@@ -15,6 +15,21 @@ const authenticateAdmin: MiddlewareHandler<AuthContext> = async (c, next) => {
 };
 
 type Dependencies = NonNullable<Parameters<typeof createAdminIdentityRoutes>[1]>;
+const STANDALONE_ID = "44444444-4444-4444-8444-444444444444";
+type StandaloneAccount = Awaited<ReturnType<Dependencies["serviceAccounts"]["listStandalone"]>>["items"][number];
+const standaloneAccount = (overrides: Partial<StandaloneAccount> = {}): StandaloneAccount => ({
+  id: STANDALONE_ID,
+  name: "Release agent",
+  kind: "agent",
+  status: "active",
+  delegatedUserId: null,
+  appId: null,
+  resourceType: null,
+  resourceId: null,
+  createdBy: ADMIN_ID,
+  createdAt: "2026-09-02T00:00:00.000Z",
+  ...overrides,
+});
 
 const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
   apps: async () => [{ id: "inventory", name: "Inventory" }],
@@ -35,8 +50,31 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
         createdBy: createdBy ?? null,
         createdAt: "2026-09-02T00:00:00.000Z",
       }),
+    createStandalone: async ({ name, kind, createdBy }) => ok(standaloneAccount({ name, kind, createdBy: createdBy ?? null })),
+    listStandalone: async () => ({ items: [standaloneAccount()], page: 1, perPage: 100, total: 1, hasNext: false }),
+    get: async ({ id }) => (id === STANDALONE_ID ? standaloneAccount() : null),
+    setStatus: async () => ok(),
   },
   credentials: {
+    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor }) =>
+      ok({
+        credential: {
+          id: CREDENTIAL_ID,
+          serviceAccountId,
+          name,
+          kind: "api_token",
+          status: "active",
+          tokenPrefix: "cld_standalone_preview",
+          scopes: scopes ?? [],
+          expiresAt: expiresAt ?? null,
+          lastUsedAt: null,
+          createdBy: actor.id,
+          createdAt: "2026-09-02T00:00:00.000Z",
+          revokedAt: null,
+          revokedBy: null,
+        },
+        token: "cld_standalone_preview.only-once-secret",
+      }),
     createResourceApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor }) =>
       ok({
         credential: {
@@ -69,6 +107,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
       hasNext: false,
     }),
   },
+  audit: { record: async () => undefined },
   ...overrides,
 });
 
@@ -144,6 +183,7 @@ describe("identity key administration", () => {
       authenticateAdmin,
       dependencies({
         serviceAccounts: {
+          ...base.serviceAccounts,
           getOrCreateResourceBound: async (input) => {
             accountInputs.push(input);
             return base.serviceAccounts.getOrCreateResourceBound(input);
@@ -190,6 +230,7 @@ describe("identity key administration", () => {
       authenticateAdmin,
       dependencies({
         serviceAccounts: {
+          ...base.serviceAccounts,
           getOrCreateResourceBound: async (input) => {
             called = true;
             return base.serviceAccounts.getOrCreateResourceBound(input);
@@ -319,4 +360,140 @@ test("lists app credentials across apps with bounded pagination and admin access
     filter: { serviceAccountKind: "resource_bound", resourceType: "cloud.app" },
   });
   expect((await routes.request("/workloads/credentials?perPage=501")).status).toBe(400);
+});
+
+describe("standalone service accounts", () => {
+  test("creates an account with the requested kind, audits it, and starts it without credentials", async () => {
+    const base = dependencies();
+    const created: Parameters<Dependencies["serviceAccounts"]["createStandalone"]>[0][] = [];
+    const audited: Parameters<Dependencies["audit"]["record"]>[0][] = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        serviceAccounts: {
+          ...base.serviceAccounts,
+          createStandalone: async (input) => {
+            created.push(input);
+            return base.serviceAccounts.createStandalone(input);
+          },
+        },
+        audit: {
+          record: async (event) => {
+            audited.push(event);
+          },
+        },
+      }),
+    );
+    expect((await createAdminIdentityRoutes().request("/service-accounts", { method: "POST" })).status).toBe(401);
+
+    const response = await routes.request("/service-accounts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Release agent", kind: "agent" }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body).toMatchObject({ id: STANDALONE_ID, kind: "agent", status: "active", delegatedUserId: null, appId: null });
+    expect(JSON.stringify(body)).not.toContain("secret");
+    expect(created).toEqual([{ name: "Release agent", kind: "agent", createdBy: ADMIN_ID }]);
+    expect(audited[0]).toMatchObject({ action: "service_account.create", actor: { userId: ADMIN_ID }, target: { id: STANDALONE_ID } });
+
+    const defaulted = await routes.request("/service-accounts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Integration" }),
+    });
+    expect(defaulted.status).toBe(201);
+    expect(created[1]?.kind).toBe("standalone");
+
+    const rejected = await routes.request("/service-accounts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Bound", kind: "resource_bound" }),
+    });
+    expect(rejected.status).toBe(400);
+    expect(created).toHaveLength(2);
+  });
+
+  test("lists and reads only standalone kinds", async () => {
+    const base = dependencies();
+    let received: Parameters<Dependencies["serviceAccounts"]["listStandalone"]>[0] | undefined;
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        serviceAccounts: {
+          ...base.serviceAccounts,
+          listStandalone: async (input) => {
+            received = input;
+            return base.serviceAccounts.listStandalone(input);
+          },
+          get: async ({ id }) =>
+            id === STANDALONE_ID
+              ? standaloneAccount()
+              : id === SERVICE_ACCOUNT_ID
+                ? standaloneAccount({ id, kind: "resource_bound", appId: "mail", resourceType: "cloud.app", resourceId: "mail" })
+                : null,
+        },
+      }),
+    );
+    const list = await routes.request("/service-accounts?kind=agent&status=active&perPage=20");
+    expect(list.status).toBe(200);
+    expect(received).toEqual({ page: 1, perPage: 20, kind: "agent", status: "active" });
+    expect(await list.json()).toMatchObject({ items: [{ id: STANDALONE_ID, kind: "agent" }], total: 1 });
+    expect((await routes.request("/service-accounts?kind=user_delegated")).status).toBe(400);
+
+    expect((await routes.request(`/service-accounts/${STANDALONE_ID}`)).status).toBe(200);
+    expect((await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}`)).status).toBe(404);
+    expect((await routes.request(`/service-accounts/${CREDENTIAL_ID}`)).status).toBe(404);
+  });
+
+  test("disables an account centrally and mints an API key only for standalone kinds", async () => {
+    const base = dependencies();
+    const statusChanges: Parameters<Dependencies["serviceAccounts"]["setStatus"]>[0][] = [];
+    const audited: string[] = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        serviceAccounts: {
+          ...base.serviceAccounts,
+          setStatus: async (input) => {
+            statusChanges.push(input);
+            return ok();
+          },
+        },
+        audit: {
+          record: async (event) => {
+            audited.push(event.action);
+          },
+        },
+      }),
+    );
+    const disabled = await routes.request(`/service-accounts/${STANDALONE_ID}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "disabled" }),
+    });
+    expect(disabled.status).toBe(200);
+    expect(await disabled.json()).toMatchObject({ id: STANDALONE_ID, status: "disabled" });
+    expect(statusChanges).toEqual([{ id: STANDALONE_ID, status: "disabled" }]);
+    expect(audited).toEqual(["service_account.disable"]);
+    expect(
+      (
+        await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ status: "disabled" }),
+        })
+      ).status,
+    ).toBe(404);
+    expect(statusChanges).toHaveLength(1);
+
+    const key = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "ci" }),
+    });
+    expect(key.status).toBe(201);
+    expect(await key.json()).toMatchObject({ credential: { serviceAccountId: STANDALONE_ID, scopes: [] }, token: expect.any(String) });
+  });
 });

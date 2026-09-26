@@ -90,7 +90,8 @@ export type {
   MandateSubject,
 } from "./mandates";
 export { serviceAccounts } from "./service-accounts";
-export type { ServiceAccount, ServiceAccountKind, ServiceAccountStatus } from "./service-accounts";
+export type { ServiceAccount, ServiceAccountKind, ServiceAccountStatus, StandaloneServiceAccountKind } from "./service-accounts";
+export { isStandaloneServiceAccountKind, STANDALONE_SERVICE_ACCOUNT_KINDS } from "./service-accounts";
 export { serviceAccountCredentials } from "./service-account-credentials";
 export type {
   AuthenticatedServiceAccountCredential,

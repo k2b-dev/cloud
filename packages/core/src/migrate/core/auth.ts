@@ -473,7 +473,7 @@ export const migrate = async (): Promise<void> => {
       resource_id TEXT,
       created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound')),
+      CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound', 'standalone', 'agent')),
       CONSTRAINT service_accounts_status_check CHECK (status IN ('active', 'disabled')),
       CONSTRAINT service_accounts_binding_check CHECK (
         (
@@ -488,9 +488,52 @@ export const migrate = async (): Promise<void> => {
           AND app_id IS NOT NULL
           AND resource_type IS NOT NULL
           AND resource_id IS NOT NULL
+        ) OR (
+          kind IN ('standalone', 'agent')
+          AND delegated_user_id IS NULL
+          AND app_id IS NULL
+          AND resource_type IS NULL
+          AND resource_id IS NULL
         )
       )
     )
+  `.simple();
+  // Standalone principals (kind standalone or agent) joined the model after the
+  // table shipped; existing installations widen the two checks in place.
+  await sql`ALTER TABLE auth.service_accounts DROP CONSTRAINT IF EXISTS service_accounts_kind_check`.simple();
+  await sql`
+    ALTER TABLE auth.service_accounts
+    ADD CONSTRAINT service_accounts_kind_check CHECK (kind IN ('user_delegated', 'resource_bound', 'standalone', 'agent'))
+  `.simple();
+  await sql`ALTER TABLE auth.service_accounts DROP CONSTRAINT IF EXISTS service_accounts_binding_check`.simple();
+  await sql`
+    ALTER TABLE auth.service_accounts
+    ADD CONSTRAINT service_accounts_binding_check CHECK (
+      (
+        kind = 'user_delegated'
+        AND delegated_user_id IS NOT NULL
+        AND app_id IS NULL
+        AND resource_type IS NULL
+        AND resource_id IS NULL
+      ) OR (
+        kind = 'resource_bound'
+        AND delegated_user_id IS NULL
+        AND app_id IS NOT NULL
+        AND resource_type IS NOT NULL
+        AND resource_id IS NOT NULL
+      ) OR (
+        kind IN ('standalone', 'agent')
+        AND delegated_user_id IS NULL
+        AND app_id IS NULL
+        AND resource_type IS NULL
+        AND resource_id IS NULL
+      )
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_service_accounts_standalone_name
+    ON auth.service_accounts(lower(name))
+    WHERE kind IN ('standalone', 'agent')
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_service_accounts_delegated_user

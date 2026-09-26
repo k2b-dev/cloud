@@ -2,8 +2,19 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { isUniqueViolation } from "./postgres";
 
-export type ServiceAccountKind = "user_delegated" | "resource_bound";
+export type ServiceAccountKind = "user_delegated" | "resource_bound" | "standalone" | "agent";
 export type ServiceAccountStatus = "active" | "disabled";
+
+/**
+ * Kinds of a standalone principal: not delegated by a user and not bound to one
+ * app resource. `agent` is a standalone account that surfaces as an agent
+ * (badge, pickers, activity); it carries no extra permission.
+ */
+export type StandaloneServiceAccountKind = Extract<ServiceAccountKind, "standalone" | "agent">;
+export const STANDALONE_SERVICE_ACCOUNT_KINDS = ["standalone", "agent"] as const satisfies readonly StandaloneServiceAccountKind[];
+
+export const isStandaloneServiceAccountKind = (kind: ServiceAccountKind): kind is StandaloneServiceAccountKind =>
+  kind === "standalone" || kind === "agent";
 
 export type ServiceAccount = {
   id: string;
@@ -48,6 +59,8 @@ const trimRequired = (value: string): string => value.trim();
 
 const isForeignKeyViolation = (error: unknown): boolean => (error as { code?: string } | null)?.code === "23503";
 const RESOURCE_BOUND_UNIQUE_CONSTRAINT = "uniq_service_accounts_resource_bound";
+const STANDALONE_NAME_UNIQUE_CONSTRAINT = "uniq_service_accounts_standalone_name";
+const MAX_NAME_LENGTH = 120;
 
 export const getByResource = async (params: {
   appId: string;
@@ -125,6 +138,60 @@ export const createResourceBound = async (params: {
   }
 };
 
+export const createStandalone = async (params: {
+  name: string;
+  kind: StandaloneServiceAccountKind;
+  createdBy?: string | null;
+}): Promise<Result<ServiceAccount>> => {
+  const name = trimRequired(params.name);
+  if (!name) return fail(err.badInput("Service account name is required"));
+  if (name.length > MAX_NAME_LENGTH) return fail(err.badInput(`Service account name must be ${MAX_NAME_LENGTH} characters or fewer`));
+  if (!isStandaloneServiceAccountKind(params.kind)) return fail(err.badInput("Service account kind must be standalone or agent"));
+
+  try {
+    const [row] = await sql<DbServiceAccount[]>`
+      INSERT INTO auth.service_accounts (name, kind, created_by)
+      VALUES (${name}, ${params.kind}, ${params.createdBy ?? null}::uuid)
+      RETURNING id, name, kind, status, delegated_user_id, app_id, resource_type, resource_id, created_by, created_at
+    `;
+    return row ? ok(mapServiceAccount(row)) : fail(err.internal("Failed to create service account"));
+  } catch (error) {
+    if (isForeignKeyViolation(error)) return fail(err.notFound("Creator"));
+    if (isUniqueViolation(error, STANDALONE_NAME_UNIQUE_CONSTRAINT)) return fail(err.conflict("Service account name"));
+    throw error;
+  }
+};
+
+/** Bounded page of standalone principals; user-delegated and resource-bound accounts stay with their owners. */
+export const listStandalone = async (params: {
+  kind?: StandaloneServiceAccountKind;
+  status?: ServiceAccountStatus;
+  search?: string;
+  page?: number;
+  perPage?: number;
+}): Promise<{ items: ServiceAccount[]; page: number; perPage: number; total: number; hasNext: boolean }> => {
+  const page = Math.max(1, params.page ?? 1);
+  const perPage = Math.max(1, Math.min(params.perPage ?? 100, 500));
+  const offset = (page - 1) * perPage;
+  const kind = params.kind ?? null;
+  const status = params.status ?? null;
+  const search = params.search?.trim() || null;
+  const rows = await sql<(DbServiceAccount & { total: number })[]>`
+    SELECT id, name, kind, status, delegated_user_id, app_id, resource_type, resource_id, created_by, created_at,
+      COUNT(*) OVER()::int AS total
+    FROM auth.service_accounts
+    WHERE kind IN ('standalone', 'agent')
+      AND (${kind}::text IS NULL OR kind = ${kind})
+      AND (${status}::text IS NULL OR status = ${status})
+      AND (${search}::text IS NULL OR name ILIKE '%' || ${search} || '%')
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${perPage}
+    OFFSET ${offset}
+  `;
+  const total = rows[0]?.total ?? 0;
+  return { items: rows.map(mapServiceAccount), page, perPage, total, hasNext: page * perPage < total };
+};
+
 export const getOrCreateResourceBound = async (params: {
   name: string;
   appId: string;
@@ -176,6 +243,8 @@ export const serviceAccounts = {
   get,
   createUserDelegated,
   createResourceBound,
+  createStandalone,
+  listStandalone,
   getByResource,
   getOrCreateResourceBound,
   setStatus,

@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-07-27
+updated: 2026-09-26
 ---
 
 # Resource authorization
@@ -52,7 +52,7 @@ type Principal =
 | --- | --- |
 | User | One user |
 | Group | Direct and nested members |
-| Service account | One resource-bound machine identity |
+| Service account | One machine identity: resource-bound, standalone, or agent |
 | Authenticated | Any authenticated user or service account |
 | Public | Every caller, including anonymous requests |
 
@@ -136,11 +136,14 @@ For a user subject it includes:
 - authenticated grants;
 - public grants.
 
-For a resource-bound service account it includes:
+For a resource-bound or standalone service account it includes:
 
 - the direct service-account grant;
 - authenticated grants;
 - public grants.
+
+A standalone or agent account has no resource binding, so only the grant and
+authenticated checks below apply to it; it is not capped to one resource.
 
 Do not pass `User.memberofGroupIds`. The shared resolver reads authoritative
 membership itself.

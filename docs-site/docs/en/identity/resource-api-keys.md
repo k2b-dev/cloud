@@ -5,7 +5,7 @@ section: Identity and access
 order: 350
 description: Create API keys for one application resource without bypassing resource authorization.
 tags: [identity, service-accounts, api-keys]
-updated: 2026-07-27
+updated: 2026-09-26
 ---
 
 # Resource API keys
@@ -17,15 +17,19 @@ account and issues the API key.
 
 ## Choose the identity
 
-Cloud has two service-account kinds:
+Cloud has four service-account kinds:
 
 | Kind | Identity | Grants |
 | --- | --- | --- |
 | `user_delegated` | A credential acting for one user | The delegated user's live grants |
 | `resource_bound` | A machine identity bound to one app resource | Explicit service-account grants |
+| `standalone` | An integration with its own identity | Explicit service-account grants |
+| `agent` | A standalone account shown as an agent | Explicit service-account grants |
 
 Personal API keys use a user-delegated service account. Resource API keys use
-a resource-bound service account.
+a resource-bound service account. Standalone and agent accounts are
+administrator-created principals; see
+[Standalone service accounts and agents](/en/docs/identity/service-accounts).
 
 Do not combine the delegated user's grants with the service account's grants.
 See [Resource authorization](/en/docs/identity/authorization#limit-resource-bound-credentials)

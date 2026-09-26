@@ -1,5 +1,5 @@
 import { env } from "@k2b/cloud/config";
-import { accounts, isAccountCategoryAllowed, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
+import { accounts, isAccountCategoryAllowed, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
 import { sql } from "bun";
 import * as jose from "jose";
@@ -41,7 +41,7 @@ export class InvalidOAuthScopeError extends Error {
 
 export class InvalidOAuthServiceAccountError extends Error {
   constructor() {
-    super("Client is not bound to an active resource service account");
+    super("Client is not bound to an active service account");
   }
 }
 
@@ -276,7 +276,8 @@ export const createTokens = async (params: {
 };
 
 /**
- * Create a client-credentials access token for a resource-bound service account.
+ * Create a client-credentials access token for the client's resource-bound or
+ * standalone service account.
  */
 export const createClientCredentialsToken = async (params: {
   client: OAuthClient;
@@ -290,16 +291,10 @@ export const createClientCredentialsToken = async (params: {
   }
 
   const serviceAccount = await serviceAccounts.get({ id: client.serviceAccountId });
-  if (
-    !serviceAccount ||
-    serviceAccount.status !== "active" ||
-    serviceAccount.kind !== "resource_bound" ||
-    !serviceAccount.appId ||
-    !serviceAccount.resourceType ||
-    !serviceAccount.resourceId
-  ) {
-    throw new InvalidOAuthServiceAccountError();
-  }
+  if (!serviceAccount || serviceAccount.status !== "active") throw new InvalidOAuthServiceAccountError();
+  const resourceBound =
+    serviceAccount.kind === "resource_bound" && serviceAccount.appId && serviceAccount.resourceType && serviceAccount.resourceId;
+  if (!resourceBound && !isStandaloneServiceAccountKind(serviceAccount.kind)) throw new InvalidOAuthServiceAccountError();
 
   const requestedScopes = resolveRequestedScopes(client, scope);
   const expiresIn = ACCESS_TOKEN_LIFETIME_SECONDS;

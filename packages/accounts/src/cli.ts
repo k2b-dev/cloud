@@ -81,7 +81,7 @@ type EntityListItem =
       serviceAccount: {
         id: string;
         name: string;
-        kind: "user_delegated" | "resource_bound";
+        kind: "user_delegated" | "resource_bound" | "standalone" | "agent";
         status: "active" | "disabled";
       };
       relation?: { direct?: boolean };
@@ -182,12 +182,13 @@ type ServiceAccountCredential = {
   serviceAccount: {
     id: string;
     name: string;
-    kind: "user_delegated" | "resource_bound";
+    kind: "user_delegated" | "resource_bound" | "standalone" | "agent";
     status: "active" | "disabled";
   };
   owner:
     | { type: "user"; userId: string; uid: string; displayName: string; mail: string | null }
-    | { type: "resource"; appId: string; resourceType: string; resourceId: string };
+    | { type: "resource"; appId: string; resourceType: string; resourceId: string }
+    | { type: "standalone"; serviceAccountId: string; name: string; kind: "standalone" | "agent" };
 };
 
 type ServiceAccountsResponse = {
@@ -202,7 +203,7 @@ const REQUEST_STATUSES = ["pending", "completed", "denied"] as const;
 const REQUEST_SCOPES = ["open", "processed", "all"] as const;
 const AUDIT_OUTCOMES = ["allowed", "denied", "failed"] as const;
 const AUDIT_ACTION_GROUPS = ["service_accounts"] as const;
-const SERVICE_ACCOUNT_KINDS = ["user_delegated", "resource_bound"] as const;
+const SERVICE_ACCOUNT_KINDS = ["user_delegated", "resource_bound", "standalone", "agent"] as const;
 const CREDENTIAL_STATUSES = ["active", "revoked"] as const;
 
 const apiPath = (path = "") => `/api/accounts${path}`;
@@ -373,7 +374,12 @@ const serviceAccountRows = (items: ServiceAccountCredential[]) =>
   items.map((credential) => ({
     status: credential.status,
     name: credential.name,
-    owner: credential.owner.type === "user" ? credential.owner.uid : `${credential.owner.appId}:${credential.owner.resourceType}`,
+    owner:
+      credential.owner.type === "user"
+        ? credential.owner.uid
+        : credential.owner.type === "standalone"
+          ? credential.owner.name
+          : `${credential.owner.appId}:${credential.owner.resourceType}`,
     kind: credential.serviceAccount.kind,
     prefix: credential.tokenPrefix,
     expiresAt: credential.expiresAt ?? "",

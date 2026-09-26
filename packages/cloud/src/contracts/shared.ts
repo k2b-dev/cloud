@@ -104,6 +104,9 @@ export const BaseGroupSchema = z.object({
 });
 export type BaseGroup = z.infer<typeof BaseGroupSchema>;
 
+export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent"]);
+export type ServiceAccountKind = z.infer<typeof ServiceAccountKindSchema>;
+
 export const EntityKindSchema = z.enum(["user", "group", "service_account"]);
 export type EntityKind = z.infer<typeof EntityKindSchema>;
 
@@ -128,7 +131,7 @@ export const EntityListItemSchema = z.discriminatedUnion("kind", [
     serviceAccount: z.object({
       id: z.uuid(),
       name: z.string(),
-      kind: z.enum(["user_delegated", "resource_bound"]),
+      kind: ServiceAccountKindSchema,
       status: z.enum(["active", "disabled"]),
       delegatedUserId: z.uuid().nullable(),
       appId: z.string().nullable(),
@@ -207,9 +210,6 @@ export type MutationResult<T = void> = { ok: true; data: T } | { ok: false; erro
 
 export const PermissionLevelSchema = z.enum(["none", "read", "write", "admin"]);
 export type PermissionLevel = z.infer<typeof PermissionLevelSchema>;
-
-export const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound"]);
-export type ServiceAccountKind = z.infer<typeof ServiceAccountKindSchema>;
 
 export const ServiceAccountStatusSchema = z.enum(["active", "disabled"]);
 export type ServiceAccountStatus = z.infer<typeof ServiceAccountStatusSchema>;

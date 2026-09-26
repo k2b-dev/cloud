@@ -310,14 +310,18 @@ const validateAuthority = (requests: OAuthTokenRequest[], state: AuthorityState,
   if (first.kind === "service_access") {
     if (requests.length !== 1 || !state.serviceAccount || state.user) return false;
     const account = state.serviceAccount;
+    const resourceBound =
+      account.kind === "resource_bound" && account.appId !== null && account.resourceType !== null && account.resourceId !== null;
+    const standalone =
+      (account.kind === "standalone" || account.kind === "agent") &&
+      account.appId === null &&
+      account.resourceType === null &&
+      account.resourceId === null;
     return (
       state.clientServiceAccountId === account.id &&
       account.status === "active" &&
-      account.kind === "resource_bound" &&
       account.delegatedUserId === null &&
-      account.appId !== null &&
-      account.resourceType !== null &&
-      account.resourceId !== null &&
+      (resourceBound || standalone) &&
       state.grantedScopes.every((scope) => state.clientScopes.includes(scope)) &&
       resolveAudiences(state, issuer) !== null
     );
@@ -369,7 +373,7 @@ const claims = (request: OAuthTokenRequest, state: AuthorityState, grantedScopes
       token_use: "access",
       principal_type: "service_account",
       service_account_id: account.id,
-      service_account_kind: "resource_bound",
+      service_account_kind: account.kind,
       app_id: account.appId,
       resource_type: account.resourceType,
       resource_id: account.resourceId,

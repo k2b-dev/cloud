@@ -9,7 +9,7 @@ import * as jose from "jose";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminApiRoutes from "../api";
-import type { OAuthClient } from "../contracts";
+import type { OAuthAllowedProfile, OAuthClient, OAuthScope } from "../contracts";
 import { ConsentDecisionSchema, completeConsent } from "../frontend/consent-action";
 import { migrate } from "../migrate";
 import oauthRoutes from "../oauth";
@@ -2129,6 +2129,105 @@ suite("OAuth resource access tokens", () => {
       if (clientId) await sql`DELETE FROM oauth.clients WHERE id = ${clientId}::uuid`;
       if (serviceAccountId) await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("client credentials of an agent account act as that standalone principal until the account is disabled", async () => {
+    const adminId = await insertUser({ admin: true });
+    const delegatedId = await insertUser();
+    const created: { clients: string[]; accounts: string[] } = { clients: [], accounts: [] };
+
+    try {
+      const agent = await serviceAccounts.createStandalone({
+        name: `Release agent ${crypto.randomUUID()}`,
+        kind: "agent",
+        createdBy: adminId,
+      });
+      expect(agent.ok).toBe(true);
+      if (!agent.ok) return;
+      created.accounts.push(agent.data.id);
+
+      // A user-delegated account still cannot own an OAuth client.
+      const delegated = await serviceAccounts.createUserDelegated({ name: "Personal keys", delegatedUserId: delegatedId });
+      expect(delegated.ok).toBe(true);
+      if (!delegated.ok) return;
+      created.accounts.push(delegated.data.id);
+      const clientInput = (serviceAccountId: string) => ({
+        name: `Agent client ${crypto.randomUUID()}`,
+        redirectUris: [],
+        scopes: ["openid", "profile", "email", "offline_access", "read", "write"] as OAuthScope[],
+        audiences: ["cloud"],
+        serviceAccountId,
+        allowedProfiles: [] as OAuthAllowedProfile[],
+        accessMode: "profiles" as const,
+        allowedUserIds: [],
+        allowedGroupIds: [],
+        isPublic: false,
+      });
+      expect((await oauth.clients.create({ actor: adminActor(adminId), data: clientInput(delegated.data.id) })).ok).toBe(false);
+
+      const client = await oauth.clients.create({ actor: adminActor(adminId), data: clientInput(agent.data.id) });
+      expect(client.ok).toBe(true);
+      if (!client.ok) return;
+      created.clients.push(client.data.id);
+      expect(client.data.clientSecret.length).toBeGreaterThan(40);
+
+      // The list filter lets a CLI find the client that belongs to an account.
+      const listed = await oauthService.client.list({ filter: { serviceAccountId: agent.data.id } });
+      expect(listed.items.map((item) => item.id)).toEqual([client.data.id]);
+      expect(JSON.stringify(listed)).not.toContain(client.data.clientSecret);
+
+      const issued = await requestClientCredentialsToken({ clientId: client.data.clientId, clientSecret: client.data.clientSecret });
+      expect(issued.status).toBe(200);
+      const body = (await issued.json()) as { access_token: string; expires_in: number; scope: string; refresh_token?: string };
+      expect(body.expires_in).toBe(3_600);
+      expect(body.refresh_token).toBeUndefined();
+      expect(body.scope).toBe("openid profile email offline_access read write");
+      expect(jose.decodeJwt(body.access_token)).toMatchObject({
+        principal_type: "service_account",
+        service_account_id: agent.data.id,
+        service_account_kind: "agent",
+        app_id: null,
+        client_id: client.data.clientId,
+      });
+
+      const verified = await oauthTokens.verifyAccessToken(body.access_token);
+      expect(verified?.kind).toBe("service_account");
+      if (verified?.kind !== "service_account") return;
+      expect(verified.serviceAccount).toMatchObject({ id: agent.data.id, kind: "agent", delegatedUserId: null });
+      expect(verified.delegatedUser).toBeNull();
+
+      const probe = await actorProbe().request("/probe", { headers: { Authorization: `Bearer ${body.access_token}` } });
+      expect(probe.status).toBe(200);
+      expect(await probe.json()).toEqual({
+        actorKind: "service_account",
+        userId: null,
+        serviceAccountId: agent.data.id,
+        accessSubject: { type: "service_account", serviceAccountId: agent.data.id },
+      });
+
+      // Rotating the secret invalidates the previous one immediately.
+      const rotated = await oauth.clients.regenerateSecret({ id: client.data.id, actor: adminActor(adminId) });
+      expect(rotated.ok).toBe(true);
+      if (!rotated.ok) return;
+      expect((await requestClientCredentialsToken({ clientId: client.data.clientId, clientSecret: client.data.clientSecret })).status).toBe(
+        401,
+      );
+      expect(
+        (await requestClientCredentialsToken({ clientId: client.data.clientId, clientSecret: rotated.data.clientSecret })).status,
+      ).toBe(200);
+
+      // Disabling the account is the central revocation: no new tokens, and issued tokens stop resolving.
+      expect((await serviceAccounts.setStatus({ id: agent.data.id, status: "disabled" })).ok).toBe(true);
+      const denied = await requestClientCredentialsToken({ clientId: client.data.clientId, clientSecret: rotated.data.clientSecret });
+      expect(denied.status).toBe(400);
+      expect(await denied.json()).toMatchObject({ error: "invalid_client" });
+      expect(await oauthTokens.verifyAccessToken(body.access_token)).toBeNull();
+      expect((await actorProbe().request("/probe", { headers: { Authorization: `Bearer ${body.access_token}` } })).status).toBe(401);
+    } finally {
+      for (const id of created.clients) await sql`DELETE FROM oauth.clients WHERE id = ${id}::uuid`;
+      for (const id of created.accounts) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${adminId}::uuid, ${delegatedId}::uuid)`;
     }
   });
 });

@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # OAuth clients and flows
@@ -203,7 +203,7 @@ expiry and immediately after their tokens are issued.
 The OAuth client must:
 
 - be confidential;
-- reference an active resource-bound service account;
+- reference an active resource-bound or standalone service account;
 - allow every requested scope;
 - allow the optional requested resource audience.
 
@@ -222,15 +222,21 @@ resource=https%3A%2F%2Fcloud.example%2Fapi%2Finventory
 Every `resource` value is an absolute URI without a fragment. When supplied,
 the resulting access token is valid only for that exact audience.
 
-The token resolves to a resource-bound service-account actor.
+The token resolves to a service-account actor of the bound account's kind.
+`service_account_kind` is `resource_bound`, `standalone`, or `agent`; for the
+standalone kinds the `app_id`, `resource_type`, and `resource_id` claims are
+`null`. See [Standalone service accounts and agents](/en/docs/identity/service-accounts).
 
-The application must still verify:
+For a resource-bound account the application must still verify:
 
 - `appId`;
 - `resourceType`;
 - `resourceId`;
 - the service-account access grant;
 - the credential scope cap.
+
+For a standalone account the application checks the service-account access
+grant like any other principal.
 
 OAuth scopes do not grant domain access. See
 [Resource authorization](/en/docs/identity/authorization#limit-resource-bound-credentials).
@@ -247,7 +253,7 @@ OAuth client creation supports:
 | `logoutUri` | None | Optional post-logout URI |
 | `scopes` | `openid profile email` | Allowed scopes |
 | `audiences` | `cloud` | Allowed token audiences and resource values |
-| `serviceAccountId` | `null` | Resource service account for client credentials |
+| `serviceAccountId` | `null` | Resource-bound or standalone service account for client credentials |
 | `allowedProfiles` | `user, guest` | User profiles allowed to authorize |
 | `accessMode` | `profiles` | Profile-based or explicit user/group access |
 | `allowedUserIds` | `[]` | Users allowed in `specific` mode |
@@ -268,8 +274,10 @@ configured managed or first-party clients.
 
 Scope, audience, redirect, user, and group lists accept at most 50 entries.
 
-`serviceAccountId` is valid only for an active resource-bound service account.
-Clients with a service-account binding must be confidential.
+`serviceAccountId` is valid only for an active resource-bound or standalone
+service account. Clients with a service-account binding must be confidential.
+`GET /api/oauth/admin/clients?serviceAccountId=<id>` lists the clients of one
+account.
 
 ## Register a dynamic public client
 

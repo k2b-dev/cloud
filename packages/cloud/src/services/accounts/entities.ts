@@ -2,6 +2,7 @@ import { sql } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
+import type { ServiceAccountKind } from "../service-accounts";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { buildBaseUser } from "./base-user";
 import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery } from "./group-sql";
@@ -369,6 +370,9 @@ const buildQuerySpec = (params: EntityListParams): EntityQuerySpec => {
   return buildNoRelationSpec();
 };
 
+const serviceAccountKind = (value: unknown): ServiceAccountKind =>
+  value === "resource_bound" || value === "standalone" || value === "agent" ? value : "user_delegated";
+
 const mapEntityRow = (row: DbRow): EntityListItem => {
   const direct = typeof row.direct === "boolean" ? row.direct : undefined;
 
@@ -386,7 +390,7 @@ const mapEntityRow = (row: DbRow): EntityListItem => {
       serviceAccount: {
         id: String(row.id),
         name: String(row.name ?? ""),
-        kind: row.service_account_kind === "resource_bound" ? "resource_bound" : "user_delegated",
+        kind: serviceAccountKind(row.service_account_kind),
         status: row.status === "disabled" ? "disabled" : "active",
         delegatedUserId: typeof row.delegated_user_id === "string" ? row.delegated_user_id : null,
         appId: typeof row.app_id === "string" ? row.app_id : null,
@@ -596,6 +600,8 @@ export const list = async (
           sa.name,
           CASE
             WHEN sa.kind = 'user_delegated' THEN 'Personal automation keys'
+            WHEN sa.kind = 'agent' THEN 'Agent'
+            WHEN sa.kind = 'standalone' THEN 'Service account'
             ELSE CONCAT_WS(' · ', sa.app_id, sa.resource_type, sa.resource_id)
           END AS description,
           NULL::int AS gid_number,

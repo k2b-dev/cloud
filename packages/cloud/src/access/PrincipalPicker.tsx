@@ -78,8 +78,12 @@ export default function PrincipalPicker(props: {
             description:
               e.serviceAccount.kind === "user_delegated"
                 ? t().userBoundServiceAccount
-                : [e.serviceAccount.appId, e.serviceAccount.resourceType, e.serviceAccount.resourceId].filter(Boolean).join(" · "),
-            icon: "ti ti-key",
+                : e.serviceAccount.kind === "agent"
+                  ? t().agentServiceAccount
+                  : e.serviceAccount.kind === "standalone"
+                    ? t().standaloneServiceAccount
+                    : [e.serviceAccount.appId, e.serviceAccount.resourceType, e.serviceAccount.resourceId].filter(Boolean).join(" · "),
+            icon: e.serviceAccount.kind === "agent" ? "ti ti-robot" : "ti ti-key",
           });
       }
     }

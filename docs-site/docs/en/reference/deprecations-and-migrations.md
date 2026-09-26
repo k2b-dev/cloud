@@ -10,6 +10,20 @@ updated: 2026-09-26
 
 # Deprecations and migrations
 
+## Service accounts gain standalone and agent kinds
+
+`ServiceAccount.kind` is now `user_delegated`, `resource_bound`, `standalone`,
+or `agent`. Application code that treated every userless service account as
+resource-bound must check `kind === "resource_bound"` before reading `appId`,
+`resourceType`, or `resourceId`; a standalone account authenticates like a
+user with its own grants. OAuth clients may bind a standalone account for the
+client-credentials grant, and its access tokens carry `service_account_kind:
+"standalone"` or `"agent"`. No migration is required: the `auth.service_accounts`
+check constraints widen in place, and existing delegated and resource-bound
+accounts, keys, and clients are unchanged. Operators provision agents with
+`cld admin agents` and revoke them by disabling the account. See
+[Standalone service accounts and agents](/en/docs/identity/service-accounts).
+
 ## The cloud-cli skill comes from cld
 
 `cld update` no longer downloads `cloud-cli-skill.tar.gz`; the core skill is

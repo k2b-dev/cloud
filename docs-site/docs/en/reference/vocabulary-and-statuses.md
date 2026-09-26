@@ -5,7 +5,7 @@ section: Reference
 order: 1240
 description: Look up the terms and status values used across Cloud application APIs.
 tags: [vocabulary, statuses, contracts]
-updated: 2026-07-27
+updated: 2026-09-26
 ---
 
 # Shared vocabulary and statuses
@@ -25,6 +25,8 @@ Do not create an application synonym for an existing platform concept.
 | Permission | `none`, `read`, `write`, or `admin` |
 | Resource-bound service account | Machine identity restricted to one application resource |
 | Delegated service account | Machine credential acting for a user |
+| Standalone service account | Machine identity with its own grants and no resource binding (`standalone` or `agent`) |
+| Agent | Standalone service account that surfaces as an agent in pickers, activity, and audit |
 
 An actor and access subject can differ.
 
