@@ -1,6 +1,7 @@
 import { createRuntimeLifecycle, stopRuntimeResources } from "@k2b/cloud/services";
 import * as mailboxAccess from "./access";
 import * as activityPublic from "./activity-public";
+import * as addresses from "./addresses";
 import * as attachmentExtraction from "./attachment-extraction";
 import { attachmentExtractionRuntime } from "./attachment-extraction";
 import * as attachmentLinks from "./attachment-links";
@@ -85,6 +86,7 @@ export const mailRuntime = {
 export type { MailRequestContext } from "./auth";
 export {
   activityPublic,
+  addresses,
   attachmentExtraction,
   attachmentLinks,
   automaticReplyConfigurations,

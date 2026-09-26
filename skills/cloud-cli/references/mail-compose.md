@@ -94,28 +94,23 @@ cld --json mail conversation drafts <conversation-id> --limit 20
 
 Treat `draft get` as the authoritative state before a terminal edit. Another Mail tab or collaborator may have scheduled, sent, discarded, or revised the draft since the previous read. Draft writes remain revision-fenced and reject a draft that is no longer editable; fetch the current state instead of retrying stale content. The Mail browser UI receives realtime lifecycle updates, while the CLI deliberately re-reads durable state per command.
 
-Draft intent is immutable. Use `new`, `reply`, `reply_all`, or `forward` when creating the draft. Replies and forwards identify their source:
+Draft intent is immutable. For a reply or forward, start from the conversation. Both commands use its latest message unless `--message` names another one, and the mailbox's verified default identity unless `--identity` names another one:
 
 ```bash
-cld --json mail draft create \
-  --identity <identity-id> \
-  --conversation <conversation-id> \
-  --intent reply \
-  --source-message <message-id> \
-  --subject "Re: Message subject" \
-  --body-file body.md
+cld --json mail reply <conversation-id> --body-file body.md
+cld --json mail reply <conversation-id> --all --message <message-id> --body-file body.md
+cld --json mail forward <conversation-id> --to colleague@example.com --body "FYI"
 ```
 
-For a forward, copy the source message's eligible attachments explicitly:
+`reply` takes the recipients from the source message and sets `Re:` on its subject. `forward` sets `Fwd:`, appends the original message below your text, and copies its attachments unless you pass `--no-attachments`. Both create a draft and print its ID; nothing is sent until you run `send`.
+
+`draft create` covers new messages and every draft field:
 
 ```bash
 cld --json mail draft create \
   --identity <identity-id> \
-  --conversation <conversation-id> \
-  --intent forward \
-  --source-message <message-id> \
-  --include-source-attachments \
-  --subject "Fwd: Message subject" \
+  --to recipient@example.com \
+  --subject "Message subject" \
   --body-file body.md
 ```
 
@@ -193,12 +188,12 @@ cld --json mail draft attachment remove \
   --revision <current-revision>
 ```
 
-## Send immediately
+## Send a draft
 
-Create an immutable draft snapshot, queue delivery, and wait for the durable command to succeed:
+`send` sends an existing draft at its current revision. Create the draft with `reply`, `forward`, or `draft create`, add files with `draft attachment add`, then send it and wait for the durable command to succeed:
 
 ```bash
-cld --json mail send \
+cld --json mail draft create \
   --identity <identity-id> \
   --to recipient@example.com \
   --subject "Message subject" \
@@ -206,8 +201,9 @@ cld --json mail send \
   --format markdown \
   --priority high \
   --delivery-receipt on \
-  --read-receipt off \
-  --attach ./invoice.pdf \
+  --read-receipt off
+cld --json mail draft attachment add <draft-id> ./invoice.pdf --revision <current-revision>
+cld --json mail send <draft-id> \
   --undo 0 \
   --idempotency-key support-message-42 \
   --wait \
@@ -216,34 +212,25 @@ cld --json mail send \
 
 Use a stable `--idempotency-key` whenever automation may retry the same send. Reusing a key with different content fails instead of sending a different message under the same operation.
 
+`send` runs the same safety review as the Mail composer. When it reports warnings, read them and pass `--approve-safety` to approve exactly those warnings.
+
 Priority and receipt flags are frozen into the draft and outbox snapshot. Delivery receipts require DSN support from the selected SMTP transport. Read receipts are only requests; recipients may ignore them. Received reports appear in conversation activity and should be treated as reported outcomes, not proof of human attention.
 
-Set `--conversation <conversation-id>`, the matching `--intent`, and `--source-message <message-id>` when replying or forwarding so Mail adds the correct `In-Reply-To` and `References` headers. Use `--include-source-attachments` only for a forward whose source attachments should be copied.
+Replies and forwards created with `reply` and `forward` carry their source message, so Mail adds the correct `In-Reply-To` and `References` headers.
 
 The default Undo Send window is 10 seconds. Set `--undo 0` for immediate submission. To exercise Undo Send, queue with an undo window and cancel the returned command before submission starts:
 
 ```bash
-cld --json mail send \
-  --identity <identity-id> \
-  --to recipient@example.com \
-  --subject "Undo test" \
-  --body "Cancel me" \
-  --undo 60
+cld --json mail send <draft-id> --undo 60
 cld --json mail command cancel <command-id>
 ```
 
 ## Schedule and cancel delivery
 
-Schedule a send with an ISO timestamp:
+Schedule a send with an ISO timestamp that includes its UTC offset:
 
 ```bash
-cld --json mail send \
-  --identity <identity-id> \
-  --to recipient@example.com \
-  --subject "Scheduled message" \
-  --body-file body.md \
-  --schedule <ISO-timestamp> \
-  --undo 0
+cld --json mail send <draft-id> --schedule 2026-10-01T08:00:00+02:00 --undo 0
 ```
 
 Scheduled delivery is observable independently from the command journal:

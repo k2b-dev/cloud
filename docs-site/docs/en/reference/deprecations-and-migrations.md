@@ -10,6 +10,47 @@ updated: 2026-09-26
 
 # Deprecations and migrations
 
+## Mail CLI commands
+
+The everyday `cld mail` commands use the shared verbs and addresses. The old
+names are removed without aliases; scripts must switch to the new names. A
+mailbox is its ID or exact name, a folder is `<mailbox>:<path>` such as
+`"Support:Projekte / 2025"`, and an ambiguous name or path fails with `409`
+and lists its candidates. Triage commands take up to 50 conversation IDs as
+arguments and act on the Inbox unless `--in <folder>` names another source
+folder. Administration, provider, identity, automation, workflow, operator,
+repair, and storage commands keep their names. See
+[Mail](/en/apps/mail#automate-mail-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `conversation list [--folder <id>]` | `ls <mailbox>[:<folder path>]` |
+| `conversation get` | `show <conversation>` |
+| `message get` | `cat <message>` |
+| `conversation assign --conversation <id>... --to <user>` | `assign <conversation>... --to <user>` |
+| `conversation archive --source <folder-id>` | `archive <conversation>... [--in <folder>]` |
+| `conversation move <conversation> <folder-id> --source <folder-id>` | `mv <conversation>... --to <folder> [--in <folder>]` |
+| `conversation trash --source <folder-id>` | `rm <conversation>... --yes [--in <folder>]` |
+| `conversation read`, `unread` | `read`, `unread <conversation>...` |
+| `conversation star`, `unstar` | `flag`, `unflag <conversation>...` |
+| `conversation tag add --conversation <id> --tag <id>` | `tag add <conversation>... --tag <tag>` |
+| none | `tag rm <conversation>... --tag <tag>` |
+| `conversation junk`, `not-spam --source <folder-id>` | `conversation junk`, `not-spam <conversation>... [--in <folder>]` |
+| `conversation keyword add <conversation> <keyword> --source <folder-id>` | `conversation keyword add <conversation>... --keyword <keyword> [--in <folder>]` |
+| `comment list`, `add`, `edit`, `delete` | `comments list`, `add`, `update`, `delete` |
+| `send --identity --to --subject --body [--attach]` | `draft create ...`, `draft attachment add ...`, then `send <draft>` |
+| `search --folder <name>` | `search --folder <path>`; a path matching several folders fails instead of searching all of them |
+
+`send` now sends an existing draft instead of composing one. The new
+`reply <conversation>` and `forward <conversation> --to <address>` create reply
+and forward drafts from the latest message; `draft create --intent` still
+works.
+
+The Mail API adds `GET /api/mail/resolve?mailbox=<ref>[&folder=<ref>]`, which
+resolves a mailbox ID or name and a folder ID or path, and answers `404` or
+`409` with the candidates. No stored data changes.
+
 ## Files CLI commands
 
 `cld filesv2` was rebuilt around shell-like verbs and file addresses. The old

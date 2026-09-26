@@ -244,7 +244,7 @@ describe("cloud CLI OAuth session handling", () => {
     expect(result.stdout).toContain("grids");
     expect(result.stdout).toContain("Manage Grids bases");
     expect(result.stdout).toContain("mail");
-    expect(result.stdout).toContain("Search, read, configure, and operate Cloud Mail");
+    expect(result.stdout).toContain("Read, triage, and answer Cloud Mail");
   });
 
   test("nested module help does not require a configured server", async () => {

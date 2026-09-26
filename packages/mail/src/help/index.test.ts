@@ -452,7 +452,7 @@ describe("mailHelp", () => {
     expect(reference).toContain("The Mail UI calls the standard `\\Flagged` state **Flag**");
     expect(commands.get("message star")).toContain("Add the standard Flag");
     expect(commands.get("message unstar")).toContain("Remove the standard Flag");
-    expect(commands.get("conversation star")).toContain("Add the standard Flag");
-    expect(commands.get("conversation unstar")).toContain("Remove the standard Flag");
+    expect(commands.get("flag")).toContain("Flag conversations");
+    expect(commands.get("unflag")).toContain("Remove the flag from conversations");
   });
 });

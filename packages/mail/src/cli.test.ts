@@ -106,6 +106,25 @@ const runCli = async (server: string, args: string[], input?: string) => {
   return { exitCode, stdout, stderr };
 };
 
+/**
+ * A stand-in for `GET /api/mail/resolve`: the mailbox by ID or exact name, and
+ * a folder by ID or name from the handler's folder list. The real resolution
+ * is covered by `service/addresses.test.ts` and the CLI integration test.
+ */
+const resolveFixtureAddress = async (url: URL, handler: (request: Request) => Response | Promise<Response>) => {
+  const ref = url.searchParams.get("mailbox");
+  if (ref !== MAILBOX_ID && ref !== mailbox.name) return api({ error: `No mailbox "${ref}"` }, { status: 404 });
+  const folderRef = url.searchParams.get("folder");
+  if (folderRef === null) return api({ mailbox: { ...mailbox, permission: "admin" }, folder: null });
+  const folders = (await (await handler(new Request(new URL(`/api/mail/mailboxes/${MAILBOX_ID}/folders`, url)))).json()) as Array<{
+    id: string;
+    name: string;
+  }>;
+  const folder = folders.find((item) => item.id === folderRef || item.name === folderRef);
+  if (!folder) return api({ error: `No folder "${folderRef}"` }, { status: 404 });
+  return api({ mailbox: { ...mailbox, permission: "admin" }, folder: { ...folder, path: folder.name } });
+};
+
 const withMailbox = (handler: (request: Request) => Response | Promise<Response>) =>
   Bun.serve({
     port: 0,
@@ -113,6 +132,7 @@ const withMailbox = (handler: (request: Request) => Response | Promise<Response>
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/api/mail/mailboxes") return api([{ ...mailbox, permission: "admin" }]);
       if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) return api(mailbox);
+      if (request.method === "GET" && url.pathname === "/api/mail/resolve") return resolveFixtureAddress(url, handler);
       return handler(request);
     },
   });
@@ -640,7 +660,7 @@ test("search preserves commas inside repeated free-text terms", async () => {
   });
 });
 
-test("search --folder filters by folder id or exact name and rejects unknown folders", async () => {
+test("search --folder resolves each folder through the server and rejects unknown folders", async () => {
   const folder = (id: string, name: string, parentId: string | null = null) => ({
     id,
     parentId,
@@ -661,7 +681,7 @@ test("search --folder filters by folder id or exact name and rejects unknown fol
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders`)
-      return api([folder(FOLDER_ID, "Developer"), folder("Foldr2", "Archive"), folder("Foldr3", "archive", "Foldr2")]);
+      return api([folder(FOLDER_ID, "Developer"), folder("Foldr2", "Archive")]);
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/search`) {
       requestBodies.push(await request.json());
       return api({ items: [], nextCursor: null, backend: "native" });
@@ -683,58 +703,61 @@ test("search --folder filters by folder id or exact name and rejects unknown fol
   expect(byId.exitCode, byId.stderr).toBe(0);
   expect(requestBodies.at(-1)).toMatchObject({ expression: { type: "folder_id", folderId: FOLDER_ID } });
 
-  const byName = await search("developer", "Archive");
+  const byName = await search("Developer", "Archive");
   expect(byName.exitCode, byName.stderr).toBe(0);
   expect(requestBodies.at(-1)).toMatchObject({
     expression: {
       type: "and",
       expressions: [
         { type: "folder_id", folderId: FOLDER_ID },
-        {
-          type: "or",
-          expressions: [
-            { type: "folder_id", folderId: "Foldr2" },
-            { type: "folder_id", folderId: "Foldr3" },
-          ],
-        },
+        { type: "folder_id", folderId: "Foldr2" },
       ],
     },
   });
 
   const unknown = await search("HM3ntB");
   expect(unknown.exitCode).not.toBe(0);
-  expect(JSON.parse(unknown.stderr).error.message).toContain('Unknown folder "HM3ntB"');
+  expect(JSON.parse(unknown.stderr).error).toMatchObject({ status: 404, message: 'No folder "HM3ntB"' });
   expect(requestBodies).toHaveLength(2);
 });
 
-test("mailbox short-id resolution uses the direct resource endpoint independently of the bounded list", async () => {
+test("mailbox references resolve through the server resolution endpoint", async () => {
   const requests: string[] = [];
   const server = Bun.serve({
     port: 0,
     fetch: (request) => {
       const url = new URL(request.url);
       requests.push(`${url.pathname}${url.search}`);
-      if (request.method === "GET" && url.pathname === "/api/mail/mailboxes") {
-        if (url.searchParams.get("name") === MAILBOX_ID) return api([]);
-        return api({ message: "bounded mailbox list must not resolve an id" }, { status: 500 });
-      }
+      if (request.method === "GET" && url.pathname === "/api/mail/resolve")
+        return api({ mailbox: { ...mailbox, permission: "write" }, folder: null });
       if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) return api(mailbox);
       return api({ message: "unexpected" }, { status: 500 });
     },
   });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--jsonl", "mail", "mailbox", "get", MAILBOX_ID]);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--jsonl", "mail", "mailbox", "get", "Support Team"]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.stderr).toBe("");
-  expect(result.stdout.trim().split("\n")).toHaveLength(1);
-  expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, permission: null });
-  expect(requests).toEqual([
-    `/api/mail/mailboxes/${MAILBOX_ID}`,
-    `/api/mail/mailboxes?limit=2&name=${MAILBOX_ID}`,
-    `/api/mail/mailboxes/${MAILBOX_ID}`,
-  ]);
+  expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, permission: "write" });
+  expect(requests).toEqual(["/api/mail/resolve?mailbox=Support+Team", `/api/mail/mailboxes/${MAILBOX_ID}`]);
+});
+
+test("an ambiguous mailbox name fails with the server's 409 instead of a guess", async () => {
+  const message = '"Support" matches several mailboxes: Support (Mail01), Support (Mail02). Use one of these paths or IDs.';
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) =>
+      new URL(request.url).pathname === "/api/mail/resolve"
+        ? api({ error: message, code: "CONFLICT" }, { status: 409 })
+        : api({ message: "unexpected" }, { status: 500 }),
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "show", CONVERSATION_ID, "--mailbox", "Support"]);
+
+  expect(result.exitCode).toBe(1);
+  expect(JSON.parse(result.stderr).error).toMatchObject({ status: 409, message });
 });
 
 test("legacy mailbox UUIDs are rejected before any API request", async () => {
@@ -765,8 +788,7 @@ test("legacy UUIDs are rejected for public Mail resources", async () => {
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "mail",
-    "message",
-    "get",
+    "cat",
     "00000000-0000-4000-8000-000000000005",
     "--mailbox",
     MAILBOX_ID,
@@ -775,93 +797,6 @@ test("legacy UUIDs are rejected for public Mail resources", async () => {
   expect(result.exitCode).not.toBe(0);
   expect(result.stderr).toContain("Message id must be an exact six-character Mail resource id");
   expect(messageRequestCount).toBe(0);
-});
-
-test("mailbox name resolution uses an exact server-side lookup", async () => {
-  const requests: string[] = [];
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      const url = new URL(request.url);
-      requests.push(`${url.pathname}${url.search}`);
-      if (request.method === "GET" && url.pathname === "/api/mail/mailboxes") {
-        if (url.searchParams.get("name") === mailbox.name) return api([{ ...mailbox, permission: "admin" }]);
-        return api({ message: "mailbox name lookup must be exact" }, { status: 500 });
-      }
-      if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) return api(mailbox);
-      return api({ message: "unexpected" }, { status: 500 });
-    },
-  });
-  servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--jsonl", "mail", "mailbox", "get", mailbox.name]);
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(result.stderr).toBe("");
-  expect(requests[0]).toBe("/api/mail/mailboxes?limit=2&name=Support");
-  expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, permission: "admin" });
-});
-
-test("six-character mailbox names remain exact selectors", async () => {
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      const url = new URL(request.url);
-      if (request.method !== "GET" || url.pathname !== "/api/mail/mailboxes") {
-        if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) {
-          return api({ ...mailbox, name: "Shared" });
-        }
-        if (request.method === "GET" && url.pathname === "/api/mail/mailboxes/Shared") {
-          return api({ message: "not found" }, { status: 404 });
-        }
-        return api({ message: "unexpected" }, { status: 500 });
-      }
-      if (url.searchParams.get("name") === "Shared") return api([{ ...mailbox, name: "Shared", permission: "write" }]);
-      return api([]);
-    },
-  });
-  servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "mailbox", "get", "Shared"]);
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(JSON.parse(result.stdout)).toMatchObject({ id: MAILBOX_ID, name: "Shared", permission: "write" });
-});
-
-test("mailbox resolution rejects a direct-id and exact-name collision outside a full bounded list", async () => {
-  const nameCollision = { ...mailbox, id: "Mail02", name: MAILBOX_ID, permission: "admin" };
-  const boundedMailboxes = Array.from({ length: 200 }, (_, index) => ({
-    ...mailbox,
-    id: `M${String(index).padStart(5, "0")}`,
-    name: `Mailbox ${index}`,
-    permission: "admin" as const,
-  }));
-  let directRequestCount = 0;
-  let boundedListRequestCount = 0;
-  const server = Bun.serve({
-    port: 0,
-    fetch: (request) => {
-      const url = new URL(request.url);
-      if (request.method === "GET" && url.pathname === "/api/mail/mailboxes") {
-        if (url.searchParams.get("name") === MAILBOX_ID) return api([nameCollision]);
-        boundedListRequestCount += 1;
-        return api(boundedMailboxes);
-      }
-      if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}`) {
-        directRequestCount += 1;
-        return api(mailbox);
-      }
-      return api({ message: "unexpected" }, { status: 500 });
-    },
-  });
-  servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "mailbox", "get", MAILBOX_ID]);
-
-  expect(result.exitCode).toBe(1);
-  expect(result.stderr).toContain(`Mailbox "${MAILBOX_ID}" is ambiguous`);
-  expect(directRequestCount).toBe(1);
-  expect(boundedListRequestCount).toBe(0);
 });
 
 test("compose template and style commands preserve exact source input", async () => {
@@ -1121,15 +1056,18 @@ test("local tag CLI creates catalog entries and fences conversation assignments"
   ]);
 });
 
-test("conversation tag add exposes bounded additive bulk assignment", async () => {
+test("tag add resolves tags by name and assigns them in one bulk request", async () => {
   let requestBody: unknown;
   const server = withMailbox(async (request) => {
-    if (request.method === "POST" && new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/local-tags`) {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/local-tags`)
+      return api([
+        { id: TAG_ID, name: "Priority", color: "#6b7280", revision: 1 },
+        { id: COMPOSE_TEMPLATE_ID, name: "Billing", color: "#6b7280", revision: 1 },
+      ]);
+    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/local-tags`) {
       requestBody = await request.json();
-      return api({
-        updatedConversationIds: [CONVERSATION_ID],
-        unchangedConversationIds: [SOURCE_CONVERSATION_ID],
-      });
+      return api({ updatedConversationIds: [CONVERSATION_ID], unchangedConversationIds: [SOURCE_CONVERSATION_ID] });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
@@ -1138,38 +1076,96 @@ test("conversation tag add exposes bounded additive bulk assignment", async () =
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "mail",
-    "conversation",
     "tag",
     "add",
+    CONVERSATION_ID,
+    SOURCE_CONVERSATION_ID,
+    CONVERSATION_ID,
     "--mailbox",
     MAILBOX_ID,
-    "--conversation",
-    CONVERSATION_ID,
-    "--conversation",
-    SOURCE_CONVERSATION_ID,
-    "--conversation",
-    CONVERSATION_ID,
     "--tag",
-    TAG_ID,
+    "Priority",
     "--tag",
     COMPOSE_TEMPLATE_ID,
     "--tag",
-    TAG_ID,
+    "Priority",
   ]);
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
-  expect(requestBody).toEqual({
-    conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID],
-    tagIds: [TAG_ID, COMPOSE_TEMPLATE_ID],
-  });
+  expect(requestBody).toEqual({ conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID], tagIds: [TAG_ID, COMPOSE_TEMPLATE_ID] });
   expect(JSON.parse(result.stdout)).toEqual({
     updatedConversationIds: [CONVERSATION_ID],
     unchangedConversationIds: [SOURCE_CONVERSATION_ID],
   });
+
+  const unknown = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "tag",
+    "add",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--tag",
+    "Nope",
+  ]);
+  expect(unknown.exitCode).toBe(1);
+  expect(unknown.stderr).toContain('No tag "Nope"');
 });
 
-test("conversation assign resolves me, usernames, and none and reports missing conversations", async () => {
+test("tag rm replaces each conversation's tags at its revision and reports failures", async () => {
+  const puts: Array<{ path: string; body: unknown }> = [];
+  const tag = { id: TAG_ID, name: "Priority", color: "#6b7280", revision: 1 };
+  const other = { id: COMPOSE_TEMPLATE_ID, name: "Billing", color: "#6b7280", revision: 1 };
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/local-tags`) return api([tag, other]);
+    const match = url.pathname.match(/\/conversations\/(\w+)\/local-tags$/);
+    if (match && request.method === "GET") {
+      if (match[1] === REMINDER_ID) return api({ error: "Conversation not found" }, { status: 404 });
+      return api({
+        conversationId: match[1],
+        conversationRevision: 4,
+        tags: match[1] === CONVERSATION_ID ? [tag, other] : [other],
+      });
+    }
+    if (match && request.method === "PUT") {
+      puts.push({ path: url.pathname, body: await request.json() });
+      return api({ conversationId: match[1], conversationRevision: 5, tags: [other] });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "tag",
+    "rm",
+    CONVERSATION_ID,
+    SOURCE_CONVERSATION_ID,
+    REMINDER_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--tag",
+    "Priority",
+  ]);
+
+  expect(result.exitCode).toBe(1);
+  expect(puts).toEqual([
+    {
+      path: `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/local-tags`,
+      body: { expectedRevision: 4, tagIds: [COMPOSE_TEMPLATE_ID] },
+    },
+  ]);
+  expect(JSON.parse(result.stdout)).toEqual({
+    updatedConversationIds: [CONVERSATION_ID],
+    unchangedConversationIds: [SOURCE_CONVERSATION_ID],
+    failed: [{ conversationId: REMINDER_ID, error: "404 Conversation not found" }],
+  });
+});
+
+test("assign resolves me, usernames, and none and reports missing conversations", async () => {
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
@@ -1196,18 +1192,9 @@ test("conversation assign resolves me, usernames, and none and reports missing c
   });
   servers.push(server);
   const assign = (to: string, ...conversations: string[]) =>
-    runCli(`http://127.0.0.1:${server.port}`, [
-      "mail",
-      "conversation",
-      "assign",
-      "--mailbox",
-      MAILBOX_ID,
-      ...conversations.flatMap((conversation) => ["--conversation", conversation]),
-      "--to",
-      to,
-    ]);
+    runCli(`http://127.0.0.1:${server.port}`, ["mail", "assign", ...conversations, "--mailbox", MAILBOX_ID, "--to", to]);
 
-  const toMe = await assign("me", `${CONVERSATION_ID},${REMINDER_ID}`);
+  const toMe = await assign("me", CONVERSATION_ID, REMINDER_ID);
   expect(toMe.exitCode, toMe.stderr).toBe(0);
   expect(toMe.stdout).toContain("Assigned 2 conversation(s) to Grace (grace).");
   const byUsername = await assign("Grace", CONVERSATION_ID, SOURCE_CONVERSATION_ID);
@@ -1222,9 +1209,9 @@ test("conversation assign resolves me, usernames, and none and reports missing c
     { conversationIds: [CONVERSATION_ID], assigneeUserId: null },
   ]);
 
-  const tooMany = await assign("none", Array.from({ length: 51 }, (_, index) => `Cv${String(index).padStart(4, "0")}`).join(","));
+  const tooMany = await assign("none", ...Array.from({ length: 51 }, (_, index) => `Cv${String(index).padStart(4, "0")}`));
   expect(tooMany.exitCode).not.toBe(0);
-  expect(tooMany.stderr).toContain("Pass at most 50 unique conversations.");
+  expect(tooMany.stderr).toContain("Pass at most 50 conversations at once.");
   expect(bodies).toHaveLength(3);
 });
 
@@ -1775,7 +1762,7 @@ test("saved view commands cover structured filters and revisioned lifecycle", as
   ]);
 }, 45_000);
 
-test("comment add forwards stdin and a message reference", async () => {
+test("comments add forwards stdin and a message reference", async () => {
   let requestBody: unknown;
   const server = withMailbox(async (request) => {
     if (
@@ -1802,7 +1789,7 @@ test("comment add forwards stdin and a message reference", async () => {
 
   const result = await runCli(
     `http://127.0.0.1:${server.port}`,
-    ["--json", "mail", "comment", "add", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--body-stdin", "--message", MESSAGE_ID],
+    ["--json", "mail", "comments", "add", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--body-stdin", "--message", MESSAGE_ID],
     "Internal note\n",
   );
 
@@ -1813,7 +1800,7 @@ test("comment add forwards stdin and a message reference", async () => {
   });
 });
 
-test("comment delete uses a revisioned tombstone request", async () => {
+test("comments delete uses a revisioned tombstone request", async () => {
   let method = "";
   let requestBody: unknown;
   const server = withMailbox(async (request) => {
@@ -1840,7 +1827,7 @@ test("comment delete uses a revisioned tombstone request", async () => {
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "mail",
-    "comment",
+    "comments",
     "delete",
     CONVERSATION_ID,
     COMMENT_ID,
@@ -1857,34 +1844,55 @@ test("comment delete uses a revisioned tombstone request", async () => {
   expect(JSON.parse(result.stdout)).toMatchObject({ body: null, revision: 3 });
 });
 
-test("conversation list forwards a built-in collaboration view", async () => {
-  let query = "";
+test("ls lists mailboxes, or a folder's conversations with a built-in view", async () => {
+  const queries: string[] = [];
+  const inbox = {
+    id: FOLDER_ID,
+    parentId: null,
+    name: "INBOX",
+    role: "inbox",
+    providerRole: "inbox",
+    configuredRole: null,
+    selectable: true,
+    showInSidebar: true,
+    namespaceKinds: ["personal"],
+    discoveryState: "active",
+    missingSince: null,
+    syncStatus: "current",
+    total: 1,
+    unread: 1,
+  };
   const server = withMailbox((request) => {
     const url = new URL(request.url);
+    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders`) return api([inbox]);
     if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations`) {
-      query = url.search;
+      queries.push(url.search);
       return api({ items: [], nextCursor: null });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
   servers.push(server);
+  const cli = (...args: string[]) => runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "ls", ...args]);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "conversation",
-    "list",
-    "--mailbox",
-    MAILBOX_ID,
-    "--view",
-    "mine",
-  ]);
+  const mailboxes = await cli();
+  expect(mailboxes.exitCode, mailboxes.stderr).toBe(0);
+  expect(JSON.parse(mailboxes.stdout)).toEqual([{ ...mailbox, permission: "admin" }]);
 
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(new URLSearchParams(query).get("view")).toBe("mine");
+  const folder = await cli("Support:INBOX", "--view", "mine");
+  expect(folder.exitCode, folder.stderr).toBe(0);
+  expect(Object.fromEntries(new URLSearchParams(queries.at(-1)))).toEqual({ limit: "50", folderId: FOLDER_ID, view: "mine" });
+  expect(JSON.parse(folder.stdout)).toEqual({ items: [], nextCursor: null });
+
+  const whole = await cli(MAILBOX_ID, "--status", "waiting");
+  expect(whole.exitCode, whole.stderr).toBe(0);
+  expect(Object.fromEntries(new URLSearchParams(queries.at(-1)))).toEqual({ limit: "50", status: "waiting" });
+
+  const local = await cli("./INBOX");
+  expect(local.exitCode).toBe(1);
+  expect(JSON.parse(local.stderr).error.message).toContain("is a local path, not a mailbox");
 });
 
-test("conversation get includes shared context and the latest message window", async () => {
+test("show includes shared context and the latest message window in English and German", async () => {
   const requested = new Set<string>();
   const summary = {
     summary: "The launch is approved. Waiting for the final checklist.",
@@ -1939,15 +1947,7 @@ test("conversation get includes shared context and the latest message window", a
   });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "conversation",
-    "get",
-    CONVERSATION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-  ]);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "show", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
@@ -1965,6 +1965,19 @@ test("conversation get includes shared context and the latest message window", a
     messagesTruncated: true,
   });
   expect(requested).toContain(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/messages?limit=50&latest=true`);
+
+  const german = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--locale",
+    "de",
+    "mail",
+    "show",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
+  expect(german.exitCode, german.stderr).toBe(0);
+  expect(german.stdout).toContain("Zuständig: Ada Lovelace");
+  expect(german.stdout).toContain("Ältere Nachrichten sind nicht gezeigt.");
 });
 
 test("command wait polls until a successful terminal state", async () => {
@@ -2444,146 +2457,189 @@ test("message wait polls indexed search for the expected message", async () => {
   expect(JSON.parse(result.stdout).id).toBe(MESSAGE_ID);
 });
 
-test("send carries reply context and can wait for delivery", async () => {
-  const bodies: unknown[] = [];
-  const server = withMailbox(async (request) => {
-    const url = new URL(request.url);
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/drafts`) {
-      bodies.push(await request.json());
-      return api({
-        id: DRAFT_ID,
-        mailboxId: MAILBOX_ID,
-        conversationId: CONVERSATION_ID,
-        senderIdentityId: IDENTITY_ID,
-        to: [{ name: null, address: "recipient@example.com" }],
-        cc: [],
-        bcc: [],
-        subject: "Re: CLI test",
-        body: "Reply body",
-        format: "markdown",
-        revision: 1,
-        state: "draft",
-        createdAt: "2026-07-12T00:00:00.000Z",
-        updatedAt: "2026-07-12T00:00:00.000Z",
-      });
-    }
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/commands`) {
-      bodies.push(await request.json());
-      return api(mailCommand("queued"));
-    }
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/safety-review`) {
-      return api({
-        draftId: DRAFT_ID,
-        revision: 1,
-        fingerprint: "a".repeat(64),
-        warnings: [],
-      });
-    }
-    if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/commands/${COMMAND_ID}`) {
-      return api(mailCommand("confirmed"));
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(
-    `http://127.0.0.1:${server.port}`,
-    [
-      "--json",
-      "mail",
-      "send",
-      "--mailbox",
-      MAILBOX_ID,
-      "--identity",
-      IDENTITY_ID,
-      "--to",
-      "recipient@example.com",
-      "--conversation",
-      CONVERSATION_ID,
-      "--subject",
-      "Re: CLI test",
-      "--body-stdin",
-      "--undo",
-      "0",
-      "--wait",
-      "--timeout-seconds",
-      "2",
-    ],
-    "Reply body",
-  );
-
-  expect(result.stderr).toBe("");
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(bodies[0]).toMatchObject({ conversationId: CONVERSATION_ID, body: "Reply body" });
-  expect(bodies[1]).toMatchObject({ kind: "send", expectedDraftRevision: 1, undoSeconds: 0 });
-  expect(JSON.parse(result.stdout).command.state).toBe("confirmed");
+const draftFixture = (overrides: Record<string, unknown> = {}) => ({
+  id: DRAFT_ID,
+  mailboxId: MAILBOX_ID,
+  conversationId: CONVERSATION_ID,
+  intent: "reply",
+  sourceMessageId: MESSAGE_ID,
+  senderIdentityId: IDENTITY_ID,
+  to: [{ name: null, address: "ada@example.test" }],
+  cc: [],
+  bcc: [],
+  subject: "Re: CLI test",
+  body: "Reply body",
+  format: "markdown",
+  revision: 1,
+  state: "draft",
+  attachments: [],
+  createdAt: "2026-07-12T00:00:00.000Z",
+  updatedAt: "2026-07-12T00:00:00.000Z",
+  ...overrides,
 });
 
-test("send requires explicit approval for the exact safety review", async () => {
-  const commandBodies: unknown[] = [];
-  const server = withMailbox(async (request) => {
+const sourceMessageFixture = {
+  id: MESSAGE_ID,
+  subject: "CLI test",
+  preview: null,
+  hasAttachments: true,
+  messageId: "<cli@example.test>",
+  internalDate: "2026-07-12T00:00:00.000Z",
+  sentAt: null,
+  from: [{ name: "Ada", address: "ada@example.test" }],
+  to: [{ name: null, address: "support@example.test" }],
+  cc: [],
+  replyTo: [],
+  flags: [],
+  keywords: [],
+  hydrationStatus: "complete",
+  remoteAvailable: true,
+  folderId: FOLDER_ID,
+  plainText: "Original text",
+  forwardText: "Original text",
+  attachments: [{ id: ATTACHMENT_ID, filename: "a.pdf", contentType: "application/pdf", sizeBytes: 3, contentId: null }],
+};
+
+/** A mailbox with one conversation, its latest message, a default identity, and a send pipeline. */
+const composeServer = (bodies: Array<{ path: string; body: unknown }>, draftOverrides: Record<string, unknown> = {}) =>
+  withMailbox(async (request) => {
     const url = new URL(request.url);
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/drafts`) {
-      return api({
-        id: DRAFT_ID,
-        mailboxId: MAILBOX_ID,
-        conversationId: null,
-        senderIdentityId: IDENTITY_ID,
-        to: [{ name: null, address: "external@example.net" }],
-        cc: [],
-        bcc: [],
-        subject: "Attachment",
-        body: "Please see the attached file.",
-        format: "plain",
-        revision: 3,
-        state: "draft",
-        createdAt: "2026-07-12T00:00:00.000Z",
-        updatedAt: "2026-07-12T00:00:00.000Z",
-      });
+    const root = `/api/mail/mailboxes/${MAILBOX_ID}`;
+    if (request.method === "GET" && url.pathname === `${root}/conversations/${CONVERSATION_ID}/messages`) {
+      expect(url.search).toBe("?limit=1&latest=true");
+      return api({ items: [sourceMessageFixture], nextCursor: null });
     }
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/safety-review`) {
-      return api({
-        draftId: DRAFT_ID,
-        revision: 3,
-        fingerprint: "b".repeat(64),
-        warnings: [{ id: "missing_attachment", title: "Attachment may be missing", description: "No attachment is included." }],
-      });
+    if (request.method === "GET" && url.pathname === `${root}/messages/${MESSAGE_ID}`) return api(sourceMessageFixture);
+    if (request.method === "GET" && url.pathname === `${root}/sender-identities`)
+      return api([
+        { id: "Ident0", isDefault: false, status: "verified" },
+        { id: IDENTITY_ID, isDefault: true, status: "verified" },
+      ]);
+    if (request.method === "POST" && url.pathname === `${root}/drafts`) {
+      const body = (await request.json()) as Record<string, unknown>;
+      bodies.push({ path: url.pathname, body });
+      return api(draftFixture({ ...draftOverrides, intent: body.intent, subject: body.subject }));
     }
-    if (request.method === "POST" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/commands`) {
-      commandBodies.push(await request.json());
+    if (request.method === "GET" && url.pathname === `${root}/drafts/${DRAFT_ID}`) return api(draftFixture(draftOverrides));
+    if (request.method === "POST" && url.pathname === `${root}/drafts/${DRAFT_ID}/safety-review`) {
+      const warnings =
+        draftOverrides.subject === "Attachment"
+          ? [{ id: "missing_attachment", title: "Attachment may be missing", description: "No attachment is included." }]
+          : [];
+      return api({ draftId: DRAFT_ID, revision: draftOverrides.revision ?? 1, fingerprint: "b".repeat(64), warnings });
+    }
+    if (request.method === "POST" && url.pathname === `${root}/commands`) {
+      bodies.push({ path: url.pathname, body: await request.json() });
       return api(mailCommand("queued"));
     }
+    if (request.method === "GET" && url.pathname === `${root}/commands/${COMMAND_ID}`) return api(mailCommand("confirmed"));
     return api({ message: "unexpected" }, { status: 500 });
   });
+
+test("reply drafts from the latest message with the default identity, and send sends that draft", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(bodies);
   servers.push(server);
   const origin = `http://127.0.0.1:${server.port}`;
-  const base = [
+
+  const reply = await runCli(
+    origin,
+    ["--json", "mail", "reply", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--all", "--body-stdin"],
+    "Reply body",
+  );
+  expect(reply.exitCode, reply.stderr).toBe(0);
+  expect(bodies[0]!.body).toEqual({
+    senderIdentityId: IDENTITY_ID,
+    to: [],
+    cc: [],
+    bcc: [],
+    subject: "Re: CLI test",
+    body: "Reply body",
+    conversationId: CONVERSATION_ID,
+    intent: "reply_all",
+    sourceMessageId: MESSAGE_ID,
+  });
+  expect(JSON.parse(reply.stdout)).toMatchObject({ id: DRAFT_ID, intent: "reply_all" });
+
+  const sent = await runCli(origin, [
     "--json",
     "mail",
     "send",
+    DRAFT_ID,
     "--mailbox",
     MAILBOX_ID,
-    "--identity",
-    IDENTITY_ID,
+    "--undo",
+    "0",
+    "--wait",
+    "--timeout-seconds",
+    "2",
+  ]);
+  expect(sent.stderr).toBe("");
+  expect(sent.exitCode, sent.stderr).toBe(0);
+  expect(bodies[1]!.body).toMatchObject({
+    kind: "send",
+    draftId: DRAFT_ID,
+    expectedDraftRevision: 1,
+    senderIdentityId: IDENTITY_ID,
+    undoSeconds: 0,
+  });
+  expect(JSON.parse(sent.stdout)).toMatchObject({ draft: { id: DRAFT_ID }, command: { state: "confirmed" } });
+});
+
+test("forward quotes the source message and copies its attachments", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(bodies, { intent: "forward" });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "forward",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--message",
+    MESSAGE_ID,
     "--to",
-    "external@example.net",
-    "--subject",
-    "Attachment",
-    "--body-stdin",
-  ];
-  const rejected = await runCli(origin, base, "Please see the attached file.");
+    "grace@example.test",
+    "--body",
+    "FYI",
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  const body = bodies[0]!.body as Record<string, unknown>;
+  expect(body).toMatchObject({
+    to: [{ name: null, address: "grace@example.test" }],
+    subject: "Fwd: CLI test",
+    intent: "forward",
+    sourceMessageId: MESSAGE_ID,
+    includeSourceAttachments: true,
+  });
+  expect(body.body).toStartWith("FYI\n\n---------- Forwarded message ----------\nFrom: Ada <ada@example.test>");
+  expect(body.body).toEndWith("Original text");
+
+  const missing = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "forward", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+  expect(missing.exitCode).toBe(1);
+  expect(missing.stderr).toContain("Pass at least one --to recipient.");
+});
+
+test("send requires explicit approval for the exact safety review", async () => {
+  const bodies: Array<{ path: string; body: unknown }> = [];
+  const server = composeServer(bodies, { subject: "Attachment", revision: 3 });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const base = ["--json", "mail", "send", DRAFT_ID, "--mailbox", MAILBOX_ID];
+
+  const rejected = await runCli(origin, base);
   expect(rejected.exitCode).toBe(1);
   expect(rejected.stderr).toContain("Pass --approve-safety");
-  expect(commandBodies).toHaveLength(0);
+  expect(bodies).toHaveLength(0);
 
-  const approved = await runCli(origin, [...base, "--approve-safety"], "Please see the attached file.");
-  expect(approved.exitCode).toBe(0);
-  expect(commandBodies[0]).toMatchObject({
-    safetyApproval: {
-      revision: 3,
-      fingerprint: "b".repeat(64),
-      warningIds: ["missing_attachment"],
-    },
+  const approved = await runCli(origin, [...base, "--approve-safety"]);
+  expect(approved.exitCode, approved.stderr).toBe(0);
+  expect(bodies[0]!.body).toMatchObject({
+    expectedDraftRevision: 3,
+    safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_attachment"] },
   });
 });
 
@@ -2786,34 +2842,30 @@ test("provider and attachment-link secrets reject inline values", async () => {
   expect(link.stderr).not.toContain("inline-link-secret");
 });
 
-test("send validates offset-aware schedules before creating a draft", async () => {
-  let sideEffects = 0;
-  const server = withMailbox((request) => {
-    if (request.method !== "GET") sideEffects += 1;
-    return api({ message: "unexpected" }, { status: 500 });
+test("send validates offset-aware schedules before any request", async () => {
+  let requests = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch: () => {
+      requests += 1;
+      return api({ message: "unexpected" }, { status: 500 });
+    },
   });
   servers.push(server);
 
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "mail",
     "send",
+    DRAFT_ID,
     "--mailbox",
     MAILBOX_ID,
-    "--identity",
-    IDENTITY_ID,
-    "--to",
-    "recipient@example.com",
-    "--subject",
-    "Scheduled",
-    "--body",
-    "Body",
     "--schedule",
     "2026-07-22T10:00:00",
   ]);
 
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("--schedule must be an ISO date-time with a UTC offset");
-  expect(sideEffects).toBe(0);
+  expect(requests).toBe(0);
 });
 
 test("command list rejects limits above the service maximum", async () => {
@@ -3619,67 +3671,115 @@ test("conversation message table does not expose provider placement ids", async 
   expect(result.stdout).not.toContain("REMOTE REF");
 });
 
-test("conversation archive targets the configured semantic role", async () => {
-  let body: unknown;
-  const server = withMailbox(async (request) => {
-    const expectedPath = `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/actions`;
-    if (request.method === "POST" && new URL(request.url).pathname === expectedPath) {
-      body = await request.json();
-      return api({ correlationId: "archive-correlation", commands: [{ ...mailCommand("queued"), kind: "move" }] });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
-
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "conversation",
-    "archive",
-    CONVERSATION_ID,
-    "--mailbox",
-    MAILBOX_ID,
-    "--source",
-    FOLDER_ID,
-    "--idempotency-key",
-    "conversation-archive-test",
-  ]);
-
-  expect(result.exitCode, result.stderr).toBe(0);
-  expect(body).toEqual({
-    kind: "move_to_role",
-    sourceFolderId: FOLDER_ID,
-    role: "archive",
-    idempotencyKey: "conversation-archive-test",
-  });
-  expect(JSON.parse(result.stdout)).toMatchObject({ correlationId: "archive-correlation", commands: [{ kind: "move" }] });
+const triageFolder = (id: string, name: string, role: string, parentId: string | null = null) => ({
+  id,
+  parentId,
+  name,
+  role,
+  providerRole: role,
+  configuredRole: null,
+  selectable: true,
+  showInSidebar: true,
+  namespaceKinds: ["personal"],
+  discoveryState: "active",
+  missingSince: null,
+  syncStatus: "current",
+  total: 1,
+  unread: 0,
 });
 
-test("conversation not-spam and provider keyword commands use the shared triage API", async () => {
-  const bodies: unknown[] = [];
-  const server = withMailbox(async (request) => {
-    const expectedPath = `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/actions`;
-    if (request.method === "POST" && new URL(request.url).pathname === expectedPath) {
-      bodies.push(await request.json());
-      return api({ correlationId: `correlation-${bodies.length}`, commands: [{ ...mailCommand("queued"), kind: "change_message_state" }] });
+/** INBOX (Foldr1), Junk (Foldr3), and Projekte (Foldr2); one triage response per conversation, 404 for Convo2. */
+const triageServer = (bodies: Array<{ conversationId: string; body: Record<string, unknown> }>) =>
+  withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders`)
+      return api([
+        triageFolder(FOLDER_ID, "INBOX", "inbox"),
+        triageFolder("Foldr2", "Projekte", "other"),
+        triageFolder("Foldr3", "Junk", "junk"),
+      ]);
+    const match = url.pathname.match(/\/conversations\/(\w+)\/actions$/);
+    if (request.method === "POST" && match) {
+      if (match[1] === SOURCE_CONVERSATION_ID)
+        return api({ error: "Conversation messages in the selected folder not found" }, { status: 404 });
+      bodies.push({ conversationId: match[1]!, body: (await request.json()) as Record<string, unknown> });
+      return api({ correlationId: `correlation-${bodies.length}`, commands: [{ ...mailCommand("queued"), kind: "move" }] });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
+
+test("archive, rm, read, and flag act on each conversation's Inbox messages and report partial failures", async () => {
+  const bodies: Array<{ conversationId: string; body: Record<string, unknown> }> = [];
+  const server = triageServer(bodies);
   servers.push(server);
   const origin = `http://127.0.0.1:${server.port}`;
-  const sharedFlags = ["--mailbox", MAILBOX_ID, "--source", FOLDER_ID];
+
+  const archived = await runCli(origin, [
+    "--json",
+    "mail",
+    "archive",
+    CONVERSATION_ID,
+    SOURCE_CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--idempotency-key",
+    "archive-test",
+  ]);
+  expect(archived.exitCode).toBe(1);
+  expect(bodies).toEqual([
+    {
+      conversationId: CONVERSATION_ID,
+      body: { kind: "move_to_role", sourceFolderId: FOLDER_ID, role: "archive", idempotencyKey: `archive-test:${CONVERSATION_ID}` },
+    },
+  ]);
+  expect(JSON.parse(archived.stdout)).toEqual({
+    results: [
+      {
+        conversationId: CONVERSATION_ID,
+        status: "ok",
+        correlationId: "correlation-1",
+        commands: [{ ...mailCommand("queued"), kind: "move" }],
+      },
+      { conversationId: SOURCE_CONVERSATION_ID, status: "error", error: "404 Conversation messages in the selected folder not found" },
+    ],
+  });
+
+  const unconfirmed = await runCli(origin, ["mail", "rm", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+  expect(unconfirmed.exitCode).toBe(1);
+  expect(unconfirmed.stderr).toContain("Pass --yes to confirm `rm`.");
+  expect(bodies).toHaveLength(1);
+
+  const trashed = await runCli(origin, ["mail", "rm", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--in", "Projekte", "--yes"]);
+  expect(trashed.exitCode, trashed.stderr).toBe(0);
+  expect(trashed.stdout).toContain("Move conversations to the Trash: 1 conversation (queued).");
+  expect(bodies[1]!.body).toMatchObject({ kind: "move_to_role", sourceFolderId: "Foldr2", role: "trash" });
+
+  for (const verb of ["read", "flag"]) {
+    const result = await runCli(origin, ["mail", verb, CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+    expect(result.exitCode, result.stderr).toBe(0);
+  }
+  expect(bodies.slice(2).map((item) => item.body.change)).toEqual([
+    { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+    { addFlags: ["flagged"], removeFlags: [], addKeywords: [], removeKeywords: [] },
+  ]);
+
+  const tooMany = await runCli(origin, [
+    "mail",
+    "read",
+    ...Array.from({ length: 51 }, (_, index) => `Cv${String(index).padStart(4, "0")}`),
+  ]);
+  expect(tooMany.exitCode).toBe(1);
+  expect(tooMany.stderr).toContain("Pass at most 50 conversations at once.");
+});
+
+test("conversation not-spam and keyword commands use Junk or --in as their source", async () => {
+  const bodies: Array<{ conversationId: string; body: Record<string, unknown> }> = [];
+  const server = triageServer(bodies);
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
 
   const results = [
-    await runCli(origin, [
-      "--json",
-      "mail",
-      "conversation",
-      "not-spam",
-      CONVERSATION_ID,
-      ...sharedFlags,
-      "--idempotency-key",
-      "not-spam-test",
-    ]),
+    await runCli(origin, ["--json", "mail", "conversation", "not-spam", CONVERSATION_ID, "--mailbox", MAILBOX_ID]),
     await runCli(origin, [
       "--json",
       "mail",
@@ -3687,10 +3787,10 @@ test("conversation not-spam and provider keyword commands use the shared triage 
       "keyword",
       "add",
       CONVERSATION_ID,
+      "--keyword",
       "FollowUp",
-      ...sharedFlags,
-      "--idempotency-key",
-      "keyword-add-test",
+      "--in",
+      `${MAILBOX_ID}:Projekte`,
     ]),
     await runCli(origin, [
       "--json",
@@ -3699,72 +3799,65 @@ test("conversation not-spam and provider keyword commands use the shared triage 
       "keyword",
       "remove",
       CONVERSATION_ID,
+      "--keyword",
       "FollowUp",
-      ...sharedFlags,
-      "--idempotency-key",
-      "keyword-remove-test",
+      "--mailbox",
+      MAILBOX_ID,
     ]),
   ];
 
   expect(results.map((result) => result.exitCode)).toEqual([0, 0, 0]);
-  expect(bodies).toEqual([
+  expect(bodies.map(({ body: { idempotencyKey: _key, ...body } }) => body)).toEqual([
+    { kind: "move_to_role", sourceFolderId: "Foldr3", role: "inbox" },
     {
-      kind: "move_to_role",
-      sourceFolderId: FOLDER_ID,
-      role: "inbox",
-      idempotencyKey: "not-spam-test",
+      kind: "change_state",
+      sourceFolderId: "Foldr2",
+      change: { addFlags: [], removeFlags: [], addKeywords: ["FollowUp"], removeKeywords: [] },
     },
     {
       kind: "change_state",
       sourceFolderId: FOLDER_ID,
-      change: { addKeywords: ["FollowUp"] },
-      idempotencyKey: "keyword-add-test",
-    },
-    {
-      kind: "change_state",
-      sourceFolderId: FOLDER_ID,
-      change: { removeKeywords: ["FollowUp"] },
-      idempotencyKey: "keyword-remove-test",
+      change: { addFlags: [], removeFlags: [], addKeywords: [], removeKeywords: ["FollowUp"] },
     },
   ]);
 });
 
-test("conversation move targets an explicit provider folder", async () => {
-  let body: unknown;
-  const destinationFolderId = "Foldr2";
-  const server = withMailbox(async (request) => {
-    const expectedPath = `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/actions`;
-    if (request.method === "POST" && new URL(request.url).pathname === expectedPath) {
-      body = await request.json();
-      return api({ correlationId: "move-correlation", commands: [{ ...mailCommand("queued"), kind: "move" }] });
-    }
-    return api({ message: "unexpected" }, { status: 500 });
-  });
-  servers.push(server);
+test("folders prints each folder's address path", async () => {
+  // Foldr3 is a child of Foldr2, so its path names both.
+  const nested = withMailbox((request) =>
+    new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders`
+      ? api([triageFolder("Foldr2", "Projekte", "other"), triageFolder("Foldr3", "2025", "other", "Foldr2")])
+      : api({ message: "unexpected" }, { status: 500 }),
+  );
+  servers.push(nested);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
-    "--json",
-    "mail",
-    "conversation",
-    "move",
-    CONVERSATION_ID,
-    destinationFolderId,
-    "--mailbox",
-    MAILBOX_ID,
-    "--source",
-    FOLDER_ID,
-    "--idempotency-key",
-    "conversation-move-test",
-  ]);
+  const result = await runCli(`http://127.0.0.1:${nested.port}`, ["--json", "mail", "folders", "--mailbox", MAILBOX_ID]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(body).toEqual({
-    kind: "move_to_folder",
-    sourceFolderId: FOLDER_ID,
-    destinationFolderId,
-    idempotencyKey: "conversation-move-test",
-  });
-  expect(JSON.parse(result.stdout)).toMatchObject({ correlationId: "move-correlation", commands: [{ kind: "move" }] });
+  expect(JSON.parse(result.stdout).map((folder: { id: string; path: string }) => [folder.id, folder.path])).toEqual([
+    ["Foldr2", "Projekte"],
+    ["Foldr3", "Projekte / 2025"],
+  ]);
+});
+
+test("mv resolves the destination by path and keeps moves inside one mailbox", async () => {
+  const bodies: Array<{ conversationId: string; body: Record<string, unknown> }> = [];
+  const server = triageServer(bodies);
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+
+  const moved = await runCli(origin, ["--json", "mail", "mv", CONVERSATION_ID, REMINDER_ID, "--to", "Support:Projekte"]);
+  expect(moved.exitCode, moved.stderr).toBe(0);
+  expect(bodies.map((item) => [item.conversationId, item.body.kind, item.body.sourceFolderId, item.body.destinationFolderId])).toEqual([
+    [CONVERSATION_ID, "move_to_folder", FOLDER_ID, "Foldr2"],
+    [REMINDER_ID, "move_to_folder", FOLDER_ID, "Foldr2"],
+  ]);
+  expect(JSON.parse(moved.stdout).results.map((result: { status: string }) => result.status)).toEqual(["ok", "ok"]);
+
+  const unknown = await runCli(origin, ["--json", "mail", "mv", CONVERSATION_ID, "--to", "Support:Nope"]);
+  expect(unknown.exitCode).toBe(1);
+  expect(JSON.parse(unknown.stderr).error).toMatchObject({ status: 404 });
+  expect(bodies).toHaveLength(2);
 });
 
 test("draft attachment add resumes a chunked upload and finalizes at the expected revision", async () => {

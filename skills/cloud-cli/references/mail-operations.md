@@ -263,7 +263,7 @@ cld --json mail message keyword remove \
   --wait
 ```
 
-The Mail UI calls the standard `\Flagged` state **Flag**. The CLI uses `star` and `unstar` for the same state. Both commands change only that flag and preserve unrelated provider flags.
+The Mail UI calls the standard `\Flagged` state **Flag**. The message commands use `star` and `unstar` for that state, and the conversation commands use `flag` and `unflag`. All of them change only that flag and preserve unrelated provider flags.
 
 `message flags` remains available as a low-level exact replacement for diagnostics. It replaces the complete provider flag set, so prefer additive commands for normal operation:
 
@@ -296,24 +296,16 @@ cld mail message delete <message-id> --folder <folder-id> --yes
 
 ## Change a conversation in one folder
 
-Apply the same action to every current message placement of a conversation in one source folder. Archive, Trash, and Junk resolve through effective folder roles:
+The everyday commands `archive`, `rm`, `mv`, `read`, `unread`, `flag`, and `unflag` in [Mail CLI](mail.md#triage-conversations) change every current message placement of a conversation in one source folder, the Inbox unless `--in` names another. Junk and provider keywords use the same model:
 
 ```bash
-cld --json mail conversation read <conversation-id> --source <folder-id> --wait
-cld --json mail conversation unread <conversation-id> --source <folder-id> --wait
-cld --json mail conversation star <conversation-id> --source <folder-id> --wait
-cld --json mail conversation unstar <conversation-id> --source <folder-id> --wait
-cld --json mail conversation archive <conversation-id> --source <folder-id> --wait
-cld --json mail conversation trash <conversation-id> --source <folder-id> --wait
-cld --json mail conversation junk <conversation-id> --source <folder-id> --wait
-cld --json mail conversation move \
-  <conversation-id> \
-  <destination-folder-id> \
-  --source <folder-id> \
-  --wait
+cld --json mail conversation junk <conversation-id> --wait
+cld --json mail conversation not-spam <conversation-id> --wait
+cld --json mail conversation keyword add <conversation-id> --keyword FollowUp --in "Support:Projekte / 2025" --wait
+cld --json mail conversation keyword remove <conversation-id> --keyword FollowUp --wait
 ```
 
-The source folder is required because one conversation may have placements in multiple provider folders.
+`conversation not-spam` acts on the Junk folder unless `--in` names another. Archive, Trash, Junk, and Inbox resolve through effective folder roles. The source folder matters because one conversation may have placements in several provider folders.
 
 ## Download attachments and create public links
 
@@ -356,10 +348,10 @@ Use a unique marker for every run and keep both mailbox ids explicit:
 1. Configure and verify mailbox A and mailbox B.
 2. Send A to B with `--undo 0 --wait` and the marker in the exact subject.
 3. Queue B sync and use `message wait` for the marker.
-4. Read the message and its conversation, then reply B to A with `--conversation`, `--intent reply`, and `--source-message`.
+4. Read the message and its conversation with `show` and `cat`, then reply B to A with `reply <conversation-id>` and `send <draft-id> --undo 0 --wait`.
 5. Queue A sync and verify that the reply appears in the same conversation.
 6. Create a uniquely named provider folder, hide and show it in Cloud navigation, unsubscribe, resubscribe, rename, and delete it after confirming it is empty.
-7. Test additive read, star, and keyword state and a role-based conversation move using discovered folder ids.
+7. Test additive `read`, `flag`, and keyword state, and a role-based `archive`, using discovered folder paths.
 8. Send a known attachment, download it from the receiving mailbox, and compare its bytes with the source.
 9. Test Undo Send with a second marker and `command cancel`.
 
