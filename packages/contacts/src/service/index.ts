@@ -72,6 +72,7 @@ export const contactsService = {
       return paginateItems(filtered, config.pagination);
     },
     listPage: books.listPage,
+    findReadableByName: books.findReadableByName,
     get: (config: { id: string }): Promise<ContactBook | null> => books.get({ id: config.id }),
     create: (config: { data: CreateBookInput; creatorId: string }) =>
       withEvent(books.create(config), (book) => ({ type: "book.created", bookId: book.id })),
@@ -148,6 +149,7 @@ export const contactsService = {
     list: (config: { bookId: string; pagination?: PageParams; filter?: import("./types").ContactListFilter }) => contacts.list(config),
     get: (config: { bookId: string; id: string }) => contacts.get(config),
     findBookId: contacts.findBookId,
+    findByDisplayName: contacts.findByDisplayName,
     getMany: (config: { bookId: string; ids: string[] }) => contacts.getMany(config),
     tree: (config: { bookId: string; id: string }) => contacts.tree(config),
     create: (config: { bookId: string; data: CreateContactInput }) =>
