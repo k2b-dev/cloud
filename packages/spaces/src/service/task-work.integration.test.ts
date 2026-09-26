@@ -37,6 +37,16 @@ suite("Spaces agent work", () => {
       expect(claims.find((r) => !r.ok)).toMatchObject({ status: 409 });
       const claimId = (await read(itemId)).claim!.id;
       expect(await change({ ...context, operation: "claim", claimId })).toMatchObject({ ok: true });
+      // Items carry the hydrated claim with the holder's name so boards and details can show who is on it.
+      expect((await get({ id: itemId }))?.claim).toEqual({
+        id: claimId,
+        actor,
+        claimedAt: expect.any(String),
+        displayName: "Task worker",
+        avatarHash: null,
+      });
+      const claimedOnly = await listFiltered({ spaceId, filter: ItemFilterSchema.parse({ type: "task", activity: "claimed" }) });
+      expect(claimedOnly.items.map((item) => [item.id, item.claim?.id])).toEqual([[itemId, claimId]]);
       expect(await change({ ...context, operation: "progress", content: "Wrong worker" })).toMatchObject({ ok: false, status: 409 });
       expect(
         await change({ ...context, operation: "progress", claimId, content: "Implemented; next run should verify race behavior." }),
@@ -77,6 +87,16 @@ suite("Spaces agent work", () => {
       expect((await setCompleted({ id: itemId, completed: false, actor })).ok).toBe(true);
       expect((await read(itemId)).result?.commit).toBe("a1b2c3d");
       const recoveryId = crypto.randomUUID();
+      expect((await change({ ...context, operation: "claim", claimId: recoveryId })).ok).toBe(true);
+      // Dragging an own claimed task into a done column completes it and releases the claim in one step.
+      expect(await move({ id: itemId, columnId: columns[1]!.id, rank: "1024", completed: true, actor })).toMatchObject({ status: 409 });
+      const moved = await move({ id: itemId, columnId: columns[1]!.id, rank: "1024", completed: true, claimId: recoveryId, actor });
+      expect(moved.ok && moved.data.completedAt !== null && moved.data.claim === null).toBe(true);
+      expect((await setCompleted({ id: itemId, completed: false, actor })).ok).toBe(true);
+      expect((await move({ id: itemId, columnId: columns[0]!.id, rank: "1024", actor })).ok).toBe(true);
+      expect(await listFiltered({ spaceId, filter: ItemFilterSchema.parse({ type: "task", activity: "claimed" }) })).toMatchObject({
+        items: [],
+      });
       expect((await change({ ...context, operation: "claim", claimId: recoveryId })).ok).toBe(true);
       expect((await change({ ...context, operation: "release", claimId: recoveryId, force: true })).ok).toBe(true);
       expect((await read(itemId)).claim).toBeNull();

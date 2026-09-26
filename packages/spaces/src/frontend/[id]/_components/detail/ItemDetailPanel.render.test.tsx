@@ -167,6 +167,48 @@ describe("Spaces item detail panel", () => {
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
   });
 
+  test("lets people claim, release, or take over a task from the detail panel", () => {
+    const otherUserId = "44444444-4444-4444-8444-444444444444";
+    const claim = {
+      id: "55555555-5555-4555-8555-555555555555",
+      actor: { kind: "user" as const, id: otherUserId },
+      displayName: "Mira Beck",
+      avatarHash: null,
+      claimedAt: now,
+    };
+
+    const unclaimed = renderPanel({ item: { ...task, claim: null } });
+    expect(unclaimed).toContain('data-spaces-claim-action="claim"');
+    expect(unclaimed).toContain("I'm on it");
+    expect(unclaimed).not.toContain('aria-label="Work and handoff"');
+
+    const own = renderPanel({ item: { ...task, claim: { ...claim, actor: { kind: "user", id: userId }, displayName: "Valentin Kolb" } } });
+    expect(own).toContain('data-spaces-claim-action="release"');
+    expect(own.match(/data-spaces-claim-action/g)).toHaveLength(1);
+    expect(own).toContain('aria-label="Work and handoff"');
+    expect(own).toContain('data-own-claim="true"');
+    expect(own).toContain("Release the claim when you stop");
+    expect(own).not.toContain('data-spaces-claim-action="claim"');
+
+    const foreign = renderPanel({ item: { ...task, claim } });
+    expect(foreign).toContain('title="Mira Beck is on it"');
+    expect(foreign).toContain("Complete or move the task once the claim is released.");
+    expect(foreign).not.toContain("data-spaces-claim-action");
+
+    const admin = renderPanel({ item: { ...task, claim }, isAdmin: true });
+    expect(admin).toContain('data-spaces-claim-action="take-over"');
+    expect(admin).toContain("Take over releases the claim of Mira Beck");
+    expect(admin.match(/data-spaces-claim-action/g)).toHaveLength(1);
+
+    const german = renderPanel({ item: { ...task, claim }, isAdmin: true }, "de");
+    expect(german).toContain("Mira Beck arbeitet daran");
+    expect(german).toContain(">Übernehmen<");
+
+    expect(renderPanel({ item: { ...task, claim: null }, canWrite: false })).not.toContain("data-spaces-claim-action");
+    expect(renderPanel({ item: { ...task, claim: null, completedAt: now } })).not.toContain("data-spaces-claim-action");
+    expect(renderPanel({ item: event })).not.toContain("data-spaces-claim-action");
+  });
+
   test("shows task estimates, connections, and related tasks in their detail sections", () => {
     const html = renderPanel({
       item: { ...task, estimatedDurationMinutes: 90 },
@@ -426,7 +468,16 @@ describe("Spaces item detail panel", () => {
 test("renders work progress and preserved completion evidence in German", () => {
   const html = renderPanel(
     {
-      item: task,
+      item: {
+        ...task,
+        claim: {
+          id: "11111111-1111-4111-8111-111111111111",
+          actor: { kind: "user", id: userId },
+          displayName: "Valentin Kolb",
+          avatarHash: null,
+          claimedAt: now,
+        },
+      },
       canWrite: false,
       work: {
         claim: { id: "11111111-1111-4111-8111-111111111111", actor: { kind: "user", id: userId }, claimedAt: now },
@@ -438,6 +489,8 @@ test("renders work progress and preserved completion evidence in German", () => 
   );
   expect(html).toContain("Arbeit und Übergabe");
   expect(html).toContain("Aufgabe übernommen");
+  expect(html).toContain("Du arbeitest daran");
+  expect(html).not.toContain("data-spaces-claim-action");
   expect(html).toContain("Nächster Schritt");
   expect(html).toContain("Letztes Abschlussergebnis");
   expect(html).toContain("Tests erfolgreich");

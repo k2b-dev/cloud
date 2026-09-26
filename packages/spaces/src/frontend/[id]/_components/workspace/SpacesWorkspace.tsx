@@ -135,6 +135,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
             initialDetail={initialDetail}
             dateConfig={props.dateConfig}
             canWrite={state.canWrite}
+            isAdmin={state.isAdmin}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
           />
         </AppWorkspace.Content>

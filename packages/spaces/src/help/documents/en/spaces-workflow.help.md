@@ -46,11 +46,20 @@ Press **Cmd/Ctrl+Alt+N** to create a task, or an event in calendar view, and pre
 ## Implementation work and handoffs {icon="notes"}
 
 Tasks can carry a progress note and a completion result, shown under **Work and
-handoff** in their details. Reopening keeps the last result. Workers using the
-CLI can claim an open task to coordinate who handles it. Claims do not expire;
-release the claim before completing the task from another session or moving it
-through a wormhole. An administrator can recover an abandoned claim through the
-CLI. Ordinary collaborative edits remain available while a task is claimed.
+handoff** in their details. Reopening keeps the last result.
+
+Press **I'm on it** on a board card or in the task details to claim a task; a
+second click releases it, and in the details you can leave a short handoff note
+on release. While a task is claimed, the card shows the holder's avatar in any
+column, and the **In progress** filter lists claimed tasks. A claim only marks
+who is working on it right now; assignment and the column do not change. CLI
+workers and service accounts claim the same way and appear the same way.
+
+Claims do not expire and cannot be overwritten. Completing a claimed task,
+including dragging it into a done column, is reserved for the holder and
+releases the claim. Space admins see **Take over** for another account's claim,
+with the previous holder shown; ordinary collaborative edits remain available
+while a task is claimed.
 
 ## Prepare invitations from Cloud search {icon="calendar-event"}
 

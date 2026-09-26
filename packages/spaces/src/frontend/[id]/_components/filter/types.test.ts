@@ -8,6 +8,7 @@ describe("Spaces activity filter URL state", () => {
     expect(href).toBe("/app/spaces/Space1?activity=inactive");
     expect(parseFilterFromUrl(new URL(href, "https://cloud.test")).activity).toBe("inactive");
     expect(hasActiveFilters(parseFilterFromUrl(new URL(href, "https://cloud.test")))).toBe(true);
+    expect(parseFilterFromUrl(new URL("https://cloud.test/app/spaces/Space1?activity=claimed")).activity).toBe("claimed");
     expect(parseFilterFromUrl(new URL("https://cloud.test/app/spaces/Space1?activity=unknown")).activity).toBe("all");
   });
 });

@@ -21,7 +21,8 @@ or calendar without copying the work into separate systems.
 - Plan events with start and end times, recurrence, and calendar views.
 - Switch between list, table, Kanban, and calendar views for the current job.
 - Filter and group the same items by state, activity, person, priority, tag, or
-  time. The inactive filter finds open tasks without activity for 30 days.
+  time. The inactive filter finds open tasks without activity for 30 days; the
+  in-progress filter finds tasks somebody has claimed.
 - Import an invitation from Mail into a chosen writable Space, or publish an
   enabled calendar feed to another calendar client.
 
@@ -181,6 +182,18 @@ Spaces supports flat implementation tasks with blockers, shared progress notes,
 completion results and explicit worker claims. Progress and the latest result
 appear in the task details; reopening preserves the result. Earlier notes are
 recorded in task activity.
+
+A claim says who is working on a task right now; assignment says who is
+responsible, and the Kanban column stays the only status. People claim from the
+board card or the task details with **I'm on it** and release with a second
+click, optionally leaving a handoff note that is saved as progress. The board
+card shows the holder's avatar in any column, the details name the holder and
+the claim time, and people and service accounts render the same way. Somebody
+else's claim cannot be overwritten; a Space admin may **take over**, which is
+the admin recovery of the exact observed claim followed by a fresh claim.
+Completing a claimed task, including a drag into a done column, requires the
+holder's claim ID and releases the claim; the web UI sends it for your own
+claim.
 
 Use `cld spaces ls <space-id> --ready --json` to find open tasks without
 active blockers. Read `show <item> --context` before starting, then claim the task

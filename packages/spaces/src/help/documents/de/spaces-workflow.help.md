@@ -47,12 +47,22 @@ Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Te
 
 Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten.
 Beides erscheint unter **Arbeit und Übergabe** in den Details. Beim Wiederöffnen
-bleibt das letzte Ergebnis erhalten. Bearbeiter können offene Aufgaben über die
-CLI übernehmen, um ihre Arbeit abzustimmen. Übernahmen laufen nicht automatisch
-ab. Gib die Übernahme frei, bevor du die Aufgabe aus einer anderen Sitzung
-abschließt oder durch ein Wormhole verschiebst. Personen mit Adminzugriff
-können verwaiste Übernahmen über die CLI freigeben. Gewöhnliche gemeinsame
-Bearbeitungen bleiben während einer Übernahme möglich.
+bleibt das letzte Ergebnis erhalten.
+
+Mit **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails
+übernimmst du eine Aufgabe; ein zweiter Klick gibt sie frei, und in den Details
+kannst du dabei eine kurze Übergabenotiz hinterlassen. Solange eine Aufgabe
+übernommen ist, zeigt die Karte in jeder Spalte den Avatar der Person, und der
+Filter **In Arbeit** listet übernommene Aufgaben. Eine Übernahme markiert nur,
+wer gerade daran arbeitet; Zuweisung und Spalte ändern sich nicht. CLI-Worker
+und Service-Accounts übernehmen auf demselben Weg und erscheinen gleich.
+
+Übernahmen laufen nicht automatisch ab und lassen sich nicht überschreiben.
+Eine übernommene Aufgabe erledigen, auch per Ziehen in eine Erledigt-Spalte,
+kann nur die Person, die sie hält; damit wird die Übernahme freigegeben.
+Personen mit Adminzugriff sehen bei fremden Übernahmen **Übernehmen** mit der
+bisherigen Person; gewöhnliche gemeinsame Bearbeitungen bleiben während einer
+Übernahme möglich.
 
 ## Einladungen über die Cloud-Suche vorbereiten {icon="calendar-event"}
 

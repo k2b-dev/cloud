@@ -15,7 +15,7 @@ export const TaskFocusInputSchema = z
     ...selection,
     query: z.string().trim().max(500).default("").describe("Optional task text search."),
     deadlineFilter: DeadlineFilterSchema.default("all").describe("Deadline window in the inherited user timezone."),
-    activity: ItemActivityFilterSchema.default("all").describe("Include all open tasks or only inactive tasks."),
+    activity: ItemActivityFilterSchema.default("all").describe("Include all open tasks, only inactive tasks, or only claimed tasks."),
     priority: z.array(PrioritySchema).max(4).optional().describe("Match any selected priority."),
     blocked: z.boolean().optional().describe("Filter by whether unfinished blocker tasks exist."),
   })

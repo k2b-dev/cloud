@@ -305,7 +305,7 @@ export const EventListDataSchema = z.array(EventListItemDataSchema).max(100);
 const ItemListBaseShape = {
   spaceId: SpaceIdSchema,
   query: QuerySchema,
-  activity: ItemActivityFilterSchema.default("all").describe("Inactive means open tasks without activity for 30 days."),
+  activity: ItemActivityFilterSchema.default("all").describe("Inactive means open tasks without activity for 30 days; claimed means tasks someone is working on."),
   deadlineFilter: DeadlineFilterSchema.default("all").describe("Deadline window in the configured application timezone."),
   status: z.enum(["active", "completed", "all"]).default("active").describe("Completion-state filter."),
   priority: z.array(PrioritySchema).max(4).optional().describe("Optional priority filter."),

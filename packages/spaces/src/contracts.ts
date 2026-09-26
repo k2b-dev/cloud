@@ -1,6 +1,6 @@
 import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
-import { CompletionInputSchema } from "./work-contracts";
+import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
 
 // PostgreSQL uuid text format (accepts PostgreSQL's broader non-RFC version/variant values too).
 const UuidSchema = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
@@ -89,6 +89,15 @@ export const SpaceAssignableUserSchema = SpaceItemAssigneeSchema.extend({
 });
 export type SpaceAssignableUser = z.infer<typeof SpaceAssignableUserSchema>;
 
+export const SpaceItemClaimSchema = z.object({
+  id: UuidSchema.describe("Claim ID; reuse it to release this exact claim"),
+  actor: WorkActorSchema.describe("Account currently working on the task"),
+  displayName: z.string().describe("Display name of the claiming account"),
+  avatarHash: z.string().nullable().describe("Avatar hash of the claiming user, null for service accounts"),
+  claimedAt: z.string().describe("Claim timestamp (ISO)"),
+});
+export type SpaceItemClaim = z.infer<typeof SpaceItemClaimSchema>;
+
 export const SpaceItemSchema = z.object({
   id: ResourceShortIdSchema.describe("Item ID"),
   spaceId: ResourceShortIdSchema.describe("Parent space ID"),
@@ -116,6 +125,7 @@ export const SpaceItemSchema = z.object({
   // Optional relations (loaded on demand)
   assignees: z.array(SpaceItemAssigneeSchema).optional().describe("Assigned users"),
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),
+  claim: SpaceItemClaimSchema.nullable().optional().describe("Active work claim and who holds it"),
 });
 export type SpaceItem = z.infer<typeof SpaceItemSchema>;
 
@@ -418,6 +428,7 @@ export const MoveItemSchema = z.object({
     .regex(/^-?\d+$/)
     .describe("Target rank value"),
   completed: z.boolean().optional().describe("Optional completion state override after move"),
+  claimId: UuidSchema.optional().describe("Current worker claim ID; required to complete a claimed task by moving it"),
 });
 export type MoveItem = z.infer<typeof MoveItemSchema>;
 
@@ -503,7 +514,7 @@ export type ItemType = z.infer<typeof ItemTypeSchema>;
 export const ItemStatusSchema = z.enum(["active", "completed", "all"]);
 export type ItemStatus = z.infer<typeof ItemStatusSchema>;
 
-export const ItemActivityFilterSchema = z.enum(["all", "inactive"]);
+export const ItemActivityFilterSchema = z.enum(["all", "inactive", "claimed"]);
 export type ItemActivityFilter = z.infer<typeof ItemActivityFilterSchema>;
 
 export const DeadlineFilterSchema = z.enum(["all", "overdue", "today", "week", "none"]);
@@ -523,7 +534,7 @@ export const ItemFilterSchema = z.object({
   blocked: z.boolean().optional().describe("Whether unfinished blocker tasks exist"),
   type: ItemTypeSchema.default("all").describe("Filter by item type"),
   status: ItemStatusSchema.default("active").describe("Filter by completion status"),
-  activity: ItemActivityFilterSchema.default("all").describe("Filter open tasks by recent activity"),
+  activity: ItemActivityFilterSchema.default("all").describe("Filter open tasks by recent activity or an active claim"),
   priority: z.array(PrioritySchema).max(4).optional().describe("Filter by priorities"),
   tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Filter by tag IDs"),
   assigneeIds: z.array(UuidSchema).max(100).optional().describe("Filter by assignee IDs"),
