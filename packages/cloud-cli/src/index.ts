@@ -2860,15 +2860,24 @@ const runVersionCommand = async (args: string[]): Promise<number> => {
 type CoreCommand = {
   help: (locale: string) => string;
   run: (args: string[], global: GlobalArgs) => Promise<number>;
+  /** Flags the command reads a value from, so `--profile help` names a profile instead of asking for help. */
+  valueFlags?: readonly string[];
 };
 
 /** The built-in commands besides `help`. `main` answers a help request before a command reads or changes anything. */
 const coreCommands = new Map<string, CoreCommand>([
-  ["login", { help: loginHelp, run: runLoginCommand }],
-  ["logout", { help: logoutHelp, run: runLogoutCommand }],
-  ["auth", { help: authHelp, run: runAuthCommand }],
-  ["profile", { help: profileHelp, run: (args, global) => runProfileCommand(args, global.locale) }],
-  ["update", { help: updateHelp, run: (args, global) => runUpdateCommand(args, global.locale) }],
+  ["login", { help: loginHelp, run: runLoginCommand, valueFlags: ["server", "scope", "fd0", "fd0-scope"] }],
+  ["logout", { help: logoutHelp, run: runLogoutCommand, valueFlags: ["profile", "p"] }],
+  ["auth", { help: authHelp, run: runAuthCommand, valueFlags: ["profile", "p"] }],
+  [
+    "profile",
+    {
+      help: profileHelp,
+      run: (args, global) => runProfileCommand(args, global.locale),
+      valueFlags: ["server", "token", "token-file", "token-command", "fd0", "fd0-scope"],
+    },
+  ],
+  ["update", { help: updateHelp, run: (args, global) => runUpdateCommand(args, global.locale), valueFlags: ["version", "skills-dir"] }],
   ["plugins", { help: pluginsHelp, run: runPluginsCommand }],
   ["skills", { help: skillsHelp, run: runSkillsCommand }],
   ["version", { help: versionHelp, run: runVersionCommand }],
@@ -2876,12 +2885,16 @@ const coreCommands = new Map<string, CoreCommand>([
 
 /**
  * A core command asks for help like a module command: `-h` or `--help`
- * anywhere, or `help` as the first or last argument. Everything after
+ * anywhere, `help` as the first argument, or `help` as the last argument
+ * unless it is the value of the flag before it. Everything after
  * `cld plugins run <name>` belongs to the plugin, which answers its own help.
  */
-const isCoreHelpRequest = (command: string, args: readonly string[]): boolean => {
+const isCoreHelpRequest = (command: string, core: CoreCommand, args: readonly string[]): boolean => {
   const own = command === "plugins" && args[0] === "run" ? args.slice(0, 2) : args;
-  return own.some((arg) => /^-+(h|help)$/.test(arg)) || own[0] === "help" || own.at(-1) === "help";
+  if (own.some((arg) => /^-+(h|help)$/.test(arg)) || own[0] === "help") return true;
+  const previous = own.at(-2) ?? "";
+  const flagValue = previous.startsWith("-") && (core.valueFlags ?? []).includes(previous.replace(/^-+/, ""));
+  return own.at(-1) === "help" && !flagValue;
 };
 
 export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
@@ -2912,7 +2925,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
 
   const core = coreCommands.get(moduleName);
   if (core) {
-    if (!isCoreHelpRequest(moduleName, moduleArgs)) return core.run(moduleArgs, global);
+    if (!isCoreHelpRequest(moduleName, core, moduleArgs)) return core.run(moduleArgs, global);
     printLine(core.help(global.locale));
     return 0;
   }

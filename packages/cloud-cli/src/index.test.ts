@@ -1401,7 +1401,8 @@ describe("core command help", () => {
       { command: "logout", args: ["--help", "logout"] },
       { command: "profile", args: ["-h", "profile", "set", "other", "--token", "replacement"] },
       { command: "logout", args: ["logout", "help"] },
-      { command: "profile", args: ["profile", "set", "other", "help"] },
+      { command: "logout", args: ["logout", "--json", "help"] },
+      { command: "profile", args: ["profile", "set", "other", "--server", server, "help"] },
       { command: "skills", args: ["skills", "remove", "-h", skillsTarget] },
     ];
 
@@ -1412,6 +1413,30 @@ describe("core command help", () => {
     }
     expect(await snapshotTree(dir)).toEqual(before);
   }, 60_000);
+
+  test("a trailing `help` that is a flag's value names a profile instead of asking for help", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cld-cli-test-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    await writeConfig(configPath, {
+      currentProfile: "default",
+      profiles: {
+        default: { server: "http://127.0.0.1:9", token: "default-token" },
+        help: { server: "http://127.0.0.1:9", token: "help-token" },
+      },
+    });
+    const before = await readFile(configPath, "utf8");
+
+    const [auth, logout] = await Promise.all([
+      runCli(configPath, ["--json", "auth", "--profile", "help"]),
+      runCli(configPath, ["logout", "-p", "help"]),
+    ]);
+
+    expect(auth).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(JSON.parse(auth.stdout)).toMatchObject({ profile: "help", kind: "token" });
+    expect(logout).toEqual({ exitCode: 0, stdout: 'Profile "help" is not logged in with OAuth.\n', stderr: "" });
+    expect(await readFile(configPath, "utf8")).toBe(before);
+  });
 
   test("help before a module command, or after `plugins run <name>`, reaches the module's help without a server", async () => {
     const dir = await createTempDir();

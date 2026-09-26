@@ -19,7 +19,9 @@ as every other client.
 
 Asking for help never runs a command. `--help` or `-h` after the command,
 `help` as its first or last argument, and `cld --help <command>` print the
-usage of a built-in or module command and change nothing.
+usage of a built-in or module command and change nothing. `help` as the value
+of a flag stays a value: `cld logout --profile help` signs out the profile
+named `help`.
 
 ## Select a locale
 
