@@ -22,6 +22,7 @@ import { sha256Json } from "./canonical";
 import { executeMutationCommand } from "./command-runtime";
 import { createActorCommand, createMailCommand, createWorkflowCommand } from "./commands";
 import { imapSmtpConnector } from "./connectors";
+import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import {
   clearFolderRole,
@@ -3081,6 +3082,154 @@ suite("mail lifecycle control plane", () => {
       await expectWokenBeforeDeadline(failedHydrationRunId);
     } finally {
       await sql`DELETE FROM workflows.workflow WHERE id = ${workflow.id}::uuid`;
+    }
+  }, 15_000);
+
+  test("a hydration source batch invalidates each settled conversation once after its commits", async () => {
+    const conversationIds: string[] = [];
+    const conversationShortIds: string[] = [];
+    for (const name of ["hydrated", "exhausted", "retryable"]) {
+      const [conversation] = await sql<{ id: string; short_id: string }[]>`
+        INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${`Hydration live ${name}`}, 'fixture', now())
+        RETURNING id, short_id
+      `;
+      conversationIds.push(conversation!.id);
+      conversationShortIds.push(conversation!.short_id);
+    }
+    const [hydratedConversationId, exhaustedConversationId, retryableConversationId] = conversationIds;
+    // Two bodies land in one conversation; one message exhausts its last attempt
+    // and one fails with retries left, which an open reader must not see as final.
+    const fixtures = [
+      { name: "first", conversationId: hydratedConversationId!, position: 0, attempt: 0, body: true },
+      { name: "second", conversationId: hydratedConversationId!, position: 1, attempt: 0, body: true },
+      { name: "exhausted", conversationId: exhaustedConversationId!, position: 0, attempt: 4, body: false },
+      { name: "retryable", conversationId: retryableConversationId!, position: 0, attempt: 0, body: false },
+    ];
+    const sources = new Map<string, { source: string; body: boolean }>();
+    for (const [index, fixture] of fixtures.entries()) {
+      const rfcMessageId = `<hydration-live-${fixture.name}-${suffix}@example.com>`;
+      const [message] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_contents (short_id,
+          mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, hydration_attempt
+        ) VALUES (${newShortId()},
+          ${mailboxId}::uuid,
+          ${rfcMessageId},
+          'Hydration live',
+          now(),
+          256,
+          ${sha256Json({ fixture: "hydration-live", name: fixture.name, suffix })},
+          'envelope',
+          ${fixture.attempt}
+        ) RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+        VALUES (${inboxFolderId}::uuid, ${message!.id}::uuid, 10, ${990101 + index})
+      `;
+      await sql`
+        INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+        VALUES (${fixture.conversationId}::uuid, ${message!.id}::uuid, ${fixture.position})
+      `;
+      sources.set(message!.id, {
+        body: fixture.body,
+        source: [
+          `Message-ID: ${rfcMessageId}`,
+          "From: sender@example.com",
+          "To: lifecycle@example.com",
+          "Subject: Hydration live",
+          `Date: ${new Date().toUTCString()}`,
+          "",
+          `Body of ${fixture.name}`,
+        ].join("\r\n"),
+      });
+    }
+    const [requestedMessageId] = sources.keys();
+
+    const cursor = await latestMailInvalidationCursor();
+    const abort = new AbortController();
+    const published = (async () => {
+      const changes = new Map<string, string>();
+      for await (const event of liveMailInvalidations({ after: cursor, signal: abort.signal })) {
+        const conversationShortId = event.data.conversationId;
+        if (event.data.mailboxId !== mailboxShortId || !conversationShortId) continue;
+        if (!conversationShortIds.includes(conversationShortId)) continue;
+        changes.set(conversationShortId, event.data.changeId);
+        if (changes.has(conversationShortIds[0]!) && changes.has(conversationShortIds[1]!)) return changes;
+      }
+      if (!abort.signal.aborted) throw new Error("Mail invalidation stream ended");
+      return changes;
+    })();
+    const download = spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(
+      async (_runtime, _folderPath, requests, consume) => {
+        for (const request of requests) {
+          const fixture = sources.get(request.key);
+          if (!fixture) continue;
+          await consume({
+            ...request,
+            expectedSize: Buffer.byteLength(fixture.source),
+            stream: Readable.from(fixture.body ? [fixture.source] : []),
+          });
+        }
+      },
+    );
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await expect(
+        hydrateMessageBatch({
+          input: { messageId: requestedMessageId! },
+          signal: new AbortController().signal,
+          heartbeat: async () => undefined,
+        } as never),
+      ).resolves.toEqual({ hydrated: true });
+      expect(download).toHaveBeenCalledTimes(1);
+      const states = await sql<{ hydration_status: string; hydration_attempt: number }[]>`
+        SELECT message.hydration_status, message.hydration_attempt
+        FROM jsonb_array_elements_text(${[...sources.keys()]}::jsonb) WITH ORDINALITY AS requested(id, position)
+        JOIN mail.message_contents message ON message.id = requested.id::uuid
+        ORDER BY requested.position
+      `;
+      expect(states).toEqual([
+        { hydration_status: "complete", hydration_attempt: 1 },
+        { hydration_status: "complete", hydration_attempt: 1 },
+        { hydration_status: "failed", hydration_attempt: 5 },
+        { hydration_status: "failed", hydration_attempt: 1 },
+      ]);
+
+      const outbox = await sql<{ id: string; conversation_id: string; transaction_key: string; after_commits: boolean }[]>`
+        SELECT
+          outbox.id,
+          outbox.conversation_id,
+          outbox.transaction_key,
+          outbox.created_at >= (
+            SELECT MAX(message.hydrated_at)
+            FROM mail.message_contents message
+            JOIN mail.conversation_messages link ON link.message_id = message.id
+            WHERE link.conversation_id = ${hydratedConversationId!}::uuid
+          ) AS after_commits
+        FROM mail.live_invalidation_outbox outbox
+        WHERE outbox.conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
+      `;
+      expect(outbox.map((row) => row.conversation_id).sort()).toEqual([hydratedConversationId!, exhaustedConversationId!].sort());
+      expect(new Set(outbox.map((row) => row.transaction_key)).size).toBe(1);
+      expect(outbox.every((row) => row.after_commits)).toBe(true);
+
+      const changes = await Promise.race([
+        published,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Timed out waiting for the hydration invalidations")), 5_000);
+        }),
+      ]);
+      expect(changes).toEqual(
+        new Map([
+          [conversationShortIds[0]!, outbox.find((row) => row.conversation_id === hydratedConversationId)!.id],
+          [conversationShortIds[1]!, outbox.find((row) => row.conversation_id === exhaustedConversationId)!.id],
+        ]),
+      );
+    } finally {
+      clearTimeout(timeout);
+      abort.abort();
+      download.mockRestore();
     }
   }, 15_000);
 

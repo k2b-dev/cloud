@@ -1510,6 +1510,32 @@ const startSyncFolderJob = async (): Promise<void> => {
   );
 };
 
+// An open reader may hold an envelope-only snapshot of a message in this batch.
+// One invalidation per affected conversation, committed after the whole batch,
+// lets it show the body or a terminal failure (a retryable failure stays
+// pending) and keeps a bulk backfill at one workspace refresh per batch.
+const invalidateSettledConversations = async (mailboxId: string, messageIds: ReadonlySet<string>): Promise<void> => {
+  if (messageIds.size === 0) return;
+  try {
+    const invalidated = await sql.begin(async (tx) => {
+      const conversations = await tx<{ conversation_id: string }[]>`
+        SELECT DISTINCT link.conversation_id
+        FROM mail.conversation_messages link
+        JOIN mail.message_contents message ON message.id = link.message_id
+        WHERE link.message_id = ANY(${toPgUuidArray([...messageIds])}::uuid[])
+          AND (message.hydration_status = 'complete' OR (message.hydration_status = 'failed' AND message.hydration_attempt >= 5))
+      `;
+      for (const conversation of conversations) {
+        await enqueueMailInvalidation(tx, { mailboxId, conversationId: conversation.conversation_id });
+      }
+      return conversations.length;
+    });
+    if (invalidated > 0) await notifyMailInvalidations();
+  } catch (error) {
+    log.warn("Mail hydration live invalidation failed", { mailboxId, code: normalizeSyncErrorCode(error) });
+  }
+};
+
 export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>): Promise<{ hydrated: boolean }> => {
   let activeClaim: { messageId: string; claimId: string } | null = null;
   return withLeaseHeartbeat({
@@ -1600,49 +1626,56 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
 
             let hydrated = false;
             let requestedMessageError: unknown = null;
+            const settled = new Set<string>();
             await assertProviderLeaseActive();
             await assertMailboxTransportFence(transportFence);
-            await imapSmtpConnector.downloadSourceBatch(
-              runtime,
-              folder.path,
-              candidates.map((candidate) => ({
-                key: candidate.id,
-                uidValidity: String(candidate.uid_validity),
-                uid: Number(candidate.uid),
-              })),
-              async (source) => {
-                await assertProviderLeaseActive();
-                await assertMailboxTransportFence(transportFence);
-                const claimId = randomUUID();
-                activeClaim = { messageId: source.key, claimId };
-                try {
-                  const result = await hydrateMessageFromSource({
-                    messageId: source.key,
-                    source: source.stream,
-                    expectedSize: source.expectedSize,
-                    claimId,
-                    transportFence,
-                  });
-                  const available =
-                    result.status === "hydrated" || result.status === "already_complete" || result.status === "deduplicated";
-                  hydrated ||= available;
+            try {
+              await imapSmtpConnector.downloadSourceBatch(
+                runtime,
+                folder.path,
+                candidates.map((candidate) => ({
+                  key: candidate.id,
+                  uidValidity: String(candidate.uid_validity),
+                  uid: Number(candidate.uid),
+                })),
+                async (source) => {
                   await assertProviderLeaseActive();
                   await assertMailboxTransportFence(transportFence);
-                  await assertProviderLeaseActive();
-                  await assertMailboxTransportFence(transportFence);
-                } catch (error) {
-                  const code = normalizeSyncErrorCode(error);
-                  if (code === "SYNC_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
-                  if (code !== "HYDRATION_NOT_CLAIMED") {
-                    log.warn("Mail message hydration failed within a source batch", { messageId: source.key, code });
-                    if (source.key === ctx.input.messageId) requestedMessageError = error;
+                  const claimId = randomUUID();
+                  activeClaim = { messageId: source.key, claimId };
+                  try {
+                    const result = await hydrateMessageFromSource({
+                      messageId: source.key,
+                      source: source.stream,
+                      expectedSize: source.expectedSize,
+                      claimId,
+                      transportFence,
+                    });
+                    if (result.status !== "already_complete") settled.add(result.canonicalMessageId ?? source.key);
+                    const available =
+                      result.status === "hydrated" || result.status === "already_complete" || result.status === "deduplicated";
+                    hydrated ||= available;
+                    await assertProviderLeaseActive();
+                    await assertMailboxTransportFence(transportFence);
+                    await assertProviderLeaseActive();
+                    await assertMailboxTransportFence(transportFence);
+                  } catch (error) {
+                    const code = normalizeSyncErrorCode(error);
+                    if (code === "SYNC_LEASE_LOST" || code === "MAILBOX_TRANSPORT_CHANGED") throw error;
+                    if (code !== "HYDRATION_NOT_CLAIMED") {
+                      settled.add(source.key);
+                      log.warn("Mail message hydration failed within a source batch", { messageId: source.key, code });
+                      if (source.key === ctx.input.messageId) requestedMessageError = error;
+                    }
+                  } finally {
+                    activeClaim = null;
                   }
-                } finally {
-                  activeClaim = null;
-                }
-              },
-              signal,
-            );
+                },
+                signal,
+              );
+            } finally {
+              await invalidateSettledConversations(message.mailbox_id, settled);
+            }
             await assertProviderLeaseActive();
             await assertMailboxTransportFence(transportFence);
             if (requestedMessageError) throw requestedMessageError;
