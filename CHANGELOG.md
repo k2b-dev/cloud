@@ -3,6 +3,32 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.19.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.18.0...cloud-v0.19.0) (2026-09-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** write the cloud-cli agent skill with every installed module's references ([#265](https://github.com/k2b-dev/cloud/issues/265))
+* **cli:** serve every first-party module as a plugin of its application ([#261](https://github.com/k2b-dev/cloud/issues/261))
+* **cli:** install and lock each profile's served plugins ([#255](https://github.com/k2b-dev/cloud/issues/255))
+
+### Features
+
+* **cli:** install and lock each profile's served plugins ([#255](https://github.com/k2b-dev/cloud/issues/255)) ([4c6be90](https://github.com/k2b-dev/cloud/commit/4c6be90b748ba77fcaf736ea8ce4f67b4c96439b))
+* **cli:** serve every first-party module as a plugin of its application ([#261](https://github.com/k2b-dev/cloud/issues/261)) ([40a9690](https://github.com/k2b-dev/cloud/commit/40a9690ce5843a08bbc60e5117fb967be9e51396))
+* **cli:** write the cloud-cli agent skill with every installed module's references ([#265](https://github.com/k2b-dev/cloud/issues/265)) ([f02142d](https://github.com/k2b-dev/cloud/commit/f02142d56db75451401e304bf9e96e0bdbd336ea))
+* **cloud:** serve each app's cld plugin and skill references from the app ([#253](https://github.com/k2b-dev/cloud/issues/253)) ([c89ffa0](https://github.com/k2b-dev/cloud/commit/c89ffa0d4dd6406d9d0246844ff307a0f31c6e54))
+* **core:** merge the account overview into the profile page ([#260](https://github.com/k2b-dev/cloud/issues/260)) ([8eb4540](https://github.com/k2b-dev/cloud/commit/8eb45401efc55ff470fa8e51e1ef9488adb39988))
+* **spaces:** let people claim, release, and take over tasks from the board and details ([#266](https://github.com/k2b-dev/cloud/issues/266)) ([9fb4cc3](https://github.com/k2b-dev/cloud/commit/9fb4cc31aea41050eaa6c72d5fc65b688d39035e))
+* **spaces:** link items to GitHub issues and external pages ([#267](https://github.com/k2b-dev/cloud/issues/267)) ([335aa41](https://github.com/k2b-dev/cloud/commit/335aa41876f4e82312827cdb0cbd3d4b4aa7d639)), closes [#263](https://github.com/k2b-dev/cloud/issues/263)
+
+
+### Bug Fixes
+
+* **core:** polish account pages and settings source labels ([#259](https://github.com/k2b-dev/cloud/issues/259)) ([c73dbf8](https://github.com/k2b-dev/cloud/commit/c73dbf80b3bd345b8aa5036ef0f5d99f3fc51d5a))
+* **grids:** keep saving while the workspace notice only informs ([#258](https://github.com/k2b-dev/cloud/issues/258)) ([53b4809](https://github.com/k2b-dev/cloud/commit/53b48095ed9853b0d49acdf8824a1cd7310d3ebe))
+* **grids:** open shared views that filter on non-selected fields ([#257](https://github.com/k2b-dev/cloud/issues/257)) ([ef53ec7](https://github.com/k2b-dev/cloud/commit/ef53ec70ca2a7557743ecde85cab8e3dfdd982bd)), closes [#256](https://github.com/k2b-dev/cloud/issues/256)
+
 ## [0.18.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.17.0...cloud-v0.18.0) (2026-09-26)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.2...npm-ui-v0.6.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* **core:** polish account pages and settings source labels ([#259](https://github.com/k2b-dev/cloud/issues/259)) ([c73dbf8](https://github.com/k2b-dev/cloud/commit/c73dbf80b3bd345b8aa5036ef0f5d99f3fc51d5a))
+
 ## [0.6.2](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.1...npm-ui-v0.6.2) (2026-09-26)
 
 

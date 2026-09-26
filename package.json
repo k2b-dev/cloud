@@ -1,7 +1,7 @@
 {
   "name": "@k2b/cloud-workspace",
   "private": true,
-  "version": "0.18.0",
+  "version": "0.19.0",
   "type": "module",
   "packageManager": "bun@1.4.2",
   "workspaces": {
