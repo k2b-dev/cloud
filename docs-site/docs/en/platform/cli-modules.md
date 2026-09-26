@@ -656,48 +656,89 @@ flags, and JSON output stay stable syntax across plugin versions.
 
 ## Install a plugin
 
+Plugins that a Cloud serves belong to the profile for that Cloud:
+
 ```sh
-cld plugins install @example/inventory-cli@1.4.0
+cld plugins list                 # available and installed plugins of the current profile
+cld plugins list --all           # every profile
+cld plugins install inventory    # one plugin from the current profile's Cloud
+cld plugins install --all        # every plugin the Cloud serves
+cld plugins update               # newer versions for the current profile
+cld plugins update --all         # newer versions for every profile
+cld plugins remove inventory
+```
+
+`cld login` offers to install the plugins that the Cloud serves once the
+sign-in succeeds. `--yes` installs them without asking, and `--no-plugins`
+skips the offer. A command whose plugin is not installed fails with a hint to
+run `cld plugins install <name>`.
+
+`install` and `update` read the plugin's manifest, download every file, check
+each file's size and SHA-512 and the manifest digest, and load the module once
+before anything changes. A mismatch leaves the installation untouched. The
+plugin then goes to a content-addressed store,
+`$XDG_CONFIG_HOME/cloud/cld/plugins/store/<digest>/`, and the profile locks
+the module's app, version, and digest in the `cld` config. Profiles for
+different Clouds can use different versions of the same module; identical
+versions are stored once, and a version that no profile locks is deleted.
+Without `XDG_CONFIG_HOME`, the directory is `~/.config/cloud/cld/plugins/`.
+
+A plugin needs the same plugin API version as `cld`. A newer API asks you to
+run `cld update`; an older one needs a newer Cloud.
+
+### Install a package plugin
+
+A package plugin is available to every profile. Use it during development or
+for commands that no Cloud serves:
+
+```sh
+cld plugins install npm:@example/inventory-cli@1.4.0
 cld plugins install ./inventory-cli-1.4.0.tgz
 cld plugins install ./packages/inventory-cli
-cld plugins list
 cld plugins run inventory items get <item-id>
 cld plugins remove inventory
 ```
 
-`install` accepts a local directory, a local `.tgz` archive, or an npm package
-from the public npm registry. Pass an exact version or a dist-tag; the
-default is `latest`. `cld` checks the tarball against the registry's `sha512`
-integrity value. To install from a private registry, download the archive
-with `npm pack <package>` and install the `.tgz` file.
+A path contains a `/` or ends in `.tgz`; an npm package starts with `npm:`.
+Anything else is the name of a plugin that the Cloud serves, so a mistyped name
+never falls back to the public registry. npm packages come from the public
+registry; pass an exact version or a dist-tag, the default is `latest`. `cld`
+checks the tarball against the registry's `sha512` integrity value. To install
+from a private registry, download the archive with `npm pack <package>` and
+install the `.tgz` file.
 
-Before it places a plugin, `cld` checks the manifest and shows the package,
-version, and source. It asks for confirmation unless you pass `--yes`, and
-without a terminal it requires `--yes`. It then loads the module and installs
-it under `$XDG_CONFIG_HOME/cloud/cld/plugins/<id>/`; without
-`XDG_CONFIG_HOME`, that is `~/.config/cloud/cld/plugins/<id>/`.
-Installing the same ID again replaces it. You can also place an unpacked
-plugin directory there by hand; `cld plugins list` shows its source as
-`manual`.
+Before it places a package plugin, `cld` checks the manifest and shows the
+package, version, and source. It asks for confirmation unless you pass
+`--yes`, and without a terminal it requires `--yes`. It then loads the module
+and installs it under `cloud/cld/plugins/<id>/`. Installing the same ID again
+replaces it. You can also place an unpacked plugin directory there by hand;
+`cld plugins list` shows its source as `manual`. A package plugin and a plugin
+that a profile locks cannot share a name; remove one before you install the
+other.
 
-`cld plugins list` shows each plugin's ID, package, version, source, and
-status:
+`cld plugins list` shows the profile (`*` for package plugins), name, app,
+installed and available version, status, and source:
 
 | Status | Meaning |
 | --- | --- |
-| `ok` | The plugin loads and its commands are available. |
+| `ok` | The installed plugin is current, or the package plugin loads. |
+| `available` | The Cloud serves the plugin; it is not installed. |
+| `update available` | The Cloud serves a different version than the profile locks. |
+| `not served` | The profile locks a plugin that the Cloud no longer serves. |
+| `unknown` | The Cloud could not be reached. |
 | `shadowed` | A later `cld` release added a built-in command with the same name. It takes precedence for `cld <id>`; run the plugin with `cld plugins run <id>`. |
-| `incompatible` | The manifest names a plugin API version that this `cld` does not support. |
-| `error` | The manifest, the entry, or the module is invalid, or the entry fails to load. |
+| `incompatible` | The package names a plugin API version that this `cld` does not support. |
+| `error` | The package manifest, the entry, or the module is invalid, or the entry fails to load. |
 
-A plugin's commands run as `cld <id> …`. `cld plugins run <id> …` runs the same
-command tree and always reaches the plugin, even when it is shadowed, so a new
-built-in command never makes an installed plugin unreachable. Use it in
+A plugin's commands run as `cld <name> …`. `cld plugins run <name> …` runs the
+same command tree and always reaches the plugin, even when it is shadowed, so a
+new built-in command never makes an installed plugin unreachable. Use it in
 scripts that must keep working across `cld` upgrades.
 
-`cld help` lists plugin modules next to the built-in modules and prints one
-warning line on stderr for each plugin that it skips. A broken plugin fails
-only its own commands. Built-in commands never load plugins.
+`cld help` lists the current profile's plugins and the package plugins next to
+the built-in modules, and prints one warning line on stderr for each package
+plugin that it skips. A broken plugin fails only its own commands. Built-in
+commands never load plugins.
 
 ## Plugin security
 
@@ -707,8 +748,10 @@ built-in module: the selected profile, the Cloud credentials, the locale, and
 the output mode. Plugins do not get extra privileges or access to other
 plugins through `cld`, but their code can read any file that you can read.
 
-Install plugins only from sources that you trust, and pin a version for
-repeatable installations. Cloud authorizes plugin requests exactly like other
+A plugin that a Cloud serves comes from that Cloud's application image over
+the authenticated connection of the profile. Package plugins come from the
+source you name; install them only from sources that you trust, and pin a
+version for repeatable installations. Cloud authorizes plugin requests exactly like other
 requests from the same user. The server remains the only place that grants
 access.
 

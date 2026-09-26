@@ -172,7 +172,7 @@ describe("plugin install and remove", () => {
     });
     try {
       const root = await tempDir();
-      const staged = await stagePlugin("@k2b-test/cld-plugin-echo", { registry: registry.url.origin });
+      const staged = await stagePlugin("npm:@k2b-test/cld-plugin-echo", { registry: registry.url.origin });
       try {
         expect(staged.source).toBe("npm:@k2b-test/cld-plugin-echo@1.0.0");
         expect(await commitPlugin(staged, new Set(), root)).toEqual({ id: "echo", replaced: false });
@@ -182,9 +182,14 @@ describe("plugin install and remove", () => {
       expect((await loadPlugins(new Set(), root)).plugins[0]).toMatchObject({ id: "echo", status: "ok" });
 
       integrity = `sha512-${Buffer.from("wrong").toString("base64")}`;
-      await expectPluginError(stagePlugin("@k2b-test/cld-plugin-echo", { registry: registry.url.origin }), "error", "integrity mismatch");
-      await expectPluginError(stagePlugin("@k2b-test/missing@2.0.0", { registry: registry.url.origin }), "error", "returned 404");
-      await expectPluginError(stagePlugin("Not A Package"), "error", "neither a local path nor an npm package");
+      await expectPluginError(
+        stagePlugin("npm:@k2b-test/cld-plugin-echo", { registry: registry.url.origin }),
+        "error",
+        "integrity mismatch",
+      );
+      await expectPluginError(stagePlugin("npm:@k2b-test/missing@2.0.0", { registry: registry.url.origin }), "error", "returned 404");
+      await expectPluginError(stagePlugin("npm:Not A Package"), "error", "not an npm package name");
+      await expectPluginError(stagePlugin("./missing-plugin"), "error", "does not exist; use npm:<package>");
     } finally {
       await registry.stop(true);
     }
@@ -258,7 +263,7 @@ describe("cld plugins command", () => {
       expect(missingRun.stderr).toContain('Plugin "missing" is not installed.');
 
       const pluginsHelp = await runCli(["plugins", "help"], configHome);
-      expect(pluginsHelp.stdout).toContain("cld plugins run <id> [args...]");
+      expect(pluginsHelp.stdout).toContain("cld plugins run <name> [args...]");
 
       const reservedSource = join(configHome, "reserved-plugin");
       await writePlugin(reservedSource, { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("grids"));
@@ -279,17 +284,15 @@ describe("cld plugins command", () => {
 
       const listed = await runCli(["plugins", "list", "--json"], configHome);
       expect(listed.exitCode, listed.stderr).toBe(0);
-      expect(JSON.parse(listed.stdout).plugins.map((plugin: { id: string; status: string }) => `${plugin.id}:${plugin.status}`)).toEqual([
-        "broken:error",
-        "echo:ok",
-        "update:shadowed",
-      ]);
+      expect(
+        JSON.parse(listed.stdout).plugins.map((plugin: { name: string; status: string }) => `${plugin.name}:${plugin.status}`),
+      ).toEqual(["broken:error", "echo:ok", "update:shadowed"]);
 
       const removed = await runCli(["plugins", "remove", "echo"], configHome);
       expect(removed.exitCode, removed.stderr).toBe(0);
       const gone = await runCli(["echo", "whoami"], configHome);
       expect(gone.exitCode).toBe(1);
-      expect(gone.stderr).toContain('Unknown module "echo"');
+      expect(gone.stderr).toContain('Unknown command "echo"');
     } finally {
       await server.stop(true);
     }

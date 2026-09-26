@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { cliHostBundle } from "../../assistant/src/artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../../assistant/src/artifacts/runtime/compile";
 import { buildEchoPlugin } from "../test/fixtures/build-plugin";
+import { type PluginCloudState, servedEchoPlugin, startPluginCloud } from "../test/fixtures/plugin-cloud";
 
 test("standalone CLI starts and runs offline without Cloud server configuration", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-standalone-test-"));
@@ -100,8 +101,27 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
     }
     const listed = await run(["plugins", "list", "--json"]);
     expect(JSON.parse(listed.stdout).plugins).toEqual([
-      { id: "echo", package: "@k2b-test/cld-plugin-echo", version: "1.0.0", source: plugin, status: "ok" },
+      { profile: null, name: "echo", app: null, installed: "1.0.0", available: null, status: "ok", source: plugin },
     ]);
+    expect((await run(["plugins", "remove", "echo"])).exitCode).toBe(0);
+
+    // The same module served by a Cloud: installed for one profile, verified, and run from the store.
+    const cloud: PluginCloudState = { plugins: [await servedEchoPlugin("1.0.0")], authorizations: [] };
+    const pluginCloud = startPluginCloud(cloud);
+    try {
+      await Bun.write(
+        join(directory, "config.json"),
+        JSON.stringify({ currentProfile: "work", profiles: { work: { server: pluginCloud.url.origin, token: "served-token" } } }),
+      );
+      const served = await run(["plugins", "install", "echo"]);
+      expect(served.exitCode, served.stderr).toBe(0);
+      const echoed = await run(["--json", "echo", "whoami"]);
+      expect(echoed.exitCode, echoed.stderr).toBe(0);
+      expect(JSON.parse(echoed.stdout)).toMatchObject({ authorization: "Bearer served-token", profile: "work" });
+      await Bun.write(join(directory, "config.json"), "{}");
+    } finally {
+      await pluginCloud.stop(true);
+    }
 
     // Exercise the compiled parent AND its internal browser subprocess, from
     // outside the checkout. No installation or user Cloud data is contacted.

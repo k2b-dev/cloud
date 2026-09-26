@@ -2,38 +2,44 @@
 
 ## What plugins are
 
-Built-in Cloud apps ship their commands inside `cld`. Other Cloud apps ship them as `cld` plugins: packages that add one command module, such as `cld inventory …`, to the installed `cld` without a new `cld` release.
+Cloud apps serve their `cld` commands as plugins. `cld plugins install <name>` downloads one from the current profile's Cloud, verifies every file's SHA-512, and locks that version for the profile. Package plugins (a local path, a `.tgz`, or `npm:<package>`) add commands for every profile, for development or for commands no Cloud serves.
 
-A plugin runs inside `cld`, unsandboxed, with the user's Cloud credentials. Install or remove one only when the user asks for that exact package or path.
+A plugin runs inside `cld`, unsandboxed, with the user's Cloud credentials.
 
-## Inspect installed plugins
+## Inspect plugins
 
 ```bash
 cld plugins list
-cld plugins list --json
+cld plugins list --all --json
 cld help
 ```
 
-`cld plugins list` shows each plugin's ID, package, version, source, and status. `ok` means its commands are available. `shadowed` means a newer built-in command with the same name wins for `cld <id>`; run the plugin with `cld plugins run <id> …`. `incompatible` means the plugin needs a different plugin API version. `error` means the manifest or entry is invalid or fails to load. `cld help` lists the working plugin modules and prints one stderr warning for each skipped plugin; a broken plugin never affects built-in commands.
+`cld plugins list` shows, per profile, each plugin's app, installed and available version, status, and source. `available` means the Cloud serves it and it is not installed; `update available` means the Cloud serves another version; `not served` means the Cloud no longer serves an installed plugin; `unknown` means the Cloud could not be reached. Package plugins show profile `*` and `ok`, `shadowed`, `incompatible`, or `error`. `cld help` lists the modules that are installed for the current profile.
 
-## Run plugin commands
-
-Plugin commands run as `cld <id> …`. `cld plugins run <id> …` runs the same commands and always reaches the plugin, even when a built-in command shadows it:
+## Install, update, and remove
 
 ```bash
-cld inventory items list --json
-cld plugins run inventory items list --json
+cld plugins install mail
+cld plugins install --all
+cld plugins update
+cld plugins update --all
+cld plugins remove mail
 ```
 
-## Install and remove
+A command whose plugin is missing fails with `run cld plugins install <name>`: install it when the user's task needs that module. `update --all` covers every profile. `cld login` offers the Cloud's plugins after signing in (`--yes` installs them, `--no-plugins` skips).
+
+A `403` means the operator allows plugins only for full accounts; tell the user instead of retrying.
+
+## Package plugins
 
 ```bash
-cld plugins install @example/inventory-cli@1.4.0
+cld plugins install npm:@example/inventory-cli@1.4.0
 cld plugins install ./inventory-cli-1.4.0.tgz
 cld plugins install ./path/to/plugin-directory
+cld plugins run inventory items list --json
 cld plugins remove inventory
 ```
 
-`install` accepts an npm package from the public registry (exact version or dist-tag, default `latest`, integrity-checked), a local `.tgz` archive, or a local directory. It prints the package, version, and source and asks for confirmation; without a terminal it requires `--yes`. Pass `--yes` only after the user confirmed that package, version, and source. Installing the same ID again replaces it. IDs of built-in modules and top-level commands are reserved, and `install` refuses them. For a private registry, run `npm pack <package>` and install the resulting `.tgz`.
+Install or remove a package plugin only when the user asks for that exact package or path. `cld` prints the package, version, and source and asks for confirmation; without a terminal it requires `--yes`. Pass `--yes` only after the user confirmed them. `cld plugins run <name> …` always reaches a plugin, even when a built-in command shadows it.
 
-Plugins live in `~/.config/cloud/cld/plugins/<id>/` (under `$XDG_CONFIG_HOME` when set).
+Plugins live in `~/.config/cloud/cld/plugins/` (under `$XDG_CONFIG_HOME` when set): package plugins in `<id>/`, served plugins in `store/<digest>/`.
