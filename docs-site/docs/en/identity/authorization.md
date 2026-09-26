@@ -370,7 +370,8 @@ If linking a new entry fails, remove it again. Protect grant mutations with
 
 Call `resolveDisplayNames()` when adapter entries do not include names. It also
 accepts `{principal}` records for a proposed grant, preserves supplied fields,
-and adds `displayName` and optional `avatarHash`. Authorize the resource operation
+and adds `displayName`, optional `avatarHash`, and, for service-account
+principals, `serviceAccountKind`. Authorize the resource operation
 before resolving names. A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
 

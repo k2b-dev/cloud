@@ -1,4 +1,5 @@
 import type { AccessEntry, AccessSubject, PermissionLevel, Principal } from "@k2b/cloud/server";
+import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { logAudit, type SqlClient } from "./audit";
@@ -34,6 +35,7 @@ type DbAccessRow = {
   permission: PermissionLevel;
   created_at: Date;
   display_name: string | null;
+  service_account_kind: ServiceAccountKind | null;
 };
 
 type DbAccessSnapshot = {
@@ -123,6 +125,7 @@ const mapAccessRow = (row: DbAccessRow): AccessEntry => ({
   permission: row.permission,
   createdAt: row.created_at.toISOString(),
   displayName: row.display_name ?? undefined,
+  serviceAccountKind: row.service_account_kind ?? undefined,
 });
 
 const resourceIdFromBinding = (binding: AccessBinding): string => (binding.resourceType === "base" ? binding.baseId : binding.customAppId);
@@ -290,7 +293,7 @@ const listAccess = async (resourceType: AccessResourceType, resourceId: string):
   const definition = ACCESS_RESOURCES[resourceType];
   const rows = await sql<DbAccessRow[]>`
     SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only,
-           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL) AS display_name
+           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL) AS display_name, sa.kind AS service_account_kind
     FROM ${sql.unsafe(definition.junctionTable)} binding
     JOIN auth.access a ON a.id = binding.access_id
     LEFT JOIN auth.users u ON u.id = a.user_id
@@ -309,7 +312,7 @@ export const listAccessForBaseTree = async (baseId: string): Promise<ScopedAcces
   const rows = await sql<(DbAccessRow & { resource_type: AccessResourceType; resource_id: string; resource_name: string })[]>`
     SELECT 'base'::text AS resource_type, b.id::text AS resource_id, b.name AS resource_name,
            a.id AS access_id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only,
-           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL) AS display_name
+           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL) AS display_name, sa.kind AS service_account_kind
     FROM grids.base_access ba
     JOIN grids.bases b ON b.id = ba.base_id AND b.deleted_at IS NULL
     JOIN auth.access a ON a.id = ba.access_id
@@ -322,7 +325,7 @@ export const listAccessForBaseTree = async (baseId: string): Promise<ScopedAcces
 
     SELECT 'customApp'::text, app.id::text, app.name,
            a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only,
-           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL)
+           a.permission, a.created_at, COALESCE(u.uid, g.name, sa.name, NULL), sa.kind
     FROM grids.custom_app_access caa
     JOIN grids.custom_apps app ON app.id = caa.custom_app_id AND app.deleted_at IS NULL
     JOIN auth.access a ON a.id = caa.access_id

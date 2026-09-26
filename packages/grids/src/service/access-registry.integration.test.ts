@@ -76,6 +76,7 @@ describe("access resource registry integration", () => {
           id: storedAccess.id,
           principal: { type: "service_account", serviceAccountId: serviceAccount.id },
           permission: "read",
+          serviceAccountKind: "resource_bound",
         }),
       ]);
     } finally {

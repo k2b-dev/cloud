@@ -115,6 +115,10 @@ cld spaces access search-principals "Release agent" --kind service_account
 
 The REST API takes the same principal:
 `{"principal":{"type":"service_account","serviceAccountId":"<id>"},"permission":"write"}`.
+The account's access entries carry `serviceAccountKind`, and
+`cld spaces access list "Roadmap"` shows its grant with type `agent` or
+`service account`; see
+[Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
 Two limits apply to every request, and the lower one wins:
 

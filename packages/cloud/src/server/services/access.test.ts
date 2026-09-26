@@ -9,6 +9,7 @@ import {
   getEffectiveGroups,
   getEffectivePermission,
   listUsersWithAccess,
+  resolveDisplayNames,
 } from "./access";
 
 type Fixture = {
@@ -267,6 +268,29 @@ suite("effective access", () => {
       });
       expect(spoofedPermission).toBe("none");
     } finally {
+      await cleanupFixture(fixture);
+    }
+  }, 30_000);
+});
+
+suite("resolveDisplayNames", () => {
+  test("adds the service-account kind to service-account principals only", async () => {
+    const fixture = await createFixture();
+    const agentName = `Access agent ${crypto.randomUUID()}`;
+    const [agent] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${agentName}, 'agent') RETURNING id
+    `;
+    try {
+      const resolved = await resolveDisplayNames([
+        { principal: { type: "service_account" as const, serviceAccountId: agent!.id } },
+        { principal: { type: "service_account" as const, serviceAccountId: fixture.serviceAccountId } },
+        { principal: { type: "user" as const, userId: fixture.userIds.direct } },
+      ]);
+
+      expect(resolved.map((entry) => entry.serviceAccountKind)).toEqual(["agent", "resource_bound", undefined]);
+      expect(resolved.map((entry) => entry.displayName)).toEqual([agentName, expect.stringMatching(/^Access service /), "Access direct"]);
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${agent!.id}::uuid`;
       await cleanupFixture(fixture);
     }
   }, 30_000);

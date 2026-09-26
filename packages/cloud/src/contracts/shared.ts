@@ -327,6 +327,8 @@ export const AccessEntrySchema = z.object({
   createdAt: z.string(),
   displayName: z.string().optional(),
   avatarHash: z.string().nullable().optional(),
+  /** Kind of a `service_account` principal; presentation only, never authorization. */
+  serviceAccountKind: ServiceAccountKindSchema.optional(),
 });
 export type AccessEntry = z.infer<typeof AccessEntrySchema>;
 
