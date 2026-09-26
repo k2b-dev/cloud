@@ -28,7 +28,7 @@ Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Wurd
 5. Fehlen Ordner oder haben sie sich geändert, wähle für die aktive Verbindung **Neu erkennen**.
 :::
 
-Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt **Inhalt wird noch synchronisiert**, bis der Vorgang abgeschlossen ist.
+Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert** und ersetzt den Hinweis durch den Inhalt, sobald die Synchronisierung abgeschlossen ist, ohne dass du die Seite neu laden musst. Zeigt die Konversationsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
 
 Prüfe bei geteilten Anbieterordnern zuerst, ob das verbundene IMAP-Konto weiterhin das erforderliche Abonnement und die nötigen Berechtigungen besitzt. Mail kann nur Ordner neu erkennen, die der Anbieter für dieses Konto bereitstellt.
 

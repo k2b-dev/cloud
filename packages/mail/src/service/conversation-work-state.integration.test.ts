@@ -7,6 +7,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, ConnectorProtocolFacts } from "./connectors";
+import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
@@ -283,6 +284,92 @@ suite("mail conversation work-state projection", () => {
       SELECT work_status, snoozed_until FROM mail.conversations WHERE id = ${link.conversation_id}::uuid
     `;
     expect(afterInbound).toEqual({ work_status: "needs_action", snoozed_until: null });
+  }, 30_000);
+
+  test("publishes a conversation invalidation when body hydration completes without a work-state change", async () => {
+    const rfcMessageId = `<work-state-live-${suffix}@example.test>`;
+    const received = {
+      ...envelope({
+        uid: 6,
+        messageId: rfcMessageId,
+        inReplyTo: null,
+        from: "customer@example.test",
+        to: "support@example.test",
+        date: new Date("2026-07-22T08:05:00.000Z"),
+      }),
+      subject: "Live reader refresh",
+    };
+    const messageId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: received });
+    const [target] = await sql<
+      { conversation_id: string; mailbox_short_id: string; conversation_short_id: string; work_status: string; hydration_status: string }[]
+    >`
+      SELECT
+        conversation.id AS conversation_id,
+        mailbox.short_id AS mailbox_short_id,
+        conversation.short_id AS conversation_short_id,
+        conversation.work_status,
+        message.hydration_status
+      FROM mail.message_contents message
+      JOIN mail.conversation_messages link ON link.message_id = message.id
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      JOIN mail.mailboxes mailbox ON mailbox.id = conversation.mailbox_id
+      WHERE message.id = ${messageId}::uuid
+    `;
+    if (!target) throw new Error("Received message was not linked to a conversation");
+    // An open reader holds this envelope-only snapshot, and hydrating an inbound
+    // message leaves a new conversation's needs_action state unchanged.
+    expect(target).toMatchObject({ work_status: "needs_action", hydration_status: "envelope" });
+    const invalidations = () => sql<{ id: string }[]>`
+      SELECT id FROM mail.live_invalidation_outbox WHERE conversation_id = ${target.conversation_id}::uuid
+    `;
+    expect(await invalidations()).toEqual([]);
+
+    const cursor = await latestMailInvalidationCursor();
+    const abort = new AbortController();
+    const published = (async () => {
+      for await (const event of liveMailInvalidations({ after: cursor, signal: abort.signal })) {
+        if (event.data.mailboxId === target.mailbox_short_id && event.data.conversationId === target.conversation_short_id) {
+          return event.data;
+        }
+      }
+      throw new Error("Mail invalidation stream ended");
+    })();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await hydrate(messageId, [
+        `Message-ID: ${rfcMessageId}`,
+        "From: Customer <customer@example.test>",
+        "To: Support <support@example.test>",
+        `Subject: ${received.subject}`,
+      ]);
+      const event = await Promise.race([
+        published,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Timed out waiting for the hydration invalidation")), 5_000);
+        }),
+      ]);
+      const outbox = await invalidations();
+      expect(outbox).toHaveLength(1);
+      expect(event).toMatchObject({ type: "mail.invalidated", changeId: outbox[0]?.id });
+    } finally {
+      clearTimeout(timeout);
+      abort.abort();
+    }
+
+    const [after] = await sql<{ hydration_status: string; work_status: string; activities: number }[]>`
+      SELECT
+        message.hydration_status,
+        conversation.work_status,
+        (
+          SELECT COUNT(*)::int
+          FROM mail.activity_events activity
+          WHERE activity.conversation_id = conversation.id
+        ) AS activities
+      FROM mail.message_contents message
+      JOIN mail.conversations conversation ON conversation.id = ${target.conversation_id}::uuid
+      WHERE message.id = ${messageId}::uuid
+    `;
+    expect(after).toEqual({ hydration_status: "complete", work_status: "needs_action", activities: 0 });
   }, 30_000);
 
   test("releases due snoozes once without changing their work state", async () => {

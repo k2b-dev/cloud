@@ -28,7 +28,7 @@ Access is checked when the page loads and during live updates. If access was rev
 5. If folders are missing or changed, select **Rediscover** for the active binding.
 :::
 
-Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing; the reader shows **Body is still synchronizing** until hydration completes.
+Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing. The reader then shows **Body is still synchronizing** and replaces it with the body as soon as synchronization completes, without a page reload. If the conversation list shows **Updates paused**, select **Refresh message** to load the current state.
 
 For provider-shared folders, first confirm that the connected IMAP account still has the required subscription and rights. Mail can rediscover only folders the provider exposes to that account.
 

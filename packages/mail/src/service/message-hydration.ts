@@ -11,7 +11,7 @@ import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueF
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
-import { type MailCollaborationEvent, publishMailCollaborationEvent } from "./events";
+import { enqueueMailInvalidation, type MailCollaborationEvent, notifyMailInvalidations } from "./events";
 import { assertMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
 import { createBlobReadable, type StoredBlob, storeReadableBlob } from "./message-blobs";
 import { extractMessageProtocolFacts, parseMessageProtocolFacts, readMessageRootHeaders } from "./message-protocol";
@@ -792,8 +792,6 @@ export const hydrateMessageFromSource = async (params: {
     const sanitized = originalHtml ? sanitizeIncomingMailHtmlWithRemoteImages(originalHtml) : null;
     const sanitizedHtml = sanitized?.html ?? null;
     let canonicalMessageId: string | null = null;
-    let collaborationEvent: Omit<MailCollaborationEvent, "type" | "at"> | null = null;
-    let receiptEvent: Omit<MailCollaborationEvent, "type" | "at"> | null = null;
     await sql.begin(async (tx) => {
       const [current] = await tx<{ id: string }[]>`
         SELECT id
@@ -805,6 +803,13 @@ export const hydrateMessageFromSource = async (params: {
       `;
       if (!current) throw Object.assign(new Error("Message hydration claim was lost"), { code: "HYDRATION_CLAIM_LOST" });
       if (params.transportFence) await assertMailboxTransportFence(params.transportFence, tx);
+      // A reader may hold this message's envelope-only snapshot. The invalidation
+      // commits with the body or duplicate merge below, including when neither
+      // changes collaboration state, so that reader refetches after commit.
+      const [link] = await tx<{ conversation_id: string }[]>`
+        SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ${params.messageId}::uuid
+      `;
+      await enqueueMailInvalidation(tx, { mailboxId: claimed.mailbox_id, conversationId: link?.conversation_id ?? null });
       const duplicate = await mergeVerifiedDuplicate({ db: tx, messageId: params.messageId, sourceHash });
       canonicalMessageId = duplicate.canonicalMessageId;
       if (canonicalMessageId) return;
@@ -925,9 +930,9 @@ export const hydrateMessageFromSource = async (params: {
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
       if (!duplicate.duplicateFound) {
-        collaborationEvent = await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
+        await applyVerifiedConversationTransition({ db: tx, messageId: params.messageId });
         if (receipt) {
-          receiptEvent = await recordMessageReceipt({
+          await recordMessageReceipt({
             db: tx,
             mailboxId: claimed.mailbox_id,
             reportMessageId: params.messageId,
@@ -936,8 +941,7 @@ export const hydrateMessageFromSource = async (params: {
         }
       }
     });
-    if (collaborationEvent) await publishMailCollaborationEvent(collaborationEvent);
-    if (receiptEvent) await publishMailCollaborationEvent(receiptEvent);
+    await notifyMailInvalidations();
     await publishMailWorkflowDependency({
       mailboxId: claimed.mailbox_id,
       dependency: { kind: "mail.hydration", key: params.messageId },
