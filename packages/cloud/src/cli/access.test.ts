@@ -64,7 +64,7 @@ const serviceAccountEntries = (): AccessEntry[] => [
   userEntry("read"),
   serviceAccountEntry("33333333-3333-4333-8333-333333333333", "Release agent", "write", "agent"),
   serviceAccountEntry("44444444-4444-4444-8444-444444444444", "CI export", "read", "standalone"),
-  serviceAccountEntry("55555555-5555-4555-8555-555555555555", "Roadmap API key", "write", "resource_bound"),
+  serviceAccountEntry("55555555-5555-4555-8555-555555555555", "Roadmap API access", "write", "resource_bound"),
   serviceAccountEntry("66666666-6666-4666-8666-666666666666", "Unknown Service Account", "read"),
 ];
 
@@ -174,7 +174,7 @@ describe("access CLI helper", () => {
 
     expect(tableSummary(tables[0])).toEqual([
       "Release agent | agent | write",
-      "Roadmap API key | service account | write",
+      "Roadmap API access | resource-bound | write",
       "CI export | service account | read",
       "Unknown Service Account | service account | read",
       "Valentin Kolb | user | read",

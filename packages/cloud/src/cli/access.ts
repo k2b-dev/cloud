@@ -236,7 +236,9 @@ export const resolveAccessPrincipal = async (
 
 const entryTypeLabel = (entry: AccessEntry): string => {
   if (entry.principal.type !== "service_account") return entry.principal.type;
-  return entry.serviceAccountKind === "agent" ? "agent" : "service account";
+  if (entry.serviceAccountKind === "agent") return "agent";
+  if (entry.serviceAccountKind === "resource_bound") return "resource-bound";
+  return "service account";
 };
 
 // Resource-bound service accounts back resource API keys, which are managed with those keys.

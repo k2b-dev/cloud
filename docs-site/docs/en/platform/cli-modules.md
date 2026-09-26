@@ -548,9 +548,11 @@ explicitly enables them. Principal search uses the same Accounts endpoint as
 `access list` prints direct grants. Its table labels service accounts as
 `agent` or `service account` and hides grants whose `serviceAccountKind` is
 `resource_bound`, which belong to resource API keys, unless the caller passes
-`--include-service-accounts`. JSON output always contains every entry. Return
-entries from `resolveDisplayNames()`, or set `serviceAccountKind` yourself, so
-the table can tell these accounts apart.
+`--include-service-accounts`; those rows then show the type
+`resource-bound`. JSON output always contains every entry. Return entries
+from `resolveDisplayNames()`, or set `serviceAccountKind` yourself, so the
+table can tell these accounts apart. An entry without `serviceAccountKind` is
+shown as `service account`.
 
 The CLI package also exports the helpers used by the generated commands:
 
