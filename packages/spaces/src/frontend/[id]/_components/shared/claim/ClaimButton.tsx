@@ -69,6 +69,7 @@ export default function ClaimButton(props: Props) {
           <IconButton
             data-spaces-claim-action={current()}
             label={label()}
+            tooltip={label()}
             size="sm"
             class={props.class}
             onClick={run}

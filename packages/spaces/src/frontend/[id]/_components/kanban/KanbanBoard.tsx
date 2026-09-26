@@ -26,7 +26,6 @@ import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelecti
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
-import ClaimAvatar from "../shared/claim/ClaimAvatar";
 import ClaimButton from "../shared/claim/ClaimButton";
 import { claimTask, ownClaimId, releaseTask } from "../shared/claim/claim";
 import { isInactiveTask } from "../shared/item-activity";
@@ -955,12 +954,12 @@ export default function KanbanBoard(props: Props) {
                                         {dates.formatDateRelative(item.deadline!, props.dateConfig)}
                                       </span>
                                     </Show>
-                                    <Show when={item.assignees && item.assignees.length > 0}>
-                                      <AssigneeAvatars assignees={item.assignees!} max={3} />
-                                    </Show>
-                                    <Show when={item.claim}>
-                                      {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId} />}
-                                    </Show>
+                                    <AssigneeAvatars
+                                      assignees={item.assignees ?? []}
+                                      claim={item.claim}
+                                      currentUserId={props.currentUserId}
+                                      max={3}
+                                    />
                                     <Show when={isInactiveTask(item)}>
                                       <span
                                         class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"

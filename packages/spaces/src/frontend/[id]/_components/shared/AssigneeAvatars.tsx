@@ -1,10 +1,15 @@
 import { Avatar, type AvatarSize } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
-import type { SpaceItemAssignee } from "@/contracts";
+import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
+import ClaimAvatar from "./claim/ClaimAvatar";
 
 type Props = {
   assignees: SpaceItemAssignee[];
+  /** The claim holder leads the stack with its success ring, appears once, and never folds into the overflow. */
+  claim?: SpaceItemClaim | null;
+  currentUserId?: string;
+  /** Visible avatars including the claim holder; the rest collapse into `+N`. */
   max?: number;
   size?: AvatarSize;
   showNames?: boolean;
@@ -25,14 +30,19 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
 export default function AssigneeAvatars(props: Props) {
   const max = () => props.max ?? 3;
   const size = () => props.size ?? "xs";
-  const visible = () => props.assignees.slice(0, max());
-  const hiddenCount = () => Math.max(props.assignees.length - visible().length, 0);
+  const holderId = () => (props.claim?.actor.kind === "user" ? props.claim.actor.id : null);
+  const others = () => props.assignees.filter((assignee) => assignee.id !== holderId());
+  const visible = () => others().slice(0, Math.max(max() - (props.claim ? 1 : 0), 0));
+  const hiddenCount = () => others().length - visible().length;
   const names = () => props.assignees.map((assignee) => assignee.displayName).join(", ");
 
   return (
-    <Show when={props.assignees.length > 0} fallback={props.empty ?? null}>
-      <div class={`flex min-w-0 items-center gap-2 ${props.class ?? ""}`} title={names()}>
+    <Show when={props.assignees.length > 0 || props.claim} fallback={props.empty ?? null}>
+      <div class={`flex min-w-0 items-center gap-2 ${props.class ?? ""}`} title={names() || undefined}>
         <div class="flex shrink-0 -space-x-1">
+          <Show when={props.claim}>
+            {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId ?? ""} size={size()} />}
+          </Show>
           <For each={visible()}>
             {(assignee) => (
               <Avatar

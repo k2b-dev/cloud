@@ -187,18 +187,26 @@ describe("Spaces item detail panel", () => {
     expect(own.match(/data-spaces-claim-action/g)).toHaveLength(1);
     expect(own).toContain('aria-label="Work and handoff"');
     expect(own).toContain('data-own-claim="true"');
-    expect(own).toContain("Release the claim when you stop");
     expect(own).not.toContain('data-spaces-claim-action="claim"');
 
+    // The holder uses the assignee row: extra-small avatar with the success ring inside it, plain name, and the claim time.
     const foreign = renderPanel({ item: { ...task, claim } });
     expect(foreign).toContain('title="Mira Beck is on it"');
-    expect(foreign).toContain("Complete or move the task once the claim is released.");
+    expect(foreign).toContain(
+      '<span class="k2b-avatar border-2 border-[var(--k2b-success-text)]" data-size="xs" style="" role="img" aria-label="Mira Beck is on it">MB</span><span class="min-w-0 flex-1 truncate text-sm">Mira Beck</span>',
+    );
+    expect(foreign).toContain(`<time datetime="${now}">`);
     expect(foreign).not.toContain("data-spaces-claim-action");
 
+    // No help sentence in the section; the take-over explanation lives in its confirmation dialog.
     const admin = renderPanel({ item: { ...task, claim }, isAdmin: true });
     expect(admin).toContain('data-spaces-claim-action="take-over"');
-    expect(admin).toContain("Take over releases the claim of Mira Beck");
+    expect(admin).not.toContain("Take over releases the claim");
     expect(admin.match(/data-spaces-claim-action/g)).toHaveLength(1);
+    for (const html of [own, foreign, admin]) {
+      expect(html).not.toContain("Release the claim when you stop");
+      expect(html).not.toContain("once the claim is released");
+    }
 
     const german = renderPanel({ item: { ...task, claim }, isAdmin: true }, "de");
     expect(german).toContain("Mira Beck arbeitet daran");
