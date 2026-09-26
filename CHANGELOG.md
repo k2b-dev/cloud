@@ -3,6 +3,13 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.19.1](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.0...cloud-v0.19.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **grids:** keep the workspace revision header out of the server module the browser bundles ([#270](https://github.com/k2b-dev/cloud/issues/270)) ([3093e2d](https://github.com/k2b-dev/cloud/commit/3093e2d94cc955f79a6f0f936110705c6b202d38))
+
 ## [0.19.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.18.0...cloud-v0.19.0) (2026-09-26)
 
 
