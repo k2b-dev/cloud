@@ -13,7 +13,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 
 1. On a new machine, sign in with `cld login --server <Cloud URL>`. On a machine without a browser, such as a server reached over SSH, use `cld login --server <Cloud URL> --device`. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
 2. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
-3. Run `cld help` to discover the installed CLI modules, then `cld <app> reference` and `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Every app module, built-in or third-party, is a `cld` plugin served by the Cloud; `cld plugins list` shows what the Cloud serves, what is installed, and what needs an update. A missing module says `run cld plugins install <name>`; do that when the task needs it.
+3. Run `cld help` to discover the installed CLI modules, then `cld <app> reference` and `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Help never runs a command, so `cld logout --help` or `cld profile set --help` is safe too. Every app module, built-in or third-party, is a `cld` plugin served by the Cloud; `cld plugins list` shows what the Cloud serves, what is installed, and what needs an update. A missing module says `run cld plugins install <name>`; do that when the task needs it.
 4. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
 
 ## How every `cld` module is organized

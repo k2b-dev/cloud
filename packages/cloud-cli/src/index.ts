@@ -127,6 +127,8 @@ type GlobalArgs = {
   fd0Scope?: string;
   output: "text" | "json" | "jsonl";
   locale: string;
+  /** `--help` or `-h` before the command: print its help instead of running it. */
+  help: boolean;
   rest: string[];
 };
 
@@ -304,6 +306,7 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
     fd0Scope: takeStringFlag(parsed.flags, "fd0-scope"),
     output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : "text",
     locale,
+    help: takeBooleanFlag(parsed.flags, "help", "h"),
     rest,
   };
 };
@@ -1015,6 +1018,7 @@ Global options:
   --locale <tag>          Human text locale (default: CLD_LOCALE or en)
   --json                  Print JSON where supported
   --jsonl                 Stream one JSON event per line where supported
+  -h, --help              Print the command's help instead of running it
 
 Modules (installed for the current profile; every Cloud app serves its own):
 ${moduleList(locale, pluginModules)}
@@ -1051,6 +1055,7 @@ Globale Optionen:
   --locale <Tag>          Sprache für menschenlesbaren Text (Standard: CLD_LOCALE oder en)
   --json                  JSON ausgeben, sofern unterstützt
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
+  -h, --help              Hilfe des Befehls ausgeben, statt ihn auszuführen
 
 Module (für das aktuelle Profil installiert; jede Cloud-App stellt ihr eigenes bereit):
 ${moduleList(locale, pluginModules)}
@@ -1096,6 +1101,78 @@ Verwendung:
 Ein Agent-Profil mit OAuth-Client-Zugangsdaten schreibt
 \`cld admin agents create <Name> --profile <Profil>\`; cld holt und erneuert
 seine Access-Tokens selbst. \`cld logout --profile <Profil>\` entfernt sie lokal.
+`,
+  );
+
+const logoutHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld logout
+
+Usage:
+  cld logout [--profile <name>]
+
+Signs a profile out (default: the current profile). An OAuth login is revoked
+at the Cloud and removed locally, together with a refresh token kept in fd0.
+An agent profile's client credentials are removed locally only; an
+administrator revokes the agent with \`cld admin agents revoke\`. A token,
+token file, token command, or fd0 token set with \`cld profile set\` stays.
+`,
+    `cld logout
+
+Verwendung:
+  cld logout [--profile <Name>]
+
+Meldet ein Profil ab (Standard: aktuelles Profil). Eine OAuth-Anmeldung wird bei
+der Cloud widerrufen und lokal entfernt, zusammen mit einem Refresh-Token in fd0.
+Die Client-Zugangsdaten eines Agent-Profils werden nur lokal entfernt; ein
+Administrator widerruft den Agent mit \`cld admin agents revoke\`. Ein Token,
+eine Token-Datei, ein Token-Befehl oder ein fd0-Token aus \`cld profile set\`
+bleibt erhalten.
+`,
+  );
+
+const authHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld auth
+
+Usage:
+  cld auth [status] [--profile <name>] [--json]
+
+Shows how a profile signs in (default: the current profile): its server, the
+kind of credential, when the OAuth access token expires, and where the refresh
+token or client secret is stored. It never prints a secret.
+`,
+    `cld auth
+
+Verwendung:
+  cld auth [status] [--profile <Name>] [--json]
+
+Zeigt, wie sich ein Profil anmeldet (Standard: aktuelles Profil): seinen Server,
+die Art der Zugangsdaten, wann das OAuth-Access-Token abläuft und wo das
+Refresh-Token oder Client-Secret liegt. Ein Secret gibt es nie aus.
+`,
+  );
+
+const versionHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld version
+
+Usage:
+  cld version
+  cld --version
+
+Prints the release and commit of this cld.
+`,
+    `cld version
+
+Verwendung:
+  cld version
+  cld --version
+
+Gibt Release und Commit dieses cld aus.
 `,
   );
 
@@ -1204,10 +1281,6 @@ const confirmCliUpdate = async (message: string): Promise<boolean> => {
 
 const runUpdateCommand = async (args: string[], locale: string): Promise<number> => {
   const parsed = parseArgs(args);
-  if (isModuleHelpRequest(parsed.args, parsed.flags)) {
-    printLine(updateHelp(locale));
-    return 0;
-  }
   if (parsed.args.length > 0)
     throw new CliError(
       "Usage: cld update [--version <version>] [--yes] [--no-verify] [--no-skills] [--skills-dir <dir>] [--claude-symlink]",
@@ -1493,7 +1566,7 @@ const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<num
   const locale = global.locale;
   const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
   const [command, target, ...extra] = parsed.args;
-  if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
+  if (!command) {
     printLine(skillsHelp(locale));
     return 0;
   }
@@ -1810,7 +1883,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
   }
   const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y", "all"]));
   const [command, ...targets] = parsed.args;
-  if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
+  if (!command) {
     printLine(pluginsHelp(locale));
     return 0;
   }
@@ -2006,7 +2079,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
 
 const runProfileCommand = async (args: string[], locale: string): Promise<number> => {
   const [command, maybeName, ...rest] = args;
-  if (!command || command === "help") {
+  if (!command) {
     printLine(profileHelp(locale));
     return 0;
   }
@@ -2587,10 +2660,6 @@ const storeOAuthLogin = async (params: {
 };
 
 const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
-  if (args[0] === "help" || args.includes("--help") || args.includes("-h")) {
-    printLine(loginHelp(global.locale));
-    return 0;
-  }
   const [maybeName, ...rest] = args;
   const config = await loadConfig();
   const name = maybeName && !maybeName.startsWith("-") ? maybeName : (global.profile ?? config.currentProfile ?? DEFAULT_PROFILE);
@@ -2782,13 +2851,48 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
   return 0;
 };
 
+const runVersionCommand = async (args: string[]): Promise<number> => {
+  if (args.length > 0) throw new CliError("Usage: cld version", 1, "Verwendung: cld version");
+  printLine(`cld ${cliVersion} (${cliCommit})`);
+  return 0;
+};
+
+type CoreCommand = {
+  help: (locale: string) => string;
+  run: (args: string[], global: GlobalArgs) => Promise<number>;
+};
+
+/** The built-in commands besides `help`. `main` answers a help request before a command reads or changes anything. */
+const coreCommands = new Map<string, CoreCommand>([
+  ["login", { help: loginHelp, run: runLoginCommand }],
+  ["logout", { help: logoutHelp, run: runLogoutCommand }],
+  ["auth", { help: authHelp, run: runAuthCommand }],
+  ["profile", { help: profileHelp, run: (args, global) => runProfileCommand(args, global.locale) }],
+  ["update", { help: updateHelp, run: (args, global) => runUpdateCommand(args, global.locale) }],
+  ["plugins", { help: pluginsHelp, run: runPluginsCommand }],
+  ["skills", { help: skillsHelp, run: runSkillsCommand }],
+  ["version", { help: versionHelp, run: runVersionCommand }],
+]);
+
+/**
+ * A core command asks for help like a module command: `-h` or `--help`
+ * anywhere, or `help` as the first or last argument. Everything after
+ * `cld plugins run <name>` belongs to the plugin, which answers its own help.
+ */
+const isCoreHelpRequest = (command: string, args: readonly string[]): boolean => {
+  const own = command === "plugins" && args[0] === "run" ? args.slice(0, 2) : args;
+  return own.some((arg) => /^-+(h|help)$/.test(arg)) || own[0] === "help" || own.at(-1) === "help";
+};
+
 export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (argv.length === 1 && ["--version", "-V", "version"].includes(argv[0]!)) {
     printLine(`cld ${cliVersion} (${cliCommit})`);
     return 0;
   }
   const global = parseGlobalArgs(argv);
-  const [moduleName, ...moduleArgs] = global.rest;
+  const [moduleName, ...commandArgs] = global.rest;
+  // `cld --help <command> ...` asks for the same help as `cld <command> --help`.
+  const moduleArgs = global.help ? ["--help"] : commandArgs;
 
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
     const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
@@ -2806,13 +2910,12 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
     return 0;
   }
 
-  if (moduleName === "login") return runLoginCommand(moduleArgs, global);
-  if (moduleName === "logout") return runLogoutCommand(moduleArgs, global);
-  if (moduleName === "auth") return runAuthCommand(moduleArgs, global);
-  if (moduleName === "profile") return runProfileCommand(moduleArgs, global.locale);
-  if (moduleName === "update") return runUpdateCommand(moduleArgs, global.locale);
-  if (moduleName === "plugins") return runPluginsCommand(moduleArgs, global);
-  if (moduleName === "skills") return runSkillsCommand(moduleArgs, global);
+  const core = coreCommands.get(moduleName);
+  if (core) {
+    if (!isCoreHelpRequest(moduleName, moduleArgs)) return core.run(moduleArgs, global);
+    printLine(core.help(global.locale));
+    return 0;
+  }
 
   if (moduleArgs[0] === "reference" && !reservedNames.has(moduleName)) {
     const locked = await lockedPlugin(moduleName, global);

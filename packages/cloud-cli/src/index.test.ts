@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installFirstPartyModules } from "../test/fixtures/first-party";
@@ -1334,5 +1334,98 @@ exit 1
     const payload = JSON.parse(result.stderr) as { error: { message: string; exitCode: number } };
     expect(payload.error.message).toContain("No server configured");
     expect(payload.error.exitCode).toBe(1);
+  });
+});
+
+/** Every path below `dir` with each file's content, to prove that a command changed nothing. */
+const snapshotTree = async (dir: string): Promise<Record<string, string>> =>
+  Object.fromEntries(
+    await Promise.all(
+      (await readdir(dir, { recursive: true })).sort().map(async (path) => {
+        const full = join(dir, path);
+        return [path, (await stat(full)).isDirectory() ? "<directory>" : await readFile(full, "utf8")] as const;
+      }),
+    ),
+  );
+
+describe("core command help", () => {
+  test("every core command prints its help for --help and -h and leaves the config unchanged", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cld-cli-test-"));
+    tempDirs.push(dir);
+    const configPath = join(dir, "config.json");
+    const server = "http://127.0.0.1:9";
+    const skillsTarget = join(dir, "skills");
+    await writeConfig(configPath, {
+      currentProfile: "default",
+      profiles: {
+        default: {
+          server,
+          oauth: { accessToken: "access", accessTokenExpiresAt: "2099-01-01T00:00:00.000Z", refreshToken: "refresh" },
+          plugins: { inventory: { app: "inventory", version: "1.0.0", digest: "a".repeat(128), summary: "Inventory" } },
+        },
+        other: { server, token: "static-token" },
+      },
+      skills: { targets: [skillsTarget] },
+    });
+    const before = await snapshotTree(dir);
+
+    const commands = [
+      ["login", "--device"],
+      ["login", "work", "--server", server, "--device"],
+      ["logout"],
+      ["logout", "--profile", "other"],
+      ["auth"],
+      ["auth", "status"],
+      ["profile"],
+      ["profile", "list"],
+      ["profile", "show", "other"],
+      ["profile", "use", "other"],
+      ["profile", "set", "other", "--token", "replacement"],
+      ["update", "--yes"],
+      ["plugins"],
+      ["plugins", "list"],
+      ["plugins", "install", "--all"],
+      ["plugins", "update"],
+      ["plugins", "remove", "inventory"],
+      ["plugins", "run"],
+      ["skills"],
+      ["skills", "list"],
+      ["skills", "add", join(dir, "more-skills")],
+      ["skills", "remove", skillsTarget],
+      ["skills", "sync"],
+      ["version"],
+    ];
+    const requests = [
+      ...commands.flatMap((command) => ["--help", "-h"].map((flag) => ({ command: command[0]!, args: [...command, flag] }))),
+      // Help before the command, a trailing `help`, and `-h` in the middle mean the same.
+      { command: "logout", args: ["--help", "logout"] },
+      { command: "profile", args: ["-h", "profile", "set", "other", "--token", "replacement"] },
+      { command: "logout", args: ["logout", "help"] },
+      { command: "profile", args: ["profile", "set", "other", "help"] },
+      { command: "skills", args: ["skills", "remove", "-h", skillsTarget] },
+    ];
+
+    for (const { command, args } of requests) {
+      const result = await runCli(configPath, args);
+      expect({ args, exitCode: result.exitCode, stderr: result.stderr }).toEqual({ args, exitCode: 0, stderr: "" });
+      expect(result.stdout, args.join(" ")).toStartWith(`cld ${command}\n\nUsage:\n`);
+    }
+    expect(await snapshotTree(dir)).toEqual(before);
+  }, 60_000);
+
+  test("help before a module command, or after `plugins run <name>`, reaches the module's help without a server", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    const results = await Promise.all([
+      runCli(configPath, ["--help", "notebooks", "ls"]),
+      runCli(configPath, ["plugins", "run", "notebooks", "--help"]),
+    ]);
+
+    for (const result of results) {
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toStartWith("cld notebooks");
+    }
   });
 });
