@@ -9,7 +9,7 @@ import type {
 } from "../api/documents-api-shared";
 import type { PublicBase as Base, PublicTable as Table } from "../api/public-dto";
 import { CreateDocumentTemplateSchema, type DocumentLink, type DocumentTemplateRenderer, UpdateDocumentTemplateSchema } from "../contracts";
-import { resolveBaseFromCommand, resolveNamedResource, resolveTable } from "./resources";
+import { resolveNamedResource, resolveTableScopeFromCommand } from "./resources";
 import { applyDefined, queryString, readApi, readJsonInput, readTextInput } from "./runtime";
 
 export const documentTemplateFlag = {
@@ -232,13 +232,8 @@ export const resolveDocumentTemplateFromCommand = async (
   args: string[],
   refs: { table?: string; template?: string },
 ): Promise<{ base: Base; table: Table | null; template: PublicDocumentTemplateSummary }> => {
-  const { base, rest } = await resolveBaseFromCommand(ctx, args, refs.table || refs.template ? 0 : 2);
-  const table = refs.table
-    ? await resolveTable(ctx, base.id, refs.table)
-    : rest.length >= 2
-      ? await resolveTable(ctx, base.id, rest[0]!)
-      : null;
-  const templateRef = refs.template ?? (table ? rest[1] : rest[0]);
+  const { base, table, rest } = await resolveTableScopeFromCommand(ctx, args, { table: refs.table, item: refs.template });
+  const templateRef = refs.template ?? rest[0];
   if (!templateRef) throw new Error("Missing document template.");
   return { base, table, template: await resolveDocumentTemplate(ctx, table, templateRef) };
 };
@@ -248,13 +243,8 @@ export const resolveFullDocumentTemplateFromCommand = async (
   args: string[],
   refs: { table?: string; template?: string },
 ): Promise<{ base: Base; table: Table | null; template: PublicDocumentTemplate }> => {
-  const { base, rest } = await resolveBaseFromCommand(ctx, args, refs.table || refs.template ? 0 : 2);
-  const table = refs.table
-    ? await resolveTable(ctx, base.id, refs.table)
-    : rest.length >= 2
-      ? await resolveTable(ctx, base.id, rest[0]!)
-      : null;
-  const templateRef = refs.template ?? (table ? rest[1] : rest[0]);
+  const { base, table, rest } = await resolveTableScopeFromCommand(ctx, args, { table: refs.table, item: refs.template });
+  const templateRef = refs.template ?? rest[0];
   if (!templateRef) throw new Error("Missing document template.");
   return { base, table, template: await resolveFullDocumentTemplate(ctx, table, templateRef) };
 };

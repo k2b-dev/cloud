@@ -9,8 +9,9 @@ import {
   baseFlag,
   resolveBaseFromCommand,
   resolveField,
-  resolveTable,
+  resolveTableFromCommand,
   resolveTableFromFlags,
+  resolveTableScopeFromCommand,
   tableArgs,
   tableFlag,
 } from "./resources";
@@ -29,7 +30,6 @@ import {
   readApiText,
   readJsonInput,
   readTextInput,
-  requireRestArg,
 } from "./runtime";
 import {
   collectGqlResultPages,
@@ -302,8 +302,7 @@ export const formulaCommands = [
       currentField: flag.string({ name: "current-field", description: "Current formula field public id or exact name" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const expression = await readTextInput(flags.expression, "formula expression", true);
       const currentField = flags.currentField ? await resolveField(ctx, table.id, flags.currentField) : null;
       const payload = await readApi<FormulaPreviewResponse>(
@@ -341,8 +340,7 @@ export const viewCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const views = await listViews(ctx, table.id);
       printJsonOrTable(ctx, views, viewRows(views), [
         { key: "id", label: "ID" },
@@ -358,15 +356,8 @@ export const viewCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, ...viewFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table || flags.view ? 0 : 2);
-      const table = flags.table
-        ? await resolveTable(ctx, base.id, flags.table)
-        : rest.length >= 2
-          ? await resolveTable(ctx, base.id, rest[0]!)
-          : null;
-      const view = flags.view
-        ? await resolveOptionalView(ctx, table, flags.view)
-        : await resolveOptionalView(ctx, table, table ? rest[1] : rest[0]);
+      const { table, rest } = await resolveTableScopeFromCommand(ctx, args.args, { table: flags.table, item: flags.view });
+      const view = await resolveOptionalView(ctx, table, flags.view ?? rest[0]);
       if (!view) throw new Error("Missing view.");
       if (!printCliStructured(ctx, view)) {
         ctx.print(`${view.name} (${view.id})`);
@@ -391,8 +382,7 @@ export const viewCommands = [
       shared: flag.boolean({ description: "Create a shared view" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "view JSON", false)) ?? {};
       applyDefined(body, {
         name: flags.name,
@@ -421,15 +411,8 @@ export const viewCommands = [
       personal: flag.boolean({ description: "Make the view personal" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table || flags.view ? 0 : 2);
-      const table = flags.table
-        ? await resolveTable(ctx, base.id, flags.table)
-        : rest.length >= 2
-          ? await resolveTable(ctx, base.id, rest[0]!)
-          : null;
-      const view = flags.view
-        ? await resolveOptionalView(ctx, table, flags.view)
-        : await resolveOptionalView(ctx, table, table ? rest[1] : rest[0]);
+      const { table, rest } = await resolveTableScopeFromCommand(ctx, args.args, { table: flags.table, item: flags.view });
+      const view = await resolveOptionalView(ctx, table, flags.view ?? rest[0]);
       if (!view) throw new Error("Missing view.");
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "view update JSON", false)) ?? {};
       applyDefined(body, {
@@ -448,15 +431,8 @@ export const viewCommands = [
     flags: { ...baseFlag, ...tableFlag, ...viewFlag, yes: confirmFlag("Delete this view") },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to delete.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table || flags.view ? 0 : 2);
-      const table = flags.table
-        ? await resolveTable(ctx, base.id, flags.table)
-        : rest.length >= 2
-          ? await resolveTable(ctx, base.id, rest[0]!)
-          : null;
-      const view = flags.view
-        ? await resolveOptionalView(ctx, table, flags.view)
-        : await resolveOptionalView(ctx, table, table ? rest[1] : rest[0]);
+      const { table, rest } = await resolveTableScopeFromCommand(ctx, args.args, { table: flags.table, item: flags.view });
+      const view = await resolveOptionalView(ctx, table, flags.view ?? rest[0]);
       if (!view) throw new Error("Missing view.");
       await readApi<MessageResponse>(ctx, `/views/${encodeURIComponent(view.id)}`, jsonRequest("DELETE"));
       printJsonOrMessage(ctx, { deleted: view.id }, `Deleted view ${view.name} (${view.id}).`);

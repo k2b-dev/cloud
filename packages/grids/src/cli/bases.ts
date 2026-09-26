@@ -81,24 +81,6 @@ const trashRows = (trash: BaseTrash) => [
 ];
 
 export const baseCrudCommands = [
-  command("list", {
-    summary: "List Grids bases",
-    flags: {
-      q: flag.string({ aliases: ["query"], description: "Search bases" }),
-      ...paginationFlags({ defaultPerPage: 100, maxPerPage: 500 }),
-    },
-    async run({ ctx, flags }) {
-      const perPage = flags.perPage ?? 100;
-      const page = flags.page ?? 1;
-      const payload = await listBases(ctx, { q: flags.q, limit: perPage, offset: (page - 1) * perPage });
-      printJsonOrTable(ctx, payload, baseRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "name", label: "NAME" },
-        { key: "description", label: "DESCRIPTION" },
-        { key: "updatedAt", label: "UPDATED" },
-      ]);
-    },
-  }),
   command("use", {
     summary: "Set the default Grids base",
     args: { base: arg.required({ description: "Base public id or exact name" }) },
@@ -117,7 +99,7 @@ export const baseCrudCommands = [
       printJsonOrMessage(ctx, { base, defaultBase: id }, `${base.name} (${id})`);
     },
   }),
-  command("bases list", {
+  command("bases ls", {
     summary: "List Grids bases",
     flags: {
       q: flag.string({ aliases: ["query"], description: "Search bases" }),
@@ -135,10 +117,11 @@ export const baseCrudCommands = [
       ]);
     },
   }),
-  command("bases get", {
+  command("bases show", {
     summary: "Show a Grids base",
     args: baseArgs,
     flags: baseFlag,
+    examples: ["cld grids bases show Bookshop --json"],
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       if (!printCliStructured(ctx, base)) {
@@ -572,7 +555,7 @@ export const baseCrudCommands = [
       printJsonOrMessage(ctx, hold, `Released preservation hold ${hold.id} for ${base.name} (${base.id}).`);
     },
   }),
-  command("bases create", {
+  command("bases add", {
     summary: "Create a Grids base",
     args: { name: arg.required({ description: "Base name" }) },
     flags: {
@@ -586,7 +569,7 @@ export const baseCrudCommands = [
       printJsonOrMessage(ctx, base, `Created ${base.name} (${id}).${flags.use ? " Using it as default." : ""}`);
     },
   }),
-  command("bases update", {
+  command("bases set", {
     summary: "Update a Grids base",
     args: baseArgs,
     flags: {
@@ -606,10 +589,11 @@ export const baseCrudCommands = [
       printJsonOrMessage(ctx, updated, `Updated ${updated.name} (${updated.id}).`);
     },
   }),
-  command("bases delete", {
+  command("bases rm", {
     summary: "Delete a Grids base",
     args: baseArgs,
     flags: { ...baseFlag, yes: confirmFlag("Delete this Grids base") },
+    examples: ["cld grids bases rm Bookshop --yes"],
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to delete.");
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);

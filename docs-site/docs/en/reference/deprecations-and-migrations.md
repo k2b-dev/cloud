@@ -10,6 +10,24 @@ updated: 2026-09-26
 
 # Deprecations and migrations
 
+## Grids CLI commands
+
+The `cld grids` commands for bases, tables, and records use the shared `cld`
+verbs. The old names are removed without aliases; scripts must switch to the
+new names. Arguments, flags, and `--json` output are unchanged, and every base,
+table, or record argument now also accepts an address such as
+`<base>:<table>/<record id>`. See
+[Grids](/en/apps/grids#automate-grids-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list`, `bases list` | `bases ls` |
+| `bases get`, `tables get`, `records get` | `bases show`, `tables show`, `records show` |
+| `bases create`, `tables create`, `records create` | `bases add`, `tables add`, `records add` |
+| `bases update`, `tables update`, `records update` | `bases set`, `tables set`, `records set` |
+| `bases delete`, `tables delete`, `records delete` | `bases rm`, `tables rm`, `records rm` |
+| `tables list`, `records list` | `tables ls`, `records ls` |
+
 ## Mail CLI commands
 
 The everyday `cld mail` commands use the shared verbs and addresses. The old
@@ -658,7 +676,6 @@ no compatibility renderer. Use `createNavigation` and let the host render
 `Navigation`; Cloud applications bind it through `WorkspaceNavigationProvider`
 or the SSR `WorkspaceNavigation` island. Keep `SidebarDesktop` for desktop.
 See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
-
 
 ## Capability protocol 2
 

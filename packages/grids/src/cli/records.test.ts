@@ -3,7 +3,7 @@ import { composeRecordExportBody, composeRecordListBody, recordCommands } from "
 
 describe("record CLI structured body precedence", () => {
   test("does not populate composable flags with parser defaults", () => {
-    const list = recordCommands.find((command) => command.path.join(" ") === "records list");
+    const list = recordCommands.find((command) => command.path.join(" ") === "records ls");
     const exportRecords = recordCommands.find((command) => command.path.join(" ") === "records export");
     const listLimit = list?.flags?.limit;
     const exportFormat = exportRecords?.flags?.format;

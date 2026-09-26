@@ -22,7 +22,18 @@ import {
   resolveFullDocumentTemplate,
   resolveFullDocumentTemplateFromCommand,
 } from "./documents-support";
-import { baseArgs, baseFlag, requirePublicId, resolveBaseFromCommand, resolveTable, tableArgs, tableFlag } from "./resources";
+import {
+  baseArgs,
+  baseFlag,
+  recordArgs,
+  requirePublicId,
+  resolveBaseFromCommand,
+  resolveRecordFromCommand,
+  resolveTable,
+  resolveTableFromCommand,
+  tableArgs,
+  tableFlag,
+} from "./resources";
 import {
   applyDefined,
   JSON_BODY_INPUT,
@@ -35,7 +46,6 @@ import {
   queryString,
   readApi,
   readJsonInput,
-  requireRestArg,
   writeApiFile,
 } from "./runtime";
 
@@ -82,8 +92,7 @@ export const documentTemplateCommands = [
       full: flag.boolean({ description: "Return full templates; requires table admin access" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const templates = await listDocumentTemplates(ctx, table.id, { full: flags.full, min: flags.min });
       printJsonOrTable(ctx, templates, documentTemplateRows(templates), [
         { key: "id", label: "ID" },
@@ -134,8 +143,7 @@ export const documentTemplateCommands = [
       "cld grids document-templates create --base Bookshop --table Labels --body-file label-template.json",
     ],
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "document template JSON", false)) ?? {};
       applyDefined(body, {
         name: flags.name,
@@ -268,9 +276,8 @@ export const documentTemplateCommands = [
       filenameTemplate: flag.string({ name: "filename-template", description: "Liquid filename pattern" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const templateRef = flags.template ?? (flags.table ? rest[0] : rest[1]);
+      const { table, rest } = await resolveTableFromCommand(ctx, args.args);
+      const templateRef = flags.template ?? rest[0];
       const template = templateRef ? await resolveFullDocumentTemplate(ctx, table, templateRef) : null;
       const body = await readDraftTemplateBody(flags, template);
       const endpoint = template
@@ -299,9 +306,8 @@ export const documentTemplateCommands = [
       out: flag.string({ description: "Output PDF path" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const templateRef = flags.template ?? (flags.table ? rest[0] : rest[1]);
+      const { table, rest } = await resolveTableFromCommand(ctx, args.args);
+      const templateRef = flags.template ?? rest[0];
       const template = templateRef ? await resolveFullDocumentTemplate(ctx, table, templateRef) : null;
       const body = await readDraftTemplateBody(flags, template);
       const endpoint = template
@@ -542,12 +548,10 @@ export const documentCommands = [
   }),
   command("documents by-record", {
     summary: "List generated documents for one record",
-    args: tableArgs,
+    args: recordArgs,
     flags: { ...baseFlag, ...tableFlag, record: flag.string({ description: "Record public id" }) },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table && flags.record ? 0 : 2);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const recordId = requirePublicId(flags.record ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "record"), "Record id");
+      const { table, recordId } = await resolveRecordFromCommand(ctx, args.args);
       const payload = await readApi<PublicDocumentList>(
         ctx,
         `/documents/by-record/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}`,

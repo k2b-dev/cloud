@@ -51,7 +51,7 @@ a universal reset value.
 
 ## Table options
 
-`tables create` accepts the following body. `tables update` accepts the same
+`tables add` accepts the following body. `tables set` accepts the same
 properties except `kind` and adds `auditPolicy` and `disableDirectInsert`.
 
 | Property | Input and behavior |
@@ -90,16 +90,16 @@ for draft tokens, candidates, mappings, publication, and revocation.
 
 ## History, finalization, and allowed changes
 
-These are dedicated operations, not properties to add to `tables update`:
+These are dedicated operations, not properties to add to `tables set`:
 
 ```bash
-cld grids tables history Operations Invoices --json
-cld grids tables history enable Operations Invoices --yes
-cld grids tables finalization Operations Invoices --json
-cld grids tables finalization enable Operations Invoices --mode direct --yes
-cld grids tables mutation-policy Operations Invoices --json
-cld grids tables mutation-policy impact Operations Invoices --allow form,workflow --json
-cld grids tables mutation-policy set Operations Invoices --allow form,workflow
+cld grids tables history Operations:Invoices --json
+cld grids tables history enable Operations:Invoices --yes
+cld grids tables finalization Operations:Invoices --json
+cld grids tables finalization enable Operations:Invoices --mode direct --yes
+cld grids tables mutation-policy Operations:Invoices --json
+cld grids tables mutation-policy impact Operations:Invoices --allow form,workflow --json
+cld grids tables mutation-policy set Operations:Invoices --allow form,workflow
 ```
 
 - **Durable History:** opt-in for stored tables; enabling is irreversible.
@@ -176,7 +176,7 @@ Submit mutation audit answers as
 alongside the operation's ordinary body; select answers contain the option
 UUID. Each answer is a string up to 10,000 characters. For the record-update
 HTTP API, the body is `{values, audit?}` and the optimistic version is an
-`If-Match` header. With `records update`, pass ordinary field values through
+`If-Match` header. With `records set`, pass ordinary field values through
 `--body`, answers through `--audit`, and the current version through
 `--if-version`; the CLI constructs that envelope. Do not put `audit` among
 the record's field values.
@@ -274,8 +274,8 @@ updating that configuration is rejected. Random/UUID/ULID strategies assign
 on creation, not finalization.
 
 ```bash
-cld grids tables history enable Operations Invoices --yes
-cld grids tables finalization enable Operations Invoices --mode direct --yes
+cld grids tables history enable Operations:Invoices --yes
+cld grids tables finalization enable Operations:Invoices --mode direct --yes
 cld grids fields create Operations Invoices --body '{"name":"Invoice number","type":"id","presentable":true,"config":{"strategy":"date_sequence","prefix":"INV-","padding":5,"period":"year","assignment":"finalization"}}'
 ```
 

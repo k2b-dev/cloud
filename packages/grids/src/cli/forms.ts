@@ -1,6 +1,6 @@
 import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { type Form, formFlag, formRows, listForms, resolveFormFromCommand } from "./forms-support";
-import { baseFlag, requirePublicId, resolveBaseFromCommand, resolveTable, tableArgs, tableFlag } from "./resources";
+import { baseFlag, requirePublicId, resolveTableFromCommand, tableArgs, tableFlag } from "./resources";
 import {
   applyDefined,
   JSON_BODY_INPUT,
@@ -11,7 +11,6 @@ import {
   printJsonOrTable,
   readApi,
   readJsonInput,
-  requireRestArg,
 } from "./runtime";
 
 export const formCommands = [
@@ -20,8 +19,7 @@ export const formCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const forms = await listForms(ctx, table.id);
       printJsonOrTable(ctx, forms, formRows(forms), [
         { key: "id", label: "ID" },
@@ -38,8 +36,7 @@ export const formCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const form = await readApi<Form>(ctx, `/forms/by-table/${encodeURIComponent(table.id)}/default`);
       if (!printCliStructured(ctx, form)) {
         ctx.print(`${form.name} (${form.id})`);
@@ -65,7 +62,7 @@ export const formCommands = [
   command("forms create", {
     summary: "Create a custom form",
     description:
-      "Form config fields use field public ids. Run `cld grids fields list <base> <table>` and `cld grids records shape <base> <table>` first.",
+      "Form config fields use field public ids. Run `cld grids fields list <base>:<table>` and `cld grids records shape <base>:<table>` first.",
     args: tableArgs,
     flags: {
       ...baseFlag,
@@ -77,12 +74,11 @@ export const formCommands = [
       private: flag.boolean({ description: "Create without a public submit token" }),
     },
     examples: [
-      'cld grids forms create Bookshop Orders --name \'Checkout\' --config \'{"fields":[{"kind":"user_input","fieldId":"<field-id>"}]}\'',
+      'cld grids forms create Bookshop:Orders --name \'Checkout\' --config \'{"fields":[{"kind":"user_input","fieldId":"<field-id>"}]}\'',
       "cld grids forms create --base Bookshop --table Orders --body-file form.json",
     ],
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "form JSON", false)) ?? {};
       applyDefined(body, {
         name: flags.name,
@@ -157,7 +153,7 @@ export const formCommands = [
       yes: confirmFlag("Save the existing record through this form"),
     },
     examples: [
-      'cld grids forms submit Bookshop Orders Checkout --body \'{"<field-id>":"Ada"}\'',
+      'cld grids forms submit Bookshop:Orders Checkout --body \'{"<field-id>":"Ada"}\'',
       "cld grids forms submit --base Bookshop --table Orders --form Checkout --body-file submission.json",
       "cld grids forms submit --base Bookshop --table Orders --form Checkout --record REC001 --body-file edit.json --yes",
     ],

@@ -90,7 +90,7 @@ Die CLI akzeptiert exakte Namen oder 6-stellige öffentliche IDs. Der Zuordnungs
 **Erstellen, prüfen, veröffentlichen und widerrufen**
 
 ```text
-cld grids tables create Reporting --name "All inventory" --kind federated --json
+cld grids tables add Reporting --name "All inventory" --kind federated --json
 cld grids fields create Reporting "All inventory" --name Name --type text --json
 cld grids tables combined candidates Reporting "All inventory" --json
 cld grids tables combined validate Reporting "All inventory" --body-file combined.json --json
