@@ -14,7 +14,7 @@ import {
 } from "@/contracts";
 import { accountsApiMessages } from "./messages";
 
-const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound"]);
+const ServiceAccountKindSchema = z.enum(["user_delegated", "resource_bound", "standalone", "agent"]);
 const CredentialStatusSchema = z.enum(["active", "revoked"]);
 const CredentialIdParamSchema = z.object({ id: z.uuid() });
 
@@ -58,6 +58,12 @@ const ServiceAccountCredentialOverviewSchema = z.object({
       resourceType: z.string(),
       resourceId: z.string(),
     }),
+    z.object({
+      type: z.literal("standalone"),
+      serviceAccountId: z.string(),
+      name: z.string(),
+      kind: z.enum(["standalone", "agent"]),
+    }),
   ]),
 });
 
@@ -81,7 +87,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Service Accounts"],
       summary: "List service account API keys",
-      description: "List user-bound and resource-bound service-account API keys with admin filters.",
+      description: "List user-bound, resource-bound, and standalone service-account API keys with admin filters.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(ServiceAccountCredentialsListResponseSchema, "Paginated service account credentials"),

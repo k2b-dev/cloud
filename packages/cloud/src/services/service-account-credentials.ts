@@ -5,7 +5,12 @@ import type { User } from "../contracts/shared";
 import { accounts } from "./accounts";
 import { audit } from "./audit";
 import { isUniqueViolation, toPgTextArray } from "./postgres";
-import { type ServiceAccount, serviceAccounts } from "./service-accounts";
+import {
+  isStandaloneServiceAccountKind,
+  type ServiceAccount,
+  type StandaloneServiceAccountKind,
+  serviceAccounts,
+} from "./service-accounts";
 
 export type ServiceAccountCredentialStatus = "active" | "revoked";
 export type ServiceAccountCredentialKind = "api_token";
@@ -46,6 +51,12 @@ export type ServiceAccountCredentialOwner =
       appId: string;
       resourceType: string;
       resourceId: string;
+    }
+  | {
+      type: "standalone";
+      serviceAccountId: string;
+      name: string;
+      kind: StandaloneServiceAccountKind;
     };
 
 export type ServiceAccountCredentialOverview = ServiceAccountCredential & {
@@ -139,28 +150,31 @@ const mapServiceAccount = (row: DbCredentialServiceAccountFields): ServiceAccoun
   createdAt: row.service_account_created_at.toISOString(),
 });
 
+const credentialOwner = (row: DbCredentialOverviewRow, serviceAccount: ServiceAccount): ServiceAccountCredentialOwner => {
+  if (serviceAccount.kind === "user_delegated" && serviceAccount.delegatedUserId) {
+    return {
+      type: "user",
+      userId: serviceAccount.delegatedUserId,
+      uid: row.delegated_uid ?? serviceAccount.delegatedUserId,
+      displayName: row.delegated_display_name ?? "",
+      mail: row.delegated_mail,
+      avatarHash: row.delegated_avatar_hash,
+    };
+  }
+  if (isStandaloneServiceAccountKind(serviceAccount.kind)) {
+    return { type: "standalone", serviceAccountId: serviceAccount.id, name: serviceAccount.name, kind: serviceAccount.kind };
+  }
+  return {
+    type: "resource",
+    appId: serviceAccount.appId ?? "",
+    resourceType: serviceAccount.resourceType ?? "",
+    resourceId: serviceAccount.resourceId ?? "",
+  };
+};
+
 const mapCredentialOverview = (row: DbCredentialOverviewRow): ServiceAccountCredentialOverview => {
   const serviceAccount = mapServiceAccount(row);
-  return {
-    ...mapCredential(row),
-    serviceAccount,
-    owner:
-      serviceAccount.kind === "user_delegated" && serviceAccount.delegatedUserId
-        ? {
-            type: "user",
-            userId: serviceAccount.delegatedUserId,
-            uid: row.delegated_uid ?? serviceAccount.delegatedUserId,
-            displayName: row.delegated_display_name ?? "",
-            mail: row.delegated_mail,
-            avatarHash: row.delegated_avatar_hash,
-          }
-        : {
-            type: "resource",
-            appId: serviceAccount.appId ?? "",
-            resourceType: serviceAccount.resourceType ?? "",
-            resourceId: serviceAccount.resourceId ?? "",
-          },
-  };
+  return { ...mapCredential(row), serviceAccount, owner: credentialOwner(row, serviceAccount) };
 };
 
 const actorForUser = (user: Pick<User, "id" | "uid" | "provider" | "roles">) => ({
@@ -430,6 +444,43 @@ export const createResourceApiToken = async (params: {
         appId: serviceAccount.appId,
         resourceType: serviceAccount.resourceType,
         resourceId: serviceAccount.resourceId,
+        expiresAt: params.expiresAt ?? null,
+      },
+      result,
+      db: tx,
+    });
+  });
+};
+
+/** Static bearer for a standalone principal (kind standalone or agent); the raw token is returned once. */
+export const createStandaloneApiToken = async (params: {
+  serviceAccountId: string;
+  actor: User;
+  name: string;
+  expiresAt?: string | null;
+  scopes?: string[];
+}): Promise<Result<{ credential: ServiceAccountCredential; token: string }>> => {
+  const serviceAccount = await serviceAccounts.get({ id: params.serviceAccountId });
+  if (!serviceAccount || !isStandaloneServiceAccountKind(serviceAccount.kind)) return fail(err.notFound("Service account"));
+  if (serviceAccount.status !== "active") return fail(err.badInput("Service account is disabled"));
+
+  return sql.begin(async (tx) => {
+    const result = await insertApiToken(tx, {
+      serviceAccountId: serviceAccount.id,
+      name: params.name,
+      expiresAt: params.expiresAt,
+      createdBy: params.actor.id,
+      scopes: params.scopes,
+    });
+
+    return audit.recordResult({
+      action: "service_account_credential.create",
+      actor: actorForUser(params.actor),
+      target: { type: "service_account_credential", id: result.ok ? result.data.credential.id : null, label: params.name },
+      metadata: {
+        serviceAccountId: serviceAccount.id,
+        kind: "api_token",
+        serviceAccountKind: serviceAccount.kind,
         expiresAt: params.expiresAt ?? null,
       },
       result,
@@ -880,6 +931,7 @@ export const serviceAccountCredentials = {
   createApiToken,
   createUserApiToken,
   createResourceApiToken,
+  createStandaloneApiToken,
   listForDelegatedUser,
   listOverview,
   getOverview,

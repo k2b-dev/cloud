@@ -8,6 +8,7 @@
 import { defineCliCommands } from "../commands";
 import { accountAdministrationCommands } from "./account-administration";
 import { accountCategoryCommands } from "./account-categories";
+import { agentCommands } from "./agents";
 import { aiQuotaCommands } from "./ai-quotas";
 import { aiSkillCommands } from "./ai-skills";
 import { aiUsageCommands } from "./ai-usage";
@@ -42,6 +43,7 @@ export default defineCliCommands({
     "ai usage": "Inspect AI runs and usage facets.",
     announcements: "Manage platform announcements and banners.",
     "app-credentials": "Manage per-application credentials for background work.",
+    agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials.",
     "app-sign-in": "Manage app sign-in and pairing.",
     apps: "Inspect and remove registered apps.",
     documentation: "Manage the administration documentation website.",
@@ -76,6 +78,7 @@ export default defineCliCommands({
   },
   commands: [
     ...appCredentialCommands,
+    ...agentCommands,
     ...documentationCommands,
     ...appSignInCommands,
     ...accountCategoryCommands,

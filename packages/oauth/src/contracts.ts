@@ -74,6 +74,7 @@ export const OAuthClientWithSecretSchema = OAuthClientSchema.extend({
 export const OAuthClientListQuerySchema = z.object({
   ...PaginationQuerySchema.shape,
   search: z.string().trim().max(200).optional(),
+  serviceAccountId: z.uuid().optional(),
 });
 
 export const OAuthClientListResponseSchema = z.object({

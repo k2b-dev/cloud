@@ -36,7 +36,7 @@ const statusTone = (status: ServiceAccountCredentialOverview["status"]): StatusT
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
   const serviceAccountKindLabel = (kind: ServiceAccountCredentialOverview["serviceAccount"]["kind"]) =>
-    kind === "user_delegated" ? t.userBound : t.resourceBound;
+    kind === "user_delegated" ? t.userBound : kind === "standalone" ? t.standalone : kind === "agent" ? t.agent : t.resourceBound;
   const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
   const user = expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
@@ -52,7 +52,8 @@ export default ssr<AuthContext>(async (c) => {
       pagination: { page, perPage },
       filter: {
         search: search || undefined,
-        serviceAccountKind: kind === "user_delegated" || kind === "resource_bound" ? kind : undefined,
+        serviceAccountKind:
+          kind === "user_delegated" || kind === "resource_bound" || kind === "standalone" || kind === "agent" ? kind : undefined,
         credentialStatus: status === "active" || status === "revoked" ? status : undefined,
       },
     }),
@@ -150,6 +151,16 @@ export default ssr<AuthContext>(async (c) => {
                             </a>
                             <span class="block truncate text-xs text-dimmed">{entry.owner.mail ?? entry.owner.uid}</span>
                           </div>
+                        </div>
+                      );
+                    }
+                    if (entry.owner.type === "standalone") {
+                      return (
+                        <div class="flex min-w-0 flex-col gap-1">
+                          <span class="truncate font-medium text-primary">{entry.owner.name}</span>
+                          <span class="truncate text-xs text-dimmed">
+                            {entry.owner.kind === "agent" ? t.agentServiceAccount : t.standaloneServiceAccount}
+                          </span>
                         </div>
                       );
                     }

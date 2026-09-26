@@ -43,6 +43,28 @@ export type CloudCliContext = {
   /** Print one compact JSON value followed by a newline. */
   jsonLine: (value: unknown) => void;
   table: <TRow extends Record<string, unknown>>(rows: TRow[], columns: CloudCliTableColumn<TRow>[]) => void;
+  /**
+   * The host's local profile store, when it has one. A command that provisions
+   * a machine credential hands the secret here instead of printing it; the host
+   * stores it like a refresh token. Absent in hosts without profiles.
+   */
+  profiles?: {
+    saveClientCredentials: (input: CloudCliClientCredentialsProfile) => Promise<void>;
+  };
+};
+
+/** A profile that signs in with the OAuth client-credentials grant. */
+export type CloudCliClientCredentialsProfile = {
+  /** Profile name in the host's config. */
+  name: string;
+  /** Cloud origin the credentials belong to. */
+  server: string;
+  clientId: string;
+  clientSecret: string;
+  /** Space-separated scopes the client is allowed to request. */
+  scope: string;
+  /** Keep the secret in fd0 under this name instead of the config file. */
+  fd0?: { name: string; scope?: string };
 };
 
 export type CloudCliModule = {

@@ -149,7 +149,14 @@ export default function ManagersTab(props: ManagersTabProps) {
 
               if (item.kind === "service_account") {
                 const serviceAccount = item.serviceAccount;
-                const kindLabel = serviceAccount.kind === "user_delegated" ? messages().userBound : messages().resourceBound;
+                const kindLabel =
+                  serviceAccount.kind === "user_delegated"
+                    ? messages().userBound
+                    : serviceAccount.kind === "standalone"
+                      ? messages().standalone
+                      : serviceAccount.kind === "agent"
+                        ? messages().agent
+                        : messages().resourceBound;
                 const href = props.isAdmin ? `/app/accounts/service-accounts?search=${encodeURIComponent(serviceAccount.name)}` : undefined;
                 if (col.id === "type") return <span class="text-dimmed">{messages().serviceAccount}</span>;
                 if (col.id === "name") {

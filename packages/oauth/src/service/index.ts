@@ -24,9 +24,17 @@ const fromMutation = <T>(result: MutationResult<T>): Result<T> => {
 
 export const oauthService = {
   client: {
-    list: async (config?: { pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<OAuthClient>> => {
+    list: async (config?: {
+      pagination?: PageParams;
+      filter?: { query?: string; serviceAccountId?: string };
+    }): Promise<Paginated<OAuthClient>> => {
       const { page, perPage, offset } = paginate(config?.pagination);
-      const result = await oauth.clients.list({ limit: perPage, offset, query: config?.filter?.query });
+      const result = await oauth.clients.list({
+        limit: perPage,
+        offset,
+        query: config?.filter?.query,
+        serviceAccountId: config?.filter?.serviceAccountId,
+      });
       return {
         items: result.items,
         page,

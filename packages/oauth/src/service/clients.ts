@@ -1,4 +1,4 @@
-import { audit, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { audit, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   CreateOAuthClient,
@@ -207,23 +207,35 @@ const replaceAccessPrincipals = async (params: {
 };
 
 /** List one bounded, filtered OAuth client page directly from PostgreSQL. */
-export const list = async (params: { limit: number; offset: number; query?: string }): Promise<{ items: OAuthClient[]; total: number }> => {
+export const list = async (params: {
+  limit: number;
+  offset: number;
+  query?: string;
+  serviceAccountId?: string;
+}): Promise<{ items: OAuthClient[]; total: number }> => {
   const query = params.query?.trim() || null;
+  const serviceAccountId = params.serviceAccountId ?? null;
   const [{ total = 0 } = {}] = await sql<{ total: number }[]>`
     SELECT count(*)::int AS total
     FROM oauth.clients
-    WHERE ${query}::text IS NULL
-      OR position(lower(${query}) in lower(name)) > 0
-      OR position(lower(${query}) in lower(client_id)) > 0
-      OR position(lower(${query}) in lower(COALESCE(description, ''))) > 0
+    WHERE (${serviceAccountId}::uuid IS NULL OR service_account_id = ${serviceAccountId}::uuid)
+      AND (
+        ${query}::text IS NULL
+        OR position(lower(${query}) in lower(name)) > 0
+        OR position(lower(${query}) in lower(client_id)) > 0
+        OR position(lower(${query}) in lower(COALESCE(description, ''))) > 0
+      )
   `;
   const rows = await sql<DbClient[]>`
     SELECT id, name, description, client_id, redirect_uris, logout_uri, scopes, audiences, service_account_id, allowed_profiles, access_mode, registration_kind, is_public, allow_device_grant, created_at, created_by
     FROM oauth.clients
-    WHERE ${query}::text IS NULL
-      OR position(lower(${query}) in lower(name)) > 0
-      OR position(lower(${query}) in lower(client_id)) > 0
-      OR position(lower(${query}) in lower(COALESCE(description, ''))) > 0
+    WHERE (${serviceAccountId}::uuid IS NULL OR service_account_id = ${serviceAccountId}::uuid)
+      AND (
+        ${query}::text IS NULL
+        OR position(lower(${query}) in lower(name)) > 0
+        OR position(lower(${query}) in lower(client_id)) > 0
+        OR position(lower(${query}) in lower(COALESCE(description, ''))) > 0
+      )
     ORDER BY created_at DESC, id DESC
     LIMIT ${params.limit}
     OFFSET ${params.offset}
@@ -726,8 +738,8 @@ const validateServiceAccountBinding = async (params: {
 
   const serviceAccount = await serviceAccounts.get({ id: serviceAccountId });
   if (!serviceAccount) return { ok: false, error: "Service account not found", status: 404 };
-  if (serviceAccount.kind !== "resource_bound") {
-    return { ok: false, error: "OAuth client credentials can only bind resource service accounts", status: 400 };
+  if (serviceAccount.kind !== "resource_bound" && !isStandaloneServiceAccountKind(serviceAccount.kind)) {
+    return { ok: false, error: "OAuth client credentials can only bind resource-bound or standalone service accounts", status: 400 };
   }
   if (serviceAccount.status !== "active") {
     return { ok: false, error: "Service account is not active", status: 400 };

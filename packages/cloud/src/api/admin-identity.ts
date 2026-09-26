@@ -6,11 +6,12 @@ import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, err, respond, v } from "../server";
+import { audit } from "../services/audit";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
 import { WORKLOAD_SCOPES } from "../services/identity/workload-auth";
 import { mandateMetrics, mandates } from "../services/mandates";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
-import { serviceAccounts } from "../services/service-accounts";
+import { isStandaloneServiceAccountKind, STANDALONE_SERVICE_ACCOUNT_KINDS, serviceAccounts } from "../services/service-accounts";
 
 const WorkloadCredentialInputSchema = z
   .object({
@@ -41,14 +42,44 @@ const MandateListQuerySchema = z
   })
   .strict();
 
+const StandaloneServiceAccountKindSchema = z.enum(STANDALONE_SERVICE_ACCOUNT_KINDS);
+const ServiceAccountParamsSchema = z.object({ id: z.uuid() }).strict();
+const ServiceAccountListQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    perPage: z.coerce.number().int().min(1).max(500).default(100),
+    kind: StandaloneServiceAccountKindSchema.optional(),
+    status: z.enum(["active", "disabled"]).optional(),
+    search: z.string().trim().max(200).optional(),
+  })
+  .strict();
+const ServiceAccountInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    kind: StandaloneServiceAccountKindSchema.default("standalone"),
+  })
+  .strict();
+const ServiceAccountStatusInputSchema = z.object({ status: z.enum(["active", "disabled"]) }).strict();
+const ServiceAccountApiKeyInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    scopes: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+    expiresAt: z.iso.datetime().nullable().optional(),
+  })
+  .strict();
+
 type IdentityAdminDependencies = {
   apps: () => Promise<Array<{ id: string; name: string }>>;
   status: typeof getIdentitySigningKeyStatus;
   rewrap: typeof rewrapIdentitySigningKeys;
   revoke: typeof revokeIdentitySigningKey;
-  serviceAccounts: Pick<typeof serviceAccounts, "getOrCreateResourceBound">;
-  credentials: Pick<typeof serviceAccountCredentials, "createResourceApiToken" | "getOverview" | "listOverview" | "revoke">;
+  serviceAccounts: Pick<typeof serviceAccounts, "getOrCreateResourceBound" | "createStandalone" | "listStandalone" | "get" | "setStatus">;
+  credentials: Pick<
+    typeof serviceAccountCredentials,
+    "createResourceApiToken" | "createStandaloneApiToken" | "getOverview" | "listOverview" | "revoke"
+  >;
   mandates: Pick<typeof mandates, "list">;
+  audit: Pick<typeof audit, "record">;
 };
 
 const dependencies: IdentityAdminDependencies = {
@@ -59,7 +90,15 @@ const dependencies: IdentityAdminDependencies = {
   serviceAccounts,
   credentials: serviceAccountCredentials,
   mandates,
+  audit,
 };
+
+const auditActor = (user: AuthContext["Variables"]["user"]) => ({
+  userId: user.id,
+  uid: user.uid,
+  provider: user.provider,
+  roles: user.roles,
+});
 
 export const createAdminIdentityRoutes = (
   authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
@@ -157,6 +196,95 @@ export const createAdminIdentityRoutes = (
           const revoked = await service.credentials.revoke({ credentialId, actor: c.get("user") });
           return revoked.ok ? ok({ revoked: true as const }) : revoked;
         }),
+    )
+    // Standalone principals: service accounts with no delegated user and no
+    // resource binding. Access is granted to them like to a user; a new account
+    // starts with nothing. Credentials: OAuth client (OAuth admin API) or the
+    // API key minted below.
+    .get(
+      "/service-accounts",
+      describeRoute({ tags: ["Service accounts"], summary: "List standalone service accounts (kind standalone or agent)" }),
+      v("query", ServiceAccountListQuerySchema),
+      async (c) => c.json(await service.serviceAccounts.listStandalone(c.req.valid("query"))),
+    )
+    .post(
+      "/service-accounts",
+      describeRoute({ tags: ["Service accounts"], summary: "Create a standalone service account without any access" }),
+      v("json", ServiceAccountInputSchema),
+      async (c) =>
+        respond(
+          c,
+          async () => {
+            const input = c.req.valid("json");
+            const actor = c.get("user");
+            const created = await service.serviceAccounts.createStandalone({ ...input, createdBy: actor.id });
+            if (!created.ok) return created;
+            await service.audit.record({
+              action: "service_account.create",
+              outcome: "allowed",
+              actor: auditActor(actor),
+              target: { type: "service_account", id: created.data.id, label: created.data.name },
+              metadata: { serviceAccountId: created.data.id, serviceAccountKind: created.data.kind },
+            });
+            return created;
+          },
+          201,
+        ),
+    )
+    .get(
+      "/service-accounts/:id",
+      describeRoute({ tags: ["Service accounts"], summary: "Read one standalone service account" }),
+      v("param", ServiceAccountParamsSchema),
+      async (c) =>
+        respond(c, async () => {
+          const account = await service.serviceAccounts.get({ id: c.req.valid("param").id });
+          return account && isStandaloneServiceAccountKind(account.kind) ? ok(account) : fail(err.notFound("Service account"));
+        }),
+    )
+    .patch(
+      "/service-accounts/:id",
+      describeRoute({
+        tags: ["Service accounts"],
+        summary: "Enable or disable a standalone service account; disabled accounts reject every credential immediately",
+      }),
+      v("param", ServiceAccountParamsSchema),
+      v("json", ServiceAccountStatusInputSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const { status } = c.req.valid("json");
+          const actor = c.get("user");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const updated = await service.serviceAccounts.setStatus({ id, status });
+          if (!updated.ok) return updated;
+          await service.audit.record({
+            action: status === "disabled" ? "service_account.disable" : "service_account.enable",
+            outcome: "allowed",
+            actor: auditActor(actor),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind, status },
+          });
+          return ok({ ...account, status });
+        }),
+    )
+    .post(
+      "/service-accounts/:id/api-keys",
+      describeRoute({ tags: ["Service accounts"], summary: "Create an API key for a standalone service account; return its token once" }),
+      v("param", ServiceAccountParamsSchema),
+      v("json", ServiceAccountApiKeyInputSchema),
+      async (c) =>
+        respond(
+          c,
+          // The raw token intentionally appears only in this one create response.
+          () =>
+            service.credentials.createStandaloneApiToken({
+              serviceAccountId: c.req.valid("param").id,
+              actor: c.get("user"),
+              ...c.req.valid("json"),
+            }),
+          201,
+        ),
     )
     .get("/mandates", v("query", MandateListQuerySchema), async (c) => {
       const query = c.req.valid("query");

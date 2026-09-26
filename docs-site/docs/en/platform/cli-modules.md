@@ -293,9 +293,15 @@ cld inventory items list --jsonl
 | `jsonLine()` | One compact JSON value |
 | `table()` | Text table |
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
+| `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
 
 `readJson()` accepts native fetch responses and typed Hono client responses.
 It requires `json()`, `text()`, `ok`, `status`, and `statusText`.
+
+`profiles` is optional. A command that provisions a machine credential, such
+as `cld admin agents create`, hands the secret to `saveClientCredentials()`
+and never prints it; the host stores it with the same protection as a refresh
+token. Fail before any remote call when the capability is missing.
 
 Use this context. Do not read CLI token or profile files from an application
 module.

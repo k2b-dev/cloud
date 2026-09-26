@@ -729,3 +729,163 @@ describe("Assistant quota administration", () => {
     expect(stillBlocked.lines).toHaveLength(0);
   });
 });
+
+describe("admin agents", () => {
+  const agent = {
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Release agent",
+    kind: "agent",
+    status: "active",
+    createdBy: "11111111-1111-4111-8111-111111111111",
+    createdAt: "2026-09-26T00:00:00.000Z",
+  };
+  const oauthClient = {
+    id: "55555555-5555-4555-8555-555555555555",
+    clientId: "agent-client",
+    name: "Agent: Release agent",
+    scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+  };
+  type Saved = Parameters<NonNullable<CloudCliContext["profiles"]>["saveClientCredentials"]>[0];
+  const withProfiles = (created: ReturnType<typeof createContext>, saved: Saved[], fail = false) => {
+    created.ctx.profiles = {
+      saveClientCredentials: async (input) => {
+        if (fail) throw new Error("disk full");
+        saved.push(input);
+      },
+    };
+    return created;
+  };
+
+  test("create provisions the account and client, hands the secret to the profile store, and never prints it", async () => {
+    const saved: Saved[] = [];
+    const run = withProfiles(
+      createContext(["agents", "create", "Release agent"], { profile: "release-agent", yes: true }, [
+        jsonResponse(agent, 201),
+        jsonResponse({ ...oauthClient, clientSecret: "top-secret-value" }, 201),
+      ]),
+      saved,
+    );
+    await adminCli.run(run.ctx);
+    expect(run.calls.map((call) => [call.init?.method, call.path])).toEqual([
+      ["POST", "/api/admin/identity/service-accounts"],
+      ["POST", "/api/oauth/admin/clients"],
+    ]);
+    expect(JSON.parse(String(run.calls[0]?.init?.body))).toEqual({ name: "Release agent", kind: "agent" });
+    expect(JSON.parse(String(run.calls[1]?.init?.body))).toMatchObject({
+      serviceAccountId: agent.id,
+      isPublic: false,
+      allowedProfiles: [],
+      redirectUris: [],
+      scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+    });
+    expect(saved).toEqual([
+      {
+        name: "release-agent",
+        server: "http://cloud.test",
+        clientId: "agent-client",
+        clientSecret: "top-secret-value",
+        scope: "openid profile email offline_access read write",
+        fd0: undefined,
+      },
+    ]);
+    expect(run.lines.join("\n")).toContain("release-agent");
+    expect(run.lines.join("\n")).not.toContain("top-secret-value");
+
+    const json = withProfiles(
+      createContext(["agents", "create", "Release agent"], { profile: "release-agent", yes: true, fd0: true }, [
+        jsonResponse(agent, 201),
+        jsonResponse({ ...oauthClient, clientSecret: "top-secret-value" }, 201),
+      ]),
+      saved,
+    );
+    json.ctx.options.output = "json";
+    await adminCli.run(json.ctx);
+    expect(saved[1]?.fd0).toEqual({ name: "cloud-release-agent-oauth-client-secret" });
+    expect(json.lines.join("\n")).not.toContain("top-secret-value");
+    expect(JSON.parse(json.lines[0]!)).toMatchObject({
+      account: { id: agent.id },
+      client: { clientId: "agent-client" },
+      profile: { secretStorage: "fd0" },
+    });
+  });
+
+  test("create refuses without --yes or a profile store and disables the account when the client or profile fails", async () => {
+    const noYes = createContext(["agents", "create", "Release agent"], { profile: "p" });
+    await expect(adminCli.run(noYes.ctx)).rejects.toThrow("--yes");
+    expect(noYes.calls).toHaveLength(0);
+
+    const noStore = createContext(["agents", "create", "Release agent"], { profile: "p", yes: true });
+    await expect(adminCli.run(noStore.ctx)).rejects.toThrow("cannot store agent profiles");
+    expect(noStore.calls).toHaveLength(0);
+
+    const clientFails = withProfiles(
+      createContext(["agents", "create", "Release agent"], { profile: "p", yes: true }, [
+        jsonResponse(agent, 201),
+        jsonResponse({ message: "Service account is not active" }, 400),
+        jsonResponse({ ...agent, status: "disabled" }),
+      ]),
+      [],
+    );
+    await expect(adminCli.run(clientFails.ctx)).rejects.toThrow("the account was disabled");
+    expect(clientFails.calls[2]).toMatchObject({ path: `/api/admin/identity/service-accounts/${agent.id}` });
+    expect(clientFails.calls[2]?.init?.method).toBe("PATCH");
+
+    const profileFails = withProfiles(
+      createContext(["agents", "create", "Release agent"], { profile: "p", yes: true }, [
+        jsonResponse(agent, 201),
+        jsonResponse({ ...oauthClient, clientSecret: "top-secret-value" }, 201),
+        jsonResponse({ ...agent, status: "disabled" }),
+      ]),
+      [],
+      true,
+    );
+    await expect(adminCli.run(profileFails.ctx)).rejects.toThrow("was disabled");
+    expect(profileFails.calls[2]?.init?.method).toBe("PATCH");
+  });
+
+  test("ls, revoke, and rotate-secret address agents by id or exact name", async () => {
+    const page = { items: [agent], page: 1, perPage: 100, total: 1, hasNext: false };
+    const list = createContext(["agents", "ls"], { status: "active" }, [jsonResponse(page)]);
+    await adminCli.run(list.ctx);
+    expect(list.calls[0]?.path).toBe("/api/admin/identity/service-accounts?kind=agent&status=active&page=1&perPage=100");
+    expect(list.tables[0]).toEqual([agent]);
+
+    const revoke = createContext(["agents", "revoke", "release AGENT"], { yes: true }, [
+      jsonResponse(page),
+      jsonResponse({ ...agent, status: "disabled" }),
+    ]);
+    await adminCli.run(revoke.ctx);
+    expect(revoke.calls[0]?.path).toBe("/api/admin/identity/service-accounts?kind=agent&search=release+AGENT&perPage=50");
+    expect(revoke.calls[1]).toMatchObject({ path: `/api/admin/identity/service-accounts/${agent.id}`, init: { method: "PATCH" } });
+    expect(revoke.lines[0]).toContain("Disabled agent");
+
+    const ambiguous = createContext(["agents", "revoke", "Release agent"], { yes: true }, [
+      jsonResponse({ ...page, items: [agent, { ...agent, id: "66666666-6666-4666-8666-666666666666" }] }),
+    ]);
+    await expect(adminCli.run(ambiguous.ctx)).rejects.toThrow("Several agents match");
+
+    const saved: Saved[] = [];
+    const rotate = withProfiles(
+      createContext(["agents", "rotate-secret", agent.id], { profile: "release-agent", yes: true }, [
+        jsonResponse(agent),
+        jsonResponse({ clients: [oauthClient] }),
+        jsonResponse({ clientSecret: "rotated-secret" }),
+      ]),
+      saved,
+    );
+    await adminCli.run(rotate.ctx);
+    expect(rotate.calls.map((call) => call.path)).toEqual([
+      `/api/admin/identity/service-accounts/${agent.id}`,
+      `/api/oauth/admin/clients?serviceAccountId=${agent.id}&per_page=50`,
+      `/api/oauth/admin/clients/${oauthClient.id}/regenerate-secret`,
+    ]);
+    expect(saved[0]).toMatchObject({ name: "release-agent", clientId: "agent-client", clientSecret: "rotated-secret" });
+    expect(rotate.lines.join("\n")).not.toContain("rotated-secret");
+
+    const notAgent = createContext(["agents", "rotate-secret", agent.id], { profile: "p", yes: true }, [
+      jsonResponse({ ...agent, kind: "standalone" }),
+    ]);
+    notAgent.ctx.profiles = { saveClientCredentials: async () => undefined };
+    await expect(adminCli.run(notAgent.ctx)).rejects.toThrow("not an agent");
+  });
+});

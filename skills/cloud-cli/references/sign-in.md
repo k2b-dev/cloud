@@ -53,3 +53,15 @@ cld login --server https://cloud.example --fd0 my-cloud-refresh --fd0-scope work
 ```
 
 Run `cld login --help` for every option.
+
+## Agent profiles
+
+An administrator provisions an agent account with `cld admin agents create <name> --profile <profile>` (see `cld admin reference`). The profile then holds the agent's OAuth client ID and secret; `cld` obtains an access token through the client-credentials grant on first use, caches it, and renews it after a `401`. There is no browser step and no refresh token.
+
+```bash
+cld --profile release-agent auth status
+cld --profile release-agent account whoami
+cld logout --profile release-agent
+```
+
+`auth status` reports `client-credentials` and where the secret is kept (`config` or `fd0:<name>`). `profile show` masks the secret. `logout` removes the credentials locally only; the administrator revokes the agent with `cld admin agents revoke` or rotates its secret with `cld admin agents rotate-secret`. A rejected credential means the agent was disabled or its secret rotated; `cld` says so instead of retrying.

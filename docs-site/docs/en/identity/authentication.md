@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-11
+updated: 2026-09-26
 ---
 
 # Request identity
@@ -44,8 +44,9 @@ invalid explicit bearer does not silently fall back to the cookie.
 | Session cookie | Browser | User |
 | Personal API key | CLI or personal automation | Service account with delegated user |
 | Resource API key | Integration bound to one resource | Resource-bound service account |
+| Standalone API key | Integration or agent with its own identity | Standalone service account |
 | OAuth authorization-code token | App acting for a user | User |
-| OAuth client-credentials token | Service integration | Resource-bound service account |
+| OAuth client-credentials token | Service integration or agent | Resource-bound or standalone service account |
 
 All branches produce the same `actor` and `accessSubject` contract.
 
@@ -109,9 +110,14 @@ type AccessSubject =
 | Session or authorization-code token | User | User |
 | Personal API key | Service account with delegated user | User |
 | Resource API key or client credentials | Resource-bound service account | Service account |
+| Standalone API key or client credentials | Standalone service account (`standalone` or `agent`) | Service account |
 
 A delegated credential uses only its user's grants. Do not merge them with
 service-account grants.
+
+A standalone service account has no user and no resource binding. Read
+`serviceAccount.kind` before treating a userless actor as resource-bound; see
+[Standalone service accounts and agents](/en/docs/identity/service-accounts).
 
 ## Get a user only when required
 

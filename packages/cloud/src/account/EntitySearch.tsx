@@ -33,7 +33,7 @@ export type EntitySearchPrincipal =
       type: "service_account";
       serviceAccountId: string;
       name: string;
-      kind: "user_delegated" | "resource_bound";
+      kind: "user_delegated" | "resource_bound" | "standalone" | "agent";
       appId: string | null;
       resourceType: string | null;
       resourceId: string | null;
@@ -102,7 +102,7 @@ type ApiGroup = {
 type ApiServiceAccount = {
   id: string;
   name: string;
-  kind: "user_delegated" | "resource_bound";
+  kind: "user_delegated" | "resource_bound" | "standalone" | "agent";
   appId: string | null;
   resourceType: string | null;
   resourceId: string | null;
@@ -290,12 +290,16 @@ const EntitySearch = (props: EntitySearchProps) => {
             <For each={serviceAccounts()}>
               {(serviceAccount) => (
                 <ResultRow
-                  icon="ti-key"
+                  icon={serviceAccount.kind === "agent" ? "ti-robot" : "ti-key"}
                   title={serviceAccount.name}
                   subtitle={
                     serviceAccount.kind === "user_delegated"
                       ? "User-bound service account"
-                      : [serviceAccount.appId, serviceAccount.resourceType, serviceAccount.resourceId].filter(Boolean).join(" · ")
+                      : serviceAccount.kind === "agent"
+                        ? "Agent"
+                        : serviceAccount.kind === "standalone"
+                          ? "Service account"
+                          : [serviceAccount.appId, serviceAccount.resourceType, serviceAccount.resourceId].filter(Boolean).join(" · ")
                   }
                   disabled={props.disabled}
                   onSelect={() =>

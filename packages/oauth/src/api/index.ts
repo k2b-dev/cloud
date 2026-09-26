@@ -54,7 +54,7 @@ const app = new Hono<AuthContext>()
       const pagination = parsePagination(query);
       const clientsPage = await oauthService.client.list({
         pagination: { page: pagination.page, perPage: pagination.perPage },
-        filter: { query: query.search },
+        filter: { query: query.search, serviceAccountId: query.serviceAccountId },
       });
       return respond(
         c,

@@ -25,6 +25,8 @@ export default function ServiceAccountsFilters(props: Props) {
       options: [
         { value: "user_delegated", label: messages().userBound, icon: "ti ti-user-key" },
         { value: "resource_bound", label: messages().resourceBound, icon: "ti ti-box" },
+        { value: "standalone", label: messages().standalone, icon: "ti ti-key" },
+        { value: "agent", label: messages().agent, icon: "ti ti-robot" },
       ],
     },
   ];

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import type {
+  CloudCliClientCredentialsProfile,
   CloudCliContext,
   CloudCliFlags,
   CloudCliFlagValue,
@@ -80,10 +81,26 @@ type OAuthSessionConfig = {
   scope?: string;
 };
 
+/**
+ * OAuth client credentials of a standalone service account (an agent). The
+ * secret lives in the config file or in fd0, like a refresh token; the cached
+ * access token sits in `oauth` without a refresh token.
+ */
+type ClientCredentialsConfig = {
+  clientId: string;
+  clientSecret?: string;
+  clientSecretFd0?: {
+    name: string;
+    scope?: string;
+  };
+  scope?: string;
+};
+
 type CloudCliProfile = TokenProviderConfig & {
   server?: string;
   defaults?: Record<string, string>;
   oauth?: OAuthSessionConfig;
+  clientCredentials?: ClientCredentialsConfig;
   /** Plugins served by this profile's Cloud, locked to one stored version each. */
   plugins?: PluginLock;
 };
@@ -298,7 +315,7 @@ const maskToken = (token: string | undefined): string | undefined => {
 };
 
 const hasPersistentTokenProvider = (profile: CloudCliProfile): boolean =>
-  Boolean(profile.token || profile.tokenFile || profile.tokenCommand || profile.fd0 || profile.oauth);
+  Boolean(profile.token || profile.tokenFile || profile.tokenCommand || profile.fd0 || profile.oauth || profile.clientCredentials);
 
 const isModuleHelpRequest = (args: readonly string[], flags: CloudCliFlags): boolean => {
   if (flags.help === true || flags.h === true) return true;
@@ -626,6 +643,101 @@ const refreshOAuthSession = async (profileName: string, server: string, force = 
     return token.access_token;
   });
 
+const readClientSecret = async (credentials: ClientCredentialsConfig): Promise<string> => {
+  if (credentials.clientSecret) return credentials.clientSecret;
+  if (credentials.clientSecretFd0) return readFd0Token(credentials.clientSecretFd0.name, credentials.clientSecretFd0.scope);
+  throw new CliError(
+    "Profile has client credentials without a secret. Run `cld admin agents rotate-secret` from an administrator profile.",
+  );
+};
+
+/** Obtain (or reuse) an access token through the client-credentials grant; the secret never leaves this process except to the token endpoint. */
+const obtainClientCredentialsToken = async (profileName: string, server: string, force = false): Promise<string> =>
+  withConfigLock(async () => {
+    const config = await loadConfig();
+    const profile = config.profiles?.[profileName];
+    const credentials = profile?.clientCredentials;
+    if (!profile || !credentials) throw new CliError(`Profile "${profileName}" has no client credentials.`);
+    if (!force && profile.oauth && isOAuthAccessTokenFresh(profile.oauth)) return profile.oauth.accessToken;
+
+    const secret = await readClientSecret(credentials);
+    const body = new URLSearchParams({ grant_type: "client_credentials" });
+    if (credentials.scope) body.set("scope", credentials.scope);
+    const response = await fetchOAuth(joinUrl(server, "/oauth/token"), {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: `Basic ${Buffer.from(`${credentials.clientId}:${secret}`, "utf8").toString("base64")}`,
+      },
+      body,
+    });
+    if (response.status === 400 || response.status === 401) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (payload?.error === "invalid_client") {
+        throw new CliError(
+          `Cloud rejected the client credentials of profile "${profileName}". The agent may be disabled or its secret rotated; an administrator can run \`cld admin agents rotate-secret\`.`,
+        );
+      }
+    }
+    const token = await readOAuthTokenResponse(response);
+
+    config.profiles ??= {};
+    config.profiles[profileName] = {
+      ...profile,
+      oauth: {
+        accessToken: token.access_token,
+        accessTokenExpiresAt: new Date(Date.now() + token.expires_in * 1000).toISOString(),
+        scope: token.scope ?? credentials.scope,
+      },
+    };
+    await saveConfig(config);
+    return token.access_token;
+  });
+
+const removeClientCredentials = async (credentials: ClientCredentialsConfig): Promise<void> => {
+  if (credentials.clientSecretFd0) await removeFd0Secret(credentials.clientSecretFd0.name, credentials.clientSecretFd0.scope);
+};
+
+/** Store client credentials that `cld admin agents` provisioned; replaces every other credential of the profile. */
+const saveClientCredentialsProfile = async (input: CloudCliClientCredentialsProfile): Promise<void> => {
+  const server = canonicalServer(input.server);
+  await withConfigLock(async () => {
+    const config = await loadConfig();
+    config.profiles ??= {};
+    const existing = config.profiles[input.name] ?? {};
+    if (existing.oauth?.refreshToken || existing.oauth?.refreshTokenFd0) {
+      throw new CliError(
+        `Profile "${input.name}" holds a personal OAuth login. Run \`cld logout --profile ${input.name}\` first or choose another profile name.`,
+      );
+    }
+    const displaced = existing.clientCredentials;
+    let clientCredentials: ClientCredentialsConfig = { clientId: input.clientId, scope: input.scope };
+    if (input.fd0) {
+      await writeFd0Secret(input.fd0.name, input.fd0.scope, input.clientSecret);
+      clientCredentials = {
+        ...clientCredentials,
+        clientSecretFd0: { name: input.fd0.name, ...(input.fd0.scope ? { scope: input.fd0.scope } : {}) },
+      };
+    } else {
+      clientCredentials = { ...clientCredentials, clientSecret: input.clientSecret };
+    }
+    const next: CloudCliProfile = { ...existing, server, clientCredentials };
+    delete next.token;
+    delete next.tokenFile;
+    delete next.tokenCommand;
+    delete next.fd0;
+    delete next.oauth;
+    config.profiles[input.name] = next;
+    config.currentProfile ??= input.name;
+    await saveConfig(config);
+    const reusesFd0 =
+      displaced?.clientSecretFd0 &&
+      displaced.clientSecretFd0.name === clientCredentials.clientSecretFd0?.name &&
+      displaced.clientSecretFd0.scope === clientCredentials.clientSecretFd0?.scope;
+    if (displaced && !reusesFd0) await removeClientCredentials(displaced);
+  });
+};
+
 const resolveAuth = async (
   global: GlobalArgs,
   config: CloudCliConfig,
@@ -640,6 +752,18 @@ const resolveAuth = async (
   if (global.tokenFile) return { token: await readTokenFile(global.tokenFile) };
   if (global.fd0) return { token: await readFd0Token(global.fd0, global.fd0Scope) };
   if (global.tokenCommand) return { token: await readCommandToken(global.tokenCommand) };
+  if (profile.clientCredentials) {
+    if (!profile.server || canonicalServer(profile.server) !== canonicalServer(server)) {
+      throw new CliError(
+        `Profile "${profileName}" holds client credentials for ${profile.server ?? "an unknown server"}, not for ${server}.`,
+      );
+    }
+    const token =
+      profile.oauth && isOAuthAccessTokenFresh(profile.oauth)
+        ? profile.oauth.accessToken
+        : await obtainClientCredentialsToken(profileName, server);
+    return { token, refresh: () => obtainClientCredentialsToken(profileName, server, true) };
+  }
   if (profile.oauth) {
     if (!profile.server || canonicalServer(profile.server) !== canonicalServer(server)) {
       throw new CliError(
@@ -848,6 +972,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
       const rendered = renderTable(rows, columns);
       if (rendered) printLine(rendered);
     },
+    profiles: { saveClientCredentials: saveClientCredentialsProfile },
   };
 };
 
@@ -952,6 +1077,10 @@ Usage:
   cld profile set [name] --server <url> --token-file <path>
   cld profile set [name] --server <url> --fd0 <secret> [--fd0-scope <scope>]
   cld profile set [name] --server <url> --token-command <command>
+
+An agent profile with OAuth client credentials is written by
+\`cld admin agents create <name> --profile <profile>\`; cld obtains and renews
+its access tokens itself. \`cld logout --profile <profile>\` removes them locally.
 `,
     `cld profile
 
@@ -963,6 +1092,10 @@ Verwendung:
   cld profile set [Name] --server <URL> --token-file <Pfad>
   cld profile set [Name] --server <URL> --fd0 <Secret> [--fd0-scope <Scope>]
   cld profile set [Name] --server <URL> --token-command <Befehl>
+
+Ein Agent-Profil mit OAuth-Client-Zugangsdaten schreibt
+\`cld admin agents create <Name> --profile <Profil>\`; cld holt und erneuert
+seine Access-Tokens selbst. \`cld logout --profile <Profil>\` entfernt sie lokal.
 `,
   );
 
@@ -1862,15 +1995,17 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
       server: profile.server ?? "",
       token: profile.token
         ? maskToken(profile.token)
-        : profile.oauth
-          ? `oauth:${profile.oauth.refreshTokenFd0 ? "fd0" : "config"}`
-          : profile.fd0
-            ? `fd0:${profile.fd0.name}`
-            : profile.tokenFile
-              ? `file:${profile.tokenFile}`
-              : profile.tokenCommand
-                ? "command"
-                : "",
+        : profile.clientCredentials
+          ? `client-credentials:${profile.clientCredentials.clientSecretFd0 ? "fd0" : "config"}`
+          : profile.oauth
+            ? `oauth:${profile.oauth.refreshTokenFd0 ? "fd0" : "config"}`
+            : profile.fd0
+              ? `fd0:${profile.fd0.name}`
+              : profile.tokenFile
+                ? `file:${profile.tokenFile}`
+                : profile.tokenCommand
+                  ? "command"
+                  : "",
     }));
     printLine(
       renderTable(rows, [
@@ -1900,6 +2035,9 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
                 accessToken: maskToken(profile.oauth.accessToken),
                 refreshToken: maskToken(profile.oauth.refreshToken),
               }
+            : undefined,
+          clientCredentials: profile.clientCredentials
+            ? { ...profile.clientCredentials, clientSecret: maskToken(profile.clientCredentials.clientSecret) }
             : undefined,
         },
         null,
@@ -1961,7 +2099,10 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
       delete next.tokenFile;
       delete next.tokenCommand;
       delete next.fd0;
-      if (setsAuthProvider) delete next.oauth;
+      if (setsAuthProvider) {
+        delete next.oauth;
+        delete next.clientCredentials;
+      }
       if (token) next.token = token;
       if (tokenFile) next.tokenFile = tokenFile;
       if (tokenCommand) next.tokenCommand = tokenCommand;
@@ -1971,6 +2112,7 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
       latestConfig.currentProfile ??= name;
       await saveConfig(latestConfig);
 
+      if (setsAuthProvider && existing.clientCredentials) await removeClientCredentials(existing.clientCredentials);
       if (setsAuthProvider && existing.oauth) {
         if (existing.server && displacedRefreshToken) {
           await revokeOAuthRefreshToken(existing.server, displacedRefreshToken).catch((error) => {
@@ -2516,6 +2658,20 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
   return withConfigLock(async () => {
     const latestConfig = await loadConfig();
     const profile = latestConfig.profiles?.[name];
+    if (profile?.clientCredentials) {
+      await removeClientCredentials(profile.clientCredentials);
+      delete profile.clientCredentials;
+      delete profile.oauth;
+      await saveConfig(latestConfig);
+      printLine(
+        text(
+          global.locale,
+          `Removed the client credentials from profile "${name}". The agent's client stays valid until an administrator revokes it.`,
+          `Client-Zugangsdaten aus Profil "${name}" entfernt. Der Client des Agents bleibt gültig, bis ein Administrator ihn widerruft.`,
+        ),
+      );
+      return 0;
+    }
     if (!profile?.oauth) {
       printLine(text(global.locale, `Profile "${name}" is not logged in with OAuth.`, `Profil "${name}" ist nicht über OAuth angemeldet.`));
       return 0;
@@ -2556,19 +2712,27 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
   const payload = {
     profile: name,
     server: profile?.server ?? "",
-    kind: profile?.oauth
-      ? "oauth"
-      : profile?.token
-        ? "token"
-        : profile?.fd0
-          ? "fd0"
-          : profile?.tokenFile
-            ? "token-file"
-            : profile?.tokenCommand
-              ? "token-command"
-              : "none",
+    kind: profile?.clientCredentials
+      ? "client-credentials"
+      : profile?.oauth
+        ? "oauth"
+        : profile?.token
+          ? "token"
+          : profile?.fd0
+            ? "fd0"
+            : profile?.tokenFile
+              ? "token-file"
+              : profile?.tokenCommand
+                ? "token-command"
+                : "none",
     accessTokenExpiresAt: profile?.oauth?.accessTokenExpiresAt ?? null,
     refreshTokenStorage: profile?.oauth?.refreshTokenFd0 ? `fd0:${profile.oauth.refreshTokenFd0.name}` : profile?.oauth ? "config" : null,
+    clientId: profile?.clientCredentials?.clientId ?? null,
+    clientSecretStorage: profile?.clientCredentials
+      ? profile.clientCredentials.clientSecretFd0
+        ? `fd0:${profile.clientCredentials.clientSecretFd0.name}`
+        : "config"
+      : null,
   };
 
   if (global.output === "json" || takeBooleanFlag(parsed.flags, "json")) printLine(JSON.stringify(payload, null, 2));
@@ -2580,6 +2744,9 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
       printLine(`${text(global.locale, "Access token expires", "Access-Token läuft ab")}: ${payload.accessTokenExpiresAt}`);
     if (payload.refreshTokenStorage)
       printLine(`${text(global.locale, "Refresh token storage", "Speicherort des Refresh-Tokens")}: ${payload.refreshTokenStorage}`);
+    if (payload.clientId) printLine(`${text(global.locale, "OAuth client", "OAuth-Client")}: ${payload.clientId}`);
+    if (payload.clientSecretStorage)
+      printLine(`${text(global.locale, "Client secret storage", "Speicherort des Client-Secrets")}: ${payload.clientSecretStorage}`);
   }
   return 0;
 };

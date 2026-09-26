@@ -226,6 +226,7 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Account categories | `accounts config get`, `accounts config set` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |
+| Agents | `agents create`, `agents ls`, `agents revoke`, `agents rotate-secret` |
 
 ## AI usage and feedback
 
@@ -301,6 +302,36 @@ the allowed background actions. For rotation, create and deploy a replacement,
 verify its calls, then revoke the old credential. The equivalent UI is
 **Administration → App credentials**.
 
+
+## Agents
+
+An agent is a standalone service account of kind `agent` with its own OAuth
+client. It appears with a robot icon in pickers, activity, and audit, starts
+with no access, and is granted access like a person (Space membership, Notebook
+access, and so on).
+
+```bash
+cld admin agents create "Release agent" --profile release-agent --yes
+cld admin agents ls --json
+cld admin agents rotate-secret "Release agent" --profile release-agent --yes
+cld admin agents revoke "Release agent" --yes
+```
+
+`create` creates the account and a confidential OAuth client with the scopes of
+a `cld login` session (`openid profile email offline_access read write`), then
+writes the client ID and secret into the local `cld` profile named by
+`--profile`. The secret is never printed, also not with `--json`; add `--fd0`
+to keep it in fd0 instead of the config file, and `--server` when the profile
+should target another origin than the administrator's. If the client or the
+profile cannot be created, the new account is disabled again. Afterwards the
+agent runs `cld --profile release-agent …` and `cld` obtains and renews its
+access tokens itself.
+
+`revoke` disables the account: its tokens, secret, and API keys stop working
+at once. `rotate-secret` regenerates the client secret and updates the local
+profile; an agent addressed by name must match exactly one account. The same
+accounts are visible in the Accounts app and through
+`cld accounts service-accounts list --kind agent`.
 
 ## Built-in Assistant Skills
 

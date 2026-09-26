@@ -226,6 +226,76 @@ describe("Core OAuth issuance authority", () => {
     });
   });
 
+  test("signs a standalone agent account without a resource binding and refuses a smuggled one", async () => {
+    const serviceAccountId = "5b1c9f6e-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
+    const grant = {
+      kind: "client_credentials" as const,
+      grantId: "dd8cc597-4268-43f2-abdf-ec008245ef10",
+      nonce: "a771d825-b5d4-44d7-a0c2-17f97f37bd02",
+    };
+    const account = {
+      id: serviceAccountId,
+      kind: "agent",
+      status: "active",
+      delegatedUserId: null,
+      appId: null,
+      resourceType: null,
+      resourceId: null,
+    };
+    const request = (routes: Awaited<ReturnType<typeof setup>>["routes"]) =>
+      routes.request("/oauth/token", {
+        method: "POST",
+        headers: { authorization: "Bearer broker", "content-type": "application/json" },
+        body: JSON.stringify({ tokens: [{ kind: "service_access", grant, expiresIn: 3_600 }] }),
+      });
+
+    const agent = await setup(
+      true,
+      authorityState({
+        user: null,
+        clientServiceAccountId: serviceAccountId,
+        clientScopes: ["read"],
+        grantedScopes: ["read"],
+        serviceAccount: account,
+      }),
+    );
+    const response = await request(agent.routes);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { tokens: string[] };
+    const verified = await jwtVerify(body.tokens[0]!, agent.publicKey, {
+      issuer: "https://cloud.example.test",
+      audience: "cloud",
+      currentDate: new Date(1_788_220_800_000),
+    });
+    expect(verified.payload).toMatchObject({
+      sub: serviceAccountId,
+      principal_type: "service_account",
+      service_account_id: serviceAccountId,
+      service_account_kind: "agent",
+      app_id: null,
+      resource_type: null,
+      resource_id: null,
+    });
+
+    for (const invalid of [
+      { ...account, appId: "mail" },
+      { ...account, status: "disabled" },
+      { ...account, kind: "user_delegated", delegatedUserId: "7d2a3b4c-5d6e-4f70-8192-a3b4c5d6e7f8" },
+    ]) {
+      const denied = await setup(
+        true,
+        authorityState({
+          user: null,
+          clientServiceAccountId: serviceAccountId,
+          clientScopes: ["read"],
+          grantedScopes: ["read"],
+          serviceAccount: invalid,
+        }),
+      );
+      expect((await request(denied.routes)).status).toBe(403);
+    }
+  });
+
   test("rejects arbitrary claims and expanded lifetimes", async () => {
     const { routes } = await setup();
     for (const token of [

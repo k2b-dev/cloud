@@ -30,6 +30,7 @@ Each module's reference (`cld <app> reference`) remains authoritative for its ex
 
 - Stay on the user's selected profile unless they name another Cloud instance.
 - When you operate a headless box (SSH, container, CI runner) and `cld` is not signed in, run `cld login --server <Cloud URL> --device` and relay the printed URL and code to the user; they approve it in their own browser. Never ask the user for a password or token instead.
+- When a profile was written by `cld admin agents create`, you act as that agent account, not as the user: `cld auth status` shows `client-credentials`. You see only what the agent was granted; ask the user to grant access instead of switching to their profile.
 - Read before changing content. Use IDs returned by list or get commands when a name is not unique.
 - Use `--json` whenever the next action depends on one complete response. Use `--jsonl` for supported list commands when processing items as a stream. Keep normal output for simple inspection.
 - Pass structured or multiline content through a command's file or stdin option instead of trying to escape it in a shell argument.
@@ -40,7 +41,7 @@ Each module's reference (`cld <app> reference`) remains authoritative for its ex
 
 Every module ships its own reference with the plugin. Run `cld <module> reference` for the module of the current task and read it before the first command; it links further files, which `cld <module> reference <file>` prints. Follow those links only when the operation needs the deeper API; do not preload every file.
 
-- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles, and store refresh tokens in fd0.
+- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles, store refresh tokens in fd0, and run as an agent account whose profile holds OAuth client credentials.
 - Read [CLI plugins](references/plugins.md) to list, install, update, or remove `cld` plugins and to print their references.
 - Run `cld apps reference` and `cld account reference` for the two modules every Cloud serves, `cld capabilities reference` for generic typed Queries and Actions, and `cld api-docs reference` for the live HTTP APIs.
 - Administrators run `cld admin reference`, `cld accounts reference`, `cld oauth reference`, and `cld ipa-hosts reference` for the matching task.
