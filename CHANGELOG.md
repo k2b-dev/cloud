@@ -3,6 +3,17 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.19.4](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.3...cloud-v0.19.4) (2026-09-26)
+
+
+### Bug Fixes
+
+* **cli:** print help for core cld commands instead of running them ([#299](https://github.com/k2b-dev/cloud/issues/299)) ([73641dd](https://github.com/k2b-dev/cloud/commit/73641ddac48f6fe0363f0e3261cff36c141d8bfe)), closes [#282](https://github.com/k2b-dev/cloud/issues/282)
+* **mail:** refresh the open reader when message body hydration completes ([#301](https://github.com/k2b-dev/cloud/issues/301)) ([d2a43d4](https://github.com/k2b-dev/cloud/commit/d2a43d4f864af45ceddd7d01e493ccd9cdcfc46f)), closes [#293](https://github.com/k2b-dev/cloud/issues/293)
+* **mail:** stop a hung provider rediscovery from starving other mailboxes ([#302](https://github.com/k2b-dev/cloud/issues/302)) ([2df030c](https://github.com/k2b-dev/cloud/commit/2df030cd49cccb81530a420038a9609cd3b66a61)), closes [#292](https://github.com/k2b-dev/cloud/issues/292)
+* **spaces:** show the claim holder like an assignee, confirm take-overs, and add the card claim tooltip ([#298](https://github.com/k2b-dev/cloud/issues/298)) ([6524b8b](https://github.com/k2b-dev/cloud/commit/6524b8b13b58634f25b4ebdea81e8593a2bfb258)), closes [#296](https://github.com/k2b-dev/cloud/issues/296) [#285](https://github.com/k2b-dev/cloud/issues/285)
+* **spaces:** show where a dragged card will land on the Kanban board ([#303](https://github.com/k2b-dev/cloud/issues/303)) ([201e3e3](https://github.com/k2b-dev/cloud/commit/201e3e347a797627543ef426d829d61fb9571fbb)), closes [#288](https://github.com/k2b-dev/cloud/issues/288)
+
 ## [0.19.3](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.2...cloud-v0.19.3) (2026-09-26)
 
 
