@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # Deprecations and migrations
@@ -51,6 +51,51 @@ the web UI still seeds it. The Notebooks API adds `GET /api/notebooks/notes/:not
 `GET /api/notebooks/:id/outline`, and `GET /api/notebooks/:id/resolve`, and
 `POST /api/notebooks/:id/notes` accepts `parentPath` and `createParents`. No
 stored data changes.
+
+## Spaces CLI commands
+
+`cld spaces` now uses the shared `cld` verbs and item addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. An item is addressed as an item ID or `<space>:<title>` instead of a
+leading space argument or `--space`, and the local default space (`use`,
+`current`) is gone. Text input is `--from <file|->` instead of `--file` and
+`--stdin`; `--page-size` is `--per-page`. See
+[Spaces](/en/apps/spaces#automate-spaces-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `use`, `current` | removed; name the space in every address |
+| `get [space]` | `show <space>:` |
+| `create` | `create` (no `--use`) |
+| `items [space]` | `ls <space>` |
+| `items --assigned-to me`, `unassigned` | `ls <space> --mine`, `--unassigned` |
+| `items --deadline`, `--activity inactive` | `ls <space> --due`, `--inactive`; new `--due-before` |
+| `item [space] <item>` | `show <item>` |
+| `add-item [space] <title> --column` | `add <space>:<title> [--column]` (defaults to the first column) |
+| `update-item [space] <item>` | `set <item>` |
+| `update-item --column` | `mv <item> <column>` |
+| none | `rm <item> --yes`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
+| `blockers`, `blocks` | `deps <item>` |
+| `block <task> <blocker>` | `deps <task> --add <blocker>` |
+| `unblock <task> <blocker>` | `deps <task> --rm <blocker>` |
+| `comments` | `comments list` |
+| `comment` | `comments add` (new `comments update`, `comments delete`) |
+| `attachments` | `attachments list` |
+| `add-attachment --file <path>` | `attachments add <item> <path>` |
+| `download-attachment --output` | `attachments download <item> <attachment> --out` |
+| `delete-attachment` | `attachments delete` |
+| `checklist add --label <text>` | `checklist add <item> <text>` |
+| `references remove` | `references delete` |
+| `calendar --from --to` | `calendar <start> <end>` |
+| `overlap --from --to --exclude-item` | `overlap <start> <end> --exclude <item>` |
+| `activity`, `work`, `claim`, `release`, `progress`, `done`, `reopen`, `invitation context`, `invitation draft`, `access …` | unchanged names; the item is one address argument |
+| `--file`, `--stdin` | `--from <file\|->` |
+| `--page-size` | `--per-page` |
+
+The Spaces API adds `GET /api/spaces/items/:itemId` and
+`GET /api/spaces/resolve?space=&title=`; the item filter accepts
+`deadlineBefore`, and assignable users include `uid`. No stored data changes.
 
 ## Workflow action costs
 
