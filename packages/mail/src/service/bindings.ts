@@ -670,6 +670,21 @@ const markRediscoveryFailure = async (
   }
 };
 
+/**
+ * Settles with the abort reason as soon as the signal aborts. Provider libraries
+ * do not reliably settle a pending call when their socket is closed, and an
+ * aborted rediscovery must still record its failure and release its lease.
+ */
+const settleOnAbort = <T>(work: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+};
+
 const REDISCOVERY_SUPERSEDED_CODES = new Set([
   "BINDING_CONFIGURATION_CHANGED",
   "BINDING_STATE_CHANGED",
@@ -739,10 +754,13 @@ export const rediscoverProviderBinding = async (params: {
     if (snapshot.secretRevision !== current.secret_revision) {
       throw Object.assign(new Error("Provider credentials changed during rediscovery"), { code: "CREDENTIAL_REVISION_CHANGED" });
     }
-    const [verification, folders] = await Promise.all([
-      imapSmtpConnector.verify(snapshot.runtime),
-      imapSmtpConnector.discoverFolders(snapshot.runtime, params.signal),
-    ]);
+    const [verification, folders] = await settleOnAbort(
+      Promise.all([
+        imapSmtpConnector.verify(snapshot.runtime, params.signal),
+        imapSmtpConnector.discoverFolders(snapshot.runtime, params.signal),
+      ]),
+      params.signal,
+    );
     if (folders.length === 0)
       throw Object.assign(new Error("The provider account contains no visible folders"), { code: "REMOTE_ACCOUNT_EMPTY" });
     const evidence = await buildScopeEvidence({ verification, folders, runtime: snapshot.runtime });
@@ -789,6 +807,8 @@ export const rediscoverProviderBinding = async (params: {
         FOR UPDATE OF binding, resource, connection, mailbox
       `;
       if (!locked) throw Object.assign(new Error("Provider binding disappeared during rediscovery"), { code: "BINDING_UNAVAILABLE" });
+      // A cancelled attempt no longer owns the provider lease and must not commit what it observed.
+      params.signal?.throwIfAborted();
       if (locked.mailbox_deleted_at || Number(locked.sync_generation) !== Number(current.sync_generation)) {
         throw Object.assign(new Error("Mailbox transport changed during rediscovery"), { code: "MAILBOX_TRANSPORT_CHANGED" });
       }

@@ -227,29 +227,34 @@ const mapNamespaces = (client: ImapFlowWithNamespaces): RemoteNamespace[] => {
 
 const verifyImap = async (
   config: ProviderConnectionInput,
+  signal?: AbortSignal,
 ): Promise<
   Omit<ConnectorVerification, "accounts" | "limits"> & {
     namespaces: RemoteNamespace[];
     limits: ProviderLimitSnapshot["imap"];
   }
 > =>
-  withImapClient(config, async (client) => {
-    const limits = await readImapLimits(client);
-    return {
-      authenticatedPrincipal: typeof client.authenticated === "string" ? client.authenticated : config.username,
-      serverIdentity: {
-        host: config.imap.host,
-        port: config.imap.port,
-        tlsMode: config.imap.tlsMode,
-        secureConnection: client.secureConnection,
-        serverInfo: client.serverInfo ?? {},
-        advertisedCapabilities: [...client.capabilities.keys()].sort(),
-      },
-      capabilities: mapCapabilities(client),
-      namespaces: mapNamespaces(client),
-      limits,
-    };
-  });
+  withImapClient(
+    config,
+    async (client) => {
+      const limits = await readImapLimits(client);
+      return {
+        authenticatedPrincipal: typeof client.authenticated === "string" ? client.authenticated : config.username,
+        serverIdentity: {
+          host: config.imap.host,
+          port: config.imap.port,
+          tlsMode: config.imap.tlsMode,
+          secureConnection: client.secureConnection,
+          serverInfo: client.serverInfo ?? {},
+          advertisedCapabilities: [...client.capabilities.keys()].sort(),
+        },
+        capabilities: mapCapabilities(client),
+        namespaces: mapNamespaces(client),
+        limits,
+      };
+    },
+    signal,
+  );
 
 const smtpOptions = (config: SmtpConnectionConfig, endpoint: ResolvedEndpoint, address: string): SMTPTransport.Options => ({
   host: address,
@@ -305,13 +310,13 @@ const withSmtpTransport = async <T>(
   throw lastError ?? new Error("SMTP endpoint did not provide a usable address");
 };
 
-const verifySmtp = async (config: SmtpConnectionConfig): Promise<void> =>
+const verifySmtp = async (config: SmtpConnectionConfig, signal?: AbortSignal): Promise<void> =>
   withSmtpTransport(
     config,
     async (transport) => {
       await transport.verify();
     },
-    { allowAddressFailover: true },
+    { allowAddressFailover: true, signal },
   );
 
 const smtpCapabilityEvidenceSchema = z.object({
@@ -354,22 +359,46 @@ const smtpConnectionOptions = (config: SmtpConnectionConfig, endpoint: ResolvedE
   },
 });
 
+/**
+ * Opens an SMTP connection for capability evidence. Nodemailer neither calls
+ * back nor emits an error when the server closes the socket before its
+ * greeting, so the connection's end settles the attempt as well. Aborting
+ * settles with the abort reason and closes the connection.
+ */
+export const connectSmtpConnection = (connection: SMTPConnection, signal?: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const settle = (error?: Error): void => {
+      connection.off("error", settle);
+      connection.off("end", onEnd);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onEnd = (): void =>
+      settle(Object.assign(new Error("SMTP connection closed before the handshake completed"), { code: "ECONNECTION" }));
+    const onAbort = (): void => {
+      settle(signal?.reason ?? Object.assign(new Error("SMTP operation was aborted"), { name: "AbortError" }));
+      connection.close();
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    connection.once("error", settle);
+    connection.once("end", onEnd);
+    connection.connect((error) => settle(error));
+  });
+
 const connectForSmtpCapabilities = async (
   config: SmtpConnectionConfig,
   endpoint: ResolvedEndpoint,
   address: string,
+  signal?: AbortSignal,
 ): Promise<ProviderLimitSnapshot["smtp"]> => {
   const connection = new SMTPConnection(smtpConnectionOptions(config, endpoint, address));
   try {
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error): void => reject(error);
-      connection.once("error", onError);
-      connection.connect((error) => {
-        connection.off("error", onError);
-        if (error) reject(error);
-        else resolve();
-      });
-    });
+    await connectSmtpConnection(connection, signal);
     const evidence = readSmtpCapabilityEvidence(connection);
     if (!evidence.extensions.includes("SIZE")) {
       return { status: "unsupported", maxMessageBytes: null, dsn: evidence.extensions.includes("DSN") };
@@ -384,13 +413,13 @@ const connectForSmtpCapabilities = async (
   }
 };
 
-const discoverSmtpLimits = async (config: ProviderConnectionInput): Promise<ProviderLimitSnapshot["smtp"]> => {
+const discoverSmtpLimits = async (config: ProviderConnectionInput, signal?: AbortSignal): Promise<ProviderLimitSnapshot["smtp"]> => {
   try {
     const endpoint = await resolvePublicEndpoint(config.smtp);
     let lastError: unknown;
     for (const resolved of endpoint.addresses) {
       try {
-        return await connectForSmtpCapabilities(config, endpoint, resolved.address);
+        return await connectForSmtpCapabilities(config, endpoint, resolved.address, signal);
       } catch (error) {
         lastError = error;
       }
@@ -408,15 +437,7 @@ const verifySmtpTransport = async (config: SmtpConnectionConfig): Promise<SmtpTr
   for (const resolved of endpoint.addresses) {
     const connection = new SMTPConnection(smtpConnectionOptions(config, endpoint, resolved.address));
     try {
-      await new Promise<void>((resolve, reject) => {
-        const onError = (error: Error): void => reject(error);
-        connection.once("error", onError);
-        connection.connect((error) => {
-          connection.off("error", onError);
-          if (error) reject(error);
-          else resolve();
-        });
-      });
+      await connectSmtpConnection(connection);
       const evidence = readSmtpCapabilityEvidence(connection);
       return {
         dsn: evidence.extensions.includes("DSN"),
@@ -480,11 +501,12 @@ export const transportDiagnostic = (
 
 export const verifyImapSmtpTransports = async (
   config: ProviderConnectionInput,
+  signal?: AbortSignal,
 ): Promise<{ verification: ConnectorVerification | null; diagnostics: ProviderTransportDiagnostics }> => {
   const checkedAt = new Date().toISOString();
   const [imap, smtp] = await Promise.allSettled([
-    verifyImap(config),
-    Promise.all([verifySmtp(config), discoverSmtpLimits(config)]).then(([, limits]) => limits),
+    verifyImap(config, signal),
+    Promise.all([verifySmtp(config, signal), discoverSmtpLimits(config, signal)]).then(([, limits]) => limits),
   ]);
   const secrets = [config.secret.password];
   const diagnostics = {
@@ -665,8 +687,8 @@ export const selectUidBatch = async (params: {
   }
 };
 
-const verify = async (config: ProviderConnectionInput): Promise<ConnectorVerification> => {
-  const result = await verifyImapSmtpTransports(config);
+const verify = async (config: ProviderConnectionInput, signal?: AbortSignal): Promise<ConnectorVerification> => {
+  const result = await verifyImapSmtpTransports(config, signal);
   if (result.verification) return result.verification;
   const summary = `IMAP: ${result.diagnostics.imap.message}; SMTP: ${result.diagnostics.smtp.message}`;
   throw Object.assign(new Error(summary), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", diagnostics: result.diagnostics });
