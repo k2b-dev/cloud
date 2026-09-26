@@ -44,6 +44,8 @@ export type PluginCloudState = {
   authorizations: string[];
   /** Refresh tokens that `/oauth/revoke` received, when set. */
   revoked?: string[];
+  /** Status `/oauth/revoke` answers with instead of 200, e.g. 503. */
+  revokeStatus?: number;
 };
 
 /** A Cloud that serves `state.plugins` the way applications do, plus `/api/echo` for the echo plugin. */
@@ -63,7 +65,7 @@ export const startPluginCloud = (state: PluginCloudState) =>
       if (pathname === "/oauth/revoke") {
         return request.formData().then((form) => {
           state.revoked?.push(String(form.get("token")));
-          return new Response(null, { status: 200 });
+          return new Response(null, { status: state.revokeStatus ?? 200 });
         });
       }
       if (!pathname.startsWith("/cli/plugins")) return new Response("not found", { status: 404 });

@@ -141,16 +141,22 @@ test("profile rm signs a profile out, drops the plugin versions no other profile
   const clouds: Record<"a" | "b" | "c", PluginCloudState & { revoked: string[] }> = {
     a: { plugins: [v1], authorizations: [], revoked: [] },
     b: { plugins: [v2], authorizations: [], revoked: [] },
-    c: { plugins: [v2], authorizations: [], revoked: [] },
+    c: { plugins: [v2], authorizations: [], revoked: [], revokeStatus: 503 },
   };
   const cli = await setup(clouds);
   const configPath = join(cli.dir, "config.json");
-  // b holds an OAuth login, so removing it revokes the refresh token at b's Cloud.
+  // b and c hold OAuth logins, so removing them revokes their refresh tokens; c's Cloud refuses.
   const signedIn = await cli.config();
-  signedIn.profiles.b = {
-    server: signedIn.profiles.b.server,
-    oauth: { accessToken: "b-access", accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(), refreshToken: "b-refresh" },
-  };
+  for (const profile of ["b", "c"]) {
+    signedIn.profiles[profile] = {
+      server: signedIn.profiles[profile].server,
+      oauth: {
+        accessToken: `${profile}-access`,
+        accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        refreshToken: `${profile}-refresh`,
+      },
+    };
+  }
   await writeFile(configPath, JSON.stringify(signedIn));
   for (const profile of ["a", "b", "c"]) {
     const installed = await cli.run(["--profile", profile, "plugins", "install", "echo"]);
@@ -185,10 +191,13 @@ test("profile rm signs a profile out, drops the plugin versions no other profile
   expect(await skill()).toContain("| c | echo | 2.0.0 |");
   expect((await cli.run(["profile", "rm", "a", "-y"])).stderr).toContain("`cld profile use c`.");
 
+  // A refused revocation warns on stderr like `cld logout` and still removes c; stdout stays JSON.
   // c was the last profile on 2.0.0: that version leaves the store and the skill.
   const json = await cli.run(["--json", "profile", "rm", "c", "-y"]);
   expect(json.exitCode, json.stderr).toBe(0);
+  expect(json.stderr).toBe("Warning: Remote OAuth revocation failed (503). Removing local credentials anyway.\n");
   expect(JSON.parse(json.stdout)).toEqual({ profile: "c", removed: true });
+  expect(clouds.c.revoked).toEqual(["c-refresh"]);
   expect(await cli.stored()).toEqual([v1.manifest.digest]);
   expect(await readdir(join(skills, "cloud-cli", "references", "echo"))).toEqual(["1.0.0"]);
 
