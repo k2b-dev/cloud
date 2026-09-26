@@ -56,7 +56,7 @@ import {
 } from "./table-admin-overview";
 import { tableQueryRoutes } from "./table-query-routes";
 import { v } from "./validator";
-import { acknowledgeWorkspaceWrite } from "./workspace";
+import { acknowledgeWorkspaceWrite } from "./workspace-revision";
 
 const PublicRelationLookupResponseSchema = z.object({
   items: z.array(z.object({ id: ShortIdSchema, label: z.string() })),

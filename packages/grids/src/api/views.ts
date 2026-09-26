@@ -18,7 +18,7 @@ import {
 } from "./public-dto";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
 import { v } from "./validator";
-import { acknowledgeWorkspaceWrite } from "./workspace";
+import { acknowledgeWorkspaceWrite } from "./workspace-revision";
 
 const gqlDiagnosticMessage = (diagnostics: Array<{ message: string }>): string =>
   diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";

@@ -20,7 +20,7 @@ import {
 } from "./public-dto";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
 import { v } from "./validator";
-import { acknowledgeWorkspaceWrite } from "./workspace";
+import { acknowledgeWorkspaceWrite } from "./workspace-revision";
 
 const PublicFieldDependentSchema = z.object({
   type: z.enum(["view", "form", "formula", "lookup", "rollup", "relation_display", "audit_policy", "federation_mapping"]),

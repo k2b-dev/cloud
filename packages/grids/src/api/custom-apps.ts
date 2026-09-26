@@ -74,7 +74,7 @@ import { runWithQueryAdmission } from "./query-admission";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
 import { ScannerLauncherRequestSchema, toPublicWorkflowError, toPublicWorkflowPayloads } from "./workflow-api-shared";
-import { acknowledgeWorkspaceWrite } from "./workspace";
+import { acknowledgeWorkspaceWrite } from "./workspace-revision";
 
 const DefinitionBaseSchema = z.object({ baseId: ShortIdSchema });
 const CustomAppCreateSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
