@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.1...npm-ui-v0.6.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **ui:** open bottom sheets without a focus ring and extend the footer into the safe area ([#243](https://github.com/k2b-dev/cloud/issues/243)) ([fa82d9b](https://github.com/k2b-dev/cloud/commit/fa82d9bb2df4f310287df67f60f8048e3bc8d804))
+
 ## [0.6.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.0...npm-ui-v0.6.1) (2026-09-25)
 
 

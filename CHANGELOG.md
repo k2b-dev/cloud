@@ -3,6 +3,40 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.18.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.17.0...cloud-v0.18.0) (2026-09-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **grids:** `cld grids` renamed `list`/`bases list` → `bases ls`, `bases|tables|records get|create|update|delete` → `show|add|set|rm`, and `tables list`/`records list` → `ls`, without aliases.
+* **mail:** renamed everyday `cld mail` commands without aliases: `list`→`ls`, `conversation list`→`ls <mailbox>[:<folder>]`, `conversation get`→`show`, `message get`→`cat`, `conversation assign`→`assign … --to`, `conversation archive|move|trash|read|unread|star|unstar`→`archive|mv --to|rm --yes|read|unread|flag|unflag` with `--in` instead of `--source`, `conversation tag add`→`tag add`, `comment list|add|edit|delete`→`comments list|add|update|delete`, `send` now sends an existing draft (`send <draft>`); `conversation junk|not-spam|keyword` take `--in` and `--keyword`.
+* **filesv2:** the old cld filesv2 commands are removed without aliases. bases list -> ls; list <base> --path P -> ls <area>:/P; stat <base> P -> stat <file>; download <base> P --out F -> get <file> [F]; archive -> get <folder> or zip <entry>... --out F; upload <base> F --to P -> put F <file> [--parents]; mkdir <base> P -> mkdir [-p] <folder>; rename -> mv in the same folder; move --to -> mv <entry>... <folder>/; copy --to [--target-base] -> cp <entry>... <folder>; delete -> rm --yes; search <base> Q --path P -> search <folder> Q; trash list|restore <base> -> trash list|restore <area>; versions download -> versions get; versions comment -> versions update --comment; shares create -> shares add; shares revoke -> shares rm --yes; documents markdown -> documents create --kind markdown; thumbnail --out F -> thumbnail <file> F; templates get -> templates show; templates use <id> <base> P -> templates use <id> <file>; admin templates import <base> P -> admin templates import <file>; admin --area -> --storage; admin files list|download|delete -> admin files ls|get|rm <storage>/<kind>/<name>:/P or <storage>/archive/<id>:/P; admin versions list|delete and admin directories archive|retire|delete take the same directory address; admin shares revoke -> admin shares rm --yes. Every other command keeps its name and file arguments use the new address form.
+* **spaces:** `cld spaces` command names changed without aliases. `list` → `ls`; `use`/`current` removed; `get` → `show <space>:`; `items` → `ls <space>`; `item` → `show`; `add-item` → `add <space>:<title>`; `update-item` → `set` (`--column` → `mv`); `blockers`/`blocks`/`block`/`unblock` → `deps [--add|--rm]`; `comments`/`comment` → `comments list|add`; `attachments`/`add-attachment`/`download-attachment`/`delete-attachment` → `attachments list|add|download|delete`; `references remove` → `references delete`; `calendar`/`overlap --from --to` → `<start> <end>`; `--file`/`--stdin` → `--from`; `--page-size` → `--per-page`; `--output` → `--out`; `--space` → addresses.
+* **contacts:** address contacts by book and name and use the shared CLI verbs ([#247](https://github.com/k2b-dev/cloud/issues/247))
+* **notebooks:** `cld notebooks` command names changed without aliases. `list` → `ls`; `use`/`current` removed; `get` → `stat <notebook>:`; `notes` → `ls <notebook>[:<path>]`; `note`/`content`/`read` → `stat`/`cat`; `block` → `cat --block`; `create-note` → `write <notebook>:<path> [--parents]`; `edit --set-content` → `write`; `move-note` → `mv`; `copy-note` → `cp`; `delete-note` → `rm`; `lock-note` → `lock`; `search --all`/`tag-notes` → `search [--notebook] [--tags]`; `favorite`/`unfavorite`/`favorites` → `favorites add|remove|list`; `comments`/`add-comment`/`update-comment`/`delete-comment` → `comments list|add|update|delete`; `versions`/`version`/`restore-version` → `versions list|cat|restore --into`; `upload-attachment` → `attach`; `attachments`/`download-attachment`/`delete-attachment` → `attachments list|download|delete`; `attachment`/`attachment-usage` → `attachments list --json` / shown by `attachments delete`; `create-from-template` → `create --template`; `api-keys`/`create-api-key`/`revoke-api-key` → `api-keys list|create|revoke`; `snapshot`/`update-snapshot`/`snapshot-logs`/`run-snapshot` → `snapshots show|set|logs|run`. `--notebook`/`--note` flags are replaced by addresses; `--file`/`--stdin` by `--from <file|->`; `--output-file` by `--out`. `cld notebooks create` makes an empty notebook.
+
+### Features
+
+* **cli:** share the command convention and address parsing for app CLIs ([#244](https://github.com/k2b-dev/cloud/issues/244)) ([3567c29](https://github.com/k2b-dev/cloud/commit/3567c29be73fd11522cde91516b0da119366ea51))
+* **contacts:** address contacts by book and name and use the shared CLI verbs ([#247](https://github.com/k2b-dev/cloud/issues/247)) ([6fc4f10](https://github.com/k2b-dev/cloud/commit/6fc4f101fd38692d7262cfdaa863067d97c9d42c))
+* **filesv2:** address files by area and path and use shell-like CLI verbs ([#249](https://github.com/k2b-dev/cloud/issues/249)) ([063e058](https://github.com/k2b-dev/cloud/commit/063e058c80c4b49450879ce57fe0b9743c646f76))
+* **grids:** address bases, tables and records the shared way ([#250](https://github.com/k2b-dev/cloud/issues/250)) ([bb26d6a](https://github.com/k2b-dev/cloud/commit/bb26d6ad7dd5fefa727a208a046a2bf4fa62aaa5))
+* **mail:** short shared verbs and mailbox/folder addressing for everyday CLI commands ([#251](https://github.com/k2b-dev/cloud/issues/251)) ([74354ee](https://github.com/k2b-dev/cloud/commit/74354eee32623f91c0b19e4dc6334218c61b5beb))
+* **notebooks:** address notes by path and mirror notebooks as Markdown folders ([#241](https://github.com/k2b-dev/cloud/issues/241)) ([172bd53](https://github.com/k2b-dev/cloud/commit/172bd534987438c1222a2aad8cabe29a63788444))
+* **spaces:** address items by space and title and use the shared CLI verbs ([#248](https://github.com/k2b-dev/cloud/issues/248)) ([9b2cdb6](https://github.com/k2b-dev/cloud/commit/9b2cdb6e7338044704723a13bafbd192f6fb0b8c))
+
+
+### Bug Fixes
+
+* **filesv2:** name the share command revoke ([#252](https://github.com/k2b-dev/cloud/issues/252)) ([086be50](https://github.com/k2b-dev/cloud/commit/086be5076fa334b5faa6d73aa1ad720ecb158369))
+* **mail:** keep common template styles such as inline-block buttons in received HTML mail ([#246](https://github.com/k2b-dev/cloud/issues/246)) ([0d4d450](https://github.com/k2b-dev/cloud/commit/0d4d450613f4c54c0fc9329a7dd58b2d86ed97e6))
+* **ui:** open bottom sheets without a focus ring and extend the footer into the safe area ([#243](https://github.com/k2b-dev/cloud/issues/243)) ([fa82d9b](https://github.com/k2b-dev/cloud/commit/fa82d9bb2df4f310287df67f60f8048e3bc8d804))
+
+
+### Performance Improvements
+
+* **cli:** load only the module a command needs ([#245](https://github.com/k2b-dev/cloud/issues/245)) ([cce4711](https://github.com/k2b-dev/cloud/commit/cce4711d08c432bf3f5fe483578cbb8b37ab0531))
+
 ## [0.17.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.16.0...cloud-v0.17.0) (2026-09-25)
 
 
