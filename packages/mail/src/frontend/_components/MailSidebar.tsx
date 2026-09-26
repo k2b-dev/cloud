@@ -60,6 +60,7 @@ export default function MailSidebar(props: {
   mailboxId: string;
   mailboxName: string;
   syncEnabled: boolean;
+  needsConnection: boolean;
   folders: MailFolderView[];
   localTags: LocalTag[];
   savedViews: SavedConversationView[];
@@ -249,6 +250,8 @@ export default function MailSidebar(props: {
                 label: props.syncEnabled ? messages().syncMailbox : messages().mailboxPaused,
                 icon: props.syncEnabled ? "ti ti-refresh" : "ti ti-player-play",
                 action: props.syncEnabled ? () => sync.mutate() : props.onOpenHealth,
+                // The mailbox banner names the missing connection; a sync request would queue nothing.
+                disabled: props.syncEnabled && props.needsConnection,
               },
               { id: "health", label: messages().mailboxHealth, icon: "ti ti-heartbeat", action: props.onOpenHealth },
             ]

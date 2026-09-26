@@ -43,6 +43,7 @@ import type { MailConversationToolbarActionId } from "./_components/mail-convers
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
   type MailListOptimisticPatch,
@@ -1440,6 +1441,7 @@ function MailWorkspaceView(props: {
         mailboxId={data.mailbox.id}
         mailboxName={data.mailbox.name}
         syncEnabled={data.mailbox.syncEnabled}
+        needsConnection={mailboxNeedsConnection(data.mailbox.health)}
         folders={data.folders}
         localTags={data.localTags}
         savedViews={data.savedViews}

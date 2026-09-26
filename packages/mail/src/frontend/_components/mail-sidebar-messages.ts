@@ -68,7 +68,7 @@ export const mailSidebarMessages = i18n.define({
       sendProblems: "Versandprobleme",
       sendProblemsDescription: "Nachrichten, die geprüft oder erneut gesendet werden.",
       failedStartSync: "Synchronisierung konnte nicht gestartet werden",
-      syncQueued: "Postfach-Synchronisierung eingereiht",
+      syncQueued: "Postfach-Synchronisierung eingeplant",
       browserHandlerInstructions:
         "Bestätige die Abfrage des Browsers, falls sie erscheint. Falls keine Abfrage erscheint, öffne die Website-Einstellungen neben der Adresse, setze die Protokollhandler für diese Website zurück und wähle erneut E-Mail-Links einrichten.",
       checkBrowser: "Browser prüfen",

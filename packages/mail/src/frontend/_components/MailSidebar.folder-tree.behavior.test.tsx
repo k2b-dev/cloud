@@ -124,6 +124,7 @@ if (!isServer) {
             mailboxId="Box001"
             mailboxName="Support"
             syncEnabled={true}
+            needsConnection={false}
             folders={folders}
             localTags={[]}
             savedViews={[]}

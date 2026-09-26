@@ -26,7 +26,7 @@ Operational status and public attachment links are separate from configuration. 
 
 **Mailbox tools > Mailbox health** shows transport health, the connected account, folder discovery, synchronization, and search-index state.
 
-- **Sync now** starts a mailbox synchronization.
+- **Sync now** queues a mailbox synchronization; **Last successful sync** shows when one last completed. **Sync now** is unavailable while the mailbox is paused or its account must be connected, reconnected, or verified first.
 - **Rediscover** refreshes folders and remote namespace information.
 - **Verify connection** completes a pending provider connection.
 - **Pause mailbox** stops incoming synchronization, queued provider changes, scheduled delivery, and automatic replies.
