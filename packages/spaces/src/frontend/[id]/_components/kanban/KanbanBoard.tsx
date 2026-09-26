@@ -62,7 +62,8 @@ type DropIntent =
       kind: "column";
       bucketKey: string;
       rawInsertIndex: number;
-      previewIndex: number;
+      /** Gap in the rendered column (which still shows the dragged card) where the card lands; null when the drop changes nothing. */
+      indicatorIndex: number | null;
     }
   | { kind: "wormhole"; wormholeId: string };
 
@@ -351,19 +352,20 @@ export default function KanbanBoard(props: Props) {
       return null;
     }
 
-    const previewIndex = normalizeTargetIndex({
+    const targetIndex = normalizeTargetIndex({
       sourceBucketKey: resolved.source.bucket.key,
       sourceIndex: resolved.source.index,
       targetBucketKey: resolved.targetBucket.key,
       targetBucketLength: resolved.targetBucket.items.length,
       rawIndex,
     });
+    const unchanged = resolved.source.bucket.key === resolved.targetBucket.key && resolved.source.index === targetIndex;
 
     return {
       kind: "column" as const,
       bucketKey: resolved.targetBucket.key,
       rawInsertIndex: rawIndex,
-      previewIndex,
+      indicatorIndex: unchanged ? null : clamp(rawIndex, 0, resolved.targetBucket.items.length),
     };
   };
 
@@ -761,8 +763,16 @@ export default function KanbanBoard(props: Props) {
   const bucketQuery = (bucketKey: string) => bucketQueries.find(({ initialBucket }) => initialBucket.key === bucketKey)?.pages;
   const isDropIndicatorVisible = (bucketKey: string, index: number) => {
     const intent = boardDnd.intent();
-    return boardDnd.isDragging() && intent?.kind === "column" && intent.bucketKey === bucketKey && intent.previewIndex === index;
+    return boardDnd.isDragging() && intent?.kind === "column" && intent.bucketKey === bucketKey && intent.indicatorIndex === index;
   };
+  /** Accent line in the gap where the card lands; `-my-1` cancels the extra `gap-2`, so cards never shift under the pointer. */
+  const DropLine = (lineProps: { bucketKey: string; index: number }) => (
+    <Show when={isDropIndicatorVisible(lineProps.bucketKey, lineProps.index)}>
+      <div aria-hidden="true" data-spaces-kanban-drop-indicator class="pointer-events-none relative -my-1 h-0">
+        <div class="absolute inset-x-1 top-0 h-0.5 -translate-y-1/2 rounded-full bg-[var(--ui-app-accent-border)]" />
+      </div>
+    </Show>
+  );
   const isColumnTargetActive = (bucketKey: string) => {
     const intent = boardDnd.intent();
     return boardDnd.isDragging() && intent?.kind === "column" && intent.bucketKey === bucketKey;
@@ -823,16 +833,19 @@ export default function KanbanBoard(props: Props) {
                         meta: { kind: "column", bucketKey: bucket.key },
                       }));
                     }}
-                    class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color,box-shadow] ${
-                      isColumnTargetActive(bucket.key)
-                        ? "bg-[var(--ui-selected)] [box-shadow:inset_0_0_0_1px_var(--ui-focus)]"
-                        : "bg-transparent"
+                    class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
+                      isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
                     }`}
                     data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
                   >
                     <Show
                       when={bucket.items.length > 0}
-                      fallback={<p class="px-2 py-6 text-center text-[11px] text-dimmed">{t.noItems}</p>}
+                      fallback={
+                        <>
+                          <DropLine bucketKey={bucket.key} index={0} />
+                          <p class="px-2 py-6 text-center text-[11px] text-dimmed">{t.noItems}</p>
+                        </>
+                      }
                     >
                       <For each={bucket.items}>
                         {(item, itemIndex) => {
@@ -845,11 +858,7 @@ export default function KanbanBoard(props: Props) {
 
                           return (
                             <>
-                              <Show when={isDropIndicatorVisible(bucket.key, itemIndex())}>
-                                <div class="relative z-10 h-4">
-                                  <div class="absolute inset-x-1 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-[var(--ui-focus)]" />
-                                </div>
-                              </Show>
+                              <DropLine bucketKey={bucket.key} index={itemIndex()} />
                               <article
                                 ref={(element) => {
                                   boardDnd.droppable(element, () => ({
@@ -976,12 +985,7 @@ export default function KanbanBoard(props: Props) {
                           );
                         }}
                       </For>
-                    </Show>
-
-                    <Show when={isDropIndicatorVisible(bucket.key, bucket.items.length)}>
-                      <div class="relative z-10 h-4">
-                        <div class="absolute inset-x-1 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-[var(--ui-focus)]" />
-                      </div>
+                      <DropLine bucketKey={bucket.key} index={bucket.items.length} />
                     </Show>
 
                     <Show when={bucketQuery(bucket.key)?.hasMore()}>
@@ -1060,7 +1064,7 @@ export default function KanbanBoard(props: Props) {
                             }`}
                             style={
                               active()
-                                ? `border-color:${wormhole.color};box-shadow:inset 0 0 0 1px var(--ui-focus),inset 0 2px 5px rgb(0 0 0 / 0.08)`
+                                ? `border-color:${wormhole.color};box-shadow:var(--ui-focus),inset 0 2px 5px rgb(0 0 0 / 0.08)`
                                 : `border-color:color-mix(in srgb, ${wormhole.color} 30%, var(--ui-border));box-shadow:inset 0 1px 2px rgb(0 0 0 / 0.05)`
                             }
                             title={dropLabel}
