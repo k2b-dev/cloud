@@ -43,7 +43,8 @@ test("host commands load no built-in module", async () => {
       const loaded: string[] = JSON.parse(stderr.slice(stderr.indexOf("CLD_PROBE") + "CLD_PROBE".length));
       expect(loaded.length).toBeGreaterThan(0);
       expect(
-        loaded.filter((path) => !hostFile.test(path)),
+        // The repo test runner preloads its own fixtures (scripts/fixtures) into every process; they are not CLI code.
+        loaded.filter((path) => !hostFile.test(path) && !path.includes("/scripts/fixtures/")),
         args.join(" "),
       ).toEqual([]);
     }
