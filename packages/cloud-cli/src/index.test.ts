@@ -1381,6 +1381,7 @@ describe("core command help", () => {
       ["profile", "show", "other"],
       ["profile", "use", "other"],
       ["profile", "set", "other", "--token", "replacement"],
+      ["profile", "rm", "other", "--yes"],
       ["update", "--yes"],
       ["plugins"],
       ["plugins", "list"],
@@ -1403,6 +1404,7 @@ describe("core command help", () => {
       { command: "logout", args: ["logout", "help"] },
       { command: "logout", args: ["logout", "--json", "help"] },
       { command: "profile", args: ["profile", "set", "other", "--server", server, "help"] },
+      { command: "profile", args: ["profile", "rm", "other", "help"] },
       { command: "skills", args: ["skills", "remove", "-h", skillsTarget] },
     ];
 

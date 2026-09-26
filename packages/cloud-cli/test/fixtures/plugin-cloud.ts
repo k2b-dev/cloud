@@ -42,6 +42,8 @@ export type PluginCloudState = {
   /** Bytes sent instead of a file's content, keyed by path. */
   tampered?: Map<string, Uint8Array<ArrayBuffer>>;
   authorizations: string[];
+  /** Refresh tokens that `/oauth/revoke` received, when set. */
+  revoked?: string[];
 };
 
 /** A Cloud that serves `state.plugins` the way applications do, plus `/api/echo` for the echo plugin. */
@@ -58,7 +60,12 @@ export const startPluginCloud = (state: PluginCloudState) =>
       if (pathname === "/oauth/token") {
         return Response.json({ access_token: "login-access", token_type: "Bearer", expires_in: 3600, refresh_token: "login-refresh" });
       }
-      if (pathname === "/oauth/revoke") return new Response(null, { status: 200 });
+      if (pathname === "/oauth/revoke") {
+        return request.formData().then((form) => {
+          state.revoked?.push(String(form.get("token")));
+          return new Response(null, { status: 200 });
+        });
+      }
       if (!pathname.startsWith("/cli/plugins")) return new Response("not found", { status: 404 });
       if (!authorization) return Response.json({ message: "Authentication required" }, { status: 401 });
       if (state.status) return Response.json({ message: "denied" }, { status: state.status });

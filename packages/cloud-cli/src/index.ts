@@ -1001,7 +1001,7 @@ Usage:
   cld login [profile] --server <url> [--device]
   cld logout [--profile <name>]
   cld auth status
-  cld profile <list|show|use|set> [options]
+  cld profile <list|show|use|set|rm> [options]
   cld update [--version <version>] [--yes] [--no-verify]
   cld plugins <list|install|update|remove|run> [options]
   cld skills <list|add|remove|sync> [options]
@@ -1038,7 +1038,7 @@ Verwendung:
   cld login [Profil] --server <URL> [--device]
   cld logout [--profile <Name>]
   cld auth status
-  cld profile <list|show|use|set> [Optionen]
+  cld profile <list|show|use|set|rm> [Optionen]
   cld update [--version <Version>] [--yes] [--no-verify]
   cld plugins <list|install|update|remove|run> [Optionen]
   cld skills <list|add|remove|sync> [Optionen]
@@ -1082,6 +1082,13 @@ Usage:
   cld profile set [name] --server <url> --token-file <path>
   cld profile set [name] --server <url> --fd0 <secret> [--fd0-scope <scope>]
   cld profile set [name] --server <url> --token-command <command>
+  cld profile rm <name> [--yes] [--json]
+
+\`rm\` signs a profile out like \`cld logout\` and deletes it with its installed
+plugins; plugin versions that another profile uses stay. It then rewrites the
+cloud-cli skill. It asks for confirmation unless --yes is given and needs --yes
+without a terminal. It refuses the current profile while other profiles exist:
+select another one with \`cld profile use <name>\` first.
 
 An agent profile with OAuth client credentials is written by
 \`cld admin agents create <name> --profile <profile>\`; cld obtains and renews
@@ -1097,6 +1104,13 @@ Verwendung:
   cld profile set [Name] --server <URL> --token-file <Pfad>
   cld profile set [Name] --server <URL> --fd0 <Secret> [--fd0-scope <Scope>]
   cld profile set [Name] --server <URL> --token-command <Befehl>
+  cld profile rm <Name> [--yes] [--json]
+
+\`rm\` meldet ein Profil wie \`cld logout\` ab und löscht es mit seinen installierten
+Plugins; Plugin-Versionen, die ein anderes Profil nutzt, bleiben. Danach schreibt
+es den cloud-cli-Skill neu. Ohne --yes fragt es nach, ohne Terminal braucht es
+--yes. Das aktuelle Profil entfernt es nicht, solange andere Profile existieren:
+wähle zuerst mit \`cld profile use <Name>\` ein anderes.
 
 Ein Agent-Profil mit OAuth-Client-Zugangsdaten schreibt
 \`cld admin agents create <Name> --profile <Profil>\`; cld holt und erneuert
@@ -2077,7 +2091,91 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
   );
 };
 
-const runProfileCommand = async (args: string[], locale: string): Promise<number> => {
+/**
+ * A profile can be removed unless it is the current one while others exist:
+ * removing it would silently make another profile current.
+ */
+const assertRemovableProfile = (config: CloudCliConfig, name: string): void => {
+  if (!config.profiles?.[name]) throw new CliError(`Profile "${name}" does not exist.`, 1, `Profil "${name}" existiert nicht.`);
+  const others = Object.keys(config.profiles)
+    .filter((other) => other !== name)
+    .sort();
+  if (others.length === 0 || resolveProfileName(config, undefined) !== name) return;
+  const [en, de] = others.length === 1 ? [others[0], others[0]] : ["<name>", "<Name>"];
+  const list = others.length > 1 ? ` (${others.join(", ")})` : "";
+  throw new CliError(
+    `Profile "${name}" is the current profile. Select another one first: \`cld profile use ${en}\`${list}.`,
+    1,
+    `Profil "${name}" ist das aktuelle Profil. Wähle zuerst ein anderes: \`cld profile use ${de}\`${list}.`,
+  );
+};
+
+/** `cld profile rm <name>`: sign out, delete the profile with its plugin lock, prune the store, and rewrite the skill. */
+const removeProfile = async (args: string[], config: CloudCliConfig, global: GlobalArgs): Promise<number> => {
+  const locale = global.locale;
+  const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
+  const unsupportedFlag = Object.keys(parsed.flags).find((flag) => !["json", "jsonl", "yes", "y"].includes(flag));
+  if (unsupportedFlag) throw new CliError(`Unknown profile option "--${unsupportedFlag}".`);
+  const [name, ...extra] = parsed.args;
+  if (!name || extra.length > 0) {
+    throw new CliError("Usage: cld profile rm <name> [--yes]", 1, "Verwendung: cld profile rm <Name> [--yes]");
+  }
+  const output = takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : global.output;
+  assertRemovableProfile(config, name);
+
+  if (!takeBooleanFlag(parsed.flags, "yes", "y")) {
+    if (!process.stdin.isTTY) {
+      throw new CliError(
+        "Not a terminal; pass --yes to remove the profile non-interactively.",
+        1,
+        "Kein Terminal; übergib --yes, um das Profil ohne Rückfrage zu entfernen.",
+      );
+    }
+    const server = config.profiles?.[name]?.server;
+    const label = server ? `"${name}" (${server})` : `"${name}"`;
+    const question = text(
+      locale,
+      `Sign out and remove profile ${label} with its plugins?`,
+      `Profil ${label} abmelden und mit seinen Plugins entfernen?`,
+    );
+    if (!(await confirmPluginInstall(question, locale))) {
+      printErrorLine(text(locale, "Profile removal cancelled.", "Entfernen des Profils abgebrochen."));
+      return 1;
+    }
+  }
+
+  const signedOut = await withConfigLock(async () => {
+    const latest = await loadConfig();
+    assertRemovableProfile(latest, name);
+    const profiles = latest.profiles!;
+    const result = await signOutProfile(profiles[name]!);
+    delete profiles[name];
+    if (latest.currentProfile === name) delete latest.currentProfile;
+    await saveConfig(latest);
+    await collectPluginGarbage(lockedDigests(latest));
+    await syncSkills(latest, locale);
+    return result;
+  });
+
+  if (output !== "text") printLine(JSON.stringify({ profile: name, removed: true }, null, output === "json" ? 2 : 0));
+  else {
+    printLine(
+      signedOut === "client-credentials"
+        ? text(
+            locale,
+            `Removed profile "${name}" and its client credentials. The agent's client stays valid until an administrator revokes it.`,
+            `Profil "${name}" mit seinen Client-Zugangsdaten entfernt. Der Client des Agents bleibt gültig, bis ein Administrator ihn widerruft.`,
+          )
+        : signedOut === "oauth"
+          ? text(locale, `Signed out and removed profile "${name}".`, `Profil "${name}" abgemeldet und entfernt.`)
+          : text(locale, `Removed profile "${name}".`, `Profil "${name}" entfernt.`),
+    );
+  }
+  return 0;
+};
+
+const runProfileCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
+  const locale = global.locale;
   const [command, maybeName, ...rest] = args;
   if (!command) {
     printLine(profileHelp(locale));
@@ -2086,6 +2184,8 @@ const runProfileCommand = async (args: string[], locale: string): Promise<number
 
   const config = await loadConfig();
   config.profiles ??= {};
+
+  if (command === "rm") return removeProfile(args.slice(1), config, global);
 
   if (command === "list") {
     const currentProfile = resolveProfileName(config, undefined);
@@ -2751,6 +2851,41 @@ const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void
   }
 };
 
+/**
+ * Sign `profile` out in place: revoke an OAuth login at its Cloud and drop it,
+ * or drop an agent's client credentials, each with a secret kept in fd0.
+ * Tokens set with `cld profile set` stay. The caller holds the config lock
+ * and saves the config. Returns what was signed out.
+ */
+const signOutProfile = async (profile: CloudCliProfile): Promise<"client-credentials" | "oauth" | null> => {
+  if (profile.clientCredentials) {
+    await removeClientCredentials(profile.clientCredentials);
+    delete profile.clientCredentials;
+    delete profile.oauth;
+    return "client-credentials";
+  }
+  if (!profile.oauth) return null;
+
+  let refreshToken: string | null = null;
+  try {
+    refreshToken = await readOAuthRefreshToken(profile.oauth);
+  } catch (error) {
+    printErrorLine(`Warning: could not read refresh token for remote revocation: ${(error as Error).message}`);
+  }
+
+  if (profile.server && refreshToken) {
+    await revokeOAuthRefreshToken(profile.server, refreshToken).catch((error) => {
+      printErrorLine(`Warning: ${(error as Error).message} Removing local credentials anyway.`);
+    });
+  }
+
+  if (profile.oauth.refreshTokenFd0) {
+    await removeFd0Secret(profile.oauth.refreshTokenFd0.name, profile.oauth.refreshTokenFd0.scope);
+  }
+  delete profile.oauth;
+  return "oauth";
+};
+
 const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
   const parsed = parseArgs(args);
   const config = await loadConfig();
@@ -2758,44 +2893,19 @@ const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<num
   return withConfigLock(async () => {
     const latestConfig = await loadConfig();
     const profile = latestConfig.profiles?.[name];
-    if (profile?.clientCredentials) {
-      await removeClientCredentials(profile.clientCredentials);
-      delete profile.clientCredentials;
-      delete profile.oauth;
-      await saveConfig(latestConfig);
-      printLine(
-        text(
-          global.locale,
-          `Removed the client credentials from profile "${name}". The agent's client stays valid until an administrator revokes it.`,
-          `Client-Zugangsdaten aus Profil "${name}" entfernt. Der Client des Agents bleibt gültig, bis ein Administrator ihn widerruft.`,
-        ),
-      );
-      return 0;
-    }
-    if (!profile?.oauth) {
-      printLine(text(global.locale, `Profile "${name}" is not logged in with OAuth.`, `Profil "${name}" ist nicht über OAuth angemeldet.`));
-      return 0;
-    }
-
-    let refreshToken: string | null = null;
-    try {
-      refreshToken = await readOAuthRefreshToken(profile.oauth);
-    } catch (error) {
-      printErrorLine(`Warning: could not read refresh token for remote revocation: ${(error as Error).message}`);
-    }
-
-    if (profile.server && refreshToken) {
-      await revokeOAuthRefreshToken(profile.server, refreshToken).catch((error) => {
-        printErrorLine(`Warning: ${(error as Error).message} Removing local credentials anyway.`);
-      });
-    }
-
-    if (profile.oauth.refreshTokenFd0) {
-      await removeFd0Secret(profile.oauth.refreshTokenFd0.name, profile.oauth.refreshTokenFd0.scope);
-    }
-    delete profile.oauth;
-    await saveConfig(latestConfig);
-    printLine(text(global.locale, `Logged out profile "${name}".`, `Profil "${name}" wurde abgemeldet.`));
+    const signedOut = profile ? await signOutProfile(profile) : null;
+    if (signedOut) await saveConfig(latestConfig);
+    printLine(
+      signedOut === "client-credentials"
+        ? text(
+            global.locale,
+            `Removed the client credentials from profile "${name}". The agent's client stays valid until an administrator revokes it.`,
+            `Client-Zugangsdaten aus Profil "${name}" entfernt. Der Client des Agents bleibt gültig, bis ein Administrator ihn widerruft.`,
+          )
+        : signedOut === "oauth"
+          ? text(global.locale, `Logged out profile "${name}".`, `Profil "${name}" wurde abgemeldet.`)
+          : text(global.locale, `Profile "${name}" is not logged in with OAuth.`, `Profil "${name}" ist nicht über OAuth angemeldet.`),
+    );
     return 0;
   });
 };
@@ -2873,7 +2983,7 @@ const coreCommands = new Map<string, CoreCommand>([
     "profile",
     {
       help: profileHelp,
-      run: (args, global) => runProfileCommand(args, global.locale),
+      run: runProfileCommand,
       valueFlags: ["server", "token", "token-file", "token-command", "fd0", "fd0-scope"],
     },
   ],

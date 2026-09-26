@@ -41,7 +41,7 @@ Each module's reference (`cld <app> reference`) remains authoritative for its ex
 
 Every module ships its own reference with the plugin. Run `cld <module> reference` for the module of the current task and read it before the first command; it links further files, which `cld <module> reference <file>` prints. Follow those links only when the operation needs the deeper API; do not preload every file.
 
-- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles, store refresh tokens in fd0, and run as an agent account whose profile holds OAuth client credentials.
+- Read [Sign-in and profiles](references/sign-in.md) to sign in with a browser or a device code, keep several Cloud instances in profiles or remove one, store refresh tokens in fd0, and run as an agent account whose profile holds OAuth client credentials.
 - Read [CLI plugins](references/plugins.md) to list, install, update, or remove `cld` plugins and to print their references.
 - Run `cld apps reference` and `cld account reference` for the two modules every Cloud serves, `cld capabilities reference` for generic typed Queries and Actions, and `cld api-docs reference` for the live HTTP APIs.
 - Administrators run `cld admin reference`, `cld accounts reference`, `cld oauth reference`, and `cld ipa-hosts reference` for the matching task.
