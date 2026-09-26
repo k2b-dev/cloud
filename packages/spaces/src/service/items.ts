@@ -25,7 +25,7 @@ import type {
 import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
-import { buildSpacePrincipalCondition, isSpaceResourceId } from "./access";
+import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { descriptionPreview } from "./description-preview";
@@ -1202,9 +1202,10 @@ export const searchAcross = async (params: {
   blocked?: boolean;
 }): Promise<ItemAcrossResult[]> => {
   const { query, kinds, limit } = params;
-  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return [];
+  if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return [];
   const principalMatch = buildSpacePrincipalCondition(params.subject);
-  const bindingMatch = params.subject.type === "service_account" ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const bindingMatch =
+    params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
   const trimmed = query.trim();
   // Empty query is valid — used by tag-only searches like `#task` or `#event`.
   // Pattern becomes `%%` which ILIKE-matches every row; the title-match
@@ -2248,9 +2249,10 @@ export const listCalendar = async (
   },
 ): Promise<CalendarItem[]> => {
   const { from, to } = params;
-  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return [];
+  if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return [];
   const principalMatch = buildSpacePrincipalCondition(params.subject);
-  const bindingMatch = params.subject.type === "service_account" ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const bindingMatch =
+    params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
   const requestedSpaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
   const typeMatch = calendarTypeMatch(params.type);
   const priorityMatch = calendarPriorityMatch(params.priorities);
@@ -2401,9 +2403,10 @@ export const listCalendarSourcePage = async (
     afterRootId?: string;
   },
 ): Promise<{ items: CalendarItem[]; nextRootId?: string }> => {
-  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return { items: [] };
+  if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return { items: [] };
   const principalMatch = buildSpacePrincipalCondition(params.subject);
-  const bindingMatch = params.subject.type === "service_account" ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const bindingMatch =
+    params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
   const spaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
   const afterMatch = params.afterRootId ? sql`COALESCE(i.recurring_event_id, i.id) > ${params.afterRootId}::uuid` : sql`true`;
   const assignmentMatch = calendarAssignmentMatch(params.assignedTo, params.subject);
@@ -2532,9 +2535,10 @@ export const checkOverlap = async (
   },
 ): Promise<OverlapItem[]> => {
   const { from, to, excludeItemId } = params;
-  if (params.subject.type === "service_account" && !isSpaceResourceId(params.boundSpaceId)) return [];
+  if (!(await mayReadAcrossSpaces(params.subject, params.boundSpaceId))) return [];
   const principalMatch = buildSpacePrincipalCondition(params.subject);
-  const bindingMatch = params.subject.type === "service_account" ? sql`i.space_id = ${params.boundSpaceId}::uuid` : sql`true`;
+  const bindingMatch =
+    params.subject.type === "service_account" && params.boundSpaceId ? sql`i.space_id = ${params.boundSpaceId}::uuid` : sql`true`;
 
   const rows = await sql<DbOverlapItem[]>`
     SELECT i.id AS item_id, i.space_id, s.name AS space_name, i.title, i.starts_at, i.ends_at

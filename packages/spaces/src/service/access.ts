@@ -11,7 +11,12 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
+import {
+  isStandaloneServiceAccountKind,
+  type ServiceAccountCredential,
+  serviceAccountCredentials,
+  serviceAccounts,
+} from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { publishSpaceEvent } from "./events";
@@ -71,6 +76,18 @@ export const buildSpacePrincipalCondition = (subject: AccessSubject) =>
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
+
+/**
+ * Reads across Spaces. Users are limited only by their grants. A
+ * resource-bound service account must pass its bound Space; a standalone or
+ * agent account is limited only by its own grants. The kind is read from the
+ * account row, so a caller that omits a binding fails closed.
+ */
+export const mayReadAcrossSpaces = async (subject: AccessSubject, boundSpaceId: string | null | undefined): Promise<boolean> => {
+  if (subject.type !== "service_account" || isSpaceResourceId(boundSpaceId)) return true;
+  const account = await serviceAccounts.get({ id: subject.serviceAccountId });
+  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+};
 
 /**
  * List all access entries for a space with resolved display names.

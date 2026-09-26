@@ -13,7 +13,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit } from "@k2b/cloud/services";
+import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
@@ -104,6 +104,7 @@ import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
 import { spacesService } from "./service";
 import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
+import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
 import { CalendarReadLimitError } from "./service/recurrence";
@@ -237,6 +238,14 @@ const scopedSpaceId = (context: CapabilityExecutionContext, required: Permission
       ? ok(null)
       : capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
   }
+  // A standalone or agent account acts under its own grants, capped by its credential scopes.
+  if (isStandaloneServiceAccountKind(account.kind)) {
+    return context.accessSubject.type === "service_account" &&
+      context.accessSubject.serviceAccountId === account.id &&
+      hasPermission(permissionFromScopes(context.actor.scopes), required)
+      ? ok(null)
+      : capabilityFail(context, err.forbidden("Access denied"), "accessDenied");
+  }
   if (
     account.appId !== SPACES_APP_ID ||
     account.resourceType !== SPACE_RESOURCE_TYPE ||
@@ -249,8 +258,9 @@ const scopedSpaceId = (context: CapabilityExecutionContext, required: Permission
   return ok(account.resourceId);
 };
 
+// Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
 const effectivePermission = (permission: Exclude<PermissionLevel, "none">, context: CapabilityExecutionContext) =>
-  context.actor.kind === "service_account" && context.actor.serviceAccount.kind === "resource_bound"
+  context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated"
     ? resolveSpaceApiKeyPermission(permission, context.actor.scopes)
     : permission;
 
@@ -1463,16 +1473,25 @@ const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, conte
       : mutationError(result, context);
   });
 
+/** Comments are written by the user behind the call or by a standalone or agent account under its own name. */
+const commentAuthor = (context: CapabilityExecutionContext): CommentAuthor | null => {
+  if (context.user) return { kind: "user", id: context.user.id };
+  return context.actor.kind === "service_account" && isStandaloneServiceAccountKind(context.actor.serviceAccount.kind)
+    ? { kind: "service_account", id: context.actor.serviceAccount.id }
+    : null;
+};
+
 const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.create", "space_item", input.itemId), async () => {
-    if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
+    const author = commentAuthor(context);
+    if (!author) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     return commentMutationResult(
       await spacesService.comment.create({
         itemId: resolved.data.internalId,
         recurrenceId: input.recurrenceId,
-        userId: context.user.id,
+        author,
         content: input.content,
       }),
       resolved.data.item,
@@ -2464,7 +2483,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "comment.create": {
       title: "Create comment",
-      description: "Add a user-authored comment to an item or recurring occurrence in a writable Space.",
+      description: "Add a comment to an item or recurring occurrence in a writable Space.",
       input: CommentCreateInputSchema,
       data: CommentDataSchema,
       destructive: false,
@@ -2473,7 +2492,8 @@ export const spacesCapabilities = defineCapabilities({
       approval: "rememberable",
       review: async (input, context) => {
         const t = spacesMessages(context.locale);
-        if (!context.user) return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
+        if (!commentAuthor(context))
+          return capabilityFail(context, err.forbidden("Comments require a user-backed actor"), "commentsNeedUser");
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         return ok({

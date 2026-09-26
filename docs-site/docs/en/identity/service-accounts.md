@@ -102,6 +102,37 @@ Creation, status changes, API-key creation, and OAuth client operations are
 recorded as audit events with the administrator as actor and the service
 account as target.
 
+## Grant access
+
+Grant a standalone or agent account access like a person: pick it in a
+Space or Notebook permission editor, or use the CLI:
+
+```bash
+cld spaces access grant "Roadmap" --service-account "Release agent" --permission write
+cld notebooks access grant "Product Notes" --service-account "Release agent" --permission read
+cld spaces access search-principals "Release agent" --kind service_account
+```
+
+The REST API takes the same principal:
+`{"principal":{"type":"service_account","serviceAccountId":"<id>"},"permission":"write"}`.
+
+Two limits apply to every request, and the lower one wins:
+
+- the account's grant on the resource, resolved through the same shared
+  resolver as for a user (direct grant, authenticated, and public grants);
+- the scopes of the credential it presents. A token with only `read` cannot
+  write, even with a `write` grant; a token without `read` reaches nothing.
+
+Scopes never add access, and there is no resource binding to widen or narrow.
+In Spaces an agent lists the Spaces it was granted, reads and changes items,
+claims tasks, reports progress, and comments under its own name. In Notebooks
+it lists its notebooks, reads notes, and writes notes with a `write` grant.
+Actions that belong to a person stay user-only: creating a Space or Notebook,
+managing access and API keys, personal views such as favorites and the Spaces
+work overview,
+and editing or deleting comments (and, in Notebooks, writing comments).
+Resource-bound API keys keep their binding and behave as before.
+
 ## Use an agent from the CLI
 
 `cld admin agents` provisions an agent end to end:

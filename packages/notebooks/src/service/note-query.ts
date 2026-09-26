@@ -11,7 +11,7 @@ import {
   type QueryFilter,
   type QueryScalar,
 } from "../lib/query-blocks";
-import { buildNotebookVisibleAccessCondition } from "./access";
+import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import * as notebooks from "./notebooks";
 
 export type NoteQueryDiagnostic = {
@@ -376,7 +376,7 @@ export const resolveNoteQuery = async (params: {
   const validation = validateNoteQuery(params.query);
   if (!validation.query) return invalidResult(validation.diagnostics);
   const query = validation.query;
-  if (params.serviceAccountId && !params.boundNotebookId) return emptyResult(query, { code: "unavailable" });
+  if (!(await mayReadAcrossNotebooks(params))) return emptyResult(query, { code: "unavailable" });
   if (params.boundNotebookId && params.boundNotebookId !== params.notebookId) return emptyResult(query, { code: "unavailable" });
   const canRead =
     params.bypassAccess ||

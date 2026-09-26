@@ -313,11 +313,16 @@ function spacesCommands(locale?: string) {
       grant: [
         'cld spaces access grant "Roadmap" --user ada.lovelace --permission read',
         'cld spaces access grant "Roadmap" --group "Editors" --permission write',
+        'cld spaces access grant "Roadmap" --service-account "Release agent" --permission write',
       ],
       set: ['cld spaces access set "Roadmap" --user ada.lovelace --permission admin'],
       revoke: ['cld spaces access revoke "Roadmap" --user ada.lovelace --yes'],
-      searchPrincipals: ['cld spaces access search-principals "Editors" --kind group'],
+      searchPrincipals: [
+        'cld spaces access search-principals "Editors" --kind group',
+        'cld spaces access search-principals "Release agent" --kind service_account',
+      ],
     },
+    allowServiceAccounts: true,
   });
 
   const calendarRange = (start: string, end: string) => {

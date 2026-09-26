@@ -556,6 +556,11 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE spaces.comments ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_comments_short_id ON spaces.comments(short_id)`.simple();
   await sql`DROP INDEX IF EXISTS spaces.idx_comments_item`.simple();
+  // Standalone and agent service accounts author comments under their own name.
+  await sql`
+    ALTER TABLE spaces.comments
+    ADD COLUMN IF NOT EXISTS service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE SET NULL
+  `.simple();
   console.log("  ✓ spaces.comments table");
 
   await sql`

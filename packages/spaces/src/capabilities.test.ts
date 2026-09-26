@@ -1452,6 +1452,58 @@ test("work capabilities enforce grants and resource binding before touching work
   expect(change).not.toHaveBeenCalled();
 });
 
+test("agent service accounts claim, progress and comment through their direct grant within their scopes", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+  const change = spyOn(spacesService.item.work, "change").mockResolvedValue({
+    ok: true,
+    data: { claim: null, progress: null, result: null },
+  });
+  const createComment = spyOn(spacesService.comment, "create").mockResolvedValue({ ok: true, data: { ...comment, userId: null } });
+  const agentId = crypto.randomUUID();
+  const agent = {
+    ...serviceAccountContext,
+    actor: {
+      ...serviceAccountContext.actor,
+      serviceAccount: {
+        ...serviceAccountContext.actor.serviceAccount,
+        id: agentId,
+        kind: "agent" as const,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+      },
+      scopes: ["read", "write"],
+    },
+    accessSubject: { type: "service_account" as const, serviceAccountId: agentId },
+  };
+  const claimId = crypto.randomUUID();
+
+  expect((await spacesCapabilities.actions["task.claim"].run({ itemId, claimId }, agent)).ok).toBe(true);
+  expect(change).toHaveBeenLastCalledWith(
+    expect.objectContaining({ actor: { kind: "service_account", id: agentId }, subject: agent.accessSubject }),
+  );
+  expect((await spacesCapabilities.actions["task.progress"].run({ itemId, claimId, content: "Halfway there." }, agent)).ok).toBe(true);
+  expect((await spacesCapabilities.actions["comment.create"].run({ itemId, content: "Picked this up." }, agent)).ok).toBe(true);
+  expect(createComment).toHaveBeenLastCalledWith(expect.objectContaining({ author: { kind: "service_account", id: agentId } }));
+  expect(permission).toHaveBeenCalledWith({ spaceId: spaceUuid, subject: agent.accessSubject });
+
+  change.mockClear();
+  createComment.mockClear();
+  // Scopes cap the grant, and without a grant nothing is reachable.
+  const readOnly = { ...agent, actor: { ...agent.actor, scopes: ["read"] } };
+  expect((await spacesCapabilities.actions["task.claim"].run({ itemId, claimId }, readOnly)).ok).toBe(false);
+  expect((await spacesCapabilities.actions["comment.create"].run({ itemId, content: "No." }, readOnly)).ok).toBe(false);
+  permission.mockResolvedValue("none");
+  expect((await spacesCapabilities.actions["task.claim"].run({ itemId, claimId }, agent)).ok).toBe(false);
+  expect((await spacesCapabilities.actions["comment.create"].run({ itemId, content: "No." }, agent)).ok).toBe(false);
+  expect(change).not.toHaveBeenCalled();
+  expect(createComment).not.toHaveBeenCalled();
+});
+
 test("work results preserve full escaped content within the capability envelope", async () => {
   const { TaskWorkSchema } = await import("./work-contracts");
   const text = "\u0001".repeat(4999) + "x";

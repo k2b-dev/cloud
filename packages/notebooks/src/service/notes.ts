@@ -16,7 +16,7 @@ import {
 import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "../lib/note-title";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
-import { buildNotebookVisibleAccessCondition } from "./access";
+import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
@@ -721,7 +721,7 @@ export const resolveShortIdsToNotebookShortIds = async (params: {
   bypassAccess?: boolean;
 }): Promise<Map<string, { notebookShortId: string; noteShortId: string }>> => {
   if (params.shortIds.length === 0) return new Map();
-  if (params.serviceAccountId && !params.boundNotebookId) return new Map();
+  if (!(await mayReadAcrossNotebooks(params))) return new Map();
   const arr = toPgTextArray(params.shortIds);
   const principalMatch = buildNotebookVisibleAccessCondition({
     userId: params.userId,

@@ -1,6 +1,6 @@
 import { logger, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
-import { buildNotebookVisibleAccessCondition } from "./access";
+import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import { notebookServiceMessages } from "./messages";
 
 const log = logger("notebooks:links");
@@ -216,7 +216,7 @@ export const listBacklinks = async (params: {
   bypassAccess?: boolean;
 }): Promise<Backlink[]> => {
   const { noteId, userId, bypassAccess = false } = params;
-  if (params.serviceAccountId && !params.boundNotebookId) return [];
+  if (!(await mayReadAcrossNotebooks(params))) return [];
   const principalMatch = buildNotebookVisibleAccessCondition({ userId, serviceAccountId: params.serviceAccountId });
   const boundNotebookId = params.boundNotebookId ?? null;
 
@@ -281,7 +281,7 @@ export const listNoteRelations = async (params: {
   direction: "incoming" | "outgoing" | "all";
   pagination: { limit: number; offset: number };
 }): Promise<NoteRelation[]> => {
-  if (params.serviceAccountId && !params.boundNotebookId) return [];
+  if (!(await mayReadAcrossNotebooks(params))) return [];
   const principalMatch = buildNotebookVisibleAccessCondition({
     userId: params.userId,
     serviceAccountId: params.serviceAccountId,

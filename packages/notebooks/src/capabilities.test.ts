@@ -370,6 +370,66 @@ describe("notebooks capabilities", () => {
     expect(first.data.data.contentHash).toBe(last.data.data.contentHash);
   });
 
+  test("agent service accounts list, read and edit through their direct grant within their scopes", async () => {
+    const agentId = "77777777-7777-4777-8777-777777777777";
+    const agentContext = (scopes: string[]) =>
+      ({
+        ...resourceContext(scopes),
+        actor: {
+          ...resourceContext(scopes).actor,
+          serviceAccount: {
+            ...resourceContext(scopes).actor.serviceAccount,
+            id: agentId,
+            kind: "agent",
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+          },
+        },
+        accessSubject: { type: "service_account", serviceAccountId: agentId },
+      }) satisfies CapabilityExecutionContext;
+    const list = trackedSpy(spyOn(notebookStore, "listWithPermission")).mockResolvedValue({
+      items: [{ ...notebook, permission: "write" }],
+      total: 1,
+    });
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    const permission = trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null });
+    const edit = trackedSpy(spyOn(noteStore, "editContent")).mockResolvedValue({
+      ok: true,
+      data: { note, content: note.contentMd, changed: true, beforeHash: "a", afterHash: "b", blocks: [] },
+    });
+    trackedSpy(spyOn(audit, "recordResultAfterSideEffect")).mockImplementation(async ({ result }) => result);
+    const agent = agentContext(["read", "write"]);
+    const editInput = notebooksCapabilities.actions["note.edit"].input.parse({
+      noteId: note.shortId,
+      operations: [{ kind: "append", content: "x" }],
+    });
+
+    const listed = await notebooksCapabilities.queries["notebook.list"].run(
+      notebooksCapabilities.queries["notebook.list"].input.parse({}),
+      agent,
+    );
+    expect(listed.ok).toBeTrue();
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ userId: null, serviceAccountId: agentId, boundNotebookId: null }));
+    expect(
+      (await notebooksCapabilities.queries["note.read"].run({ id: note.shortId, contentOffset: 0, contentLimit: 1000 }, agent)).ok,
+    ).toBeTrue();
+    expect((await notebooksCapabilities.actions["note.edit"].run(editInput, agent)).ok).toBeTrue();
+    expect(permission).toHaveBeenCalledWith({ notebookId, userId: null, serviceAccountId: agentId });
+
+    edit.mockClear();
+    // Scopes cap the grant, and without a grant nothing is reachable.
+    expect((await notebooksCapabilities.actions["note.edit"].run(editInput, agentContext(["read"]))).ok).toBeFalse();
+    permission.mockResolvedValue("none");
+    expect(
+      (await notebooksCapabilities.queries["note.read"].run({ id: note.shortId, contentOffset: 0, contentLimit: 1000 }, agent)).ok,
+    ).toBeFalse();
+    expect((await notebooksCapabilities.actions["note.edit"].run(editInput, agent)).ok).toBeFalse();
+    expect(edit).not.toHaveBeenCalled();
+  });
+
   test("compiles the expanded public manifest", () => {
     expect(() => compileCapabilityManifest("notebooks", notebooksCapabilities)).not.toThrow();
   });
