@@ -163,6 +163,7 @@ export const spacesService = {
     /** Single-query cross-space search used by the global search dialog. */
     searchAcross: items.searchAcross,
     get: items.get,
+    findByTitle: items.findByTitle,
     getRecurringOverride: items.getRecurringOverride,
     create: items.create,
     update: items.update,

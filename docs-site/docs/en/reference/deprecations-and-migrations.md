@@ -5,10 +5,141 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # Deprecations and migrations
+
+## Mail CLI commands
+
+The everyday `cld mail` commands use the shared verbs and addresses. The old
+names are removed without aliases; scripts must switch to the new names. A
+mailbox is its ID or exact name, a folder is `<mailbox>:<path>` such as
+`"Support:Projekte / 2025"`, and an ambiguous name or path fails with `409`
+and lists its candidates. Triage commands take up to 50 conversation IDs as
+arguments and act on the Inbox unless `--in <folder>` names another source
+folder. Administration, provider, identity, automation, workflow, operator,
+repair, and storage commands keep their names. See
+[Mail](/en/apps/mail#automate-mail-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `conversation list [--folder <id>]` | `ls <mailbox>[:<folder path>]` |
+| `conversation get` | `show <conversation>` |
+| `message get` | `cat <message>` |
+| `conversation assign --conversation <id>... --to <user>` | `assign <conversation>... --to <user>` |
+| `conversation archive --source <folder-id>` | `archive <conversation>... [--in <folder>]` |
+| `conversation move <conversation> <folder-id> --source <folder-id>` | `mv <conversation>... --to <folder> [--in <folder>]` |
+| `conversation trash --source <folder-id>` | `rm <conversation>... --yes [--in <folder>]` |
+| `conversation read`, `unread` | `read`, `unread <conversation>...` |
+| `conversation star`, `unstar` | `flag`, `unflag <conversation>...` |
+| `conversation tag add --conversation <id> --tag <id>` | `tag add <conversation>... --tag <tag>` |
+| none | `tag rm <conversation>... --tag <tag>` |
+| `conversation junk`, `not-spam --source <folder-id>` | `conversation junk`, `not-spam <conversation>... [--in <folder>]` |
+| `conversation keyword add <conversation> <keyword> --source <folder-id>` | `conversation keyword add <conversation>... --keyword <keyword> [--in <folder>]` |
+| `comment list`, `add`, `edit`, `delete` | `comments list`, `add`, `update`, `delete` |
+| `send --identity --to --subject --body [--attach]` | `draft create ...`, `draft attachment add ...`, then `send <draft>` |
+| `search --folder <name>` | `search --folder <path>`; a path matching several folders fails instead of searching all of them |
+
+`send` now sends an existing draft instead of composing one. The new
+`reply <conversation>` and `forward <conversation> --to <address>` create reply
+and forward drafts from the latest message; `draft create --intent` still
+works.
+
+The Mail API adds `GET /api/mail/resolve?mailbox=<ref>[&folder=<ref>]`, which
+resolves a mailbox ID or name and a folder ID or path, and answers `404` or
+`409` with the candidates. No stored data changes.
+
+## Files CLI commands
+
+`cld filesv2` was rebuilt around shell-like verbs and file addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. Files are addressed as `<area>:/path` or by file ID instead of a base ID
+followed by a path, `--path`, or `--to`. The area is `me`, a group's exact name
+or ID, or a full area ID from `ls`; an ambiguous name fails with status 409 and
+lists every candidate. Administrator commands use `--storage` instead of
+`--area` and address directories as `<storage>/<users|groups>/<name>` or
+`<storage>/archive/<archive-id>`. See
+[Files](/en/apps/filesv2#use-the-cli).
+
+| Old command | New command |
+| --- | --- |
+| `bases list` | `ls` |
+| `list <base> --path <path>` | `ls <area>:/<path>` |
+| `stat <base> <path>` | `stat <file>` |
+| `download <base> <path> --out <local>` | `get <file> [<local>]` |
+| `archive <base> <path>... --out <local>` | `get <folder> [<local>]`, `zip <entry>... --out <local>` |
+| `upload <base> <local> --to <path>` | `put <local> <file>` (`--parents` creates folders) |
+| `mkdir <base> <path>` | `mkdir [-p] <folder>` |
+| `rename <base> <path> <name>` | `mv <file> <new-file>` in the same folder |
+| `move <base> <path>... --to <folder>` | `mv <entry>... <folder>/` |
+| `copy <base> <path>... --to <folder> [--target-base <base>]` | `cp <entry>... <folder>` |
+| `delete <base> <path>...` | `rm <entry>... --yes` |
+| `search <base> <query> --path <path>` | `search <folder> <query>` |
+| `trash list <base>`, `trash restore <base> <id>` | `trash list <area>`, `trash restore <area> <id>` |
+| `versions list <base> <path>` | `versions list <file>` |
+| `versions download <base> <path> <id> --out <local>` | `versions get <file> <id> <local>` |
+| `versions restore <base> <path> <id>` | `versions restore <file> <id>` |
+| `versions comment <base> <path> <id> <text>` | `versions update <file> <id> --comment <text>` |
+| `shares create <base> <path>...` | `shares add <entry>...` |
+| `shares revoke <id>` | `shares rm <id> --yes` |
+| `favorites add\|remove <base> <path>` | `favorites add\|remove <entry>` |
+| `documents create <base> <path>` | `documents create <file>` |
+| `documents markdown <base> <path>` | `documents create <file> --kind markdown` |
+| `edit-url <base> <path>` | `edit-url <file>` |
+| `thumbnail <base> <path> --out <local>` | `thumbnail <file> <local>` |
+| `templates get <id>` | `templates show <id>` |
+| `templates use <id> <base> <path>` | `templates use <id> <file>` |
+| `admin templates import <base> <path>` | `admin templates import <file>` |
+| `admin … --area <cloud\|freeipa>` | `admin … --storage <cloud\|freeipa>` |
+| `admin files list --area --kind --name\|--archive-id --path` | `admin files ls <directory>[:/<path>]` |
+| `admin files download <path> … --out <local>` | `admin files get <directory>:/<path> <local>` |
+| `admin files delete <path> …` | `admin files rm <directory>:/<path> --confirm-path … --yes` |
+| `admin versions list\|delete <path> …` | `admin versions list\|delete <directory>:/<path> …` |
+| `admin directories archive\|retire\|delete <name> --area --kind` | `admin directories archive\|retire\|delete <storage>/<kind>/<name>` |
+| `admin shares revoke <id>` | `admin shares rm <id> --yes` |
+
+`tree` and `cat` are new. `recent`, `favorites list`, `shares list`,
+`templates list`, and the remaining administrator commands keep their names.
+The Files API adds `GET /api/filesv2/entries/:id`, which resolves a file ID
+with the same access checks as a path. No stored data changes.
+
+## Contacts CLI commands
+
+`cld contacts` now uses the shared command verbs and addresses contacts by
+ID or `<book>:<name>`. The old command names are removed without aliases;
+scripts must switch to the new names. The `--book` and `--contact` flags and
+the local default book (`use`, `current`) are gone: pass the book in every
+address. `show --email <address>` finds a contact by email. Contact JSON input
+is `--from <file|->` instead of `--json-input` and `--stdin`; note text is
+`--from <file|->` or `--content <text>` instead of `--file` and `--stdin`.
+Destructive commands need `--yes` without a terminal. See
+[Contacts](/en/apps/contacts#automate-contacts-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `books` | `ls` |
+| `use`, `current` | removed; pass the book in every address |
+| `book` | `show <book>:` |
+| `create-book [--use]`, `update-book`, `delete-book` | `books add`, `books update`, `books delete` |
+| `list` | `ls <book>` (`--q`, `--tag`) |
+| `get` | `show <contact>`, `show --email <address>` |
+| `create` | `add <book>[:<name>]` |
+| `update` | `set <contact>` |
+| `move --target-book` | `mv <contact> <book>` |
+| `delete` | `rm <contact>` |
+| `notes`, `note`, `update-note`, `delete-note` | `notes list`, `add`, `update`, `delete` |
+| `tags`, `create-tag`, `update-tag`, `delete-tag` | `tags list <book>`, `tags add\|update\|delete <book>:<tag>` |
+| `import-preview` | `import <book> --from <file\|-> --dry-run` |
+| `--query` | `--q` |
+| `--output` | `--out` |
+| `--firstName`, `--per_page`, and other camelCase or snake_case aliases, `--parent-contact` | the kebab-case flag (`--first-name`, `--per-page`), `--parent` |
+
+`import` without `--dry-run` now creates the previewed contacts, skipping
+matches unless `--include-duplicates` is given. `search`, `tree`, `export`,
+and the `access` group keep their names. The Contacts API adds
+`GET /api/contacts/resolve`. No stored data changes.
 
 ## Notebooks CLI commands
 
@@ -51,6 +182,51 @@ the web UI still seeds it. The Notebooks API adds `GET /api/notebooks/notes/:not
 `GET /api/notebooks/:id/outline`, and `GET /api/notebooks/:id/resolve`, and
 `POST /api/notebooks/:id/notes` accepts `parentPath` and `createParents`. No
 stored data changes.
+
+## Spaces CLI commands
+
+`cld spaces` now uses the shared `cld` verbs and item addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. An item is addressed as an item ID or `<space>:<title>` instead of a
+leading space argument or `--space`, and the local default space (`use`,
+`current`) is gone. Text input is `--from <file|->` instead of `--file` and
+`--stdin`; `--page-size` is `--per-page`. See
+[Spaces](/en/apps/spaces#automate-spaces-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `use`, `current` | removed; name the space in every address |
+| `get [space]` | `show <space>:` |
+| `create` | `create` (no `--use`) |
+| `items [space]` | `ls <space>` |
+| `items --assigned-to me`, `unassigned` | `ls <space> --mine`, `--unassigned` |
+| `items --deadline`, `--activity inactive` | `ls <space> --due`, `--inactive`; new `--due-before` |
+| `item [space] <item>` | `show <item>` |
+| `add-item [space] <title> --column` | `add <space>:<title> [--column]` (defaults to the first column) |
+| `update-item [space] <item>` | `set <item>` |
+| `update-item --column` | `mv <item> <column>` |
+| none | `rm <item> --yes`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
+| `blockers`, `blocks` | `deps <item>` |
+| `block <task> <blocker>` | `deps <task> --add <blocker>` |
+| `unblock <task> <blocker>` | `deps <task> --rm <blocker>` |
+| `comments` | `comments list` |
+| `comment` | `comments add` (new `comments update`, `comments delete`) |
+| `attachments` | `attachments list` |
+| `add-attachment --file <path>` | `attachments add <item> <path>` |
+| `download-attachment --output` | `attachments download <item> <attachment> --out` |
+| `delete-attachment` | `attachments delete` |
+| `checklist add --label <text>` | `checklist add <item> <text>` |
+| `references remove` | `references delete` |
+| `calendar --from --to` | `calendar <start> <end>` |
+| `overlap --from --to --exclude-item` | `overlap <start> <end> --exclude <item>` |
+| `activity`, `work`, `claim`, `release`, `progress`, `done`, `reopen`, `invitation context`, `invitation draft`, `access …` | unchanged names; the item is one address argument |
+| `--file`, `--stdin` | `--from <file\|->` |
+| `--page-size` | `--per-page` |
+
+The Spaces API adds `GET /api/spaces/items/:itemId` and
+`GET /api/spaces/resolve?space=&title=`; the item filter accepts
+`deadlineBefore`, and assignable users include `uid`. No stored data changes.
 
 ## Workflow action costs
 

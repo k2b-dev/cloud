@@ -57,6 +57,7 @@ export type CloudCliModule = {
 };
 
 export * from "./access";
+export * from "./address";
 export * from "./commands";
 export * from "./locale";
 export * from "./output";

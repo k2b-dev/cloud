@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-09-22
+updated: 2026-09-26
 ---
 
 # Application CLI modules
@@ -299,6 +299,187 @@ It requires `json()`, `text()`, `ok`, `status`, and `statusText`.
 
 Use this context. Do not read CLI token or profile files from an application
 module.
+
+## Design commands
+
+Every `cld` module, built-in or plugin, uses the same verbs, addresses, and
+flags, so a user or agent who knows one module can guess the basics of the
+next one.
+
+### Choose the verb
+
+Name commands after what they do to the module's primary resource:
+
+| Verb | Use |
+| --- | --- |
+| `ls` | List resources, optionally below a container or path |
+| `show` or `stat` | Show metadata; use `stat` when the resource also has content |
+| `cat` | Print a resource's content, such as Markdown or a file body |
+| `add` or `write` | Create a resource; use `write` for content that can also replace an existing one |
+| `set` or `edit` | Change fields with `set`; change content in place with `edit` |
+| `mv` | Rename or move |
+| `cp` | Copy |
+| `rm` | Delete |
+
+Put secondary resources in a group named by their plural noun, with the plain
+verbs `list`, `add`, `update`, and `delete`: `comments list`, `versions
+restore`, `access grant`. Keep domain operations that fit none of these as
+their own verb, such as `pull`, `attach`, or `search`.
+
+### Address resources
+
+Every argument that names a resource accepts these forms:
+
+| Form | Example | Resolution |
+| --- | --- | --- |
+| ID | `ns98Kq` | Always accepted and always unique |
+| `<container>:<path>` | `"Team Docs":ops/backup` | Container by ID or exact name, then the path inside it |
+| Local path | `./ops/backup.md`, `~/docs/a.md` | A file inside a local copy that the module manages, if it has one |
+
+Parse the syntax with `parseCliAddress()` and resolve the result through the
+application's own API. It returns `local` for arguments that start with `/`,
+`./`, `../`, or `~`, `path` for `<container>:<path>` split at the first colon,
+and `ref` for everything else.
+
+Never guess. When a name or path segment matches several resources, the server
+fails with `409 CONFLICT` and lists every candidate as `path (id)`. Build that
+message with `cliAmbiguityText()` so every application reports ambiguity with
+the same wording in English and German. An ID always resolves, so the user can
+retry with one of the listed IDs.
+
+A module that keeps local copies may add the ID to a file name when two
+siblings share a name, for example `backup--Ab12Cd.md`. That suffix belongs
+to local file names only; it is never path syntax on the server.
+
+### Use the shared flags
+
+| Flag | Contract |
+| --- | --- |
+| `--json` / `--jsonl` | Available on every command, with a stable documented shape; see [Support every output mode](#support-every-output-mode) |
+| `--yes` | Required for destructive or irreversible actions; without a terminal, refuse instead of prompting |
+| `--from <file\|->` | Read content from a file or stdin (`-`) |
+| `--out <path>` | Write a download or export to a file instead of stdout |
+
+### Exit with a clear status
+
+A command exits with `0` when it did everything it was asked to do. Anything
+else exits with `1`: a thrown error, an API error, or a partial result such as
+skipped files. `cld` prints the error on stderr; with `--json`, it prints
+`{"error":{"message","status","exitCode"}}` instead. Return `1` from `run()`
+after you have printed a partial result.
+
+### Localize the help
+
+Write command summaries, descriptions, and messages in English and German.
+Build the module in a function that takes the locale, use that locale for
+`help`, and use `ctx.options.locale` for `run`. Command names, flags, and
+examples stay unchanged.
+
+### Example
+
+This module lists and deletes inventory items. The item argument accepts an ID
+or `<warehouse>:<path>`:
+
+```ts
+import {
+  arg,
+  type CloudCliContext,
+  type CloudCliText,
+  cliAmbiguityText,
+  command,
+  confirmFlag,
+  defineCliCommands,
+  localizeCloudCliText,
+  parseCliAddress,
+  printRows,
+  printStructured,
+} from "@k2b/cloud/cli";
+import { fail } from "@k2b/stdlib";
+
+type Item = { [key: string]: unknown; id: string; name: string; path: string };
+
+/** Server: a path segment that matches several items. */
+export const ambiguousItem = (locale: string, segment: string, matches: Item[]) =>
+  fail({
+    code: "CONFLICT" as const,
+    status: 409 as const,
+    message: localizeCloudCliText(
+      locale,
+      cliAmbiguityText({
+        value: segment,
+        resources: { en: "items", de: "Artikeln" },
+        candidates: matches.map((item) => ({ path: item.path, id: item.id })),
+      }),
+    ),
+  });
+
+const inventoryCommands = (locale?: string) => {
+  const t = (text: CloudCliText) => localizeCloudCliText(locale, text);
+
+  const resolveItem = async (ctx: CloudCliContext, raw: string): Promise<Item> => {
+    const address = parseCliAddress(raw);
+    if (address.kind === "local")
+      throw new Error(t({ en: `"${raw}" is a local path, not an item.`, de: `„${raw}“ ist ein lokaler Pfad, kein Artikel.` }));
+    const url =
+      address.kind === "path"
+        ? `/api/inventory/warehouses/${encodeURIComponent(address.container)}/resolve?${new URLSearchParams({ path: address.path })}`
+        : `/api/inventory/items/${encodeURIComponent(address.ref)}`;
+    return ctx.readJson<Item>(await ctx.fetch(url));
+  };
+
+  const itemArg = {
+    item: arg.required({
+      valueLabel: "item",
+      description: t({ en: "Item ID or <warehouse>:<path>", de: "Artikel-ID oder <lager>:<pfad>" }),
+    }),
+  };
+
+  return defineCliCommands({
+    name: "inventory",
+    summary: t({ en: "Manage inventory items.", de: "Lagerartikel verwalten." }),
+    commands: [
+      command("ls", {
+        summary: t({ en: "List items in a warehouse", de: "Artikel eines Lagers auflisten" }),
+        args: { warehouse: arg.required({ description: t({ en: "Warehouse ID or name", de: "Lager-ID oder -Name" }) }) },
+        async run({ ctx, args }) {
+          const page = await ctx.readJson<{ items: Item[] }>(
+            await ctx.fetch(`/api/inventory/warehouses/${encodeURIComponent(args.warehouse)}/items`),
+          );
+          printRows(ctx, page, page.items, [
+            { key: "id", label: "ID" },
+            { key: "path", label: t({ en: "PATH", de: "PFAD" }) },
+          ]);
+        },
+      }),
+      command("rm", {
+        summary: t({ en: "Delete an item", de: "Einen Artikel löschen" }),
+        args: itemArg,
+        flags: { yes: confirmFlag(t({ en: "Confirm the deletion", de: "Löschen bestätigen" })) },
+        async run({ ctx, args, flags }) {
+          if (!flags.yes) throw new Error(t({ en: "Deleting needs --yes.", de: "Löschen braucht --yes." }));
+          const item = await resolveItem(ctx, args.item);
+          await ctx.readJson<unknown>(await ctx.fetch(`/api/inventory/items/${encodeURIComponent(item.id)}`, { method: "DELETE" }));
+          if (!printStructured(ctx, { deleted: { id: item.id, path: item.path } }))
+            ctx.print(`${t({ en: "Deleted", de: "Gelöscht" })} ${item.path} (${item.id})`);
+        },
+      }),
+    ],
+  });
+};
+
+const inventory = inventoryCommands();
+
+export default {
+  ...inventory,
+  help: (locale?: string) => inventoryCommands(locale).help!(),
+  run: (ctx: CloudCliContext) => inventoryCommands(ctx.options.locale).run(ctx),
+};
+```
+
+`cld inventory rm "Main warehouse":cables/usb-c --yes` fails with
+`"usb-c" matches several items: cables/usb-c (Ab12Cd), cables/usb-c (Ef34Gh).
+Use one of these paths or IDs.` when two items share that path, and
+`cld inventory rm Ab12Cd --yes` then deletes the intended one.
 
 ## Add access commands
 

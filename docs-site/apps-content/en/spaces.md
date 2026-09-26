@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-09-08
+updated: 2026-09-26
 ---
 
 # Spaces
@@ -104,18 +104,31 @@ Spaces adopts.
 
 ## Automate Spaces from the terminal
 
-Spaces provides a native CLI module for spaces, items, comments, access, and
-calendar queries. Start with read commands:
+`cld spaces` lists and changes work from a terminal. An item is addressed by
+its ID or as `<space>:<title>`, with the space given by ID or exact name:
 
 ```bash
-cld spaces list --json
-cld spaces items "Product" --status active --json
-cld spaces attachments "Product" "Fix mobile dialog" --json
+cld spaces ls --json
+cld spaces ls "Product" --mine --due-before 2026-10-01 --json
+cld spaces show "Product":"Fix mobile dialog" --json
+cld spaces add "Product":"Write release notes" --deadline 2026-10-20 --assignee me
+cld spaces done "Product":"Fix mobile dialog"
 ```
 
-Run `cld spaces help` for the available areas. Run
-`cld spaces <command> --help` before creating or changing work, access, or
-calendar integrations.
+Titles are matched exactly. When a space name or title matches several
+resources, the command fails with every candidate as `path (id)` and changes
+nothing; retry with an ID. There is no default space, so every address names
+its space.
+
+The commands follow the shared `cld` verbs: `ls`, `show`, `add`, `set`, `mv`,
+and `rm`, the quick actions `done`, `reopen`, `assign`, and `due`, `deps` for
+blockers, and the groups `comments`, `attachments`, `checklist`, `references`,
+`invitation`, and `access`. `calendar` and `overlap` query a time range across
+spaces. Every command supports `--json`; destructive commands need `--yes`,
+and long text comes from `--from <file|->`. Run `cld spaces help` for the
+full list. The API behind item addresses is `GET /api/spaces/items/:itemId`
+and `GET /api/spaces/resolve?space=&title=`; both apply the same read access
+as the web interface.
 
 The `spaces.item.read` capability includes bounded task attachment metadata
 with authenticated preview and download links. Attachment content remains in
@@ -169,29 +182,29 @@ completion results and explicit worker claims. Progress and the latest result
 appear in the task details; reopening preserves the result. Earlier notes are
 recorded in task activity.
 
-Use `cld spaces items --space <id> --ready --json` to find open tasks without
-active blockers. Read `item --context` before starting, then claim the task
+Use `cld spaces ls <space-id> --ready --json` to find open tasks without
+active blockers. Read `show <item> --context` before starting, then claim the task
 with a caller-generated UUID. Competing claims fail, including separate workers
 using the same account. Claims do not expire or lock ordinary edits. Release
 the claim when stopping, before a transfer, or before completing from another
 session. An administrator can recover an abandoned claim by its exact ID.
 
-`progress` accepts a full handoff through text, file, or standard input. `done` can save
+`progress` accepts a full handoff as text or through `--from <file|->`. `done` can save
 an outcome with verification evidence and an optional commit SHA in the same
 transaction as completion. Both user and resource-bound service accounts can
 record this work under their actual identity. Comments remain user-authored.
 
-`item --context` includes work state, checklist, attachments, references, and
+`show <item> --context` includes work state, checklist, attachments, references, and
 blockers, plus explicit pages of comments and dependent tasks. Follow `hasNext`
-in those pages using `comments` and `blocks`; use `activity --cursor` to read
+in those pages using `comments list` and `deps`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
-The `comments` and `blocks` CLI JSON outputs are paginated objects.
+The `comments list` output and the `blocks` field of `deps` are paginated objects.
 
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.set-completed` accepts optional `result`, `commit` and
 `claimId`. Results and progress notes each have the existing 5,000-character
 text budget. Keep the repository's Space ID in its agent instructions and
-pass it explicitly: the CLI default selected by `spaces use` is profile-wide.
+use it in every item address.
 
 ## Deployment requirements
 

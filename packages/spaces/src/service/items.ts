@@ -354,6 +354,7 @@ export const listAssignableUsers = async (params: {
     id: user.id,
     displayName: user.displayName,
     avatarHash: user.avatarHash,
+    uid: user.uid,
     description: assignableUserDescription(user),
   }));
 };
@@ -863,6 +864,7 @@ export const listFiltered = async (params: {
     assignedTo,
     columnIds,
     deadlineFilter,
+    deadlineBefore,
     search,
     sort,
     sortDesc,
@@ -928,6 +930,9 @@ export const listFiltered = async (params: {
     conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${weekEnd}::timestamptz`;
   } else if (deadlineFilter === "none") {
     conditions = sql`${conditions} AND i.deadline IS NULL`;
+  }
+  if (deadlineBefore) {
+    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${deadlineBefore}::timestamptz`;
   }
 
   // Tag filter (items that have ANY of the specified tags)
@@ -1268,6 +1273,19 @@ export const searchAcross = async (params: {
 /**
  * Get an item by ID with relations
  */
+/**
+ * Items of one space whose title equals `title` exactly, oldest first.
+ * Occurrence overrides share their series title and are addressed by ID only.
+ */
+export const findByTitle = async (params: { spaceId: string; title: string; limit: number }) =>
+  sql<{ id: string; shortId: string; title: string }[]>`
+    SELECT id, short_id AS "shortId", title
+    FROM spaces.items
+    WHERE space_id = ${params.spaceId}::uuid AND title = ${params.title} AND recurrence_id IS NULL
+    ORDER BY created_at ASC, id ASC
+    LIMIT ${params.limit}
+  `;
+
 export const get = async (params: { id: string }): Promise<SpaceItem | null> => {
   const [row] = await sql<DbItem[]>`
     SELECT

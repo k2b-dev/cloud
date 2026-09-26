@@ -139,12 +139,12 @@ SolidJS library remains independent of Cloud and application domains.
 ## Ship CLI commands as a plugin
 
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) before
-adding `cld` commands. Define the module with `defineCliCommands()` and publish
-it as a package with `"cld": { "apiVersion": 1, "entry": "dist/cli.js" }`
-(one bundled ESM file). The module name is the plugin ID (`cld <id>`, always
-reachable as `cld plugins run <id>`); built-in names are reserved. Commands
-are API clients with the user's `CloudCliContext` only; the server keeps
-authorization, and command names, flags, and JSON output are stable syntax.
+adding `cld` commands; CLI commands follow its *Design commands* section.
+Define the module with `defineCliCommands()` and publish it as a package with
+`"cld": { "apiVersion": 1, "entry": "dist/cli.js" }` (one bundled ESM file).
+The module name is the plugin ID (`cld <id>`, also `cld plugins run <id>`);
+built-in names are reserved. Commands are `CloudCliContext` API clients; the
+server keeps authorization, and names, flags, and JSON are stable syntax.
 
 ## Build and verify one complete slice
 

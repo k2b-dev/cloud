@@ -5,7 +5,7 @@ import juice from "juice";
 import postcss from "postcss";
 import selectorParser from "postcss-selector-parser";
 import sanitizeHtml from "sanitize-html";
-import { allowedEmailInlineStyles, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
+import { allowedEmailInlineStyles, allowedEmailInlineStyleValue, EMAIL_INLINE_STYLE_PROPERTY_SET } from "./email-inline-style-policy";
 import { renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
 
 const MAX_CSS_RULES = 200;
@@ -117,7 +117,9 @@ export const validateComposeCss = (source: string): Result<string> => {
       validationError = `CSS value for "${property}" is too long`;
       return;
     }
-    if (UNSAFE_CSS_VALUE.test(node.value)) validationError = `CSS value for "${property}" is not allowed`;
+    if (UNSAFE_CSS_VALUE.test(node.value) || !allowedEmailInlineStyleValue(property, node.value)) {
+      validationError = `CSS value for "${property}" is not allowed`;
+    }
   });
 
   if (validationError) return fail(err.badInput(validationError));

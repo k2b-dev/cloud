@@ -88,7 +88,7 @@ const configuration = {
   tokenConfigured: true,
 };
 const base = {
-  id: "base-1",
+  id: `cloud:users:${identityId}`,
   area: "cloud",
   kind: "users",
   name: "alice",
@@ -97,6 +97,22 @@ const base = {
   indexEnabled: false,
   versioningEnabled: true,
 };
+/** A file address in the test area. */
+const at = (path: string) => `${base.id}:/${path}`;
+/** Answers `get`'s metadata request for a file and delegates everything else. */
+const withEntry =
+  (handler: (request: Request) => Response | Promise<Response>) =>
+  (request: Request): Response | Promise<Response> => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname.endsWith("/entry")) {
+      const path = url.searchParams.get("path")!;
+      return Response.json({
+        base,
+        entry: { name: path.split("/").at(-1), path, directory: false, size: 0, modified: "2026-09-18T12:00:00Z" },
+      });
+    }
+    return handler(request);
+  };
 const entry = { name: "résumé.txt", path: "Documents/résumé.txt", directory: false, size: 12, modified: "2026-09-18T12:00:00Z" };
 const inventoryItem = {
   identityId,
@@ -153,12 +169,12 @@ describe("Filesv2 CLI integration", () => {
     const commands = [
       ["templates", "list"],
       ["admin", "templates", "upload", file, "--name", "Minutes"],
-      ["admin", "templates", "import", base.id, "minutes.md", "--name", "Minutes"],
+      ["admin", "templates", "import", at("minutes.md"), "--name", "Minutes"],
       ["admin", "templates", "update", identityId, "--name", "Changed", "--file", file],
       ["admin", "templates", "replace", identityId, file],
       ["admin", "templates", "access", "grant", identityId, "--stdin"],
-      ["templates", "use", identityId, base.id, "Created.md"],
-      ["documents", "markdown", base.id, "Empty.md"],
+      ["templates", "use", identityId, at("Created.md")],
+      ["documents", "create", at("Empty.md"), "--kind", "markdown"],
     ];
     for (const args of commands) {
       const result = await run(["--json", "filesv2", ...args], {
@@ -188,14 +204,16 @@ describe("Filesv2 CLI integration", () => {
     for (const locale of ["en", "de"]) {
       const result = await run(["filesv2", "--help"], { locale });
       expect(result.exitCode, result.stderr).toBe(0);
-      expect(result.stdout).toContain(locale === "en" ? "Browse files" : "Dateien durchsuchen");
-      expect(result.stdout).toContain("download");
+      expect(result.stdout).toContain(locale === "en" ? "Work with personal and group files" : "Mit persönlichen und Gruppendateien");
+      for (const verb of ["ls", "tree", "stat", "cat", "get", "put", "mkdir", "mv", "cp", "rm", "trash", "versions", "shares"])
+        expect(result.stdout).toContain(verb);
+      expect(result.stdout).not.toContain("bases");
       expect(result.stdout).toContain("admin");
       const nested = await run(["filesv2", "admin", "configuration", "set", "--help"], { locale });
       expect(nested.exitCode, nested.stderr).toBe(0);
       expect(nested.stdout).toContain("--input-file");
       expect(nested.stdout).toContain("--stdin");
-      for (const command of ["list", "search"]) {
+      for (const command of ["ls", "search"]) {
         const browse = await run(["filesv2", command, "--help"], { locale });
         expect(browse.exitCode, browse.stderr).toBe(0);
         for (const flag of ["--sort", "--order", "--type", "--no-group-folders"]) expect(browse.stdout).toContain(flag);
@@ -210,13 +228,14 @@ describe("Filesv2 CLI integration", () => {
       requests.push(new URL(request.url));
       return Response.json({ base, path: "Documents", query: "report", scope: "tree", items: [entry], next: "next-cursor" });
     });
-    for (const args of [
-      ["list", base.id],
-      ["search", base.id, "report"],
-    ]) {
-      const defaults = await run(["--json", "filesv2", ...args], { server: server.url.href });
+    for (const command of ["ls", "search"] as const) {
+      const args = [command];
+      const folder = args;
+      const query = command === "search" ? ["report"] : [];
+      const defaults = await run(["--json", "filesv2", ...args, `${base.id}:/`, ...query], { server: server.url.href });
       expect(defaults.exitCode, defaults.stderr).toBe(0);
       expect(Object.fromEntries(requests.at(-1)!.searchParams)).toMatchObject({
+        path: "",
         sort: "name",
         order: "asc",
         type: "all",
@@ -226,9 +245,9 @@ describe("Filesv2 CLI integration", () => {
         [
           "--json",
           "filesv2",
-          ...args,
-          "--path",
-          "Documents",
+          ...folder,
+          at("Documents"),
+          ...query,
           "--after",
           "opaque+/= cursor",
           "--sort",
@@ -250,7 +269,7 @@ describe("Filesv2 CLI integration", () => {
         type: "files",
         groupFolders: "false",
       });
-      const alternate = await run(["--json", "filesv2", ...args, "--sort", "modified", "--type", "directories"], {
+      const alternate = await run(["--json", "filesv2", ...args, `${base.id}:/`, ...query, "--sort", "modified", "--type", "directories"], {
         server: server.url.href,
       });
       expect(alternate.exitCode, alternate.stderr).toBe(0);
@@ -259,7 +278,7 @@ describe("Filesv2 CLI integration", () => {
         type: "directories",
         groupFolders: "true",
       });
-      const invalid = await run(["filesv2", ...args, "--sort", "type"], { server: server.url.href });
+      const invalid = await run(["filesv2", ...args, `${base.id}:/`, ...query, "--sort", "type"], { server: server.url.href });
       expect(invalid.exitCode).not.toBe(0);
     }
     expect(requests).toHaveLength(6);
@@ -277,17 +296,17 @@ describe("Filesv2 CLI integration", () => {
       return Response.json({ message: "unexpected route" }, { status: 404 });
     });
     const options = { server: server.url.href, locale: "de" };
-    const bases = await run(["--json", "filesv2", "bases", "list"], options);
+    const bases = await run(["--json", "filesv2", "ls"], options);
     expect(bases.exitCode, bases.stderr).toBe(0);
     expect(JSON.parse(bases.stdout)).toEqual({ items: [base], issues: [{ area: "freeipa", code: "unavailable" }] });
     expect(bases.stderr).toContain("unavailable");
-    const page = await run(["--json", "filesv2", "list", base.id, "--path", "Documents/ä & +", "--after", inventory.next], options);
+    const page = await run(["--json", "filesv2", "ls", at("Documents/ä & +"), "--after", inventory.next], options);
     expect(page.exitCode, page.stderr).toBe(0);
     expect(JSON.parse(page.stdout)).toEqual({ base, path: "Documents/ä & +", items: [entry], next: inventory.next });
     expect(requests.at(-1)?.url.searchParams.get("path")).toBe("Documents/ä & +");
     expect(requests.at(-1)?.url.searchParams.get("after")).toBe(inventory.next);
     const admin = await run(
-      ["--json", "filesv2", "admin", "inventory", "--area", "freeipa", "--kind", "groups", "--after", inventory.next],
+      ["--json", "filesv2", "admin", "inventory", "--storage", "freeipa", "--kind", "groups", "--after", inventory.next],
       options,
     );
     expect(admin.exitCode, admin.stderr).toBe(0);
@@ -296,8 +315,8 @@ describe("Filesv2 CLI integration", () => {
     expect(requests.at(-1)?.url.searchParams.get("kind")).toBe("groups");
     expect(requests.at(-1)?.url.searchParams.get("after")).toBe(inventory.next);
     for (const [args, expected] of [
-      [["bases", "list"], base],
-      [["list", base.id], entry],
+      [["ls"], base],
+      [["ls", at("")], entry],
       [["admin", "inventory"], inventoryItem],
     ] as const) {
       const lines = await run(["--jsonl", "filesv2", ...args], options);
@@ -387,7 +406,7 @@ describe("Filesv2 CLI integration", () => {
       expect(writes).toHaveLength(0);
     }
     const adopted = await run(
-      ["--json", "filesv2", "admin", "adopt", identityId, "--area", "freeipa", "--kind", "groups", "--yes"],
+      ["--json", "filesv2", "admin", "adopt", identityId, "--storage", "freeipa", "--kind", "groups", "--yes"],
       options,
     );
     expect(adopted.exitCode, adopted.stderr).toBe(0);
@@ -421,22 +440,24 @@ describe("Filesv2 CLI integration", () => {
       );
     });
     const leases: Array<{ authorization: string | null; path: string }> = [];
-    const cloud = serve(async (request) => {
-      const body = await request.json();
-      leases.push({ authorization: request.headers.get("authorization"), path: body.path });
-      return Response.json({
-        url: `${filegate.url}${body.path === "empty.txt" ? "empty" : "file"}?lease=${leaseSecret}`,
-        method: "GET",
-        expires: "2030-01-01T00:00:00Z",
-      });
-    });
+    const cloud = serve(
+      withEntry(async (request) => {
+        const body = await request.json();
+        leases.push({ authorization: request.headers.get("authorization"), path: body.path });
+        return Response.json({
+          url: `${filegate.url}${body.path === "empty.txt" ? "empty" : "file"}?lease=${leaseSecret}`,
+          method: "GET",
+          expires: "2030-01-01T00:00:00Z",
+        });
+      }),
+    );
     const dir = await directory();
     for (const [remote, expected] of [
       ["nested/résumé.txt", bytes],
       ["empty.txt", new Uint8Array()],
     ] as const) {
       const out = join(dir, remote === "empty.txt" ? "empty" : "binary");
-      const result = await run(["--json", "filesv2", "download", base.id, remote, "--out", out], { server: cloud.url.href });
+      const result = await run(["--json", "filesv2", "get", at(remote), out], { server: cloud.url.href });
       expect(result.exitCode, result.stderr).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual({ path: out, bytes: expected.length });
       expect(new Uint8Array(await readFile(out))).toEqual(expected);
@@ -467,19 +488,18 @@ describe("Filesv2 CLI integration", () => {
       await writeFile(race, "concurrent writer");
       return new Response("download");
     });
-    const cloud = serve(() => {
-      calls += 1;
-      return Response.json({ url: `${filegate.url}?lease=${leaseSecret}`, method: "GET", expires: "2030-01-01T00:00:00Z" });
-    });
+    const cloud = serve(
+      withEntry(() => {
+        calls += 1;
+        return Response.json({ url: `${filegate.url}?lease=${leaseSecret}`, method: "GET", expires: "2030-01-01T00:00:00Z" });
+      }),
+    );
     for (const out of [existing, symbolic]) {
-      const result = await run(["filesv2", "download", base.id, "file", "--out", out], { server: cloud.url.href });
+      const result = await run(["filesv2", "get", at("file"), out], { server: cloud.url.href });
       expect(result.exitCode).not.toBe(0);
       expect(calls).toBe(0);
     }
-    const missingOut = await run(["filesv2", "download", base.id, "file"], { server: cloud.url.href });
-    expect(missingOut.exitCode).not.toBe(0);
-    expect(calls).toBe(0);
-    const result = await run(["filesv2", "download", base.id, "file", "--out", race], { server: cloud.url.href });
+    const result = await run(["filesv2", "get", at("file"), race], { server: cloud.url.href });
     expect(result.exitCode).not.toBe(0);
     expect(await readFile(existing, "utf8")).toBe("keep");
     expect((await lstat(symbolic)).isSymbolicLink()).toBe(true);
@@ -499,12 +519,14 @@ describe("Filesv2 CLI integration", () => {
         ? Response.redirect(`${target.url}?token=${leaseSecret}`, 307)
         : new Response(`Sensitive response ${leaseSecret}`, { status: 403 }),
     );
-    const cloud = serve(async (request) => {
-      const body = await request.json();
-      return Response.json({ url: `${filegate.url}${body.path}?lease=${leaseSecret}`, method: "GET", expires: "2030-01-01T00:00:00Z" });
-    });
+    const cloud = serve(
+      withEntry(async (request) => {
+        const body = await request.json();
+        return Response.json({ url: `${filegate.url}${body.path}?lease=${leaseSecret}`, method: "GET", expires: "2030-01-01T00:00:00Z" });
+      }),
+    );
     for (const remote of ["redirect", "failure"]) {
-      const result = await run(["--json", "filesv2", "download", base.id, remote, "--out", join(dir, remote)], { server: cloud.url.href });
+      const result = await run(["--json", "filesv2", "get", at(remote), join(dir, remote)], { server: cloud.url.href });
       expect(result.exitCode).not.toBe(0);
       expect(result.stdout).toBe("");
       expect(result.stderr).toContain("Filegate download failed");
@@ -525,8 +547,8 @@ describe("Filesv2 CLI integration", () => {
       response.write(Buffer.alloc(64 * 1024, 42));
       // Leave the stream open until the CLI cancels it.
     });
-    const cloud = serve(() => Response.json({ url, method: "GET", expires: "2030-01-01T00:00:00Z" }));
-    const proc = await start(["--json", "filesv2", "download", base.id, "file", "--out", join(dir, "output")], { server: cloud.url.href });
+    const cloud = serve(withEntry(() => Response.json({ url, method: "GET", expires: "2030-01-01T00:00:00Z" })));
+    const proc = await start(["--json", "filesv2", "get", at("file"), join(dir, "output")], { server: cloud.url.href });
     const completed = finish(proc);
     const deadline = setTimeout(() => proc.kill("SIGKILL"), 10_000);
     try {
@@ -565,8 +587,8 @@ describe("Filesv2 CLI integration", () => {
     const address = filegate.address();
     if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
     const url = `http://127.0.0.1:${address.port}/?lease=${leaseSecret}`;
-    const cloud = serve(() => Response.json({ url, method: "GET", expires: "2030-01-01T00:00:00Z" }));
-    const proc = await start(["--json", "filesv2", "download", base.id, "file", "--out", join(dir, "output")], { server: cloud.url.href });
+    const cloud = serve(withEntry(() => Response.json({ url, method: "GET", expires: "2030-01-01T00:00:00Z" })));
+    const proc = await start(["--json", "filesv2", "get", at("file"), join(dir, "output")], { server: cloud.url.href });
     const deadline = setTimeout(() => proc.kill("SIGKILL"), 10_000);
     try {
       const result = await finish(proc);
@@ -620,7 +642,7 @@ describe("Filesv2 CLI integration", () => {
         "filesv2",
         "admin",
         "inventory",
-        "--area",
+        "--storage",
         "freeipa",
         "--kind",
         "groups",
@@ -639,7 +661,7 @@ describe("Filesv2 CLI integration", () => {
     expect(requests[0]?.searchParams.get("status")).toBe("orphaned");
     expect(requests[0]?.searchParams.get("after")).toBe(inventory.next);
     const archives = await run(
-      ["--json", "filesv2", "admin", "archives", "list", "--area", "freeipa", "--search", "old & +", "--after", identityId],
+      ["--json", "filesv2", "admin", "archives", "list", "--storage", "freeipa", "--search", "old & +", "--after", identityId],
       options,
     );
     expect(archives.exitCode, archives.stderr).toBe(0);
@@ -647,7 +669,7 @@ describe("Filesv2 CLI integration", () => {
     expect(requests.at(-1)?.searchParams.get("area")).toBe("freeipa");
     expect(requests.at(-1)?.searchParams.get("q")).toBe("old & +");
     expect(requests.at(-1)?.searchParams.get("after")).toBe(identityId);
-    const lines = await run(["--jsonl", "filesv2", "admin", "archives", "list", "--area", "freeipa"], options);
+    const lines = await run(["--jsonl", "filesv2", "admin", "archives", "list", "--storage", "freeipa"], options);
     expect(lines.exitCode, lines.stderr).toBe(0);
     expect(
       lines.stdout
@@ -669,9 +691,11 @@ describe("Filesv2 CLI integration", () => {
     for (const args of [
       ["directories", "create", identityId],
       ["directories", "create", "not-a-uuid", "--yes"],
-      ["directories", "archive", "alumni"],
-      ["directories", "retire", "alumni"],
-      ["directories", "delete", "alumni", "--yes"],
+      ["directories", "archive", "cloud/groups/alumni"],
+      ["directories", "archive", `cloud/archive/${identityId}`, "--yes"],
+      ["directories", "archive", "alumni", "--yes"],
+      ["directories", "retire", "cloud/groups/alumni"],
+      ["directories", "delete", "cloud/groups/alumni", "--yes"],
       ["archives", "restore", identityId, "--yes"],
       ["archives", "delete", identityId, "--confirm-path", "prefix/archive/alumni"],
       ["root", "rebuild"],
@@ -682,25 +706,25 @@ describe("Filesv2 CLI integration", () => {
     }
     const operations = [
       {
-        args: ["directories", "create", identityId, "--area", "freeipa", "--kind", "groups", "--yes"],
+        args: ["directories", "create", identityId, "--storage", "freeipa", "--kind", "groups", "--yes"],
         path: "/directories/create",
         method: "POST",
         body: { area: "freeipa", kind: "groups", identityId },
       },
       {
-        args: ["directories", "archive", "alumni", "--kind", "groups", "--archive-path", "archiv/2026", "--yes"],
+        args: ["directories", "archive", "cloud/groups/alumni", "--archive-path", "archiv/2026", "--yes"],
         path: "/directories/archive",
         method: "POST",
         body: { area: "cloud", kind: "groups", name: "alumni", archivePath: "archiv/2026" },
       },
       {
-        args: ["directories", "retire", "alumni", "--kind", "groups", "--yes"],
+        args: ["directories", "retire", "cloud/groups/alumni", "--yes"],
         path: "/directories/retire",
         method: "POST",
         body: { area: "cloud", kind: "groups", name: "alumni" },
       },
       {
-        args: ["directories", "delete", "alumni", "--kind", "groups", "--confirm-path", "prefix/groups/alumni", "--yes"],
+        args: ["directories", "delete", "cloud/groups/alumni", "--confirm-path", "prefix/groups/alumni", "--yes"],
         path: "/directories/delete",
         method: "POST",
         body: { area: "cloud", kind: "groups", name: "alumni", confirmPath: "prefix/groups/alumni" },
@@ -717,8 +741,8 @@ describe("Filesv2 CLI integration", () => {
         method: "DELETE",
         body: { confirmPath: "prefix/archive/alumni" },
       },
-      { args: ["root", "refresh", "--area", "freeipa"], path: "/root/refresh", method: "POST", body: { area: "freeipa" } },
-      { args: ["root", "rebuild", "--area", "freeipa", "--yes"], path: "/root/rebuild", method: "POST", body: { area: "freeipa" } },
+      { args: ["root", "refresh", "--storage", "freeipa"], path: "/root/refresh", method: "POST", body: { area: "freeipa" } },
+      { args: ["root", "rebuild", "--storage", "freeipa", "--yes"], path: "/root/rebuild", method: "POST", body: { area: "freeipa" } },
     ];
     for (const expected of operations) {
       const result = await run(["--json", "filesv2", "admin", ...expected.args], options);
@@ -758,24 +782,20 @@ describe("Filesv2 CLI integration", () => {
       );
     });
     const options = { server: cloud.url.href };
-    for (const source of [
-      ["--name", "alumni", "--kind", "groups"],
-      ["--archive-id", identityId],
-    ]) {
-      const result = await run(
-        ["--json", "filesv2", "admin", "files", "list", "--area", "freeipa", ...source, "--path", "trash", "--after", inventory.next],
-        options,
-      );
+    for (const source of ["freeipa/groups/alumni", `freeipa/archive/${identityId}`]) {
+      const result = await run(["--json", "filesv2", "admin", "files", "ls", `${source}:/trash`, "--after", inventory.next], options);
       expect(result.exitCode, result.stderr).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual(page);
       expect(requests.at(-1)?.url.searchParams.get("path")).toBe("trash");
       expect(requests.at(-1)?.url.searchParams.get("after")).toBe(inventory.next);
     }
     expect(requests[0]?.url.searchParams.get("name")).toBe("alumni");
+    expect(requests[0]?.url.searchParams.get("kind")).toBe("groups");
+    expect(requests[0]?.url.searchParams.get("area")).toBe("freeipa");
     expect(requests[0]?.url.searchParams.get("archiveId")).toBeNull();
     expect(requests[1]?.url.searchParams.get("archiveId")).toBe(identityId);
     expect(requests[1]?.url.searchParams.get("name")).toBeNull();
-    const lines = await run(["--jsonl", "filesv2", "admin", "files", "list", "--area", "freeipa", "--archive-id", identityId], options);
+    const lines = await run(["--jsonl", "filesv2", "admin", "files", "ls", `freeipa/archive/${identityId}`], options);
     expect(
       lines.stdout
         .trim()
@@ -784,20 +804,7 @@ describe("Filesv2 CLI integration", () => {
     ).toEqual(page.items);
     const out = join(dir, "archive-file");
     const downloaded = await run(
-      [
-        "--json",
-        "filesv2",
-        "admin",
-        "files",
-        "download",
-        "trash/résumé.txt",
-        "--area",
-        "freeipa",
-        "--archive-id",
-        identityId,
-        "--out",
-        out,
-      ],
+      ["--json", "filesv2", "admin", "files", "get", `freeipa/archive/${identityId}:/trash/résumé.txt`, out],
       options,
     );
     expect(downloaded.exitCode, downloaded.stderr).toBe(0);
@@ -819,10 +826,10 @@ describe("Filesv2 CLI integration", () => {
     });
     const options = { server: server.url.href };
     for (const args of [
-      ["list"],
-      ["list", "--name", "alumni", "--archive-id", identityId],
-      ["delete", "trash/file.txt", "--name", "alumni", "--yes"],
-      ["delete", "trash/file.txt", "--name", "alumni", "--confirm-path", "prefix/groups/alumni/trash/file.txt"],
+      ["ls"],
+      ["ls", "alumni:/trash"],
+      ["rm", "freeipa/groups/alumni:/trash/file.txt", "--yes"],
+      ["rm", "freeipa/groups/alumni:/trash/file.txt", "--confirm-path", "prefix/groups/alumni/trash/file.txt"],
     ]) {
       const result = await run(["filesv2", "admin", "files", ...args], options);
       expect(result.exitCode).not.toBe(0);
@@ -834,14 +841,8 @@ describe("Filesv2 CLI integration", () => {
         "filesv2",
         "admin",
         "files",
-        "delete",
-        "trash/file.txt",
-        "--area",
-        "freeipa",
-        "--kind",
-        "groups",
-        "--name",
-        "alumni",
+        "rm",
+        "freeipa/groups/alumni:/trash/file.txt",
         "--confirm-path",
         "prefix/groups/alumni/trash/file.txt",
         "--yes",
@@ -919,11 +920,11 @@ test("stat and thumbnail use the same authenticated base and keep transfer crede
     expect(await request.json()).toEqual({ path: entry.path, size: "large" });
     return Response.json({ method: "GET", url: `${transfer.url}?lease=${leaseSecret}`, expires: "2030-01-01T00:00:00Z" });
   });
-  const metadata = await run(["--json", "filesv2", "stat", base.id, entry.path], { server: cloud.url.href });
+  const metadata = await run(["--json", "filesv2", "stat", at(entry.path)], { server: cloud.url.href });
   expect(metadata.exitCode, metadata.stderr).toBe(0);
   expect(JSON.parse(metadata.stdout)).toEqual({ base, entry });
   const out = join(await directory(), "thumbnail.png");
-  const result = await run(["--json", "filesv2", "thumbnail", base.id, entry.path, "--out", out, "--size", "large"], {
+  const result = await run(["--json", "filesv2", "thumbnail", at(entry.path), out, "--size", "large"], {
     server: cloud.url.href,
   });
   expect(result.exitCode, result.stderr).toBe(0);
@@ -947,10 +948,10 @@ test("search and mkdir pass folder scope and names through the authenticated API
     expect(await request.json()).toEqual({ path: "Documents/2026" });
     return Response.json({ base, entry: { name: "2026", path: "Documents/2026", directory: true, size: 0, modified: entry.modified } });
   });
-  const search = await run(["--json", "filesv2", "search", base.id, "report", "--path", "Documents"], { server: cloud.url.href });
+  const search = await run(["--json", "filesv2", "search", at("Documents"), "report"], { server: cloud.url.href });
   expect(search.exitCode, search.stderr).toBe(0);
   expect(JSON.parse(search.stdout).items).toEqual([entry]);
-  const made = await run(["--json", "filesv2", "mkdir", base.id, "Documents/2026"], { server: cloud.url.href });
+  const made = await run(["--json", "filesv2", "mkdir", at("Documents/2026")], { server: cloud.url.href });
   expect(made.exitCode, made.stderr).toBe(0);
   expect(JSON.parse(made.stdout).entry.path).toBe("Documents/2026");
   expect(seen).toEqual([`GET /api/filesv2/bases/${base.id}/search`, `POST /api/filesv2/bases/${base.id}/directories`]);
@@ -1007,7 +1008,7 @@ test("upload opens a session through Cloud, streams segments to Filegate without
     expect(received).toBe(14);
     return Response.json({ base, entry: { ...entry, name: "notes.txt", path: "Documents/notes.txt", size: 14 } });
   });
-  const result = await run(["--json", "filesv2", "upload", base.id, local, "--to", "Documents/notes.txt", "--replace"], {
+  const result = await run(["--json", "filesv2", "put", local, at("Documents/notes.txt"), "--replace"], {
     server: cloud.url.href,
   });
   expect(result.exitCode, result.stderr).toBe(0);
@@ -1016,7 +1017,7 @@ test("upload opens a session through Cloud, streams segments to Filegate without
   expect(seen).toEqual([`POST /api/filesv2/bases/${base.id}/uploads`, `POST /api/filesv2/bases/${base.id}/uploads/s1/commit`]);
 });
 
-test("delete, trash restore, versions and shares are thin wrappers over the authenticated API", async () => {
+test("rm, trash restore, versions and shares are thin wrappers over the authenticated API", async () => {
   const seen: string[] = [];
   const cloud = serve(async (request) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
@@ -1072,19 +1073,20 @@ test("delete, trash restore, versions and shares are thin wrappers over the auth
     return Response.json({ message: "unexpected" }, { status: 500 });
   });
   const server = { server: cloud.url.href };
-  const removed = await run(["--json", "filesv2", "delete", base.id, entry.path, "Documents/old.txt"], server);
+  const removed = await run(["--json", "filesv2", "rm", at(entry.path), at("Documents/old.txt"), "--yes"], server);
   expect(removed.exitCode, removed.stderr).toBe(0);
   expect(JSON.parse(removed.stdout).entries[0].original).toBe(entry.path);
   const restored = await run(["--json", "filesv2", "trash", "restore", base.id, "11111111-1111-4111-8111-111111111111"], server);
   expect(restored.exitCode, restored.stderr).toBe(0);
-  const versions = await run(["--json", "filesv2", "versions", "list", base.id, entry.path], server);
+  expect(restored.exitCode, restored.stderr).toBe(0);
+  const versions = await run(["--json", "filesv2", "versions", "list", at(entry.path)], server);
   expect(JSON.parse(versions.stdout)[0].comment).toBe("draft");
-  const asCopy = await run(["--json", "filesv2", "versions", "restore", base.id, entry.path, "v1", "--as", "copy.txt"], server);
+  const asCopy = await run(["--json", "filesv2", "versions", "restore", at(entry.path), "v1", "--as", "copy.txt"], server);
   expect(JSON.parse(asCopy.stdout).entry.path).toBe("Documents/copy.txt");
-  const share = await run(["filesv2", "shares", "create", base.id, entry.path, "--title", "Report", "--expires-in", "7d"], server);
+  const share = await run(["filesv2", "shares", "add", at(entry.path), "--title", "Report", "--expires-in", "7d"], server);
   expect(share.exitCode, share.stderr).toBe(0);
   expect(share.stdout.trim()).toBe("https://cloud.test/share/filesv2/s/tok");
-  const revoked = await run(["--json", "filesv2", "shares", "revoke", "s1"], server);
+  const revoked = await run(["--json", "filesv2", "shares", "rm", "s1", "--yes"], server);
   expect(JSON.parse(revoked.stdout).state).toBe("revoked");
   expect(seen).toEqual([
     `POST /api/filesv2/bases/${base.id}/delete`,
@@ -1109,10 +1111,10 @@ test("documents create calls the API and edit-url prints the Cloud address local
     return Response.json({ message: "unexpected" }, { status: 500 });
   });
   const server = { server: cloud.url.href };
-  const created = await run(["--json", "filesv2", "documents", "create", base.id, "Documents/Minutes", "--kind", "spreadsheet"], server);
+  const created = await run(["--json", "filesv2", "documents", "create", at("Documents/Minutes"), "--kind", "spreadsheet"], server);
   expect(created.exitCode, created.stderr).toBe(0);
   expect(JSON.parse(created.stdout).entry.path).toBe("Documents/Minutes.ods");
-  const address = await run(["filesv2", "edit-url", base.id, "Documents/Minutes.ods"], server);
+  const address = await run(["filesv2", "edit-url", at("Documents/Minutes.ods")], server);
   expect(address.exitCode, address.stderr).toBe(0);
   const query = new URLSearchParams({ base: base.id, path: "Documents", file: "Documents/Minutes.ods" });
   expect(address.stdout.trim()).toBe(`${cloud.url.origin}/app/filesv2?${query}&view=edit`);
@@ -1130,7 +1132,7 @@ test("batch partial results preserve successes and return a failure exit status"
       ],
     }),
   );
-  const result = await run(["--json", "filesv2", "move", base.id, entry.path, "missing.txt", "--to", "Target"], { server: cloud.url.href });
+  const result = await run(["--json", "filesv2", "mv", at(entry.path), at("missing.txt"), at("Target/")], { server: cloud.url.href });
   expect(result.exitCode).toBe(1);
   expect(JSON.parse(result.stdout).results).toHaveLength(2);
   expect(JSON.parse(result.stdout).entries[0].path).toBe(entry.path);
@@ -1175,13 +1177,12 @@ test("new administration and inbox settings use the authenticated API without st
   for (const args of [
     ["admin", "shares", "list"],
     ["admin", "uploads", "list"],
-    ["admin", "shares", "revoke", "abc"],
-    ["admin", "versions", "delete", "a.txt", "v1", "--name", "alice", "--confirm-path", "home/alice/a.txt", "--yes"],
+    ["admin", "shares", "rm", "abc", "--yes"],
+    ["admin", "versions", "delete", "cloud/users/alice:/a.txt", "v1", "--confirm-path", "home/alice/a.txt", "--yes"],
     [
       "shares",
-      "create",
-      base.id,
-      "Inbox",
+      "add",
+      at("Inbox"),
       "--kind",
       "inbox",
       "--title",
@@ -1220,7 +1221,7 @@ test("cross-area copy and strict search failures use the same CLI contract", asy
     [`cloud:groups:${identityId}`, `freeipa:users:${identityId}`],
     [`freeipa:users:${identityId}`, `cloud:groups:${identityId}`],
   ] as const) {
-    const result = await run(["--json", "filesv2", "copy", source, entry.path, "--target-base", target, "--to", "Documents"], {
+    const result = await run(["--json", "filesv2", "cp", `${source}:/${entry.path}`, `${target}:/Documents`], {
       server: cloud.url.href,
     });
     expect(result.exitCode, result.stderr).toBe(0);
@@ -1228,7 +1229,7 @@ test("cross-area copy and strict search failures use the same CLI contract", asy
   }
   for (const status of [403, 404]) {
     denied = status;
-    const result = await run(["--json", "filesv2", "search", base.id, "report", "--after", "cursor"], { server: cloud.url.href });
+    const result = await run(["--json", "filesv2", "search", at(""), "report", "--after", "cursor"], { server: cloud.url.href });
     expect(result.exitCode).not.toBe(0);
     expect(result.stdout).not.toContain('"items":[]');
   }
@@ -1247,12 +1248,56 @@ test("share passwords are read from a private file for download and inbox withou
     return Response.json({ id: "s1", passwordProtected: true, url: "https://cloud.test/share/filesv2/s/token" });
   });
   for (const kind of ["download", "inbox"]) {
-    const result = await run(
-      ["filesv2", "shares", "create", base.id, "Docs", "--kind", kind, "--title", "Protected", "--password-file", path],
-      { server: cloud.url.href },
-    );
+    const result = await run(["filesv2", "shares", "add", at("Docs"), "--kind", kind, "--title", "Protected", "--password-file", path], {
+      server: cloud.url.href,
+    });
     expect(result.exitCode, result.stderr).toBe(0);
     expect(result.stdout + result.stderr).not.toContain(password);
   }
   expect(kinds).toEqual(["download", "inbox"]);
 });
+
+test("areas resolve by name through cld, ambiguity reports 409 with every candidate, and mkdir -p parses", async () => {
+  const ops = [`cloud:groups:${identityId}`, "freeipa:groups:22222222-2222-4222-8222-222222222222"];
+  const seen: string[] = [];
+  const cloud = serve(async (request) => {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${cloudToken}`);
+    const url = new URL(request.url);
+    seen.push(`${request.method} ${url.pathname}`);
+    if (url.pathname === "/api/filesv2/bases")
+      return Response.json({
+        items: [base, ...ops.map((id) => ({ ...base, id, area: id.split(":")[0], kind: "groups", name: "ops" }))],
+        issues: [],
+        editor: null,
+      });
+    const body = (await request.json()) as { path: string };
+    if (body.path === "a") return Response.json({ code: "path_conflict", message: "path_conflict" }, { status: 409 });
+    return Response.json({ base, entry: { ...entry, path: body.path, directory: true } });
+  });
+  const ambiguous = await run(["--json", "filesv2", "ls", "ops:/"], { server: cloud.url.href });
+  expect(ambiguous.exitCode).toBe(1);
+  expect(ambiguous.stdout).toBe("");
+  expect(JSON.parse(ambiguous.stderr || ambiguous.stdout || "{}")).toEqual({
+    error: {
+      message: `"ops" matches several areas: cloud/groups/ops (${ops[0]}), freeipa/groups/ops (${ops[1]}). Use one of these paths or IDs.`,
+      status: 409,
+      exitCode: 1,
+    },
+  });
+  expect(seen).toEqual(["GET /api/filesv2/bases"]);
+  const german = await run(["filesv2", "ls", "ops:/"], { server: cloud.url.href, locale: "de" });
+  expect(german.stderr).toContain("„ops“ passt zu mehreren Bereichen");
+
+  seen.length = 0;
+  const made = await run(["--json", "filesv2", "mkdir", "-p", "me:/b/c"], { server: cloud.url.href });
+  expect(made.exitCode, made.stderr).toBe(0);
+  expect(JSON.parse(made.stdout).entry.path).toBe("b/c");
+  expect(seen).toEqual([
+    "GET /api/filesv2/bases",
+    `POST /api/filesv2/bases/${base.id}/directories`,
+    `POST /api/filesv2/bases/${base.id}/directories`,
+  ]);
+  const conflict = await run(["filesv2", "mkdir", "me:/a"], { server: cloud.url.href });
+  expect(conflict.exitCode).toBe(1);
+  expect(conflict.stderr).toContain("path_conflict");
+}, 20_000);

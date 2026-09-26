@@ -6,11 +6,15 @@ import { pipeline } from "node:stream/promises";
 import {
   arg,
   type CloudCliContext,
+  type CloudCliText,
+  cliAmbiguityText,
   command,
   confirmFlag,
   createAccessCommands,
   defineCliCommands,
   flag,
+  localizeCloudCliText,
+  parseCliAddress,
   printStructured,
   printRows as printTable,
   readCliInput,
@@ -87,6 +91,8 @@ import {
   type WorkflowEffectBudget,
   type WorkflowValidation,
 } from "./contracts";
+import { mailFolderPaths } from "./folder-tree";
+import { forwardMessageBody } from "./frontend/_components/mail-compose-derivation";
 import { incomingAutomationIssues } from "./incoming-automation-issues";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
@@ -116,7 +122,6 @@ import type { MessageSearchHit, MessageSearchPage } from "./service/search";
 import type { MailWorkflowCatalogSnapshot } from "./workflows/catalog";
 
 type MailboxWithPermission = Mailbox & { permission: PermissionLevel };
-type ResolvedMailbox = Mailbox & { permission: PermissionLevel | null };
 type ProviderConnectionResult = {
   connection: ProviderConnection;
   verification: unknown;
@@ -334,30 +339,34 @@ const pollUntil = async <T>(params: {
 const listMailboxes = (ctx: CloudCliContext): Promise<MailboxWithPermission[]> => readApi(ctx, "/mailboxes?limit=200");
 const getMailbox = (ctx: CloudCliContext, mailboxId: string, signal?: AbortSignal): Promise<Mailbox> =>
   readApi(ctx, `/mailboxes/${mailboxId}`, { signal });
-const getMailboxIfFound = async (ctx: CloudCliContext, mailboxId: string): Promise<Mailbox | null> => {
-  const response = await ctx.fetch(apiPath(`/mailboxes/${mailboxId}`));
-  if (response.status === 404) return null;
-  return ctx.readJson<Mailbox>(response);
-};
 
-const resolveMailbox = async (ctx: CloudCliContext, ref?: string): Promise<ResolvedMailbox> => {
+type MailAddressFolder = MailFolderView & { path: string };
+type MailAddressMailbox = Mailbox & { permission: PermissionLevel };
+type MailAddressResolution = { mailbox: MailAddressMailbox; folder: MailAddressFolder | null };
+type Translate = (text: CloudCliText) => string;
+const english: Translate = (text) => text.en;
+
+/** The server resolves IDs, exact names, and folder paths, and answers 409 when several match. */
+const resolveMailAddress = (ctx: CloudCliContext, mailbox: string, folder?: string): Promise<MailAddressResolution> =>
+  readApi(ctx, `/resolve?${new URLSearchParams(folder === undefined ? { mailbox } : { mailbox, folder })}`);
+
+const mailboxRefOrDefault = async (ctx: CloudCliContext, ref: string | undefined, t: Translate = english): Promise<string> => {
   const effectiveRef = ref ?? (await ctx.getDefault(DEFAULT_MAILBOX_KEY));
-  if (!effectiveRef) throw new Error("Missing mailbox. Pass a mailbox or run `cld mail use <mailbox>`. ");
+  if (!effectiveRef)
+    throw new Error(
+      t({
+        en: "Missing mailbox. Pass --mailbox or run `cld mail use <mailbox>`.",
+        de: "Postfach fehlt. Übergib --mailbox oder führe `cld mail use <postfach>` aus.",
+      }),
+    );
   if (LEGACY_UUID_PATTERN.test(effectiveRef)) {
     throw new Error("Mailbox id must be an exact six-character Mail resource id; legacy UUIDs are not supported.");
   }
-  const candidates = new Map<string, ResolvedMailbox>();
-  const [idMatch, exact] = await Promise.all([
-    MAIL_RESOURCE_ID_PATTERN.test(effectiveRef) ? getMailboxIfFound(ctx, effectiveRef) : Promise.resolve(null),
-    readApi<ResolvedMailbox[]>(ctx, `/mailboxes?limit=2&name=${encodeURIComponent(effectiveRef)}`),
-  ]);
-  if (idMatch) candidates.set(idMatch.id, { ...idMatch, permission: null });
-  for (const mailbox of exact) candidates.set(mailbox.id, mailbox);
-  if (candidates.size > 1) throw new Error(`Mailbox "${effectiveRef}" is ambiguous; use its id.`);
-  const candidate = candidates.values().next().value;
-  if (candidate) return candidate;
-  throw new Error(`Mailbox "${effectiveRef}" was not found.`);
+  return effectiveRef;
 };
+
+const resolveMailbox = async (ctx: CloudCliContext, ref?: string, t: Translate = english): Promise<MailAddressMailbox> =>
+  (await resolveMailAddress(ctx, await mailboxRefOrDefault(ctx, ref, t))).mailbox;
 
 const findSubscription = async (ctx: CloudCliContext, mailboxId: string, requestedListKey: string): Promise<MailSubscriptionSummary> => {
   const listKey = requestedListKey.trim().toLowerCase();
@@ -981,7 +990,10 @@ const searchTermFlags = {
     description: "Search conversation references; repeatable",
     separator: "\0",
   }),
-  folder: flag.stringList({ description: "Only messages in this folder, by id or exact name; repeatable", separator: "\0" }),
+  folder: flag.stringList({
+    description: "Only messages in this folder, by ID or path such as Projekte/2025; repeatable",
+    separator: "\0",
+  }),
   tag: flag.stringList({ description: "Search Cloud-local tags; repeatable", separator: "\0" }),
   keyword: flag.stringList({
     description: "Search remote provider keywords; repeatable",
@@ -1098,14 +1110,6 @@ type SearchTermFlagValues = {
   expression: Parameters<typeof readCliInput>[0];
 };
 
-const folderFilter = (folders: MailFolderView[], value: string): MailSearchExpression => {
-  const byId = folders.find((folder) => folder.id === value);
-  const matches = byId ? [byId] : folders.filter((folder) => folder.name.toLowerCase() === value.toLowerCase());
-  if (matches.length === 0) throw new Error(`Unknown folder "${value}". Pass a folder id or name from \`cld mail folders\`.`);
-  const [first, ...rest] = matches.map((folder): MailSearchExpression => ({ type: "folder_id", folderId: folder.id }));
-  return rest.length === 0 ? first! : { type: "or", expressions: [first!, ...rest] };
-};
-
 const buildSimpleSearchExpression = async (
   ctx: CloudCliContext,
   mailboxId: string,
@@ -1132,9 +1136,9 @@ const buildSimpleSearchExpression = async (
   for (const [flagName, field] of fields) {
     for (const query of flags[flagName]) terms.push({ type: "text", field, query, match: flags.match ?? "words" });
   }
-  if (flags.folder.length > 0) {
-    const folders = await readApi<MailFolderView[]>(ctx, `/mailboxes/${mailboxId}/folders`);
-    for (const value of flags.folder) terms.push(folderFilter(folders, value));
+  for (const value of flags.folder) {
+    const { folder } = await resolveMailAddress(ctx, mailboxId, value);
+    terms.push({ type: "folder_id", folderId: folder!.id });
   }
   if (terms.length === 0) throw new Error("Pass at least one search term such as --any, --subject, --body, or --from.");
   return terms.length === 1 ? terms[0]! : flags.or ? { type: "or", expressions: terms } : { type: "and", expressions: terms };
@@ -1230,37 +1234,6 @@ const submitMessageState = (
     },
   );
 
-const submitConversationAction = async (params: {
-  ctx: CloudCliContext;
-  mailbox: Mailbox;
-  conversationId: string;
-  input: Record<string, unknown>;
-  wait: boolean;
-  timeoutSeconds?: number;
-}): Promise<void> => {
-  const result = await readApi<{
-    correlationId: string;
-    commands: MailCommand[];
-  }>(
-    params.ctx,
-    `/mailboxes/${params.mailbox.id}/conversations/${requireMailResourceId(params.conversationId, "Conversation id")}/actions`,
-    jsonRequest("POST", params.input),
-  );
-  const commands = params.wait
-    ? await waitForCommands(
-        params.ctx,
-        params.mailbox.id,
-        result.commands.map((item) => item.id),
-        params.timeoutSeconds,
-      )
-    : result.commands;
-  const output = { correlationId: result.correlationId, commands };
-  if (printStructured(params.ctx, output)) return;
-  params.ctx.print(
-    `${commands.length} conversation message command${commands.length === 1 ? "" : "s"} ${params.wait ? "completed" : "queued"}.`,
-  );
-};
-
 const stateMutationFlags = {
   ...mutationFlags,
   folder: flag.string({ required: true, description: "Source folder id" }),
@@ -1268,94 +1241,300 @@ const stateMutationFlags = {
   ...waitFlags,
 };
 
-const conversationMutationFlags = {
-  ...mutationFlags,
-  source: flag.string({ required: true, description: "Source folder id" }),
-  wait: flag.boolean({ description: "Wait for every provider mutation" }),
-  ...waitFlags,
+/**
+ * A folder argument: `<mailbox>:<folder path>`, or a folder ID or path in the
+ * mailbox from `--mailbox` or `cld mail use`. The server resolves names and
+ * paths and reports ambiguity with 409.
+ */
+const resolveFolderArg = async (
+  ctx: CloudCliContext,
+  raw: string,
+  mailboxRef: string | undefined,
+  t: Translate,
+): Promise<{ mailbox: Mailbox; folder: MailAddressFolder }> => {
+  const address = parseCliAddress(raw);
+  if (address.kind === "local")
+    throw new Error(t({ en: `"${raw}" is a local path, not a Mail folder.`, de: `„${raw}“ ist ein lokaler Pfad, kein Mail-Ordner.` }));
+  const [mailbox, folder] =
+    address.kind === "path" ? [address.container, address.path] : [await mailboxRefOrDefault(ctx, mailboxRef, t), address.ref];
+  const resolved = await resolveMailAddress(ctx, mailbox, folder);
+  return { mailbox: resolved.mailbox, folder: resolved.folder! };
 };
 
+/** The mailbox of an everyday command, and the folder it acts in: `--in`, or the folder with `role`. */
+const resolveActionScope = async (
+  ctx: CloudCliContext,
+  flags: { mailbox?: string; in?: string },
+  role: "inbox" | "junk",
+  t: Translate,
+): Promise<{ mailbox: Mailbox; folder: MailAddressFolder }> => {
+  if (flags.in) {
+    const scope = await resolveFolderArg(ctx, flags.in, flags.mailbox, t);
+    if (flags.mailbox) {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      if (mailbox.id !== scope.mailbox.id)
+        throw new Error(
+          t({
+            en: `--in names a folder in ${scope.mailbox.name}, but --mailbox is ${mailbox.name}.`,
+            de: `--in nennt einen Ordner in ${scope.mailbox.name}, aber --mailbox ist ${mailbox.name}.`,
+          }),
+        );
+    }
+    return scope;
+  }
+  const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+  const folders = await readApi<MailFolderView[]>(ctx, `/mailboxes/${mailbox.id}/folders`);
+  const folder = folders.find((item) => item.role === role);
+  if (!folder)
+    throw new Error(
+      t({
+        en: `${mailbox.name} has no ${role} folder. Pass --in <folder>.`,
+        de: `${mailbox.name} hat keinen Ordner mit der Rolle ${role}. Übergib --in <ordner>.`,
+      }),
+    );
+  return { mailbox, folder: { ...folder, path: folder.name } };
+};
+
+const requireConversationIds = (values: string[], t: Translate): string[] => {
+  const ids = [...new Set(values)];
+  if (ids.length === 0) throw new Error(t({ en: "Pass at least one conversation ID.", de: "Übergib mindestens eine Unterhaltungs-ID." }));
+  if (ids.length > MAIL_CONVERSATION_BATCH_LIMIT)
+    throw new Error(
+      t({
+        en: `Pass at most ${MAIL_CONVERSATION_BATCH_LIMIT} conversations at once.`,
+        de: `Übergib höchstens ${MAIL_CONVERSATION_BATCH_LIMIT} Unterhaltungen auf einmal.`,
+      }),
+    );
+  return requireMailResourceIds(ids, "Conversation id");
+};
+
+type ConversationActionOutcome =
+  | { conversationId: string; status: "ok"; correlationId: string; commands: MailCommand[] }
+  | { conversationId: string; status: "error"; error: string };
+
+/** One triage request per conversation; a failure does not stop the others. */
+const runConversationActions = async (params: {
+  ctx: CloudCliContext;
+  mailbox: Mailbox;
+  conversationIds: string[];
+  input: Record<string, unknown>;
+  idempotencyKey?: string;
+  wait: boolean;
+  timeoutSeconds?: number;
+  done: CloudCliText;
+  t: Translate;
+}): Promise<number | undefined> => {
+  const results: ConversationActionOutcome[] = [];
+  for (const conversationId of params.conversationIds) {
+    try {
+      const queued = await readApi<{ correlationId: string; commands: MailCommand[] }>(
+        params.ctx,
+        `/mailboxes/${params.mailbox.id}/conversations/${conversationId}/actions`,
+        jsonRequest("POST", {
+          ...params.input,
+          idempotencyKey: params.idempotencyKey
+            ? params.conversationIds.length === 1
+              ? params.idempotencyKey
+              : `${params.idempotencyKey}:${conversationId}`
+            : crypto.randomUUID(),
+        }),
+      );
+      const commands = params.wait
+        ? await waitForCommands(
+            params.ctx,
+            params.mailbox.id,
+            queued.commands.map((item) => item.id),
+            params.timeoutSeconds,
+          )
+        : queued.commands;
+      results.push({ conversationId, status: "ok", correlationId: queued.correlationId, commands });
+    } catch (error) {
+      results.push({ conversationId, status: "error", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  const failed = results.filter((result) => result.status === "error");
+  if (!printStructured(params.ctx, { results })) {
+    const count = results.length - failed.length;
+    params.ctx.print(
+      `${params.t(params.done)}: ${count} ${params.t({ en: count === 1 ? "conversation" : "conversations", de: count === 1 ? "Unterhaltung" : "Unterhaltungen" })}${params.wait ? "" : params.t({ en: " (queued)", de: " (eingereiht)" })}.`,
+    );
+    for (const item of failed) if (item.status === "error") params.ctx.error(`${item.conversationId}: ${item.error}`);
+  }
+  return failed.length > 0 ? 1 : undefined;
+};
+
+const replySubject = (subject: string): string => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
+const forwardSubject = (subject: string): string => (/^fwd?:/i.test(subject) ? subject : `Fwd: ${subject}`);
+
+/** The message to reply to or forward: `--message`, or the conversation's latest message. */
+const resolveSourceMessage = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  conversationId: string,
+  messageId: string | undefined,
+  t: Translate,
+): Promise<MessageDetail> => {
+  let id = messageId ? requireMailResourceId(messageId, "Message id") : undefined;
+  if (!id) {
+    const latest = await readApi<{ items: MessageSummary[] }>(
+      ctx,
+      `/mailboxes/${mailboxId}/conversations/${conversationId}/messages?limit=1&latest=true`,
+    );
+    id = latest.items[0]?.id;
+    if (!id) throw new Error(t({ en: "The conversation has no messages.", de: "Die Unterhaltung enthält keine Nachrichten." }));
+  }
+  return readApi<MessageDetail>(ctx, `/mailboxes/${mailboxId}/messages/${id}`);
+};
+
+/** `--identity`, or the mailbox's verified default sender identity. */
+const resolveSenderIdentityId = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  identity: string | undefined,
+  t: Translate,
+): Promise<string> => {
+  if (identity) return requireMailResourceId(identity, "Sender identity id");
+  const identities = await readApi<SenderIdentity[]>(ctx, `/mailboxes/${mailboxId}/sender-identities`);
+  const fallback = identities.find((item) => item.isDefault && item.status === "verified");
+  if (!fallback)
+    throw new Error(
+      t({
+        en: "The mailbox has no verified default sender identity. Pass --identity <id> from `cld mail identity list`.",
+        de: "Das Postfach hat keine bestätigte Standard-Absenderidentität. Übergib --identity <id> aus `cld mail identity list`.",
+      }),
+    );
+  return fallback.id;
+};
+
+/** Mailbox-local tags by ID or exact name; at most 50, like the bulk tag endpoint. */
+const resolveLocalTags = async (ctx: CloudCliContext, mailboxId: string, refs: string[], t: Translate): Promise<LocalTag[]> => {
+  const unique = [...new Set(refs)];
+  if (unique.length === 0) throw new Error(t({ en: "Pass at least one --tag.", de: "Übergib mindestens ein --tag." }));
+  if (unique.length > 50) throw new Error(t({ en: "Pass at most 50 tags.", de: "Übergib höchstens 50 Tags." }));
+  const tags = await readApi<LocalTag[]>(ctx, `/mailboxes/${mailboxId}/local-tags`);
+  return unique.map((ref) => {
+    const matches = tags.filter((tag) => tag.id === ref || tag.name === ref);
+    if (matches.length === 1) return matches[0]!;
+    if (matches.length === 0)
+      throw new Error(
+        t({ en: `No tag "${ref}". List tags with \`cld mail tag list\`.`, de: `Kein Tag „${ref}“. Tags zeigt \`cld mail tag list\`.` }),
+      );
+    throw new Error(
+      t(
+        cliAmbiguityText({
+          value: ref,
+          resources: { en: "tags", de: "Tags" },
+          candidates: matches.map((tag) => ({ path: tag.name, id: tag.id })),
+        }),
+      ),
+    );
+  });
+};
+
+const conversationsArg = (t: Translate) => ({
+  conversations: arg.rest({
+    required: true,
+    valueLabel: "conversation",
+    description: t({
+      en: `Conversation IDs, at most ${MAIL_CONVERSATION_BATCH_LIMIT}`,
+      de: `Unterhaltungs-IDs, höchstens ${MAIL_CONVERSATION_BATCH_LIMIT}`,
+    }),
+  }),
+});
+
+const inFlag = (t: Translate, role: "inbox" | "junk") => ({
+  in: flag.string({
+    valueLabel: "folder",
+    description:
+      role === "inbox"
+        ? t({
+            en: "Act on the messages in this folder: ID, path, or <mailbox>:<path>; default Inbox",
+            de: "Nur die Nachrichten in diesem Ordner: ID, Pfad oder <postfach>:<pfad>; Standard Posteingang",
+          })
+        : t({
+            en: "Act on the messages in this folder: ID, path, or <mailbox>:<path>; default Junk",
+            de: "Nur die Nachrichten in diesem Ordner: ID, Pfad oder <postfach>:<pfad>; Standard Spam",
+          }),
+  }),
+});
+
+const localizedWaitFlags = (t: Translate) => ({
+  timeoutSeconds: flag.int({
+    ...waitFlags.timeoutSeconds,
+    description: t({ en: "Maximum wait time in seconds", de: "Längste Wartezeit in Sekunden" }),
+  }),
+});
+
+const conversationActionFlags = (t: Translate) => ({
+  mailbox: flag.string({
+    description: t({
+      en: "Mailbox ID or exact name; defaults to `cld mail use`",
+      de: "Postfach-ID oder exakter Name; Standard ist `cld mail use`",
+    }),
+  }),
+  idempotencyKey: flag.string({
+    name: "idempotency-key",
+    description: t({ en: "Stable retry key; suffixed per conversation", de: "Stabiler Wiederholungsschlüssel; je Unterhaltung ergänzt" }),
+  }),
+  wait: flag.boolean({ description: t({ en: "Wait for every provider change", de: "Auf jede Änderung beim Anbieter warten" }) }),
+  ...localizedWaitFlags(t),
+});
+
+type ConversationTriageAction =
+  | { kind: "change_state"; change: { addFlags?: string[]; removeFlags?: string[] } }
+  | { kind: "move_to_role"; role: "archive" | "trash" | "junk" | "inbox" };
+
+/** archive, rm, read, flag, junk, keywords: one triage request per conversation in the `--in` folder. */
 const conversationActionCommand = (
+  t: Translate,
   path: string,
-  summary: string,
-  action:
-    | { kind: "change_state"; change: Record<string, unknown> }
-    | { kind: "move_to_role"; role: "inbox" | "archive" | "trash" | "junk" },
+  summary: CloudCliText,
+  action: ConversationTriageAction,
+  options: { sourceRole?: "inbox" | "junk"; confirm?: CloudCliText; examples?: string[]; keyword?: "add" | "remove" } = {},
 ) =>
   command(path, {
-    summary,
-    args: { conversationId: arg.required({ description: "Conversation id" }) },
-    flags: conversationMutationFlags,
+    summary: t(summary),
+    args: conversationsArg(t),
+    flags: {
+      ...conversationActionFlags(t),
+      ...inFlag(t, options.sourceRole ?? "inbox"),
+      ...(options.confirm ? { yes: confirmFlag(t(options.confirm)) } : {}),
+      ...(options.keyword
+        ? { keyword: flag.string({ required: true, description: t({ en: "IMAP keyword", de: "IMAP-Schlüsselwort" }) }) }
+        : {}),
+    },
+    examples: options.examples,
     run: async ({ ctx, args, flags }) => {
-      const mailbox = await resolveMailbox(ctx, flags.mailbox);
-      await submitConversationAction({
+      if (options.confirm && !("yes" in flags && flags.yes))
+        throw new Error(t({ en: `Pass --yes to confirm \`${path}\`.`, de: `Übergib --yes, um \`${path}\` zu bestätigen.` }));
+      const keyword = "keyword" in flags ? flags.keyword : undefined;
+      const conversationIds = requireConversationIds(args.conversations, t);
+      const scope = await resolveActionScope(ctx, flags, options.sourceRole ?? "inbox", t);
+      return runConversationActions({
         ctx,
-        mailbox,
-        conversationId: args.conversationId,
-        input: {
-          ...action,
-          sourceFolderId: requireMailResourceId(flags.source!, "Source folder id"),
-          idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-          correlationId: flags.correlationId,
-        },
+        mailbox: scope.mailbox,
+        conversationIds,
+        input:
+          action.kind === "change_state"
+            ? {
+                kind: action.kind,
+                sourceFolderId: scope.folder.id,
+                change: {
+                  addFlags: action.change.addFlags ?? [],
+                  removeFlags: action.change.removeFlags ?? [],
+                  addKeywords: keyword && options.keyword === "add" ? [keyword] : [],
+                  removeKeywords: keyword && options.keyword === "remove" ? [keyword] : [],
+                },
+              }
+            : { kind: action.kind, sourceFolderId: scope.folder.id, role: action.role },
+        idempotencyKey: flags.idempotencyKey,
         wait: flags.wait,
         timeoutSeconds: flags.timeoutSeconds,
+        done: summary,
+        t,
       });
     },
   });
-
-const conversationKeywordCommand = (path: string, summary: string, operation: "add" | "remove") =>
-  command(path, {
-    summary,
-    args: {
-      conversationId: arg.required({ description: "Conversation id" }),
-      keyword: arg.required({ description: "IMAP keyword" }),
-    },
-    flags: conversationMutationFlags,
-    run: async ({ ctx, args, flags }) => {
-      const mailbox = await resolveMailbox(ctx, flags.mailbox);
-      await submitConversationAction({
-        ctx,
-        mailbox,
-        conversationId: args.conversationId,
-        input: {
-          kind: "change_state",
-          sourceFolderId: requireMailResourceId(flags.source!, "Source folder id"),
-          change: operation === "add" ? { addKeywords: [args.keyword] } : { removeKeywords: [args.keyword] },
-          idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-          correlationId: flags.correlationId,
-        },
-        wait: flags.wait,
-        timeoutSeconds: flags.timeoutSeconds,
-      });
-    },
-  });
-
-const conversationMoveCommand = command("conversation move", {
-  summary: "Move a conversation from one provider folder to another",
-  args: {
-    conversationId: arg.required({ description: "Conversation id" }),
-    destinationFolderId: arg.required({ description: "Destination folder id" }),
-  },
-  flags: conversationMutationFlags,
-  run: async ({ ctx, args, flags }) => {
-    const mailbox = await resolveMailbox(ctx, flags.mailbox);
-    await submitConversationAction({
-      ctx,
-      mailbox,
-      conversationId: args.conversationId,
-      input: {
-        kind: "move_to_folder",
-        sourceFolderId: requireMailResourceId(flags.source!, "Source folder id"),
-        destinationFolderId: requireMailResourceId(args.destinationFolderId, "Destination folder id"),
-        idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-        correlationId: flags.correlationId,
-      },
-      wait: flags.wait,
-      timeoutSeconds: flags.timeoutSeconds,
-    });
-  },
-});
 
 const folderSubscriptionCommand = (path: "folder subscribe" | "folder unsubscribe", subscribed: boolean) =>
   command(path, {
@@ -1433,9 +1612,744 @@ const folderRole = (value: string): "sent" | "drafts" | "trash" | "archive" | "j
   throw new Error("Unsupported folder role.");
 };
 
-export default defineCliCommands({
-  name: "mail",
-  summary: "Search, read, configure, and operate Cloud Mail.",
+const everydayCommands = (t: Translate) => {
+  const mailboxOption = {
+    mailbox: flag.string({
+      description: t({
+        en: "Mailbox ID or exact name; defaults to `cld mail use`",
+        de: "Postfach-ID oder exakter Name; Standard ist `cld mail use`",
+      }),
+    }),
+  };
+  const bodyFlag = flag.input({
+    required: true,
+    fileName: "body-file",
+    stdinName: "body-stdin",
+    description: t({ en: "Plaintext or Markdown body", de: "Text oder Markdown" }),
+  });
+
+  return [
+    command("ls", {
+      summary: t({
+        en: "List mailboxes, or the conversations of a mailbox or folder",
+        de: "Postfächer oder die Unterhaltungen eines Postfachs oder Ordners auflisten",
+      }),
+      args: {
+        scope: arg.optional({
+          valueLabel: "mailbox[:folder]",
+          description: t({
+            en: "Mailbox ID or exact name, optionally with a folder path such as Support:Projekte/2025",
+            de: "Postfach-ID oder exakter Name, optional mit Ordnerpfad wie Support:Projekte/2025",
+          }),
+        }),
+      },
+      flags: {
+        status: flag.enum(["needs_action", "waiting", "done"] as const, { description: t({ en: "Work status", de: "Bearbeitungsstand" }) }),
+        view: flag.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"] as const, {
+          description: t({ en: "Built-in collaboration view", de: "Eingebaute Zusammenarbeitsansicht" }),
+        }),
+        cursor: flag.string({ description: t({ en: "Cursor from a previous page", de: "Cursor einer vorherigen Seite" }) }),
+        limit: flag.int({ min: 1, max: 100, default: 50 }),
+      },
+      examples: ["cld mail ls", "cld mail ls Support", 'cld mail ls "Support:Projekte / 2025"', "cld mail ls Support --view mine --json"],
+      run: async ({ ctx, args, flags }) => {
+        if (!args.scope) {
+          const mailboxes = await listMailboxes(ctx);
+          printTable(
+            ctx,
+            mailboxes,
+            mailboxes.map((mailbox) => ({ name: mailbox.name, health: mailbox.health, permission: mailbox.permission, id: mailbox.id })),
+            [
+              { key: "name", label: "NAME" },
+              { key: "health", label: t({ en: "HEALTH", de: "ZUSTAND" }) },
+              { key: "permission", label: t({ en: "ACCESS", de: "ZUGRIFF" }) },
+              { key: "id", label: "ID" },
+            ],
+          );
+          return;
+        }
+        const address = parseCliAddress(args.scope);
+        if (address.kind === "local")
+          throw new Error(
+            t({ en: `"${args.scope}" is a local path, not a mailbox.`, de: `„${args.scope}“ ist ein lokaler Pfad, kein Postfach.` }),
+          );
+        const { mailbox, folder } =
+          address.kind === "path"
+            ? await resolveMailAddress(ctx, address.container, address.path)
+            : await resolveMailAddress(ctx, address.ref);
+        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
+        if (folder) query.set("folderId", folder.id);
+        if (flags.status) query.set("status", flags.status);
+        if (flags.view) query.set("view", flags.view);
+        if (flags.cursor) query.set("cursor", flags.cursor);
+        const page = await readApi<{ items: ConversationSummary[]; nextCursor: string | null }>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations?${query}`,
+        );
+        printTable(
+          ctx,
+          page,
+          page.items.map((thread) => ({
+            date: thread.latestMessageAt,
+            unread: thread.unread ? t({ en: "yes", de: "ja" }) : "",
+            status: thread.workStatus,
+            participants: thread.participantSummary,
+            subject: thread.subject,
+            id: thread.id,
+          })),
+          [
+            { key: "date", label: t({ en: "DATE", de: "DATUM" }) },
+            { key: "unread", label: t({ en: "UNREAD", de: "UNGELESEN" }) },
+            { key: "status", label: "STATUS" },
+            { key: "participants", label: t({ en: "PARTICIPANTS", de: "BETEILIGTE" }) },
+            { key: "subject", label: t({ en: "SUBJECT", de: "BETREFF" }) },
+            { key: "id", label: "ID" },
+          ],
+        );
+      },
+    }),
+    command("show", {
+      summary: t({
+        en: "Show a conversation with its status, tags, and recent messages",
+        de: "Eine Unterhaltung mit Stand, Tags und neuesten Nachrichten zeigen",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: mailboxOption,
+      examples: ["cld mail show Convo1", "cld mail show Convo1 --mailbox Support --json"],
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const conversationId = requireMailResourceId(args.conversation, "Conversation id");
+        const root = `/mailboxes/${mailbox.id}/conversations/${conversationId}`;
+        const [summary, collaborationState, localTagState, messagePage] = await Promise.all([
+          readApi<ConversationContentSummary>(ctx, `${root}/summary`),
+          readApi<ConversationCollaboration>(ctx, `${root}/collaboration`),
+          readApi<ConversationLocalTags>(ctx, `${root}/local-tags`),
+          readApi<{ items: MessageSummary[]; nextCursor: string | null }>(ctx, `${root}/messages?limit=50&latest=true`),
+        ]);
+        const value: ConversationReadView = {
+          conversationId,
+          summary: summary.summary,
+          summaryRevision: summary.summaryRevision,
+          collaboration: {
+            assignee: collaborationState.assignee,
+            workStatus: collaborationState.workStatus,
+            snoozedUntil: collaborationState.snoozedUntil,
+            revision: collaborationState.revision,
+          },
+          tags: localTagState.tags.map(({ id, name, color, revision }) => ({ id, name, color, revision })),
+          messages: messagePage.items,
+          messagesTruncated: messagePage.nextCursor !== null,
+        };
+        if (printStructured(ctx, value)) return;
+        const none = t({ en: "none", de: "keine" });
+        ctx.print(`${t({ en: "Conversation", de: "Unterhaltung" })}: ${conversationId}`);
+        ctx.print(
+          `${t({ en: "Summary", de: "Zusammenfassung" })}: ${value.summary ?? t({ en: "No shared summary", de: "Keine gemeinsame Zusammenfassung" })}`,
+        );
+        ctx.print(`Status: ${value.collaboration.workStatus}`);
+        ctx.print(
+          `${t({ en: "Assignee", de: "Zuständig" })}: ${value.collaboration.assignee ? `${value.collaboration.assignee.displayName} (${value.collaboration.assignee.id})` : t({ en: "unassigned", de: "niemand" })}`,
+        );
+        ctx.print(`Tags: ${value.tags.length > 0 ? value.tags.map((tag) => tag.name).join(", ") : none}`);
+        ctx.print(`${t({ en: "Recent messages", de: "Neueste Nachrichten" })}: ${value.messages.length}`);
+        for (const message of value.messages) {
+          const sender =
+            message.from.map((address) => address.address).join(", ") || t({ en: "unknown sender", de: "unbekannter Absender" });
+          ctx.print(`${message.internalDate}  ${sender}  ${message.subject}  ${message.id}`);
+        }
+        if (value.messagesTruncated)
+          ctx.print(
+            t({
+              en: "Earlier messages are not shown. Use `cld mail conversation messages` for the complete history.",
+              de: "Ältere Nachrichten sind nicht gezeigt. Den ganzen Verlauf zeigt `cld mail conversation messages`.",
+            }),
+          );
+      },
+    }),
+    command("cat", {
+      summary: t({ en: "Print one message with its headers and text", de: "Eine Nachricht mit Kopfzeilen und Text ausgeben" }),
+      args: { message: arg.required({ description: t({ en: "Message ID", de: "Nachrichten-ID" }) }) },
+      flags: mailboxOption,
+      examples: ["cld mail cat Messg1", "cld mail cat Messg1 --json"],
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const message = await readApi<MessageDetail>(
+          ctx,
+          `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.message, "Message id")}`,
+        );
+        if (printStructured(ctx, message)) return;
+        ctx.print(`${t({ en: "Subject", de: "Betreff" })}: ${message.subject}`);
+        ctx.print(`${t({ en: "From", de: "Von" })}: ${message.from.map((address) => address.address).join(", ")}`);
+        ctx.print(`${t({ en: "To", de: "An" })}: ${message.to.map((address) => address.address).join(", ")}`);
+        if (message.security && message.security.risk !== "none") {
+          ctx.print(`${t({ en: "Security", de: "Sicherheit" })}: ${message.security.verdict}`);
+          for (const finding of message.security.findings) ctx.print(`- ${finding.title}: ${finding.explanation}`);
+        }
+        ctx.print("");
+        ctx.print(message.plainText ?? t({ en: "[Body not loaded yet]", de: "[Text noch nicht geladen]" }));
+      },
+    }),
+    command("assign", {
+      summary: t({
+        en: "Assign conversations to a person, or clear their assignee",
+        de: "Unterhaltungen einer Person zuweisen oder die Zuweisung aufheben",
+      }),
+      description: t({
+        en: "`cld mail conversation users` lists who can be assigned.",
+        de: "`cld mail conversation users` zeigt, wer infrage kommt.",
+      }),
+      args: conversationsArg(t),
+      flags: {
+        ...mailboxOption,
+        to: flag.string({
+          required: true,
+          valueLabel: "user",
+          description: t({ en: "User ID, exact username, me, or none", de: "Benutzer-ID, exakter Benutzername, me oder none" }),
+        }),
+      },
+      examples: ["cld mail assign Convo1 Convo2 --to ada", "cld mail assign Convo1 --to me", "cld mail assign Convo1 --to none"],
+      run: async ({ ctx, args, flags }) => {
+        const conversationIds = requireConversationIds(args.conversations, t);
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const assigneeUserId = await resolveAssigneeUserId(ctx, mailbox.id, flags.to!.trim());
+        const result = await readApi<ConversationAssignmentResult>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/assign`,
+          jsonRequest("POST", { conversationIds, assigneeUserId }),
+        );
+        const missing = result.results.filter((item) => item.status !== "ok");
+        if (!printStructured(ctx, result)) {
+          const count = result.results.length - missing.length;
+          ctx.print(
+            result.assignee
+              ? t({
+                  en: `Assigned ${count} conversation(s) to ${result.assignee.displayName} (${result.assignee.uid}).`,
+                  de: `${count} Unterhaltung(en) ${result.assignee.displayName} (${result.assignee.uid}) zugewiesen.`,
+                })
+              : t({ en: `Cleared the assignee of ${count} conversation(s).`, de: `Zuweisung von ${count} Unterhaltung(en) aufgehoben.` }),
+          );
+          for (const item of missing)
+            ctx.error(`${item.conversationId}: ${t({ en: "not found in this mailbox", de: "in diesem Postfach nicht gefunden" })}`);
+        }
+        return missing.length > 0 ? 1 : undefined;
+      },
+    }),
+    conversationActionCommand(
+      t,
+      "archive",
+      { en: "Archive conversations", de: "Unterhaltungen archivieren" },
+      { kind: "move_to_role", role: "archive" },
+      {
+        examples: ["cld mail archive Convo1 Convo2", 'cld mail archive Convo1 --in "Support:Projekte / 2025"'],
+      },
+    ),
+    conversationActionCommand(
+      t,
+      "rm",
+      { en: "Move conversations to the Trash", de: "Unterhaltungen in den Papierkorb verschieben" },
+      { kind: "move_to_role", role: "trash" },
+      {
+        confirm: { en: "Confirm moving to the Trash", de: "Verschieben in den Papierkorb bestätigen" },
+        examples: ["cld mail rm Convo1 --yes"],
+      },
+    ),
+    conversationActionCommand(
+      t,
+      "read",
+      { en: "Mark conversations as read", de: "Unterhaltungen als gelesen markieren" },
+      {
+        kind: "change_state",
+        change: { addFlags: ["seen"] },
+      },
+    ),
+    conversationActionCommand(
+      t,
+      "unread",
+      { en: "Mark conversations as unread", de: "Unterhaltungen als ungelesen markieren" },
+      {
+        kind: "change_state",
+        change: { removeFlags: ["seen"] },
+      },
+    ),
+    conversationActionCommand(
+      t,
+      "flag",
+      { en: "Flag conversations", de: "Unterhaltungen markieren" },
+      { kind: "change_state", change: { addFlags: ["flagged"] } },
+    ),
+    conversationActionCommand(
+      t,
+      "unflag",
+      { en: "Remove the flag from conversations", de: "Markierung von Unterhaltungen entfernen" },
+      {
+        kind: "change_state",
+        change: { removeFlags: ["flagged"] },
+      },
+    ),
+    command("mv", {
+      summary: t({ en: "Move conversations to a folder", de: "Unterhaltungen in einen Ordner verschieben" }),
+      description: t({
+        en: "Folders are an ID, a path such as `Projekte / 2025`, or `<mailbox>:<path>`. Paths use `/` between folders.",
+        de: "Ordner sind eine ID, ein Pfad wie `Projekte / 2025` oder `<postfach>:<pfad>`. Pfade trennen Ordner mit `/`.",
+      }),
+      args: conversationsArg(t),
+      flags: {
+        ...conversationActionFlags(t),
+        to: flag.string({
+          required: true,
+          valueLabel: "folder",
+          description: t({ en: "Destination folder", de: "Zielordner" }),
+        }),
+        ...inFlag(t, "inbox"),
+      },
+      examples: ['cld mail mv Convo1 Convo2 --to "Support:Projekte / 2025"', "cld mail mv Convo1 --in Projekte --to Projekte/Archiv"],
+      run: async ({ ctx, args, flags }) => {
+        const conversationIds = requireConversationIds(args.conversations, t);
+        const destination = await resolveFolderArg(ctx, flags.to!, flags.mailbox, t);
+        const scope = await resolveActionScope(ctx, { mailbox: flags.mailbox ?? destination.mailbox.id, in: flags.in }, "inbox", t);
+        if (scope.mailbox.id !== destination.mailbox.id)
+          throw new Error(
+            t({
+              en: "Conversations can only move between folders of one mailbox.",
+              de: "Unterhaltungen lassen sich nur zwischen Ordnern eines Postfachs verschieben.",
+            }),
+          );
+        return runConversationActions({
+          ctx,
+          mailbox: scope.mailbox,
+          conversationIds,
+          input: { kind: "move_to_folder", sourceFolderId: scope.folder.id, destinationFolderId: destination.folder.id },
+          idempotencyKey: flags.idempotencyKey,
+          wait: flags.wait,
+          timeoutSeconds: flags.timeoutSeconds,
+          done: { en: `Moved to ${destination.folder.path}`, de: `Nach ${destination.folder.path} verschoben` },
+          t,
+        });
+      },
+    }),
+    command("tag add", {
+      summary: t({ en: "Add a tag to conversations", de: "Unterhaltungen einen Tag hinzufügen" }),
+      args: conversationsArg(t),
+      flags: {
+        ...mailboxOption,
+        tag: flag.stringList({
+          valueLabel: "tag",
+          separator: "\0",
+          description: t({ en: "Tag ID or exact name; repeatable", de: "Tag-ID oder exakter Name; wiederholbar" }),
+        }),
+      },
+      examples: ["cld mail tag add Convo1 Convo2 --tag Urgent"],
+      run: async ({ ctx, args, flags }) => {
+        const conversationIds = requireConversationIds(args.conversations, t);
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const tags = await resolveLocalTags(ctx, mailbox.id, flags.tag, t);
+        const result = await readApi<AddConversationLocalTagsResult>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/local-tags`,
+          jsonRequest("POST", { conversationIds, tagIds: tags.map((tag) => tag.id) }),
+        );
+        if (printStructured(ctx, result)) return;
+        const names = tags.map((tag) => tag.name).join(", ");
+        ctx.print(
+          t({
+            en: `Tagged ${result.updatedConversationIds.length} conversation(s) with ${names}; ${result.unchangedConversationIds.length} unchanged.`,
+            de: `${result.updatedConversationIds.length} Unterhaltung(en) mit ${names} getaggt; ${result.unchangedConversationIds.length} unverändert.`,
+          }),
+        );
+      },
+    }),
+    command("tag rm", {
+      summary: t({ en: "Remove a tag from conversations", de: "Einen Tag von Unterhaltungen entfernen" }),
+      args: conversationsArg(t),
+      flags: {
+        ...mailboxOption,
+        tag: flag.stringList({
+          valueLabel: "tag",
+          separator: "\0",
+          description: t({ en: "Tag ID or exact name; repeatable", de: "Tag-ID oder exakter Name; wiederholbar" }),
+        }),
+      },
+      examples: ["cld mail tag rm Convo1 --tag Urgent"],
+      run: async ({ ctx, args, flags }) => {
+        const conversationIds = requireConversationIds(args.conversations, t);
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const removed = new Set((await resolveLocalTags(ctx, mailbox.id, flags.tag, t)).map((tag) => tag.id));
+        const updatedConversationIds: string[] = [];
+        const unchangedConversationIds: string[] = [];
+        const failed: Array<{ conversationId: string; error: string }> = [];
+        // No bulk endpoint removes tags: replace each conversation's tag set at its current revision.
+        for (const conversationId of conversationIds) {
+          try {
+            const path = `/mailboxes/${mailbox.id}/conversations/${conversationId}/local-tags`;
+            const current = await readApi<ConversationLocalTags>(ctx, path);
+            const kept = current.tags.filter((item) => !removed.has(item.id));
+            if (kept.length === current.tags.length) {
+              unchangedConversationIds.push(conversationId);
+              continue;
+            }
+            await readApi<ConversationLocalTags>(
+              ctx,
+              path,
+              jsonRequest("PUT", { expectedRevision: current.conversationRevision, tagIds: kept.map((item) => item.id) }),
+            );
+            updatedConversationIds.push(conversationId);
+          } catch (error) {
+            failed.push({ conversationId, error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+        if (!printStructured(ctx, { updatedConversationIds, unchangedConversationIds, failed })) {
+          ctx.print(
+            t({
+              en: `Removed tags from ${updatedConversationIds.length} conversation(s); ${unchangedConversationIds.length} unchanged.`,
+              de: `Tags von ${updatedConversationIds.length} Unterhaltung(en) entfernt; ${unchangedConversationIds.length} unverändert.`,
+            }),
+          );
+          for (const item of failed) ctx.error(`${item.conversationId}: ${item.error}`);
+        }
+        return failed.length > 0 ? 1 : undefined;
+      },
+    }),
+    command("comments list", {
+      summary: t({ en: "List a conversation's internal comments", de: "Interne Kommentare einer Unterhaltung auflisten" }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        cursor: flag.string({ description: t({ en: "Cursor from a previous page", de: "Cursor einer vorherigen Seite" }) }),
+        limit: flag.int({ min: 1, max: 100, default: 50 }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
+        if (flags.cursor) query.set("cursor", flags.cursor);
+        const page = await readApi<{ items: ConversationComment[]; nextCursor: string | null }>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversation, "Conversation id")}/comments?${query}`,
+        );
+        printTable(
+          ctx,
+          page,
+          page.items.map((comment) => ({
+            date: comment.createdAt,
+            author: comment.author.displayName,
+            revision: comment.revision,
+            body: comment.body?.replace(/\s+/g, " ").slice(0, 120) ?? t({ en: "[deleted]", de: "[gelöscht]" }),
+            id: comment.id,
+          })),
+          [
+            { key: "date", label: t({ en: "DATE", de: "DATUM" }) },
+            { key: "author", label: t({ en: "AUTHOR", de: "AUTOR" }) },
+            { key: "revision", label: "REV" },
+            { key: "body", label: t({ en: "COMMENT", de: "KOMMENTAR" }) },
+            { key: "id", label: "ID" },
+          ],
+        );
+      },
+    }),
+    command("comments add", {
+      summary: t({ en: "Add an internal Markdown comment", de: "Einen internen Markdown-Kommentar hinzufügen" }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        body: flag.input({
+          required: true,
+          fileName: "body-file",
+          stdinName: "body-stdin",
+          description: t({ en: "Comment text", de: "Kommentartext" }),
+        }),
+        message: flag.string({
+          description: t({ en: "Message the comment refers to", de: "Nachricht, auf die sich der Kommentar bezieht" }),
+        }),
+      },
+      examples: ['cld mail comments add Convo1 --body "Ada calls back on Monday"'],
+      run: async ({ ctx, args, flags }) => {
+        const body = await readCliInput(flags.body, { label: "comment body", required: true });
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const value = await readApi<ConversationComment>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversation, "Conversation id")}/comments`,
+          jsonRequest("POST", {
+            body: body ?? "",
+            referencedMessageId: flags.message ? requireMailResourceId(flags.message, "Referenced message id") : undefined,
+          }),
+        );
+        if (printStructured(ctx, value)) return;
+        ctx.print(t({ en: `Added comment ${value.id}.`, de: `Kommentar ${value.id} hinzugefügt.` }));
+      },
+    }),
+    command("comments update", {
+      summary: t({ en: "Change an internal comment", de: "Einen internen Kommentar ändern" }),
+      args: {
+        conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }),
+        comment: arg.required({ description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+      },
+      flags: {
+        ...mailboxOption,
+        revision: flag.int({
+          required: true,
+          min: 1,
+          description: t({ en: "Expected current revision", de: "Erwartete aktuelle Revision" }),
+        }),
+        body: flag.input({
+          required: true,
+          fileName: "body-file",
+          stdinName: "body-stdin",
+          description: t({ en: "New comment text", de: "Neuer Kommentartext" }),
+        }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const body = await readCliInput(flags.body, { label: "comment body", required: true });
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const value = await readApi<ConversationComment>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversation, "Conversation id")}/comments/${requireMailResourceId(args.comment, "Comment id")}`,
+          jsonRequest("PATCH", { expectedRevision: flags.revision, body: body ?? "" }),
+        );
+        if (printStructured(ctx, value)) return;
+        ctx.print(
+          t({
+            en: `Updated comment ${value.id} to revision ${value.revision}.`,
+            de: `Kommentar ${value.id} auf Revision ${value.revision} geändert.`,
+          }),
+        );
+      },
+    }),
+    command("comments delete", {
+      summary: t({ en: "Delete an internal comment", de: "Einen internen Kommentar löschen" }),
+      args: {
+        conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }),
+        comment: arg.required({ description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+      },
+      flags: {
+        ...mailboxOption,
+        revision: flag.int({
+          required: true,
+          min: 1,
+          description: t({ en: "Expected current revision", de: "Erwartete aktuelle Revision" }),
+        }),
+        yes: confirmFlag(t({ en: "Confirm the deletion", de: "Löschen bestätigen" })),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (!flags.yes) throw new Error(t({ en: "Deleting needs --yes.", de: "Löschen braucht --yes." }));
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const value = await readApi<ConversationComment>(
+          ctx,
+          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversation, "Conversation id")}/comments/${requireMailResourceId(args.comment, "Comment id")}`,
+          jsonRequest("DELETE", { expectedRevision: flags.revision }),
+        );
+        if (printStructured(ctx, value)) return;
+        ctx.print(t({ en: `Deleted comment ${value.id}.`, de: `Kommentar ${value.id} gelöscht.` }));
+      },
+    }),
+    command("reply", {
+      summary: t({ en: "Create a reply draft in a conversation", de: "Einen Antwortentwurf in einer Unterhaltung anlegen" }),
+      description: t({
+        en: "Replies to the latest message unless --message names another one. Recipients and subject come from that message. Send the draft with `cld mail send <draft>`.",
+        de: "Antwortet auf die neueste Nachricht, außer --message nennt eine andere. Empfänger und Betreff kommen aus dieser Nachricht. Senden mit `cld mail send <entwurf>`.",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        all: flag.boolean({ description: t({ en: "Reply to all recipients", de: "Allen Empfängern antworten" }) }),
+        message: flag.string({
+          description: t({
+            en: "Message to reply to; default the latest",
+            de: "Nachricht, auf die geantwortet wird; Standard die neueste",
+          }),
+        }),
+        identity: flag.string({
+          description: t({ en: "Sender identity ID; default the mailbox default", de: "Absenderidentität; Standard die des Postfachs" }),
+        }),
+        body: bodyFlag,
+        format: flag.enum(["plain", "markdown"] as const),
+      },
+      examples: ['cld mail reply Convo1 --body "Thanks, done."', "cld mail reply Convo1 --all --body-file answer.md --json"],
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const conversationId = requireMailResourceId(args.conversation, "Conversation id");
+        const [source, senderIdentityId, body] = await Promise.all([
+          resolveSourceMessage(ctx, mailbox.id, conversationId, flags.message, t),
+          resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
+          readCliInput(flags.body, { label: "message body", required: true }),
+        ]);
+        const draft = await readApi<MailDraft>(
+          ctx,
+          `/mailboxes/${mailbox.id}/drafts`,
+          jsonRequest("POST", {
+            senderIdentityId,
+            to: [],
+            cc: [],
+            bcc: [],
+            subject: replySubject(source.subject),
+            body: body ?? "",
+            ...(flags.format ? { format: flags.format } : {}),
+            conversationId,
+            intent: flags.all ? "reply_all" : "reply",
+            sourceMessageId: source.id,
+          }),
+        );
+        if (printStructured(ctx, draft)) return;
+        ctx.print(
+          t({
+            en: `Created reply draft ${draft.id} to ${draft.to.map((address) => address.address).join(", ")}. Send it with \`cld mail send ${draft.id}\`.`,
+            de: `Antwortentwurf ${draft.id} an ${draft.to.map((address) => address.address).join(", ")} angelegt. Senden mit \`cld mail send ${draft.id}\`.`,
+          }),
+        );
+      },
+    }),
+    command("forward", {
+      summary: t({ en: "Create a forward draft from a conversation", de: "Einen Weiterleitungsentwurf aus einer Unterhaltung anlegen" }),
+      description: t({
+        en: "Forwards the latest message unless --message names another one, with its text and attachments. Send the draft with `cld mail send <draft>`.",
+        de: "Leitet die neueste Nachricht weiter, außer --message nennt eine andere, mit Text und Anhängen. Senden mit `cld mail send <entwurf>`.",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        to: flag.stringList({ description: t({ en: "Recipient; repeatable", de: "Empfänger; wiederholbar" }) }),
+        cc: flag.stringList({ description: t({ en: "Cc recipient; repeatable", de: "Cc-Empfänger; wiederholbar" }) }),
+        message: flag.string({
+          description: t({ en: "Message to forward; default the latest", de: "Weiterzuleitende Nachricht; Standard die neueste" }),
+        }),
+        identity: flag.string({
+          description: t({ en: "Sender identity ID; default the mailbox default", de: "Absenderidentität; Standard die des Postfachs" }),
+        }),
+        body: flag.input({
+          fileName: "body-file",
+          stdinName: "body-stdin",
+          description: t({ en: "Text above the forwarded message", de: "Text über der weitergeleiteten Nachricht" }),
+        }),
+        noAttachments: flag.boolean({
+          name: "no-attachments",
+          description: t({ en: "Do not include the original attachments", de: "Originalanhänge nicht mitsenden" }),
+        }),
+      },
+      examples: ["cld mail forward Convo1 --to ada@example.org", 'cld mail forward Convo1 --to ada@example.org --body "FYI"'],
+      run: async ({ ctx, args, flags }) => {
+        if (flags.to.length === 0)
+          throw new Error(t({ en: "Pass at least one --to recipient.", de: "Übergib mindestens einen Empfänger mit --to." }));
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const conversationId = requireMailResourceId(args.conversation, "Conversation id");
+        const [source, senderIdentityId, body] = await Promise.all([
+          resolveSourceMessage(ctx, mailbox.id, conversationId, flags.message, t),
+          resolveSenderIdentityId(ctx, mailbox.id, flags.identity, t),
+          readCliInput(flags.body, { label: "message body" }),
+        ]);
+        const draft = await readApi<MailDraft>(
+          ctx,
+          `/mailboxes/${mailbox.id}/drafts`,
+          jsonRequest("POST", {
+            senderIdentityId,
+            to: parseAddresses(flags.to),
+            cc: parseAddresses(flags.cc),
+            bcc: [],
+            subject: forwardSubject(source.subject),
+            body: `${body ?? ""}${forwardMessageBody(source, { locale: ctx.options.locale ?? "en", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })}`,
+            conversationId,
+            intent: "forward",
+            sourceMessageId: source.id,
+            ...(flags.noAttachments || source.attachments.length === 0 ? {} : { includeSourceAttachments: true }),
+          }),
+        );
+        if (printStructured(ctx, draft)) return;
+        ctx.print(
+          t({
+            en: `Created forward draft ${draft.id}. Send it with \`cld mail send ${draft.id}\`.`,
+            de: `Weiterleitungsentwurf ${draft.id} angelegt. Senden mit \`cld mail send ${draft.id}\`.`,
+          }),
+        );
+      },
+    }),
+    command("send", {
+      summary: t({ en: "Send a draft", de: "Einen Entwurf senden" }),
+      description: t({
+        en: "Sends the draft at its current revision. Create drafts with `reply`, `forward`, or `draft create`.",
+        de: "Sendet den Entwurf in seiner aktuellen Revision. Entwürfe entstehen mit `reply`, `forward` oder `draft create`.",
+      }),
+      args: { draft: arg.required({ description: t({ en: "Draft ID", de: "Entwurfs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        schedule: flag.string({ description: t({ en: "Send later, at this ISO date-time", de: "Später senden, zu dieser ISO-Zeit" }) }),
+        undo: flag.int({
+          min: 0,
+          max: 60,
+          default: 10,
+          description: t({ en: "Undo window in seconds", de: "Rückgängig-Fenster in Sekunden" }),
+        }),
+        idempotencyKey: flag.string({
+          name: "idempotency-key",
+          description: t({ en: "Stable retry key", de: "Stabiler Wiederholungsschlüssel" }),
+        }),
+        approveSafety: flag.boolean({
+          name: "approve-safety",
+          description: t({
+            en: "Approve the current safety warnings after reviewing them",
+            de: "Die aktuellen Sicherheitshinweise nach Prüfung bestätigen",
+          }),
+        }),
+        wait: flag.boolean({ description: t({ en: "Wait until the message is sent", de: "Warten, bis die Nachricht gesendet ist" }) }),
+        ...localizedWaitFlags(t),
+      },
+      examples: ["cld mail send Draft1", "cld mail send Draft1 --schedule 2026-10-01T08:00:00+02:00", "cld mail send Draft1 --wait --json"],
+      run: async ({ ctx, args, flags }) => {
+        const scheduledAt = flags.schedule ? parseOffsetDateTime(flags.schedule, "--schedule") : undefined;
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const draft = await readApi<MailDraft>(ctx, `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draft, "Draft id")}`);
+        const safetyApproval = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
+        const queued = await readApi<MailCommand>(
+          ctx,
+          `/mailboxes/${mailbox.id}/commands`,
+          jsonRequest("POST", {
+            kind: "send",
+            draftId: draft.id,
+            expectedDraftRevision: draft.revision,
+            senderIdentityId: draft.senderIdentityId,
+            scheduledAt,
+            undoSeconds: flags.undo,
+            idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
+            ...(safetyApproval ? { safetyApproval } : {}),
+          }),
+        );
+        const result = flags.wait ? await waitForCommand(ctx, mailbox.id, queued.id, flags.timeoutSeconds) : queued;
+        if (printStructured(ctx, { draft, command: result })) return;
+        ctx.print(
+          flags.wait
+            ? t({ en: `Sent draft ${draft.id} (${result.state}).`, de: `Entwurf ${draft.id} gesendet (${result.state}).` })
+            : t({
+                en: `Queued draft ${draft.id} for sending (${result.id}).`,
+                de: `Entwurf ${draft.id} zum Senden eingereiht (${result.id}).`,
+              }),
+        );
+      },
+    }),
+    conversationActionCommand(
+      t,
+      "conversation junk",
+      { en: "Move conversations to the Junk folder", de: "Unterhaltungen in den Spam-Ordner verschieben" },
+      { kind: "move_to_role", role: "junk" },
+    ),
+    conversationActionCommand(
+      t,
+      "conversation not-spam",
+      { en: "Move conversations from Junk to the Inbox", de: "Unterhaltungen aus dem Spam-Ordner in den Posteingang verschieben" },
+      { kind: "move_to_role", role: "inbox" },
+      { sourceRole: "junk" },
+    ),
+    ...(["add", "remove"] as const).map((operation) =>
+      conversationActionCommand(
+        t,
+        `conversation keyword ${operation}`,
+        operation === "add"
+          ? { en: "Add an IMAP keyword to conversations", de: "Unterhaltungen ein IMAP-Schlüsselwort hinzufügen" }
+          : { en: "Remove an IMAP keyword from conversations", de: "Ein IMAP-Schlüsselwort von Unterhaltungen entfernen" },
+        { kind: "change_state", change: {} },
+        { keyword: operation },
+      ),
+    ),
+  ];
+};
+
+/** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
+const specialistCommands = {
   groupSummaries: {
     access: "Manage direct access to mailboxes",
     admin: "Inspect and operate Mail across active mailboxes",
@@ -1444,9 +2358,7 @@ export default defineCliCommands({
     binding: "Attach and verify mailbox provider bindings",
     calendar: "Preview, import, and respond to calendar invitations",
     command: "Inspect, wait for, or cancel durable Mail commands",
-    comment: "Manage internal conversation comments",
     compose: "Preview drafts and manage reusable composition content",
-    conversation: "Inspect and manage Mail conversations",
     draft: "Create, edit, and recover shared drafts",
     folder: "Create, map, and manage provider folders",
     identity: "Create, configure, and verify sender identities",
@@ -1463,7 +2375,6 @@ export default defineCliCommands({
     scheduled: "Inspect and cancel scheduled message delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
-    tag: "Create and manage mailbox-local tags",
     workflow: "Create, validate, and activate Mail workflows",
     "admin contact-directory": "Choose the app Mail uses as its contact directory",
     "admin mailbox": "Inspect mailboxes and recover their access",
@@ -1494,28 +2405,6 @@ export default defineCliCommands({
     "draft attachment upload": "Inspect and cancel resumable attachment uploads",
   },
   commands: [
-    command("list", {
-      summary: "List accessible mailboxes",
-      run: async ({ ctx }) => {
-        const mailboxes = await listMailboxes(ctx);
-        printTable(
-          ctx,
-          mailboxes,
-          mailboxes.map((mailbox) => ({
-            name: mailbox.name,
-            health: mailbox.health,
-            permission: mailbox.permission,
-            id: mailbox.id,
-          })),
-          [
-            { key: "name", label: "NAME" },
-            { key: "health", label: "HEALTH" },
-            { key: "permission", label: "ACCESS" },
-            { key: "id", label: "ID" },
-          ],
-        );
-      },
-    }),
     command("create", {
       summary: "Create a mailbox",
       args: { name: arg.required({ description: "Mailbox name" }) },
@@ -2762,16 +3651,18 @@ export default defineCliCommands({
       },
     }),
     command("folders", {
-      summary: "List canonical folders",
+      summary: "List folders with their paths and IDs",
       flags: mailboxFlag,
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const folders = await readApi<MailFolderView[]>(ctx, `/mailboxes/${mailbox.id}/folders`);
+        const views = await readApi<MailFolderView[]>(ctx, `/mailboxes/${mailbox.id}/folders`);
+        const paths = mailFolderPaths(views);
+        const folders = views.map((folder) => ({ ...folder, path: paths.get(folder.id) ?? folder.name }));
         printTable(
           ctx,
           folders,
           folders.map((folder) => ({
-            name: folder.name,
+            path: folder.path,
             role: folder.role,
             namespace: folder.namespaceKinds.join(","),
             sidebar: folder.showInSidebar ? "shown" : "hidden",
@@ -2782,7 +3673,7 @@ export default defineCliCommands({
             id: folder.id,
           })),
           [
-            { key: "name", label: "NAME" },
+            { key: "path", label: "PATH" },
             { key: "role", label: "ROLE" },
             { key: "namespace", label: "NAMESPACE" },
             { key: "sidebar", label: "SIDEBAR" },
@@ -3184,30 +4075,6 @@ export default defineCliCommands({
         );
         if (printStructured(ctx, { deleted: true, tagId: args.tagId })) return;
         ctx.print(`Deleted local tag ${args.tagId}.`);
-      },
-    }),
-    command("message get", {
-      summary: "Read one mirrored message",
-      args: { messageId: arg.required({ description: "Message content id" }) },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const message = await readApi<MessageDetail>(
-          ctx,
-          `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.messageId, "Message id")}`,
-        );
-        if (printStructured(ctx, message)) return;
-        {
-          ctx.print(`Subject: ${message.subject}`);
-          ctx.print(`From: ${message.from.map((address) => address.address).join(", ")}`);
-          ctx.print(`To: ${message.to.map((address) => address.address).join(", ")}`);
-          if (message.security && message.security.risk !== "none") {
-            ctx.print(`Security: ${message.security.verdict}`);
-            for (const finding of message.security.findings) ctx.print(`- ${finding.title}: ${finding.explanation}`);
-          }
-          ctx.print("");
-          ctx.print(message.plainText ?? "[Body not hydrated]");
-        }
       },
     }),
     command("message report-phishing", {
@@ -3795,55 +4662,6 @@ export default defineCliCommands({
         );
       },
     }),
-    command("conversation list", {
-      summary: "List recent conversations",
-      flags: {
-        ...mailboxFlag,
-        folder: flag.string({ description: "Folder id" }),
-        status: flag.enum(["needs_action", "waiting", "done"] as const, {
-          description: "Workflow status",
-        }),
-        view: flag.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"] as const, {
-          description: "Built-in collaboration view",
-        }),
-        cursor: flag.string({
-          description: "Opaque cursor returned by a previous page",
-        }),
-        limit: flag.int({ min: 1, max: 100, default: 50 }),
-      },
-      run: async ({ ctx, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
-        if (flags.folder) query.set("folderId", requireMailResourceId(flags.folder, "Folder id"));
-        if (flags.status) query.set("status", flags.status);
-        if (flags.view) query.set("view", flags.view);
-        if (flags.cursor) query.set("cursor", flags.cursor);
-        const page = await readApi<{
-          items: ConversationSummary[];
-          nextCursor: string | null;
-        }>(ctx, `/mailboxes/${mailbox.id}/conversations?${query}`);
-        printTable(
-          ctx,
-          page,
-          page.items.map((thread) => ({
-            date: thread.latestMessageAt,
-            unread: thread.unread ? "yes" : "",
-            status: thread.workStatus,
-            participants: thread.participantSummary,
-            subject: thread.subject,
-            id: thread.id,
-          })),
-          [
-            { key: "date", label: "DATE" },
-            { key: "unread", label: "UNREAD" },
-            { key: "status", label: "STATUS" },
-            { key: "participants", label: "PARTICIPANTS" },
-            { key: "subject", label: "SUBJECT" },
-            { key: "id", label: "THREAD ID" },
-          ],
-        );
-      },
-    }),
     command("conversation messages", {
       summary: "List messages in one conversation",
       args: {
@@ -3883,54 +4701,6 @@ export default defineCliCommands({
             { key: "id", label: "MESSAGE ID" },
           ],
         );
-      },
-    }),
-    command("conversation get", {
-      summary: "Show shared context and recent messages for one conversation",
-      args: {
-        conversationId: arg.required({ description: "Conversation id" }),
-      },
-      flags: mailboxFlag,
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const conversationId = requireMailResourceId(args.conversationId, "Conversation id");
-        const root = `/mailboxes/${mailbox.id}/conversations/${conversationId}`;
-        const [summary, collaborationState, localTagState, messagePage] = await Promise.all([
-          readApi<ConversationContentSummary>(ctx, `${root}/summary`),
-          readApi<ConversationCollaboration>(ctx, `${root}/collaboration`),
-          readApi<ConversationLocalTags>(ctx, `${root}/local-tags`),
-          readApi<{ items: MessageSummary[]; nextCursor: string | null }>(ctx, `${root}/messages?limit=50&latest=true`),
-        ]);
-        const value: ConversationReadView = {
-          conversationId,
-          summary: summary.summary,
-          summaryRevision: summary.summaryRevision,
-          collaboration: {
-            assignee: collaborationState.assignee,
-            workStatus: collaborationState.workStatus,
-            snoozedUntil: collaborationState.snoozedUntil,
-            revision: collaborationState.revision,
-          },
-          tags: localTagState.tags.map(({ id, name, color, revision }) => ({ id, name, color, revision })),
-          messages: messagePage.items,
-          messagesTruncated: messagePage.nextCursor !== null,
-        };
-        if (printStructured(ctx, value)) return;
-        ctx.print(`Conversation: ${conversationId}`);
-        ctx.print(`Summary: ${value.summary ?? "No shared summary"}`);
-        ctx.print(`Status: ${value.collaboration.workStatus}`);
-        ctx.print(
-          `Assignee: ${value.collaboration.assignee ? `${value.collaboration.assignee.displayName} (${value.collaboration.assignee.id})` : "unassigned"}`,
-        );
-        ctx.print(`Tags: ${value.tags.length > 0 ? value.tags.map((tag) => tag.name).join(", ") : "none"}`);
-        ctx.print(`Recent messages: ${value.messages.length}`);
-        for (const message of value.messages) {
-          const sender = message.from.map((address) => address.address).join(", ") || "unknown sender";
-          ctx.print(`${message.internalDate}  ${sender}  ${message.subject}  ${message.id}`);
-        }
-        if (value.messagesTruncated) {
-          ctx.print("Earlier messages are not shown. Use `cld mail conversation messages` to inspect the complete history.");
-        }
       },
     }),
     command("conversation drafts", {
@@ -4218,38 +4988,6 @@ export default defineCliCommands({
         }
       },
     }),
-    command("conversation tag add", {
-      summary: "Add local tags to one or more conversations",
-      flags: {
-        ...mailboxFlag,
-        conversation: flag.stringList({
-          description: "Conversation id; repeatable; maximum 50",
-        }),
-        tag: flag.stringList({
-          description: "Local tag id; repeatable; maximum 50",
-        }),
-      },
-      run: async ({ ctx, flags }) => {
-        const conversationIds = [...new Set(flags.conversation)];
-        const tagIds = [...new Set(flags.tag)];
-        if (conversationIds.length === 0) throw new Error("Pass at least one --conversation.");
-        if (tagIds.length === 0) throw new Error("Pass at least one --tag.");
-        if (conversationIds.length > 50) throw new Error("Pass at most 50 unique conversations.");
-        if (tagIds.length > 50) throw new Error("Pass at most 50 unique tags.");
-        requireMailResourceIds(conversationIds, "Conversation id");
-        requireMailResourceIds(tagIds, "Tag id");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const result = await readApi<AddConversationLocalTagsResult>(
-          ctx,
-          `/mailboxes/${mailbox.id}/conversations/local-tags`,
-          jsonRequest("POST", { conversationIds, tagIds }),
-        );
-        if (printStructured(ctx, result)) return;
-        ctx.print(
-          `Added ${tagIds.length} tag(s) to ${result.updatedConversationIds.length} conversation(s); ${result.unchangedConversationIds.length} unchanged.`,
-        );
-      },
-    }),
     command("conversation tag set", {
       summary: "Replace the Cloud-local tags assigned to a conversation",
       args: {
@@ -4353,47 +5091,6 @@ export default defineCliCommands({
         if (flags.search) query.set("search", flags.search);
         const users = await readApi<MailAssignableUser[]>(ctx, `/mailboxes/${mailbox.id}/assignable-users?${query}`);
         printCollaborators(ctx, users);
-      },
-    }),
-    command("conversation assign", {
-      summary: "Assign up to 50 conversations to one person, or clear their assignee",
-      flags: {
-        ...mailboxFlag,
-        conversation: flag.stringList({
-          description: "Conversation id; repeatable or comma-separated; maximum 50",
-        }),
-        to: flag.string({
-          required: true,
-          description: "User id, exact username, `me`, or `none` to unassign",
-        }),
-      },
-      run: async ({ ctx, flags }) => {
-        const conversationIds = [...new Set(flags.conversation)];
-        if (conversationIds.length === 0) throw new Error("Pass at least one --conversation.");
-        if (conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT) {
-          throw new Error(`Pass at most ${MAIL_CONVERSATION_BATCH_LIMIT} unique conversations.`);
-        }
-        requireMailResourceIds(conversationIds, "Conversation id");
-        const target = flags.to?.trim() ?? "";
-        if (!target) throw new Error("Pass --to with a user id, username, `me`, or `none`.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const assigneeUserId = await resolveAssigneeUserId(ctx, mailbox.id, target);
-        const result = await readApi<ConversationAssignmentResult>(
-          ctx,
-          `/mailboxes/${mailbox.id}/conversations/assign`,
-          jsonRequest("POST", { conversationIds, assigneeUserId }),
-        );
-        const missing = result.results.filter((item) => item.status !== "ok");
-        if (!printStructured(ctx, result)) {
-          const count = result.results.length - missing.length;
-          ctx.print(
-            result.assignee
-              ? `Assigned ${count} conversation(s) to ${result.assignee.displayName} (${result.assignee.uid}).`
-              : `Cleared the assignee of ${count} conversation(s).`,
-          );
-          for (const item of missing) ctx.error(`${item.conversationId}: not found in this mailbox`);
-        }
-        return missing.length > 0 ? 1 : undefined;
       },
     }),
     command("conversation counts", {
@@ -4684,192 +5381,6 @@ export default defineCliCommands({
         );
       },
     }),
-    command("comment list", {
-      summary: "List internal comments in chronological order",
-      args: {
-        conversationId: arg.required({ description: "Conversation id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        cursor: flag.string({
-          description: "Opaque cursor returned by a previous page",
-        }),
-        limit: flag.int({ min: 1, max: 100, default: 50 }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
-        if (flags.cursor) query.set("cursor", flags.cursor);
-        const page = await readApi<{
-          items: ConversationComment[];
-          nextCursor: string | null;
-        }>(
-          ctx,
-          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/comments?${query}`,
-        );
-        printTable(
-          ctx,
-          page,
-          page.items.map((comment) => ({
-            date: comment.createdAt,
-            author: comment.author.displayName,
-            revision: comment.revision,
-            body: comment.body?.replace(/\s+/g, " ").slice(0, 120) ?? "[deleted]",
-            id: comment.id,
-          })),
-          [
-            { key: "date", label: "DATE" },
-            { key: "author", label: "AUTHOR" },
-            { key: "revision", label: "REV" },
-            { key: "body", label: "COMMENT" },
-            { key: "id", label: "COMMENT ID" },
-          ],
-        );
-      },
-    }),
-    command("comment add", {
-      summary: "Add an internal Markdown comment",
-      args: {
-        conversationId: arg.required({ description: "Conversation id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        body: flag.input({
-          required: true,
-          fileName: "body-file",
-          stdinName: "body-stdin",
-          description: "Comment body",
-        }),
-        message: flag.string({ description: "Referenced message id" }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        const body = await readCliInput(flags.body, {
-          label: "comment body",
-          required: true,
-        });
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const value = await readApi<ConversationComment>(
-          ctx,
-          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/comments`,
-          jsonRequest("POST", {
-            body: body ?? "",
-            referencedMessageId: flags.message ? requireMailResourceId(flags.message, "Referenced message id") : undefined,
-          }),
-        );
-        if (printStructured(ctx, value)) return;
-        ctx.print(`Created comment ${value.id} at revision ${value.revision}.`);
-      },
-    }),
-    command("comment edit", {
-      summary: "Edit an internal comment with optimistic concurrency",
-      args: {
-        conversationId: arg.required({ description: "Conversation id" }),
-        commentId: arg.required({ description: "Comment id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        revision: flag.int({
-          required: true,
-          min: 1,
-          description: "Expected current comment revision",
-        }),
-        body: flag.input({
-          required: true,
-          fileName: "body-file",
-          stdinName: "body-stdin",
-          description: "Updated comment body",
-        }),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (!flags.revision) throw new Error("Missing expected comment revision.");
-        const body = await readCliInput(flags.body, {
-          label: "comment body",
-          required: true,
-        });
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const value = await readApi<ConversationComment>(
-          ctx,
-          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/comments/${requireMailResourceId(args.commentId, "Comment id")}`,
-          jsonRequest("PATCH", {
-            expectedRevision: flags.revision,
-            body: body ?? "",
-          }),
-        );
-        if (printStructured(ctx, value)) return;
-        ctx.print(`Updated comment ${value.id} to revision ${value.revision}.`);
-      },
-    }),
-    command("comment delete", {
-      summary: "Replace an internal comment with a deletion tombstone",
-      args: {
-        conversationId: arg.required({ description: "Conversation id" }),
-        commentId: arg.required({ description: "Comment id" }),
-      },
-      flags: {
-        ...mailboxFlag,
-        revision: flag.int({
-          required: true,
-          min: 1,
-          description: "Expected current comment revision",
-        }),
-        yes: confirmFlag("Confirm internal comment deletion"),
-      },
-      run: async ({ ctx, args, flags }) => {
-        if (!flags.yes) throw new Error("Pass --yes to delete the internal comment.");
-        if (!flags.revision) throw new Error("Missing expected comment revision.");
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const value = await readApi<ConversationComment>(
-          ctx,
-          `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/comments/${requireMailResourceId(args.commentId, "Comment id")}`,
-          jsonRequest("DELETE", { expectedRevision: flags.revision }),
-        );
-        if (printStructured(ctx, value)) return;
-        ctx.print(`Deleted comment ${value.id} at revision ${value.revision}.`);
-      },
-    }),
-    conversationActionCommand("conversation read", "Mark every message in a conversation folder placement as read", {
-      kind: "change_state",
-      change: { addFlags: ["seen"] },
-    }),
-    conversationActionCommand("conversation unread", "Mark every message in a conversation folder placement as unread", {
-      kind: "change_state",
-      change: { removeFlags: ["seen"] },
-    }),
-    conversationActionCommand("conversation star", "Add the standard Flag to every message in a conversation folder placement", {
-      kind: "change_state",
-      change: { addFlags: ["flagged"] },
-    }),
-    conversationActionCommand("conversation unstar", "Remove the standard Flag from every message in a conversation folder placement", {
-      kind: "change_state",
-      change: { removeFlags: ["flagged"] },
-    }),
-    conversationActionCommand("conversation archive", "Move a conversation from one folder to the Archive folder (All Mail on Gmail)", {
-      kind: "move_to_role",
-      role: "archive",
-    }),
-    conversationActionCommand("conversation trash", "Move a conversation from one folder to the configured Trash folder", {
-      kind: "move_to_role",
-      role: "trash",
-    }),
-    conversationActionCommand("conversation junk", "Move a conversation from one folder to the configured Junk folder", {
-      kind: "move_to_role",
-      role: "junk",
-    }),
-    conversationActionCommand("conversation not-spam", "Move a conversation from Junk to the configured Inbox folder", {
-      kind: "move_to_role",
-      role: "inbox",
-    }),
-    conversationKeywordCommand(
-      "conversation keyword add",
-      "Add an IMAP keyword to every message in a conversation folder placement",
-      "add",
-    ),
-    conversationKeywordCommand(
-      "conversation keyword remove",
-      "Remove an IMAP keyword from every message in a conversation folder placement",
-      "remove",
-    ),
-    conversationMoveCommand,
     command("provider discover", {
       summary: "Discover IMAP and SMTP settings for an email address",
       args: { email: arg.required({ description: "Mailbox email address" }) },
@@ -5849,68 +6360,6 @@ export default defineCliCommands({
         ctx.print(`Discarded draft ${draft.id} at revision ${draft.revision}.`);
       },
     }),
-    command("send", {
-      summary: "Create an immutable draft snapshot and queue delivery",
-      flags: {
-        ...mailboxFlag,
-        ...draftContentFlags,
-        schedule: flag.string({ description: "Optional ISO send time" }),
-        undo: flag.int({
-          min: 0,
-          max: 60,
-          default: 10,
-          description: "Undo window in seconds",
-        }),
-        attachment: flag.stringList({
-          name: "attach",
-          description: "Local attachment path; repeatable",
-        }),
-        idempotencyKey: flag.string({
-          name: "idempotency-key",
-          description: "Stable client retry key",
-        }),
-        approveSafety: flag.boolean({
-          name: "approve-safety",
-          description: "Approve the exact current safety warnings after reviewing them",
-        }),
-        wait: flag.boolean({
-          description: "Wait for a successful terminal command state",
-        }),
-        ...waitFlags,
-      },
-      run: async ({ ctx, flags }) => {
-        const scheduledAt = flags.schedule ? parseOffsetDateTime(flags.schedule, "--schedule") : undefined;
-        const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        let draft = await createDraft(ctx, mailbox.id, flags);
-        for (const path of flags.attachment) {
-          draft = await uploadDraftAttachment({
-            ctx,
-            mailboxId: mailbox.id,
-            draftId: draft.id,
-            expectedRevision: draft.revision,
-            path,
-          });
-        }
-        const safetyApproval = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
-        const command = await readApi<MailCommand>(
-          ctx,
-          `/mailboxes/${mailbox.id}/commands`,
-          jsonRequest("POST", {
-            kind: "send",
-            draftId: draft.id,
-            expectedDraftRevision: draft.revision,
-            senderIdentityId: requireMailResourceId(flags.identity!, "Sender identity id"),
-            scheduledAt,
-            undoSeconds: flags.undo,
-            idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-            ...(safetyApproval ? { safetyApproval } : {}),
-          }),
-        );
-        const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
-        if (printStructured(ctx, { draft, command: result })) return;
-        ctx.print(`${flags.wait ? "Sent" : "Queued"} message ${result.id} (${result.state}).`);
-      },
-    }),
     command("scheduled list", {
       summary: "List messages waiting for scheduled delivery",
       flags: {
@@ -6811,4 +7260,31 @@ export default defineCliCommands({
     }),
     ...mailboxAccessCommands,
   ],
-});
+};
+
+/** Built per request locale: everyday commands and their groups follow it. */
+const mailCommands = (locale?: string) => {
+  const t: Translate = (text) => localizeCloudCliText(locale, text);
+  return defineCliCommands({
+    name: "mail",
+    summary: t({
+      en: "Read, triage, and answer Cloud Mail; configure and operate mailboxes.",
+      de: "Cloud Mail lesen, bearbeiten und beantworten; Postfächer einrichten und betreiben.",
+    }),
+    groupSummaries: {
+      ...specialistCommands.groupSummaries,
+      comments: t({ en: "Discuss a conversation internally", de: "Eine Unterhaltung intern besprechen" }),
+      tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
+      conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
+    },
+    commands: [...everydayCommands(t), ...specialistCommands.commands],
+  });
+};
+
+const mail = mailCommands();
+
+export default {
+  ...mail,
+  help: (locale?: string) => mailCommands(locale).help!(),
+  run: (ctx: CloudCliContext) => mailCommands(ctx.options.locale).run(ctx),
+};
