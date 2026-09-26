@@ -70,6 +70,18 @@ The defaults are `5432`, `6379`, and `4222`. Containers still talk to each
 other on the default ports, so only host-side clients change: use the new ports
 in `DATABASE_URL`, `REDIS_URL`, `NATS_SERVERS`, and the `CLOUD_TEST_*` URLs.
 
+## Serve the stack under another address
+
+When the stack is reached through a reverse proxy or tunnel, for example
+`https://cloud.dev.example`, set that address as `APP_URL` in the checkout's
+`.env` before `bun run dev`. Cloud uses it for links, OAuth redirects, and the
+same-origin checks on sign-in; with the default `localhost:3000`, signing in
+through the other address fails when the terms are accepted.
+
+```bash
+APP_URL=https://cloud.dev.example
+```
+
 ## Test Filegate locally
 
 Development infrastructure includes Filegate 6.1.0 for Files (`filesv2`) development.
