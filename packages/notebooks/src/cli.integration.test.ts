@@ -382,6 +382,27 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
       expect(server.content).toContain("Deutsch.");
     }, 60_000);
 
+    test("note links become relative mirror paths, follow moves, and round-trip on write", async () => {
+      const mirror = join(home, "docs-mirror");
+      const readme = join(mirror, "kolb-antik-it.md");
+      const backup = (await manifestOf(mirror)).notes.find((note) => note.path === "docs/handbook/backup-und-wiederherstellung.md")!.id;
+      await cldJson(["notebooks", "edit", readme, "--append", "--content", `\n[Backup](note://${backup}#nightly)\n`]);
+      expect(await readFile(readme, "utf8")).toContain("[Backup](docs/handbook/backup-und-wiederherstellung.md#nightly)");
+
+      // Moving the target rewrites the linking file, although that note did not change.
+      await cldJson(["notebooks", "mv", backup, "Kolb Antik Doku:docs"]);
+      const report = await cldJson<{ written: string[] }>(["notebooks", "pull", mirror]);
+      expect(report.written.sort()).toEqual(["docs/backup-und-wiederherstellung.md", "kolb-antik-it.md"]);
+      const local = await readFile(readme, "utf8");
+      expect(local).toContain("[Backup](docs/backup-und-wiederherstellung.md#nightly)");
+
+      await writeFile(readme, local.replace("Start here.", "Start hier."));
+      await cldJson(["notebooks", "write", readme]);
+      const server = await cldJson<{ content: string }>(["notebooks", "cat", "Kolb Antik Doku:kolb-antik-it"]);
+      expect(server.content).toContain(`[Backup](note://${backup}#nightly)`);
+      expect(server.content).toContain("Start hier.");
+    }, 60_000);
+
     test("pull into an empty folder for an empty notebook creates just the manifest", async () => {
       await cldJson(["notebooks", "create", "Leer"]);
       const dir = join(home, "leer");

@@ -27,11 +27,11 @@ import {
   MANIFEST_FILE,
   type Manifest,
   type ManifestNote,
+  manifestPaths,
   mirrorFileContent,
   newManifest,
   type OutlineEntry,
   readManifest,
-  restoreAttachmentLinks,
   type SyncReport,
   stripFrontMatter,
   syncMirror,
@@ -113,8 +113,6 @@ const isHttpStatus = (error: unknown, status: number): boolean => error instance
 const expandHome = (path: string): string => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
 
 const looksLocal = (raw: string): boolean => parseCliAddress(raw).kind === "local";
-
-const depthOf = (path: string): number => path.split("/").length - 1;
 
 const formatNumberedLines = (content: string): string =>
   content
@@ -996,8 +994,7 @@ function notebooksCommands(locale?: string) {
               );
             source = await readFile(join(ownFile.root, ownPath), "utf8");
           }
-          let content = stripFrontMatter(source);
-          if (ownPath) content = restoreAttachmentLinks(content, depthOf(ownPath));
+          let content = ownFile && ownPath ? mirrorFileContent(source, ownPath, manifestPaths(ownFile.manifest)) : stripFrontMatter(source);
 
           if (destination.kind === "existing") {
             const { target } = destination;
@@ -1151,9 +1148,9 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const operation = await buildEditOperation(flags);
           if (target.mirror) {
-            const { entry, root } = target.mirror;
+            const { entry, root, manifest } = target.mirror;
             const text = await readFile(join(root, entry.path), "utf8").catch(() => null);
-            if (text !== null && noteContentHash(mirrorFileContent(text, entry.path)) !== entry.contentHash)
+            if (text !== null && noteContentHash(mirrorFileContent(text, entry.path, manifestPaths(manifest))) !== entry.contentHash)
               throw new Error(
                 t({
                   en: `${entry.path} has local changes. Write the file back first, or pull --force to discard them.`,

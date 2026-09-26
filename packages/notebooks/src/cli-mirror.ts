@@ -4,14 +4,15 @@
  * Layout: a note without children is `<segment>.md`; a note with children is
  * a folder `<segment>/` whose own content is `index.md`. Segments are mirror
  * path segments from `lib/note-path`. Attachments live in `_attachments/` and
- * `attach://<id>` links are rewritten to relative paths. Every file starts
+ * `attach://<id>` links are rewritten to relative paths; so are `note://<id>`
+ * link targets of notes inside the mirror. Every file starts
  * with front matter (`id`, `title`, `updatedAt`). The manifest
  * `.cld-notebook.json` maps every file to its note and records the content
  * hash that was downloaded, so local edits are detected and never overwritten
  * without `--force`.
  */
 import { mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { noteContentHash } from "./lib/note-edit";
 import { buildNotePaths } from "./lib/note-path";
@@ -145,25 +146,51 @@ export const restoreAttachmentLinks = (content: string, depth: number): string =
     "attach://$1",
   );
 
-/** Server content of a mirror file at `path`: without front matter and with `attach://` links. */
-export const mirrorFileContent = (text: string, path: string): string => restoreAttachmentLinks(stripFrontMatter(text), depthOf(path));
+/** Mirror file path of every note, by note ID. */
+export type NotePaths = ReadonlyMap<string, string>;
+
+export const manifestPaths = (manifest: Manifest): NotePaths => new Map(manifest.notes.map((note) => [note.id, note.path]));
+
+const relativeNoteLink = (from: string, to: string): string => posix.relative(posix.dirname(from), to);
+
+/** `](note://<id>` → `](<relative path>` for a file at `path`; notes outside the mirror keep their link. */
+export const rewriteNoteLinks = (content: string, path: string, notePaths: NotePaths): string =>
+  content.replace(/\]\(note:\/\/([A-Za-z0-9]{6})(?=[)#\s])/g, (link, id: string) => {
+    const target = notePaths.get(id);
+    return target ? `](${relativeNoteLink(path, target)}` : link;
+  });
+
+/** Inverse of `rewriteNoteLinks` for the same file and paths. */
+export const restoreNoteLinks = (content: string, path: string, notePaths: NotePaths): string => {
+  const ids = new Map([...notePaths].map(([id, target]) => [relativeNoteLink(path, target), id]));
+  return content.replace(/\]\(([^()#\s]+\.md)(?=[)#\s])/g, (link, target: string) => {
+    const id = ids.get(target);
+    return id ? `](note://${id}` : link;
+  });
+};
+
+/** Server content of a mirror file at `path`: without front matter and with `attach://` and `note://` links. */
+export const mirrorFileContent = (text: string, path: string, notePaths: NotePaths): string =>
+  restoreNoteLinks(restoreAttachmentLinks(stripFrontMatter(text), depthOf(path)), path, notePaths);
 
 export const renderMirrorFile = (
   note: { id: string; title: string; updatedAt: string },
   content: string,
   path: string,
   attachments: ReadonlyMap<string, AttachmentMeta>,
+  notePaths: NotePaths,
 ): string =>
-  `---\nid: ${note.id}\ntitle: ${JSON.stringify(note.title)}\nupdatedAt: ${note.updatedAt}\n---\n${rewriteAttachmentLinks(content, depthOf(path), attachments)}`;
+  `---\nid: ${note.id}\ntitle: ${JSON.stringify(note.title)}\nupdatedAt: ${note.updatedAt}\n---\n${rewriteNoteLinks(rewriteAttachmentLinks(content, depthOf(path), attachments), path, notePaths)}`;
 
 /** Whether the local file differs from the content recorded in the manifest. */
 export const localFileState = async (
   root: string,
   note: ManifestNote,
+  notePaths: NotePaths,
 ): Promise<{ state: "missing" | "clean" | "modified"; text?: string }> => {
   const text = await readFile(join(root, note.path), "utf8").catch(() => null);
   if (text === null) return { state: "missing" };
-  return { state: noteContentHash(mirrorFileContent(text, note.path)) === note.contentHash ? "clean" : "modified", text };
+  return { state: noteContentHash(mirrorFileContent(text, note.path, notePaths)) === note.contentHash ? "clean" : "modified", text };
 };
 
 // ==========================
@@ -264,7 +291,10 @@ export const syncMirror = async (
   const attachments = new Map(attachmentList.map((attachment) => [attachment.id, attachment]));
   const layout = mirrorLayout(outline);
   const previous = new Map(manifest.notes.map((note) => [note.id, note]));
-  const local = new Map(await Promise.all(manifest.notes.map(async (note) => [note.id, await localFileState(root, note)] as const)));
+  const previousPaths = manifestPaths(manifest);
+  const local = new Map(
+    await Promise.all(manifest.notes.map(async (note) => [note.id, await localFileState(root, note, previousPaths)] as const)),
+  );
 
   const needed = outline.filter((entry) => {
     const known = previous.get(entry.id);
@@ -294,34 +324,34 @@ export const syncMirror = async (
         next.push(known);
         continue;
       }
+      // Carry the local edits along; only the relative links follow the new layout.
+      const text = renderMirrorFile(meta, mirrorFileContent(state.text!, known.path, previousPaths), target, attachments, layout);
       if (known.path !== target) {
-        // Carry the local edits along; only the relative attachment links follow the new depth.
-        writes.push({
-          id: entry.id,
-          path: target,
-          text: renderMirrorFile(meta, mirrorFileContent(state.text!, known.path), target, attachments),
-          inPlace: false,
-        });
+        writes.push({ id: entry.id, path: target, text, inPlace: false });
         removes.add(known.path);
+      } else if (text !== state.text) {
+        writes.push({ id: entry.id, path: target, text, inPlace: true });
       }
       report.kept.push({ path: target, reason: "local-changes" });
       next.push({ ...known, path: target, updatedAt: entry.updatedAt });
       continue;
     }
 
-    const content = remote ? (remote.contentMd ?? "") : state?.text !== undefined ? mirrorFileContent(state.text, known!.path) : null;
+    const content = remote
+      ? (remote.contentMd ?? "")
+      : state?.text !== undefined
+        ? mirrorFileContent(state.text, known!.path, previousPaths)
+        : null;
     if (content === null) continue;
+    const text = renderMirrorFile(meta, content, target, attachments, layout);
     if (!remote && known?.path === target) {
+      // Links to notes that moved change even when this note did not.
+      if (text !== state?.text) writes.push({ id: entry.id, path: target, text, inPlace: true });
       next.push(known);
       continue;
     }
     if (known && known.path !== target) removes.add(known.path);
-    writes.push({
-      id: entry.id,
-      path: target,
-      text: renderMirrorFile(meta, content, target, attachments),
-      inPlace: known?.path === target,
-    });
+    writes.push({ id: entry.id, path: target, text, inPlace: known?.path === target });
     next.push({ id: entry.id, path: target, contentHash: noteContentHash(content), updatedAt: remote?.updatedAt ?? entry.updatedAt });
   }
 
@@ -381,7 +411,7 @@ export const recordMirrorNote = async (
 ): Promise<Manifest> => {
   const known = manifest.notes.find((entry) => entry.id === note.id);
   if (!known) return manifest;
-  await writeFile(join(root, known.path), renderMirrorFile(note, content, known.path, attachments));
+  await writeFile(join(root, known.path), renderMirrorFile(note, content, known.path, attachments, manifestPaths(manifest)));
   const updated: Manifest = {
     ...manifest,
     notes: manifest.notes.map((entry) =>

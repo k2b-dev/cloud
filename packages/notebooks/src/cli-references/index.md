@@ -194,7 +194,8 @@ docs-mirror/
 
 - A note without children is `<slug>.md`. A note with children is a folder whose own content is `<slug>/index.md`.
 - When siblings share a slug, each file name carries the note ID: `<slug>--<id>.md` or `<slug>--<id>/`. A note whose slug is `index` always gets the suffix. The suffix exists only in mirror names; `<notebook>:<path>` never accepts it. A mirror file path always works as an address.
-- Attachments are downloaded to `_attachments/<id>-<file name>`. In the files, `attach://<id>` links become relative paths such as `../_attachments/Ab12Cd-plan.png`; writing a file back turns them into `attach://` links again. `note://` links stay as they are.
+- Attachments are downloaded to `_attachments/<id>-<file name>`. In the files, `attach://<id>` links become relative paths such as `../_attachments/Ab12Cd-plan.png`; writing a file back turns them into `attach://` links again.
+- Note links to notes in the mirror become relative file paths in the same way: `[Backup](note://Ab12Cd#restore)` becomes `[Backup](../betrieb/backup.md#restore)`, so editors, Markdown viewers, and `rg` can follow them. Pull updates these paths when the target note moves, and writing a file back turns them into `note://` links again. Links to notes outside the mirror stay as `note://`.
 - Each file starts with minimal front matter, followed by the exact note content:
 
   ```markdown
@@ -234,7 +235,7 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/${f#./} --
 - A `README.md` becomes an ordinary note titled after its heading. To make a file the content of its folder note, write it to `<folder>/index.md`; note that its heading then renames the folder, so write such files last or keep the heading equal to the folder name.
 - Running the loop again does not duplicate notes: a new file whose title already exists in that folder is refused with the existing path and ID. Update existing notes through their mirror files instead.
 - Run the loop sequentially. Parallel writes that create the same missing folder can create that folder twice.
-- Relative links between the Git files (`../x.md`, images) are copied verbatim; fix them afterward with `note://` or `attach://` links (`cld notebooks attach` prints one).
+- A relative link that names a file already in the mirror, as seen from the target file, becomes a `note://` link. All other relative links between the Git files (`../x.md`, images) are copied verbatim; fix them afterward with `note://` or `attach://` links (`cld notebooks attach` prints one).
 
 The loop takes well under a second per file.
 

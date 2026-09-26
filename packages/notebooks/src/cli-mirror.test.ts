@@ -12,7 +12,9 @@ import {
   mirrorLayout,
   renderMirrorFile,
   restoreAttachmentLinks,
+  restoreNoteLinks,
   rewriteAttachmentLinks,
+  rewriteNoteLinks,
   stripFrontMatter,
 } from "./cli-mirror";
 
@@ -22,6 +24,11 @@ afterEach(async () => {
 });
 
 const attachments = new Map([["att001", { id: "att001", filename: "Plan (final) ä.png" }]]);
+const notePaths = new Map([
+  ["note01", "betrieb/backup.md"],
+  ["note02", "betrieb/index.md"],
+  ["note03", "start.md"],
+]);
 
 describe("mirror file format", () => {
   test("round-trips server content through front matter and relative attachment links", () => {
@@ -31,11 +38,27 @@ describe("mirror file format", () => {
       content,
       "betrieb/backup.md",
       attachments,
+      new Map(),
     );
     expect(text).toBe(
       '---\nid: note01\ntitle: "Backup \\"neu\\""\nupdatedAt: 2026-09-25T10:00:00.000Z\n---\n# Backup\n\n![Plan](../_attachments/att001-Plan-final-a.png) and [missing](attach://gone01)\n',
     );
-    expect(mirrorFileContent(text, "betrieb/backup.md")).toBe(content);
+    expect(mirrorFileContent(text, "betrieb/backup.md", new Map())).toBe(content);
+  });
+
+  test("round-trips note links as relative mirror paths", () => {
+    const content =
+      '# Backup\n\n[Start](note://note03) [Betrieb](note://note02#ziel) [Selbst](note://note01 "t") [Fremd](note://other1) note://note03\n';
+    const text = renderMirrorFile({ id: "note01", title: "Backup", updatedAt: "x" }, content, "betrieb/backup.md", new Map(), notePaths);
+    expect(text).toEndWith('[Start](../start.md) [Betrieb](index.md#ziel) [Selbst](backup.md "t") [Fremd](note://other1) note://note03\n');
+    expect(mirrorFileContent(text, "betrieb/backup.md", notePaths)).toBe(content);
+  });
+
+  test("restores only relative links that name a mirror note from the file's own folder", () => {
+    expect(rewriteNoteLinks("[a](note://note01)", "start.md", notePaths)).toBe("[a](betrieb/backup.md)");
+    expect(
+      restoreNoteLinks("[a](betrieb/backup.md) [b](backup.md) [c](../start.md) [d](https://x.org/start.md)", "start.md", notePaths),
+    ).toBe("[a](note://note01) [b](backup.md) [c](../start.md) [d](https://x.org/start.md)");
   });
 
   test("restores only links written for the file's own depth", () => {
