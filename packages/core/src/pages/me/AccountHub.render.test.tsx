@@ -45,7 +45,7 @@ const renderAccountHub = (locale: string) =>
       get children() {
         return createComponent(AccountHub, {
           user,
-          active: "overview",
+          active: "profile",
           loginLabel: "Firmenaccount",
           get children() {
             return "Content";
@@ -63,8 +63,10 @@ describe("AccountHub SSR locale", () => {
 
   test("renders German navigation through the inherited request locale", () => {
     const html = renderAccountHub("de-CH");
-    expect(html).toContain("Übersicht");
-    expect(html).toContain("Sicherheit");
+    expect(html).toContain("Profil");
+    expect(html).toContain("Anmeldung");
+    expect(html).toContain("Gruppen");
+    expect(html).not.toContain("/me/profile");
     expect(html).toContain("Gruppenverwaltung");
     expect(html).toContain("Firmenaccount");
     expect(html).toContain('aria-label="Kontobereiche"');
@@ -72,7 +74,7 @@ describe("AccountHub SSR locale", () => {
 
   test("keeps English as the deterministic fallback", () => {
     const html = renderAccountHub("fr");
-    expect(html).toContain("Overview");
-    expect(html).toContain("Security");
+    expect(html).toContain("Profile");
+    expect(html).toContain("Sign-in");
   });
 });

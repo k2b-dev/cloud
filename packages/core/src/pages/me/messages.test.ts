@@ -11,7 +11,7 @@ describe("account messages", () => {
     const swiss = accountMessages.resolve(["de-CH"]);
     expect(swiss.locale).toBe("de");
     expect(swiss.t.revokeApiKeyConfirm({ name: "Desktop" })).toContain("verlieren sofort den Zugriff");
-    expect(accountMessages.resolve(["fr"]).t.security).toBe("Security");
+    expect(accountMessages.resolve(["fr"]).t.security).toBe("Sign-in");
   });
 
   test("localizes stable notification channel and status values", () => {

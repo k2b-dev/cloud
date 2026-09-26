@@ -5,7 +5,7 @@ import type { JSXElement } from "solid-js";
 import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";
 
-export type AccountSection = "overview" | "profile" | "security" | "access" | "notifications" | "developer";
+export type AccountSection = "profile" | "security" | "access" | "notifications" | "developer";
 
 export const notificationViews = (locale: string) => {
   const { t } = accountMessages.resolve([locale]);
@@ -25,6 +25,8 @@ export default function AccountHub(props: {
   active: AccountSection;
   children: JSXElement;
   actions?: JSXElement;
+  /** Replaces the static avatar, for example with the avatar-change trigger on the profile page. */
+  avatar?: JSXElement;
   loginLabel: string;
 }) {
   const locale = useLocale();
@@ -40,13 +42,15 @@ export default function AccountHub(props: {
     <div class="mx-auto flex w-full max-w-6xl flex-col gap-2 px-2">
       <section class="paper p-4 sm:p-5" style="view-transition-name: account-hub">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <Avatar
-            name={props.user.displayName || props.user.uid}
-            src={avatarSrc}
-            size={props.active === "overview" ? "lg" : "md"}
-            class="bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
-            style="view-transition-name: user-avatar"
-          />
+          {props.avatar ?? (
+            <Avatar
+              name={props.user.displayName || props.user.uid}
+              src={avatarSrc}
+              size={props.active === "profile" ? "lg" : "md"}
+              class="bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
+              style="view-transition-name: user-avatar"
+            />
+          )}
           <div class="min-w-0 flex-1">
             <h1 class="truncate text-xl font-semibold leading-tight text-primary">{props.user.displayName || props.user.uid}</h1>
             <p class="mt-1 truncate text-xs text-dimmed">
@@ -67,8 +71,7 @@ export default function AccountHub(props: {
         <nav class="mt-5 flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
           {(
             [
-              { id: "overview", href: "/me", label: t().overview, icon: "ti ti-layout-dashboard" },
-              { id: "profile", href: "/me/profile", label: t().profile, icon: "ti ti-user" },
+              { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
               { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
               { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
               { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
@@ -115,6 +118,7 @@ export function AccountProfileActions(props: {
   appName: string;
   freeIpaEnabled: boolean;
   actions?: ("avatar" | "profile" | "details" | "extend")[];
+  trigger?: "avatar";
 }) {
   return (
     <ProfileActions
@@ -130,6 +134,7 @@ export function AccountProfileActions(props: {
       appName={props.appName}
       freeIpaEnabled={props.freeIpaEnabled}
       actions={props.actions}
+      trigger={props.trigger}
     />
   );
 }

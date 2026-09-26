@@ -26,7 +26,6 @@ import developerPage from "./me/developer.page";
 import notificationHistoryPage from "./me/notification-history.page";
 import notificationsPage from "./me/notifications.page";
 import profilePage from "./me/page";
-import personalProfilePage from "./me/profile.page";
 import securityPage from "./me/security.page";
 import notFoundPage from "./NotFound";
 
@@ -67,7 +66,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     )
     // Profile
     .get("/me", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...profilePage)
-    .get("/me/profile", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...personalProfilePage)
+    .get("/me/profile", (c) => c.redirect("/me", 302))
     .get("/me/security", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...securityPage)
     .get("/me/security/pair", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...pairDevicePage)
     .get("/me/access", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...accessPage)

@@ -1,3 +1,4 @@
+import { accountCategoryLabel } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService,
@@ -14,13 +15,22 @@ import { ButtonLink, NoticeCard, Placeholder } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
 import { type AccountMessages, accountMessages } from "./messages";
-import SignOutButton from "./SignOutButton.island";
 
 const accountExpiryCopy = (expiresAt: string, t: AccountMessages): string => {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
   if (days < 0) return t.accountExpired;
   if (days === 0) return t.accountExpiresToday;
   return t.accountExpiresIn({ count: days });
+};
+
+const formatAddress = (address: {
+  street: string | null;
+  postalCode: string | null;
+  city: string | null;
+  state: string | null;
+}): string | null => {
+  const parts = [address.street, [address.postalCode, address.city].filter(Boolean).join(" "), address.state].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : null;
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -43,22 +53,20 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const customizedNotifications = notificationPreferences.definitions.filter((preference) => preference.customized).length;
   const action = c.req.query("action");
+  const address = formatAddress(user.ipa?.address ?? { street: null, postalCode: null, city: null, state: null });
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account }]}>
       <AccountHub
         loginLabel={categoryPolicy.login.label}
         user={user}
-        active="overview"
-        actions={
-          <>
-            <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} />
-            <SignOutButton />
-          </>
+        active="profile"
+        avatar={
+          <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["avatar"]} trigger="avatar" />
         }
       >
         <div class="flex flex-col gap-2">
-          <AccountPageHeader title={t.overviewTitle} description={t.overviewDescription} />
+          <AccountPageHeader title={t.profile} description={t.profilePageDescription} />
 
           {action === "extend" && (
             <NoticeCard tone="info" icon={false}>
@@ -102,6 +110,77 @@ export default ssr<AuthContext>(async (c) => {
               {t.limitedAccess}
             </NoticeCard>
           )}
+
+          <section class="paper p-5 sm:p-6">
+            <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
+                <h3 class="text-sm font-semibold text-primary">{t.profileTitle}</h3>
+                <p class="mt-1 text-xs text-dimmed">{t.profileDescription}</p>
+              </div>
+              <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["profile", "details"]} />
+            </div>
+            <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+              <div>
+                <p class="section-label mb-1">{t.displayName}</p>
+                <p class="text-sm font-medium text-primary">{user.displayName || user.uid}</p>
+              </div>
+              <div>
+                <p class="section-label mb-1">{t.username}</p>
+                <p class="text-sm text-secondary">{user.uid}</p>
+              </div>
+              <div>
+                <p class="section-label mb-1">{t.email}</p>
+                <p class="break-words text-sm text-secondary">{user.mail ?? t.notSet}</p>
+              </div>
+              <div>
+                <p class="section-label mb-1">{t.phone}</p>
+                <p class="text-sm text-secondary">{user.ipa?.phone ?? t.notSet}</p>
+              </div>
+              {user.ipa?.mobile && user.ipa.mobile !== user.ipa.phone && (
+                <div>
+                  <p class="section-label mb-1">{t.mobile}</p>
+                  <p class="text-sm text-secondary">{user.ipa.mobile}</p>
+                </div>
+              )}
+              {user.ipa?.employeeType && (
+                <div>
+                  <p class="section-label mb-1">{t.employeeType}</p>
+                  <p class="text-sm text-secondary">{user.ipa.employeeType}</p>
+                </div>
+              )}
+              <div class="sm:col-span-2">
+                <p class="section-label mb-1">{t.address}</p>
+                <p class="text-sm text-secondary">{address ?? t.notSet}</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="paper p-5 sm:p-6">
+            <div class="mb-5">
+              <h3 class="text-sm font-semibold text-primary">{t.accountFacts}</h3>
+              <p class="mt-1 text-xs text-dimmed">{t.accountFactsDescription}</p>
+            </div>
+            <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+              <div>
+                <p class="section-label mb-1">{t.accountType}</p>
+                <p class="text-sm text-secondary">{accountCategoryLabel(user, categoryPolicy.login.label)}</p>
+              </div>
+              <div>
+                <p class="section-label mb-1">{t.accountExpiry}</p>
+                <p class="text-sm text-secondary">{user.accountExpires ? dates.formatDate(user.accountExpires, { locale }) : t.noExpiry}</p>
+              </div>
+              <div>
+                <p class="section-label mb-1">{t.passwordExpiry}</p>
+                <p class="text-sm text-secondary">
+                  {user.ipa?.passwordExpires ? dates.formatDate(user.ipa.passwordExpires, { locale }) : t.notApplicable}
+                </p>
+              </div>
+              <div>
+                <p class="section-label mb-1">{t.sshKeys}</p>
+                <p class="text-sm text-secondary">{t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 })}</p>
+              </div>
+            </div>
+          </section>
 
           <section class="grid gap-2 sm:grid-cols-2">
             <a href="/me/security" class="paper group p-4 no-underline transition-colors hover:bg-[var(--ui-surface-subtle)]">

@@ -201,7 +201,7 @@ devices in Cloud before pairing again.
 
 ## Connect a Cloud
 
-On your own Cloud profile page, open **Security → Paired devices → Pair a device**.
+On your own Cloud profile page, open **Sign-in → Paired devices → Pair a device**.
 Copy the link into **Add Cloud** in Cloud Login, open the link on the same device,
 or choose **Scan QR code** to scan inside Cloud Login. The phone's camera can
 also open the link. All paths carry the same temporary link.

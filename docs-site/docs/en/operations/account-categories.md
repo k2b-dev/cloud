@@ -24,7 +24,7 @@ sign-in, Linux identities and maintenance.
 | FreeIPA | Directory-managed accounts | FreeIPA credentials, passkey, or paired app |
 
 Change **Login account label** to use a name such as **Company account**.
-The name appears in sign-in, the account overview and account administration.
+The name appears in sign-in, the account profile page and account administration.
 An empty label uses **Login**. Renaming the entry does not change account access
 or permissions.
 

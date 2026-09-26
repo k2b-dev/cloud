@@ -27,7 +27,7 @@ const protectedPages = [
   "/admin/oauth",
   "/admin/gateway/apps",
   "/admin/observability",
-  "/me/profile",
+  "/me",
   ...[
     "accounts",
     "assistant",
