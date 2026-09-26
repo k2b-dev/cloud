@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-08-30
+updated: 2026-09-26
 ---
 
 # Layout and navigation
@@ -39,6 +39,10 @@ Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
+
+Without either option, the layout scrolls the page content and reserves a
+stable scrollbar gutter, so switching between short and long pages or tabs
+does not shift the content sideways where scrollbars take layout space.
 
 Do not reproduce Cloud chrome inside application content.
 

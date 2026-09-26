@@ -280,6 +280,10 @@ solid-island {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     background: var(--ui-surface);
   }
+  /* Below lg the document is the page scroller; reserve its scrollbar gutter
+     so short and long pages keep the same width. Full-page surfaces own their
+     inner scrolling. */
+  html:has(.cloud-app-canvas:not([data-layout-full-page])) { scrollbar-gutter: stable; }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
   .cloud-app-canvas .layout-header {
     border-radius: 0; border: 0; border-bottom: 1px solid var(--ui-border);

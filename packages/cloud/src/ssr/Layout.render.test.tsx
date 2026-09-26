@@ -52,15 +52,17 @@ const server = new Hono()
   )
   .get(
     "/layout",
-    ...app.ssr(
-      (c) => () =>
+    ...app.ssr((c) => {
+      const mode = c.req.query("mode") ?? "fullPage";
+      return () =>
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
-          fullPage: true,
+          fullPage: mode === "fullPage",
+          fullWidth: mode === "fullWidth",
           title: "Public tools",
           children: "Anonymous content",
-        }),
-    ),
+        });
+    }),
   )
   .get(
     "/minimal/:position",
@@ -83,6 +85,21 @@ describe("Cloud layouts SSR", () => {
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
     expect(css).toContain('html:has(.cloud-app-canvas[data-layout-full-page="true"])');
     expect(css).toContain("overscroll-behavior: none;");
+  });
+  test("regular pages reserve the scrollbar gutter on the shell's page scroller", async () => {
+    const mainClass = async (mode: string) => {
+      const html = await (await server.request(`/layout?mode=${mode}`)).text();
+      return html.match(/<main[^>]*class="([^"]*layout-content-main[^"]*)"/)?.[1];
+    };
+    expect(await mainClass("page")).toContain("lg:overflow-auto lg:[scrollbar-gutter:stable]");
+    for (const mode of ["fullPage", "fullWidth"]) {
+      const delegated = await mainClass(mode);
+      expect(delegated).toContain("flex flex-col");
+      expect(delegated).not.toContain("scrollbar-gutter");
+    }
+    const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
+    const mobileShell = css.slice(css.indexOf("@media (max-width: 1023px)"));
+    expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
   });
   test("admin children inherit the request locale during SSR", async () => {
     for (const locale of ["de", "en", "de-CH"]) {
