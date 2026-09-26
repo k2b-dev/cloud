@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.15.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.14.0...npm-cloud-v0.15.0) (2026-09-26)
+
+
+### Features
+
+* **cli:** share the command convention and address parsing for app CLIs ([#244](https://github.com/k2b-dev/cloud/issues/244)) ([3567c29](https://github.com/k2b-dev/cloud/commit/3567c29be73fd11522cde91516b0da119366ea51))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.6.1 to 0.6.2
+
 ## [0.14.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.13.0...npm-cloud-v0.14.0) (2026-09-25)
 
 
