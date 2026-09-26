@@ -9,7 +9,7 @@
  * with front matter (`id`, `title`, `updatedAt`). The manifest
  * `.cld-notebook.json` maps every file to its note and records the content
  * hash that was downloaded and the hash of the file that was written, so
- * local edits are detected exactly and never overwritten without `--force`.
+ * local edits are detected exactly and never discarded without `--force`.
  */
 import { mkdir, readdir, readFile, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
@@ -29,8 +29,12 @@ export type ManifestNote = {
   path: string;
   /** Hash of the server content that was downloaded. */
   contentHash: string;
-  /** Hash of the exact file text that was written; missing in manifests written before note links became paths. */
-  fileHash?: string;
+  /**
+   * Hash of the exact file text that pull writes for the server copy at `path`. `null` when pull updated the links of a
+   * file it kept for a conflict or a deleted note: that file matches no server copy and stays modified. Missing in
+   * manifests written before note links became paths.
+   */
+  fileHash?: string | null;
   updatedAt: string;
 };
 
@@ -222,8 +226,8 @@ export const renderMirrorFile = (
   `---\nid: ${note.id}\ntitle: ${JSON.stringify(note.title)}\nupdatedAt: ${note.updatedAt}\n---\n${rewriteNoteLinks(rewriteAttachmentLinks(content, depthOf(path), attachments), path, notePaths)}`;
 
 /**
- * Whether the local file still holds exactly what pull wrote. Entries without `fileHash` come from files
- * that never had note links as paths; for them the content without front matter is compared.
+ * Whether the local file still holds exactly what pull writes for its server copy. Entries without `fileHash` come from
+ * files that never had note links as paths; for them the content without front matter is compared.
  */
 export const localFileState = async (
   root: string,
@@ -323,7 +327,7 @@ const syncAttachments = async (ctx: CloudCliContext, root: string, notebookId: s
 
 /**
  * Bring the mirror to the server state. Only changed notes are downloaded.
- * Files with local changes are never overwritten or deleted unless `force`
+ * Files with local changes are never discarded unless `force`
  * is set; they move along when their note moved, and their relative note
  * links follow the notes they name, so writing them back keeps every link on
  * its note. A move onto a path that another file holds is skipped, and the
@@ -431,8 +435,10 @@ export const syncMirror = async (
     return `${text.slice(0, text.length - body.length)}${followNoteLinks(body, path, previousFiles, placed)}`;
   };
 
-  // Clean files whose note links change because a linked note moved, appeared, or left the mirror, and edited files
-  // that pull rewrites, whose file hash must describe the server copy at the new place.
+  // Clean files whose note links change because a linked note moved, appeared, or left the mirror. When any note's
+  // file changed, also edited files: their server copy may link to that note, and their file hash must describe it
+  // at the final paths, or undoing the edits would bring back stale links that count as clean.
+  const placementChanged = placed.size !== previous.size || [...placed].some(([id, path]) => previous.get(id)?.path !== path);
   await download(
     outline
       .filter((entry) => {
@@ -440,7 +446,7 @@ export const syncMirror = async (
         const path = placed.get(entry.id);
         const state = local.get(entry.id);
         if (!known || state?.text === undefined || path === undefined || fetched.has(entry.id)) return false;
-        if (edited(entry.id)) return path !== known.path || editedText(entry.id, path) !== state.text;
+        if (edited(entry.id)) return placementChanged;
         return state.state === "clean" && noteLinksChange(state.text, known.path, previousFiles, placed);
       })
       .map((entry) => entry.id),
@@ -449,22 +455,27 @@ export const syncMirror = async (
   const writes: Array<{ path: string; text: string }> = [];
   const removes = new Set<string>();
   const next: ManifestNote[] = [];
-  const keepEdits = (known: ManifestNote, path: string) => {
+  const keepEdits = (known: ManifestNote, path: string): boolean => {
     const text = editedText(known.id, path);
+    const rewritten = text !== local.get(known.id)!.text;
     if (path !== known.path) removes.add(known.path);
-    if (path !== known.path || text !== local.get(known.id)!.text) writes.push({ path, text });
+    if (path !== known.path || rewritten) writes.push({ path, text });
+    return rewritten;
   };
+  // A conflict or a deleted note keeps its old record, so the next pull still sees it. Once pull updated its links, the
+  // file matches no server copy, so it stays modified even if it now reads like the pulled file.
+  const keptRecord = (known: ManifestNote, rewritten: boolean): ManifestNote => (rewritten ? { ...known, fileHash: null } : known);
   for (const entry of outline) {
     const known = previous.get(entry.id);
     const path = placed.get(entry.id);
     if (path === undefined) continue;
     const remote = fetched.get(entry.id);
     if (edited(entry.id)) {
-      keepEdits(known!, path);
+      const rewritten = keepEdits(known!, path);
       if (!kept.has(entry.id)) kept.set(entry.id, { path, reason: "local-changes" });
-      // A conflict keeps its old record, so the next pull still sees it. Otherwise the server copy is still the base
-      // of the edits, and the file hash names what pull would write for it at the final place.
-      if (kept.get(entry.id)!.reason === "changed-on-both-sides") next.push(known!);
+      // For local changes the server copy is still the base of the edits, and the file hash names what pull would
+      // write for it at the final place.
+      if (kept.get(entry.id)!.reason === "changed-on-both-sides") next.push(keptRecord(known!, rewritten));
       else
         next.push({
           ...known!,
@@ -491,10 +502,8 @@ export const syncMirror = async (
   }
   for (const known of manifest.notes) {
     if (onServer.has(known.id)) continue;
-    if (kept.has(known.id)) {
-      keepEdits(known, known.path);
-      next.push(known);
-    } else removes.add(known.path);
+    if (kept.has(known.id)) next.push(keptRecord(known, keepEdits(known, known.path)));
+    else removes.add(known.path);
   }
 
   const report: SyncReport = { written: [], removed: [], kept: [...kept.values()], attachments: { downloaded: 0, removed: 0 } };

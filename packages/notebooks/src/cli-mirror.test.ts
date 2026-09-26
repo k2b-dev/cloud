@@ -388,6 +388,54 @@ describe("pull", () => {
     expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason: "local-changes" }]);
   });
 
+  test("undoing a local edit after a linked note moved is still a local change", async () => {
+    const mirror = await mirrorOf([serverNote("start1", "Start", "\n[Plan](note://plan01)\n"), serverNote("plan01", "Plan")]);
+    await mirror.pull();
+    const pulled = await mirror.read("start.md");
+    // The edit drops the link, so the rename of Plan changes nothing in the file.
+    await mirror.put("start.md", pulled.replace("[Plan](plan.md)\n", "draft\n"));
+    mirror.save("plan01", { title: "Roadmap", content: "# Roadmap\n" });
+    expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason: "local-changes" }]);
+
+    // The undo brings back a link to a file that no longer exists.
+    await mirror.put("start.md", pulled);
+    expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason: "local-changes" }]);
+    expect(mirror.downloads).toEqual([]);
+    // What pull writes for the server copy now is clean.
+    await mirror.put("start.md", pulled.replace("[Plan](plan.md)", "[Plan](roadmap.md)"));
+    expect(await mirror.pull()).toMatchObject({ written: [], kept: [] });
+  });
+
+  test.each(["changed-on-both-sides", "deleted-on-server"] as const)(
+    "a %s file whose link update restores the pulled text is still a local change",
+    async (reason) => {
+      const mirror = await mirrorOf([
+        serverNote("start1", "Start", "\n[Plan](note://plan01)\n"),
+        serverNote("plan01", "Plan"),
+        serverNote("plan02", "Plan v2"),
+      ]);
+      const remove = (id: string) =>
+        mirror.notes.splice(
+          mirror.notes.findIndex((note) => note.id === id),
+          1,
+        );
+      await mirror.pull();
+      const pulled = await mirror.read("start.md");
+      await mirror.put("start.md", pulled.replace("[Plan](plan.md)", "[Plan](plan-v2.md)"));
+      if (reason === "changed-on-both-sides") mirror.save("start1", { content: "# Start\nserver\n" });
+      else remove("start1");
+      expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason }]);
+
+      // The old plan is deleted and the new one takes its name, so the followed link reads like the pulled file.
+      remove("plan01");
+      mirror.save("plan02", { title: "Plan", content: "# Plan\n" });
+      expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason }]);
+      expect(await mirror.read("start.md")).toBe(pulled);
+      expect((await mirror.pull()).kept).toEqual([{ path: "start.md", reason }]);
+      expect(await mirror.read("start.md")).toBe(pulled);
+    },
+  );
+
   test("a locally modified file whose note moves carries its edits and updates its relative links", async () => {
     const mirror = await mirrorOf([serverNote("start1", "Start", "\n[B](note://bbbbbb)\n"), serverNote("bbbbbb", "B"), ...folder]);
     await mirror.pull();

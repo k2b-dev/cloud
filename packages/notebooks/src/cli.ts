@@ -1461,8 +1461,8 @@ function notebooksCommands(locale?: string) {
           de: "Ein Notizbuch in einen lokalen Ordner mit Markdown-Dateien spiegeln",
         }),
         description: t({
-          en: "One-way: only changed notes are downloaded; renamed, moved, and deleted notes follow. Files with local changes are never overwritten; they are listed and pull exits 1. --force discards them. An existing mirror can be pulled with just its folder.",
-          de: "Einweg: Nur geänderte Notizen werden geladen; umbenannte, verschobene und gelöschte Notizen folgen. Dateien mit lokalen Änderungen werden nie überschrieben; sie werden aufgelistet und pull endet mit 1. --force verwirft sie. Ein vorhandener Spiegel lässt sich nur mit seinem Ordner pullen.",
+          en: "Only changed notes are downloaded; renamed, moved, and deleted notes follow, and so do links to them. Local changes are never discarded: such files only move with their note and have their links to moved notes updated; they are listed and pull exits 1. --force discards them. An existing mirror can be pulled with just its folder.",
+          de: "Nur geänderte Notizen werden geladen; umbenannte, verschobene und gelöschte Notizen folgen, ebenso Links auf sie. Lokale Änderungen werden nie verworfen: Solche Dateien wandern nur mit ihrer Notiz mit, und ihre Links auf verschobene Notizen werden angepasst; sie werden aufgelistet und pull endet mit 1. --force verwirft sie. Ein vorhandener Spiegel lässt sich nur mit seinem Ordner pullen.",
         }),
         args: {
           first: arg.required({
