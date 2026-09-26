@@ -205,7 +205,11 @@ describe("cloud CLI OAuth session handling", () => {
     expect(result.stdout).toBe("");
     expect(result.stderr.trim().split("\n")).toHaveLength(1);
     expect(JSON.parse(result.stderr)).toEqual({
-      error: { message: 'Unknown module "missing-module". Run `cld help`.', exitCode: 1 },
+      error: {
+        message:
+          'Unknown command "missing-module". If your Cloud serves it, run `cld plugins install missing-module`; `cld plugins list` shows what it serves.',
+        exitCode: 1,
+      },
     });
   });
 
@@ -217,7 +221,7 @@ describe("cloud CLI OAuth session handling", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain('Unbekanntes Modul "missing-module"');
+    expect(result.stderr).toContain('Unbekannter Befehl "missing-module"');
   });
 
   test("rejects incomplete update versions before contacting a release server", async () => {

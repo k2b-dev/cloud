@@ -217,7 +217,8 @@ the list and to every download:
 
 Change it under **Administration › Settings › Command line**. The setting only
 protects the plugin code; the server still authorizes every command a plugin
-sends. See [Application CLI modules](/en/docs/platform/cli-modules#serve-a-module-from-the-application).
+sends. Users install the plugins with `cld plugins install <name>` or accept the
+offer after `cld login`; `cld` verifies every file against the served manifest. See [Application CLI modules](/en/docs/platform/cli-modules#serve-a-module-from-the-application).
 
 ## Validate a deployment
 

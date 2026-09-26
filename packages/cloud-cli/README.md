@@ -46,17 +46,21 @@ bun run packages/cloud-cli/src/index.ts --server http://localhost:3000 --token c
 
 ## Plugins
 
-Third-party applications ship their `cld` commands as plugins:
+Cloud applications serve their `cld` commands as plugins. Each profile installs
+and locks the versions its Cloud serves:
 
 ```bash
-cld plugins install @example/inventory-cli@1.4.0
 cld plugins list
-cld plugins run inventory items list
+cld plugins install --all
+cld plugins update --all
 cld plugins remove inventory
 ```
 
-Plugins live in `~/.config/cloud/cld/plugins/<id>/` and run unsandboxed with
-your Cloud credentials. See
+Package plugins install for every profile from a path, a `.tgz`, or
+`npm:<package>`. Served plugins live content-addressed in
+`~/.config/cloud/cld/plugins/store/<digest>/`, package plugins in
+`~/.config/cloud/cld/plugins/<id>/`. Both run unsandboxed with your Cloud
+credentials. See
 [Application CLI modules](../../docs-site/docs/en/platform/cli-modules.md) for
 the manifest and the security model.
 

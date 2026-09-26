@@ -13,17 +13,19 @@ import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import type { CloudCliModule } from "@k2b/cloud/cli";
+import { CLOUD_CLI_API_VERSION, type CloudCliModule, validateCloudCliModule } from "@k2b/cloud/cli";
 import { userConfigDirectory } from "./config";
 
 const execFileAsync = promisify(execFile);
 
 /** Plugin contract version: the `CloudCliModule` shape exported by `@k2b/cloud/cli`. */
-export const CLD_PLUGIN_API_VERSION = 1;
+export const CLD_PLUGIN_API_VERSION = CLOUD_CLI_API_VERSION;
 export const NPM_REGISTRY = "https://registry.npmjs.org";
 const INSTALL_RECORD = ".cld-install.json";
 const FETCH_TIMEOUT_MS = 60_000;
 const MODULE_NAME = /^[a-z][a-z0-9-]*$/;
+/** Directory of served plugins inside the plugins directory; never a plugin ID. */
+const STORE_DIRECTORY = "store";
 const NPM_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 
 export const pluginsDirectory = (): string => join(userConfigDirectory(), "cloud", "cld", "plugins");
@@ -78,28 +80,13 @@ export const readPluginManifest = async (directory: string): Promise<PluginManif
   return { package: raw.name, version: raw.version, entry };
 };
 
-/**
- * Check the default export structurally. `instanceof` would fail because a
- * plugin bundles its own copy of `@k2b/cloud/cli`.
- */
+/** Check the default export structurally; see `validateCloudCliModule`. */
 export const validatePluginModule = (value: unknown): CloudCliModule => {
-  if (!isRecord(value)) throw new PluginError("default export is not a CLI module");
-  if (typeof value.name !== "string" || !MODULE_NAME.test(value.name)) {
-    throw new PluginError("default export needs a lowercase kebab-case name");
+  try {
+    return validateCloudCliModule(value);
+  } catch (error) {
+    throw new PluginError(error instanceof Error ? error.message : String(error));
   }
-  if (typeof value.summary !== "string") throw new PluginError("default export needs a string summary");
-  if (typeof value.run !== "function") throw new PluginError("default export needs a run function");
-  for (const key of ["help", "requiresCloudFor"] as const) {
-    if (value[key] !== undefined && typeof value[key] !== "function") throw new PluginError(`${key} must be a function`);
-  }
-  if (value.requiresCloud !== undefined && typeof value.requiresCloud !== "boolean") {
-    throw new PluginError("requiresCloud must be a boolean");
-  }
-  const flags = value.booleanFlags;
-  if (flags !== undefined && (!Array.isArray(flags) || flags.some((flag) => typeof flag !== "string"))) {
-    throw new PluginError("booleanFlags must be a string array");
-  }
-  return value as CloudCliModule;
 };
 
 const importPluginModule = async (entry: string): Promise<CloudCliModule> => {
@@ -120,7 +107,7 @@ const importInstalledPlugin = async (id: string, manifest: PluginManifest): Prom
 
 /** Load plugin `<id>`; returns undefined when it is not installed. */
 export const loadPlugin = async (id: string, root = pluginsDirectory()): Promise<CloudCliModule | undefined> => {
-  if (!MODULE_NAME.test(id)) return undefined;
+  if (!MODULE_NAME.test(id) || id === STORE_DIRECTORY) return undefined;
   const directory = join(root, id);
   if (!(await stat(directory).catch(() => null))?.isDirectory()) return undefined;
   return importInstalledPlugin(id, await readPluginManifest(directory));
@@ -138,7 +125,7 @@ const readInstallSource = async (directory: string): Promise<string> => {
 const pluginIds = async (root: string): Promise<string[]> => {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   return entries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== STORE_DIRECTORY)
     .map((entry) => entry.name)
     .sort();
 };
@@ -185,7 +172,7 @@ const parseNpmSpec = (spec: string): { name: string; version: string } => {
   const at = spec.indexOf("@", spec.startsWith("@") ? 1 : 0);
   const name = at < 0 ? spec : spec.slice(0, at);
   const version = at < 0 ? "latest" : spec.slice(at + 1);
-  if (!NPM_NAME.test(name) || version === "") throw new PluginError(`"${spec}" is neither a local path nor an npm package name`);
+  if (!NPM_NAME.test(name) || version === "") throw new PluginError(`"${spec}" is not an npm package name`);
   return { name, version };
 };
 
@@ -222,16 +209,28 @@ const downloadNpmTarball = async (spec: string, workspace: string, registry: str
   return { archive, source: `npm:${name}@${resolved}` };
 };
 
+/** `npm:` marks an npm package spec (`npm:name`, `npm:name@version`, `npm:name@tag`). */
+export const NPM_SPEC_PREFIX = "npm:";
+
+/**
+ * Whether an install target names a local path or an npm package rather than
+ * a plugin served by the Cloud: `npm:<spec>`, or a path with a slash or an
+ * archive extension (`./inventory`, `inventory-1.0.0.tgz`).
+ */
+export const isPackagePluginSource = (spec: string): boolean =>
+  spec.startsWith(NPM_SPEC_PREFIX) || spec.includes("/") || /\.(tgz|tar\.gz)$/.test(spec);
+
 /**
  * Unpack a plugin from a local directory, a local `.tgz`, or an npm package
- * spec (`name`, `name@version`, `name@tag`) into a temporary directory and
- * verify its manifest. Nothing is imported or placed yet.
+ * spec (`npm:name`, `npm:name@version`, `npm:name@tag`) into a temporary
+ * directory and verify its manifest. Nothing is imported or placed yet.
  */
 export const stagePlugin = async (spec: string, options: { registry?: string } = {}): Promise<StagedPlugin> => {
   const workspace = await mkdtemp(join(tmpdir(), "cld-plugin-"));
   const cleanup = () => rm(workspace, { recursive: true, force: true });
   try {
-    const local = await stat(spec).catch(() => null);
+    const npm = spec.startsWith(NPM_SPEC_PREFIX);
+    const local = npm ? null : await stat(spec).catch(() => null);
     let directory: string;
     let source: string;
     if (local?.isDirectory()) {
@@ -244,10 +243,12 @@ export const stagePlugin = async (spec: string, options: { registry?: string } =
     } else if (local?.isFile()) {
       source = resolve(spec);
       directory = await extractTarball(source, workspace);
-    } else {
-      const download = await downloadNpmTarball(spec, workspace, options.registry ?? NPM_REGISTRY);
+    } else if (npm) {
+      const download = await downloadNpmTarball(spec.slice(NPM_SPEC_PREFIX.length), workspace, options.registry ?? NPM_REGISTRY);
       source = download.source;
       directory = await extractTarball(download.archive, workspace);
+    } else {
+      throw new PluginError(`${spec} does not exist; use ${NPM_SPEC_PREFIX}<package> for an npm package`);
     }
     return { directory, manifest: await readPluginManifest(directory), source, cleanup };
   } catch (error) {
@@ -264,10 +265,14 @@ export const commitPlugin = async (
   staged: StagedPlugin,
   reserved: ReadonlySet<string>,
   root = pluginsDirectory(),
+  /** Throws a `PluginError` when the module name must not be installed. */
+  check: (id: string) => void = () => {},
 ): Promise<{ id: string; replaced: boolean }> => {
   const module = await importPluginModule(staged.manifest.entry);
   const id = module.name;
-  if (reserved.has(id)) throw new PluginError(`plugin id "${id}" is reserved by a built-in cld command`, "shadowed");
+  check(id);
+  if (reserved.has(id) || id === STORE_DIRECTORY)
+    throw new PluginError(`plugin id "${id}" is reserved by a built-in cld command`, "shadowed");
   await writeFile(join(staged.directory, INSTALL_RECORD), `${JSON.stringify({ source: staged.source }, null, 2)}\n`);
   await mkdir(root, { recursive: true, mode: 0o700 });
   const target = join(root, id);
@@ -286,7 +291,7 @@ export const commitPlugin = async (
 
 /** Remove plugin `<id>`; returns false when it is not installed. */
 export const removePlugin = async (id: string, root = pluginsDirectory()): Promise<boolean> => {
-  if (!MODULE_NAME.test(id)) return false;
+  if (!MODULE_NAME.test(id) || id === STORE_DIRECTORY) return false;
   const directory = join(root, id);
   if (!(await stat(directory).catch(() => null))?.isDirectory()) return false;
   await rm(directory, { recursive: true, force: true });

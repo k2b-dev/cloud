@@ -10,15 +10,29 @@ import type {
   CloudCliFlagValue,
   CloudCliModule,
   CloudCliOptions,
+  CloudCliPluginSummary,
   CloudCliTableColumn,
 } from "@k2b/cloud/cli";
-import { localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
+import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken } from "./config";
 import { builtInModules, isBuiltInModuleName } from "./modules";
 import {
+  collectPluginGarbage,
+  downloadPlugin,
+  fetchAvailablePlugins,
+  fetchPluginManifest,
+  hasStoredPlugin,
+  type LockedPlugin,
+  loadStoredPlugin,
+  type PluginLock,
+  placePlugin,
+  readPluginLock,
+} from "./plugin-store";
+import {
   commitPlugin,
+  isPackagePluginSource,
   loadPlugin,
   loadPlugins,
   PluginError,
@@ -60,6 +74,8 @@ type CloudCliProfile = TokenProviderConfig & {
   server?: string;
   defaults?: Record<string, string>;
   oauth?: OAuthSessionConfig;
+  /** Plugins served by this profile's Cloud, locked to one stored version each. */
+  plugins?: PluginLock;
 };
 
 type CloudCliConfig = {
@@ -611,9 +627,10 @@ const resolveAuth = async (
   profileName: string,
   profile: CloudCliProfile,
   server: string,
+  useEnvironment = true,
 ): Promise<ResolvedAuth> => {
   if (global.token) return { token: global.token };
-  const tokenFromEnv = envToken();
+  const tokenFromEnv = useEnvironment ? envToken() : undefined;
   if (tokenFromEnv) return { token: tokenFromEnv };
   if (global.tokenFile) return { token: await readTokenFile(global.tokenFile) };
   if (global.fd0) return { token: await readFd0Token(global.fd0, global.fd0Scope) };
@@ -654,11 +671,19 @@ const resolveProfileName = (config: CloudCliConfig, requestedProfile: string | u
   return DEFAULT_PROFILE;
 };
 
-const resolveOptions = async (global: GlobalArgs): Promise<ResolvedCliOptions> => {
+/**
+ * Resolve server and credentials. `profileOnly` uses nothing but the saved
+ * profile: no flags and no environment, so a command that walks every profile
+ * never sends one Cloud's token to another.
+ */
+const resolveOptions = async (global: GlobalArgs, { profileOnly = false } = {}): Promise<ResolvedCliOptions> => {
+  if (profileOnly) {
+    global = { ...global, server: undefined, token: undefined, tokenFile: undefined, tokenCommand: undefined, fd0: undefined };
+  }
   const config = await loadConfig();
   const profileName = resolveProfileName(config, global.profile);
   const profile = config.profiles?.[profileName] ?? {};
-  const server = global.server ?? envServer() ?? profile.server;
+  const server = profileOnly ? profile.server : (global.server ?? envServer() ?? profile.server);
   if (!server)
     throw new CliError(
       "No server configured. Pass --server or run `cld profile set --server <url>`.",
@@ -666,7 +691,7 @@ const resolveOptions = async (global: GlobalArgs): Promise<ResolvedCliOptions> =
       "Kein Server konfiguriert. Übergib --server oder führe `cld profile set --server <URL>` aus.",
     );
   const normalizedServer = canonicalServer(server);
-  const auth = await resolveAuth(global, config, profileName, profile, normalizedServer);
+  const auth = await resolveAuth(global, config, profileName, profile, normalizedServer, !profileOnly);
   return {
     profile: profileName,
     server: normalizedServer,
@@ -821,12 +846,14 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
   };
 };
 
-const moduleList = (locale: string, pluginModules: CloudCliModule[]): string =>
+type ModuleSummary = Pick<CloudCliModule, "name" | "summary">;
+
+const moduleList = (locale: string, pluginModules: ModuleSummary[]): string =>
   [...Object.entries(builtInModules).map(([name, module]) => ({ name, summary: module.summary })), ...pluginModules]
     .map((module) => `  ${module.name.padEnd(12)} ${moduleSummary(module.name, module.summary, locale)}`)
     .join("\n");
 
-const helpText = (locale: string, pluginModules: CloudCliModule[]): string =>
+const helpText = (locale: string, pluginModules: ModuleSummary[]): string =>
   text(
     locale,
     `cld
@@ -838,7 +865,7 @@ Usage:
   cld auth status
   cld profile <list|show|use|set> [options]
   cld update [--version <version>] [--yes] [--no-verify]
-  cld plugins <list|install|remove|run> [options]
+  cld plugins <list|install|update|remove|run> [options]
   cld --version
 
 Global options:
@@ -872,7 +899,7 @@ Verwendung:
   cld auth status
   cld profile <list|show|use|set> [Optionen]
   cld update [--version <Version>] [--yes] [--no-verify]
-  cld plugins <list|install|remove|run> [Optionen]
+  cld plugins <list|install|update|remove|run> [Optionen]
   cld --version
 
 Globale Optionen:
@@ -946,6 +973,10 @@ Options:
   --scope <scopes>      OAuth scopes (default: ${DEFAULT_OAUTH_SCOPE})
   --fd0 [name]          Store the refresh token in fd0 (default name: cloud-<profile>-oauth-refresh-token)
   --fd0-scope <scope>   fd0 scope for the refresh token
+  --yes                 Install the Cloud's plugins without asking
+  --no-plugins          Do not offer the Cloud's plugins after signing in
+
+After signing in, cld offers to install the plugins this Cloud serves.
 
 Examples:
   cld login --server https://cloud.example
@@ -968,6 +999,10 @@ Optionen:
   --scope <Scopes>      OAuth-Scopes (Standard: ${DEFAULT_OAUTH_SCOPE})
   --fd0 [Name]          Refresh-Token in fd0 speichern (Standardname: cloud-<Profil>-oauth-refresh-token)
   --fd0-scope <Scope>   fd0-Scope für das Refresh-Token
+  --yes                 Plugins der Cloud ohne Rückfrage installieren
+  --no-plugins          Nach der Anmeldung keine Plugins der Cloud anbieten
+
+Nach der Anmeldung bietet cld an, die Plugins dieser Cloud zu installieren.
 
 Beispiele:
   cld login --server https://cloud.example
@@ -1098,30 +1133,51 @@ const pluginsHelp = (locale: string): string =>
     `cld plugins
 
 Usage:
-  cld plugins list [--json]
-  cld plugins install <directory|package.tgz|npm-package[@version]> [--yes]
-  cld plugins remove <id>
-  cld plugins run <id> [args...]
+  cld plugins list [--all] [--json]
+  cld plugins install <name>... | --all
+  cld plugins install <./directory|package.tgz|npm:package[@version]> [--yes]
+  cld plugins update [<name>...] [--all]
+  cld plugins remove <name>
+  cld plugins run <name> [args...]
 
-Plugin commands also run as \`cld <id> ...\`. \`cld plugins run <id>\` always reaches the
+Every Cloud application serves its own commands as a plugin. \`install <name>\`
+downloads a plugin from the current profile's Cloud, checks the SHA-512 of every
+file, and locks that version for the profile. \`update\` fetches newer versions for
+the current profile, or for every profile with --all. \`list --all\` covers every
+profile. Profiles share identical plugin versions on disk.
+
+A local directory, a .tgz archive, or an npm: package installs a plugin for every
+profile, for development or for commands that no Cloud serves. Such a plugin runs
+inside cld with your Cloud credentials; install only plugins you trust.
+
+Plugin commands run as \`cld <name> ...\`. \`cld plugins run <name>\` always reaches the
 plugin, even when a built-in command with the same name takes precedence.
-Plugins add third-party application commands to cld without a new cld release.
-A plugin runs inside cld with your Cloud credentials. Install only plugins you trust.
 
 Directory: ${pluginsDirectory()}
 `,
     `cld plugins
 
 Verwendung:
-  cld plugins list [--json]
-  cld plugins install <Verzeichnis|Paket.tgz|npm-Paket[@Version]> [--yes]
-  cld plugins remove <ID>
-  cld plugins run <ID> [Argumente...]
+  cld plugins list [--all] [--json]
+  cld plugins install <Name>... | --all
+  cld plugins install <./Verzeichnis|Paket.tgz|npm:Paket[@Version]> [--yes]
+  cld plugins update [<Name>...] [--all]
+  cld plugins remove <Name>
+  cld plugins run <Name> [Argumente...]
 
-Plugin-Befehle laufen auch als \`cld <ID> ...\`. \`cld plugins run <ID>\` erreicht das Plugin
+Jede Cloud-Anwendung stellt ihre Befehle als Plugin bereit. \`install <Name>\` lädt
+ein Plugin von der Cloud des aktuellen Profils, prüft den SHA-512 jeder Datei und
+legt diese Version für das Profil fest. \`update\` holt neuere Versionen für das
+aktuelle Profil, mit --all für alle Profile. \`list --all\` zeigt alle Profile.
+Profile teilen sich identische Plugin-Versionen auf der Festplatte.
+
+Ein lokales Verzeichnis, ein .tgz-Archiv oder ein npm:-Paket installiert ein Plugin
+für alle Profile, zum Entwickeln oder für Befehle, die keine Cloud bereitstellt. Ein
+solches Plugin läuft in cld mit deinen Cloud-Zugangsdaten; installiere nur Plugins,
+denen du vertraust.
+
+Plugin-Befehle laufen als \`cld <Name> ...\`. \`cld plugins run <Name>\` erreicht das Plugin
 immer, auch wenn ein eingebauter Befehl mit demselben Namen Vorrang hat.
-Plugins ergänzen cld um Befehle von Drittanbieter-Anwendungen, ohne ein neues cld-Release.
-Ein Plugin läuft in cld mit deinen Cloud-Zugangsdaten. Installiere nur Plugins, denen du vertraust.
 
 Verzeichnis: ${pluginsDirectory()}
 `,
@@ -1147,7 +1203,7 @@ const warnSkippedPlugin = (plugin: PluginInfo, locale: string): void => {
   );
 };
 
-const confirmPluginInstall = async (message: string, locale: string): Promise<boolean> => {
+const confirmPluginInstall = async (message: string, locale: string, defaultYes = false): Promise<boolean> => {
   if (!process.stdin.isTTY) {
     throw new CliError(
       "Not a terminal; pass --yes to install the plugin non-interactively.",
@@ -1157,8 +1213,9 @@ const confirmPluginInstall = async (message: string, locale: string): Promise<bo
   }
   const prompt = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await prompt.question(`${message} ${text(locale, "[y/N]", "[j/N]")} `);
-    return /^(y|yes|j|ja)$/i.test(answer.trim());
+    const choices = defaultYes ? text(locale, "[Y/n]", "[J/n]") : text(locale, "[y/N]", "[j/N]");
+    const answer = (await prompt.question(`${message} ${choices} `)).trim();
+    return (defaultYes && answer === "") || /^(y|yes|j|ja)$/i.test(answer);
   } finally {
     prompt.close();
   }
@@ -1169,48 +1226,263 @@ const pluginFailure = (error: unknown, action: string, germanAction: string): ne
   throw error;
 };
 
+const profileLock = (config: CloudCliConfig, profileName: string): PluginLock => readPluginLock(config.profiles?.[profileName]?.plugins);
+
+/** Digests any profile still locks; everything else in the store may go. */
+const lockedDigests = (config: CloudCliConfig): Set<string> =>
+  new Set(Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)));
+
+/**
+ * Load an installed plugin: the one the profile locks, else a package plugin
+ * installed for every profile. Undefined when neither exists.
+ */
+const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
+  const config = await loadConfig();
+  const locked = profileLock(config, resolveProfileName(config, global.profile))[name];
+  const module = locked ? loadStoredPlugin(name, locked) : loadPlugin(name);
+  return module.catch((error) => pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`));
+};
+
+type PluginCloud = { profile: string; server: string; fetch: (path: string, init?: RequestInit) => Promise<Response> };
+
+/**
+ * Authenticated access to a profile's Cloud. The current profile honours
+ * --server, --token and the environment; other profiles use only their saved
+ * configuration.
+ */
+const pluginCloud = async (global: GlobalArgs, otherProfile?: string): Promise<PluginCloud> => {
+  const options =
+    otherProfile === undefined
+      ? await resolveOptions(global)
+      : await resolveOptions({ ...global, profile: otherProfile }, { profileOnly: true });
+  return { profile: options.profile, server: options.server, fetch: createContext([], {}, options).fetch };
+};
+
+type PluginChange = {
+  profile: string;
+  name: string;
+  app: string;
+  version: string;
+  previous?: string;
+  status: "installed" | "updated" | "unchanged" | "not served" | "failed";
+  message?: string;
+};
+
+/**
+ * Fetch, verify and lock plugins for one profile. Downloads run outside the
+ * config lock; placing them in the store, updating the lock, and pruning
+ * unused versions happen together under it.
+ */
+const syncProfilePlugins = async (cloud: PluginCloud, names: readonly string[], mode: "install" | "update"): Promise<PluginChange[]> => {
+  const current = profileLock(await loadConfig(), cloud.profile);
+  const changes: PluginChange[] = [];
+  const staged: Array<{ name: string; locked: LockedPlugin; incoming: string | null }> = [];
+  for (const name of names) {
+    try {
+      if (reservedNames.has(name)) throw new PluginError(`"${name}" is a built-in cld command`, "shadowed");
+      if (!current[name] && (await loadPlugin(name).catch(() => null))) {
+        throw new PluginError(`a package plugin "${name}" is installed for every profile; run \`cld plugins remove ${name}\` first`);
+      }
+      const manifest = await fetchPluginManifest(cloud.fetch, name);
+      const previous = current[name];
+      if (previous?.digest === manifest.digest && (await hasStoredPlugin(manifest.digest))) {
+        changes.push({ profile: cloud.profile, name, app: manifest.app, version: manifest.version, status: "unchanged" });
+        continue;
+      }
+      const download = (await hasStoredPlugin(manifest.digest))
+        ? { incoming: null, module: await loadStoredPlugin(name, { ...manifest, summary: "" }) }
+        : await downloadPlugin(cloud.fetch, manifest);
+      staged.push({
+        name,
+        incoming: download.incoming,
+        locked: { app: manifest.app, version: manifest.version, digest: manifest.digest, summary: download.module.summary },
+      });
+      changes.push({
+        profile: cloud.profile,
+        name,
+        app: manifest.app,
+        version: manifest.version,
+        ...(previous ? { previous: previous.version } : {}),
+        status: previous ? "updated" : "installed",
+      });
+    } catch (error) {
+      if (!(error instanceof PluginError)) throw error;
+      const notServed = mode === "update" && current[name] && error.message.startsWith("This Cloud serves no plugin");
+      changes.push({
+        profile: cloud.profile,
+        name,
+        app: current[name]?.app ?? "",
+        version: current[name]?.version ?? "",
+        status: notServed ? "not served" : "failed",
+        message: error.message,
+      });
+    }
+  }
+  if (staged.length === 0) return changes;
+  await withConfigLock(async () => {
+    const config = await loadConfig();
+    config.profiles ??= {};
+    const profile = config.profiles[cloud.profile] ?? {};
+    const lock = profileLock(config, cloud.profile);
+    for (const { name, locked, incoming } of staged) {
+      if (incoming) await placePlugin(incoming, locked.digest);
+      lock[name] = locked;
+    }
+    config.profiles[cloud.profile] = { ...profile, plugins: lock };
+    await saveConfig(config);
+    await collectPluginGarbage(lockedDigests(config));
+  });
+  return changes;
+};
+
+const printPluginChanges = (changes: PluginChange[], output: GlobalArgs["output"], locale: string): number => {
+  if (output === "jsonl") for (const change of changes) printLine(JSON.stringify(change));
+  else if (output === "json") printLine(JSON.stringify({ plugins: changes }, null, 2));
+  else {
+    for (const change of changes) {
+      const label = `${change.name} ${change.version}`.trim();
+      const line =
+        change.status === "installed"
+          ? text(locale, `Installed ${label} (profile "${change.profile}").`, `${label} installiert (Profil "${change.profile}").`)
+          : change.status === "updated"
+            ? text(
+                locale,
+                `Updated ${change.name} ${change.previous} → ${change.version} (profile "${change.profile}").`,
+                `${change.name} ${change.previous} → ${change.version} aktualisiert (Profil "${change.profile}").`,
+              )
+            : change.status === "unchanged"
+              ? text(locale, `${label} is up to date (profile "${change.profile}").`, `${label} ist aktuell (Profil "${change.profile}").`)
+              : undefined;
+      if (line) printLine(line);
+      else printErrorLine(`cld: ${change.name} (${change.profile}): ${change.message}`);
+    }
+  }
+  return changes.some((change) => change.status === "failed") ? 1 : 0;
+};
+
+type PluginRow = {
+  profile: string | null;
+  name: string;
+  app: string | null;
+  installed: string | null;
+  available: string | null;
+  status: string;
+  source: string;
+};
+
+const listProfilePlugins = async (global: GlobalArgs, profileName: string, current: boolean): Promise<PluginRow[]> => {
+  const lock = profileLock(await loadConfig(), profileName);
+  let available: CloudCliPluginSummary[] | null = null;
+  const digests = new Map<string, string>();
+  try {
+    const cloud = await pluginCloud(global, current ? undefined : profileName);
+    available = await fetchAvailablePlugins(cloud.fetch);
+    await Promise.all(
+      Object.keys(lock)
+        .filter((name) => available?.some((plugin) => plugin.name === name))
+        .map(async (name) => digests.set(name, (await fetchPluginManifest(cloud.fetch, name)).digest)),
+    );
+  } catch (error) {
+    // A profile without a server has nothing to list; anything else is worth a warning.
+    const unconfigured = error instanceof CliError && /No (server|token|login) configured/.test(error.message);
+    if (!unconfigured) {
+      printErrorLine(`cld: profile "${profileName}": ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const names = [...new Set([...Object.keys(lock), ...(available ?? []).map((plugin) => plugin.name)])].sort();
+  return names.map((name) => {
+    const locked = lock[name];
+    const served = available?.find((plugin) => plugin.name === name);
+    const status = !available
+      ? "unknown"
+      : !locked
+        ? "available"
+        : !served
+          ? "not served"
+          : digests.get(name) === locked.digest
+            ? "ok"
+            : "update available";
+    return {
+      profile: profileName,
+      name,
+      app: locked?.app ?? served?.app ?? null,
+      installed: locked?.version ?? null,
+      available: served?.version ?? null,
+      status,
+      source: "cloud",
+    };
+  });
+};
+
 const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
   const locale = global.locale;
   if (args[0] === "run") {
-    // Everything after the ID belongs to the plugin; shadowing does not apply.
+    // Everything after the name belongs to the plugin; shadowing does not apply.
     const [, id, ...moduleArgs] = args;
     if (!id || id.startsWith("-")) {
-      throw new CliError("Usage: cld plugins run <id> [args...]", 1, "Verwendung: cld plugins run <ID> [Argumente...]");
+      throw new CliError("Usage: cld plugins run <name> [args...]", 1, "Verwendung: cld plugins run <Name> [Argumente...]");
     }
-    const module = await loadPlugin(id).catch((error) =>
-      pluginFailure(error, `Plugin "${id}" cannot run`, `Plugin "${id}" kann nicht ausgeführt werden`),
-    );
+    const module = await loadInstalledModule(id, global);
     if (!module) throw new CliError(`Plugin "${id}" is not installed.`, 1, `Plugin "${id}" ist nicht installiert.`);
     return runModule(module, moduleArgs, global);
   }
-  const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
-  const [command, target, ...extra] = parsed.args;
+  const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y", "all"]));
+  const [command, ...targets] = parsed.args;
   if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
     printLine(pluginsHelp(locale));
     return 0;
   }
   const output = takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : global.output;
-  const allowedFlags = new Set(command === "install" ? ["json", "jsonl", "yes", "y"] : ["json", "jsonl"]);
+  const allowed: Record<string, string[]> = {
+    list: ["all"],
+    install: ["all", "yes", "y"],
+    update: ["all"],
+    remove: [],
+  };
+  const allowedFlags = new Set(["json", "jsonl", ...(allowed[command] ?? [])]);
   const unsupportedFlag = Object.keys(parsed.flags).find((flag) => !allowedFlags.has(flag));
   if (unsupportedFlag) throw new CliError(`Unknown plugins option "--${unsupportedFlag}".`);
+  const all = takeBooleanFlag(parsed.flags, "all");
   const printJson = (value: unknown) => printLine(output === "jsonl" ? JSON.stringify(value) : JSON.stringify(value, null, 2));
 
-  if (command === "list" && !target) {
+  if (command === "list" && targets.length === 0) {
+    const config = await loadConfig();
+    const currentProfile = resolveProfileName(config, global.profile);
+    const profileNames = all ? Object.keys(config.profiles ?? {}).sort() : [currentProfile];
+    const rows: PluginRow[] = [];
+    for (const profileName of profileNames) rows.push(...(await listProfilePlugins(global, profileName, profileName === currentProfile)));
     const { plugins } = await loadPlugins(reservedNames);
-    if (output === "jsonl") {
-      for (const plugin of plugins) printJson(plugin);
-    } else if (output === "json") {
-      printJson({ directory: pluginsDirectory(), plugins });
-    } else if (plugins.length === 0) {
-      printLine(text(locale, `No plugins installed in ${pluginsDirectory()}.`, `Keine Plugins in ${pluginsDirectory()} installiert.`));
+    for (const plugin of plugins) {
+      rows.push({
+        profile: null,
+        name: plugin.id,
+        app: null,
+        installed: plugin.version ?? null,
+        available: null,
+        status: plugin.status,
+        source: plugin.source,
+      });
+    }
+    if (output === "jsonl") for (const row of rows) printJson(row);
+    else if (output === "json") printJson({ directory: pluginsDirectory(), plugins: rows });
+    else if (rows.length === 0) {
+      printLine(
+        text(
+          locale,
+          `No plugins available for profile "${currentProfile}". Sign in with \`cld login\` to see your Cloud's plugins.`,
+          `Keine Plugins für Profil "${currentProfile}" verfügbar. Melde dich mit \`cld login\` an, um die Plugins deiner Cloud zu sehen.`,
+        ),
+      );
     } else {
       printLine(
-        renderTable(plugins, [
-          { key: "id", label: "ID" },
-          { key: "package", label: text(locale, "PACKAGE", "PAKET") },
-          { key: "version", label: "VERSION" },
-          { key: "source", label: text(locale, "SOURCE", "QUELLE") },
+        renderTable(rows, [
+          { key: "profile", label: text(locale, "PROFILE", "PROFIL"), value: (row) => row.profile ?? "*" },
+          { key: "name", label: "NAME" },
+          { key: "app", label: "APP", value: (row) => row.app ?? "-" },
+          { key: "installed", label: text(locale, "INSTALLED", "INSTALLIERT"), value: (row) => row.installed ?? "-" },
+          { key: "available", label: text(locale, "AVAILABLE", "VERFÜGBAR"), value: (row) => row.available ?? "-" },
           { key: "status", label: "STATUS" },
+          { key: "source", label: text(locale, "SOURCE", "QUELLE") },
         ]),
       );
     }
@@ -1218,8 +1490,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     return 0;
   }
 
-  if (command === "install" && target && extra.length === 0) {
-    const staged = await stagePlugin(target).catch((error) =>
+  if (command === "install" && targets.length === 1 && isPackagePluginSource(targets[0]!)) {
+    const staged = await stagePlugin(targets[0]!).catch((error) =>
       pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"),
     );
     try {
@@ -1239,9 +1511,15 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         printErrorLine(text(locale, "Plugin installation cancelled.", "Plugin-Installation abgebrochen."));
         return 1;
       }
-      const { id, replaced } = await commitPlugin(staged, reservedNames).catch((error) =>
-        pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"),
-      );
+      const config = await loadConfig();
+      const { id, replaced } = await commitPlugin(staged, reservedNames, pluginsDirectory(), (id) => {
+        const lockedBy = Object.keys(config.profiles ?? {}).filter((name) => profileLock(config, name)[id]);
+        if (lockedBy.length > 0) {
+          throw new PluginError(
+            `profile "${lockedBy[0]}" already uses the Cloud's plugin "${id}"; run \`cld plugins remove ${id}\` there first`,
+          );
+        }
+      }).catch((error) => pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"));
       if (output !== "text") {
         printJson({ id, package: manifest.package, version: manifest.version, source, replaced });
       } else {
@@ -1259,19 +1537,87 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     }
   }
 
-  if (command === "remove" && target && extra.length === 0) {
-    if (!(await removePlugin(target))) {
-      throw new CliError(`Plugin "${target}" is not installed.`, 1, `Plugin "${target}" ist nicht installiert.`);
+  if (command === "install" && (all ? targets.length === 0 : targets.length > 0)) {
+    const invalid = targets.find((target) => !CLOUD_CLI_MODULE_NAME.test(target));
+    if (invalid) {
+      throw new CliError(
+        `"${invalid}" is not a plugin name. Use ./path, a .tgz file, or npm:<package> for a package plugin.`,
+        1,
+        `"${invalid}" ist kein Plugin-Name. Nutze ./Pfad, eine .tgz-Datei oder npm:<Paket> für ein Paket-Plugin.`,
+      );
     }
-    if (output !== "text") printJson({ id: target, removed: true });
-    else printLine(text(locale, `Removed plugin "${target}".`, `Plugin "${target}" entfernt.`));
+    const cloud = await pluginCloud(global);
+    const lock = profileLock(await loadConfig(), cloud.profile);
+    const names = all
+      ? (
+          await fetchAvailablePlugins(cloud.fetch).catch((error) =>
+            pluginFailure(error, "Cannot install plugins", "Plugins können nicht installiert werden"),
+          )
+        )
+          .map((plugin) => plugin.name)
+          .filter((name) => !lock[name] && !reservedNames.has(name))
+      : targets;
+    if (names.length === 0) {
+      if (output === "text") printLine(text(locale, "All plugins are installed.", "Alle Plugins sind installiert."));
+      else printJson({ plugins: [] });
+      return 0;
+    }
+    return printPluginChanges(await syncProfilePlugins(cloud, names, "install"), output, locale);
+  }
+
+  if (command === "update") {
+    const config = await loadConfig();
+    const currentProfile = resolveProfileName(config, global.profile);
+    const profileNames = all ? Object.keys(config.profiles ?? {}).sort() : [currentProfile];
+    const changes: PluginChange[] = [];
+    for (const profileName of profileNames) {
+      const lock = profileLock(config, profileName);
+      const names = targets.length > 0 ? targets : Object.keys(lock).sort();
+      const missing = names.find((name) => !lock[name]);
+      if (missing) {
+        throw new CliError(
+          `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
+          1,
+          `Plugin "${missing}" ist für Profil "${profileName}" nicht installiert. Führe \`cld plugins install ${missing}\` aus.`,
+        );
+      }
+      if (names.length === 0) continue;
+      const cloud = await pluginCloud(global, profileName === currentProfile ? undefined : profileName);
+      changes.push(...(await syncProfilePlugins(cloud, names, "update")));
+    }
+    if (changes.length === 0 && output === "text") {
+      printLine(text(locale, "No plugins installed.", "Keine Plugins installiert."));
+      return 0;
+    }
+    return printPluginChanges(changes, output, locale);
+  }
+
+  if (command === "remove" && targets.length === 1) {
+    const name = targets[0]!;
+    const config = await loadConfig();
+    const profileName = resolveProfileName(config, global.profile);
+    if (profileLock(config, profileName)[name]) {
+      await withConfigLock(async () => {
+        const latest = await loadConfig();
+        const lock = profileLock(latest, profileName);
+        delete lock[name];
+        latest.profiles ??= {};
+        latest.profiles[profileName] = { ...latest.profiles[profileName], plugins: lock };
+        await saveConfig(latest);
+        await collectPluginGarbage(lockedDigests(latest));
+      });
+    } else if (!(await removePlugin(name))) {
+      throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+    }
+    if (output !== "text") printJson({ id: name, removed: true });
+    else printLine(text(locale, `Removed plugin "${name}".`, `Plugin "${name}" entfernt.`));
     return 0;
   }
 
   throw new CliError(
-    "Usage: cld plugins <list|install <source>|remove <id>|run <id>>. Run `cld plugins help`.",
+    "Usage: cld plugins <list|install|update|remove|run>. Run `cld plugins help`.",
     1,
-    "Verwendung: cld plugins <list|install <Quelle>|remove <ID>|run <ID>>. Führe `cld plugins help` aus.",
+    "Verwendung: cld plugins <list|install|update|remove|run>. Führe `cld plugins help` aus.",
   );
 };
 
@@ -1857,7 +2203,7 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   const config = await loadConfig();
   const name = maybeName && !maybeName.startsWith("-") ? maybeName : (global.profile ?? config.currentProfile ?? DEFAULT_PROFILE);
   const flagArgs = maybeName && !maybeName.startsWith("-") ? rest : [maybeName, ...rest].filter((value): value is string => Boolean(value));
-  const parsed = parseArgs(flagArgs, new Set([...BOOLEAN_FLAGS, "no-open", "device"]));
+  const parsed = parseArgs(flagArgs, new Set([...BOOLEAN_FLAGS, "no-open", "device", "yes", "y", "no-plugins"]));
   if ("client-id" in parsed.flags) {
     throw new CliError('cld login always uses the first-party "cloud-cli" OAuth client; --client-id is not supported.');
   }
@@ -1890,7 +2236,54 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
           `Bei ${normalizedServer} als Profil "${name}" angemeldet.`,
         ),
   );
+  if (!takeBooleanFlag(parsed.flags, "no-plugins")) {
+    await offerCloudPlugins({ ...global, profile: name }, takeBooleanFlag(parsed.flags, "yes", "y"));
+  }
   return 0;
+};
+
+/**
+ * After a login, offer the plugins this Cloud serves that the profile does
+ * not have yet. Never fails the login: problems become one stderr line.
+ */
+const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void> => {
+  const locale = global.locale;
+  try {
+    const cloud = await pluginCloud({ ...global, server: undefined, token: undefined }, global.profile);
+    const lock = profileLock(await loadConfig(), cloud.profile);
+    const missing = (await fetchAvailablePlugins(cloud.fetch))
+      .map((plugin) => plugin.name)
+      .filter((name) => !lock[name] && !reservedNames.has(name));
+    if (missing.length === 0) return;
+    const list = missing.join(", ");
+    if (!yes) {
+      if (!process.stdin.isTTY) {
+        printErrorLine(
+          text(
+            locale,
+            `This Cloud serves ${missing.length} cld plugin(s): ${list}. Run \`cld plugins install --all\` to install them.`,
+            `Diese Cloud stellt ${missing.length} cld-Plugin(s) bereit: ${list}. Führe \`cld plugins install --all\` aus, um sie zu installieren.`,
+          ),
+        );
+        return;
+      }
+      const question = text(
+        locale,
+        `This Cloud serves ${missing.length} cld plugin(s): ${list}. Install them?`,
+        `Diese Cloud stellt ${missing.length} cld-Plugin(s) bereit: ${list}. Installieren?`,
+      );
+      if (!(await confirmPluginInstall(question, locale, true))) return;
+    }
+    printPluginChanges(await syncProfilePlugins(cloud, missing, "install"), "text", locale);
+  } catch (error) {
+    printErrorLine(
+      text(
+        locale,
+        `cld: plugins not installed: ${error instanceof Error ? error.message : String(error)}`,
+        `cld: Plugins nicht installiert: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+  }
 };
 
 const runLogoutCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
@@ -1979,7 +2372,16 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
     const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
-    printLine(helpText(global.locale, pluginModules));
+    const config = await loadConfig();
+    const served = Object.entries(profileLock(config, resolveProfileName(config, global.profile)))
+      .filter(([name]) => !reservedNames.has(name))
+      .map(([name, locked]) => ({ name, summary: locked.summary }));
+    printLine(
+      helpText(
+        global.locale,
+        [...served, ...pluginModules].sort((left, right) => left.name.localeCompare(right.name)),
+      ),
+    );
     return 0;
   }
 
@@ -1994,15 +2396,21 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
     ? (await builtInModules[moduleName].load()).default
     : reservedNames.has(moduleName)
       ? undefined
-      : await loadPlugin(moduleName).catch((error) =>
-          pluginFailure(error, `Plugin "${moduleName}" cannot run`, `Plugin "${moduleName}" kann nicht ausgeführt werden`),
-        );
-  if (!module)
+      : await loadInstalledModule(moduleName, global);
+  if (!module) {
+    if (CLOUD_CLI_MODULE_NAME.test(moduleName)) {
+      throw new CliError(
+        `Unknown command "${moduleName}". If your Cloud serves it, run \`cld plugins install ${moduleName}\`; \`cld plugins list\` shows what it serves.`,
+        1,
+        `Unbekannter Befehl "${moduleName}". Wenn deine Cloud ihn bereitstellt, führe \`cld plugins install ${moduleName}\` aus; \`cld plugins list\` zeigt, was sie bereitstellt.`,
+      );
+    }
     throw new CliError(
       `Unknown module "${moduleName}". Run \`cld help\`.`,
       1,
       `Unbekanntes Modul "${moduleName}". Führe \`cld help\` aus.`,
     );
+  }
 
   return runModule(module, moduleArgs, global);
 };

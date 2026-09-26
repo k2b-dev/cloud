@@ -10,6 +10,17 @@ updated: 2026-09-26
 
 # Deprecations and migrations
 
+## CLI plugin installation
+
+`cld plugins install <name>` now installs the plugin that the current
+profile's Cloud serves. An npm package needs the `npm:` prefix, for example
+`cld plugins install npm:@example/inventory-cli@1.4.0`; a bare package name no
+longer reaches the npm registry. Local paths and `.tgz` archives are unchanged.
+`cld plugins list --json` returns one row per plugin with `profile`, `name`,
+`app`, `installed`, `available`, `status`, and `source` instead of the package
+plugin fields `id` and `package`. See
+[Application CLI modules](/en/docs/platform/cli-modules#install-a-plugin).
+
 ## Grids CLI commands
 
 The `cld grids` commands for bases, tables, and records use the shared `cld`
