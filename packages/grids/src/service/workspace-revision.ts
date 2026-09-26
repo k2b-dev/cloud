@@ -3,8 +3,6 @@ import { sql } from "bun";
 /** Small, record-independent snapshot. Hashes are change detectors, not integrity proofs. */
 export type WorkspaceRevision = { revision: string; resources: Record<string, string> };
 
-export const workspaceRevisionHeader = "X-Grids-Workspace-Revision";
-
 /**
  * Structure is what a stale tab would render or validate wrongly: names, field
  * schema, query sources, definitions, and content. Presentation (columns,
