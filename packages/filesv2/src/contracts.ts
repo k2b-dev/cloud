@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { DOCUMENT_FORMATS, DOCUMENT_KINDS, type DocumentFormat } from "./documents";
 
+/** Largest content one capability stream or `cld filesv2 cat` moves through Cloud or memory. */
+export const CONTENT_STREAM_LIMIT = 50 * 1024 * 1024;
 export const AreaSchema = z.enum(["cloud", "freeipa"]);
 export type Area = z.infer<typeof AreaSchema>;
 export const KindSchema = z.enum(["users", "groups"]);
@@ -75,6 +77,8 @@ export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: bool
 /** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */
 export type MarkedEntry = { base: { id: string; name: string; kind: BaseKind; area: Area }; entry: FileEntry; markedAt: string };
 export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096), favorite: z.boolean() });
+/** A file ID: an inline `filesv2.entry` ref or a persisted `p:<sha256>` one. */
+export const EntryIdSchema = z.object({ id: z.string().min(1).max(512) });
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
 export type SearchResult = DirectoryResult & { query: string; scope: "folder" | "tree" };

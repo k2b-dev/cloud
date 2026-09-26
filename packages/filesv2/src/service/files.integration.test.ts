@@ -2208,8 +2208,14 @@ suite("Files service and durable bindings", () => {
     expect(result.resourceId).toStartWith("p:");
     expect(await resolveEntryRefId(result.resourceId!)).toEqual({ baseId, path });
     expect((await service.entry(actor, { baseId, path })).resourceId).toBe(result.resourceId);
+    // The CLI addresses files by these IDs: persisted and inline IDs resolve to the same checked entry.
+    expect((await service.entryById(actor, result.resourceId!)).entry.path).toBe(path);
+    expect((await service.entryById(actor, entryRefId(baseId, segments[0]!)!)).entry.directory).toBe(true);
+    await expect(service.entryById(actor, `p:${"0".repeat(64)}`)).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await expect(service.entryById(actor, "not-an-id")).rejects.toMatchObject({ code: "not_found", status: 404 });
     directory("freeipa", `users/alice/${path}`, 9999, 9999, "0600", false);
     await expect(service.entry(actor, (await resolveEntryRefId(result.resourceId!))!)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.entryById(actor, result.resourceId!)).rejects.toMatchObject({ code: "forbidden" });
   });
   test("marks use live metadata, hide unreadable leaves and allow removal of missing entries", async () => {
     const actor = await user("alice", "ipa");

@@ -51,6 +51,60 @@ The Mail API adds `GET /api/mail/resolve?mailbox=<ref>[&folder=<ref>]`, which
 resolves a mailbox ID or name and a folder ID or path, and answers `404` or
 `409` with the candidates. No stored data changes.
 
+## Files CLI commands
+
+`cld filesv2` was rebuilt around shell-like verbs and file addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. Files are addressed as `<area>:/path` or by file ID instead of a base ID
+followed by a path, `--path`, or `--to`. The area is `me`, a group's exact name
+or ID, or a full area ID from `ls`; an ambiguous name fails with status 409 and
+lists every candidate. Administrator commands use `--storage` instead of
+`--area` and address directories as `<storage>/<users|groups>/<name>` or
+`<storage>/archive/<archive-id>`. See
+[Files](/en/apps/filesv2#use-the-cli).
+
+| Old command | New command |
+| --- | --- |
+| `bases list` | `ls` |
+| `list <base> --path <path>` | `ls <area>:/<path>` |
+| `stat <base> <path>` | `stat <file>` |
+| `download <base> <path> --out <local>` | `get <file> [<local>]` |
+| `archive <base> <path>... --out <local>` | `get <folder> [<local>]`, `zip <entry>... --out <local>` |
+| `upload <base> <local> --to <path>` | `put <local> <file>` (`--parents` creates folders) |
+| `mkdir <base> <path>` | `mkdir [-p] <folder>` |
+| `rename <base> <path> <name>` | `mv <file> <new-file>` in the same folder |
+| `move <base> <path>... --to <folder>` | `mv <entry>... <folder>/` |
+| `copy <base> <path>... --to <folder> [--target-base <base>]` | `cp <entry>... <folder>` |
+| `delete <base> <path>...` | `rm <entry>... --yes` |
+| `search <base> <query> --path <path>` | `search <folder> <query>` |
+| `trash list <base>`, `trash restore <base> <id>` | `trash list <area>`, `trash restore <area> <id>` |
+| `versions list <base> <path>` | `versions list <file>` |
+| `versions download <base> <path> <id> --out <local>` | `versions get <file> <id> <local>` |
+| `versions restore <base> <path> <id>` | `versions restore <file> <id>` |
+| `versions comment <base> <path> <id> <text>` | `versions update <file> <id> --comment <text>` |
+| `shares create <base> <path>...` | `shares add <entry>...` |
+| `shares revoke <id>` | `shares rm <id> --yes` |
+| `favorites add\|remove <base> <path>` | `favorites add\|remove <entry>` |
+| `documents create <base> <path>` | `documents create <file>` |
+| `documents markdown <base> <path>` | `documents create <file> --kind markdown` |
+| `edit-url <base> <path>` | `edit-url <file>` |
+| `thumbnail <base> <path> --out <local>` | `thumbnail <file> <local>` |
+| `templates get <id>` | `templates show <id>` |
+| `templates use <id> <base> <path>` | `templates use <id> <file>` |
+| `admin templates import <base> <path>` | `admin templates import <file>` |
+| `admin … --area <cloud\|freeipa>` | `admin … --storage <cloud\|freeipa>` |
+| `admin files list --area --kind --name\|--archive-id --path` | `admin files ls <directory>[:/<path>]` |
+| `admin files download <path> … --out <local>` | `admin files get <directory>:/<path> <local>` |
+| `admin files delete <path> …` | `admin files rm <directory>:/<path> --confirm-path … --yes` |
+| `admin versions list\|delete <path> …` | `admin versions list\|delete <directory>:/<path> …` |
+| `admin directories archive\|retire\|delete <name> --area --kind` | `admin directories archive\|retire\|delete <storage>/<kind>/<name>` |
+| `admin shares revoke <id>` | `admin shares rm <id> --yes` |
+
+`tree` and `cat` are new. `recent`, `favorites list`, `shares list`,
+`templates list`, and the remaining administrator commands keep their names.
+The Files API adds `GET /api/filesv2/entries/:id`, which resolves a file ID
+with the same access checks as a path. No stored data changes.
+
 ## Contacts CLI commands
 
 `cld contacts` now uses the shared command verbs and addresses contacts by

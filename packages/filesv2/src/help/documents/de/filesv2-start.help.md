@@ -76,11 +76,11 @@ Wähle mehrere Einträge oder einen Ordner und nutze **Herunterladen**, um ein Z
 
 ## Terminal verwenden {icon="terminal"}
 
-Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 bases list --json` zeigt deine Ablagen-IDs. Mit `cld filesv2 list <base-id> --path Documents --json` liest du einen Ordner. Enthält das Ergebnis einen `next`-Cursor, übergib ihn unverändert als `--after` für die nächste Seite.
+Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 ls` zeigt deine Bereiche: `me` ist dein persönlicher Bereich, jeder Gruppenbereich heißt wie seine Gruppe. Dateien adressierst du als `<bereich>:/pfad`, zum Beispiel `cld filesv2 ls me:/Dokumente --json`. Enthält das Ergebnis einen `next`-Cursor, übergib ihn unverändert als `--after` für die nächste Seite. Passt ein Gruppenname zu mehreren Bereichen, listet der Befehl die Kandidaten mit ihren IDs auf; verwende dann eine der IDs.
 
-`cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf` lädt eine Datei direkt von Filegate in eine neue lokale Datei. Bestehende Pfade werden nie überschrieben. Mit `--json` erhältst du den gespeicherten Pfad und die Byteanzahl. `cld filesv2 help` zeigt alle verfügbaren Befehle.
+`cld filesv2 get me:/Dokumente/bericht.pdf` lädt eine Datei herunter, `cld filesv2 cat me:/Notizen/todo.md` gibt eine Textdatei aus. Die CLI lädt direkt von Filegate in eine neue lokale Datei und überschreibt nie bestehende Pfade; ein Ordner kommt als ZIP. Mit `--json` erhältst du den gespeicherten Pfad und die Byteanzahl. `cld filesv2 help` zeigt alle verfügbaren Befehle.
 
-`cld filesv2 search <base-id> Bericht --path Dokumente --json` sucht Namen unterhalb eines Ordners und `cld filesv2 mkdir <base-id> Dokumente/2026` legt einen Ordner an. `rename`, `move --to`, `copy --to [--target-base]`, `delete`, `trash list|restore`, `versions list|comment|restore|download`, `shares list|create|revoke`, `archive --out` für ein ZIP mehrerer Einträge sowie `documents create --kind` und `edit-url` für Office-Dokumente decken die übrigen Vorgänge ab. `cld filesv2 upload <base-id> ./bericht.pdf --to Dokumente/bericht.pdf` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei. `cld filesv2 stat <base-id> <path> --json` liest aktuelle Dateidetails. `cld filesv2 thumbnail <base-id> Photos/team.jpg --out ./team.png` speichert eine Bildvorschau.
+`cld filesv2 put ./bericht.pdf me:/Dokumente/` lädt eine Datei direkt zum Dateiserver hoch; mit `--replace` ersetzt du eine bestehende Datei, mit `--parents` legst du fehlende Ordner an. `mkdir -p`, `mv`, `cp`, `rm --yes` (in den Papierkorb), `tree`, `stat`, `search`, `trash list|restore`, `versions list|get|restore|update`, `shares list|add|rm`, `zip --out` für ein ZIP mehrerer Einträge, `thumbnail` sowie `documents create --kind` und `edit-url` für Office-Dokumente decken die übrigen Vorgänge ab.
 
 ## Wenn eine Ablage nicht verfügbar ist {icon="alert-circle"}
 
@@ -94,7 +94,7 @@ Cloud-Ablagen setzen aktivierte lokale Linux-Identitäten voraus. Nur POSIX-Grup
 
 **Hinzufügen → Vorlage** zeigt die für dich verfügbaren Vorlagen. Wähle eine und einen Namen für eine unabhängige Datei im aktuellen Ordner. Dort brauchst du Schreibzugriff. Vorhandene Dateien werden niemals ersetzt. Eine Vorlage kann für dich verfügbar sein, auch wenn du ihre ursprüngliche Datei nicht öffnen darfst. Spätere Vorlagenänderungen verändern deine Kopie nicht. Wenn keine Vorlagen erscheinen, kann die Administration dir oder deinen Gruppen Nutzungsrechte geben.
 
-Im Terminal gibt es dafür `cld filesv2 documents markdown <ablagen-id> Notizen.md`, `cld filesv2 templates list --json` und `cld filesv2 templates use <vorlagen-id> <ablagen-id> Notizen.md`. Zum bedingten Ersetzen ergänzt du `upload` um `--replace --expected-revision <revision>`; ein Konflikt lässt die aktuelle Datei unverändert.
+Im Terminal gibt es dafür `cld filesv2 documents create me:/Notizen.md --kind markdown`, `cld filesv2 templates list --json` und `cld filesv2 templates use <vorlagen-id> me:/Notizen.md`. Zum bedingten Ersetzen ergänzt du `put` um `--replace --expected-revision <revision>`; ein Konflikt lässt die aktuelle Datei unverändert.
 
 ## Dateien mit dem Assistenten nutzen {icon="sparkles"}
 
