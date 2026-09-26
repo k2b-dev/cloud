@@ -179,6 +179,67 @@ describe("Cloud CLI releases", () => {
     }
   });
 
+  /** A release whose binary streams in `chunks` pieces, `interval` ms apart; `stallAfter` stops the stream after that many pieces. */
+  const slowRelease = (chunks: number, interval: number, stallAfter = chunks) => {
+    const assetName = "cld_linux_x64";
+    const piece = new TextEncoder().encode("x".repeat(64));
+    const binary = new Uint8Array(piece.byteLength * chunks);
+    for (let index = 0; index < chunks; index += 1) binary.set(piece, index * piece.byteLength);
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/releases") return Response.json([{ tag_name: "cloud-v1.2.3" }]);
+      if (path === "/release/download/cloud-v1.2.3/checksums.txt") return new Response(`${sha256(binary)}  ${assetName}\n`);
+      if (path !== `/release/download/cloud-v1.2.3/${assetName}`) return new Response("not found", { status: 404 });
+      let sent = 0;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            await Bun.sleep(interval);
+            if (sent === chunks) return controller.close();
+            if (sent === stallAfter) return new Promise<void>(() => undefined);
+            controller.enqueue(piece);
+            sent += 1;
+          },
+        }),
+      );
+    };
+    return { assetName, binary, fetchImpl };
+  };
+
+  const updateFrom = async (release: ReturnType<typeof slowRelease>, stallTimeoutMs: number) => {
+    const executablePath = join(await createTemporaryDirectory(), "cld");
+    await writeFile(executablePath, "old binary", { mode: 0o755 });
+    const update = updateCli({
+      apiBase: "http://release.test",
+      releaseBase: "http://release.test/release",
+      fetchImpl: release.fetchImpl,
+      stallTimeoutMs,
+      executablePath,
+      standalone: true,
+      target: { os: "linux", arch: "x64", asset: release.assetName },
+      verifyCosign: false,
+      confirm: async () => true,
+    });
+    return { executablePath, update };
+  };
+
+  test("downloads a slow but steady binary that takes far longer than the stall timeout", async () => {
+    const release = slowRelease(20, 10);
+    const started = performance.now();
+    const { executablePath, update } = await updateFrom(release, 50);
+
+    expect((await update).replaced).toBe(true);
+    expect(performance.now() - started).toBeGreaterThan(4 * 50);
+    expect(new Uint8Array(await readFile(executablePath))).toEqual(release.binary);
+  });
+
+  test("aborts a download whose body stops arriving, with a readable error", async () => {
+    const { executablePath, update } = await updateFrom(slowRelease(20, 10, 5), 50);
+
+    await expect(update).rejects.toThrow("Cloud CLI release request failed: no data received for 0.05 s");
+    expect(await readFile(executablePath, "utf8")).toBe("old binary");
+  });
+
   test("installs the highest stable, non-draft, non-prerelease release through the shell installer", async () => {
     const directory = await createTemporaryDirectory();
     const prefix = join(directory, "bin");

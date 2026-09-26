@@ -23,7 +23,13 @@ export const releaseApiHeaders = (token: string | undefined = envGithubToken()):
 
 const MAX_RELEASE_FILE_BYTES = 512 * 1024 * 1024;
 const CLI_RELEASE_PAGE_SIZE = 100;
-const FETCH_TIMEOUT_MS = 30_000;
+/**
+ * A request attempt fails after this long without progress: no response
+ * headers yet, or no body bytes since the last chunk. It bounds a dead or
+ * stalled connection without a total deadline, so a large binary on a slow but
+ * steady link completes (65 MB at 1.2 MB/s takes about 55 s).
+ */
+const STALL_TIMEOUT_MS = 30_000;
 const FETCH_ATTEMPTS = 3;
 const cliReleaseTag = /^cloud-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export const COSIGN_CERTIFICATE_IDENTITY_REGEXP = "^https://github\\.com/k2b-dev/cloud/\\.github/workflows/release\\.yml@refs/heads/main$";
@@ -62,6 +68,8 @@ type ReleaseSource = {
   apiBase?: string;
   releaseBase?: string;
   fetchImpl?: FetchImplementation;
+  /** Test seam for {@link STALL_TIMEOUT_MS}. */
+  stallTimeoutMs?: number;
 };
 
 type UpdateOptions = ReleaseSource & {
@@ -89,7 +97,13 @@ const releaseSource = (source: ReleaseSource) => ({
   apiBase: normalizeBase(source.apiBase ?? envReleaseApiBase() ?? CLI_RELEASE_API_BASE),
   releaseBase: normalizeBase(source.releaseBase ?? envReleaseBase() ?? CLI_RELEASE_BASE),
   fetchImpl: source.fetchImpl ?? fetch,
+  stallTimeoutMs: source.stallTimeoutMs ?? STALL_TIMEOUT_MS,
 });
+
+type ReleaseRequest = { fetchImpl: FetchImplementation; stallTimeoutMs: number };
+
+/** A completed response: status and the whole body, read within the same attempt. */
+type ReleaseResponse = { ok: boolean; status: number; bytes: Uint8Array };
 
 const toCliTag = (version: string): string => (version.startsWith("cloud-v") ? version : `cloud-v${version.replace(/^v/, "")}`);
 
@@ -104,11 +118,59 @@ const compareStableVersions = (left: StableVersion, right: StableVersion): numbe
 
 const retryDelay = (attempt: number): Promise<void> => Bun.sleep(250 * 2 ** attempt);
 
-const fetchWithRetry = async (url: string, init: RequestInit, fetchImpl: FetchImplementation): Promise<Response> => {
+/**
+ * One attempt: fetch `url` and read its body, aborting after
+ * `stallTimeoutMs` without progress. The timer restarts on the response
+ * headers and on every body chunk.
+ */
+const fetchOnce = async (url: string, init: RequestInit, { fetchImpl, stallTimeoutMs }: ReleaseRequest): Promise<ReleaseResponse> => {
+  const controller = new AbortController();
+  const stalled = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+  });
+  stalled.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const restartTimer = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(new Error(`no data received for ${stallTimeoutMs / 1000} s`)), stallTimeoutMs);
+  };
+  restartTimer();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    const response = await Promise.race([fetchImpl(url, { ...init, signal: controller.signal }), stalled]);
+    restartTimer();
+    const contentLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > MAX_RELEASE_FILE_BYTES) throw new Error("Cloud CLI release asset is too large.");
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    reader = response.body?.getReader();
+    while (reader) {
+      const { done, value } = await Promise.race([reader.read(), stalled]);
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RELEASE_FILE_BYTES) throw new Error("Cloud CLI release asset is too large.");
+      chunks.push(value);
+      restartTimer();
+    }
+    reader = undefined;
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return { ok: response.ok, status: response.status, bytes };
+  } finally {
+    clearTimeout(timer);
+    await reader?.cancel().catch(() => undefined);
+  }
+};
+
+const fetchWithRetry = async (url: string, init: RequestInit, request: ReleaseRequest): Promise<ReleaseResponse> => {
   let lastError: unknown;
   for (let attempt = 0; attempt < FETCH_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      const response = await fetchOnce(url, init, request);
       if (response.ok || (response.status < 500 && response.status !== 429)) return response;
       lastError = new Error(`Request failed with ${response.status}.`);
     } catch (error) {
@@ -118,6 +180,8 @@ const fetchWithRetry = async (url: string, init: RequestInit, fetchImpl: FetchIm
   }
   throw new Error(`Cloud CLI release request failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 };
+
+const parseJson = (response: ReleaseResponse): unknown => JSON.parse(new TextDecoder().decode(response.bytes));
 
 export const resolveCliTarget = (os = platform(), cpu = arch()): CliTarget => {
   if (os !== "darwin" && os !== "linux") throw new Error(`Cloud CLI does not support ${os}. Use macOS or Linux.`);
@@ -139,18 +203,18 @@ const releaseVersion = (release: CliRelease): StableVersion => {
 };
 
 export const resolveCliRelease = async (version: string | undefined, source: ReleaseSource = {}): Promise<CliRelease> => {
-  const { apiBase, fetchImpl } = releaseSource(source);
+  const { apiBase, ...request } = releaseSource(source);
   const requestedTag = version ? toCliTag(version) : undefined;
   const requestedVersion = version ? parseStableVersion(version.replace(/^cloud-v/, "").replace(/^v/, "")) : null;
   if (version && !requestedVersion) throw new Error("Cloud CLI updates require a stable version such as 1.2.3.");
 
   const url = requestedTag ? `${apiBase}/releases/tags/${encodeURIComponent(requestedTag)}` : undefined;
-  const response = url ? await fetchWithRetry(url, { headers: releaseApiHeaders() }, fetchImpl) : undefined;
+  const response = url ? await fetchWithRetry(url, { headers: releaseApiHeaders() }, request) : undefined;
 
   if (requestedTag) {
     if (!response) throw new Error("Could not resolve the requested Cloud CLI release.");
     if (!response.ok) throw new Error(`Could not resolve Cloud CLI release (${response.status}).`);
-    const payload = (await response.json()) as unknown;
+    const payload = parseJson(response);
     if (!payload || typeof payload !== "object") throw new Error(`Cloud CLI release ${requestedTag} is invalid.`);
     const release = parseRelease(payload as GithubRelease);
     if (!release || release.tag !== requestedTag) throw new Error(`Cloud CLI release ${requestedTag} was not found.`);
@@ -160,9 +224,9 @@ export const resolveCliRelease = async (version: string | undefined, source: Rel
   let newest: CliRelease | null = null;
   for (let page = 1; ; page += 1) {
     const pageUrl = `${apiBase}/releases?per_page=${CLI_RELEASE_PAGE_SIZE}&page=${page}`;
-    const pageResponse = await fetchWithRetry(pageUrl, { headers: releaseApiHeaders() }, fetchImpl);
+    const pageResponse = await fetchWithRetry(pageUrl, { headers: releaseApiHeaders() }, request);
     if (!pageResponse.ok) throw new Error(`Could not resolve Cloud CLI release (${pageResponse.status}).`);
-    const payload = (await pageResponse.json()) as unknown;
+    const payload = parseJson(pageResponse);
     if (!Array.isArray(payload)) throw new Error("Cloud CLI release response is invalid.");
     for (const entry of payload) {
       if (!entry || typeof entry !== "object") continue;
@@ -176,26 +240,18 @@ export const resolveCliRelease = async (version: string | undefined, source: Rel
   return newest;
 };
 
-const readBytes = async (response: Response): Promise<Uint8Array> => {
-  const contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > MAX_RELEASE_FILE_BYTES) throw new Error("Cloud CLI release asset is too large.");
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_RELEASE_FILE_BYTES) throw new Error("Cloud CLI release asset is too large.");
-  return bytes;
-};
-
-const fetchBytes = async (url: string, fetchImpl: FetchImplementation): Promise<Uint8Array> => {
-  const response = await fetchWithRetry(url, {}, fetchImpl);
+const fetchBytes = async (url: string, request: ReleaseRequest): Promise<Uint8Array> => {
+  const response = await fetchWithRetry(url, {}, request);
   if (!response.ok) throw new Error(`Could not download ${url} (${response.status}).`);
-  return readBytes(response);
+  return response.bytes;
 };
 
 /** Like fetchBytes, but a release without the asset (404) yields null. */
-const fetchOptionalBytes = async (url: string, fetchImpl: FetchImplementation): Promise<Uint8Array | null> => {
-  const response = await fetchWithRetry(url, {}, fetchImpl);
+const fetchOptionalBytes = async (url: string, request: ReleaseRequest): Promise<Uint8Array | null> => {
+  const response = await fetchWithRetry(url, {}, request);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`Could not download ${url} (${response.status}).`);
-  return readBytes(response);
+  return response.bytes;
 };
 
 const expectedChecksum = (manifest: string, asset: string): string => {
@@ -239,24 +295,24 @@ const verifyCosign = async (
   directory: string,
   manifest: Uint8Array,
   downloadBase: string,
-  fetchImpl: FetchImplementation,
+  request: ReleaseRequest,
   cosign: string | null,
 ): Promise<"verified" | "unavailable"> => {
   if (!cosign) return "unavailable";
   const manifestPath = await writeReleaseFile(directory, CHECKSUMS_ASSET, manifest);
-  const bundle = await fetchOptionalBytes(`${downloadBase}/${CHECKSUMS_BUNDLE_ASSET}`, fetchImpl);
+  const bundle = await fetchOptionalBytes(`${downloadBase}/${CHECKSUMS_BUNDLE_ASSET}`, request);
   const material: CosignMaterial = bundle
     ? { bundle: await writeReleaseFile(directory, CHECKSUMS_BUNDLE_ASSET, bundle) }
     : {
         signature: await writeReleaseFile(
           directory,
           CHECKSUMS_SIGNATURE_ASSET,
-          await fetchBytes(`${downloadBase}/${CHECKSUMS_SIGNATURE_ASSET}`, fetchImpl),
+          await fetchBytes(`${downloadBase}/${CHECKSUMS_SIGNATURE_ASSET}`, request),
         ),
         certificate: await writeReleaseFile(
           directory,
           CHECKSUMS_CERTIFICATE_ASSET,
-          await fetchBytes(`${downloadBase}/${CHECKSUMS_CERTIFICATE_ASSET}`, fetchImpl),
+          await fetchBytes(`${downloadBase}/${CHECKSUMS_CERTIFICATE_ASSET}`, request),
         ),
       };
   try {
@@ -357,12 +413,12 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
   const temporaryDirectory = await mkdtemp(join(replaceInstalledBinary ? directory : tmpdir(), ".cld-update-"));
   try {
     const downloadBase = `${source.releaseBase}/download/${release.tag}`;
-    const manifest = await fetchBytes(`${downloadBase}/${CHECKSUMS_ASSET}`, source.fetchImpl);
+    const manifest = await fetchBytes(`${downloadBase}/${CHECKSUMS_ASSET}`, source);
     const cosign =
       options.verifyCosign === false
         ? "skipped"
-        : await verifyCosign(temporaryDirectory, manifest, downloadBase, source.fetchImpl, options.cosignPath ?? Bun.which("cosign"));
-    const binary = await fetchBytes(`${downloadBase}/${target.asset}`, source.fetchImpl);
+        : await verifyCosign(temporaryDirectory, manifest, downloadBase, source, options.cosignPath ?? Bun.which("cosign"));
+    const binary = await fetchBytes(`${downloadBase}/${target.asset}`, source);
     verifyChecksum(binary, expectedChecksum(new TextDecoder().decode(manifest), target.asset));
     if (replaceInstalledBinary) {
       const staged = await stageBinary(directory, target.asset, binary);
