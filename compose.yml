@@ -42,7 +42,7 @@ services:
       POSTGRES_USER: ipa
       POSTGRES_PASSWORD: ipa
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${CLOUD_DEV_POSTGRES_PORT:-5432}:5432"
     volumes:
       - ipa_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
     command: valkey-server --save 30 1 --loglevel warning
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${CLOUD_DEV_VALKEY_PORT:-6379}:6379"
     volumes:
       - ipa_valkey_data:/data
     healthcheck:
@@ -71,8 +71,8 @@ services:
     container_name: ipa_nats_1
     command: --config /etc/nats/nats.conf --name ipa_nats_1
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      - "127.0.0.1:${CLOUD_DEV_NATS_PORT:-4222}:4222"
+      - "127.0.0.1:8222:8222"
     volumes:
       - ipa_nats_data:/data
 
@@ -81,7 +81,7 @@ services:
     container_name: geo
     restart: unless-stopped
     ports:
-      - "8081:4000"
+      - "127.0.0.1:8081:4000"
 
   filegate:
     image: ghcr.io/k2b-dev/filegate:6.1.0
@@ -116,7 +116,7 @@ services:
     container_name: gotenberg
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
 
   # Collabora Online (CODE) for Filesv2 document editing. The browser loads the
   # editor from localhost:9980; Collabora itself reaches Cloud through the

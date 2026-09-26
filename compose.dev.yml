@@ -49,7 +49,7 @@ services:
     container_name: gateway
     environment: { <<: *env, APP_ID: gateway }
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
       - ./packages/cloud/scripts:/app/packages/cloud/scripts

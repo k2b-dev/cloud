@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-09-23
+updated: 2026-09-26
 ---
 
 # Monorepo development
@@ -50,6 +50,25 @@ available for quick restarts. Stop the infrastructure explicitly with
 | `bun run format` | Format the workspace |
 | `bun run test [--integration] [--shard n/m]` | Run tests; see [Testing](/en/docs/contributing/testing) |
 | `bun run release:preflight` | Check a running fleet against a release; see [Build and deploy](/en/docs/operations/build-and-deploy) |
+
+## Change host ports
+
+The development stack publishes every port on `127.0.0.1` only. Other machines
+cannot reach it; for remote access, use an SSH tunnel or a reverse proxy.
+
+If another Postgres, Valkey, or NATS already uses its default port on the same
+host, move the host port before `bun run dev`. Set the variables in your shell
+or in the checkout's `.env`, which Compose reads:
+
+```bash
+CLOUD_DEV_POSTGRES_PORT=55432
+CLOUD_DEV_VALKEY_PORT=56379
+CLOUD_DEV_NATS_PORT=54222
+```
+
+The defaults are `5432`, `6379`, and `4222`. Containers still talk to each
+other on the default ports, so only host-side clients change: use the new ports
+in `DATABASE_URL`, `REDIS_URL`, `NATS_SERVERS`, and the `CLOUD_TEST_*` URLs.
 
 ## Test Filegate locally
 
@@ -320,6 +339,7 @@ CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
 bun run test --integration
 ```
 
+If you [changed the host ports](#change-host-ports), use them in these URLs.
 The database name must end in `_test`; the fixture refuses anything else so a
 run can never touch the development database. Create that database once on the
 development PostgreSQL:
@@ -344,7 +364,7 @@ psql "$DATABASE_URL" -c 'DROP SCHEMA mail CASCADE;'
 
 ### Run Sync integration checks
 
-The Compose cluster exposes NATS on `127.0.0.1:4222` and monitoring on
+The Compose cluster exposes NATS on `127.0.0.1:4222` (or `CLOUD_DEV_NATS_PORT`) and monitoring on
 `127.0.0.1:8222`. Host-side clients set `NATS_IGNORE_CLUSTER_UPDATES=true` so
 they keep using the reachable seed address. Containers use the three
 `ipa_nats_1` through `ipa_nats_3` addresses instead.
