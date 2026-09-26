@@ -79,9 +79,13 @@ const columnX = (column: number) => column * COLUMN_STRIDE + 140;
 const box = (left: number, top: number, width: number, height: number) =>
   ({ left, top, width, height, x: left, y: top, right: left + width, bottom: top + height, toJSON: () => ({}) }) as DOMRect;
 
+const WORMHOLE_TARGET = '[title^="Move item to"]';
+
 const layOut = (document: Document) => {
   const HTMLElementPrototype = document.defaultView!.HTMLElement.prototype;
   HTMLElementPrototype.getBoundingClientRect = function (this: HTMLElement) {
+    // The wormhole target sits right of the three columns.
+    if (this.matches(WORMHOLE_TARGET)) return box(3 * COLUMN_STRIDE, 0, 280, 144);
     const body = this.closest<HTMLElement>(COLUMN_BODY);
     if (!body) return box(0, 0, 0, 0);
     const column = Array.from(document.querySelectorAll(COLUMN_BODY)).indexOf(body);
@@ -115,7 +119,7 @@ describe("Spaces Kanban drop indicator", () => {
     return;
   }
 
-  test("marks the exact landing gap at column top, between cards, at the bottom, and in empty columns", async () => {
+  test("marks the exact landing gap at column top, between cards, at the bottom, in empty columns, and rings the hovered wormhole", async () => {
     moves.length = 0;
     const dom = createDomTestHarness();
     const { default: KanbanBoard } = await import("../src/frontend/[id]/_components/kanban/KanbanBoard");
@@ -144,7 +148,24 @@ describe("Spaces Kanban drop indicator", () => {
           pageSize: 30,
           canWrite: true,
           currentUserId: "77777777-7777-4777-8777-777777777777",
-          wormholes: [],
+          wormholes: [
+            {
+              id: "Worm01",
+              sourceSpaceId: SPACE_ID,
+              color: "#8b5cf6",
+              rank: "1024",
+              target: {
+                spaceId: "Space2",
+                spaceName: "Archive",
+                spaceColor: "#8b5cf6",
+                columnId: "Col009",
+                columnName: "Inbox",
+                columnIsDone: false,
+              },
+              createdAt: NOW,
+              updatedAt: NOW,
+            },
+          ],
         }),
       dom.root,
     );
@@ -200,6 +221,13 @@ describe("Spaces Kanban drop indicator", () => {
     expect(line.getAttribute("aria-hidden")).toBe("true");
     expect(line.outerHTML).toContain("bg-[var(--ui-app-accent-border)]");
     expect(line.outerHTML).not.toContain("--ui-focus");
+
+    // The active wormhole ring is `--ui-focus` as its own box-shadow layer; nested inside another shadow it drops the whole shadow.
+    const wormhole = dom.document.querySelector<HTMLElement>(WORMHOLE_TARGET)!;
+    expect(wormhole.style.boxShadow).not.toContain("--ui-focus");
+    await moveTo(3, 70);
+    expect(slots()).toEqual(["Open: A B C D", "Review: X Y", "Later: empty"]);
+    expect(wormhole.style.boxShadow).toStartWith("var(--ui-focus),");
 
     // Dropping where the line points puts the card exactly there.
     await moveTo(0, cardCenter(2) + 10);
