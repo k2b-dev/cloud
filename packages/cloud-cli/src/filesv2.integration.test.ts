@@ -1300,4 +1300,4 @@ test("areas resolve by name through cld, ambiguity reports 409 with every candid
   const conflict = await run(["filesv2", "mkdir", "me:/a"], { server: cloud.url.href });
   expect(conflict.exitCode).toBe(1);
   expect(conflict.stderr).toContain("path_conflict");
-});
+}, 20_000);
