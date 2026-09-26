@@ -1904,6 +1904,7 @@ suite("mail lifecycle control plane", () => {
       `;
       expect(typeof storedPaused?.result === "string" ? JSON.parse(storedPaused.result) : storedPaused?.result).toEqual({
         queuedFolders: 0,
+        reason: "Mailbox transport is paused",
       });
     }
     const resumed = await updateMailbox({

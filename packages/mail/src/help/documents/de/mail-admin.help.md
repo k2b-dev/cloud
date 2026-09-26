@@ -24,7 +24,7 @@ Betriebsstatus und öffentliche Anhangslinks gehören nicht zur Konfiguration. �
 
 **Postfachwerkzeuge > Postfachstatus** zeigt Verbindung, Ordnererkennung, Synchronisierung und Suchindex.
 
-- **Jetzt synchronisieren** startet eine Synchronisierung.
+- **Jetzt synchronisieren** plant eine Synchronisierung ein; **Letzte erfolgreiche Synchronisierung** zeigt, wann zuletzt eine abgeschlossen wurde. Solange das Postfach pausiert ist oder das Konto erst verbunden, erneut verbunden oder geprüft werden muss, ist **Jetzt synchronisieren** nicht verfügbar.
 - **Neu erkennen** aktualisiert Ordner und Namespaces.
 - **Verbindung prüfen** schließt eine ausstehende Anbieterprüfung ab.
 - **Postfach pausieren** stoppt Synchronisierung, vorgemerkte Anbieteränderungen, geplanten Versand und automatische Antworten.

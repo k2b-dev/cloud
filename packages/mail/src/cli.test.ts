@@ -2041,6 +2041,32 @@ test("status reads the aggregate operational health endpoint", async () => {
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ mailboxId: MAILBOX_ID, bindings: { active: 1 }, discovery: { missingFolders: 1 } });
+
+  const text = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "status", "--mailbox", MAILBOX_ID]);
+  expect(text.exitCode, text.stderr).toBe(0);
+  expect(text.stdout).toContain("Sync: never completed, 0 running, 0 failed");
+});
+
+test("sync folder separates queued work from a missing prerequisite", async () => {
+  let result: Record<string, unknown> = { folderId: FOLDER_ID, queued: true };
+  const server = withMailbox((request) => {
+    const path = new URL(request.url).pathname;
+    const command = (state: string) => ({ ...mailCommand(state), kind: "sync_folder", target: { folderId: FOLDER_ID }, result });
+    if (request.method === "POST" && path === `/api/mail/mailboxes/${MAILBOX_ID}/commands`) return api(command("queued"));
+    if (path === `/api/mail/mailboxes/${MAILBOX_ID}/commands/${COMMAND_ID}`) return api(command("confirmed"));
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const args = ["mail", "sync", "folder", FOLDER_ID, "--mailbox", MAILBOX_ID, "--wait", "--timeout-seconds", "2"];
+
+  const queued = await runCli(`http://127.0.0.1:${server.port}`, args);
+  expect(queued.exitCode, queued.stderr).toBe(0);
+  expect(queued.stdout.trim()).toBe(`Folder sync queued (${COMMAND_ID}); \`cld mail status\` shows the last completed sync.`);
+
+  result = { folderId: FOLDER_ID, queued: false, reason: "Mailbox transport is paused" };
+  const blocked = await runCli(`http://127.0.0.1:${server.port}`, args);
+  expect(blocked.exitCode, blocked.stderr).toBe(0);
+  expect(blocked.stdout.trim()).toBe(`Folder sync not queued: Mailbox transport is paused (${COMMAND_ID}).`);
 });
 
 test("operator run submits a durable typed action with the caller idempotency key", async () => {

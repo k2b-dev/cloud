@@ -20,6 +20,7 @@ const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {
       mailboxId: "Box001",
       mailboxName: "Support",
       syncEnabled: true,
+      needsConnection: false,
       folders: [],
       localTags: [],
       savedViews: [],

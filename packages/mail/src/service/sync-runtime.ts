@@ -135,6 +135,11 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
   lastFullReconcileAt: null,
 });
 
+// `degraded` only records a failed sync whose binding and credentials stayed
+// valid, so the next attempt may claim the resource and its committed batch
+// makes it active again. `pending`, `paused`, and `connection_required` stay
+// excluded, and the mailbox and binding checks still fence pause, credential
+// changes, and revocation.
 export const claimFence = async (resourceId: string, bindingId: string, kind: string): Promise<FenceClaim> =>
   sql.begin(async (tx) => {
     const [resource] = await tx<{ token: string | number; generation: string | number }[]>`
@@ -143,7 +148,7 @@ export const claimFence = async (resourceId: string, bindingId: string, kind: st
       FROM mail.mailboxes mailbox
       WHERE resource.id = ${resourceId}::uuid
         AND mailbox.id = resource.mailbox_id
-        AND resource.status = 'active'
+        AND resource.status IN ('active', 'degraded')
         AND mailbox.sync_enabled = true
         AND mailbox.deleted_at IS NULL
         AND EXISTS (
@@ -825,11 +830,15 @@ const recordSyncFailure = async (params: {
         last_error_message = ${message}
       WHERE id = ${folder.remote_resource_id}::uuid
     `;
+      // Pausing does not fence a running sync; a late failure must not hide the pause.
       await tx`
       UPDATE mail.mailboxes
       SET
-        health = ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"},
-        health_reason = ${message}
+        health = CASE
+          WHEN sync_enabled = false THEN 'paused'
+          ELSE ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"}
+        END,
+        health_reason = CASE WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator' ELSE ${message} END
       WHERE id = ${folder.mailbox_id}::uuid
     `;
     })
@@ -1309,7 +1318,7 @@ export const commitSyncBatch = async (params: {
   return result;
 };
 
-const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<void>): Promise<SyncBatchResult> => {
+export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<void>): Promise<SyncBatchResult> => {
   const folder = await loadSyncFolder(folderId);
   if (!folder) return { hasMore: false, imported: 0, flagsUpdated: 0, removed: 0 };
 

@@ -16,7 +16,7 @@ export const mailSidebarMessages = i18n.define({
       sendProblems: "Send problems",
       sendProblemsDescription: "Messages that need attention or will be retried.",
       failedStartSync: "Failed to start synchronization",
-      syncStarted: "Mailbox synchronization started",
+      syncQueued: "Mailbox synchronization queued",
       browserHandlerInstructions:
         "Confirm the browser prompt if it appears. No prompt? Open the site controls next to the address, go to Site settings, reset Protocol handlers for this site, then choose Email link setup again.",
       checkBrowser: "Check your browser",
@@ -68,7 +68,7 @@ export const mailSidebarMessages = i18n.define({
       sendProblems: "Versandprobleme",
       sendProblemsDescription: "Nachrichten, die geprüft oder erneut gesendet werden.",
       failedStartSync: "Synchronisierung konnte nicht gestartet werden",
-      syncStarted: "Postfach-Synchronisierung gestartet",
+      syncQueued: "Postfach-Synchronisierung eingeplant",
       browserHandlerInstructions:
         "Bestätige die Abfrage des Browsers, falls sie erscheint. Falls keine Abfrage erscheint, öffne die Website-Einstellungen neben der Adresse, setze die Protokollhandler für diese Website zurück und wähle erneut E-Mail-Links einrichten.",
       checkBrowser: "Browser prüfen",

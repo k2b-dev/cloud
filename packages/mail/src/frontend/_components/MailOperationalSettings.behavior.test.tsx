@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { Mailbox, MailboxOperationalHealth, MailboxOperatorOperations } from "../../contracts";
@@ -107,6 +107,49 @@ describe("Mail folder maintenance", () => {
       expect(text).toContain("Folder maintenance");
       expect(text).toContain("Projekte / 2025 / Archiv");
       expect(dom.document.querySelector('[title="Projekte / 2025 / Archiv"]')).not.toBeNull();
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("offers Sync now only when the account is connected", async () => {
+    globalThis.fetch = Object.assign(async () => Response.json(operations), { preconnect: originalFetch.preconnect });
+    const dom = createDomTestHarness();
+    const [{ default: MailOperationalSettings }, { LocaleProvider }] = await Promise.all([
+      import("./MailOperationalSettings"),
+      import("@k2b/ui"),
+    ]);
+    const [state, setState] = createSignal<MailboxOperationalHealth["health"]>("connection_required");
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "en",
+          get children() {
+            return createComponent(MailOperationalSettings, {
+              mailbox,
+              get health() {
+                return { ...health, health: state() };
+              },
+              bindings: [],
+              connections: [],
+              dateConfig: { locale: "en", timeZone: "UTC" },
+              reloading: false,
+              onReload: async () => undefined,
+              onWorkspaceChange: () => undefined,
+            });
+          },
+        }),
+      dom.root,
+    );
+    const syncNow = () => Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.includes("Sync now"));
+    try {
+      expect(syncNow()?.disabled).toBe(true);
+      setState("auth_required");
+      expect(syncNow()?.disabled).toBe(true);
+      // A timed-out sync leaves the account connected, so the next sync can recover the mailbox.
+      setState("degraded");
+      expect(syncNow()?.disabled).toBe(false);
     } finally {
       dispose();
       dom.cleanup();

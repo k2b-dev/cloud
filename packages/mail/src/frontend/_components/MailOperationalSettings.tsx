@@ -29,6 +29,7 @@ import type {
 import { PROVIDER_LIMIT_MAX_AGE_MS } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
+import { mailboxNeedsConnection } from "./mail-health-presentation";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
@@ -202,7 +203,7 @@ export default function MailOperationalSettings(props: {
     onSuccess: () => {
       toast.success(
         lastCommand() === "sync_mailbox"
-          ? messages().mailboxSyncStarted
+          ? messages().mailboxSyncQueued
           : lastCommand() === "verify_binding"
             ? messages().providerVerificationStarted
             : messages().folderDiscoveryStarted,
@@ -381,7 +382,7 @@ export default function MailOperationalSettings(props: {
           <Button
             size="sm"
             type="button"
-            disabled={busy() || !props.mailbox.syncEnabled}
+            disabled={busy() || !props.mailbox.syncEnabled || mailboxNeedsConnection(props.health.health)}
             aria-busy={syncLoading()}
             onClick={() => command.mutate({ kind: "sync_mailbox" })}
           >

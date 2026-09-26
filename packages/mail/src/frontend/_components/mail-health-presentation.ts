@@ -174,6 +174,10 @@ export const mailboxHealthPresentation = (
   return presentations[mailbox.health];
 };
 
+/** The account must be connected, reconnected, or verified first; until then a sync request queues nothing. */
+export const mailboxNeedsConnection = (health: MailboxHealth): boolean =>
+  health === "auth_required" || health === "connection_required" || health === "disconnected";
+
 export const mailboxOperationalHealthSummary = (
   health: MailboxOperationalHealth,
   locale = "en",

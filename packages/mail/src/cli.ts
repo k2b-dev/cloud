@@ -936,6 +936,14 @@ const waitForCommand = async (
   return result;
 };
 
+// A confirmed sync request only queues work; `mail status` shows when a sync last completed.
+const printSyncRequest = (ctx: CloudCliContext, label: string, command: MailCommand): void => {
+  const reason = typeof command.result.reason === "string" ? command.result.reason : null;
+  if (command.state !== "confirmed") ctx.print(`${label} request ${command.state} (${command.id}).`);
+  else if (reason) ctx.print(`${label} not queued: ${reason} (${command.id}).`);
+  else ctx.print(`${label} queued (${command.id}); \`cld mail status\` shows the last completed sync.`);
+};
+
 const waitForCommands = async (
   ctx: CloudCliContext,
   mailboxId: string,
@@ -3110,7 +3118,7 @@ const specialistCommands = {
             `Folders: ${health.discovery.activeFolders} active, ${health.discovery.missingFolders} missing, ${health.discovery.ambiguousFolders} ambiguous`,
           );
           ctx.print(
-            `Sync: ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
+            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
           );
           ctx.print(`Commands: ${health.commands.maintenanceQueued} maintenance pending; search ${health.search.configuredBackend}`);
         }
@@ -3850,7 +3858,7 @@ const specialistCommands = {
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
         if (printStructured(ctx, result)) return;
-        ctx.print(`Mailbox sync ${result.state} (${result.id}).`);
+        printSyncRequest(ctx, "Mailbox sync", result);
       },
     }),
     command("sync folder", {
@@ -3871,7 +3879,7 @@ const specialistCommands = {
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
         if (printStructured(ctx, result)) return;
-        ctx.print(`Folder sync ${result.state} (${result.id}).`);
+        printSyncRequest(ctx, "Folder sync", result);
       },
     }),
     command("rediscover", {
