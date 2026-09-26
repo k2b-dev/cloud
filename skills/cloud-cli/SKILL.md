@@ -44,3 +44,11 @@ Every module ships its own reference with the plugin. Run `cld <module> referenc
 - Read [CLI plugins](references/plugins.md) to list, install, update, or remove `cld` plugins and to print their references.
 - Run `cld apps reference` and `cld account reference` for the two modules every Cloud serves, `cld capabilities reference` for generic typed Queries and Actions, and `cld api-docs reference` for the live HTTP APIs.
 - Administrators run `cld admin reference`, `cld accounts reference`, `cld oauth reference`, and `cld ipa-hosts reference` for the matching task.
+
+## Installed modules
+
+`cld` keeps this table current: every profile, the modules installed for it, their versions, and the folder with that version's references. Read the reference folder of the profile you operate; `cld <module> reference [file]` prints the same files.
+
+<!-- cld:modules -->
+No module is installed for any profile yet. `cld plugins install --all` installs the modules of the current profile's Cloud and fills this table.
+<!-- /cld:modules -->

@@ -21,8 +21,8 @@ CURL_CONNECT_TIMEOUT=10
 CURL_MAX_TIME=60
 MAX_RELEASE_PAGES=100
 COSIGN_IDENTITY_REGEXP='^https://github\.com/k2b-dev/cloud/\.github/workflows/release\.yml@refs/heads/main$'
-SKILL_ASSET="cloud-cli-skill.tar.gz"
 SKILL_NAME="cloud-cli"
+CLAUDE_SKILLS_DIR="${HOME}/.claude/skills"
 
 die() { printf 'cld: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -95,13 +95,13 @@ Install or update Cloud CLI.
   Options accept --flag=VALUE or --flag VALUE.
 
   --prefix=DIR       Install into DIR (default: ~/.local/bin)
-  --skills-dir=DIR   Install agent skills into DIR (default: ~/.agents/skills)
+  --skills-dir=DIR   Write the agent skill into DIR (default: ~/.agents/skills)
   --version=VERSION  Install cloud-vX.Y.Z or X.Y.Z (default: latest Cloud release)
   --no-verify        Skip optional Cosign verification; SHA-256 is still required
-  --no-skills        Skip installing the Cloud CLI agent skill
-  --claude-symlink   Symlink the skill into ~/.claude/skills/cloud-cli
+  --no-skills        Skip the Cloud CLI agent skill
+  --claude-symlink   Also write the skill into ~/.claude/skills for Claude Code
   --no-claude-symlink
-                     Do not symlink the skill into Claude Code
+                     Do not write the skill for Claude Code
   -y, --yes          Skip the confirmation prompt
   -h, --help         Show this help
 EOF
@@ -215,14 +215,14 @@ confirm "proceed?" || { printf 'aborted.\n'; exit 1; }
 if [ "$INSTALL_SKILL" = "ask" ]; then
   if [ "$ASSUME_YES" = "1" ]; then
     INSTALL_SKILL=1
-  elif confirm "Install the Cloud CLI agent skill? (recommended)"; then
+  elif confirm "Write the Cloud CLI agent skill for coding agents? (recommended)"; then
     INSTALL_SKILL=1
   else
     INSTALL_SKILL=0
   fi
 fi
 if [ "$INSTALL_SKILL" = "1" ] && [ "$CLAUDE_SYMLINK" = "ask" ]; then
-  if confirm_default_no "Also symlink the skill to Claude Code at ~/.claude/skills/cloud-cli?"; then
+  if confirm_default_no "Also write the skill for Claude Code at ~/.claude/skills/cloud-cli?"; then
     CLAUDE_SYMLINK=1
   else
     CLAUDE_SYMLINK=0
@@ -257,45 +257,14 @@ verify_file() {
   [ "$actual" = "$expected" ] || die "SHA-256 mismatch; refusing to install"
 }
 
+# The skill is embedded in cld: registering a target writes it and keeps it
+# current on every plugin change and update.
 install_skill() {
-  archive="$1"
-  have tar || die "tar is required to install the Cloud CLI skill"
-  work="$TMP/skill"
-  mkdir -p "$work"
-  tar -xzf "$archive" -C "$work"
-  [ -f "$work/$SKILL_NAME/SKILL.md" ] || die "skill archive is invalid"
-  mkdir -p "$SKILLS_DIR"
-  dest="$SKILLS_DIR/$SKILL_NAME"
-  backup="$SKILLS_DIR/.$SKILL_NAME.backup.$$"
-  if [ -e "$dest" ] || [ -L "$dest" ]; then
-    mv "$dest" "$backup"
-  fi
-  if mv "$work/$SKILL_NAME" "$dest"; then
-    rm -rf "$backup"
-  else
-    rm -rf "$dest"
-    [ ! -e "$backup" ] && [ ! -L "$backup" ] || mv "$backup" "$dest"
-    die "could not install Cloud CLI skill"
-  fi
-  printf '✓ Cloud CLI skill installed at %s\n' "$dest"
-
+  "$PREFIX/cld" skills add "$SKILLS_DIR" >/dev/null || die "could not write the Cloud CLI skill"
+  printf '✓ Cloud CLI skill written to %s/%s\n' "$SKILLS_DIR" "$SKILL_NAME"
   if [ "$CLAUDE_SYMLINK" = "1" ]; then
-    claude_dir="$HOME/.claude/skills"
-    claude_dest="$claude_dir/$SKILL_NAME"
-    mkdir -p "$claude_dir"
-    if [ -L "$claude_dest" ]; then
-      current_link=$(readlink "$claude_dest" || true)
-      if [ "$current_link" = "$dest" ]; then
-        printf '✓ Claude Code skill symlink already points to %s\n' "$dest"
-      else
-        printf 'cld: Claude Code skill symlink exists and points elsewhere; left unchanged: %s\n' "$claude_dest" >&2
-      fi
-    elif [ -e "$claude_dest" ]; then
-      printf 'cld: Claude Code skill path exists and is not a symlink; left unchanged: %s\n' "$claude_dest" >&2
-    else
-      ln -s "$dest" "$claude_dest"
-      printf '✓ Claude Code skill symlink created at %s\n' "$claude_dest"
-    fi
+    "$PREFIX/cld" skills add "$CLAUDE_SKILLS_DIR" >/dev/null || die "could not write the Cloud CLI skill for Claude Code"
+    printf '✓ Cloud CLI skill written to %s/%s\n' "$CLAUDE_SKILLS_DIR" "$SKILL_NAME"
   fi
 }
 
@@ -335,10 +304,7 @@ if [ "$CURRENT_IS_TARGET" = "0" ]; then
 fi
 
 if [ "$INSTALL_SKILL" = "1" ]; then
-  expected=$(checksum "$SKILL_ASSET")
-  curl_get "${DOWNLOAD_BASE}/${SKILL_ASSET}" -o "$TMP/$SKILL_ASSET" || die "could not download $SKILL_ASSET"
-  verify_file "$TMP/$SKILL_ASSET" "$expected"
-  install_skill "$TMP/$SKILL_ASSET"
+  install_skill
 fi
 
 case ":$PATH:" in

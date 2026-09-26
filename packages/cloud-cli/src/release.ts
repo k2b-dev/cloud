@@ -25,8 +25,6 @@ const MAX_RELEASE_FILE_BYTES = 512 * 1024 * 1024;
 const CLI_RELEASE_PAGE_SIZE = 100;
 const FETCH_TIMEOUT_MS = 30_000;
 const FETCH_ATTEMPTS = 3;
-const CLOUD_CLI_SKILL_ASSET = "cloud-cli-skill.tar.gz";
-const CLOUD_CLI_SKILL_NAME = "cloud-cli";
 const cliReleaseTag = /^cloud-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export const COSIGN_CERTIFICATE_IDENTITY_REGEXP = "^https://github\\.com/k2b-dev/cloud/\\.github/workflows/release\\.yml@refs/heads/main$";
 const COSIGN_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
@@ -74,10 +72,6 @@ type UpdateOptions = ReleaseSource & {
   verifyCosign?: boolean;
   /** Cosign executable; defaults to `cosign` on the PATH. */
   cosignPath?: string;
-  installSkill?: boolean;
-  skillsDir?: string;
-  claudeSymlink?: boolean;
-  claudeSkillsDir?: string;
   confirm?: (message: string) => Promise<boolean>;
 };
 
@@ -85,8 +79,8 @@ export type CliUpdateResult = {
   release: CliRelease;
   target: CliTarget;
   cosign: "verified" | "unavailable" | "skipped";
-  skill: "installed" | "skipped";
-  claudeSymlink: "created" | "exists" | "blocked" | "skipped";
+  /** Whether the binary at `executablePath` was replaced by the release. */
+  replaced: boolean;
 };
 
 const normalizeBase = (value: string): string => value.replace(/\/+$/, "");
@@ -306,10 +300,8 @@ const replaceBinary = async (staged: string, destination: string): Promise<void>
   if (backupCreated) await rm(backup, { force: true }).catch(() => undefined);
 };
 
-export const defaultCloudCliSkillsDir = (): string => join(homedir(), ".agents", "skills");
-export const defaultClaudeSkillsDir = (): string => join(homedir(), ".claude", "skills");
-
-const replaceDirectory = async (source: string, destination: string): Promise<void> => {
+/** Replace `destination` with `source` in one rename, restoring the previous directory when the swap fails. */
+export const replaceDirectory = async (source: string, destination: string): Promise<void> => {
   await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
   const backup = join(dirname(destination), `.${basename(destination)}.backup-${process.pid}`);
   const destinationExists = await lstat(destination)
@@ -333,38 +325,6 @@ const replaceDirectory = async (source: string, destination: string): Promise<vo
   if (backupCreated) await rm(backup, { recursive: true, force: true }).catch(() => undefined);
 };
 
-const installSkillArchive = async (directory: string, archive: Uint8Array, skillsDir: string): Promise<string> => {
-  const archivePath = join(directory, CLOUD_CLI_SKILL_ASSET);
-  const extractDir = join(directory, "skill");
-  await mkdir(extractDir, { recursive: true, mode: 0o700 });
-  await writeFile(archivePath, archive, { mode: 0o600 });
-  await execFileAsync("tar", ["-xzf", archivePath, "-C", extractDir]);
-  const extractedSkill = join(extractDir, CLOUD_CLI_SKILL_NAME);
-  await stat(join(extractedSkill, "SKILL.md"));
-  const destination = join(resolve(skillsDir), CLOUD_CLI_SKILL_NAME);
-  await replaceDirectory(extractedSkill, destination);
-  return destination;
-};
-
-const ensureClaudeSkillSymlink = async (
-  skillPath: string,
-  claudeSkillsDir = defaultClaudeSkillsDir(),
-): Promise<"created" | "exists" | "blocked"> => {
-  const claudeSkillPath = join(claudeSkillsDir, CLOUD_CLI_SKILL_NAME);
-  await mkdir(claudeSkillsDir, { recursive: true, mode: 0o700 });
-  const existing = await lstat(claudeSkillPath).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  });
-  if (existing) {
-    if (!existing.isSymbolicLink()) return "blocked";
-    const currentTarget = await readlink(claudeSkillPath);
-    return resolve(claudeSkillsDir, currentTarget) === resolve(skillPath) ? "exists" : "blocked";
-  }
-  await symlink(skillPath, claudeSkillPath, "dir");
-  return "created";
-};
-
 export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateResult> => {
   const executablePath = options.executablePath ?? process.execPath;
   const standalone =
@@ -377,21 +337,13 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
   const currentVersion = typeof __CLD_VERSION__ === "string" ? __CLD_VERSION__ : "0.0.0-dev";
   const currentStableVersion = parseStableVersion(currentVersion);
   const target = options.target ?? resolveCliTarget();
-  const installSkill = options.installSkill !== false;
   const requestedVersion = options.version ? parseStableVersion(options.version.replace(/^cloud-v/, "").replace(/^v/, "")) : null;
-  if (!installSkill && requestedVersion && currentStableVersion && compareStableVersions(requestedVersion, currentStableVersion) === 0) {
-    return {
-      release: { tag: `cloud-v${currentVersion}`, version: currentVersion },
-      target,
-      cosign: "skipped",
-      skill: "skipped",
-      claudeSymlink: "skipped",
-    };
+  if (requestedVersion && currentStableVersion && compareStableVersions(requestedVersion, currentStableVersion) === 0) {
+    return { release: { tag: `cloud-v${currentVersion}`, version: currentVersion }, target, cosign: "skipped", replaced: false };
   }
 
   const release = await resolveCliRelease(options.version, source);
-  if (!installSkill && release.version === currentVersion)
-    return { release, target, cosign: "skipped", skill: "skipped", claudeSymlink: "skipped" };
+  if (release.version === currentVersion) return { release, target, cosign: "skipped", replaced: false };
   if (!options.version && currentStableVersion && compareStableVersions(releaseVersion(release), currentStableVersion) < 0) {
     throw new Error(`Refusing to downgrade cld ${currentVersion} to ${release.version} without --version.`);
   }
@@ -416,22 +368,7 @@ export const updateCli = async (options: UpdateOptions = {}): Promise<CliUpdateR
       const staged = await stageBinary(directory, target.asset, binary);
       await replaceBinary(staged, executablePath);
     }
-    let installedSkillPath: string | null = null;
-    if (installSkill) {
-      const skillArchive = await fetchBytes(`${downloadBase}/${CLOUD_CLI_SKILL_ASSET}`, source.fetchImpl);
-      verifyChecksum(skillArchive, expectedChecksum(new TextDecoder().decode(manifest), CLOUD_CLI_SKILL_ASSET));
-      installedSkillPath = await installSkillArchive(temporaryDirectory, skillArchive, options.skillsDir ?? defaultCloudCliSkillsDir());
-    }
-    return {
-      release,
-      target,
-      cosign,
-      skill: installSkill ? "installed" : "skipped",
-      claudeSymlink:
-        options.claudeSymlink && installedSkillPath
-          ? await ensureClaudeSkillSymlink(installedSkillPath, options.claudeSkillsDir)
-          : "skipped",
-    };
+    return { release, target, cosign, replaced: replaceInstalledBinary };
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }

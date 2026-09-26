@@ -301,6 +301,8 @@ jobs:
           VERSION: ${{ inputs.version }}
           # Shared runners exhaust GitHub's anonymous API quota (403); the token lifts it.
           GH_TOKEN: ${{ github.token }}
+          CLD_CONFIG: ${{ runner.temp }}/cld-config/config.json
+          XDG_CONFIG_HOME: ${{ runner.temp }}/cld-config
         run: |
           set -euo pipefail
           prefix="$RUNNER_TEMP/cld-bin"
@@ -323,6 +325,9 @@ jobs:
           "$cld" --server http://127.0.0.1:3000 --token "$token" apps list --json | jq -e '.items | map(.id) | index("faq")'
           "$cld" --server http://127.0.0.1:3000 --token "$token" faq list --json | jq -e '.items | type == "array"'
           "$cld" faq reference | grep -q '^# '
+          # Installing plugins rewrote the skill: the table names the profile and the module's reference folder exists.
+          grep -F "| default | faq | $VERSION |" "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"
+          test -f "$RUNNER_TEMP/cld-skills/cloud-cli/references/faq/$VERSION/index.md"
       - if: always()
         run: docker rm --force app-core app-faq gateway postgres nats valkey || true
 

@@ -26,16 +26,9 @@ const currentAssetName = () => {
   return `cld_${os}_${cpu}`;
 };
 
-const createSkillArchive = async (directory: string): Promise<Uint8Array> => {
-  const source = join(directory, "skill-source");
-  const archive = join(directory, "cloud-cli-skill.tar.gz");
-  await mkdir(join(source, "cloud-cli"), { recursive: true });
-  await writeFile(join(source, "cloud-cli", "SKILL.md"), "---\nname: cloud-cli\n---\n# Cloud CLI\n");
-  const tar = Bun.spawn(["tar", "-czf", archive, "-C", source, "cloud-cli"], { stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stderr] = await Promise.all([tar.exited, new Response(tar.stderr).text()]);
-  if (exitCode !== 0) throw new Error(stderr);
-  return new Uint8Array(await Bun.file(archive).arrayBuffer());
-};
+/** A stand-in for the released `cld`: answers `--version` and, like the real one, writes the skill on `skills add <dir>`. */
+const fakeCld = (version: string): string =>
+  `#!/bin/sh\ncase "$1" in\n  --version) printf 'cld ${version}\\n' ;;\n  skills) mkdir -p "$3/cloud-cli" && printf '# Cloud CLI\\n' > "$3/cloud-cli/SKILL.md" ;;\nesac\n`;
 
 /** A `cosign` on PATH that records its arguments, one per line, and exits with the given code. */
 const createCosignStub = async (directory: string, exitCode = 0) => {
@@ -115,11 +108,8 @@ describe("Cloud CLI releases", () => {
   test("updates an installed binary only after checksum verification", async () => {
     const directory = await createTemporaryDirectory();
     const executablePath = join(directory, "cld");
-    const skillsDir = join(directory, "skills");
-    const claudeSkillsDir = join(directory, "claude-skills");
     const assetName = "cld_linux_x64";
     const replacement = new TextEncoder().encode("new binary");
-    const skillArchive = await createSkillArchive(directory);
     await writeFile(executablePath, "old binary", { mode: 0o755 });
     await chmod(executablePath, 0o755);
 
@@ -128,10 +118,8 @@ describe("Cloud CLI releases", () => {
       fetch(request) {
         const url = new URL(request.url);
         if (url.pathname === "/releases") return Response.json([{ tag_name: "cloud-v1.2.3" }]);
-        if (url.pathname === "/release/download/cloud-v1.2.3/checksums.txt")
-          return new Response(`${sha256(replacement)}  ${assetName}\n${sha256(skillArchive)}  cloud-cli-skill.tar.gz\n`);
+        if (url.pathname === "/release/download/cloud-v1.2.3/checksums.txt") return new Response(`${sha256(replacement)}  ${assetName}\n`);
         if (url.pathname === `/release/download/cloud-v1.2.3/${assetName}`) return new Response(replacement);
-        if (url.pathname === "/release/download/cloud-v1.2.3/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
         return new Response("not found", { status: 404 });
       },
     });
@@ -144,18 +132,12 @@ describe("Cloud CLI releases", () => {
         standalone: true,
         target: { os: "linux", arch: "x64", asset: assetName },
         verifyCosign: false,
-        skillsDir,
-        claudeSymlink: true,
-        claudeSkillsDir,
         confirm: async () => true,
       });
 
       expect(result.release.version).toBe("1.2.3");
-      expect(result.skill).toBe("installed");
-      expect(result.claudeSymlink).toBe("created");
+      expect(result.replaced).toBe(true);
       expect(await readFile(executablePath, "utf8")).toBe("new binary");
-      expect(await readFile(join(skillsDir, "cloud-cli", "SKILL.md"), "utf8")).toContain("Cloud CLI");
-      expect(await readlink(join(claudeSkillsDir, "cloud-cli"))).toBe(join(skillsDir, "cloud-cli"));
     } finally {
       server.stop(true);
     }
@@ -188,7 +170,6 @@ describe("Cloud CLI releases", () => {
           standalone: true,
           target: { os: "linux", arch: "x64", asset: assetName },
           verifyCosign: false,
-          installSkill: false,
           confirm: async () => true,
         }),
       ).rejects.toThrow("checksum verification failed");
@@ -203,8 +184,7 @@ describe("Cloud CLI releases", () => {
     const prefix = join(directory, "bin");
     const skillsDir = join(directory, "skills");
     const assetName = currentAssetName();
-    const binary = new TextEncoder().encode("release binary");
-    const skillArchive = await createSkillArchive(directory);
+    const binary = new TextEncoder().encode(fakeCld("2.0.0"));
     await mkdir(prefix, { mode: 0o700 });
     await chmod(prefix, 0o700);
     const server = Bun.serve({
@@ -228,10 +208,8 @@ describe("Cloud CLI releases", () => {
             ),
           );
         }
-        if (url.pathname === "/release/download/cloud-v2.0.0/checksums.txt")
-          return new Response(`${sha256(binary)}  ${assetName}\n${sha256(skillArchive)}  cloud-cli-skill.tar.gz\n`);
+        if (url.pathname === "/release/download/cloud-v2.0.0/checksums.txt") return new Response(`${sha256(binary)}  ${assetName}\n`);
         if (url.pathname === `/release/download/cloud-v2.0.0/${assetName}`) return new Response(binary);
-        if (url.pathname === "/release/download/cloud-v2.0.0/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
         return new Response("not found", { status: 404 });
       },
     });
@@ -256,7 +234,7 @@ describe("Cloud CLI releases", () => {
       expect(exitCode, `${stdout}\n${stderr}`).toBe(0);
       expect(stderr).toBe("");
       expect(stdout).toContain("installed");
-      expect(await readFile(join(prefix, "cld"), "utf8")).toBe("release binary");
+      expect(await readFile(join(prefix, "cld"), "utf8")).toBe(fakeCld("2.0.0"));
       expect(await readFile(join(skillsDir, "cloud-cli", "SKILL.md"), "utf8")).toContain("Cloud CLI");
       expect((await stat(prefix)).mode & 0o777).toBe(0o700);
     } finally {
@@ -269,9 +247,8 @@ describe("Cloud CLI releases", () => {
     const prefix = join(directory, "bin");
     const skillsDir = join(directory, "skills");
     const assetName = currentAssetName();
-    const skillArchive = await createSkillArchive(directory);
     await mkdir(prefix, { recursive: true, mode: 0o700 });
-    await writeFile(join(prefix, "cld"), "#!/bin/sh\nprintf 'cld 2.0.0\\n'\n", { mode: 0o755 });
+    await writeFile(join(prefix, "cld"), fakeCld("2.0.0"), { mode: 0o755 });
     await chmod(join(prefix, "cld"), 0o755);
 
     const server = Bun.serve({
@@ -282,9 +259,7 @@ describe("Cloud CLI releases", () => {
           if (url.searchParams.get("page") !== "1") return Response.json([]);
           return new Response(JSON.stringify([{ tag_name: "cloud-v2.0.0" }], null, 2));
         }
-        if (url.pathname === "/release/download/cloud-v2.0.0/checksums.txt")
-          return new Response(`${"0".repeat(64)}  ${assetName}\n${sha256(skillArchive)}  cloud-cli-skill.tar.gz\n`);
-        if (url.pathname === "/release/download/cloud-v2.0.0/cloud-cli-skill.tar.gz") return new Response(skillArchive.slice().buffer);
+        if (url.pathname === "/release/download/cloud-v2.0.0/checksums.txt") return new Response(`${"0".repeat(64)}  ${assetName}\n`);
         return new Response("not found", { status: 404 });
       },
     });
@@ -312,7 +287,7 @@ describe("Cloud CLI releases", () => {
       expect(exitCode, `${stdout}\n${stderr}`).toBe(0);
       expect(stderr).toBe("");
       expect(stdout).toContain("already installed");
-      expect(stdout).toContain("Cloud CLI skill installed");
+      expect(stdout).toContain("Cloud CLI skill written");
       expect(await readFile(join(prefix, "cld"), "utf8")).toContain("cld 2.0.0");
       expect(await readFile(join(skillsDir, "cloud-cli", "SKILL.md"), "utf8")).toContain("Cloud CLI");
     } finally {
@@ -352,7 +327,6 @@ describe("Cloud CLI releases", () => {
         executablePath,
         standalone: true,
         target: { os: "linux", arch: "x64", asset: assetName },
-        installSkill: false,
         cosignPath: cosign.executable,
         confirm: async () => true,
       }).then(

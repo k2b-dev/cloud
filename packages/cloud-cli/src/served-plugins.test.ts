@@ -93,6 +93,20 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(missingReference.exitCode).toBe(1);
   expect(missingReference.stderr).toContain('no reference "missing.md". Available: index.md');
 
+  // The agent skill: one folder per target with the core skill, a table of every profile's modules, and the references per version.
+  const skills = join(cli.dir, "agent-skills");
+  const added = await cli.run(["skills", "add", skills]);
+  expect(added.exitCode, added.stderr).toBe(0);
+  expect((await cli.config()).skills).toEqual({ targets: ["~/agent-skills"] });
+  const skill = await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8");
+  expect(skill).toContain("| a | echo | 1.0.0 | `references/echo/1.0.0/` |");
+  expect(skill).toContain("| b | echo | 2.0.0 | `references/echo/2.0.0/` |");
+  expect(skill).toContain("cld <app> reference");
+  expect(await readFile(join(skills, "cloud-cli", "references", "echo", "1.0.0", "index.md"), "utf8")).toBe("# Echo 1.0.0\n");
+  expect(await readFile(join(skills, "cloud-cli", "references", "echo", "2.0.0", "index.md"), "utf8")).toBe("# Echo 2.0.0\n");
+  expect((await readdir(join(skills, "cloud-cli", "references"))).sort()).toEqual(["echo", "plugins.md", "sign-in.md"]);
+  expect((await cli.run(["skills", "list"])).stdout.trim()).toBe(join(skills, "cloud-cli"));
+
   // Cloud A moves to v2: list shows the update, update installs it, and the
   // now unused v1 leaves the store because both profiles use the same v2.
   clouds.a.plugins = [v2];
@@ -102,6 +116,9 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(updated.exitCode, updated.stderr).toBe(0);
   expect(updated.stdout).toContain('Updated echo 1.0.0 → 2.0.0 (profile "a")');
   expect(await cli.stored()).toEqual([v2.manifest.digest]);
+  // The skill followed: both profiles use 2.0.0, and the 1.0.0 folder is gone.
+  expect(await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8")).toContain("| a | echo | 2.0.0 |");
+  expect(await readdir(join(skills, "cloud-cli", "references", "echo"))).toEqual(["2.0.0"]);
   expect((await cli.run(["plugins", "update", "--all"])).stdout).toContain('echo 2.0.0 is up to date (profile "b")');
 
   const removed = await cli.run(["plugins", "remove", "echo"]);
@@ -110,6 +127,13 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(await cli.stored()).toEqual([v2.manifest.digest]);
   expect((await cli.run(["--profile", "b", "plugins", "remove", "echo"])).exitCode).toBe(0);
   expect(await cli.stored()).toEqual([]);
+  expect(await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8")).toContain("No module is installed for any profile yet");
+  expect((await cli.run(["skills", "remove", skills])).exitCode).toBe(0);
+  expect(await readdir(skills)).toEqual([]);
+  expect((await cli.config()).skills).toEqual({ targets: [] });
+  const noTarget = await cli.run(["skills", "sync"]);
+  expect(noTarget.exitCode).toBe(1);
+  expect(noTarget.stderr).toContain("No skill target configured");
 }, 30_000);
 
 test("a file that does not match the manifest leaves the store and the lock untouched", async () => {
@@ -189,6 +213,9 @@ test("login offers the Cloud's plugins and installs them with --yes", async () =
   for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) stdout += new TextDecoder().decode(chunk.value);
   expect(await child.exited, await new Response(child.stderr).text()).toBe(0);
   expect(stdout).toContain('Installed echo 1.0.0 (profile "a")');
+  expect(stdout).toContain(`Wrote the cloud-cli skill to ${join(cli.dir, ".agents", "skills", "cloud-cli")}.`);
   expect(cloud.authorizations).toContain("Bearer login-access");
   expect(Object.keys((await cli.config()).profiles.a.plugins)).toEqual(["echo"]);
+  expect((await cli.config()).skills).toEqual({ targets: ["~/.agents/skills"] });
+  expect(await readFile(join(cli.dir, ".agents", "skills", "cloud-cli", "SKILL.md"), "utf8")).toContain("| a | echo | 1.0.0 |");
 });

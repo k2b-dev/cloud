@@ -71,7 +71,9 @@ not releases: they carry no changelog entry and no support commitment.
 The GitHub release for `cloud-vX.Y.Z` also carries the `cld` binaries
 (`cld_darwin_arm64`, `cld_darwin_x64`, `cld_linux_arm64`, `cld_linux_x64`),
 the `cloud-cli-skill.tar.gz` skill archive, and `checksums.txt` with the
-SHA-256 of each. The release workflow signs `checksums.txt` keylessly with
+SHA-256 of each. Current `cld` versions embed the skill and ignore the
+archive; it stays published for installed `cld` versions that still download
+it. The release workflow signs `checksums.txt` keylessly with
 Cosign and publishes the Sigstore bundle `checksums.txt.sigstore.json`. Verify
 it with Cosign 2.4.2 or newer:
 
