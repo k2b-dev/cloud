@@ -62,6 +62,18 @@ Import heavy components once at module scope, not inside the first test: the
 first import runs the Solid transform over the component's source graph, and
 that time otherwise counts against the 5 s test timeout.
 
+## Replace modules in tests
+
+`mock.module` replaces a module for the whole Bun process. Without
+`--isolate`, `bun test` runs all files of a suite in one process in
+file-system order, so a module mock leaks into every file loaded after it and
+the result depends on the machine. A test file that calls `mock.module` at the
+top level therefore needs a package `test` script with `--isolate`, or it runs
+the mocked part in a child process, as
+`packages/notebooks/src/ws-lifecycle.test.ts` does. Prefer the child process
+when `--isolate` would make the package suite much slower. `bun run check`
+fails on a top-level `mock.module` in a suite that shares one process.
+
 ## Run integration tests
 
 Integration tests gate themselves on `CLOUD_TEST_*` variables through
