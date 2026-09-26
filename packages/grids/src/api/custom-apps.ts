@@ -4,7 +4,7 @@ import { type AuthContext, auth, getDateConfig, getLocale, respond } from "@k2b/
 import { hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
-import { type GridRecord, ShortIdSchema } from "../contracts";
+import { type GridRecord, ShortIdSchema, workspaceRevisionHeader } from "../contracts";
 import { customAppPageRecordFieldIds } from "../custom-apps/conditions";
 import { CustomAppDefinitionInputSchema } from "../custom-apps/contracts";
 import { customAppDiagnostic } from "../custom-apps/diagnostics";
@@ -53,7 +53,6 @@ import {
   getWorkflowDocumentConfirmation,
   getWorkflowRunScope,
 } from "../service/workflow-runs";
-import { workspaceRevisionHeader } from "../service/workspace-revision";
 import { projectGridRecord, projectPublishedRecords, requiredProjected } from "./custom-app-public-dto";
 import { loadPublishedCustomAppPage } from "./custom-app-published-page";
 import { resolvePublishedCustomAppGlobalRuntime, resolvePublishedCustomAppRuntime } from "./custom-app-published-runtime";

@@ -8,6 +8,9 @@ import { AGGREGATE_KINDS } from "./aggregate-catalog";
  * read `row.short_id` directly; if a row lacks the column the throw bubbles
  * up rather than getting silently coerced to "" (we hit that bug once).
  */
+/** Response header carrying the structure revisions of this tab's own write: `key=revision[,key=revision]`. */
+export const workspaceRevisionHeader = "X-Grids-Workspace-Revision";
+
 export const ShortIdSchema = z.string().regex(/^[A-Za-z0-9]{6}$/);
 const IconNameSchema = z.string().max(200).nullable().optional();
 

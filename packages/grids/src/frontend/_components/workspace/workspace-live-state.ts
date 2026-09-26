@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { workspaceRevisionHeader } from "../../../service/workspace-revision";
+import { workspaceRevisionHeader } from "../../../contracts";
 
 // Page-owned status shared by independently hydrated workspace/dialog islands.
 export const [workspaceLiveStatus, setWorkspaceLiveStatus] = createSignal<{ revoked: boolean; message: string }>({

@@ -1,5 +1,6 @@
 import type { Context } from "hono";
-import { loadResourceRevision, workspaceRevisionHeader } from "../service/workspace-revision";
+import { workspaceRevisionHeader } from "../contracts";
+import { loadResourceRevision } from "../service/workspace-revision";
 
 /**
  * Tells the writing tab which structure revision its own write produced so the
