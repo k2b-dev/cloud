@@ -85,4 +85,6 @@ export type AppRegistryEntry = {
   settingKeys?: readonly string[];
   /** Gateway-relative URL where this app serves its OpenAPI JSON spec. */
   openapi?: string;
+  /** Names of the `cld` modules this app serves under `/cli/plugins/<name>`. */
+  cliModules?: readonly string[];
 };

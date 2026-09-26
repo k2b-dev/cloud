@@ -43,6 +43,7 @@ import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
 
 export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
+export { cliPluginListRoutes } from "./cli-plugins";
 
 /**
  * Single-expression chain so `typeof buildCoreApi()` captures every route's

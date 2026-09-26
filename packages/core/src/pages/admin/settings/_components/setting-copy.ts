@@ -3,6 +3,10 @@ import type { SettingFieldDef } from "./CoreSettingsForm.island";
 type SettingCopy = Pick<SettingFieldDef, "label" | "description"> & { placeholder?: string };
 
 const deOptions: Partial<Record<string, Record<string, string>>> = {
+  "cli.plugins.access": {
+    full_users: "Vollständige Konten",
+    all_users: "Alle Konten, auch Gäste",
+  },
   "freeipa.user_match_mode": {
     ignore: "Lokales Konto ignorieren",
     migrate: "Passendes lokales Konto migrieren",
@@ -231,6 +235,11 @@ const de: Record<string, SettingCopy> = {
   "mail.noreply.from": { label: "Absenderadresse", description: "E-Mail-Adresse des Absenders." },
   "mail.noreply.user": { label: "SMTP-Benutzername", description: "Benutzername für den SMTP-Server." },
   "mail.noreply.password": { label: "SMTP-Passwort", description: "Passwort für den SMTP-Server." },
+  "cli.plugins.access": {
+    label: "Wer cld-Plugins installieren darf",
+    description:
+      "Gilt für die Plugin-Liste und jeden Plugin-Download. Abgemeldete Anfragen erhalten nie Plugins. Befehle autorisiert in jedem Fall der Server.",
+  },
   "security.rate_limit_per_second": {
     label: "Anfragen pro Sekunde",
     description: "Maximale Anzahl von API-Anfragen pro Sekunde und IP-Adresse.",

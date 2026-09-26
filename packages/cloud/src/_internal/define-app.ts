@@ -17,10 +17,12 @@ import { routes } from "@k2b/ssr/hono";
 import type { Sync } from "@k2b/sync";
 import { type Context, type Handler, Hono } from "hono";
 import { generateSpecs } from "hono-openapi";
+import { CLOUD_CLI_PLUGIN_ROUTE } from "../cli/plugin";
 import { env } from "../config/env";
 import type {
   AppAdminNavigationGroup,
   AppAppearance,
+  AppCliModules,
   AppLifecycle,
   AppMeta,
   AppPresentationCatalog,
@@ -69,6 +71,7 @@ import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
 import { appRuntimeMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
+import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } from "./cli-plugins";
 import { createHeartbeat } from "./heartbeat";
 import { compileHelp } from "./help";
 import { createPageResponses } from "./page-responses";
@@ -198,6 +201,18 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    */
   openapi?: string;
   /**
+   * `cld` modules this app serves as plugins, keyed by module name
+   * (`cld <name>`). Paths are relative to the application directory:
+   *
+   *   cli: { inventory: { module: "src/cli.ts", references: "src/cli-references" } }
+   *
+   * The production build bundles each module with its skill references into
+   * the image; the framework serves them under `/cli/plugins/<name>/` to
+   * authenticated callers that `cli.plugins.access` allows, and adds that
+   * prefix to the app's gateway routes.
+   */
+  cli?: AppCliModules;
+  /**
    * Project root used for SSR component IDs and development assets.
    * Defaults to `process.cwd()`. Override only if you run the entrypoint
    * from a directory other than the project root. Discovery uses APP_DIR/src
@@ -305,6 +320,7 @@ export const defineApp = <
   configurePostgresApplicationName(opts.id);
   const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
+  const cliModules = validateAppCliModules(opts.id, opts.cli);
 
   // ── 0. Register declared settings into the runtime registry ──────────
   // SETTINGS_MAP is the single source of truth for validation in store.ts
@@ -392,13 +408,14 @@ export const defineApp = <
         links: group.links.map((link) => ({ ...link })),
       }),
     ),
-    routes: [...opts.routes],
+    routes: [...opts.routes, ...cliPluginRoutePrefixes(cliModules)],
     nav: opts.nav,
     legalLinks: opts.legalLinks ? [...opts.legalLinks] : undefined,
     searchLinks: opts.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
     widgets: opts.widgets ? opts.widgets.map((w) => ({ ...w })) : undefined,
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
     openapi: opts.openapi,
+    cli: opts.cli,
   };
   const meta: AppMeta = { ...baseMeta, presentation: compileAppPresentation(baseMeta, opts.presentation) };
 
@@ -492,6 +509,7 @@ export const defineApp = <
         widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
         settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
         openapi: advertiseOpenapi ? opts.openapi : undefined,
+        cliModules: cliModules.length > 0 ? cliModules : undefined,
       };
 
       // Heartbeat
@@ -554,6 +572,7 @@ export const defineApp = <
       //   /api/_internal/capabilities/v1/* when capabilities are declared
       //   /api/_internal/widgets/v1/*     when widget handlers are bound
       //   /_internal/sync/*       process-local sync operations (admin only)
+      //   /cli/plugins/<name>/*   `cld` plugins, when `cli` modules are declared
       //   <opts.openapi>          OpenAPI JSON spec, when both opts.openapi
       //                            and startOpts.openapi are set
       const ssrMountPath = config.basePath ? `${config.basePath}/_ssr` : "/_ssr";
@@ -581,6 +600,8 @@ export const defineApp = <
           return next();
         })
         .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
+
+      if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));
 
       if (compiledHelp) {
         const pageBase = compiledHelp.summary.pageBase;

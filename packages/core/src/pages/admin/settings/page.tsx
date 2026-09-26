@@ -146,6 +146,13 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       group: "security" as const,
     },
     {
+      id: "cli",
+      title: t.cliSettings,
+      description: t.cliSettingsDescription,
+      icon: "ti ti-terminal",
+      group: "cli" as const,
+    },
+    {
       id: "legal",
       title: t.legalSettings,
       description: t.legalSettingsDescription,

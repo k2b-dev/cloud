@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-09-23
+updated: 2026-09-26
 ---
 
 # Build and deploy
@@ -30,6 +30,11 @@ dist/
 ├── server.js
 ├── _ssr/
 ├── assets/
+├── cli/
+│   └── inventory/
+│       ├── cli.js
+│       ├── manifest.json
+│       └── references/
 └── public/
     └── inventory/
         └── app.css
@@ -77,6 +82,12 @@ source tree.
 Import Bun built-ins statically, for example `import { sql } from "bun"`. The
 minified server bundle breaks `await import("bun")`: it runs from source but
 throws a `ReferenceError` in the built image.
+
+The build bundles each module declared in `defineApp({ cli })` into one
+self-contained `dist/cli/<name>/cli.js`, copies its skill references, and
+writes a `manifest.json` with the SHA-512 of every file. It imports each
+bundle once and fails when its module name differs from the declaration. See
+[Application CLI modules](/en/docs/platform/cli-modules#serve-a-module-from-the-application).
 
 Add `scripts/build-extras.ts` only when the application must generate another
 artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.

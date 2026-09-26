@@ -546,16 +546,72 @@ principal resolution and output contracts.
 
 ## Register the module
 
-Export the module from the application package, usually from `src/cli.ts`.
+Export the module from the application package, usually from `src/cli.ts`,
+and declare it in `defineApp({ cli })`. Built-in and third-party applications
+use the same declaration.
 
-The bundled `cld` distribution imports the built-in modules explicitly. Every
-other application ships its module as a `cld` plugin. The installed `cld`
-loads plugins at run time, so the application releases its commands on its
-own schedule, without a new `cld` build.
+## Serve a module from the application
+
+Each application serves its own `cld` plugin from its own image, so the
+commands always match the Cloud version they talk to:
+
+```ts
+export const app = defineApp({
+  id: "inventory",
+  // ...
+  cli: {
+    inventory: { module: "src/cli.ts", references: "src/cli-references" },
+  },
+});
+```
+
+The key is the module name, the command `cld inventory …`. It must equal the
+`name` of the module's default export. An application may serve several
+modules. Both paths are relative to the application directory:
+
+| Field | Rule |
+| --- | --- |
+| `module` | Source file whose default export comes from `defineCliCommands()`. |
+| `references` | Directory of agent skill references: an `index.md` entry plus any further Markdown files, in subdirectories if needed. |
+
+Write the references for agents that operate the application through `cld`:
+start `index.md` with the task workflow and the safest commands, and link the
+other files for details. Every file must be Markdown with a plain file name.
+
+The production build bundles each module into one self-contained ESM file,
+copies its references, and writes a manifest to `dist/cli/<name>/`. It imports
+the bundle once and fails if the exported name differs from the declared key.
+During development, the application builds the plugin from source on the
+first request.
+
+The framework serves every declared module and adds `/cli/plugins/<name>` to
+the application's gateway routes. The registry entry lists the module names,
+and Core lists all live plugins:
+
+| Route | Content |
+| --- | --- |
+| `GET /cli/plugins` | `{ plugins: [{ name, app, version }] }` for every live module. Served by Core. |
+| `GET /cli/plugins/<name>/manifest.json` | `apiVersion`, `name`, `app`, `version`, `entry`, `digest`, and `files` with the `size` and `sha512` of each file. |
+| `GET /cli/plugins/<name>/cli.js` | The bundled module. |
+| `GET /cli/plugins/<name>/references/<path>.md` | One skill reference. |
+
+`version` is the version of the application build. The `digest` is the
+SHA-512 of the `sha512sum` lines of all files, sorted by path, so it changes
+whenever any file changes. `parseCloudCliPluginManifest()` from
+`@k2b/cloud/cli` checks a manifest and its digest.
+
+Only authenticated callers get any of these routes: a session, an OAuth token
+with `read` scope, or an API key. The operator setting `cli.plugins.access`
+excludes guest accounts by default; see
+[Runtime configuration](/en/docs/operations/runtime-configuration#control-cli-plugin-access).
+Plugin access protects the code only. Every command still goes through the
+server's authorization.
 
 ## Ship a module as a plugin
 
-A plugin is an npm package, a `.tgz` archive of one, or a local directory
+A module can also ship as a package, for example a public command set that
+does not belong to one application, or a module under development. Such a
+plugin is an npm package, a `.tgz` archive of one, or a local directory
 with a `package.json` that declares the plugin manifest:
 
 ```json

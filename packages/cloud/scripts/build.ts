@@ -18,6 +18,8 @@
  *   public/<id>/app.css  Tailwind, if the app has src/styles/app.css
  *   public/<id>/...      anything from <appDir>/public/
  *   assets/...           anything from <appDir>/src/assets/ (appAssetPath)
+ *   cli/<name>/...       `cld` plugin per `defineApp({ cli })` module: cli.js,
+ *                        references/*.md, manifest.json
  *
  * If the app needs additional artefacts (core's global.css, logo, katex),
  * it ships a `scripts/build-extras.ts` that this script runs at the end.
@@ -131,6 +133,7 @@ try {
       __CLOUD_SYNC_VERSION__: JSON.stringify(syncVersion),
       __CLOUD_PDF_RENDER_WORKER__: JSON.stringify("./pdf-render/worker.js"),
       __CLOUD_APP_ASSETS__: JSON.stringify("./assets/"),
+      __CLOUD_CLI_PLUGINS__: JSON.stringify("./cli/"),
     },
     plugins: [(app?.plugin ?? plugin)()],
   });
@@ -173,6 +176,14 @@ if (existsSync(appPublic)) {
 const appAssets = resolve(appDir, "src/assets");
 if (existsSync(appAssets)) {
   await cp(appAssets, resolve(dist, "assets"), { recursive: true });
+}
+
+// `cld` plugins: one self-contained module bundle plus references per module.
+// Imported after the app config so the framework sees the APP_DIR set above.
+const { buildCliPlugin, writeCliPlugin } = await import("../src/_internal/cli-plugins");
+for (const [name, declaration] of Object.entries(app?.meta.cli ?? {})) {
+  const plugin = await buildCliPlugin({ appDir, appId, name, declaration, version });
+  await writeCliPlugin(resolve(dist, "cli", name), plugin);
 }
 
 if (appId !== "core" && app) {

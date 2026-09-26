@@ -709,6 +709,19 @@ export const CORE_SETTINGS = {
     description: "Maximum API requests per second per IP address",
   },
 
+  // ── Command line ────────────────────────────────────────────────────────
+  "cli.plugins.access": {
+    kind: "enum",
+    label: "Who may install cld plugins",
+    default: "full_users",
+    options: [
+      { value: "full_users", label: "Full accounts" },
+      { value: "all_users", label: "All accounts, including guests" },
+    ],
+    description:
+      "Applies to the plugin list and every plugin download. Signed-out requests never get plugins. Commands stay authorized by the server either way.",
+  },
+
   // ── Legal documents (Imprint, Privacy, Terms) ──────────────────────────
   // mode = "local"    → render markdown from `legal.<kind>.content`
   // mode = "external" → 302-redirect to `legal.<kind>.url`

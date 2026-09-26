@@ -6,6 +6,7 @@ export const settingsDocumentation: Readonly<Record<string, string>> = {
   freeipa: "operations/freeipa",
   linux: "operations/linux-identities",
   "account-operations": "accounts/lifecycle",
+  cli: "operations/runtime-configuration#control-cli-plugin-access",
   "app.identity": "accounts/documentation",
   "user.login": "operations/account-categories",
   "user.registration": "accounts/registration",
