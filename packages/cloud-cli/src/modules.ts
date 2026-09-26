@@ -48,7 +48,7 @@ export const builtInModules = {
     load: () => import("@k2b/cloud-app-assistant/cli"),
   },
   contacts: {
-    summary: "Manage contact books, contacts, notes, tags, and exports.",
+    summary: "Find and change contacts by ID or <book>:<name>, and manage contact books.",
     germanSummary: "Kontakte verwalten.",
     load: () => import("@k2b/cloud-app-contacts/cli"),
   },
@@ -58,7 +58,7 @@ export const builtInModules = {
     load: () => import("@k2b/cloud-app-faq/cli"),
   },
   filesv2: {
-    summary: "Browse files and administer storage.",
+    summary: "Work with personal and group files and administer storage.",
     germanSummary: "Dateien und Ablagen verwalten.",
     load: () => import("@k2b/cloud-app-filesv2/cli"),
   },
@@ -74,7 +74,7 @@ export const builtInModules = {
     load: () => import("@k2b/cloud-app-ipa-hosts/cli"),
   },
   mail: {
-    summary: "Search, read, configure, and operate Cloud Mail.",
+    summary: "Read, triage, and answer Cloud Mail; configure and operate mailboxes.",
     germanSummary: "Mail verwalten.",
     load: () => import("@k2b/cloud-app-mail/cli"),
   },
@@ -94,7 +94,7 @@ export const builtInModules = {
     load: () => import("@k2b/cloud-app-pulse/cli"),
   },
   spaces: {
-    summary: "Inspect and update Spaces through the Spaces REST API.",
+    summary: "List, add, and change tasks and events by ID or <space>:<title>.",
     germanSummary: "Spaces und Arbeitselemente verwalten.",
     load: () => import("@k2b/cloud-app-spaces/cli"),
   },
