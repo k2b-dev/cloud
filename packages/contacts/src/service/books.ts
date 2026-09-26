@@ -92,6 +92,46 @@ export const list = async (config: { subject: AccessSubject; boundBookId?: strin
 };
 
 /**
+ * Readable manual books whose name is exactly `name`, at most `limit` of them.
+ * A result longer than one means the name is ambiguous for this subject.
+ */
+export const findReadableByName = async (config: {
+  subject: AccessSubject;
+  boundBookId?: string | null;
+  name: string;
+  limit: number;
+}): Promise<ContactBook[]> => {
+  if (config.subject.type === "service_account" && !isUuid(config.boundBookId ?? "")) return [];
+
+  const principalMatch = buildAccessPrincipalCondition({
+    subject: config.subject,
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const bindingMatch = config.subject.type === "service_account" ? sql`b.id = ${config.boundBookId}::uuid` : sql`true`;
+
+  const rows = await sql<DbBook[]>`
+    SELECT DISTINCT b.id, b.name, b.description, b.created_at, b.updated_at
+    FROM contacts.books b
+    JOIN contacts.book_access ba ON ba.book_id = b.id
+    JOIN auth.access a ON a.id = ba.access_id
+    WHERE
+      b.name = ${config.name}
+      AND a.permission IN ('read'::auth.permission_level, 'write'::auth.permission_level, 'admin'::auth.permission_level)
+      AND ${principalMatch}
+      AND ${bindingMatch}
+    ORDER BY b.id
+    LIMIT ${config.limit}
+  `;
+
+  return rows.map(mapBook);
+};
+
+/**
  * Lists readable manual books with database-side filtering and pagination.
  * The effective permission is computed in the same query so capability
  * callers do not need one permission lookup per row.

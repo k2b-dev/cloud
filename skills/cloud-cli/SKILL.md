@@ -46,7 +46,7 @@ Read the app reference for the current task. Follow specialized links inside it 
 - Read [CLI plugins](references/plugins.md) to list, install, or remove `cld` plugins that add third-party app commands.
 - Read [Capabilities](references/capabilities.md) to discover and invoke live typed app Queries and Actions through the generic CLI.
 - Read [Assistant](references/assistant.md) for one-shot streaming chat, chat history, approvals, files, personalization, and Projects.
-- Read [Contacts](references/contacts.md) for contact books, contacts, tags, notes, exports, and access grants.
+- Read [Contacts](references/contacts.md) for contacts by ID, `<book>:<name>`, or email, and for contact books, tags, notes, vCard import and export, and access grants.
 - Read [FAQ](references/faq.md) to list and manage localized, audience-aware FAQ entries as an administrator.
 - Read [Files](references/filesv2.md) (`cld filesv2`) to browse Cloud and FreeIPA storage, download files directly, and administer directory provisioning, archives, permanent deletion, root maintenance, and storage configuration.
 - Read [Grids](references/grids.md) to create bases from templates and manage schema, records, GQL, views, forms, Custom Apps, documents, access, and workflows.

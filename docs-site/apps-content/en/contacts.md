@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-09-07
+updated: 2026-09-26
 ---
 
 # Contacts
@@ -59,18 +59,32 @@ Contacts adopts.
 
 ## Automate Contacts from the terminal
 
-Contacts provides a native CLI module for scripts and terminal workflows. Start
-with read commands and use stable IDs from JSON output when names are
-ambiguous:
+The `cld contacts` CLI finds and changes contacts from scripts and terminal
+workflows. A command that takes a contact accepts a **contact ID** such as
+`Ab12Cd`, or **`<book>:<name>`** such as `"Customers:Ada Lovelace"`, where the
+book is an ID or exact name and the name is the contact's exact display name.
+`show --email <address>` finds the one readable contact with that email
+address. Book names and display names are not unique: when a name or email
+matches several resources, the command fails and lists every candidate with
+its path and ID instead of guessing.
 
 ```bash
-cld contacts books --json
-cld contacts search "Ada Lovelace" --json
+cld contacts ls
+cld contacts ls Customers --q ada --tag VIP --json
+cld contacts show --email ada@example.org --json
+cld contacts add "Customers:Ada Lovelace" --email work=ada@example.org
+cld contacts set "Customers:Ada Lovelace" --job-title Mathematician
+cld contacts mv "Customers:Ada Lovelace" Alumni
+cld contacts import Customers --from contacts.vcf --dry-run
 ```
 
-Run `cld contacts help` for the available areas. Run
-`cld contacts <command> --help` before a mutation or destructive operation to
-read its current fields and confirmation requirements.
+Books, tags, notes, and access grants are command groups: `books add`,
+`tags list`, `notes add`, `access grant`. `rm` and the other delete commands
+ask for confirmation in a terminal and need `--yes` in scripts. Every command
+prints a stable JSON shape with `--json`.
+
+Run `cld contacts help` for the full command set and
+`cld contacts <command> --help` before a mutation or destructive operation.
 
 ## Deployment requirements
 

@@ -51,6 +51,42 @@ The Mail API adds `GET /api/mail/resolve?mailbox=<ref>[&folder=<ref>]`, which
 resolves a mailbox ID or name and a folder ID or path, and answers `404` or
 `409` with the candidates. No stored data changes.
 
+## Contacts CLI commands
+
+`cld contacts` now uses the shared command verbs and addresses contacts by
+ID or `<book>:<name>`. The old command names are removed without aliases;
+scripts must switch to the new names. The `--book` and `--contact` flags and
+the local default book (`use`, `current`) are gone: pass the book in every
+address. `show --email <address>` finds a contact by email. Contact JSON input
+is `--from <file|->` instead of `--json-input` and `--stdin`; note text is
+`--from <file|->` or `--content <text>` instead of `--file` and `--stdin`.
+Destructive commands need `--yes` without a terminal. See
+[Contacts](/en/apps/contacts#automate-contacts-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `books` | `ls` |
+| `use`, `current` | removed; pass the book in every address |
+| `book` | `show <book>:` |
+| `create-book [--use]`, `update-book`, `delete-book` | `books add`, `books update`, `books delete` |
+| `list` | `ls <book>` (`--q`, `--tag`) |
+| `get` | `show <contact>`, `show --email <address>` |
+| `create` | `add <book>[:<name>]` |
+| `update` | `set <contact>` |
+| `move --target-book` | `mv <contact> <book>` |
+| `delete` | `rm <contact>` |
+| `notes`, `note`, `update-note`, `delete-note` | `notes list`, `add`, `update`, `delete` |
+| `tags`, `create-tag`, `update-tag`, `delete-tag` | `tags list <book>`, `tags add\|update\|delete <book>:<tag>` |
+| `import-preview` | `import <book> --from <file\|-> --dry-run` |
+| `--query` | `--q` |
+| `--output` | `--out` |
+| `--firstName`, `--per_page`, and other camelCase or snake_case aliases, `--parent-contact` | the kebab-case flag (`--first-name`, `--per-page`), `--parent` |
+
+`import` without `--dry-run` now creates the previewed contacts, skipping
+matches unless `--include-duplicates` is given. `search`, `tree`, `export`,
+and the `access` group keep their names. The Contacts API adds
+`GET /api/contacts/resolve`. No stored data changes.
+
 ## Notebooks CLI commands
 
 `cld notebooks` was rebuilt around note addresses and a local Markdown mirror.
@@ -92,6 +128,51 @@ the web UI still seeds it. The Notebooks API adds `GET /api/notebooks/notes/:not
 `GET /api/notebooks/:id/outline`, and `GET /api/notebooks/:id/resolve`, and
 `POST /api/notebooks/:id/notes` accepts `parentPath` and `createParents`. No
 stored data changes.
+
+## Spaces CLI commands
+
+`cld spaces` now uses the shared `cld` verbs and item addresses. The old
+command names are removed without aliases; scripts must switch to the new
+names. An item is addressed as an item ID or `<space>:<title>` instead of a
+leading space argument or `--space`, and the local default space (`use`,
+`current`) is gone. Text input is `--from <file|->` instead of `--file` and
+`--stdin`; `--page-size` is `--per-page`. See
+[Spaces](/en/apps/spaces#automate-spaces-from-the-terminal).
+
+| Old command | New command |
+| --- | --- |
+| `list` | `ls` |
+| `use`, `current` | removed; name the space in every address |
+| `get [space]` | `show <space>:` |
+| `create` | `create` (no `--use`) |
+| `items [space]` | `ls <space>` |
+| `items --assigned-to me`, `unassigned` | `ls <space> --mine`, `--unassigned` |
+| `items --deadline`, `--activity inactive` | `ls <space> --due`, `--inactive`; new `--due-before` |
+| `item [space] <item>` | `show <item>` |
+| `add-item [space] <title> --column` | `add <space>:<title> [--column]` (defaults to the first column) |
+| `update-item [space] <item>` | `set <item>` |
+| `update-item --column` | `mv <item> <column>` |
+| none | `rm <item> --yes`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
+| `blockers`, `blocks` | `deps <item>` |
+| `block <task> <blocker>` | `deps <task> --add <blocker>` |
+| `unblock <task> <blocker>` | `deps <task> --rm <blocker>` |
+| `comments` | `comments list` |
+| `comment` | `comments add` (new `comments update`, `comments delete`) |
+| `attachments` | `attachments list` |
+| `add-attachment --file <path>` | `attachments add <item> <path>` |
+| `download-attachment --output` | `attachments download <item> <attachment> --out` |
+| `delete-attachment` | `attachments delete` |
+| `checklist add --label <text>` | `checklist add <item> <text>` |
+| `references remove` | `references delete` |
+| `calendar --from --to` | `calendar <start> <end>` |
+| `overlap --from --to --exclude-item` | `overlap <start> <end> --exclude <item>` |
+| `activity`, `work`, `claim`, `release`, `progress`, `done`, `reopen`, `invitation context`, `invitation draft`, `access …` | unchanged names; the item is one address argument |
+| `--file`, `--stdin` | `--from <file\|->` |
+| `--page-size` | `--per-page` |
+
+The Spaces API adds `GET /api/spaces/items/:itemId` and
+`GET /api/spaces/resolve?space=&title=`; the item filter accepts
+`deadlineBefore`, and assignable users include `uid`. No stored data changes.
 
 ## Workflow action costs
 
