@@ -1,5 +1,7 @@
 # Sign-in and profiles
 
+After a successful sign-in, `cld` offers to install the plugins the Cloud serves and, the first time, asks where to write this skill (`--yes` accepts both defaults; `--no-plugins` skips the plugin offer).
+
 ## Sign in
 
 `cld login` signs in with the user's Cloud account and stores a refreshable OAuth login in a profile. It always uses Cloud's first-party `cloud-cli` client.

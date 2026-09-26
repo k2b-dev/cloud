@@ -41,7 +41,17 @@ import {
   removePlugin,
   stagePlugin,
 } from "./plugins";
-import { defaultCloudCliSkillsDir, updateCli } from "./release";
+import { updateCli } from "./release";
+import {
+  CLAUDE_SKILL_TARGET,
+  DEFAULT_SKILL_TARGET,
+  expandSkillTarget,
+  normalizeSkillTarget,
+  SKILL_NAME,
+  type SkillModuleRow,
+  type SkillsConfig,
+  syncSkillTargets,
+} from "./skills";
 
 declare const __CLD_VERSION__: string;
 declare const __CLD_COMMIT__: string;
@@ -81,6 +91,8 @@ type CloudCliProfile = TokenProviderConfig & {
 type CloudCliConfig = {
   currentProfile?: string;
   profiles?: Record<string, CloudCliProfile>;
+  /** Where the cloud-cli agent skill is written; absent until `cld` has asked. */
+  skills?: SkillsConfig;
 };
 
 type ParsedArgs = {
@@ -116,7 +128,17 @@ const cliVersion = typeof __CLD_VERSION__ === "string" ? __CLD_VERSION__ : "0.0.
 const cliCommit = typeof __CLD_COMMIT__ === "string" ? __CLD_COMMIT__ : "unknown";
 
 /** Top-level names that plugins can never take over. */
-const reservedNames: ReadonlySet<string> = new Set(["help", "version", "login", "logout", "auth", "profile", "update", "plugins"]);
+const reservedNames: ReadonlySet<string> = new Set([
+  "help",
+  "version",
+  "login",
+  "logout",
+  "auth",
+  "profile",
+  "update",
+  "plugins",
+  "skills",
+]);
 
 const text = (locale: string, en: string, de: string): string => localizeCloudCliText(locale, { en, de });
 
@@ -854,6 +876,7 @@ Usage:
   cld profile <list|show|use|set> [options]
   cld update [--version <version>] [--yes] [--no-verify]
   cld plugins <list|install|update|remove|run> [options]
+  cld skills <list|add|remove|sync> [options]
   cld --version
 
 Global options:
@@ -889,6 +912,7 @@ Verwendung:
   cld profile <list|show|use|set> [Optionen]
   cld update [--version <Version>] [--yes] [--no-verify]
   cld plugins <list|install|update|remove|run> [Optionen]
+  cld skills <list|add|remove|sync> [Optionen]
   cld --version
 
 Globale Optionen:
@@ -1011,9 +1035,11 @@ Options:
   --version <version>  Install cli-vX.Y.Z or X.Y.Z (default: latest CLI release)
   --yes                Skip the confirmation prompt
   --no-verify          Skip optional Cosign verification; SHA-256 is always verified
-  --no-skills          Skip updating the Cloud CLI agent skill
-  --skills-dir <dir>   Skill install base directory (default: ${defaultCloudCliSkillsDir()})
-  --claude-symlink     Link the installed skill into ~/.claude/skills/cloud-cli
+  --no-skills          Do not rewrite the Cloud CLI agent skill afterwards
+  --skills-dir <dir>   Add <dir> to the skill targets (default target: ${DEFAULT_SKILL_TARGET})
+  --claude-symlink     Add ${CLAUDE_SKILL_TARGET} to the skill targets for Claude Code
+
+After the update, cld rewrites the cloud-cli skill in every target (\`cld skills list\`).
 `,
     `cld update
 
@@ -1024,9 +1050,11 @@ Optionen:
   --version <Version>  cli-vX.Y.Z oder X.Y.Z installieren (Standard: neuestes CLI-Release)
   --yes                Bestätigungsabfrage überspringen
   --no-verify          Optionale Cosign-Prüfung überspringen; SHA-256 wird immer geprüft
-  --no-skills          Aktualisierung des Cloud-CLI-Agent-Skills überspringen
-  --skills-dir <Pfad>  Basisverzeichnis für Skills (Standard: ${defaultCloudCliSkillsDir()})
-  --claude-symlink     Installierten Skill unter ~/.claude/skills/cloud-cli verlinken
+  --no-skills          Den Cloud-CLI-Agent-Skill danach nicht neu schreiben
+  --skills-dir <Pfad>  <Pfad> zu den Skill-Zielen hinzufügen (Standardziel: ${DEFAULT_SKILL_TARGET})
+  --claude-symlink     ${CLAUDE_SKILL_TARGET} für Claude Code zu den Skill-Zielen hinzufügen
+
+Nach dem Update schreibt cld den cloud-cli-Skill in jedes Ziel neu (\`cld skills list\`).
 `,
   );
 
@@ -1062,39 +1090,32 @@ const runUpdateCommand = async (args: string[], locale: string): Promise<number>
   const noSkills = takeBooleanFlag(parsed.flags, "no-skills");
   const claudeSymlink = takeBooleanFlag(parsed.flags, "claude-symlink");
   const skillsDir = takeStringFlag(parsed.flags, "skills-dir");
-  const result = await updateCli({
-    version,
-    verifyCosign: !noVerify,
-    installSkill: !noSkills,
-    skillsDir,
-    claudeSymlink,
-    confirm: yes ? undefined : confirmCliUpdate,
-  });
-  const claude =
-    result.claudeSymlink === "created"
-      ? "; Claude Code symlink created"
-      : result.claudeSymlink === "exists"
-        ? "; Claude Code symlink already linked"
-        : result.claudeSymlink === "blocked"
-          ? "; Claude Code symlink skipped because the target already exists"
-          : "";
-  if (result.release.version === cliVersion) {
-    printLine(
-      result.skill === "installed"
-        ? `cld ${cliVersion} is up to date; Cloud CLI skill updated${claude}.`
-        : `cld ${cliVersion} is already up to date${claude}.`,
-    );
-    return 0;
-  }
+  const result = await updateCli({ version, verifyCosign: !noVerify, confirm: yes ? undefined : confirmCliUpdate });
+  const added = [...(skillsDir ? [skillsDir] : []), ...(claudeSymlink ? [CLAUDE_SKILL_TARGET] : [])].map(normalizeSkillTarget);
+  if (added.length > 0) await addSkillTargets(added);
   const verification =
     result.cosign === "verified"
       ? "SHA-256 and Cosign verified"
       : result.cosign === "unavailable"
         ? "SHA-256 verified; Cosign unavailable"
         : "SHA-256 verified";
-  const skill = result.skill === "installed" ? "; Cloud CLI skill updated" : "";
-  printLine(`Updated cld to ${result.release.version} (${verification}${skill}${claude}).`);
+  printLine(result.replaced ? `Updated cld to ${result.release.version} (${verification}).` : `cld ${cliVersion} is already up to date.`);
+  if (noSkills) return 0;
+  // The skill belongs to the release that runs: the new binary writes it after a replacement.
+  const written = result.replaced ? await spawnSkillSync(process.execPath) : await syncSkills(await loadConfig(), locale);
+  for (const path of written) printLine(text(locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
   return 0;
+};
+
+/** Run `cld skills sync` on `executable` (the freshly installed binary) and return the written paths. */
+const spawnSkillSync = async (executable: string): Promise<string[]> => {
+  const child = Bun.spawn([executable, "--json", "skills", "sync"], { stdin: "ignore", stdout: "pipe", stderr: "inherit" });
+  const [exitCode, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+  if (exitCode !== 0) return [];
+  const parsed: unknown = JSON.parse(stdout);
+  return typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { written?: unknown }).written)
+    ? ((parsed as { written: string[] }).written ?? [])
+    : [];
 };
 
 /** Run one installed module with the shared context. */
@@ -1250,6 +1271,194 @@ const runReferenceCommand = async (name: string, locked: LockedPlugin, args: str
   return 0;
 };
 
+/** Every installed module of every profile, for the generated skill table. */
+const skillRows = (config: CloudCliConfig): SkillModuleRow[] =>
+  Object.keys(config.profiles ?? {})
+    .sort()
+    .flatMap((profile) =>
+      Object.entries(profileLock(config, profile))
+        .filter(([name]) => !reservedNames.has(name))
+        .map(([name, locked]) => ({ profile, name, version: locked.version, digest: locked.digest })),
+    );
+
+/**
+ * Rewrite the skill in every configured target from `config`. Problems never
+ * fail the command that changed the plugins; they become one stderr line.
+ */
+const syncSkills = async (config: CloudCliConfig, locale: string): Promise<string[]> => {
+  const targets = config.skills?.targets ?? [];
+  if (targets.length === 0) return [];
+  try {
+    return await syncSkillTargets(targets, skillRows(config));
+  } catch (error) {
+    printErrorLine(
+      text(
+        locale,
+        `cld: skill not updated: ${error instanceof Error ? error.message : String(error)}`,
+        `cld: Skill nicht aktualisiert: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+    return [];
+  }
+};
+
+const skillsHelp = (locale: string): string =>
+  text(
+    locale,
+    `cld skills
+
+Usage:
+  cld skills list [--json]
+  cld skills add <directory>
+  cld skills remove <directory>
+  cld skills sync
+
+cld writes the cloud-cli agent skill into every target directory: the core
+SKILL.md and references of this cld release, plus references/<module>/<version>/
+for every module a profile has installed, and a table in SKILL.md that maps each
+profile to its modules. The default target is ${DEFAULT_SKILL_TARGET}; add
+${CLAUDE_SKILL_TARGET} for Claude Code. Every change to the installed plugins and
+every \`cld update\` rewrites all targets; \`sync\` rewrites them now.
+`,
+    `cld skills
+
+Verwendung:
+  cld skills list [--json]
+  cld skills add <Verzeichnis>
+  cld skills remove <Verzeichnis>
+  cld skills sync
+
+cld schreibt den cloud-cli-Agent-Skill in jedes Zielverzeichnis: SKILL.md und
+Referenzen dieses cld-Releases sowie references/<Modul>/<Version>/ für jedes
+Modul, das ein Profil installiert hat, und eine Tabelle in SKILL.md, die jedem
+Profil seine Module zuordnet. Standardziel ist ${DEFAULT_SKILL_TARGET}; für
+Claude Code kommt ${CLAUDE_SKILL_TARGET} hinzu. Jede Änderung an den installierten
+Plugins und jedes \`cld update\` schreibt alle Ziele neu; \`sync\` tut es sofort.
+`,
+  );
+
+const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
+  const locale = global.locale;
+  const parsed = parseArgs(args);
+  const [command, target, ...extra] = parsed.args;
+  if (!command || isModuleHelpRequest(parsed.args, parsed.flags)) {
+    printLine(skillsHelp(locale));
+    return 0;
+  }
+  const output = takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : global.output;
+  const unsupportedFlag = Object.keys(parsed.flags).find((flag) => flag !== "json" && flag !== "jsonl");
+  if (unsupportedFlag) throw new CliError(`Unknown skills option "--${unsupportedFlag}".`);
+  if (extra.length > 0 || (command === "add" || command === "remove") !== Boolean(target)) {
+    throw new CliError("Usage: cld skills <list|add <directory>|remove <directory>|sync>. Run `cld skills help`.");
+  }
+  if (command === "list") {
+    const config = await loadConfig();
+    const targets = config.skills?.targets ?? [];
+    if (output !== "text") printLine(JSON.stringify({ targets, asked: config.skills !== undefined }, null, output === "json" ? 2 : 0));
+    else if (targets.length === 0) {
+      printLine(
+        text(
+          locale,
+          `No skill target configured. Run \`cld skills add ${DEFAULT_SKILL_TARGET}\` to write the cloud-cli skill for agents.`,
+          `Kein Skill-Ziel konfiguriert. Führe \`cld skills add ${DEFAULT_SKILL_TARGET}\` aus, um den cloud-cli-Skill für Agenten zu schreiben.`,
+        ),
+      );
+    } else for (const entry of targets) printLine(join(expandSkillTarget(entry), SKILL_NAME));
+    return 0;
+  }
+  if (command === "add" || command === "remove") {
+    const normalized = normalizeSkillTarget(target!);
+    const config =
+      command === "add"
+        ? await addSkillTargets([normalized])
+        : await withConfigLock(async () => {
+            const latest = await loadConfig();
+            latest.skills = { targets: (latest.skills?.targets ?? []).filter((entry) => entry !== normalized) };
+            await saveConfig(latest);
+            return latest;
+          });
+    if (command === "remove") {
+      await rm(join(expandSkillTarget(normalized), SKILL_NAME), { recursive: true, force: true });
+      printLine(text(locale, `Removed the cloud-cli skill from ${normalized}.`, `cloud-cli-Skill aus ${normalized} entfernt.`));
+      return 0;
+    }
+    const written = await syncSkillTargets([normalized], skillRows(config));
+    printLine(text(locale, `Wrote the cloud-cli skill to ${written[0]}.`, `cloud-cli-Skill nach ${written[0]} geschrieben.`));
+    return 0;
+  }
+  if (command === "sync") {
+    const config = await loadConfig();
+    if ((config.skills?.targets ?? []).length === 0) {
+      throw new CliError(
+        `No skill target configured. Run \`cld skills add ${DEFAULT_SKILL_TARGET}\` first.`,
+        1,
+        `Kein Skill-Ziel konfiguriert. Führe zuerst \`cld skills add ${DEFAULT_SKILL_TARGET}\` aus.`,
+      );
+    }
+    const written = await syncSkillTargets(config.skills!.targets, skillRows(config));
+    if (output !== "text") printLine(JSON.stringify({ written }, null, output === "json" ? 2 : 0));
+    else
+      for (const path of written)
+        printLine(text(locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
+    return 0;
+  }
+  throw new CliError("Usage: cld skills <list|add <directory>|remove <directory>|sync>. Run `cld skills help`.");
+};
+
+/** Add skill targets to the config (deduplicated, in order) and return the saved config. */
+const addSkillTargets = (targets: readonly string[]): Promise<CloudCliConfig> =>
+  withConfigLock(async () => {
+    const latest = await loadConfig();
+    const current = latest.skills?.targets ?? [];
+    latest.skills = { targets: [...current, ...targets.filter((entry) => !current.includes(entry))] };
+    await saveConfig(latest);
+    return latest;
+  });
+
+/**
+ * After the first login, ask where the agent skill should live. `--yes` takes
+ * the default target. Without a terminal nothing is asked or written, and the
+ * next interactive login asks.
+ */
+const offerSkillTargets = async (locale: string, yes: boolean): Promise<void> => {
+  if ((await loadConfig()).skills !== undefined) return;
+  let targets: string[] = [];
+  if (yes) targets = [DEFAULT_SKILL_TARGET];
+  else if (!process.stdin.isTTY) return;
+  else {
+    if (
+      await confirmPluginInstall(
+        text(
+          locale,
+          `Write the cloud-cli agent skill to ${DEFAULT_SKILL_TARGET}?`,
+          `cloud-cli-Agent-Skill nach ${DEFAULT_SKILL_TARGET} schreiben?`,
+        ),
+        locale,
+        true,
+      )
+    ) {
+      targets.push(DEFAULT_SKILL_TARGET);
+    }
+    if (
+      await confirmPluginInstall(
+        text(locale, `Also to ${CLAUDE_SKILL_TARGET} for Claude Code?`, `Auch nach ${CLAUDE_SKILL_TARGET} für Claude Code?`),
+        locale,
+      )
+    ) {
+      targets.push(CLAUDE_SKILL_TARGET);
+    }
+  }
+  const config = await withConfigLock(async () => {
+    const latest = await loadConfig();
+    latest.skills = { targets };
+    await saveConfig(latest);
+    return latest;
+  });
+  for (const path of await syncSkills(config, locale)) {
+    printLine(text(locale, `Wrote the cloud-cli skill to ${path}.`, `cloud-cli-Skill nach ${path} geschrieben.`));
+  }
+};
+
 type PluginCloud = { profile: string; server: string; fetch: (path: string, init?: RequestInit) => Promise<Response> };
 
 /**
@@ -1280,7 +1489,12 @@ type PluginChange = {
  * config lock; placing them in the store, updating the lock, and pruning
  * unused versions happen together under it.
  */
-const syncProfilePlugins = async (cloud: PluginCloud, names: readonly string[], mode: "install" | "update"): Promise<PluginChange[]> => {
+const syncProfilePlugins = async (
+  cloud: PluginCloud,
+  names: readonly string[],
+  mode: "install" | "update",
+  locale: string,
+): Promise<PluginChange[]> => {
   const current = profileLock(await loadConfig(), cloud.profile);
   const changes: PluginChange[] = [];
   const staged: Array<{ name: string; locked: LockedPlugin; incoming: string | null }> = [];
@@ -1338,6 +1552,7 @@ const syncProfilePlugins = async (cloud: PluginCloud, names: readonly string[], 
     config.profiles[cloud.profile] = { ...profile, plugins: lock };
     await saveConfig(config);
     await collectPluginGarbage(lockedDigests(config));
+    await syncSkills(config, locale);
   });
   return changes;
 };
@@ -1569,7 +1784,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       else printJson({ plugins: [] });
       return 0;
     }
-    return printPluginChanges(await syncProfilePlugins(cloud, names, "install"), output, locale);
+    return printPluginChanges(await syncProfilePlugins(cloud, names, "install", locale), output, locale);
   }
 
   if (command === "update") {
@@ -1590,7 +1805,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       }
       if (names.length === 0) continue;
       const cloud = await pluginCloud(global, profileName === currentProfile ? undefined : profileName);
-      changes.push(...(await syncProfilePlugins(cloud, names, "update")));
+      changes.push(...(await syncProfilePlugins(cloud, names, "update", locale)));
     }
     if (changes.length === 0 && output === "text") {
       printLine(text(locale, "No plugins installed.", "Keine Plugins installiert."));
@@ -1612,6 +1827,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         latest.profiles[profileName] = { ...latest.profiles[profileName], plugins: lock };
         await saveConfig(latest);
         await collectPluginGarbage(lockedDigests(latest));
+        await syncSkills(latest, global.locale);
       });
     } else if (!(await removePlugin(name))) {
       throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
@@ -2243,9 +2459,9 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
           `Bei ${normalizedServer} als Profil "${name}" angemeldet.`,
         ),
   );
-  if (!takeBooleanFlag(parsed.flags, "no-plugins")) {
-    await offerCloudPlugins({ ...global, profile: name }, takeBooleanFlag(parsed.flags, "yes", "y"));
-  }
+  const yes = takeBooleanFlag(parsed.flags, "yes", "y");
+  if (!takeBooleanFlag(parsed.flags, "no-plugins")) await offerCloudPlugins({ ...global, profile: name }, yes);
+  await offerSkillTargets(global.locale, yes);
   return 0;
 };
 
@@ -2281,7 +2497,7 @@ const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void
       );
       if (!(await confirmPluginInstall(question, locale, true))) return;
     }
-    printPluginChanges(await syncProfilePlugins(cloud, missing, "install"), "text", locale);
+    printPluginChanges(await syncProfilePlugins(cloud, missing, "install", locale), "text", locale);
   } catch (error) {
     printErrorLine(
       text(
@@ -2398,6 +2614,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   if (moduleName === "profile") return runProfileCommand(moduleArgs, global.locale);
   if (moduleName === "update") return runUpdateCommand(moduleArgs, global.locale);
   if (moduleName === "plugins") return runPluginsCommand(moduleArgs, global);
+  if (moduleName === "skills") return runSkillsCommand(moduleArgs, global);
 
   if (moduleArgs[0] === "reference" && !reservedNames.has(moduleName)) {
     const locked = await lockedPlugin(moduleName, global);

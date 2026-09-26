@@ -681,6 +681,32 @@ the current profile.
 `index.md` by default, or one of the further files it links to. Agents read
 them before using an unfamiliar module.
 
+### Write the skill for agents
+
+`cld` also writes the `cloud-cli` agent skill to disk. The core `SKILL.md`,
+`references/sign-in.md`, and `references/plugins.md` are embedded in the `cld`
+release; the installed modules add `references/<module>/<version>/` from the
+plugin store, and `SKILL.md` gets a generated table from profile to module,
+version, and reference folder. Profiles on different Clouds therefore see
+different versions side by side, and a version no profile uses disappears.
+
+The targets are `skills.targets` in the `cld` config. The first `cld login`
+asks whether to write the skill to `~/.agents/skills` and also to
+`~/.claude/skills` for Claude Code (`--yes` takes the default target); the
+installer asks the same. Manage them with:
+
+```sh
+cld skills list
+cld skills add ~/.claude/skills
+cld skills remove ~/.claude/skills
+cld skills sync
+```
+
+Every `cld plugins install`, `update`, and `remove`, every `cld login` that
+installs plugins, and every `cld update` rewrite all targets; `cld skills sync`
+does it on demand. `cld update --skills-dir <dir>` and `--claude-symlink` add
+targets; `--no-skills` skips the rewrite once.
+
 `install` and `update` read the plugin's manifest, download every file, check
 each file's size and SHA-512 and the manifest digest, and load the module once
 before anything changes. A mismatch leaves the installation untouched. The

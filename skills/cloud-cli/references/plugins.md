@@ -37,7 +37,17 @@ cld mail reference
 cld mail reference compose.md
 ```
 
-`reference` prints the plugin's entry page; a file argument prints one of the files it links to. An unknown file lists the available ones.
+`reference` prints the plugin's entry page; a file argument prints one of the files it links to. An unknown file lists the available ones. The same files are in this skill under `references/<module>/<version>/`; the table in `SKILL.md` names the folder for each profile and module.
+
+## Skill targets
+
+```bash
+cld skills list
+cld skills add ~/.claude/skills
+cld skills sync
+```
+
+`cld` rewrites this skill in every target after each plugin change and each `cld update`. Add a target only when the user asks for it.
 
 ## Package plugins
 

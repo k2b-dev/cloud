@@ -10,6 +10,19 @@ updated: 2026-09-26
 
 # Deprecations and migrations
 
+## The cloud-cli skill comes from cld
+
+`cld update` no longer downloads `cloud-cli-skill.tar.gz`; the core skill is
+embedded in `cld`, and `cld` writes it together with the installed modules'
+references to every target in `skills.targets`. `cld update --skills-dir <dir>`
+now adds a target instead of choosing one for a single run, and
+`--claude-symlink` adds `~/.claude/skills` as a target that receives a copy
+instead of a symlink; an existing symlink there is replaced by the copy. The
+installer's `--skills-dir`, `--no-skills`, and `--claude-symlink` keep their
+meaning and register the targets through `cld skills add`. The release still
+publishes `cloud-cli-skill.tar.gz` for `cld` versions before this change. See
+[Application CLI modules](/en/docs/platform/cli-modules#write-the-skill-for-agents).
+
 ## First-party CLI modules are served plugins
 
 `cld` no longer bundles the application modules (`account`, `admin`, `apps`,
