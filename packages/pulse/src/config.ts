@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "pulse",
+  cli: { pulse: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Pulse",
   icon: "ti ti-activity-heartbeat",
   description: "Metrics, events, states, and realtime dashboards.",

@@ -5,6 +5,12 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { natsServers, testFor } from "../../../scripts/fixtures/test-infra";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The contacts module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-contacts-cli-"));
+await installFirstPartyModules(cliHome, ["contacts"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 /**
  * The real `cld contacts` CLI against the real Contacts API: ID and
@@ -60,7 +66,7 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
         ...args,
       ],
       cwd: home,
-      env: { ...process.env, HOME: home },
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: cliHome },
       stdin: options.stdin === undefined ? "ignore" : new Blob([options.stdin]),
       stdout: "pipe",
       stderr: "pipe",

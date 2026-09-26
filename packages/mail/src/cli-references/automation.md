@@ -1,6 +1,6 @@
 # Mail automation
 
-Read this reference when configuring managed automatic replies, conversation references, or Mail workflow YAML. Start with [Mail CLI](mail.md) for mailbox setup, permissions, search, and collaboration.
+Read this reference when configuring managed automatic replies, conversation references, or Mail workflow YAML. Start with [Mail CLI](index.md) for mailbox setup, permissions, search, and collaboration.
 
 ## Choose the right automation surface
 
@@ -488,7 +488,7 @@ Request cooperative cancellation when no further effects should start:
 cld admin workflows cancel <run-id> --yes
 ```
 
-Cancellation does not undo completed effects. If an external effect has an uncertain outcome, inspect it with `workflows effects` and record the verified outcome with `cld admin workflows resolve`. Read [Administration](admin.md) for the exact filters, states, and resolution command.
+Cancellation does not undo completed effects. If an external effect has an uncertain outcome, inspect it with `workflows effects` and record the verified outcome with `cld admin workflows resolve`. Run `cld admin reference` for the exact filters, states, and resolution command.
 
 ## Understand budgets, permissions, and recovery
 

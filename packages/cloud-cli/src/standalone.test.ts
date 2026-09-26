@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { cliHostBundle } from "../../assistant/src/artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../../assistant/src/artifacts/runtime/compile";
 import { buildEchoPlugin } from "../test/fixtures/build-plugin";
+import { installFirstPartyModules } from "../test/fixtures/first-party";
 import { type PluginCloudState, servedEchoPlugin, startPluginCloud } from "../test/fixtures/plugin-cloud";
 
 test("standalone CLI starts and runs offline without Cloud server configuration", async () => {
@@ -24,6 +25,8 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
       new Response(build.stderr).text(),
     ]);
     expect(buildExit, `${buildOut}\n${buildErr}`).toBe(0);
+    // First-party modules are plugins like any other; the binary loads them from disk.
+    await installFirstPartyModules(join(directory, ".config"), ["assistant", "grids"]);
 
     const run = async (args: string[], extraEnv: Record<string, string> = {}) => {
       const child = Bun.spawn([join(directory, "build", `cld_${target}`), ...args], {
@@ -100,9 +103,15 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
       await echoServer.stop(true);
     }
     const listed = await run(["plugins", "list", "--json"]);
-    expect(JSON.parse(listed.stdout).plugins).toEqual([
-      { profile: null, name: "echo", app: null, installed: "1.0.0", available: null, status: "ok", source: plugin },
-    ]);
+    expect(JSON.parse(listed.stdout).plugins).toContainEqual({
+      profile: null,
+      name: "echo",
+      app: null,
+      installed: "1.0.0",
+      available: null,
+      status: "ok",
+      source: plugin,
+    });
     expect((await run(["plugins", "remove", "echo"])).exitCode).toBe(0);
 
     // The same module served by a Cloud: installed for one profile, verified, and run from the store.
@@ -161,6 +170,7 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
         ],
         {
           HOME: homedir(),
+          XDG_CONFIG_HOME: join(directory, ".config"),
           ...(chromium ? { CLOUD_CLI_CHROMIUM: chromium } : {}),
         },
       );

@@ -5,6 +5,12 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "core",
+  cli: {
+    account: { module: "src/cli/account.ts", references: "src/cli-references/account" },
+    admin: { module: "src/cli/admin.ts", references: "src/cli-references/admin" },
+    apps: { module: "src/cli/apps.ts", references: "src/cli-references/apps" },
+    capabilities: { module: "src/cli/capabilities.ts", references: "src/cli-references/capabilities" },
+  },
   name: "Core",
   icon: "ti ti-cloud",
   description: "Auth, search, admin, and platform services.",

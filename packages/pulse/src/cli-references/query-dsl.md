@@ -333,4 +333,4 @@ events app.error since 24h where severity=critical limit 100
 states integration.online since 10m where integration=webshop limit 200
 ```
 
-Return to the [Pulse CLI reference](pulse.md) for discovery, saved queries, dashboards, sources, and access.
+Return to the [Pulse CLI reference](index.md) for discovery, saved queries, dashboards, sources, and access.

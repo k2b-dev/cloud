@@ -3,6 +3,7 @@ import { germanToolSearchDescriptions, germanToolSearchLabels, toolSearchLinks }
 
 export const app = defineApp({
   id: "tools",
+  cli: { tools: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Tools",
   icon: "ti ti-tools",
   description: "Utility tools for day-to-day work tasks.",

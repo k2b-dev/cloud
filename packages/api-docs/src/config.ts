@@ -13,6 +13,7 @@ import { defineApp } from "@k2b/cloud";
  */
 export const app = defineApp({
   id: "api-docs",
+  cli: { "api-docs": { module: "src/cli.ts", references: "src/cli-references" } },
   name: "API Docs",
   icon: "ti ti-books",
   description: "Aggregated OpenAPI documentation for every Cloud app.",

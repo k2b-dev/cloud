@@ -35,14 +35,14 @@ Read the relevant reference before constructing configuration; examples are not 
 
 | Task | Reference and authoritative discovery |
 | --- | --- |
-| Tables, all field types, generated IDs, formats, Views, Forms, finalization | [Schema and records](grids-schema.md); `cld grids fields type <type> --json` includes `configSchema`; `records shape <table> --json` gives writable values |
-| Documents, HTML/Liquid, numbering, PDF, CSV, JSON, XML, SEPA and DATEV | [Documents and exports](grids-documents.md); `document-templates reference --json` includes create/update schemas; `documents renderers --json` includes each installed profile's `inputSchema` |
+| Tables, all field types, generated IDs, formats, Views, Forms, finalization | [Schema and records](schema.md); `cld grids fields type <type> --json` includes `configSchema`; `records shape <table> --json` gives writable values |
+| Documents, HTML/Liquid, numbering, PDF, CSV, JSON, XML, SEPA and DATEV | [Documents and exports](documents.md); `document-templates reference --json` includes create/update schemas; `documents renderers --json` includes each installed profile's `inputSchema` |
 | Custom App pages, blocks, bindings and runtime operations | [Publish a Grids App](#publish-a-grids-app); `cld grids apps reference --json` includes the complete recursive `definitionSchema` and semantic checks |
 | GQL clauses, joins, formulas, metadata and query context | [Query data with GQL](#query-data-with-gql); `cld grids gql reference --json`, `cld grids formulas reference --json` |
 | Workflow inputs, triggers, actions, expressions, captures and export confirmation | [Build and operate workflows](#build-and-operate-workflows); `cld grids workflows reference --json` |
-| Whole business process and audience isolation | [Build a business application](grids-build-apps.md) |
+| Whole business process and audience isolation | [Build a business application](build-apps.md) |
 
-For full request/response schemas, including nested table, View and Form options, use [API Docs](api-docs.md): `cld api-docs operations grids --json`, then `cld api-docs show grids <METHOD> <PATH> --json` with the exact returned method/path. Do not infer writable fields from a GET response. JSON Schema describes structural constraints; permission, lifecycle, cross-field and publication checks still apply. Run the matching validation/preview operation before applying a definition.
+For full request/response schemas, including nested table, View and Form options, use the API Docs module (`cld api-docs reference`): `cld api-docs operations grids --json`, then `cld api-docs show grids <METHOD> <PATH> --json` with the exact returned method/path. Do not infer writable fields from a GET response. JSON Schema describes structural constraints; permission, lifecycle, cross-field and publication checks still apply. Run the matching validation/preview operation before applying a definition.
 
 Use the references as a map, then read only the relevant live contract:
 
@@ -113,7 +113,7 @@ requested table as Markdown or claim it appeared based only on tool metadata.
 This is capability input, not a `gql run` CLI flag. Editor links carry URL-encoded
 GQL and its source; very long queries may not have a link.
 
-For an inventory, CRM, invoicing, expense or merchandise-management application, first read [Build a business application](grids-build-apps.md). It connects model choices, permissions, atomic transitions, templates and scenario-specific acceptance checks. This reference supplies the individual commands.
+For an inventory, CRM, invoicing, expense or merchandise-management application, first read [Build a business application](build-apps.md). It connects model choices, permissions, atomic transitions, templates and scenario-specific acceptance checks. This reference supplies the individual commands.
 
 Work from discovery to mutation, then read the result back.
 
@@ -339,7 +339,7 @@ Important encodings:
 - `duration` accepts seconds, `MM:SS`, or `HH:MM:SS` and stores integer seconds.
 - `id`, formula, lookup, rollup, HTML template, and timestamp fields must not be sent in record writes.
 
-For every configuration property, defaults and constraints, see [Schema and records](grids-schema.md). In particular, generated `id` supports seven strategies; sequential strategies support `assignment: "finalization"` after enabling table Finalization. It is not merely a system metadata field.
+For every configuration property, defaults and constraints, see [Schema and records](schema.md). In particular, generated `id` supports seven strategies; sequential strategies support `assignment: "finalization"` after enabling table Finalization. It is not merely a system metadata field.
 
 `html_template` renders Liquid and CSS per record. Inspect `fields type html_template --json` for its configuration. Use stable public field IDs in `record.data`, and preview before using `raw`. HTML fields are stored-table output only: no filtering, sorting, grouping, aggregation, formula use, relation lookup, or recursive HTML templates. Default exports omit them; explicit HTML exports require a query limit of at most 1,000 records. One read renders at most 2,000 HTML cells and 32 MB total. A Rendered HTML App block displays one such field in a non-interactive sandbox; immutable downloadable output belongs in Documents.
 

@@ -441,6 +441,6 @@ Treat JSON fields as the contract and tolerate additional fields.
 
 Load only the reference needed for the task:
 
-- [Table formulas](notebooks-formulas.md): read when creating or changing formulas inside Markdown tables.
+- [Table formulas](formulas.md): read when creating or changing formulas inside Markdown tables.
 
 The formula reference lists the supported functions. Do not assume unlisted formula functions exist.

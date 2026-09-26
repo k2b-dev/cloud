@@ -2,6 +2,12 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The spaces module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-spaces-cli-"));
+await installFirstPartyModules(cliHome, ["spaces"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 /**
  * `cld spaces` against a recording mock of the Spaces REST API: addressing,
@@ -180,6 +186,7 @@ const cld = async (args: string[], stdin?: string) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", base, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
+    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
     stdin: stdin === undefined ? "ignore" : new Blob([stdin]),
     stdout: "pipe",
     stderr: "pipe",

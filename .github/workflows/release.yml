@@ -308,6 +308,21 @@ jobs:
           "$prefix/cld" --version | grep -F "$VERSION"
           "$prefix/cld" update --version "$VERSION" --yes --skills-dir "$RUNNER_TEMP/cld-skills"
           test -f "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"
+      - name: Install the served plugins and run a module against the booted stack
+        env:
+          CLD_CONFIG: ${{ runner.temp }}/cld-config/config.json
+          XDG_CONFIG_HOME: ${{ runner.temp }}/cld-config
+        run: |
+          set -euo pipefail
+          cld="$RUNNER_TEMP/cld-bin/cld"
+          # The stack has no OAuth app; the recovery admin session acts as the bearer token.
+          token=$(curl --silent --fail -X POST http://127.0.0.1:3000/api/auth/admin-login \
+            -H 'content-type: application/json' --data '{"token":"release-smoke"}' | jq -r .session_token)
+          "$cld" --server http://127.0.0.1:3000 --token "$token" plugins list --json | jq -e '.plugins | map(.name) | index("faq") and index("apps")'
+          "$cld" --server http://127.0.0.1:3000 --token "$token" plugins install --all
+          "$cld" --server http://127.0.0.1:3000 --token "$token" apps list --json | jq -e '.items | map(.id) | index("faq")'
+          "$cld" --server http://127.0.0.1:3000 --token "$token" faq list --json | jq -e '.items | type == "array"'
+          "$cld" faq reference | grep -q '^# '
       - if: always()
         run: docker rm --force app-core app-faq gateway postgres nats valkey || true
 

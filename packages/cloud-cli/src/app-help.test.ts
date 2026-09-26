@@ -1,36 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import type { CloudCliContext, CloudCliModule } from "@k2b/cloud/cli";
-import accountsCliModule from "@k2b/cloud-app-accounts/cli";
-import apiDocsCliModule from "@k2b/cloud-app-api-docs/cli";
-import contactsCliModule from "@k2b/cloud-app-contacts/cli";
-import faqCliModule from "@k2b/cloud-app-faq/cli";
-import filesv2CliModule from "@k2b/cloud-app-filesv2/cli";
-import gridsCliModule from "@k2b/cloud-app-grids/cli";
-import ipaHostsCliModule from "@k2b/cloud-app-ipa-hosts/cli";
-import mailCliModule from "@k2b/cloud-app-mail/cli";
-import notebooksCliModule from "@k2b/cloud-app-notebooks/cli";
-import oauthCliModule from "@k2b/cloud-app-oauth/cli";
-import pulseCliModule from "@k2b/cloud-app-pulse/cli";
-import spacesCliModule from "@k2b/cloud-app-spaces/cli";
-import toolsCliModule from "@k2b/cloud-app-tools/cli";
-import venueCliModule from "@k2b/cloud-app-venue/cli";
+import { FIRST_PARTY_MODULES, firstPartyModuleSource } from "../test/fixtures/first-party";
 
-const appModules = [
-  accountsCliModule,
-  apiDocsCliModule,
-  contactsCliModule,
-  faqCliModule,
-  filesv2CliModule,
-  gridsCliModule,
-  ipaHostsCliModule,
-  mailCliModule,
-  notebooksCliModule,
-  oauthCliModule,
-  pulseCliModule,
-  spacesCliModule,
-  toolsCliModule,
-  venueCliModule,
-];
+/** Every first-party module, loaded from its source: each one must follow the host's help contract. */
+const appModules: CloudCliModule[] = await Promise.all(
+  Object.keys(FIRST_PARTY_MODULES).map(async (name) => {
+    const module = ((await import(firstPartyModuleSource(name))) as { default: CloudCliModule }).default;
+    if (module.name !== name) throw new Error(`Module ${name} exports the name "${module.name}"`);
+    return module;
+  }),
+);
 
 const renderHelp = async (module: CloudCliModule, path: string[]): Promise<string[]> => {
   const lines: string[] = [];

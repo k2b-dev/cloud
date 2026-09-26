@@ -6,6 +6,12 @@ import type { User } from "@k2b/cloud/contracts";
 import { encryptSecret } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The mail module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-mail-cli-"));
+await installFirstPartyModules(cliHome, ["mail"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 /**
  * The real `cld mail` everyday commands against the real Mail API and a
@@ -49,7 +55,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", cliEntry, "--server", serverUrl, "--token", "cli-test", ...args],
       cwd: home,
-      env: { ...process.env, HOME: home },
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: cliHome },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

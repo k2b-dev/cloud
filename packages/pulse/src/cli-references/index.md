@@ -245,7 +245,7 @@ cld pulse query delete "Checkout errors" --yes
 
 `query save` compiles first and rejects invalid input. There is currently no saved-query update command; delete and recreate the saved query when its definition must change.
 
-Read [Pulse Query DSL](pulse-query-dsl.md) for the complete grammar, defaults, aggregations, limits, quoting, and result semantics.
+Read [Pulse Query DSL](query-dsl.md) for the complete grammar, defaults, aggregations, limits, quoting, and result semantics.
 
 ## Build dashboards
 
@@ -279,7 +279,7 @@ cld pulse dashboards unpublish "Operations"
 
 Public snapshots expose the rendered layout and widget-bound values. They omit Dashboard DSL, query text, source IDs, and dimensions from returned events and states. This limits accidental exposure but does not make a public link private.
 
-Read [Pulse Dashboard DSL](pulse-dashboard-dsl.md) for the complete authoring language, layout rules, controls, widget compatibility, conditions, and public-display behavior.
+Read [Pulse Dashboard DSL](dashboard-dsl.md) for the complete authoring language, layout rules, controls, widget compatibility, conditions, and public-display behavior.
 
 ## Manage sources
 
@@ -321,7 +321,7 @@ cld pulse source-tokens revoke "Warehouse importer" production-job --yes
 
 `cld pulse ingest --source <source>` sends a batch through the signed-in user's authenticated API access into that enabled source. External collectors use `/api/pulse/ingest` with a source token instead.
 
-Read [Pulse ingest](pulse-ingest.md) for the complete batch schema, collector request, source-token behavior, limits, transaction semantics, and idempotent retries.
+Read [Pulse ingest](ingest.md) for the complete batch schema, collector request, source-token behavior, limits, transaction semantics, and idempotent retries.
 
 ## Manage access
 
@@ -674,9 +674,9 @@ principal selector = --user <ref> | --group <ref> | --authenticated
 
 ## Further references
 
-- [Pulse Query DSL](pulse-query-dsl.md) is the complete query grammar and execution reference.
-- [Pulse Dashboard DSL](pulse-dashboard-dsl.md) is the complete dashboard authoring reference.
-- [Pulse ingest](pulse-ingest.md) is the complete collector and batch contract.
+- [Pulse Query DSL](query-dsl.md) is the complete query grammar and execution reference.
+- [Pulse Dashboard DSL](dashboard-dsl.md) is the complete dashboard authoring reference.
+- [Pulse ingest](ingest.md) is the complete collector and batch contract.
 
 ### Absolute analytics periods
 

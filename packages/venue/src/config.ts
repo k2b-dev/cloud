@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "venue",
+  cli: { venue: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Venues",
   icon: "ti ti-building-carousel",
   description: "Venues, opening hours, staffing shifts, public status pages, and anonymous feedback.",

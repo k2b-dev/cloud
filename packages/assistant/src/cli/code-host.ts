@@ -5,7 +5,20 @@ import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capa
 import { createCodeHostHttp } from "./code-host-http";
 import { hostIpc } from "./code-host-ipc";
 
-declare const __CLD_STANDALONE__: boolean;
+/** Hidden `cld assistant` command that runs the code host in a child process. */
+export const CODE_HOST_COMMAND = "code-host";
+
+/**
+ * The command that starts the code host child. Inside `cld` this module is a
+ * bundled plugin, so the child is `cld assistant code-host` on the running
+ * `cld`: the compiled binary itself, or `bun <entry>` when `cld` runs from
+ * source. Loaded from source (tests, dev), the child runs the sibling file.
+ */
+const codeHostCommand = (): string[] => {
+  if (import.meta.url.endsWith(".ts")) return [process.execPath, fileURLToPath(new URL("./code-host-process.ts", import.meta.url))];
+  const self = Bun.main.startsWith("/$bunfs/") ? [process.execPath] : [process.execPath, Bun.main];
+  return [...self, "assistant", CODE_HOST_COMMAND];
+};
 
 type Call = Parameters<AiFrontendToolHandler>[0];
 
@@ -29,14 +42,10 @@ export async function createCliCodeHost(
       return approve(request.approval);
     },
   );
-  const entry =
-    options?.entry ??
-    (typeof __CLD_STANDALONE__ !== "undefined" && __CLD_STANDALONE__
-      ? "--internal-code-host"
-      : fileURLToPath(new URL("./code-host-process.ts", import.meta.url)));
+  const command = options?.entry ? [process.execPath, options.entry] : codeHostCommand();
   const child = (() => {
     try {
-      return Bun.spawn([process.execPath, entry], {
+      return Bun.spawn(command, {
         stdin: "ignore",
         stdout: "ignore",
         stderr: "inherit",

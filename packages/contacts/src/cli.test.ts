@@ -1,4 +1,13 @@
-import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The contacts module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-contacts-cli-"));
+await installFirstPartyModules(cliHome, ["contacts"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 // Every case spawns the real CLI one or more times.
 setDefaultTimeout(30_000);
@@ -43,6 +52,7 @@ const runCli = async (server: string, args: string[]) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", server, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
+    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

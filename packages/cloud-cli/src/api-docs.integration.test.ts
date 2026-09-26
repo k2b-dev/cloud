@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { installFirstPartyModules } from "../test/fixtures/first-party";
 
 const tempDirs: string[] = [];
 const repoRoot = resolve(import.meta.dir, "../../..");
@@ -31,6 +32,7 @@ describe("API Docs CLI integration", () => {
 
     const directory = await mkdtemp(join(tmpdir(), "cld-api-docs-test-"));
     tempDirs.push(directory);
+    await installFirstPartyModules(directory, ["api-docs"]);
     const configPath = join(directory, "config.json");
     await mkdir(dirname(configPath), { recursive: true });
     await writeFile(
@@ -43,7 +45,7 @@ describe("API Docs CLI integration", () => {
       const proc = Bun.spawn({
         cmd: [process.execPath, "run", "packages/cloud-cli/src/index.ts", "api-docs", "spec", "large"],
         cwd: repoRoot,
-        env: { ...process.env, CLD_CONFIG: configPath },
+        env: { ...process.env, CLD_CONFIG: configPath, XDG_CONFIG_HOME: directory },
         stdout: "pipe",
         stderr: "pipe",
       });

@@ -92,6 +92,8 @@ export const buildCliPlugin = async (params: {
     target: "bun",
     format: "esm",
     minify: true,
+    // Playwright references this optional BiDi adapter lazily; Cloud uses CDP.
+    external: ["chromium-bidi/*"],
   });
   if (!result.success) {
     throw new Error(`CLI module "${name}" failed to bundle:\n${result.logs.map((log) => String(log)).join("\n")}`);

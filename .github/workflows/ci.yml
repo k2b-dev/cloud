@@ -53,7 +53,7 @@ jobs:
           shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/workflows/)'
           {
             echo "cloud=$(match "$shared")"
-            echo "grids=$(match '^(packages/grids/|skills/cloud-cli/references/grids\.md)')"
+            echo "grids=$(match '^packages/grids/')"
             echo "ui=$(match '^(packages/ui/|fixtures/ui-ssr/)')"
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"

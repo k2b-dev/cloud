@@ -46,14 +46,16 @@ bun run packages/cloud-cli/src/index.ts --server http://localhost:3000 --token c
 
 ## Plugins
 
-Cloud applications serve their `cld` commands as plugins. Each profile installs
-and locks the versions its Cloud serves:
+Every Cloud application serves its `cld` commands as a plugin, the built-in
+ones included; `cld` itself has only `login`, `profile`, `plugins`, `update`,
+and `help`. Each profile installs and locks the versions its Cloud serves:
 
 ```bash
 cld plugins list
 cld plugins install --all
 cld plugins update --all
 cld plugins remove inventory
+cld notebooks reference
 ```
 
 Package plugins install for every profile from a path, a `.tgz`, or
@@ -108,6 +110,8 @@ bun run packages/cloud-cli/src/index.ts profile set local \
 ```
 
 ## Notebooks
+
+After `cld plugins install notebooks` for the profile:
 
 ```bash
 bun run packages/cloud-cli/src/index.ts notebooks ls

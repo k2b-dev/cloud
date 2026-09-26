@@ -2,7 +2,7 @@
 
 ## What plugins are
 
-Cloud apps serve their `cld` commands as plugins. `cld plugins install <name>` downloads one from the current profile's Cloud, verifies every file's SHA-512, and locks that version for the profile. Package plugins (a local path, a `.tgz`, or `npm:<package>`) add commands for every profile, for development or for commands no Cloud serves.
+Every Cloud app serves its `cld` commands as a plugin, the built-in apps included; `cld` itself only signs in, manages profiles and plugins, and updates. `cld plugins install <name>` downloads one from the current profile's Cloud, verifies every file's SHA-512, and locks that version for the profile. Package plugins (a local path, a `.tgz`, or `npm:<package>`) add commands for every profile, for development or for commands no Cloud serves.
 
 A plugin runs inside `cld`, unsandboxed, with the user's Cloud credentials.
 
@@ -29,6 +29,15 @@ cld plugins remove mail
 A command whose plugin is missing fails with `run cld plugins install <name>`: install it when the user's task needs that module. `update --all` covers every profile. `cld login` offers the Cloud's plugins after signing in (`--yes` installs them, `--no-plugins` skips).
 
 A `403` means the operator allows plugins only for full accounts; tell the user instead of retrying.
+
+## Read a module's reference
+
+```bash
+cld mail reference
+cld mail reference compose.md
+```
+
+`reference` prints the plugin's entry page; a file argument prints one of the files it links to. An unknown file lists the available ones.
 
 ## Package plugins
 

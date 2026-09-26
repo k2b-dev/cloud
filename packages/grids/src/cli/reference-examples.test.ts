@@ -9,10 +9,10 @@ import { filterOperatorsForType, validateFilterValue } from "../service/filter-c
 import { DOCUMENT_TEMPLATE_REFERENCE } from "./documents-support";
 import { fieldTypeReferences } from "./schema-support";
 
-const references = ["grids.md", "grids-schema.md", "grids-documents.md", "grids-build-apps.md"];
+const references = ["index.md", "schema.md", "documents.md", "build-apps.md"];
 
 test("form guide covers the public config, input properties and validation operators", async () => {
-  const markdown = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids-schema.md", import.meta.url)).text();
+  const markdown = await Bun.file(new URL("../cli-references/schema.md", import.meta.url)).text();
   const guide = markdown.split("## Forms")[1]!;
   for (const key of Object.keys(PublicFormConfigSchema.shape)) expect(guide).toContain(`\`${key}\``);
   for (const entry of PublicFormConfigSchema.shape.fields.element.options) {
@@ -24,7 +24,7 @@ test("form guide covers the public config, input properties and validation opera
 });
 
 test("command index covers every registered Grids command", async () => {
-  const markdown = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+  const markdown = await Bun.file(new URL("../cli-references/index.md", import.meta.url)).text();
   const index = markdown.split("## Command index")[1]!.match(/```text\n([\s\S]*?)```/)![1]!;
   const paths = index
     .trim()
@@ -38,7 +38,7 @@ test("command index covers every registered Grids command", async () => {
 });
 
 test("operator discovery names every Grids setting", async () => {
-  const markdown = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids.md", import.meta.url)).text();
+  const markdown = await Bun.file(new URL("../cli-references/index.md", import.meta.url)).text();
   const config = await Bun.file(new URL("../config.ts", import.meta.url)).text();
   const settings = [...config.matchAll(/^    "(grids\.[^"]+)":/gm)].map((match) => match[1]!);
   expect(settings.length).toBeGreaterThan(0);
@@ -46,12 +46,12 @@ test("operator discovery names every Grids setting", async () => {
 });
 
 test("schema guide lists every registered field type", async () => {
-  const markdown = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids-schema.md", import.meta.url)).text();
+  const markdown = await Bun.file(new URL("../cli-references/schema.md", import.meta.url)).text();
   for (const field of fieldTypeReferences()) expect(markdown).toContain(`| \`${field.type}\` |`);
 });
 
 test("JSON filter discovery and guide cover the compiler operators", async () => {
-  const markdown = await Bun.file(new URL("../../../../skills/cloud-cli/references/grids-schema.md", import.meta.url)).text();
+  const markdown = await Bun.file(new URL("../cli-references/schema.md", import.meta.url)).text();
   const guide = markdown.split("## JSON filters")[1]!.split("## Forms")[0]!;
   for (const field of fieldTypeReferences()) {
     expect(field.filterOperators).toEqual([...filterOperatorsForType(field.type)]);
@@ -72,7 +72,7 @@ const sourceQueries = (value: unknown): string[] => {
 test("skill YAML query examples use parsable GQL clauses", async () => {
   let checked = 0;
   for (const file of references) {
-    const markdown = await Bun.file(new URL(`../../../../skills/cloud-cli/references/${file}`, import.meta.url)).text();
+    const markdown = await Bun.file(new URL(`../cli-references/${file}`, import.meta.url)).text();
     for (const block of markdown.matchAll(/```yaml\n([\s\S]*?)```/g)) {
       for (const source of sourceQueries(parse(block[1]!))) {
         const result = parseGridsQueryDsl(source);

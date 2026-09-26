@@ -266,17 +266,10 @@ describe("cld plugins command", () => {
       expect(pluginsHelp.stdout).toContain("cld plugins run <name> [args...]");
 
       const reservedSource = join(configHome, "reserved-plugin");
-      await writePlugin(reservedSource, { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("grids"));
+      await writePlugin(reservedSource, { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("login"));
       const reserved = await runCli(["plugins", "install", reservedSource, "--yes"], configHome);
       expect(reserved.exitCode).toBe(1);
-      expect(reserved.stderr).toContain('Cannot install plugin: plugin id "grids" is reserved by a built-in cld command');
-
-      const builtIn = await runCli(
-        ["--server", "https://cloud.invalid", "--token", "t", "--json", "grids", "workflows", "reference"],
-        configHome,
-      );
-      expect(builtIn.exitCode, builtIn.stderr).toBe(0);
-      expect(builtIn.stderr).toBe("");
+      expect(reserved.stderr).toContain('Cannot install plugin: plugin id "login" is reserved by a built-in cld command');
 
       const broken = await runCli(["broken", "anything"], configHome);
       expect(broken.exitCode).toBe(1);

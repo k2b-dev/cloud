@@ -2,6 +2,7 @@ import { defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "oauth",
+  cli: { oauth: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "OAuth",
   icon: "ti ti-key",
   description: "Manage OAuth/OIDC clients, redirects, scopes, and secrets.",

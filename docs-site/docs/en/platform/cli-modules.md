@@ -302,7 +302,7 @@ module.
 
 ## Design commands
 
-Every `cld` module, built-in or plugin, uses the same verbs, addresses, and
+Every `cld` module uses the same verbs, addresses, and
 flags, so a user or agent who knows one module can guess the basics of the
 next one.
 
@@ -547,8 +547,10 @@ principal resolution and output contracts.
 ## Register the module
 
 Export the module from the application package, usually from `src/cli.ts`,
-and declare it in `defineApp({ cli })`. Built-in and third-party applications
-use the same declaration.
+and declare it in `defineApp({ cli })`. Every application registers its module
+this way, including the built-in ones: `cld` itself contains no application
+module. Core serves the shared `account`, `admin`, `apps`, and `capabilities`
+modules of `@k2b/cloud/cli` from its own image.
 
 ## Serve a module from the application
 
@@ -636,10 +638,11 @@ with a `package.json` that declares the plugin manifest:
 The entry's default export is the module from `defineCliCommands()`. Its
 `name` becomes the command, `cld inventory …`, and the plugin's ID.
 
-The names of built-in modules and top-level commands (`help`, `version`,
-`login`, `logout`, `auth`, `profile`, `update`, `plugins`) are reserved.
-`cld plugins install` refuses a plugin whose ID matches one of them. Choose a
-distinct ID, such as your application ID.
+The names of the top-level commands (`help`, `version`, `login`, `logout`,
+`auth`, `profile`, `update`, `plugins`) are reserved, and `reference` is
+reserved as the first argument of every served module. `cld plugins install`
+refuses a plugin whose ID matches a reserved name. Choose a distinct ID, such
+as your application ID.
 
 Bundle the entry into one self-contained file. `cld` does not install plugin
 dependencies, so the bundle carries its own copy of `@k2b/cloud/cli`:
@@ -671,7 +674,12 @@ cld plugins remove inventory
 `cld login` offers to install the plugins that the Cloud serves once the
 sign-in succeeds. `--yes` installs them without asking, and `--no-plugins`
 skips the offer. A command whose plugin is not installed fails with a hint to
-run `cld plugins install <name>`.
+run `cld plugins install <name>`. `cld help` lists the modules installed for
+the current profile.
+
+`cld <module> reference [file]` prints a served plugin's skill references:
+`index.md` by default, or one of the further files it links to. Agents read
+them before using an unfamiliar module.
 
 `install` and `update` read the plugin's manifest, download every file, check
 each file's size and SHA-512 and the manifest digest, and load the module once
@@ -735,17 +743,16 @@ same command tree and always reaches the plugin, even when it is shadowed, so a
 new built-in command never makes an installed plugin unreachable. Use it in
 scripts that must keep working across `cld` upgrades.
 
-`cld help` lists the current profile's plugins and the package plugins next to
-the built-in modules, and prints one warning line on stderr for each package
-plugin that it skips. A broken plugin fails only its own commands. Built-in
-commands never load plugins.
+`cld help` lists the current profile's plugins and the package plugins, and
+prints one warning line on stderr for each package plugin that it skips. A
+broken plugin fails only its own commands. The top-level commands never load
+plugins.
 
 ## Plugin security
 
 A plugin is not sandboxed. It runs inside `cld` with the permissions of your
-operating-system account and receives the same `CloudCliContext` as a
-built-in module: the selected profile, the Cloud credentials, the locale, and
-the output mode. Plugins do not get extra privileges or access to other
+operating-system account and receives the `CloudCliContext` of the host: the
+selected profile, the Cloud credentials, the locale, and the output mode. Plugins do not get extra privileges or access to other
 plugins through `cld`, but their code can read any file that you can read.
 
 A plugin that a Cloud serves comes from that Cloud's application image over

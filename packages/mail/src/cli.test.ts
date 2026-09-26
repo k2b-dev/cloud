@@ -1,5 +1,13 @@
-import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { afterAll, afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The mail module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-mail-cli-"));
+await installFirstPartyModules(cliHome, ["mail"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 // Each scenario launches several cold CLI processes; bound the whole scenario, not just one launch.
 setDefaultTimeout(30_000);
@@ -94,6 +102,7 @@ const runCli = async (server: string, args: string[], input?: string) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", server, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
+    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
     stdin: input === undefined ? "ignore" : "pipe",
     stdout: "pipe",
     stderr: "pipe",

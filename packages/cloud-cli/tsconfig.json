@@ -6,31 +6,9 @@
       "@/*": ["../notebooks/src/*"],
       "@k2b/cloud/cli": ["../cloud/src/cli/index.ts"],
       "@k2b/cloud/cli/account": ["../cloud/src/cli/account.ts"],
-      "@k2b/cloud/services/*": ["../cloud/src/services/*"],
-      "@k2b/cloud-app-contacts/cli": ["../contacts/src/cli.ts"],
-      "@k2b/cloud-app-assistant/cli": ["../assistant/src/cli.ts"],
-      "@k2b/cloud-app-faq/cli": ["../faq/src/cli.ts"],
-      "@k2b/cloud-app-grids/cli": ["../grids/src/cli.ts"],
-      "@k2b/cloud-app-notebooks/cli": ["../notebooks/src/cli.ts"],
-      "@k2b/cloud-app-pulse/cli": ["../pulse/src/cli.ts"],
-      "@k2b/cloud-app-spaces/cli": ["../spaces/src/cli.ts"],
-      "@k2b/cloud-app-tools/cli": ["../tools/src/cli.ts"]
+      "@k2b/cloud/services/*": ["../cloud/src/services/*"]
     }
   },
-  "include": [
-    "./src/**/*.ts",
-    "./test/**/*.ts",
-    "../cloud/src/types/**/*.d.ts",
-    "../cloud/src/cli/**/*.ts",
-    "../assistant/src/cli.ts",
-    "../assistant/src/cli/**/*.ts",
-    "../contacts/src/cli.ts",
-    "../faq/src/cli.ts",
-    "../grids/src/cli.ts",
-    "../notebooks/src/cli.ts",
-    "../pulse/src/cli.ts",
-    "../spaces/src/cli.ts",
-    "../tools/src/cli.ts"
-  ],
+  "include": ["./src/**/*.ts", "./test/**/*.ts", "../cloud/src/types/**/*.d.ts", "../cloud/src/cli/**/*.ts"],
   "exclude": ["./dist", "./node_modules"]
 }

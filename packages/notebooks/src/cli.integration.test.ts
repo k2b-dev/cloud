@@ -5,6 +5,12 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { natsServers, testFor } from "../../../scripts/fixtures/test-infra";
+import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
+
+/** The notebooks module as a package plugin in a private config home; cld loads it like any installed module. */
+const cliHome = await mkdtemp(join(tmpdir(), "cld-notebooks-cli-"));
+await installFirstPartyModules(cliHome, ["notebooks"]);
+afterAll(() => rm(cliHome, { recursive: true, force: true }));
 
 /**
  * The real `cld notebooks` CLI against the real Notebooks API: path
@@ -40,7 +46,7 @@ if (process.env.NOTEBOOKS_CLI_CHILD !== "1") {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", cliEntry, "--server", serverUrl, "--token", "cli-test", ...args],
       cwd: options.cwd ?? home,
-      env: { ...process.env, HOME: home },
+      env: { ...process.env, HOME: home, XDG_CONFIG_HOME: cliHome },
       stdin: options.stdin === undefined ? "ignore" : new Blob([options.stdin]),
       stdout: "pipe",
       stderr: "pipe",
@@ -165,7 +171,7 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
 `;
       const loop = Bun.spawn(["bash", "-c", script], {
         cwd: home,
-        env: { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` },
+        env: { ...process.env, HOME: home, XDG_CONFIG_HOME: cliHome, PATH: `${bin}:${process.env.PATH}` },
         stdout: "pipe",
         stderr: "pipe",
       });

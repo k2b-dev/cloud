@@ -3,6 +3,7 @@ import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "grids",
+  cli: { grids: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Grids",
   icon: "ti ti-table",
   description: "Flexible tables: bases, fields, records, views, forms.",
