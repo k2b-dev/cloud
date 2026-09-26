@@ -830,11 +830,15 @@ const recordSyncFailure = async (params: {
         last_error_message = ${message}
       WHERE id = ${folder.remote_resource_id}::uuid
     `;
+      // Pausing does not fence a running sync; a late failure must not hide the pause.
       await tx`
       UPDATE mail.mailboxes
       SET
-        health = ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"},
-        health_reason = ${message}
+        health = CASE
+          WHEN sync_enabled = false THEN 'paused'
+          ELSE ${authFailure ? "auth_required" : code === "NO_SYNC_BINDING" ? "connection_required" : "degraded"}
+        END,
+        health_reason = CASE WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator' ELSE ${message} END
       WHERE id = ${folder.mailbox_id}::uuid
     `;
     })

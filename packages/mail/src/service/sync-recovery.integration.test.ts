@@ -274,6 +274,31 @@ suite("mail sync recovery", () => {
     expect(await loadImapPushPlan(fixture.bindingId)).toBeNull();
   });
 
+  test("a sync that fails after an administrator paused the mailbox leaves it paused", async () => {
+    const fixture = await createSyncedMailbox("pause-race");
+    // Pausing does not fence a sync that is already talking to the provider.
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async () => {
+      const paused = await updateMailbox({ context: ownerContext, mailboxId: fixture.mailboxId, syncEnabled: false });
+      if (!paused.ok) throw new Error(paused.error.message);
+      throw connectTimeout();
+    });
+    try {
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "CONNECT_TIMEOUT" });
+    } finally {
+      status.mockRestore();
+    }
+
+    expect(await transportState(fixture)).toMatchObject({
+      health: "paused",
+      health_reason: "Synchronization paused by a mailbox administrator",
+    });
+    expect(await requestFolderSync(fixture, "pause-race-sync")).toEqual({
+      folderId: fixture.folderId,
+      queued: false,
+      reason: "Mailbox transport is paused",
+    });
+  });
+
   test("a degraded mailbox stays paused after an administrator pauses synchronization", async () => {
     const fixture = await createSyncedMailbox("paused");
     await degradeWithTimeout(fixture);
