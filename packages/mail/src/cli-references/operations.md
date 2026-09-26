@@ -162,6 +162,10 @@ cld --json mail sync --wait --timeout-seconds 300
 cld --json mail sync folder <folder-id> --wait --timeout-seconds 300
 ```
 
+`--wait` waits until the request is handled, not until the provider sync finishes. A queued request prints `queued`; under `--json`, `result.queued` is `true` for a folder and `result.queuedFolders` counts the folders of a mailbox. `mail status` shows when a sync last completed (`sync.lastAt` under `--json`). When the mailbox cannot synchronize yet, the command still ends `confirmed` but queues nothing: it prints `not queued` with the reason, and `--json` sets `result.queued` to `false` or `result.queuedFolders` to `0` together with `result.reason`, for example `Mailbox transport is paused` or `Mailbox transport is unavailable: Provider credentials changed; verify the remote resource again`. Resume synchronization, reconnect the account, or verify the binding again before you retry.
+
+A failed sync whose binding and credentials stay valid, such as a provider connection timeout, makes the mailbox `degraded` with the provider's message as its reason. Background sync and IMAP push keep running for that mailbox, and the next sync that completes, including one you queue, makes it active again without waiting for rediscovery. Authentication failures do not take this path: Mail rechecks the binding through rediscovery, and the account may need to be reconnected.
+
 Use `--idempotency-key` when an external script may retry the same maintenance request.
 
 ## Repair projections

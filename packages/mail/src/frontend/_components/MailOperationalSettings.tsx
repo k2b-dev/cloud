@@ -202,7 +202,7 @@ export default function MailOperationalSettings(props: {
     onSuccess: () => {
       toast.success(
         lastCommand() === "sync_mailbox"
-          ? messages().mailboxSyncStarted
+          ? messages().mailboxSyncQueued
           : lastCommand() === "verify_binding"
             ? messages().providerVerificationStarted
             : messages().folderDiscoveryStarted,

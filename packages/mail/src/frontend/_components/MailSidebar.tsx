@@ -160,7 +160,7 @@ export default function MailSidebar(props: {
       if (!response.ok) throw new Error(await readApiError(response, messages().failedStartSync));
     },
     onSuccess: () => {
-      toast.success(messages().syncStarted);
+      toast.success(messages().syncQueued);
       refreshCurrentPath();
     },
     onError: (error) => prompts.error(error.message),

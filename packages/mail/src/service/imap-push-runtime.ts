@@ -216,7 +216,7 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
     FROM mail.provider_bindings binding
     JOIN mail.remote_resources resource
       ON resource.id = binding.remote_resource_id
-     AND resource.status = 'active'
+     AND resource.status IN ('active', 'degraded')
     JOIN mail.mailboxes mailbox
       ON mailbox.id = resource.mailbox_id
      AND mailbox.sync_enabled = true
@@ -267,7 +267,7 @@ const queryPlans = async (bindingId: string | null): Promise<ImapPushBindingPlan
 
 const listPlans = async (): Promise<ImapPushBindingPlan[]> => queryPlans(null);
 
-const loadPlan = async (bindingId: string): Promise<ImapPushBindingPlan | null> => (await queryPlans(bindingId))[0] ?? null;
+export const loadImapPushPlan = async (bindingId: string): Promise<ImapPushBindingPlan | null> => (await queryPlans(bindingId))[0] ?? null;
 
 const timestampMs = (value: Date | string | null): number | null => {
   if (value == null) return null;
@@ -817,7 +817,7 @@ export const runImapPushBinding = async (
 
 const defaultDependencies: ImapPushRuntimeDependencies = {
   listPlans,
-  loadPlan,
+  loadPlan: loadImapPushPlan,
   claimGeneration,
   updateHealth,
   loadRuntime: loadProviderConnectionRuntimeSnapshot,

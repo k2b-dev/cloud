@@ -7,6 +7,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { type CommandState, type MaintenanceCommandInput, maintenanceCommandInputSchema } from "../contracts";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
+import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
 import { enqueueFolderSync, enqueueMailboxSync, enqueueMessageHydration, executeBindingRediscovery } from "./sync-runtime";
@@ -207,6 +208,21 @@ const executeMaintenanceWork = async (
     throw Object.assign(new Error("Mailbox administration access was revoked before execution"), { code: "ACCESS_REVOKED" });
   }
   const target = parseRecord(command.target);
+  if (command.kind === "sync_mailbox" || command.kind === "sync_folder") {
+    const folderId = command.kind === "sync_folder" ? folderTargetSchema.parse(target).folderId : null;
+    // The sync job resolves the same execution first. When that fails, report the
+    // prerequisite instead of queueing work that cannot run and would overwrite
+    // the mailbox's recorded reason with a generic failure.
+    const execution = await resolveMailExecution({
+      mailboxId: command.mailbox_id,
+      operation: "backgroundSync",
+      folderRequirements: folderId ? [{ folderId, rights: ["read"] }] : [],
+    });
+    if (!execution.ok) {
+      const reason = execution.error.message;
+      return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
+    }
+  }
   if (command.kind === "sync_mailbox") {
     if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id) };
     const [folders] = await sql<{ count: number }[]>`
