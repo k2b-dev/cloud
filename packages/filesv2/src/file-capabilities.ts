@@ -4,14 +4,13 @@ import { FilegateError } from "@k2b/filegate";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
-import { BrowseQuerySchema } from "./contracts";
+import { BrowseQuerySchema, CONTENT_STREAM_LIMIT } from "./contracts";
 import { persistedEntryRefId, resolveEntryRefId } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { filesUrl } from "./frontend/urls";
 import { FilesError, filesService } from "./service";
 
 // Match the existing code-run file budget and stay within Cloud HTTP body budgets.
-const MAX_BYTES = 50 * 1024 * 1024;
 const Base = z.string().min(1).max(512).describe("Exact base ID returned by bases.list.");
 const Path = z.string().max(4096).describe("Path relative to this storage base; empty means its root.");
 const Location = z.object({ baseId: Base, path: Path }).strict();
@@ -70,7 +69,7 @@ const uuidKey = (key: string) => {
 };
 const Upload = Location.extend({
   path: Path.min(1),
-  size: z.number().int().min(0).max(MAX_BYTES).describe("Exact byte count of the new content."),
+  size: z.number().int().min(0).max(CONTENT_STREAM_LIMIT).describe("Exact byte count of the new content."),
   mediaType: z
     .string()
     .min(1)
@@ -174,7 +173,7 @@ export const fileQueries = {
     openWorld: false,
     stream: {
       direction: "read" as const,
-      maxBytes: MAX_BYTES,
+      maxBytes: CONTENT_STREAM_LIMIT,
       read: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
         domain(async () => {
           const source = sourceRef.parse(JSON.parse(s.id));
@@ -189,7 +188,7 @@ export const fileQueries = {
         if (!ref) return fail(err.notFound("File"));
         const file = await filesService.entry(readActor(c), ref);
         if (file.entry.directory) return fail(err.badInput("Choose a file, not a folder"));
-        if (file.entry.size > MAX_BYTES) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
+        if (file.entry.size > CONTENT_STREAM_LIMIT) return fail(err.badInput("File exceeds the 50 MiB stream budget"));
         return ok({
           ...(await result(ref.baseId, file.entry)),
           stream: {
@@ -290,7 +289,7 @@ export const fileActions = {
       }),
     stream: {
       direction: "write" as const,
-      maxBytes: MAX_BYTES,
+      maxBytes: CONTENT_STREAM_LIMIT,
       write: async (s: CapabilityStream, body: ReadableStream<Uint8Array>, c: CapabilityExecutionContext) =>
         domain(async () => {
           const ref = uploadRef.parse(JSON.parse(s.id));

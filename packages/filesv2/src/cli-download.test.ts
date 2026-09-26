@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { downloadFile } from "./cli-download";
+import { downloadFile, readFile as readLeased } from "./cli-download";
 
 const ctx = { options: { profile: "test", server: "https://cloud.test", token: "cloud-secret", output: "json" as const } };
 const directories: string[] = [];
@@ -51,4 +51,17 @@ test("download cancellation while requesting a lease cleans temporary state and 
   ).rejects.toThrow("Filegate download failed");
   expect(await readdir(dir)).toEqual([]);
   expect(process.listenerCount("SIGINT")).toBe(before);
+});
+
+test("in-memory reads refuse content above the limit and surface Cloud lease errors unchanged", async () => {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("0123456789") });
+  servers.push(server);
+  const lease = async () => ({ url: `${server.url}file`, method: "GET" as const, expires: "2099-01-01" });
+  expect(new TextDecoder().decode(await readLeased(ctx, 10, lease))).toBe("0123456789");
+  await expect(readLeased(ctx, 9, lease)).rejects.toThrow("larger than");
+  await expect(
+    readLeased(ctx, 10, async () => {
+      throw new Error("400 not_file");
+    }),
+  ).rejects.toThrow("400 not_file");
 });

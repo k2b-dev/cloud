@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-09-22
+updated: 2026-09-26
 ---
 
 # Files
@@ -381,39 +381,63 @@ not be interpreted as totals for a configured prefix.
 ## Use the CLI
 
 The same operations are available through `cld filesv2`. Sign in with
-`cld login --server <Cloud URL>`, then use a base ID from `bases list`:
+`cld login --server <Cloud URL>`. Commands use shell-like verbs and address
+files as `<area>:/path`: `me` is your personal area, and a group area is its
+exact group name or group ID. `cld filesv2 ls` lists your areas with their IDs;
+a full area ID such as `cloud:groups:<uuid>` also works as the area. A file ID,
+the `resourceId` from `stat --json`, works in place of any file address.
 
 ```sh
-cld filesv2 bases list --json
-cld filesv2 list <base-id> --path Documents --sort modified --order desc --json
-cld filesv2 download <base-id> Documents/report.pdf --out ./report.pdf --json
-cld filesv2 documents create <base-id> Documents/Minutes --kind text --json
-cld filesv2 edit-url <base-id> Documents/Minutes.odt
-cld filesv2 recent --json
-cld filesv2 favorites add <base-id> Documents --json
-cld filesv2 shares list --after <next> --json
-cld filesv2 admin shares list --json
-cld filesv2 admin shares revoke <share-id> --json
-cld filesv2 admin uploads list --json
-cld filesv2 admin inventory --area freeipa --kind groups --json
-cld filesv2 admin configuration get --json
+cld filesv2 ls --json
+cld filesv2 ls me:/Documents --sort modified --order desc --json
+cld filesv2 tree team:/Projects --depth 2
+cld filesv2 stat me:/Documents/report.pdf --json
+cld filesv2 cat me:/Notes/todo.md
+cld filesv2 get me:/Documents/report.pdf ./report.pdf --json
+cld filesv2 put ./report.pdf team:/2026/Q3/ --parents --json
+cld filesv2 mkdir -p me:/Documents/2026
+cld filesv2 mv me:/Documents/draft.odt me:/Documents/final.odt
+cld filesv2 cp me:/Documents/final.odt team:/Shared/
+cld filesv2 rm me:/Documents/old.txt --yes
+cld filesv2 trash restore me <trash-id> --json
+cld filesv2 versions list me:/Documents/report.pdf --json
+cld filesv2 shares add me:/Documents/report.pdf --title "Report" --expires-in 7d --json
+cld filesv2 shares rm <share-id> --yes
+cld filesv2 documents create me:/Documents/Minutes --kind text --json
+cld filesv2 edit-url me:/Documents/Minutes.odt
+cld filesv2 favorites add me:/Documents --json
+cld filesv2 admin inventory --storage freeipa --kind groups --json
 cld filesv2 admin configuration set --input-file ./filesv2.json --json
-cld filesv2 admin adopt <identity-uuid> --area cloud --kind users --yes
-cld filesv2 admin directories create <identity-uuid> --area freeipa --kind groups --yes
-cld filesv2 admin directories archive editors --area freeipa --kind groups --yes
-cld filesv2 admin archives list --area freeipa --json
-cld filesv2 admin files list --area freeipa --archive-id <archive-uuid> --json
+cld filesv2 admin adopt <identity-uuid> --storage cloud --kind users --yes
+cld filesv2 admin directories create <identity-uuid> --storage freeipa --kind groups --yes
+cld filesv2 admin directories archive freeipa/groups/editors --yes
+cld filesv2 admin archives list --storage freeipa --json
+cld filesv2 admin files ls freeipa/archive/<archive-uuid>:/Documents --json
 cld filesv2 admin archives restore <archive-uuid> --confirm-path groups/editors --yes
+cld filesv2 admin shares rm <share-id> --yes
 ```
 
-Lists return one page. Use `--json` to preserve metadata and the `next` cursor;
-pass that cursor unchanged as `--after` with the same query and sort options.
-`list` and `search` accept `--sort name|modified|size`, `--order asc|desc`,
-`--type all|files|directories`, and `--no-group-folders`.
-`--jsonl` emits one complete item per
-line for lists. Downloads stream directly to a new local file and never
+Names are matched exactly and never guessed. When a name matches several areas,
+for example a Cloud and a FreeIPA group with the same name, the command fails
+with status 409 and lists every candidate with its ID. `ls` does not offer
+personal Linux groups as areas; such an area stays reachable by its full area
+ID.
+
+`ls` returns one folder page. Use `--json` to preserve metadata and the `next`
+cursor; pass that cursor unchanged as `--after` with the same folder and sort
+options. `ls` and `search` accept `--sort name|modified|size`,
+`--order asc|desc`, `--type all|files|directories`, and `--no-group-folders`.
+`--jsonl` emits one complete item per line for lists. `tree` follows every page
+down to `--depth` levels and stops with an error above 10,000 entries.
+
+`get` and `cat --out` stream directly from Filegate to a new local file and never
 overwrite an existing path; their structured result contains only `path` and
-`bytes`. The CLI must be able to reach Filegate's public download address.
+`bytes`. `get` downloads a folder as a ZIP. `cat` prints UTF-8 text up to 50 MiB
+and refuses binary content. The CLI must be able to reach Filegate's public
+download address. `put` needs `--replace` to replace an existing file.
+`rm` moves entries to the trash and needs `--yes`; `mv` renames or moves only
+inside one area. Multi-entry commands exit with status 1 when any entry
+failed.
 
 Administrator commands use the same permissions as the UI. Configuration
 updates accept a complete JSON configuration through `--input-file` or
@@ -425,8 +449,9 @@ Use `cld filesv2 <command> --help` for the command's arguments.
 `admin directories retire` stops Files access and automatic recreation while
 leaving existing files and Unix permissions untouched. Use archival when access
 through the filesystem must also be restricted. Administrator file commands
-accept either a directory name and kind or an archive ID. They use the same
-download leases as the ordinary file browser.
+address a directory as `<storage>/<users|groups>/<name>` or an archive as
+`<storage>/archive/<archive-id>`, followed by `:/path` for an entry inside it.
+They use the same download leases as the ordinary file browser.
 
 Permanent deletion commands require both `--yes` and `--confirm-path` matching
 the complete path returned by the inventory or administrator browser. Do not
@@ -507,10 +532,10 @@ administration-only visibility. Creating a file additionally checks the current
 target's write permissions and applies its Unix execution identity and ownership.
 Template permissions do not change permissions on the resulting file.
 
-The CLI exposes `templates list|get|use`,
+The CLI exposes `templates list|show|use`,
 `admin templates list|upload|import|update|replace|delete`,
-`admin templates access list|grant|revoke`, and `documents markdown`.
-`upload --replace --expected-revision <revision>` adds a save precondition;
+`admin templates access list|grant|revoke`, and `documents create --kind markdown`.
+`put --replace --expected-revision <revision>` adds a save precondition;
 read the revision with `stat`. Keep the same revision and idempotency key when
 recovering an uncertain upload. For unmanaged files, the observation token is
 `fs:<modified>:<size>` from the stat response.
@@ -571,7 +596,7 @@ until expiry, subject to storage checks, even after Cloud access is revoked.
 
 Use `filesv2.content.read` and the authenticated capability stream mechanism
 when processing bytes inside code. The direct lease is for a user download,
-not a way around the stream budget. `cld filesv2 download ... --out ...` obtains
+not a way around the stream budget. `cld filesv2 get <file>` obtains
 a lease and saves the file without printing the private URL; the explicit
 `cld capabilities query filesv2 content.download` command returns the lease.
 See [App capabilities](/en/docs/platform/capabilities) for discovery and consent.
