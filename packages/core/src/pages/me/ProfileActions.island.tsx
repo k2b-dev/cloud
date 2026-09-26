@@ -3,7 +3,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Avatar, Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 
@@ -30,6 +30,8 @@ type Props = {
   appName?: string;
   freeIpaEnabled: boolean;
   actions?: ("avatar" | "profile" | "details" | "extend")[];
+  /** Render the avatar itself as the change-avatar button instead of a button row. */
+  trigger?: "avatar";
 };
 
 const SSH_KEY_PATTERN = /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521))\s+[A-Za-z0-9+/=]+/;
@@ -420,6 +422,35 @@ export default function ProfileActions(props: Props) {
         ]
       : []),
   ].filter((action) => enabledActions.has(action.id));
+
+  if (props.trigger === "avatar") {
+    const avatarSrc = props.avatarHash
+      ? `/api/accounts/users/${encodeURIComponent(props.userId)}/avatar?rev=${encodeURIComponent(props.avatarHash)}`
+      : undefined;
+    return (
+      <button
+        type="button"
+        class="group relative shrink-0 self-start rounded-full sm:self-center transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)]"
+        aria-label={t().changeAvatar}
+        title={t().changeAvatar}
+        onClick={() => void handleChangeAvatar()}
+      >
+        <Avatar
+          name={props.displayName || props.uid}
+          src={avatarSrc}
+          size="lg"
+          class="bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
+          style="view-transition-name: user-avatar"
+        />
+        <span
+          class="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ui-surface)] text-secondary shadow-[var(--ui-shadow-surface)] transition-colors group-hover:text-primary group-focus-visible:text-primary"
+          aria-hidden="true"
+        >
+          <i class="ti ti-camera text-xs" />
+        </span>
+      </button>
+    );
+  }
 
   return (
     <Show when={actions.length > 0}>
