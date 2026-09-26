@@ -121,7 +121,7 @@ Work from discovery to mutation, then read the result back.
 
    ```bash
    cld apps list --search grids --json
-   cld grids list --json
+   cld grids bases ls --json
    cld grids use Bookshop
    cld grids current --json
    ```
@@ -129,16 +129,16 @@ Work from discovery to mutation, then read the result back.
 2. Inspect the live schema before constructing payloads:
 
    ```bash
-   cld grids tables list --json
-   cld grids fields list Authors --json
-   cld grids records shape Authors --json
+   cld grids tables ls --json
+   cld grids fields list Bookshop:Authors --json
+   cld grids records shape Bookshop:Authors --json
    ```
 
 3. Read current data before updating it. Keep the returned public ID and `version` when the next write depends on current state:
 
    ```bash
-   cld grids records list Authors --limit 100 --json
-   cld grids records get Authors <record-id> --json
+   cld grids records ls Bookshop:Authors --limit 100 --json
+   cld grids records show <record-id> --json
    ```
 
 4. Validate languages and templates before saving them:
@@ -155,25 +155,54 @@ Work from discovery to mutation, then read the result back.
 
 ## Resolve resources and pass input
 
-### Base selection
+### Addresses
 
-Most base-scoped commands accept a leading base argument or `--base <ref>`. Once `cld grids use <base>` sets a default, omit the base where the command has enough remaining arguments to be unambiguous.
+Every argument that names a base, table, or record accepts these forms:
+
+| Resource | Forms | Example |
+| --- | --- | --- |
+| Base | Public ID or exact name | `Bookshop`, `bk001A` |
+| Table | `<base>:<table>` with the table's ID or exact name; a table ID alone; or a name in the default base | `Bookshop:Authors`, `tb001A`, `Authors` |
+| Record | `<base>:<table>/<record id>` or a record ID alone | `Bookshop:Authors/Rc01Ab`, `Rc01Ab` |
+
+Grids records have no per-table record number, so the last path segment of a
+record address is always the record's public ID. A table ID resolves even when
+the named base does not own it; a record must belong to the table or base named
+with it. Names are exact and case-sensitive. When a name
+matches several resources, the server answers `409` and lists every candidate
+as `path (id)`; nothing is guessed, so retry with one of the listed IDs. The
+split happens at the first `:` and, for records, at the last `/`, so a base
+name that contains `:` needs its ID instead.
 
 ```bash
-cld grids tables list Bookshop --json
-cld grids tables list --base Bookshop --json
-cld grids use Bookshop
-cld grids tables list --json
+cld grids tables show Bookshop:Authors --json
+cld grids records ls Bookshop:Authors --limit 20 --json
+cld grids records show Bookshop:Authors/Rc01Ab --json
+cld grids records rm Rc01Ab --yes
 ```
 
-A base reference can be an exact name or 6-character public ID. Table, field, view, form, Grids App, document-template, workflow, and launcher commands resolve the same two forms inside their parent scope. Prefer public IDs from JSON output in unattended automation.
+The older forms still work where a command takes them: a leading base
+argument, `--base`, `--table`, and `--record`, and `[base] <table> <record>`
+positionals. Once `cld grids use <base>` sets a default, a table name alone
+resolves in that base:
+
+```bash
+cld grids tables ls Bookshop --json
+cld grids use Bookshop
+cld grids tables ls --json
+cld grids records ls Authors --json
+```
+
+Field, view, form, Grids App, document-template, workflow, and launcher
+references stay an exact name or public ID inside their parent scope. Prefer
+public IDs from JSON output in unattended automation.
 
 ### Structured input
 
 Commands with JSON bodies accept `--body <json>`, `--body-file <path>`, or `--stdin`. Specialized inputs follow the same pattern, for example `--query-file`, `--source-file`, `--inputs-file`, and `--expression-file`.
 
 ```bash
-cld grids records create Authors --body-file record.json --json
+cld grids records add Bookshop:Authors --body-file record.json --json
 cat records.json | cld grids records import --table Authors --stdin --json
 cld grids workflows create --name "Check in" --source-file workflow.yml --enabled --json
 ```
@@ -194,9 +223,9 @@ numeric style and precision, not locale or query values.
 ```bash
 cld grids templates list --json
 cld grids templates instantiate inventory --name "Equipment" --use --json
-cld grids bases create Bookshop --description "Books and loans" --use --json
-cld grids tables create --name Authors --description "People who wrote books" --json
-cld grids tables get Authors --json
+cld grids bases add Bookshop --description "Books and loans" --use --json
+cld grids tables add --name Authors --description "People who wrote books" --json
+cld grids tables show Bookshop:Authors --json
 cld grids tables mutation-policy Authors --json
 ```
 
@@ -226,7 +255,7 @@ Built-in templates create complete example bases with schema, views, Grids Apps,
 records are included by default; pass `--empty` to keep the complete configuration without those records. Commands are
 `templates list|instantiate`.
 
-Base commands are `list`, `use`, `current`, and `bases list|get|create|update|delete|restore|trash|retention|preservation-holds|destruction`. Table commands are `tables list|get|create|update|delete|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable|finalization policy`.
+Base commands are `use`, `current`, and `bases ls|show|add|set|rm|restore|trash|retention|preservation-holds|destruction`. Table commands are `tables ls|show|add|set|rm|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable|finalization policy`. `bases rm`, `tables rm`, and `records rm` require `--yes`.
 
 A Base Admin can configure a technical minimum age for trashed Records. Read and preview it before changing it:
 
@@ -335,9 +364,9 @@ Field commands are `fields types|type|list|get|create|update|delete|restore|depe
 `records shape` returns writable field public IDs, types, and example values for one table. Create and update bodies are plain objects keyed by those public IDs.
 
 ```bash
-cld grids records shape Authors --json
-cld grids records create Authors --body '{"<field-id>":"Octavia Butler"}' --json
-cld grids records update Authors <record-id> \
+cld grids records shape Bookshop:Authors --json
+cld grids records add Bookshop:Authors --body '{"<field-id>":"Octavia Butler"}' --json
+cld grids records set Bookshop:Authors/<record-id> \
   --if-version 3 \
   --body-file record-update.json \
   --json
@@ -385,10 +414,10 @@ cld grids records changes Operations --table Requests --cursor <cursor> --all --
 Read and transfer records with:
 
 ```bash
-cld grids records list Authors --q Butler --limit 100 --json
-cld grids records list Authors --finalization awaiting-review --json
-cld grids records export Authors --format csv --out authors.csv
-cld grids records audit Authors <record-id> --json
+cld grids records ls Bookshop:Authors --q Butler --limit 100 --json
+cld grids records ls Bookshop:Authors --finalization awaiting-review --json
+cld grids records export Bookshop:Authors --format csv --out authors.csv
+cld grids records audit Bookshop:Authors/<record-id> --json
 ```
 
 Durable history is an irreversible opt-in for a stored table. Inspect the current status first, then enable it explicitly. The enable command
@@ -470,7 +499,7 @@ Combined tables cannot source other Combined tables.
 Create the table with the contract value `federated`, then add the fields readers should query:
 
 ```bash
-cld grids tables create Reporting \
+cld grids tables add Reporting \
   --name "All inventory" \
   --kind federated \
   --json
@@ -481,7 +510,7 @@ cld grids fields create Reporting "All inventory" \
   --json
 ```
 
-Use `tables get` to inspect the table itself. Use `tables combined get` to inspect its draft and published revisions.
+Use `tables show` to inspect the table itself. Use `tables combined get` to inspect its draft and published revisions.
 
 ### Discover and map sources
 
@@ -586,7 +615,7 @@ with `draft`, and run `publish` again. Restoring revoked source scope requires a
 normal confirmed table lifecycle:
 
 ```bash
-cld grids tables delete Reporting "All inventory" --yes
+cld grids tables rm "Reporting:All inventory" --yes
 ```
 
 ## Query data with GQL
@@ -691,7 +720,7 @@ Use `@auth.id != null` for authenticated-only data and `@auth.id = null` for ano
 Record metadata filters are `record.id`, `record.createdBy`, `record.updatedBy`, `record.deletedBy`, and `record.finalizationState`; they accept
 `=` or `oneof(...)` and may be combined only with `and`. Record IDs are public IDs, user values are UUIDs, and Finalization values are `draft`,
 `awaitingReview`, or `finalized`. `awaitingReview` means a current Four-eyes request, not that the current caller may approve it. Metadata sorts are
-`record.createdAt`, `record.updatedAt`, and `record.deletedAt`. The `records list --finalization` shortcut accepts `draft`, `awaiting-review`, or
+`record.createdAt`, `record.updatedAt`, and `record.deletedAt`. The `records ls --finalization` shortcut accepts `draft`, `awaiting-review`, or
 `finalized` and composes with the other list filters.
 
 Aggregates are:
@@ -871,7 +900,7 @@ Targets must be same-table formula fields; their full dependency chain must end 
 
 Create accepts field values directly or `{data,inlineCreates?,idempotencyKey?}`. Prefer the envelope with a stable key for retryable operations. Each `inlineCreates` key is a relation Field ID and its value is `[{tempId,data}]`; include those temporary IDs in the root relation values. Only configured `inlineCreate.fields` are writable. Parent and children commit together.
 
-To edit an existing parent with its lines, use `forms submit BASE TABLE FORM --record REC001 --body-file edit.json --yes`. Read the parent and children with `records get` first. The body is `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. `inlineUpdates` is keyed by relation Field ID with `[{recordId,version,data}]`; retain edited child IDs in the root relation value. These are full Form values, not an arbitrary record patch: preserve required inputs and use explicit empty values to clear fields. Up to 20 creates/updates per relation and 50 total are accepted. Children must already belong to this parent, stay linked, belong to the same Base and not be shared with another parent. Removing a relation detaches rather than deletes its child. Finalization and mutation policy checks remain active.
+To edit an existing parent with its lines, use `forms submit BASE TABLE FORM --record REC001 --body-file edit.json --yes`. Read the parent and children with `records show` first. The body is `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. `inlineUpdates` is keyed by relation Field ID with `[{recordId,version,data}]`; retain edited child IDs in the root relation value. These are full Form values, not an arbitrary record patch: preserve required inputs and use explicit empty values to clear fields. Up to 20 creates/updates per relation and 50 total are accepted. Children must already belong to this parent, stay linked, belong to the same Base and not be shared with another parent. Removing a relation detaches rather than deletes its child. Finalization and mutation policy checks remain active.
 
 Published App Forms opt into editing with `mode: edit` on a Record page for the same table. `apps runtime read` returns `blocks[].form.initialRecord` with `version`, `values`, and `inlineCreates` drafts carrying `existing:{id,version}`. Replace those draft temp IDs in `data` with `existing.id` and send existing edits in `inlineUpdates`, not `inlineCreates`. Submit through the same discovered page/block and parameters; the server derives the target from the page, not a body Record ID. Sidebar and standalone public Forms remain create-only.
 
@@ -1791,11 +1820,10 @@ Agents can discover templates with `document.templates`, list stored results wit
 Use `cld grids <command> --help` for every flag, positional form, constraint, and built-in example.
 
 ```text
-list
 use
 current
 templates list|instantiate
-bases list|get|create|update|delete|restore|trash|retention
+bases ls|show|add|set|rm|restore|trash|retention
 bases navigation get|set
 bases retention preview|set|remove
 bases retention records list
@@ -1803,13 +1831,13 @@ bases retention files list|download
 bases preservation-holds list|create|release
 bases destruction preview|run|status|cancel
 access reference|list|grant|set|revoke|search-principals
-tables list|get|create|update|delete|restore|history|finalization|mutation-policy
+tables ls|show|add|set|rm|restore|history|finalization|mutation-policy
 tables history enable
 tables finalization enable|disable|policy
 tables mutation-policy impact|set
 tables combined get|candidates|publications|validate|draft|publish|revoke
 fields types|type|list|get|create|update|delete|restore|dependents|reorder
-records changes|shape|list|query|get|create|upsert-external|upsert-external-batch|import|export|update|finalize|delete|restore|audit|versions
+records changes|shape|ls|query|show|add|upsert-external|upsert-external-batch|import|export|set|finalize|rm|restore|audit|versions
 records finalization request|approve|reject
 records audit list
 records versions download

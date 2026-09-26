@@ -119,8 +119,8 @@ const cli = defineCliCommands({
   commands: [...workflowCommands, ...workflowRunCommands],
 });
 
-const basePage = { items: [{ id: baseId, name: "Bookshop" }], total: 1, limit: 500, offset: 0 };
-const resolutionResponses = () => [jsonResponse(basePage), jsonResponse([workflow])];
+const resolvedBase = { base: { id: baseId, name: "Bookshop" }, table: null, record: null };
+const resolutionResponses = () => [jsonResponse(resolvedBase), jsonResponse([workflow])];
 
 describe("Grids workflow CLI", () => {
   test("financial confirmation needs an explicitly reviewed hash and never refreshes it implicitly", async () => {
@@ -265,7 +265,7 @@ describe("Grids workflow CLI", () => {
     await cli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/workflows/by-base/${baseId}`,
       `/api/grids/workflows/${workflowId}/invoke/cli`,
     ]);

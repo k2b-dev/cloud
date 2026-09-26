@@ -44,7 +44,9 @@ const context = (responses: Response[]) => {
   };
   return { ctx, calls, values };
 };
-const record = { table: "TABLE1", record: "REC001" };
+const record = { args: ["TABLE1", "REC001"] };
+const resolvedRecord = () =>
+  Response.json({ base: { id: "BASE01", name: "Base" }, table: { id: "TABLE1", name: "Expenses" }, record: { id: "REC001" } });
 
 describe("Grids operational CLI", () => {
   test("document sources validate pagination locally and preserve source metadata", async () => {
@@ -73,15 +75,18 @@ describe("Grids operational CLI", () => {
     expect(reference).toContain("records files list|upload|replace|download|delete");
     expect(reference).not.toMatch(/\\\ncld grids/);
   });
-  test("preserves comments pagination and permissions without resolving a Base", async () => {
+  test("preserves comments pagination and permissions for a record address", async () => {
     const page = { items: [{ id: "COMM01", body: "Hello" }], nextCursor: "next", permissions: { canWrite: false } };
-    const { ctx, calls, values } = context([Response.json(page)]);
-    await command("records comments list").run({ ctx, args: record, flags: { cursor: "a+b/c", limit: 5 } });
-    expect(calls[0]?.path).toBe("/api/grids/records/TABLE1/REC001/comments?cursor=a%2Bb%2Fc&limit=5");
+    const { ctx, calls, values } = context([resolvedRecord(), Response.json(page)]);
+    await command("records comments list").run({ ctx, args: { args: ["Base:Expenses/REC001"] }, flags: { cursor: "a+b/c", limit: 5 } });
+    expect(calls.map((call) => call.path)).toEqual([
+      "/api/grids/resolve?base=Base&table=Expenses&record=REC001",
+      "/api/grids/records/TABLE1/REC001/comments?cursor=a%2Bb%2Fc&limit=5",
+    ]);
     expect(values).toEqual([page]);
   });
   test("passes comment Markdown unchanged and surfaces authorization failure", async () => {
-    const { ctx, calls } = context([Response.json({ message: "Forbidden" }, { status: 403 })]);
+    const { ctx, calls } = context([resolvedRecord(), Response.json({ message: "Forbidden" }, { status: 403 })]);
     await expect(
       command("records comments create").run({
         ctx,
@@ -89,29 +94,31 @@ describe("Grids operational CLI", () => {
         flags: { body: { source: "value", value: "First\n**Second**", provided: true } },
       }),
     ).rejects.toThrow("Forbidden");
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ body: "First\n**Second**" });
+    expect(calls[0]?.path).toBe("/api/grids/resolve?base=BASE01&table=TABLE1&record=REC001");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ body: "First\n**Second**" });
   });
   test("requires deletion confirmation before any request and accepts empty 204", async () => {
-    const { ctx, calls, values } = context([new Response(null, { status: 204 })]);
-    const args = { ...record, comment: "COMM01" };
+    const { ctx, calls, values } = context([resolvedRecord(), new Response(null, { status: 204 })]);
+    const args = { args: [...record.args, "COMM01"] };
     await expect(command("records comments delete").run({ ctx, args, flags: {} })).rejects.toThrow("--yes");
     expect(calls).toHaveLength(0);
     await command("records comments delete").run({ ctx, args, flags: { yes: true } });
-    expect(calls[0]?.init?.method).toBe("DELETE");
+    expect(calls[1]?.path).toBe("/api/grids/records/TABLE1/REC001/comments/COMM01");
+    expect(calls[1]?.init?.method).toBe("DELETE");
     expect(values).toEqual([{ deleted: true }]);
   });
   test("uses the bounded referenced-by API and validates resource IDs", async () => {
-    const { ctx, calls } = context([Response.json({ items: [], nextCursor: null })]);
+    const { ctx, calls } = context([resolvedRecord(), Response.json({ items: [], nextCursor: null })]);
     await command("records referenced-by").run({ ctx, args: record, flags: { limit: 5, relationField: "FIELD1" } });
-    expect(calls[0]?.path).toEndWith("/referenced-by?limit=5&relationFieldId=FIELD1");
-    await expect(command("records referenced-by").run({ ctx, args: { ...record, record: "not-an-id" }, flags: {} })).rejects.toThrow(
+    expect(calls[1]?.path).toBe("/api/grids/records/TABLE1/REC001/referenced-by?limit=5&relationFieldId=FIELD1");
+    await expect(command("records referenced-by").run({ ctx, args: { args: ["TABLE1", "not-an-id"] }, flags: {} })).rejects.toThrow(
       "public id",
     );
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
   });
   test("creates evidence only after confirmation with the validated scope", async () => {
     const { ctx, calls } = context([
-      Response.json({ items: [{ id: "BASE01", name: "Base" }] }),
+      Response.json({ base: { id: "BASE01", name: "Base" }, table: null, record: null }),
       Response.json({ id: "EXP001", status: "queued" }),
     ]);
     const args = { args: [] };
@@ -136,7 +143,7 @@ describe("Grids operational CLI", () => {
   });
 
   test("preflight remains read-only and preserves the scope query", async () => {
-    const { ctx, calls } = context([Response.json({ items: [{ id: "BASE01", name: "Base" }] }), Response.json({})]);
+    const { ctx, calls } = context([Response.json({ base: { id: "BASE01", name: "Base" }, table: null, record: null }), Response.json({})]);
     await command("evidence preflight").run({
       ctx,
       args: { args: [] },
@@ -169,12 +176,14 @@ describe("Grids operational CLI", () => {
 
   test("comment updates use their own resource route and JSONL retains the complete page", async () => {
     const { ctx, calls, values } = context([
+      resolvedRecord(),
       Response.json({ id: "COMM01", body: "Updated" }),
+      resolvedRecord(),
       Response.json({ items: [], nextCursor: "more" }),
     ]);
     await command("records comments update").run({
       ctx,
-      args: { ...record, comment: "COMM01" },
+      args: { args: [...record.args, "COMM01"] },
       flags: {
         body: {
           source: "value",
@@ -183,8 +192,8 @@ describe("Grids operational CLI", () => {
         },
       },
     });
-    expect(calls[0]?.path).toEndWith("/comments/COMM01");
-    expect(calls[0]?.init?.method).toBe("PATCH");
+    expect(calls[1]?.path).toEndWith("/comments/COMM01");
+    expect(calls[1]?.init?.method).toBe("PATCH");
     ctx.options.output = "jsonl";
     ctx.json = () => {
       throw new Error("JSONL must use jsonLine");

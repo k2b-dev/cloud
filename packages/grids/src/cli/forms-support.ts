@@ -1,7 +1,7 @@
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import { flag } from "@k2b/cloud/cli";
 import type { PublicBase as Base, PublicForm, PublicTable as Table } from "../api/public-dto";
-import { resolveBaseFromCommand, resolveNamedResource, resolveTable } from "./resources";
+import { resolveNamedResource, resolveTableScopeFromCommand } from "./resources";
 import { readApi } from "./runtime";
 
 export type Form = Omit<PublicForm, "id"> & { id: string };
@@ -36,13 +36,8 @@ export const resolveFormFromCommand = async (
   args: string[],
   refs: { table?: string; form?: string },
 ): Promise<{ base: Base; table: Table | null; form: Form }> => {
-  const { base, rest } = await resolveBaseFromCommand(ctx, args, refs.table || refs.form ? 0 : 2);
-  const table = refs.table
-    ? await resolveTable(ctx, base.id, refs.table)
-    : rest.length >= 2
-      ? await resolveTable(ctx, base.id, rest[0]!)
-      : null;
-  const formRef = refs.form ?? (table ? rest[1] : rest[0]);
+  const { base, table, rest } = await resolveTableScopeFromCommand(ctx, args, { table: refs.table, item: refs.form });
+  const formRef = refs.form ?? rest[0];
   if (!formRef) throw new Error("Missing form.");
   return { base, table, form: await resolveForm(ctx, table, formRef) };
 };

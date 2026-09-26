@@ -3,13 +3,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags } from "@k2b/cloud/cli";
-import gridsCli from "./cli";
+import gridsCli, { GRIDS_CLI_SUMMARY, GRIDS_GROUP_SUMMARIES, gridsCommands } from "./cli";
 import { accessCommands } from "./cli/access";
 import { baseCrudCommands } from "./cli/bases";
 import { customAppCommands } from "./cli/custom-apps";
 import { documentCommands, documentTemplateCommands } from "./cli/documents";
 import { evidenceCommands } from "./cli/evidence";
 import { formCommands } from "./cli/forms";
+import { GRIDS_CLI_HELP_DE } from "./cli/help-de";
 import { navigationCommands } from "./cli/navigation";
 import { publishedAppCommands } from "./cli/published-apps";
 import { recordDiscussionCommands } from "./cli/record-discussion";
@@ -130,6 +131,13 @@ const base = {
 };
 
 const basePage = { items: [base], total: 1, limit: 500, offset: 0 };
+
+/** What `GET /api/grids/resolve` returns for an address. */
+const resolved = (tableValue: unknown = null, recordValue: string | null = null) => ({
+  base,
+  table: tableValue,
+  record: recordValue ? { id: recordValue } : null,
+});
 
 const table = {
   id: tableId,
@@ -390,6 +398,105 @@ const customApp = {
   updatedAt: "2026-07-07T00:00:00.000Z",
 };
 
+describe("grids CLI conventions", () => {
+  test("bases, tables, and records use the shared verbs without aliases for the old names", () => {
+    const paths = new Set(gridsCommands.map((item) => item.path.join(" ")));
+    for (const resource of ["bases", "tables", "records"]) {
+      for (const verb of ["ls", "show", "add", "set", "rm"]) expect(paths).toContain(`${resource} ${verb}`);
+      for (const verb of ["list", "get", "create", "update", "delete"]) expect(paths).not.toContain(`${resource} ${verb}`);
+    }
+    expect(paths).not.toContain("list");
+    for (const path of ["bases rm", "tables rm", "records rm"]) {
+      expect(gridsCommands.find((item) => item.path.join(" ") === path)?.flags?.yes).toBeDefined();
+    }
+  });
+
+  test("keeps the --json shapes of the renamed commands", async () => {
+    const listed = createContext(["bases", "ls"], { q: "Book" }, [jsonResponse(basePage)], { output: "json" });
+    await gridsCli.run(listed.ctx);
+    expect(listed.calls.map((call) => call.path)).toEqual(["/api/grids/bases?q=Book&limit=100&offset=0"]);
+    expect(listed.jsonValues).toEqual([basePage]);
+
+    const show = createContext(["bases", "show", baseId], {}, [jsonResponse(resolved())], { output: "json" });
+    await gridsCli.run(show.ctx);
+    expect(show.jsonValues).toEqual([base]);
+
+    const removeBase = createContext(["bases", "rm", baseId], { yes: true }, [jsonResponse(resolved()), jsonResponse({ message: "ok" })], {
+      output: "json",
+    });
+    await gridsCli.run(removeBase.ctx);
+    expect(removeBase.calls.at(-1)).toMatchObject({ path: `/api/grids/bases/${baseId}`, init: { method: "DELETE" } });
+    expect(removeBase.jsonValues).toEqual([{ deleted: baseId }]);
+
+    const tableShow = createContext(["tables", "show", "Bookshop:Authors"], {}, [jsonResponse(resolved(table))], { output: "json" });
+    await gridsCli.run(tableShow.ctx);
+    expect(tableShow.calls.map((call) => call.path)).toEqual(["/api/grids/resolve?base=Bookshop&table=Authors"]);
+    expect(tableShow.jsonValues).toEqual([table]);
+
+    const removeTable = createContext(
+      ["tables", "rm", tableId],
+      { yes: true },
+      [jsonResponse(resolved(table)), jsonResponse({ message: "ok" })],
+      {
+        output: "json",
+      },
+    );
+    await gridsCli.run(removeTable.ctx);
+    expect(removeTable.calls.map((call) => call.path)).toEqual([`/api/grids/resolve?table=${tableId}`, `/api/grids/tables/${tableId}`]);
+    expect(removeTable.jsonValues).toEqual([{ deleted: tableId }]);
+
+    const recordShow = createContext(["records", "show", recordId], {}, [jsonResponse(resolved(table, recordId)), jsonResponse(record)], {
+      output: "json",
+    });
+    await gridsCli.run(recordShow.ctx);
+    expect(recordShow.calls.map((call) => call.path)).toEqual([
+      `/api/grids/resolve?record=${recordId}`,
+      `/api/grids/records/${tableId}/${recordId}`,
+    ]);
+    expect(recordShow.jsonValues).toEqual([record]);
+
+    const removeRecord = createContext(
+      ["records", "rm", `Bookshop:Authors/${recordId}`],
+      { yes: true },
+      [jsonResponse(resolved(table, recordId)), new Response(null, { status: 204 })],
+      { output: "json" },
+    );
+    await gridsCli.run(removeRecord.ctx);
+    expect(removeRecord.calls.map((call) => call.path)).toEqual([
+      `/api/grids/resolve?base=Bookshop&table=Authors&record=${recordId}`,
+      `/api/grids/records/${tableId}/${recordId}/trash`,
+    ]);
+    expect(removeRecord.jsonValues).toEqual([{ deleted: recordId }]);
+
+    const unconfirmed = createContext(["records", "rm", recordId]);
+    await expect(gridsCli.run(unconfirmed.ctx)).rejects.toThrow("--yes");
+    expect(unconfirmed.calls).toEqual([]);
+  });
+
+  test("renders help in English and German with unchanged command syntax", async () => {
+    const texts = new Set([GRIDS_CLI_SUMMARY, ...Object.values(GRIDS_GROUP_SUMMARIES)]);
+    for (const item of gridsCommands) {
+      texts.add(item.summary);
+      if (item.description) texts.add(item.description);
+      for (const spec of [...Object.values(item.args ?? {}), ...Object.values(item.flags ?? {})])
+        if (spec.description) texts.add(spec.description);
+    }
+    expect([...texts].filter((text) => !GRIDS_CLI_HELP_DE[text])).toEqual([]);
+    expect(Object.keys(GRIDS_CLI_HELP_DE).filter((text) => !texts.has(text))).toEqual([]);
+
+    expect(gridsCli.help?.("de")).toContain(GRIDS_CLI_HELP_DE[GRIDS_CLI_SUMMARY] ?? "missing");
+    const german = createContext(["records", "ls", "help"]);
+    german.ctx.options.locale = "de-DE";
+    await gridsCli.run(german.ctx);
+    expect(german.lines[0]).toContain("Datensätze einer Tabelle auflisten");
+    expect(german.lines[0]).toContain("cld grids records ls Bookshop:Authors --limit 20 --json");
+    expect(german.lines[0]).toContain("--include-deleted");
+    const english = createContext(["records", "ls", "help"]);
+    await gridsCli.run(english.ctx);
+    expect(english.lines[0]).toContain("List records in a table");
+  });
+});
+
 describe("grids CLI", () => {
   test("verifies evidence packages locally and returns structured failures", async () => {
     const dir = await mkdtemp(join(tmpdir(), "grids-cli-evidence-"));
@@ -429,34 +536,32 @@ describe("grids CLI", () => {
   });
 
   test("sets and reads the default base by public id", async () => {
-    const { ctx, calls, defaults, lines } = createContext(["use", "bk001A"], {}, [
-      jsonResponse({ items: [base], total: 1, limit: 500, offset: 0 }),
-    ]);
+    const { ctx, calls, defaults, lines } = createContext(["use", "bk001A"], {}, [jsonResponse(resolved())]);
 
     await gridsCli.run(ctx);
 
-    expect(calls.map((call) => call.path)).toEqual(["/api/grids/bases?q=bk001A&limit=500&offset=0"]);
+    expect(calls.map((call) => call.path)).toEqual(["/api/grids/resolve?base=bk001A"]);
     expect(defaults["grids.base"]).toBe("bk001A");
     expect(lines).toEqual(["Using Grids base Bookshop (bk001A)."]);
   });
 
   test("reads and replaces shared navigation without retrying conflicts", async () => {
     const config = { revision: 2, groups: [{ id: "GROUP1", name: "Orders", entries: [{ type: "table", id: tableId }] }] };
-    const get = createContext(["bases", "navigation", "get", baseId], {}, [jsonResponse(basePage), jsonResponse(config)], {
+    const get = createContext(["bases", "navigation", "get", baseId], {}, [jsonResponse(resolved()), jsonResponse(config)], {
       output: "json",
     });
     await gridsCli.run(get.ctx);
     expect(get.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/navigation`);
     expect(get.jsonValues).toEqual([config]);
     const set = createContext(["bases", "navigation", "set", baseId], { body: JSON.stringify(config) }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse({ ...config, revision: 3 }),
     ]);
     await gridsCli.run(set.ctx);
     expect(set.calls.at(-1)?.init?.method).toBe("PUT");
     expect(JSON.parse(String(set.calls.at(-1)?.init?.body))).toEqual(config);
     const conflict = createContext(["bases", "navigation", "set", baseId], { body: JSON.stringify(config) }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse({ message: "Reload navigation" }, 409),
     ]);
     await expect(gridsCli.run(conflict.ctx)).rejects.toThrow("Reload navigation");
@@ -464,7 +569,7 @@ describe("grids CLI", () => {
     const invalid = createContext(
       ["bases", "navigation", "set", baseId],
       { body: JSON.stringify({ ...config, groups: [{ ...config.groups[0], entries: [{ type: "table", id: "Unknown record" }] }] }) },
-      [jsonResponse(basePage)],
+      [jsonResponse(resolved())],
     );
     await expect(gridsCli.run(invalid.ctx)).rejects.toThrow();
     expect(invalid.calls).toHaveLength(1);
@@ -472,7 +577,9 @@ describe("grids CLI", () => {
 
   test("shows and previews a Base retention floor through public ids", async () => {
     const policy = { baseId, minimumDays: 30, updatedAt: "2026-08-19T12:00:00.000Z" };
-    const show = createContext(["bases", "retention", baseId], {}, [jsonResponse(basePage), jsonResponse({ policy })], { output: "json" });
+    const show = createContext(["bases", "retention", baseId], {}, [jsonResponse(resolved()), jsonResponse({ policy })], {
+      output: "json",
+    });
 
     await gridsCli.run(show.ctx);
 
@@ -509,7 +616,7 @@ describe("grids CLI", () => {
     const impact = createContext(
       ["bases", "retention", "preview", baseId],
       { days: "30" },
-      [jsonResponse(basePage), jsonResponse(preview)],
+      [jsonResponse(resolved()), jsonResponse(preview)],
       { output: "json" },
     );
 
@@ -541,7 +648,7 @@ describe("grids CLI", () => {
     const list = createContext(
       ["bases", "retention", "files", "list", baseId],
       { days: "30", search: "evidence", status: "retained", page: "2", "per-page": "10" },
-      [jsonResponse(basePage), jsonResponse(payload)],
+      [jsonResponse(resolved()), jsonResponse(payload)],
       { output: "json" },
     );
     await gridsCli.run(list.ctx);
@@ -554,7 +661,7 @@ describe("grids CLI", () => {
     const out = join(dir, "evidence.txt");
     try {
       const download = createContext(["bases", "retention", "files", "download", baseId, fileId], { out }, [
-        jsonResponse(basePage),
+        jsonResponse(resolved()),
         new Response("hello"),
       ]);
       await gridsCli.run(download.ctx);
@@ -585,7 +692,7 @@ describe("grids CLI", () => {
     const list = createContext(
       ["bases", "retention", "records", "list", baseId],
       { days: "30", search: "Cases", status: "retained", page: "2", "per-page": "10" },
-      [jsonResponse(basePage), jsonResponse(payload)],
+      [jsonResponse(resolved()), jsonResponse(payload)],
       { output: "json" },
     );
     await gridsCli.run(list.ctx);
@@ -601,7 +708,7 @@ describe("grids CLI", () => {
     const update = createContext(
       ["bases", "retention", "set", baseId],
       { days: "60" },
-      [jsonResponse(basePage), jsonResponse({ policy: existing }), jsonResponse({ policy: longer })],
+      [jsonResponse(resolved()), jsonResponse({ policy: existing }), jsonResponse({ policy: longer })],
       { output: "json" },
     );
 
@@ -612,14 +719,14 @@ describe("grids CLI", () => {
     expect(update.jsonValues).toEqual([{ policy: longer }]);
 
     const shorter = createContext(["bases", "retention", "set", baseId], { days: "10" }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse({ policy: existing }),
     ]);
     await expect(gridsCli.run(shorter.ctx)).rejects.toThrow("Pass --yes to shorten the existing retention floor.");
     expect(shorter.calls.at(-1)?.init?.method).toBeUndefined();
 
     const confirmed = createContext(["bases", "retention", "set", baseId], { days: "10", yes: true }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse({ policy: existing }),
       jsonResponse({ policy: { ...existing, minimumDays: 10 } }),
     ]);
@@ -635,7 +742,7 @@ describe("grids CLI", () => {
     const confirmed = createContext(
       ["bases", "retention", "remove", baseId],
       { yes: true },
-      [jsonResponse(basePage), new Response(null, { status: 204 })],
+      [jsonResponse(resolved()), new Response(null, { status: 204 })],
       { output: "json" },
     );
     await gridsCli.run(confirmed.ctx);
@@ -685,21 +792,21 @@ describe("grids CLI", () => {
       error: null,
     };
     const overview = { preview, runs: [] };
-    const show = createContext(["bases", "destruction", "preview", baseId], {}, [jsonResponse(basePage), jsonResponse(overview)], {
+    const show = createContext(["bases", "destruction", "preview", baseId], {}, [jsonResponse(resolved()), jsonResponse(overview)], {
       output: "json",
     });
     await gridsCli.run(show.ctx);
     expect(show.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/controlled-destruction`);
     expect(show.jsonValues).toEqual([preview]);
 
-    const wrong = createContext(["bases", "destruction", "run", baseId], { confirm: "Wrong" }, [jsonResponse(basePage)]);
+    const wrong = createContext(["bases", "destruction", "run", baseId], { confirm: "Wrong" }, [jsonResponse(resolved())]);
     await expect(gridsCli.run(wrong.ctx)).rejects.toThrow("--confirm must exactly match the Base name: Bookshop");
     expect(wrong.calls).toHaveLength(1);
 
     const start = createContext(
       ["bases", "destruction", "run", baseId],
       { confirm: "Bookshop" },
-      [jsonResponse(basePage), jsonResponse(overview), jsonResponse(run, 201)],
+      [jsonResponse(resolved()), jsonResponse(overview), jsonResponse(run, 201)],
       { output: "json" },
     );
     await gridsCli.run(start.ctx);
@@ -711,7 +818,7 @@ describe("grids CLI", () => {
     });
     expect(start.jsonValues).toEqual([run]);
 
-    const status = createContext(["bases", "destruction", "status", baseId, run.id], {}, [jsonResponse(basePage), jsonResponse(run)], {
+    const status = createContext(["bases", "destruction", "status", baseId, run.id], {}, [jsonResponse(resolved()), jsonResponse(run)], {
       output: "json",
     });
     await gridsCli.run(status.ctx);
@@ -725,7 +832,7 @@ describe("grids CLI", () => {
     const cancel = createContext(
       ["bases", "destruction", "cancel", baseId, run.id],
       { yes: true },
-      [jsonResponse(basePage), jsonResponse(canceled)],
+      [jsonResponse(resolved()), jsonResponse(canceled)],
       { output: "json" },
     );
     await gridsCli.run(cancel.ctx);
@@ -754,7 +861,7 @@ describe("grids CLI", () => {
     const list = createContext(
       ["bases", "preservation-holds", "list", baseId],
       { status: "active", page: "2", "per-page": "10", search: " Review " },
-      [jsonResponse(basePage), jsonResponse(page)],
+      [jsonResponse(resolved()), jsonResponse(page)],
       { output: "json" },
     );
     await gridsCli.run(list.ctx);
@@ -766,7 +873,7 @@ describe("grids CLI", () => {
     const create = createContext(
       ["bases", "preservation-holds", "create", baseId],
       { reason: " Annual review " },
-      [jsonResponse(basePage), jsonResponse(hold)],
+      [jsonResponse(resolved()), jsonResponse(hold)],
       { output: "json" },
     );
     await gridsCli.run(create.ctx);
@@ -783,11 +890,11 @@ describe("grids CLI", () => {
     const createTable = createContext(
       ["bases", "preservation-holds", "create", baseId],
       { scope: "table", table: table.name, reason: " Author dispute " },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(tableHold)],
+      [jsonResponse(resolved()), jsonResponse(resolved(table)), jsonResponse(tableHold)],
       { output: "json" },
     );
     await gridsCli.run(createTable.ctx);
-    expect(createTable.calls.at(-2)?.path).toBe(`/api/grids/tables/by-base/${baseId}?q=Authors&limit=100`);
+    expect(createTable.calls.at(-2)?.path).toBe(`/api/grids/resolve?base=${baseId}&table=Authors`);
     expect(JSON.parse(String(createTable.calls.at(-1)?.init?.body))).toEqual({
       reason: "Author dispute",
       scope: { type: "table", tableId },
@@ -797,8 +904,8 @@ describe("grids CLI", () => {
       ["bases", "preservation-holds", "list", baseId],
       { status: "active", scope: "table", table: table.name },
       [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved()),
+        jsonResponse(resolved(table)),
         jsonResponse({ ...page, items: [tableHold], pagination: { ...page.pagination, total: 1 } }),
       ],
       { output: "json" },
@@ -811,7 +918,7 @@ describe("grids CLI", () => {
     const historicalJsonl = createContext(
       ["bases", "preservation-holds", "list", baseId],
       { status: "released", scope: "table", table: tableId },
-      [jsonResponse(basePage), jsonResponse({ ...page, items: [tableHold] })],
+      [jsonResponse(resolved()), jsonResponse({ ...page, items: [tableHold] })],
       { output: "jsonl" },
     );
     await gridsCli.run(historicalJsonl.ctx);
@@ -824,7 +931,7 @@ describe("grids CLI", () => {
     const internalTableRef = createContext(
       ["bases", "preservation-holds", "create", baseId],
       { scope: "table", table: accessId, reason: "Internal ref" },
-      [jsonResponse(basePage)],
+      [jsonResponse(resolved())],
       { output: "json" },
     );
     await expect(gridsCli.run(internalTableRef.ctx)).rejects.toThrow("Table references do not accept UUIDs");
@@ -840,7 +947,7 @@ describe("grids CLI", () => {
     const release = createContext(
       ["bases", "preservation-holds", "release", baseId, hold.id],
       { reason: " Review completed ", yes: true },
-      [jsonResponse(basePage), jsonResponse(released)],
+      [jsonResponse(resolved()), jsonResponse(released)],
       { output: "json" },
     );
     await gridsCli.run(release.ctx);
@@ -854,9 +961,8 @@ describe("grids CLI", () => {
       columns: [{ fieldId }],
       displayConfig: { mode: "cards", cards: { imageFieldId: fieldId, fieldIds: [fieldId] } },
     };
-    const tableUpdate = createContext(["tables", "update", baseId, "Authors"], { body: JSON.stringify(tableBody) }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+    const tableUpdate = createContext(["tables", "set", baseId, "Authors"], { body: JSON.stringify(tableBody) }, [
+      jsonResponse(resolved(table)),
       jsonResponse({ ...table, ...tableBody }),
     ]);
     await gridsCli.run(tableUpdate.ctx);
@@ -872,8 +978,7 @@ describe("grids CLI", () => {
       },
     };
     const viewUpdate = createContext(["views", "update", baseId, "Authors", "Recent authors"], { body: JSON.stringify(viewBody) }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse([view]),
       jsonResponse({ ...view, ...viewBody }),
     ]);
@@ -931,11 +1036,11 @@ describe("grids CLI", () => {
       fields: [{ ...field, deletedAt }],
       forms: [{ id: formId, tableId, name: "Author intake", deletedAt }],
     };
-    const { ctx, calls, tables } = createContext(["bases", "trash", baseId], {}, [jsonResponse(basePage), jsonResponse(trash)]);
+    const { ctx, calls, tables } = createContext(["bases", "trash", baseId], {}, [jsonResponse(resolved()), jsonResponse(trash)]);
 
     await gridsCli.run(ctx);
 
-    expect(calls.map((call) => call.path)).toEqual([`/api/grids/bases?q=${baseId}&limit=500&offset=0`, `/api/grids/bases/${baseId}/trash`]);
+    expect(calls.map((call) => call.path)).toEqual([`/api/grids/resolve?base=${baseId}`, `/api/grids/bases/${baseId}/trash`]);
     expect(tables[0]).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "table", id: tableId }),
@@ -951,7 +1056,7 @@ describe("grids CLI", () => {
       ["gql", "run"],
       { query },
       [
-        jsonResponse({ items: [base], total: 1, limit: 500, offset: 0 }),
+        jsonResponse(resolved()),
         jsonResponse({
           ok: true,
           mode: "rows",
@@ -967,10 +1072,7 @@ describe("grids CLI", () => {
     const exitCode = await gridsCli.run(ctx);
 
     expect(exitCode).toBe(0);
-    expect(calls.map((call) => call.path)).toEqual([
-      "/api/grids/bases?q=bk001A&limit=500&offset=0",
-      `/api/grids/gql/by-base/${baseId}/execute`,
-    ]);
+    expect(calls.map((call) => call.path)).toEqual(["/api/grids/resolve?base=bk001A", `/api/grids/gql/by-base/${baseId}/execute`]);
     expect(calls[1]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ query, pageSize: 100 });
     expect(tables[0]).toEqual([{ recordId, Name: "Ursula K. Le Guin" }]);
@@ -982,7 +1084,7 @@ describe("grids CLI", () => {
       const { ctx, calls } = createContext(
         ["gql", operation, baseId],
         { query: "from table Authors", parameters: JSON.stringify(parameters) },
-        [jsonResponse({ items: [base], total: 1, limit: 500, offset: 0 }), jsonResponse({ ok: false, diagnostics: [] })],
+        [jsonResponse(resolved()), jsonResponse({ ok: false, diagnostics: [] })],
       );
       await gridsCli.run(ctx);
       expect(JSON.parse(String(calls[1]?.init?.body)).parameters).toEqual(parameters);
@@ -995,17 +1097,14 @@ describe("grids CLI", () => {
     const { ctx, calls, jsonValues, lines, tables } = createContext(
       ["gql", "compile-view", baseId],
       { query },
-      [jsonResponse(basePage), jsonResponse(payload)],
+      [jsonResponse(resolved()), jsonResponse(payload)],
       { output: "jsonl" },
     );
 
     const exitCode = await gridsCli.run(ctx);
 
     expect(exitCode).toBe(0);
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/gql/by-base/${baseId}/compile-view`,
-    ]);
+    expect(calls.map((call) => call.path)).toEqual([`/api/grids/resolve?base=${baseId}`, `/api/grids/gql/by-base/${baseId}/compile-view`]);
     expect(jsonValues).toEqual([payload]);
     expect(lines).toEqual([]);
     expect(tables).toEqual([]);
@@ -1015,18 +1114,17 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["fields", "create", baseId, "Authors"],
       { name: "Birth year", type: "number", config: "{}" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...field, name: "Birth year", type: "number", config: {} }, 201)],
+      [jsonResponse(resolved(table)), jsonResponse({ ...field, name: "Birth year", type: "number", config: {} }, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/fields/by-table/${tableId}`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({ name: "Birth year", type: "number", config: {} });
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ name: "Birth year", type: "number", config: {} });
     expect(lines).toEqual(["Created field Birth year (name1A)."]);
   });
 
@@ -1091,15 +1189,14 @@ describe("grids CLI", () => {
     const { ctx, calls, jsonValues } = createContext(
       ["records", "shape", baseId, "Authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([field, selectField, formulaField])],
+      [jsonResponse(resolved(table)), jsonResponse([field, selectField, formulaField])],
       { output: "json" },
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/fields/by-table/${tableId}`,
     ]);
     expect(jsonValues[0]).toMatchObject({
@@ -1118,7 +1215,7 @@ describe("grids CLI", () => {
     const { ctx, jsonValues } = createContext(
       ["records", "shape", baseId, "All authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([combinedTable]), jsonResponse([field])],
+      [jsonResponse(resolved(combinedTable)), jsonResponse([field])],
       { output: "json" },
     );
 
@@ -1141,11 +1238,10 @@ describe("grids CLI", () => {
       sources: [{ base: "Bookshop", table: "Regional authors", mappings: [{ target: "Name", source: "Display name" }] }],
     };
     const { ctx, calls, lines } = createContext(["tables", "combined", "validate", baseId, "All authors"], { body: JSON.stringify(body) }, [
-      jsonResponse(basePage),
-      jsonResponse([combinedTable]),
+      jsonResponse(resolved(combinedTable)),
       jsonResponse([targetField]),
-      jsonResponse({ items: [base], total: 1, limit: 500, offset: 0 }),
-      jsonResponse([sourceTable]),
+      jsonResponse(resolved()),
+      jsonResponse(resolved(sourceTable)),
       jsonResponse([sourceField]),
       jsonResponse({ valid: true, diagnostics: [] }),
     ]);
@@ -1178,7 +1274,7 @@ describe("grids CLI", () => {
     const get = createContext(
       ["tables", "combined", "get", baseId, "All authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([combinedTable]), jsonResponse({ current, draft: combinedDraftView })],
+      [jsonResponse(resolved(combinedTable)), jsonResponse({ current, draft: combinedDraftView })],
       { output: "json" },
     );
 
@@ -1197,12 +1293,7 @@ describe("grids CLI", () => {
     const draft = createContext(
       ["tables", "combined", "draft", baseId, "All authors"],
       { body: JSON.stringify(body) },
-      [
-        jsonResponse(basePage),
-        jsonResponse([combinedTable]),
-        jsonResponse({ current: null, draft: combinedDraftView }),
-        jsonResponse(combinedDraftView),
-      ],
+      [jsonResponse(resolved(combinedTable)), jsonResponse({ current: null, draft: combinedDraftView }), jsonResponse(combinedDraftView)],
       { output: "json" },
     );
 
@@ -1220,7 +1311,7 @@ describe("grids CLI", () => {
     const publish = createContext(
       ["tables", "combined", "publish", baseId, "All authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([combinedTable]), jsonResponse(published)],
+      [jsonResponse(resolved(combinedTable)), jsonResponse(published)],
       { output: "json" },
     );
 
@@ -1236,15 +1327,12 @@ describe("grids CLI", () => {
     const { ctx, calls } = createContext(
       ["tables", "combined", "draft", baseId, "All authors"],
       { body: JSON.stringify(body) },
-      [jsonResponse(basePage), jsonResponse([combinedTable])],
+      [jsonResponse(resolved(combinedTable))],
       { output: "json" },
     );
 
     await expect(gridsCli.run(ctx)).rejects.toThrow("Invalid Combined table draft");
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
-    ]);
+    expect(calls.map((call) => call.path)).toEqual([`/api/grids/resolve?base=${baseId}&table=All+authors`]);
   });
 
   test("lists Combined source candidates and source-admin publications", async () => {
@@ -1258,7 +1346,7 @@ describe("grids CLI", () => {
     const candidateContext = createContext(
       ["tables", "combined", "candidates", baseId, "All authors"],
       { q: "regional", "per-page": "25", page: "2" },
-      [jsonResponse(basePage), jsonResponse([combinedTable]), jsonResponse(candidates)],
+      [jsonResponse(resolved(combinedTable)), jsonResponse(candidates)],
       { output: "json" },
     );
 
@@ -1302,7 +1390,7 @@ describe("grids CLI", () => {
     const publicationContext = createContext(
       ["tables", "combined", "publications", baseId, "Regional authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([sourceTable]), jsonResponse(publications)],
+      [jsonResponse(resolved(sourceTable)), jsonResponse(publications)],
       { output: "json" },
     );
 
@@ -1317,7 +1405,7 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["tables", "combined", "revoke", baseId, "Regional authors"],
       { "target-table": combinedTableId, yes: true },
-      [jsonResponse(basePage), jsonResponse([sourceTable]), new Response(null, { status: 204 })],
+      [jsonResponse(resolved(sourceTable)), new Response(null, { status: 204 })],
     );
 
     await gridsCli.run(ctx);
@@ -1329,20 +1417,19 @@ describe("grids CLI", () => {
 
   test("creates records with raw JSON payloads", async () => {
     const { ctx, calls, lines } = createContext(
-      ["records", "create", baseId, "Authors"],
+      ["records", "add", baseId, "Authors"],
       { body: JSON.stringify({ [fieldId]: "Octavia Butler" }) },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } }, 201)],
+      [jsonResponse(resolved(table)), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } }, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/records/by-table/${tableId}`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ [fieldId]: "Octavia Butler" });
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ [fieldId]: "Octavia Butler" });
     expect(lines).toEqual([`Created record ${recordId}.`]);
   });
 
@@ -1391,15 +1478,15 @@ describe("grids CLI", () => {
     const changes = createContext(
       ["records", "changes", baseId],
       { table: "Authors", limit: "2", all: true, "max-events": "3" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(first), jsonResponse(second)],
+      [jsonResponse(resolved()), jsonResponse(resolved(table)), jsonResponse(first), jsonResponse(second)],
       { output: "json" },
     );
 
     await gridsCli.run(changes.ctx);
 
     expect(changes.calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/records/by-base/${baseId}/changes?tableId=${tableId}&limit=2`,
       `/api/grids/records/by-base/${baseId}/changes?tableId=${tableId}&cursor=cursor-1&limit=1`,
     ]);
@@ -1430,19 +1517,18 @@ describe("grids CLI", () => {
         "idempotency-key": "sync-003ABC-v2",
         "if-version": "1",
       },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(payload)],
+      [jsonResponse(resolved(table)), jsonResponse(payload)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/records/by-table/${tableId}/external`,
     ]);
-    expect(calls[2]?.init?.method).toBe("PUT");
-    expect(new Headers(calls[2]?.init?.headers).get("Idempotency-Key")).toBe("sync-003ABC-v2");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
+    expect(calls[1]?.init?.method).toBe("PUT");
+    expect(new Headers(calls[1]?.init?.headers).get("Idempotency-Key")).toBe("sync-003ABC-v2");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
       externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
       values: { [fieldId]: "Octavia Butler" },
       ifVersion: 1,
@@ -1489,19 +1575,18 @@ describe("grids CLI", () => {
     const batch = createContext(
       ["records", "upsert-external-batch", baseId, "Authors"],
       { body: JSON.stringify(body) },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(response)],
+      [jsonResponse(resolved(table)), jsonResponse(response)],
       { output: "jsonl" },
     );
 
     await gridsCli.run(batch.ctx);
 
     expect(batch.calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/records/by-table/${tableId}/external/batch`,
     ]);
-    expect(batch.calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(batch.calls[2]?.init?.body))).toEqual(body);
+    expect(batch.calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(batch.calls[1]?.init?.body))).toEqual(body);
     expect(batch.jsonValues).toEqual(response.items);
   });
 
@@ -1509,7 +1594,7 @@ describe("grids CLI", () => {
     const disabled = createContext(
       ["tables", "history", baseId, "Authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ enabled: false })],
+      [jsonResponse(resolved(table)), jsonResponse({ enabled: false })],
       { output: "json" },
     );
 
@@ -1534,13 +1619,13 @@ describe("grids CLI", () => {
     const enabled = createContext(
       ["tables", "history", "enable", baseId, "Authors"],
       { yes: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(activating), jsonResponse(active)],
+      [jsonResponse(resolved(table)), jsonResponse(activating), jsonResponse(active)],
       { output: "json" },
     );
 
     await gridsCli.run(enabled.ctx);
 
-    expect(enabled.calls.slice(2).map((call) => [call.path, call.init?.method])).toEqual([
+    expect(enabled.calls.slice(1).map((call) => [call.path, call.init?.method])).toEqual([
       [`/api/grids/tables/${tableId}/durable-history/enable`, "POST"],
       [`/api/grids/tables/${tableId}/durable-history/continue`, "POST"],
     ]);
@@ -1548,7 +1633,7 @@ describe("grids CLI", () => {
   });
 
   test("shows and previews a table mutation policy through public ids", async () => {
-    const show = createContext(["tables", "mutation-policy", baseId, "Authors"], {}, [jsonResponse(basePage), jsonResponse([table])], {
+    const show = createContext(["tables", "mutation-policy", baseId, "Authors"], {}, [jsonResponse(resolved(table))], {
       output: "json",
     });
 
@@ -1566,7 +1651,7 @@ describe("grids CLI", () => {
     const preview = createContext(
       ["tables", "mutation-policy", "impact", baseId, "Authors"],
       { allow: "direct,form" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(impact)],
+      [jsonResponse(resolved(table)), jsonResponse(impact)],
       { output: "json" },
     );
 
@@ -1585,7 +1670,7 @@ describe("grids CLI", () => {
     const update = createContext(
       ["tables", "mutation-policy", "set", baseId, "Authors"],
       { allow: "direct" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ policy })],
+      [jsonResponse(resolved(table)), jsonResponse({ policy })],
       { output: "json" },
     );
 
@@ -1604,7 +1689,7 @@ describe("grids CLI", () => {
     const confirmedFreeze = createContext(
       ["tables", "mutation-policy", "set", baseId, "Authors"],
       { allow: "none", yes: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ policy: frozenPolicy })],
+      [jsonResponse(resolved(table)), jsonResponse({ policy: frozenPolicy })],
       { output: "json" },
     );
     await gridsCli.run(confirmedFreeze.ctx);
@@ -1628,7 +1713,7 @@ describe("grids CLI", () => {
     const status = createContext(
       ["tables", "finalization", baseId, "Authors"],
       {},
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(disabledStatus)],
+      [jsonResponse(resolved(table)), jsonResponse(disabledStatus)],
       { output: "json" },
     );
     await gridsCli.run(status.ctx);
@@ -1638,7 +1723,7 @@ describe("grids CLI", () => {
     const enable = createContext(
       ["tables", "finalization", "enable", baseId, "Authors"],
       { mode: "direct", yes: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(enabledStatus)],
+      [jsonResponse(resolved(table)), jsonResponse(enabledStatus)],
       { output: "json" },
     );
     await gridsCli.run(enable.ctx);
@@ -1658,7 +1743,7 @@ describe("grids CLI", () => {
     const policy = createContext(
       ["tables", "finalization", "policy", baseId, "Authors"],
       { mode: "four-eyes", "approver-group": approverGroupId, yes: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(fourEyesStatus)],
+      [jsonResponse(resolved(table)), jsonResponse(fourEyesStatus)],
       { output: "json" },
     );
     await gridsCli.run(policy.ctx);
@@ -1670,7 +1755,7 @@ describe("grids CLI", () => {
     const finalize = createContext(
       ["records", "finalize", baseId, "Authors", recordId],
       { yes: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(finalizedRecord)],
+      [jsonResponse(resolved(table, recordId)), jsonResponse(finalizedRecord)],
       { output: "json" },
     );
     await gridsCli.run(finalize.ctx);
@@ -1698,7 +1783,7 @@ describe("grids CLI", () => {
     const requested = createContext(
       ["records", "finalization", "request", baseId, "Authors", recordId],
       { comment: "Ready" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(request)],
+      [jsonResponse(resolved(table, recordId)), jsonResponse(request)],
       { output: "json" },
     );
     await gridsCli.run(requested.ctx);
@@ -1709,8 +1794,7 @@ describe("grids CLI", () => {
       ["records", "finalization", "approve", baseId, "Authors", recordId],
       { request: "req001", yes: true },
       [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table, recordId)),
         jsonResponse({
           enabled: true,
           mode: "fourEyes",
@@ -1736,8 +1820,7 @@ describe("grids CLI", () => {
       ["records", "finalization", "approve", baseId, "Authors", recordId],
       { request: "req001", yes: true },
       [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table, recordId)),
         jsonResponse({
           enabled: true,
           mode: "fourEyes",
@@ -1796,7 +1879,7 @@ describe("grids CLI", () => {
     const listed = createContext(
       ["records", "versions", baseId, "Authors", recordId],
       { limit: "10", cursor: "rev010" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(revisionPage)],
+      [jsonResponse(resolved(table, recordId)), jsonResponse(revisionPage)],
       { output: "json" },
     );
 
@@ -1809,8 +1892,7 @@ describe("grids CLI", () => {
     const out = join(dir, "cover.txt");
     try {
       const downloaded = createContext(["records", "versions", "download", baseId, "Authors", recordId, revisionId, fileId], { out }, [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table, recordId)),
         new Response("hello"),
       ]);
 
@@ -1824,9 +1906,8 @@ describe("grids CLI", () => {
   });
 
   test("loads a deleted record explicitly", async () => {
-    const { ctx, calls } = createContext(["records", "get", baseId, "Authors", recordId], { "deleted-only": true }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+    const { ctx, calls } = createContext(["records", "show", baseId, "Authors", recordId], { "deleted-only": true }, [
+      jsonResponse(resolved(table, recordId)),
       jsonResponse({ ...record, deletedAt: "2026-07-20T10:00:00.000Z" }),
     ]);
 
@@ -1838,59 +1919,57 @@ describe("grids CLI", () => {
   test("sends audit answers through update, trash, and restore contracts", async () => {
     const audit = { [auditQuestionId]: "Annual inventory review" };
     const update = createContext(
-      ["records", "update", baseId, "Authors", recordId],
+      ["records", "set", baseId, "Authors", recordId],
       { body: JSON.stringify({ [fieldId]: "Octavia Butler" }), audit: JSON.stringify(audit), "if-version": "3" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } })],
+      [jsonResponse(resolved(table, recordId)), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } })],
     );
 
     await gridsCli.run(update.ctx);
 
-    expect(update.calls[2]?.path).toBe(`/api/grids/records/${tableId}/${recordId}`);
-    expect(update.calls[2]?.init?.method).toBe("PATCH");
-    expect(new Headers(update.calls[2]?.init?.headers).get("If-Match")).toBe("3");
-    expect(JSON.parse(String(update.calls[2]?.init?.body))).toEqual({
+    expect(update.calls[1]?.path).toBe(`/api/grids/records/${tableId}/${recordId}`);
+    expect(update.calls[1]?.init?.method).toBe("PATCH");
+    expect(new Headers(update.calls[1]?.init?.headers).get("If-Match")).toBe("3");
+    expect(JSON.parse(String(update.calls[1]?.init?.body))).toEqual({
       values: { [fieldId]: "Octavia Butler" },
       audit: { answers: audit },
     });
 
     const unguarded = createContext(
-      ["records", "update", baseId, "Authors", recordId],
+      ["records", "set", baseId, "Authors", recordId],
       { body: JSON.stringify({ [fieldId]: "Octavia Butler" }) },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } })],
+      [jsonResponse(resolved(table, recordId)), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } })],
     );
     await gridsCli.run(unguarded.ctx);
-    expect(new Headers(unguarded.calls[2]?.init?.headers).has("If-Match")).toBe(false);
+    expect(new Headers(unguarded.calls[1]?.init?.headers).has("If-Match")).toBe(false);
 
     const invalidVersion = createContext(
-      ["records", "update", baseId, "Authors", recordId],
+      ["records", "set", baseId, "Authors", recordId],
       { body: JSON.stringify({ [fieldId]: "Octavia Butler" }), "if-version": "0" },
-      [jsonResponse(basePage), jsonResponse([table])],
+      [jsonResponse(resolved(table, recordId))],
     );
     await expect(gridsCli.run(invalidVersion.ctx)).rejects.toThrow(/if-version.*at least 1/i);
 
-    const remove = createContext(["records", "delete", baseId, "Authors", recordId], { audit: JSON.stringify(audit), yes: true }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+    const remove = createContext(["records", "rm", baseId, "Authors", recordId], { audit: JSON.stringify(audit), yes: true }, [
+      jsonResponse(resolved(table, recordId)),
       new Response(null, { status: 204 }),
     ]);
 
     await gridsCli.run(remove.ctx);
 
-    expect(remove.calls[2]?.path).toBe(`/api/grids/records/${tableId}/${recordId}/trash`);
-    expect(remove.calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(remove.calls[2]?.init?.body))).toEqual({ audit: { answers: audit } });
+    expect(remove.calls[1]?.path).toBe(`/api/grids/records/${tableId}/${recordId}/trash`);
+    expect(remove.calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(remove.calls[1]?.init?.body))).toEqual({ audit: { answers: audit } });
 
     const restore = createContext(["records", "restore", baseId, "Authors", recordId], { audit: JSON.stringify(audit) }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table, recordId)),
       new Response(null, { status: 204 }),
     ]);
 
     await gridsCli.run(restore.ctx);
 
-    expect(restore.calls[2]?.path).toBe(`/api/grids/records/${tableId}/${recordId}/restore`);
-    expect(restore.calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(restore.calls[2]?.init?.body))).toEqual({ audit: { answers: audit } });
+    expect(restore.calls[1]?.path).toBe(`/api/grids/records/${tableId}/${recordId}/restore`);
+    expect(restore.calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(restore.calls[1]?.init?.body))).toEqual({ audit: { answers: audit } });
   });
 
   test("browses Combined audit entries with server-side filters and cursors", async () => {
@@ -1922,15 +2001,14 @@ describe("grids CLI", () => {
     const { ctx, calls, jsonValues } = createContext(
       ["records", "audit", "list", baseId, "All authors"],
       { action: "deleted", source: "0", cursor: "current-page", limit: "25" },
-      [jsonResponse(basePage), jsonResponse([combinedTable]), jsonResponse(payload)],
+      [jsonResponse(resolved(combinedTable)), jsonResponse(payload)],
       { output: "json" },
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=All+authors`,
       `/api/grids/records/by-table/${combinedTableId}/audit?sourceRef=0&action=deleted&cursor=current-page&limit=25`,
     ]);
     expect(jsonValues).toEqual([payload]);
@@ -1963,8 +2041,7 @@ describe("grids CLI", () => {
       nextCursor: null,
     };
     const { ctx, tables } = createContext(["records", "audit", "list", baseId, "All authors"], {}, [
-      jsonResponse(basePage),
-      jsonResponse([combinedTable]),
+      jsonResponse(resolved(combinedTable)),
       jsonResponse(payload),
     ]);
 
@@ -1979,20 +2056,18 @@ describe("grids CLI", () => {
   test("imports records atomically through the backend import endpoint", async () => {
     const body = [{ [fieldId]: "Octavia Butler" }];
     const { ctx, calls, tables } = createContext(["records", "import", baseId, "Authors"], { body: JSON.stringify(body) }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse({ items: [{ ...record, data: body[0] }] }, 201),
     ]);
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/records/by-table/${tableId}/import`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ items: body });
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ items: body });
     expect(tables[0]?.[0]).toMatchObject({ id: recordId, [fieldId]: "Octavia Butler" });
   });
 
@@ -2001,20 +2076,18 @@ describe("grids CLI", () => {
     const out = join(dir, "authors.json");
     try {
       const { ctx, calls, lines } = createContext(["records", "export", baseId, "Authors"], { format: "json", limit: "50", out }, [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table)),
         new Response("[]", { headers: { "Content-Type": "application/json" } }),
       ]);
 
       await gridsCli.run(ctx);
 
       expect(calls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/tables/by-base/${baseId}`,
+        `/api/grids/resolve?base=${baseId}&table=Authors`,
         `/api/grids/records/by-table/${tableId}/export`,
       ]);
-      expect(calls[2]?.init?.method).toBe("POST");
-      expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ format: "json", query: { limit: 50 } });
+      expect(calls[1]?.init?.method).toBe("POST");
+      expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ format: "json", query: { limit: 50 } });
       expect(lines).toEqual([`Wrote ${out}.`]);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -2027,8 +2100,7 @@ describe("grids CLI", () => {
       calls: listCalls,
       tables,
     } = createContext(["records", "files", "list", baseId, "Authors", recordId, "Name"], {}, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table, recordId)),
       jsonResponse([field]),
       jsonResponse({ items: [gridFile] }),
     ]);
@@ -2036,8 +2108,7 @@ describe("grids CLI", () => {
     await gridsCli.run(listCtx);
 
     expect(listCalls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors&record=${recordId}`,
       `/api/grids/fields/by-table/${tableId}`,
       `/api/grids/records/${tableId}/${recordId}/files/${fieldId}`,
     ]);
@@ -2053,8 +2124,7 @@ describe("grids CLI", () => {
         calls: uploadCalls,
         lines: uploadLines,
       } = createContext(["records", "files", "upload", baseId, "Authors", recordId, "Name", source], {}, [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table, recordId)),
         jsonResponse([field]),
         jsonResponse(gridFile, 201),
       ]);
@@ -2062,13 +2132,12 @@ describe("grids CLI", () => {
       await gridsCli.run(uploadCtx);
 
       expect(uploadCalls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/tables/by-base/${baseId}`,
+        `/api/grids/resolve?base=${baseId}&table=Authors&record=${recordId}`,
         `/api/grids/fields/by-table/${tableId}`,
         `/api/grids/records/${tableId}/${recordId}/files/${fieldId}`,
       ]);
-      expect(uploadCalls[3]?.init?.method).toBe("POST");
-      const form = uploadCalls[3]?.init?.body as FormData;
+      expect(uploadCalls[2]?.init?.method).toBe("POST");
+      const form = uploadCalls[2]?.init?.body as FormData;
       const file = form.get("file") as File;
       expect(file.name).toBe("cover.txt");
       expect(await file.text()).toBe("hello");
@@ -2079,8 +2148,7 @@ describe("grids CLI", () => {
         calls: downloadCalls,
         lines: downloadLines,
       } = createContext(["records", "files", "download", baseId, "Authors", recordId, "Name", fileId], { out }, [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table, recordId)),
         jsonResponse([field]),
         new Response("hello"),
       ]);
@@ -2088,8 +2156,7 @@ describe("grids CLI", () => {
       await gridsCli.run(downloadCtx);
 
       expect(downloadCalls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/tables/by-base/${baseId}`,
+        `/api/grids/resolve?base=${baseId}&table=Authors&record=${recordId}`,
         `/api/grids/fields/by-table/${tableId}`,
         `/api/grids/records/${tableId}/${recordId}/files/${fieldId}/${fileId}/content`,
       ]);
@@ -2101,8 +2168,7 @@ describe("grids CLI", () => {
         calls: deleteCalls,
         lines: deleteLines,
       } = createContext(["records", "files", "delete", baseId, "Authors", recordId, "Name", fileId], { yes: true }, [
-        jsonResponse(basePage),
-        jsonResponse([table]),
+        jsonResponse(resolved(table, recordId)),
         jsonResponse([field]),
         new Response(null, { status: 204 }),
       ]);
@@ -2110,12 +2176,11 @@ describe("grids CLI", () => {
       await gridsCli.run(deleteCtx);
 
       expect(deleteCalls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/tables/by-base/${baseId}`,
+        `/api/grids/resolve?base=${baseId}&table=Authors&record=${recordId}`,
         `/api/grids/fields/by-table/${tableId}`,
         `/api/grids/records/${tableId}/${recordId}/files/${fieldId}/${fileId}`,
       ]);
-      expect(deleteCalls[3]?.init?.method).toBe("DELETE");
+      expect(deleteCalls[2]?.init?.method).toBe("DELETE");
       expect(deleteLines).toEqual([`Removed attachment ${fileId} from the current record.`]);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -2123,11 +2188,11 @@ describe("grids CLI", () => {
   });
 
   test("record create help points agents to the shape command", async () => {
-    const { ctx, lines } = createContext(["records", "create", "help"]);
+    const { ctx, lines } = createContext(["records", "add", "help"]);
 
     await gridsCli.run(ctx);
 
-    expect(lines[0]).toContain("cld grids records shape Bookshop Authors --json");
+    expect(lines[0]).toContain("cld grids records shape Bookshop:Authors --json");
     expect(lines[0]).toContain("Pass a JSON object keyed by field public id.");
   });
 
@@ -2175,8 +2240,7 @@ describe("grids CLI", () => {
 
   test("checks formulas through the backend compiler", async () => {
     const { ctx, calls, tables } = createContext(["formulas", "check", baseId, "Authors"], { expression: "LEN(Name)" }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse({
         ok: true,
         diagnostics: [],
@@ -2189,12 +2253,11 @@ describe("grids CLI", () => {
 
     expect(exitCode).toBe(0);
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/formulas/by-table/${tableId}/check`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ expression: "LEN(Name)" });
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ expression: "LEN(Name)" });
     expect(tables[0]).toEqual([{ recordId, result: "18" }]);
   });
 
@@ -2202,18 +2265,17 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["views", "create", baseId, "Authors"],
       { name: "Recent authors", source: "from table Authors" },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(view, 201)],
+      [jsonResponse(resolved(table)), jsonResponse(view, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/views/by-table/${tableId}`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
       name: "Recent authors",
       source: "from table Authors",
     });
@@ -2238,13 +2300,13 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["access", "set", "base", baseId],
       { user: accessEntry.principal.userId, permission: "write" },
-      [jsonResponse(basePage), jsonResponse([accessEntry]), new Response(null, { status: 204 })],
+      [jsonResponse(resolved()), jsonResponse([accessEntry]), new Response(null, { status: 204 })],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/access/by-base/${baseId}`,
       `/api/grids/access/${accessId}`,
     ]);
@@ -2257,13 +2319,13 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["access", "grant", "app", baseId, "Public catalog"],
       { public: true, permission: "read" },
-      [jsonResponse(basePage), jsonResponse([customApp]), jsonResponse({ accessId }, 201)],
+      [jsonResponse(resolved()), jsonResponse([customApp]), jsonResponse({ accessId }, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/apps/by-base/${baseId}`,
       `/api/grids/access/by-custom-app/${customAppId}`,
     ]);
@@ -2292,18 +2354,17 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["forms", "create", baseId, "Authors"],
       { name: "Author intake", config: JSON.stringify(form.config), public: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...form, publicToken: "pub_test" }, 201)],
+      [jsonResponse(resolved(table)), jsonResponse({ ...form, publicToken: "pub_test" }, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/forms/by-table/${tableId}`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
       name: "Author intake",
       config: form.config,
       isPublic: true,
@@ -2315,19 +2376,18 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["forms", "submit", baseId, "Authors", "Author intake"],
       { body: JSON.stringify({ [fieldId]: "N. K. Jemisin" }) },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([form]), jsonResponse({ recordId }, 201)],
+      [jsonResponse(resolved(table)), jsonResponse([form]), jsonResponse({ recordId }, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/forms/by-table/${tableId}`,
       `/api/grids/forms/${formId}/submit`,
     ]);
-    expect(calls[3]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({ [fieldId]: "N. K. Jemisin" });
+    expect(calls[2]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ [fieldId]: "N. K. Jemisin" });
     expect(lines).toEqual([`Created record ${recordId}.`]);
   });
 
@@ -2341,7 +2401,7 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["forms", "submit", baseId, "Authors", "Author intake"],
       { body: JSON.stringify(body), record: recordId, yes: true },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([form]), jsonResponse({ recordId })],
+      [jsonResponse(resolved(table)), jsonResponse([form]), jsonResponse({ recordId })],
     );
     await gridsCli.run(ctx);
     expect(calls.at(-1)?.path).toBe(`/api/grids/forms/${formId}/records/${recordId}`);
@@ -2356,7 +2416,7 @@ describe("grids CLI", () => {
     const stale = createContext(
       ["forms", "submit", baseId, "Authors", "Author intake"],
       { record: recordId, yes: true, body: JSON.stringify({ data: {} }) },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([form])],
+      [jsonResponse(resolved(table)), jsonResponse([form])],
     );
     await expect(gridsCli.run(stale.ctx)).rejects.toThrow("positive version");
     expect(stale.calls.every((call) => !call.init?.method || call.init.method === "GET")).toBe(true);
@@ -2365,8 +2425,7 @@ describe("grids CLI", () => {
   test("rejects form UUID references", async () => {
     const uuid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const { ctx } = createContext(["forms", "get", baseId], { table: "Authors", form: uuid }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse([form]),
     ]);
 
@@ -2383,18 +2442,17 @@ describe("grids CLI", () => {
         "number-template": documentTemplate.renderer.numberTemplate,
         "filename-template": documentTemplate.renderer.filenameTemplate,
       },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(documentTemplate, 201)],
+      [jsonResponse(resolved(table)), jsonResponse(documentTemplate, 201)],
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/documents/templates/by-table/${tableId}`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({
       name: "Invoice",
       source: documentTemplate.source,
       renderer: documentTemplate.renderer,
@@ -2406,15 +2464,14 @@ describe("grids CLI", () => {
     const { ctx, calls, jsonValues } = createContext(
       ["document-templates", "get", baseId, "Authors", "Invoice"],
       {},
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([documentTemplate])],
+      [jsonResponse(resolved(table)), jsonResponse([documentTemplate])],
       { output: "json" },
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/documents/templates/by-table/${tableId}/full`,
     ]);
     expect(jsonValues).toEqual([{ ...documentTemplate, id: documentTemplate.id }]);
@@ -2427,19 +2484,18 @@ describe("grids CLI", () => {
       const { ctx, calls, lines } = createContext(
         ["documents", "generate", baseId, "Authors", "Invoice"],
         { record: recordId, tag: ["invoice"], "idempotency-key": "invoice-001", out },
-        [jsonResponse(basePage), jsonResponse([table]), jsonResponse([documentTemplate]), new Response("PDF")],
+        [jsonResponse(resolved(table)), jsonResponse([documentTemplate]), new Response("PDF")],
       );
 
       await gridsCli.run(ctx);
 
       expect(calls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/tables/by-base/${baseId}`,
+        `/api/grids/resolve?base=${baseId}&table=Authors`,
         `/api/grids/documents/templates/by-table/${tableId}?min=read`,
         `/api/grids/documents/templates/${documentTemplateId}/generate`,
       ]);
-      expect(calls[3]?.init?.method).toBe("POST");
-      expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({
+      expect(calls[2]?.init?.method).toBe("POST");
+      expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
         recordId,
         tags: ["invoice"],
         idempotencyKey: "invoice-001",
@@ -2458,12 +2514,12 @@ describe("grids CLI", () => {
     expect(renderers.tables[0]?.[0]).toMatchObject({ id: renderer.id, version: 1 });
 
     const documents = createContext(["documents", "list", baseId], { limit: "25" }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse({ items: [document], cursor: "next", hasMore: true }),
     ]);
     await gridsCli.run(documents.ctx);
     expect(documents.calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/documents/by-base/${baseId}?sort=newest&limit=25`,
     ]);
     expect(documents.tables[0]?.[0]).toMatchObject({ id: documentId, number: document.number });
@@ -2472,7 +2528,7 @@ describe("grids CLI", () => {
     const filtered = createContext(
       ["documents", "list", baseId],
       { workflow: "FLOW01", template: "TMPL01", "media-type": "application/zip", sort: "name", q: "bundle" },
-      [jsonResponse(basePage), jsonResponse({ items: [], cursor: null, hasMore: false })],
+      [jsonResponse(resolved()), jsonResponse({ items: [], cursor: null, hasMore: false })],
     );
     await gridsCli.run(filtered.ctx);
     expect(filtered.calls.at(-1)?.path).toBe(
@@ -2511,12 +2567,11 @@ describe("grids CLI", () => {
 
   test("requires an explicit stable retry key before generating a Document", async () => {
     const { ctx, calls } = createContext(["documents", "generate", baseId, "Authors", "Invoice"], { record: recordId }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse([documentTemplate]),
     ]);
     await expect(gridsCli.run(ctx)).rejects.toThrow("Missing stable retry key");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(2);
   });
 
   test("previews unsaved document template drafts as data", async () => {
@@ -2529,23 +2584,18 @@ describe("grids CLI", () => {
         "number-template": documentTemplate.renderer.numberTemplate,
         "filename-template": documentTemplate.renderer.filenameTemplate,
       },
-      [
-        jsonResponse(basePage),
-        jsonResponse([table]),
-        jsonResponse({ html: "<p>Rendered</p>", data: { record: { id: recordId } }, columns: [], rows: [] }),
-      ],
+      [jsonResponse(resolved(table)), jsonResponse({ html: "<p>Rendered</p>", data: { record: { id: recordId } }, columns: [], rows: [] })],
       { output: "json" },
     );
 
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/documents/templates/by-table/${tableId}/preview-data-draft`,
     ]);
-    expect(calls[2]?.init?.method).toBe("POST");
-    expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({
+    expect(calls[1]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({
       recordId,
       source: documentTemplate.source,
       renderer: documentTemplate.renderer,
@@ -2560,19 +2610,18 @@ describe("grids CLI", () => {
       const { ctx, calls, lines } = createContext(
         ["document-templates", "preview-draft-pdf", baseId, "Authors", "Invoice"],
         { record: recordId, out, html: "<p>{{ record.id }}</p>" },
-        [jsonResponse(basePage), jsonResponse([table]), jsonResponse([documentTemplate]), new Response("PDF")],
+        [jsonResponse(resolved(table)), jsonResponse([documentTemplate]), new Response("PDF")],
       );
 
       await gridsCli.run(ctx);
 
       expect(calls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/tables/by-base/${baseId}`,
+        `/api/grids/resolve?base=${baseId}&table=Authors`,
         `/api/grids/documents/templates/by-table/${tableId}/full`,
         `/api/grids/documents/templates/${documentTemplateId}/preview-draft`,
       ]);
-      expect(calls[3]?.init?.method).toBe("POST");
-      expect(JSON.parse(String(calls[3]?.init?.body))).toMatchObject({
+      expect(calls[2]?.init?.method).toBe("POST");
+      expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({
         recordId,
         source: documentTemplate.source,
         renderer: {
@@ -2593,8 +2642,7 @@ describe("grids CLI", () => {
       calls: listCalls,
       tables,
     } = createContext(["documents", "list-by-template", baseId, "Authors", "Invoice"], { tag: ["invoice"], limit: "25" }, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse([documentTemplate]),
       jsonResponse({ items: [document], limit: 25 }),
     ]);
@@ -2602,8 +2650,7 @@ describe("grids CLI", () => {
     await gridsCli.run(listCtx);
 
     expect(listCalls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors`,
       `/api/grids/documents/templates/by-table/${tableId}?min=read`,
       `/api/grids/documents/by-template/${documentTemplateId}?tags=invoice&limit=25`,
     ]);
@@ -2635,19 +2682,17 @@ describe("grids CLI", () => {
       calls: createCalls,
       lines: createLines,
     } = createContext(["snapshots", "create", baseId, "Authors", recordId], {}, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table, recordId)),
       jsonResponse({ snapshot: recordSnapshot }, 201),
     ]);
 
     await gridsCli.run(createCtx);
 
     expect(createCalls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors&record=${recordId}`,
       `/api/grids/documents/snapshots/by-record/${tableId}/${recordId}`,
     ]);
-    expect(createCalls[2]?.init?.method).toBe("POST");
+    expect(createCalls[1]?.init?.method).toBe("POST");
     expect(createLines).toEqual([`Created snapshot ${snapshotId}.`]);
 
     const {
@@ -2655,16 +2700,14 @@ describe("grids CLI", () => {
       calls: listCalls,
       tables,
     } = createContext(["snapshots", "list", baseId, "Authors", recordId], {}, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table, recordId)),
       jsonResponse({ items: [recordSnapshot] }),
     ]);
 
     await gridsCli.run(listCtx);
 
     expect(listCalls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/resolve?base=${baseId}&table=Authors&record=${recordId}`,
       `/api/grids/documents/snapshots/by-record/${tableId}/${recordId}`,
     ]);
     expect(tables[0]?.[0]).toMatchObject({ id: snapshotId, recordId, tableId });
@@ -2686,8 +2729,7 @@ describe("grids CLI", () => {
   test("rejects document template UUID references", async () => {
     const uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { ctx } = createContext(["document-templates", "get", baseId, "Authors", uuid], {}, [
-      jsonResponse(basePage),
-      jsonResponse([table]),
+      jsonResponse(resolved(table)),
       jsonResponse([documentTemplate]),
     ]);
 
@@ -2698,15 +2740,12 @@ describe("grids CLI", () => {
     const { ctx, calls, lines } = createContext(
       ["email-templates", "create", baseId],
       { name: "Reminder", subject: "Reminder", html: "<p>Hello</p>" },
-      [jsonResponse(basePage), jsonResponse(emailTemplate, 201)],
+      [jsonResponse(resolved()), jsonResponse(emailTemplate, 201)],
     );
 
     await gridsCli.run(ctx);
 
-    expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-      `/api/grids/email-templates/by-base/${baseId}`,
-    ]);
+    expect(calls.map((call) => call.path)).toEqual([`/api/grids/resolve?base=${baseId}`, `/api/grids/email-templates/by-base/${baseId}`]);
     expect(calls[1]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ name: "Reminder", subject: "Reminder", html: "<p>Hello</p>" });
     expect(lines).toEqual(["Created email template Reminder (mail1A)."]);
@@ -2714,14 +2753,14 @@ describe("grids CLI", () => {
 
   test("rejects email template UUID references", async () => {
     const uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const { ctx } = createContext(["email-templates", "get", baseId, uuid], {}, [jsonResponse(basePage), jsonResponse([emailTemplate])]);
+    const { ctx } = createContext(["email-templates", "get", baseId, uuid], {}, [jsonResponse(resolved()), jsonResponse([emailTemplate])]);
 
     await expect(gridsCli.run(ctx)).rejects.toThrow("email template references do not accept UUIDs");
   });
 
   test("validates workflow YAML through the backend", async () => {
     const { ctx, calls, lines } = createContext(["workflows", "validate", baseId], { source: workflow.source }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse({ ok: true, plan: workflow.plan }),
     ]);
 
@@ -2729,7 +2768,7 @@ describe("grids CLI", () => {
 
     expect(exitCode).toBe(0);
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/workflows/by-base/${baseId}/validate`,
     ]);
     expect(calls[1]?.init?.method).toBe("POST");
@@ -2743,16 +2782,13 @@ describe("grids CLI", () => {
     await writeFile(sourceFile, workflow.source);
     try {
       const { ctx, calls, lines } = createContext(["workflows", "create", baseId], { name: "Send reminder", f: sourceFile }, [
-        jsonResponse(basePage),
+        jsonResponse(resolved()),
         jsonResponse(workflow, 201),
       ]);
 
       await gridsCli.run(ctx);
 
-      expect(calls.map((call) => call.path)).toEqual([
-        `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
-        `/api/grids/workflows/by-base/${baseId}`,
-      ]);
+      expect(calls.map((call) => call.path)).toEqual([`/api/grids/resolve?base=${baseId}`, `/api/grids/workflows/by-base/${baseId}`]);
       expect(JSON.parse(String(calls[1]?.init?.body))).toMatchObject({ name: "Send reminder", source: workflow.source });
       expect(lines).toEqual(["Created workflow Send reminder (wf001A)."]);
     } finally {
@@ -2763,7 +2799,7 @@ describe("grids CLI", () => {
   test("sends the resolved workflow revision when updating", async () => {
     const updated = { ...workflow, name: "Updated reminder", revision: workflow.revision + 1 };
     const { ctx, calls, lines } = createContext(["workflows", "update", baseId, workflow.id], { name: updated.name }, [
-      jsonResponse(basePage),
+      jsonResponse(resolved()),
       jsonResponse([workflow]),
       jsonResponse(updated),
     ]);
@@ -2771,7 +2807,7 @@ describe("grids CLI", () => {
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/workflows/by-base/${baseId}`,
       `/api/grids/workflows/${workflowId}`,
     ]);
@@ -2782,7 +2818,7 @@ describe("grids CLI", () => {
 
   test("rejects workflow UUID references", async () => {
     const uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    const { ctx } = createContext(["workflows", "get", baseId, uuid], {}, [jsonResponse(basePage), jsonResponse([workflow])]);
+    const { ctx } = createContext(["workflows", "get", baseId, uuid], {}, [jsonResponse(resolved()), jsonResponse([workflow])]);
 
     await expect(gridsCli.run(ctx)).rejects.toThrow("workflow references do not accept UUIDs");
   });
@@ -2792,7 +2828,7 @@ describe("grids CLI", () => {
       ["workflows", "invoke", baseId, "Send reminder"],
       { inputs: JSON.stringify({ recordId }), "idempotency-key": "reminder-1" },
       [
-        jsonResponse(basePage),
+        jsonResponse(resolved()),
         jsonResponse([workflow]),
         jsonResponse({ runId, workflowId, revision: 1, mode: "execute", channel: "api", created: true, status: "queued" }),
       ],
@@ -2801,7 +2837,7 @@ describe("grids CLI", () => {
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/workflows/by-base/${baseId}`,
       `/api/grids/workflows/${workflowId}/invoke/cli`,
     ]);
@@ -2819,7 +2855,7 @@ describe("grids CLI", () => {
       ["workflows", "invoke", baseId, "Send reminder"],
       { "idempotency-key": "scheduled-manual-1" },
       [
-        jsonResponse(basePage),
+        jsonResponse(resolved()),
         jsonResponse([scheduledWorkflow]),
         jsonResponse({ runId, workflowId, revision: 1, mode: "execute", channel: "api", created: true, status: "queued" }),
       ],
@@ -2828,7 +2864,7 @@ describe("grids CLI", () => {
     await gridsCli.run(ctx);
 
     expect(calls.map((call) => call.path)).toEqual([
-      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/resolve?base=${baseId}`,
       `/api/grids/workflows/by-base/${baseId}`,
       `/api/grids/workflows/${workflowId}/invoke/cli`,
     ]);

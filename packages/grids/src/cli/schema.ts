@@ -58,6 +58,7 @@ import {
   resolveField,
   resolveNamedResource,
   resolveTable,
+  resolveTableFromCommand,
   tableArgs,
   tableFlag,
 } from "./resources";
@@ -174,10 +175,11 @@ const readFederatedDraftInput = async (
 };
 
 export const tableCommands = [
-  command("tables list", {
+  command("tables ls", {
     summary: "List tables in a base",
     args: baseArgs,
     flags: baseFlag,
+    examples: ["cld grids tables ls Bookshop --json"],
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       const tables = await listTables(ctx, base.id);
@@ -190,13 +192,13 @@ export const tableCommands = [
       ]);
     },
   }),
-  command("tables get", {
+  command("tables show", {
     summary: "Show a table",
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
+    examples: ["cld grids tables show Bookshop:Authors --json", "cld grids tables show Ab12Cd"],
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (!printCliStructured(ctx, table)) {
         ctx.print(`${table.name} (${table.id})`);
         if (table.description) ctx.print(table.description);
@@ -211,8 +213,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "stored") throw new Error("Record change policies are only available for stored tables.");
       if (!printCliStructured(ctx, table.mutationPolicy)) {
         ctx.print(`Allowed record change sources for ${table.name}: ${mutationPolicyText(table.mutationPolicy)}.`);
@@ -230,8 +231,7 @@ export const tableCommands = [
     },
     async run({ ctx, args, flags }) {
       const policy = parseMutationPolicy(flags.allow);
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "stored") throw new Error("Record change policies are only available for stored tables.");
       const impact = await readApi<MutationPolicyImpact>(
         ctx,
@@ -276,8 +276,7 @@ export const tableCommands = [
       if (policy.mode === "selected" && policy.sources.length === 0 && !flags.yes) {
         throw new Error("Pass --yes with --allow none to freeze all record changes.");
       }
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "stored") throw new Error("Record change policies are only available for stored tables.");
       const result = await readApi<{ policy: TableMutationPolicy }>(
         ctx,
@@ -292,8 +291,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const status = await readApi<PublicDurableHistoryStatus>(ctx, `/tables/${encodeURIComponent(table.id)}/durable-history`);
       if (!printCliStructured(ctx, status)) {
         if (!status.enabled) ctx.print(`Durable history is not enabled for ${table.name} (${table.id}).`);
@@ -312,13 +310,12 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, yes: confirmFlag("Permanently enable durable history for this table") },
     examples: [
-      "cld grids tables history enable Bookshop Authors --yes",
+      "cld grids tables history enable Bookshop:Authors --yes",
       "cld grids tables history enable --base Bookshop --table Authors --yes --json",
     ],
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to permanently enable durable history.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       let status = await readApi<PublicDurableHistoryStatus>(
         ctx,
         `/tables/${encodeURIComponent(table.id)}/durable-history/enable`,
@@ -343,8 +340,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const status = await readApi<PublicRecordFinalizationStatus>(ctx, `/tables/${encodeURIComponent(table.id)}/finalization`);
       if (!printCliStructured(ctx, status)) {
         ctx.print(
@@ -372,8 +368,7 @@ export const tableCommands = [
       if (mode === "four-eyes" && !flags.approverGroup?.trim()) {
         throw new Error("Pass --approver-group with the Cloud group UUID for Four-eyes Finalization.");
       }
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const policy =
         mode === "four-eyes" ? { mode: "fourEyes" as const, approverGroupId: flags.approverGroup!.trim() } : { mode: "direct" as const };
       const status = await readApi<PublicRecordFinalizationStatus>(
@@ -390,8 +385,7 @@ export const tableCommands = [
     flags: { ...baseFlag, ...tableFlag, yes: confirmFlag("Disable record finalization") },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to disable record finalization.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const status = await readApi<PublicRecordFinalizationStatus>(
         ctx,
         `/tables/${encodeURIComponent(table.id)}/finalization/disable`,
@@ -417,8 +411,7 @@ export const tableCommands = [
       if (mode === "four-eyes" && !flags.approverGroup?.trim()) {
         throw new Error("Pass --approver-group with the Cloud group UUID for Four-eyes Finalization.");
       }
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const policy =
         mode === "four-eyes" ? { mode: "fourEyes" as const, approverGroupId: flags.approverGroup!.trim() } : { mode: "direct" as const };
       const status = await readApi<PublicRecordFinalizationStatus>(
@@ -435,7 +428,7 @@ export const tableCommands = [
       );
     },
   }),
-  command("tables create", {
+  command("tables add", {
     summary: "Create a table",
     args: baseArgs,
     flags: {
@@ -447,8 +440,8 @@ export const tableCommands = [
       icon: flag.string({ description: "Table icon class" }),
     },
     examples: [
-      "cld grids tables create Bookshop --name Authors --description 'People who wrote books'",
-      'cld grids tables create --base Bookshop --body \'{"name":"Orders","icon":"ti ti-shopping-cart"}\'',
+      "cld grids tables add Bookshop --name Authors --description 'People who wrote books'",
+      'cld grids tables add --base Bookshop --body \'{"name":"Orders","icon":"ti ti-shopping-cart"}\'',
     ],
     async run({ ctx, args, flags }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
@@ -468,7 +461,7 @@ export const tableCommands = [
       printJsonOrMessage(ctx, table, `Created table ${table.name} (${table.id}).`);
     },
   }),
-  command("tables update", {
+  command("tables set", {
     summary: "Update a table",
     args: tableArgs,
     flags: {
@@ -481,9 +474,9 @@ export const tableCommands = [
       disableDirectInsert: flag.boolean({ name: "disable-direct-insert", description: "Disable direct record insertion" }),
       enableDirectInsert: flag.boolean({ name: "enable-direct-insert", description: "Enable direct record insertion" }),
     },
+    examples: ["cld grids tables set Bookshop:Authors --description 'People who wrote books'"],
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "table update JSON", false)) ?? {};
       applyDefined(body, {
         name: flags.name,
@@ -495,14 +488,14 @@ export const tableCommands = [
       printJsonOrMessage(ctx, updated, `Updated table ${updated.name} (${updated.id}).`);
     },
   }),
-  command("tables delete", {
+  command("tables rm", {
     summary: "Delete a table",
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, yes: confirmFlag("Delete this table") },
+    examples: ["cld grids tables rm Bookshop:Authors --yes"],
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to delete.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       await readApi<MessageResponse>(ctx, `/tables/${encodeURIComponent(table.id)}`, jsonRequest("DELETE"));
       printJsonOrMessage(ctx, { deleted: table.id }, `Deleted table ${table.name} (${table.id}).`);
     },
@@ -520,8 +513,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "federated") throw new Error(`Table "${table.name}" is not a Combined table.`);
       const config = await readApi<FederatedTableConfig>(ctx, `/tables/${encodeURIComponent(table.id)}/federation`);
       if (!printCliStructured(ctx, config)) {
@@ -547,8 +539,7 @@ export const tableCommands = [
       ...paginationFlags({ defaultPerPage: 50, maxPerPage: 100 }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "federated") throw new Error(`Table "${table.name}" is not a Combined table.`);
       const perPage = flags.perPage ?? 50;
       const page = flags.page ?? 1;
@@ -580,8 +571,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "source table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "stored") throw new Error(`Table "${table.name}" is not a stored source table.`);
       const publications = await readApi<FederatedSourcePublication[]>(
         ctx,
@@ -616,8 +606,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, body: JSON_BODY_INPUT },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { base, table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "federated") throw new Error(`Table "${table.name}" is not a Combined table.`);
       const input = await readFederatedDraftInput(ctx, base.id, table, await readJsonInput<unknown>(flags.body, "Combined table JSON"));
       const result = await readApi<FederatedValidation>(
@@ -637,8 +626,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, body: JSON_BODY_INPUT },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { base, table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "federated") throw new Error(`Table "${table.name}" is not a Combined table.`);
       const input = await readFederatedDraftInput(ctx, base.id, table, await readJsonInput<unknown>(flags.body, "Combined table JSON"));
       const config = await readApi<FederatedTableConfig>(ctx, `/tables/${encodeURIComponent(table.id)}/federation`);
@@ -659,8 +647,7 @@ export const tableCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (table.kind !== "federated") throw new Error(`Table "${table.name}" is not a Combined table.`);
       const revision = await readApi<FederatedRevisionView>(
         ctx,
@@ -684,8 +671,7 @@ export const tableCommands = [
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to revoke the source publication.");
       if (!flags.targetTable) throw new Error("Pass --target-table with the published Combined table public id.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const source = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "source table"));
+      const { table: source } = await resolveTableFromCommand(ctx, args.args);
       if (source.kind !== "stored") throw new Error(`Table "${source.name}" is not a stored source table.`);
       await readApi<null>(
         ctx,
@@ -729,8 +715,7 @@ export const fieldCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const fields = await listFields(ctx, table.id);
       printJsonOrTable(ctx, fields, fieldRows(fields), [
         { key: "id", label: "ID" },
@@ -746,9 +731,8 @@ export const fieldCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, field: flag.string({ description: "Field public id or exact name" }) },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.field ? 0 : 1) : 2);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const fieldRef = flags.field ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "field");
+      const { table, rest } = await resolveTableFromCommand(ctx, args.args, flags.field ? 0 : 1);
+      const fieldRef = flags.field ?? requireRestArg(rest, 0, "field");
       const field = await resolveField(ctx, table.id, fieldRef);
       if (!printCliStructured(ctx, field)) {
         ctx.print(`${field.name} (${field.id})`);
@@ -774,13 +758,12 @@ export const fieldCommands = [
       hideInTable: flag.boolean({ name: "hide-in-table", description: "Hide field in table views" }),
     },
     examples: [
-      'cld grids fields create Bookshop Authors --name Email --type text --config \'{"regex":"^[^@]+@[^@]+$"}\'',
-      'cld grids fields create Bookshop Orders --name Customer --type relation --config \'{"targetTableId":"<table-id>","cardinality":"single"}\'',
-      "cld grids fields create Bookshop Orders --body-file field.json",
+      'cld grids fields create Bookshop:Authors --name Email --type text --config \'{"regex":"^[^@]+@[^@]+$"}\'',
+      'cld grids fields create Bookshop:Orders --name Customer --type relation --config \'{"targetTableId":"<table-id>","cardinality":"single"}\'',
+      "cld grids fields create Bookshop:Orders --body-file field.json",
     ],
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "field JSON", false)) ?? {};
       applyDefined(body, {
         name: flags.name,
@@ -816,9 +799,8 @@ export const fieldCommands = [
       showInTable: flag.boolean({ name: "show-in-table", description: "Show field in table views" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.field ? 0 : 1) : 2);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const field = await resolveField(ctx, table.id, flags.field ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "field"));
+      const { table, rest } = await resolveTableFromCommand(ctx, args.args, flags.field ? 0 : 1);
+      const field = await resolveField(ctx, table.id, flags.field ?? requireRestArg(rest, 0, "field"));
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "field update JSON", false)) ?? {};
       applyDefined(body, {
         name: flags.name,
@@ -843,9 +825,8 @@ export const fieldCommands = [
     },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to delete.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.field ? 0 : 1) : 2);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const field = await resolveField(ctx, table.id, flags.field ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "field"));
+      const { table, rest } = await resolveTableFromCommand(ctx, args.args, flags.field ? 0 : 1);
+      const field = await resolveField(ctx, table.id, flags.field ?? requireRestArg(rest, 0, "field"));
       await readApi<MessageResponse>(ctx, `/fields/${encodeURIComponent(field.id)}`, jsonRequest("DELETE"));
       printJsonOrMessage(ctx, { deleted: field.id }, `Deleted field ${field.name} (${field.id}).`);
     },
@@ -863,9 +844,8 @@ export const fieldCommands = [
     args: tableArgs,
     flags: { ...baseFlag, ...tableFlag, field: flag.string({ description: "Field public id or exact name" }) },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.field ? 0 : 1) : 2);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
-      const field = await resolveField(ctx, table.id, flags.field ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "field"));
+      const { table, rest } = await resolveTableFromCommand(ctx, args.args, flags.field ? 0 : 1);
+      const field = await resolveField(ctx, table.id, flags.field ?? requireRestArg(rest, 0, "field"));
       const payload = await readApi<FieldDependentsResponse>(ctx, `/fields/${encodeURIComponent(field.id)}/dependents`);
       if (!printCliStructured(ctx, payload)) {
         ctx.print(payload.hasBlocking ? "Blocking dependents found." : "No blocking dependents.");
@@ -882,8 +862,7 @@ export const fieldCommands = [
       fieldIds: flag.stringList({ name: "field-ids", description: "Comma-separated field ids in desired order" }),
     },
     async run({ ctx, args, flags }) {
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
-      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const { table } = await resolveTableFromCommand(ctx, args.args);
       if (flags.fieldIds.length === 0) throw new Error("Pass --field-ids.");
       await readApi<MessageResponse>(
         ctx,

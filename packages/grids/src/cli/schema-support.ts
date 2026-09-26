@@ -156,7 +156,7 @@ const FIELD_TYPE_DETAILS: Record<string, FieldReferenceDetails> = {
   file: {
     config: '{ "maxFiles": 10, "accept": ["image/png", "application/pdf"] }',
     recordValue: "(external file API)",
-    notes: "File bytes are not written through records create/update. Use the dedicated file API/UI.",
+    notes: "File bytes are not written through records add/set. Use the dedicated file API/UI.",
   },
 };
 

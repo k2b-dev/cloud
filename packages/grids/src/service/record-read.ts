@@ -24,12 +24,12 @@ import type { Field, GridRecord } from "./types";
 
 type DbRow = Record<string, unknown>;
 
-export const findTableId = async (recordId: string): Promise<string | null> => {
+export const findTableId = async (recordId: string, opts: { includeDeleted?: boolean } = {}): Promise<string | null> => {
   const [row] = await sql<Array<{ table_id: string }>>`
     SELECT r.table_id::text AS table_id
     FROM grids.records r
     ${liveRecordParentJoinSql("r", "rt", "rb")}
-    WHERE r.id = ${recordId}::uuid AND r.deleted_at IS NULL
+    WHERE r.id = ${recordId}::uuid AND (${opts.includeDeleted ?? false} OR r.deleted_at IS NULL)
   `;
   return row?.table_id ?? null;
 };

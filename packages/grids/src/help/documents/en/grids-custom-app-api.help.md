@@ -114,7 +114,7 @@ Use discovered IDs and full Form values, retaining required inputs and explicit 
 
 `initialRecord` contains root `version`, editable `values` and drafts in `inlineCreates` with `{tempId,data,existing:{id,version}}`. Replace existing temporary references with `existing.id`; send existing edits as `inlineUpdates`, only new drafts as `inlineCreates`. It is not a write payload.
 
-The server chooses the edit target from the bound page Record, never a body `recordId`. For Base writers the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, using current versions from `records get`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`; create uses `POST /api/grids/forms/FORM/submit`.
+The server chooses the edit target from the bound page Record, never a body `recordId`. For Base writers the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, using current versions from `records show`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`; create uses `POST /api/grids/forms/FORM/submit`.
 
 Keys: nonblank, at most 200 characters, no NUL; scoped to Form/table and actor. Exact retries return the original Record ID without another write. Changed payloads, deleted results or stale versions conflict (`409`). After timeouts, retry the same body/key or inspect the result; unkeyed creates can duplicate. After confirmed stale versions, reload and review before a new attempt. Validation (`400`/`422`) and access failures (`401`/`403`/`404`) are not successful saves. Create returns `201`, edit `200`, with `recordId` and optional App success navigation.
 

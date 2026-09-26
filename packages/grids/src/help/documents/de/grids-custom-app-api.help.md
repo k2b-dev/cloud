@@ -114,7 +114,7 @@ Ermittelte IDs und vollständige Formularwerte verwenden: Pflichtwerte beibehalt
 
 `initialRecord` enthält Elternversion `version`, Eingaben `values` und vorausgefüllte Einträge in `inlineCreates` mit `{tempId,data,existing:{id,version}}`. Bestehende temporäre Verweise durch `existing.id` ersetzen; vorhandene Änderungen als `inlineUpdates`, nur neue als `inlineCreates` senden. Dies ist kein Schreib-Payload.
 
-Der Server bestimmt das Bearbeitungsziel aus dem Seitendatensatz, niemals aus einer `recordId` im Body. Base-Schreiber verwenden entsprechend `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, mit aktuellen Versionen aus `records get`. HTTP: `POST /api/grids/forms/FORM/records/REC001`; Anlegen: `POST /api/grids/forms/FORM/submit`.
+Der Server bestimmt das Bearbeitungsziel aus dem Seitendatensatz, niemals aus einer `recordId` im Body. Base-Schreiber verwenden entsprechend `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, mit aktuellen Versionen aus `records show`. HTTP: `POST /api/grids/forms/FORM/records/REC001`; Anlegen: `POST /api/grids/forms/FORM/submit`.
 
 Schlüssel: nichtleer, höchstens 200 Zeichen, ohne NUL; Gültigkeit je Formular/Tabelle und Akteur. Exakte Wiederholungen liefern dieselbe Datensatz-ID ohne weitere Änderung. Andere Payloads, gelöschte Ergebnisse oder alte Versionen ergeben `409`. Nach Timeouts denselben Body/Schlüssel wiederholen oder Ergebnis prüfen; ohne Schlüssel drohen Duplikate. Nach bestätigten Versionskonflikten neu laden und prüfen. Validierungsfehler (`400`/`422`) und Zugriffsfehler (`401`/`403`/`404`) sind keine Speicherung. Anlegen liefert `201`, Bearbeiten `200`, mit `recordId` und optionaler App-Erfolgsnavigation.
 

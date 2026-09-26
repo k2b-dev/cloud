@@ -57,6 +57,8 @@ export const listVisible = async (params: {
   userGroups: string[];
   serviceAccountId?: string | null;
   baseId?: string;
+  /** Exact name, for address resolution. */
+  name?: string;
   query?: string;
   limit?: number;
   offset?: number;
@@ -66,6 +68,7 @@ export const listVisible = async (params: {
   const query = params.query?.trim().toLowerCase();
   const conditions: any[] = [sql`b.deleted_at IS NULL`];
   if (params.baseId) conditions.push(sql`b.id = ${params.baseId}::uuid`);
+  if (params.name !== undefined) conditions.push(sql`b.name = ${params.name}`);
   if (query) {
     const pattern = `%${escapeLikePattern(query)}%`;
     conditions.push(sql`(

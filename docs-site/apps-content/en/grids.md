@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-22
+updated: 2026-09-26
 ---
 
 # Grids
@@ -677,12 +677,28 @@ For structured table queries, `sort` orders Records. Grouped results use
 `groupBy.direction` and `groupSort` instead, on both stored and federated tables.
 Aggregate labels are display text and do not need to be valid GQL aliases.
 
-Grids provides a native CLI module for every major resource area. These
-read-oriented commands list bases and records from a chosen table:
+Grids provides a native CLI module for every major resource area. Bases,
+tables, and records use the shared `cld` verbs `ls`, `show`, `add`, `set`, and
+`rm`; `rm` needs `--yes`. Every base, table, or record argument accepts an
+address:
+
+| Resource | Address |
+| --- | --- |
+| Base | Public ID or exact name |
+| Table | `<base>:<table>`, a table ID, or a table name in the default base from `cld grids use` |
+| Record | `<base>:<table>/<record id>` or a record ID |
+
+Records have no per-table number, so a record address always ends in the
+record's public ID. IDs always resolve. Names are exact; when one matches
+several bases or tables, the command fails with `409` and lists every candidate
+as `path (id)` instead of guessing. The CLI resolves addresses through
+`GET /api/grids/resolve`, which applies the same Base Read permissions as the
+app.
 
 ```bash
-cld grids list --json
-cld grids records list --base "Operations" --table "Requests" --limit 20 --json
+cld grids bases ls --json
+cld grids records ls "Operations:Requests" --limit 20 --json
+cld grids records show "Operations:Requests/Rc01Ab" --json
 ```
 
 Record updates patch only the named fields. Integrations can pass the current positive Record version with `--if-version` so a stale projection conflicts instead of overwriting a newer edit. An update whose normalized scalar and Relation values are already current returns the Record without creating another version, history revision, audit entry, or live event.
