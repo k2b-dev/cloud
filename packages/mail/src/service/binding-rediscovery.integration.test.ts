@@ -13,7 +13,7 @@ import { executeBindingRediscovery } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
-// Short enough for a test, long enough for a healthy rediscovery against local infrastructure.
+// Only the hung binding gets this short deadline; it hangs right after taking its provider lease.
 const TEST_DEADLINE_MS = 2_000;
 
 const inbox = () => ({
@@ -185,8 +185,9 @@ suite("mail binding rediscovery", () => {
       // The rediscovery job handles one binding at a time per process: drain both queued bindings in order.
       const outcomes: string[] = [];
       for (const binding of [hung, healthy]) {
+        const deadlineMs = binding === hung ? TEST_DEADLINE_MS : undefined;
         outcomes.push(
-          await executeBindingRediscovery(binding.bindingId, false, async () => undefined, TEST_DEADLINE_MS).then(
+          await executeBindingRediscovery(binding.bindingId, false, async () => undefined, deadlineMs).then(
             (result) => result.state,
             (error: unknown) => providerErrorCode(error, "UNEXPECTED_FAILURE"),
           ),

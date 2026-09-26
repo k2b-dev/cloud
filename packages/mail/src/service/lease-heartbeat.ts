@@ -5,8 +5,10 @@
  * work outlives `deadline.ms`. Renewal stops for good once the signal aborts,
  * so a lost or overdue operation cannot keep its leases and job delivery alive.
  * The helper still waits for the work to settle before releasing its caller's
- * leases: work must honor the signal promptly. The abort reason wins over the
- * work's own outcome.
+ * leases: work must honor the signal promptly. A lost lease wins over the
+ * work's own outcome. After a deadline the work's outcome stands: work that
+ * stopped throws the signal's reason, and work that passed its commit point
+ * before the deadline returns what it committed.
  */
 export const withLeaseHeartbeat = async <T>(params: {
   intervalMs: number;
@@ -23,6 +25,7 @@ export const withLeaseHeartbeat = async <T>(params: {
 
   let stopped = false;
   let aborted = false;
+  let leaseLost = false;
   let abortReason: unknown;
   const abortController = new AbortController();
   const abort = (reason: unknown): void => {
@@ -38,6 +41,7 @@ export const withLeaseHeartbeat = async <T>(params: {
       try {
         await params.heartbeat();
       } catch (error) {
+        leaseLost = true;
         abort(error);
       }
     });
@@ -69,7 +73,7 @@ export const withLeaseHeartbeat = async <T>(params: {
     await heartbeatChain;
   }
 
-  if (aborted) throw abortReason;
+  if (leaseLost) throw abortReason;
   if (workFailed) throw workError;
   return result;
 };
