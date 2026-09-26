@@ -26,6 +26,9 @@ import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelecti
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
+import ClaimAvatar from "../shared/claim/ClaimAvatar";
+import ClaimButton from "../shared/claim/ClaimButton";
+import { claimTask, ownClaimId, releaseTask } from "../shared/claim/claim";
 import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
@@ -72,6 +75,7 @@ type MoveContext = {
   targetRank: string;
   targetIndex: number;
   targetCompleted: boolean;
+  claimId: string | undefined;
 };
 
 type TransferContext = {
@@ -479,6 +483,7 @@ export default function KanbanBoard(props: Props) {
         targetRank: targetRank.toString(),
         targetIndex: targetIndexClamped,
         targetCompleted: resolved.targetBucket.isDone,
+        claimId: resolved.targetBucket.isDone ? ownClaimId(resolved.source.item.claim, props.currentUserId) : undefined,
       };
     },
     mutation: async (vars, ctx) => {
@@ -488,6 +493,7 @@ export default function KanbanBoard(props: Props) {
           columnId: ctx.targetColumnId,
           rank: ctx.targetRank,
           completed: ctx.targetCompleted,
+          claimId: ctx.claimId,
         },
       });
       if (!moveRes.ok) {
@@ -619,7 +625,7 @@ export default function KanbanBoard(props: Props) {
     mutation: async (item) => {
       const response = await apiClient[":id"].items[":itemId"].completed.$post({
         param: { id: props.spaceId, itemId: item.id },
-        json: { completed: true },
+        json: { completed: true, claimId: ownClaimId(item.claim, props.currentUserId) },
       });
       if (!response.ok) throw new Error(await readResponseError(response, t.updateFailed));
       return response.json();
@@ -630,6 +636,26 @@ export default function KanbanBoard(props: Props) {
       void invalidateSpacesData().catch(() => prompts.error(t.listRefreshFailed));
     },
     onError: (error) => prompts.error(error.message),
+  });
+
+  const [claimingItemId, setClaimingItemId] = createSignal<string | null>(null);
+  const claimCardMutation = mutations.create<string, SpaceItem>({
+    onBefore: (item) => setClaimingItemId(item.id),
+    mutation: async (item) => {
+      const target = { spaceId: props.spaceId, itemId: item.id };
+      if (item.claim) {
+        await releaseTask(target, item.claim.id, t);
+        return t.claimReleased;
+      }
+      await claimTask(target, t);
+      return t.youAreOnIt;
+    },
+    onSuccess: (message) => {
+      toast.success(message);
+      void invalidateSpacesData().catch(() => prompts.error(t.itemRefreshFailed));
+    },
+    onError: (error) => prompts.error(error.message),
+    onFinally: () => setClaimingItemId(null),
   });
 
   const kanbanCards = () =>
@@ -876,6 +902,22 @@ export default function KanbanBoard(props: Props) {
                                     </div>
                                   </Show>
                                 </Show>
+                                <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
+                                  <ClaimButton
+                                    claim={item.claim}
+                                    currentUserId={props.currentUserId}
+                                    isAdmin={false}
+                                    compact
+                                    loading={claimingItemId() === item.id}
+                                    disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
+                                    class={`absolute bottom-1.5 right-1.5 h-6 w-6 ${
+                                      item.claim ? "" : "opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
+                                    }`}
+                                    onClaim={() => void claimCardMutation.mutate(item)}
+                                    onRelease={() => void claimCardMutation.mutate(item)}
+                                    onTakeOver={() => undefined}
+                                  />
+                                </Show>
                                 <a
                                   data-spaces-kanban-card
                                   data-bucket-key={bucket.key}
@@ -906,7 +948,7 @@ export default function KanbanBoard(props: Props) {
                                     <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{item.description}</p>
                                   </Show>
 
-                                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                  <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
                                     <Show when={item.deadline}>
                                       <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
                                         <i class="ti ti-clock text-[10px]" />
@@ -915,6 +957,9 @@ export default function KanbanBoard(props: Props) {
                                     </Show>
                                     <Show when={item.assignees && item.assignees.length > 0}>
                                       <AssigneeAvatars assignees={item.assignees!} max={3} />
+                                    </Show>
+                                    <Show when={item.claim}>
+                                      {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId} />}
                                     </Show>
                                     <Show when={isInactiveTask(item)}>
                                       <span

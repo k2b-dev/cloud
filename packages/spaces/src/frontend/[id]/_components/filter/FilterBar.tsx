@@ -95,6 +95,7 @@ export default function FilterBar(props: FilterBarProps) {
       options: [
         { value: "all", label: t.all, icon: "ti ti-activity" },
         { value: "inactive", label: t.inactive, icon: "ti ti-clock-pause" },
+        { value: "claimed", label: t.inProgress, icon: "ti ti-player-play" },
       ],
     },
   ];

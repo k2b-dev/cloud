@@ -2159,7 +2159,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const spaceShortId = c.req.param("id") ?? "";
       const itemId = c.req.param("itemId") ?? "";
-      const { columnId, rank, completed } = c.req.valid("json");
+      const { columnId, rank, completed, claimId } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
@@ -2170,7 +2170,14 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         projectMutation(
-          spacesService.item.move({ id: itemCheck.data.id, columnId: column.data.id, rank, completed, actor: getSpaceActivityActor(c) }),
+          spacesService.item.move({
+            id: itemCheck.data.id,
+            columnId: column.data.id,
+            rank,
+            completed,
+            claimId,
+            actor: getSpaceActivityActor(c),
+          }),
           projectItems,
         ),
       );

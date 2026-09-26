@@ -38,6 +38,9 @@ import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
+import ClaimAvatar from "../shared/claim/ClaimAvatar";
+import ClaimButton from "../shared/claim/ClaimButton";
+import { claimTask, ownClaimId, promptReleaseNote, releaseTask, takeOverTask } from "../shared/claim/claim";
 import { openEditItemDialog, saveItemFormData } from "../shared/editItem";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import {
@@ -75,6 +78,8 @@ type Props = {
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
   canWrite: boolean;
+  /** Space admins may take over another account's claim. */
+  isAdmin?: boolean;
   mailIntegrationAvailable: boolean;
   scrollPreserveKey: string;
 };
@@ -400,7 +405,7 @@ export default function ItemDetailPanel(props: Props) {
     mutation: async (completed: boolean) => {
       const res = await apiClient[":id"].items[":itemId"].completed.$post({
         param: { id: props.spaceId, itemId: props.item.id },
-        json: { completed },
+        json: { completed, claimId: ownClaimId(props.item.claim, props.currentUserId) },
       });
       if (!res.ok) {
         throw new Error(await readResponseError(res, t.updateItemFailed));
@@ -414,6 +419,45 @@ export default function ItemDetailPanel(props: Props) {
     },
     onError: (err) => prompts.error(err.message),
   });
+
+  const claimMutation = mutations.create<string | null, "claim" | "release" | "take-over">({
+    mutation: async (kind) => {
+      const target = { spaceId: props.spaceId, itemId: props.item.id };
+      const claim = props.item.claim;
+      if (kind === "claim") {
+        await claimTask(target, t);
+        return t.youAreOnIt;
+      }
+      if (!claim) return null;
+      if (kind === "release") {
+        const note = await promptReleaseNote(t);
+        if (note === null) return null;
+        await releaseTask(target, claim.id, t, note);
+        return t.claimReleased;
+      }
+      await takeOverTask(target, claim, t);
+      return t.claimTakenOver({ name: claim.displayName });
+    },
+    onSuccess: (message) => {
+      if (!message) return;
+      toast.success(message);
+      reconcileAfterWrite();
+    },
+    onError: (err) => prompts.error(err.message),
+  });
+  /** Header: claim or release your own claim. Work section: admin take-over of somebody else's claim. */
+  const claimButton = (options: { takeOver?: boolean } = {}) => (
+    <ClaimButton
+      claim={props.item.claim}
+      currentUserId={props.currentUserId}
+      isAdmin={options.takeOver === true && props.isAdmin === true}
+      loading={claimMutation.loading()}
+      disabled={isLoading() || isCompleted() || (!props.item.claim && completionBlocked())}
+      onClaim={() => void claimMutation.mutate("claim")}
+      onRelease={() => void claimMutation.mutate("release")}
+      onTakeOver={() => void claimMutation.mutate("take-over")}
+    />
+  );
 
   const duplicateIntent = () => ({
     columnId: props.item.columnId,
@@ -830,6 +874,7 @@ export default function ItemDetailPanel(props: Props) {
                     </Show>
                     {isCompleted() ? t.reopen : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.markComplete}
                   </Button>
+                  <Show when={!isEvent() && !isCompleted()}>{claimButton()}</Show>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void handleEdit()} disabled={isLoading()}>
                     <i class="ti ti-pencil" aria-hidden="true" /> Edit
                   </Button>
@@ -998,15 +1043,33 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <Show when={!isEvent() && (props.work?.claim || props.work?.progress || props.work?.result)}>
+          <Show when={!isEvent() && (props.item.claim || props.work?.progress || props.work?.result)}>
             <DetailPanel.Group label={t.workState}>
-              <Show when={props.work?.claim}>
+              <Show when={props.item.claim}>
                 {(claim) => (
-                  <DetailPanel.Section title={t.workClaimed} icon="ti ti-user-check" tone="neutral">
-                    <p class="text-sm">{t.workClaimHelp}</p>
-                    <time class="text-xs text-dimmed" datetime={claim().claimedAt}>
-                      {dates.formatDateTime(claim().claimedAt, props.dateConfig)}
-                    </time>
+                  <DetailPanel.Section
+                    title={t.workClaimed}
+                    icon="ti ti-user-check"
+                    tone="neutral"
+                    actions={
+                      canEditItem() && !isCompleted() && !ownClaimId(claim(), props.currentUserId)
+                        ? claimButton({ takeOver: true })
+                        : undefined
+                    }
+                  >
+                    <div class="flex flex-col gap-2">
+                      <ClaimAvatar claim={claim()} currentUserId={props.currentUserId} size="sm" showName />
+                      <p class="text-sm">
+                        {ownClaimId(claim(), props.currentUserId)
+                          ? t.claimHelpOwn
+                          : props.isAdmin && canEditItem()
+                            ? t.takeOverHelp({ name: claim().displayName })
+                            : t.claimHelpOther}
+                      </p>
+                      <p class="text-xs text-dimmed">
+                        {t.since} <time datetime={claim().claimedAt}>{dates.formatDateTime(claim().claimedAt, props.dateConfig)}</time>
+                      </p>
+                    </div>
                   </DetailPanel.Section>
                 )}
               </Show>

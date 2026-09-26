@@ -118,7 +118,7 @@ export function parseFilterFromUrl(url: URL): FilterState {
   return {
     type: (params.get(QueryParams.TYPE) as ItemType) || defaultFilter.type,
     status: (params.get(QueryParams.STATUS) as ItemStatus) || defaultFilter.status,
-    activity: activity === "inactive" ? activity : defaultFilter.activity,
+    activity: activity === "inactive" || activity === "claimed" ? activity : defaultFilter.activity,
     priority: (params.get(QueryParams.PRIORITY)?.split(",").filter(Boolean) as Priority[]) || [],
     tagIds: params.get(QueryParams.TAGS)?.split(",").filter(Boolean) || [],
     columnIds: params.get(QueryParams.COLUMNS)?.split(",").filter(Boolean) || [],

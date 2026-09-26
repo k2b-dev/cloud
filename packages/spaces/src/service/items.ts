@@ -6,6 +6,7 @@ import type {
   AssignedToFilter,
   CalendarItem,
   CreateItem,
+  ItemActivityFilter,
   ItemFilter,
   ItemListResult,
   ItemType,
@@ -16,13 +17,14 @@ import type {
   SpaceAssignableUser,
   SpaceItem,
   SpaceItemAssignee,
+  SpaceItemClaim,
   SpaceTag,
   SplitRecurringItem,
   UpdateItem,
 } from "@/contracts";
 import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { withShortId } from "../lib/short-id";
-import { CompletionInputSchema } from "../work-contracts";
+import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, isSpaceResourceId } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
@@ -606,20 +608,46 @@ const getLastActivityByItemIds = async (itemIds: string[]): Promise<Map<string, 
   return new Map(rows.map((row) => [row.item_id, row.last_activity_at.toISOString()]));
 };
 
+/** Open tasks with an active work claim (`activity: "claimed"`). */
+const claimedMatch = sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item_id = i.id AND tw.claim IS NOT NULL)`;
+
+const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemClaim>> => {
+  if (itemIds.length === 0) return new Map();
+  const rows = await sql<{ item_id: string; claim: TaskWork["claim"]; display_name: string; avatar_hash: string | null }[]>`
+    SELECT tw.item_id, tw.claim,
+      COALESCE(NULLIF(u.display_name, ''), u.uid, sa.name,
+        CASE tw.claim->'actor'->>'kind' WHEN 'user' THEN 'Former user' ELSE 'Former service account' END) AS display_name,
+      u.avatar_hash
+    FROM spaces.task_work tw
+    LEFT JOIN auth.users u ON tw.claim->'actor'->>'kind' = 'user' AND u.id = (tw.claim->'actor'->>'id')::uuid
+    LEFT JOIN auth.service_accounts sa ON tw.claim->'actor'->>'kind' = 'service_account' AND sa.id = (tw.claim->'actor'->>'id')::uuid
+    WHERE tw.item_id = ANY(${toPgUuidArray(itemIds)}::uuid[]) AND tw.claim IS NOT NULL
+  `;
+  return new Map(
+    rows.flatMap((row) =>
+      row.claim
+        ? [[row.item_id, { ...row.claim, displayName: row.display_name, avatarHash: row.avatar_hash }] satisfies [string, SpaceItemClaim]]
+        : [],
+    ),
+  );
+};
+
 const hydrateRelations = async (items: SpaceItem[]): Promise<SpaceItem[]> => {
   if (items.length === 0) return items;
   const itemIds = items.map((item) => item.id);
-  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId] = await Promise.all([
+  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId, claimsByItemId] = await Promise.all([
     getAssigneesByItemIds(itemIds),
     getTagsByItemIds(itemIds),
     getActiveBlockerCountsByItemIds(itemIds),
     getLastActivityByItemIds(itemIds),
+    getClaimsByItemIds(itemIds),
   ]);
   for (const item of items) {
     item.assignees = assigneesByItemId.get(item.id) ?? [];
     item.tags = tagsByItemId.get(item.id) ?? [];
     item.activeBlockerCount = blockerCountsByItemId.get(item.id) ?? 0;
     item.lastActivityAt = lastActivityByItemId.get(item.id) ?? item.updatedAt;
+    item.claim = claimsByItemId.get(item.id) ?? null;
   }
   return items;
 };
@@ -906,6 +934,8 @@ export const listFiltered = async (params: {
         (SELECT MAX(item_activity.last_occurred_at) FROM spaces.activity_events item_activity WHERE item_activity.item_id = i.id),
         i.updated_at
       ) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`;
+  } else if (activityFilter === "claimed") {
+    conditions = sql`${conditions} AND ${claimedMatch}`;
   }
 
   // Priority filter - use IN with parameterized values
@@ -1166,7 +1196,7 @@ export const searchAcross = async (params: {
   offset?: number;
   spaceId?: string;
   assignedTo?: AssignedToFilter;
-  activity?: "all" | "inactive";
+  activity?: ItemActivityFilter;
   deadlineFilter?: ItemFilter["deadlineFilter"];
   dateConfig?: DateContext;
   blocked?: boolean;
@@ -1199,7 +1229,9 @@ export const searchAcross = async (params: {
       ? sql`i.completed_at IS NULL AND i.starts_at IS NULL AND i.ends_at IS NULL AND COALESCE(
         (SELECT MAX(activity.last_occurred_at) FROM spaces.activity_events activity WHERE activity.item_id = i.id),
         i.updated_at) < now() - (${INACTIVE_ITEM_DAYS} * interval '1 day')`
-      : sql`true`;
+      : params.activity === "claimed"
+        ? claimedMatch
+        : sql`true`;
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
     params.deadlineFilter === "overdue"
@@ -1319,14 +1351,16 @@ export const get = async (params: { id: string }): Promise<SpaceItem | null> => 
   if (!row) return null;
 
   const item = mapToItem(row);
-  const [assignees, tags, blockerCounts] = await Promise.all([
+  const [assignees, tags, blockerCounts, claims] = await Promise.all([
     getAssignees(item.id),
     getTags(item.id),
     getActiveBlockerCountsByItemIds([item.id]),
+    getClaimsByItemIds([item.id]),
   ]);
   item.assignees = assignees;
   item.tags = tags;
   item.activeBlockerCount = blockerCounts.get(item.id) ?? 0;
+  item.claim = claims.get(item.id) ?? null;
 
   return item;
 };
@@ -1877,6 +1911,7 @@ export const move = async (params: {
   columnId: string;
   rank: string;
   completed?: boolean;
+  claimId?: string;
   actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
   const { id, columnId } = params;
@@ -1897,7 +1932,7 @@ export const move = async (params: {
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
     if (params.completed !== undefined) {
-      const claim = await taskWork.checkClaim(id, params.actor ?? systemActor, undefined, tx);
+      const claim = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx);
       if (!claim.ok) return claim;
       if (params.completed) {
         const [blocked] = await tx<{ blocked: boolean }[]>`SELECT EXISTS (
@@ -1930,6 +1965,7 @@ export const move = async (params: {
           RETURNING id
         `;
     if (!row) return { ok: false, error: "Failed to move item", status: 500 };
+    if (params.completed) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
     await activity.record(
       {
         spaceId: existing.space_id,

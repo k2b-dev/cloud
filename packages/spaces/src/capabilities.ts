@@ -760,7 +760,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
     filter: {
       type: kind,
       status: input.status,
-      activity: input.activity,
+      activity: "claimed" in input && input.claimed ? "claimed" : input.activity,
       priority: input.priority,
       columnIds,
       tagIds,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AssignedToFilterSchema, DeadlineFilterSchema, ItemActivityFilterSchema, PrioritySchema, ResourceShortIdSchema } from "./contracts";
+import { AssignedToFilterSchema, DeadlineFilterSchema, PrioritySchema, ResourceShortIdSchema } from "./contracts";
 
 const paging = {
   cursor: z.string().min(1).max(256).optional().describe("Opaque continuation cursor; keep all filters unchanged."),
@@ -15,7 +15,8 @@ export const TaskFocusInputSchema = z
     ...selection,
     query: z.string().trim().max(500).default("").describe("Optional task text search."),
     deadlineFilter: DeadlineFilterSchema.default("all").describe("Deadline window in the inherited user timezone."),
-    activity: ItemActivityFilterSchema.default("all").describe("Include all open tasks or only inactive tasks."),
+    activity: z.enum(["all", "inactive"]).default("all").describe("Include all open tasks or only inactive tasks."),
+    claimed: z.boolean().optional().describe("Only tasks with an active work claim; takes precedence over activity."),
     priority: z.array(PrioritySchema).max(4).optional().describe("Match any selected priority."),
     blocked: z.boolean().optional().describe("Filter by whether unfinished blocker tasks exist."),
   })
