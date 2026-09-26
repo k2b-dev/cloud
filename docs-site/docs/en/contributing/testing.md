@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-09-23
+updated: 2026-09-26
 ---
 
 # Testing
@@ -75,6 +75,11 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
+
+The ports are the development stack's defaults. If you moved them with
+`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_VALKEY_PORT`, or `CLOUD_DEV_NATS_PORT`
+([Change host ports](/en/docs/operations/monorepo-development#change-host-ports)),
+use the same ports here.
 
 A suite runs when its variables are present and fails loudly when the target
 is unreachable. When a variable is absent, the suite is skipped and the
