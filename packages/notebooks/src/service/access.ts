@@ -12,6 +12,7 @@ import {
 import {
   isStandaloneServiceAccountKind,
   type ServiceAccountCredential,
+  type ServiceAccountKind,
   serviceAccountCredentials,
   serviceAccounts,
 } from "@k2b/cloud/services";
@@ -36,6 +37,7 @@ type DbNotebookAccess = {
   user_uid: string | null;
   group_name: string | null;
   service_account_name: string | null;
+  service_account_kind: ServiceAccountKind | null;
 };
 
 export const NOTEBOOKS_APP_ID = "notebooks";
@@ -106,6 +108,7 @@ const mapAccessRow = (row: DbNotebookAccess): AccessEntry => {
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
     displayName,
+    serviceAccountKind: row.service_account_kind ?? undefined,
   };
 };
 
@@ -182,7 +185,8 @@ export const listNotebookAccessPage = async (config: {
             u.display_name AS user_display_name,
             u.uid AS user_uid,
             g.name AS group_name,
-            sa.name AS service_account_name
+            sa.name AS service_account_name,
+            sa.kind AS service_account_kind
           ${baseQuery}
           ORDER BY
             CASE
@@ -206,7 +210,8 @@ export const listNotebookAccessPage = async (config: {
             u.display_name AS user_display_name,
             u.uid AS user_uid,
             g.name AS group_name,
-            sa.name AS service_account_name
+            sa.name AS service_account_name,
+            sa.kind AS service_account_kind
           ${baseQuery}
           ORDER BY
             CASE

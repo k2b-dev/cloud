@@ -12,6 +12,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Add a comment to a record": "Einen Kommentar zu einem Datensatz hinzufügen",
   "Allow live or deleted records": "Aktive oder gelöschte Datensätze zulassen",
   "Allowed sources: all, none, or direct,form,workflow": "Erlaubte Quellen: all, none oder direct,form,workflow",
+  "Also show grants of resource-bound service accounts in text output.":
+    "Freigaben ressourcengebundener Dienstkonten zusätzlich in der Textausgabe anzeigen.",
   "Already destroyed bytes cannot be recovered.": "Bereits vernichtete Bytes können nicht wiederhergestellt werden.",
   "Anyone with the link, including anonymous users": "Alle mit dem Link, auch anonyme Personen",
   "App name": "Name der App",
@@ -241,7 +243,6 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Hold status": "Status der Sperre",
   "Import records atomically from JSON": "Datensätze atomar aus JSON importieren",
   "Include deleted records": "Gelöschte Datensätze einbeziehen",
-  "Include service-account grants in text output.": "Freigaben für Dienstkonten in die Textausgabe aufnehmen.",
   "Inclusive ISO timestamp": "ISO-Zeitstempel (inklusiv)",
   "Independently upsert a bounded batch by external identity":
     "Einen begrenzten Stapel unabhängig anhand externer Identität anlegen oder aktualisieren",

@@ -2,6 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type SQLQuery, sql } from "bun";
 import { recursiveGroupIdsSubquery } from "../../services/accounts/group-sql";
 import { toPgUuidArray } from "../../services/postgres";
+import type { ServiceAccountKind } from "../../services/service-accounts";
 
 export type AccessDb = typeof sql;
 
@@ -67,6 +68,7 @@ export type AccessEntry = {
   // Resolved display info (populated by service)
   displayName?: string;
   avatarHash?: string | null;
+  serviceAccountKind?: ServiceAccountKind;
 };
 
 export type AccessUserSource =
@@ -566,11 +568,12 @@ export const listUsersWithAccess = async (params: {
 
 /**
  * Resolve display names for access entries.
- * Populates the displayName field based on principal type.
+ * Populates the displayName field based on principal type, and the
+ * serviceAccountKind field for service-account principals.
  */
 export const resolveDisplayNames = async <T extends { principal: Principal }>(
   entries: T[],
-): Promise<(T & { displayName: string; avatarHash?: string | null })[]> => {
+): Promise<(T & { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind })[]> => {
   const userIds = entries.filter((e) => e.principal.type === "user").map((e) => (e.principal as { type: "user"; userId: string }).userId);
 
   const groupIds = entries
@@ -606,21 +609,22 @@ export const resolveDisplayNames = async <T extends { principal: Principal }>(
     }
   }
 
-  const serviceAccountNames = new Map<string, string>();
+  const serviceAccountsById = new Map<string, { id: string; name: string; kind: ServiceAccountKind }>();
   if (serviceAccountIds.length > 0) {
-    const serviceAccounts = await sql<{ id: string; name: string }[]>`
-      SELECT id, name
+    const serviceAccounts = await sql<{ id: string; name: string; kind: ServiceAccountKind }[]>`
+      SELECT id, name, kind
       FROM auth.service_accounts
       WHERE id = ANY(${toPgUuidArray(serviceAccountIds)}::uuid[])
     `;
     for (const serviceAccount of serviceAccounts) {
-      serviceAccountNames.set(serviceAccount.id, serviceAccount.name);
+      serviceAccountsById.set(serviceAccount.id, serviceAccount);
     }
   }
 
   return entries.map((entry) => {
     let displayName: string;
     let avatarHash: string | null | undefined;
+    let serviceAccountKind: ServiceAccountKind | undefined;
     switch (entry.principal.type) {
       case "user": {
         const user = userNames.get(entry.principal.userId);
@@ -631,9 +635,12 @@ export const resolveDisplayNames = async <T extends { principal: Principal }>(
       case "group":
         displayName = groupNames.get(entry.principal.groupId) ?? "Unknown Group";
         break;
-      case "service_account":
-        displayName = serviceAccountNames.get(entry.principal.serviceAccountId) ?? "Unknown Service Account";
+      case "service_account": {
+        const serviceAccount = serviceAccountsById.get(entry.principal.serviceAccountId);
+        displayName = serviceAccount?.name ?? "Unknown Service Account";
+        serviceAccountKind = serviceAccount?.kind;
         break;
+      }
       case "authenticated":
         displayName = "All users (incl. guests)";
         break;
@@ -641,6 +648,6 @@ export const resolveDisplayNames = async <T extends { principal: Principal }>(
         displayName = "Public";
         break;
     }
-    return { ...entry, displayName, avatarHash };
+    return { ...entry, displayName, avatarHash, serviceAccountKind };
   });
 };
