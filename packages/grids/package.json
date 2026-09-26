@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@xmldom/xmldom": "0.9.12",
-    "@bwip-js/generic": "4.11.1",
+    "@bwip-js/generic": "4.11.4",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
@@ -30,17 +30,17 @@
     "ibantools": "4.5.4",
     "juice": "catalog:",
     "lean-qr": "catalog:",
-    "libxml2-wasm": "0.6.0",
+    "libxml2-wasm": "0.7.2",
     "pdf-lib": "1.17.1",
     "postcss": "catalog:",
     "saxes": "6.0.0",
     "solid-js": "catalog:",
     "yaml": "catalog:",
     "zod": "catalog:",
-    "zxing-wasm": "3.1.2"
+    "zxing-wasm": "3.1.4"
   },
   "devDependencies": {
-    "@stackforge-eu/factur-x": "1.2.0",
+    "@stackforge-eu/factur-x": "1.4.1",
     "@nats-io/jetstream": "catalog:",
     "@types/bun": "catalog:",
     "playwright": "catalog:",

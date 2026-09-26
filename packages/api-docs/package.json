@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@scalar/hono-api-reference": "0.12.2",
+    "@scalar/hono-api-reference": "0.12.4",
     "@k2b/cloud": "workspace:*",
     "hono": "catalog:"
   },
