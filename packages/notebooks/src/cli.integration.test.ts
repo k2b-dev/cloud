@@ -403,6 +403,41 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/\${f#./} -
       expect(server.content).toContain("Start hier.");
     }, 60_000);
 
+    test("writing a renamed note updates the files that link to it, and they stay clean", async () => {
+      const mirror = join(home, "docs-mirror");
+      const readme = join(mirror, "kolb-antik-it.md");
+      const file = join(mirror, "docs/backup-und-wiederherstellung.md");
+      await writeFile(file, (await readFile(file, "utf8")).replace("# Backup und Wiederherstellung", "# Backup"));
+      const written = await cldJson<{ mirrorPath: string }>(["notebooks", "write", file]);
+      expect(written.mirrorPath).toBe("docs/backup.md");
+      expect(await exists(file)).toBe(false);
+      expect(await readFile(readme, "utf8")).toContain("[Backup](docs/backup.md#nightly)");
+
+      const again = await cldJson<{ written: string[]; kept: unknown[] }>(["notebooks", "pull", mirror]);
+      expect({ written: again.written, kept: again.kept }).toEqual({ written: [], kept: [] });
+      await cldJson(["notebooks", "edit", readme, "--append", "--content", "Mehr.\n"]);
+    }, 60_000);
+
+    test("a relative link written before its target existed stays literal and clean until the file is written back", async () => {
+      await cldJson(["notebooks", "create", "Links"]);
+      const dir = join(home, "links");
+      await cldJson(["notebooks", "pull", "Links", dir]);
+      // The Git migration loop writes a file whose relative link names a file written later.
+      await cldJson(["notebooks", "write", join(dir, "a.md"), "--content", "# A\n\n[B](b.md)\n"]);
+      await cldJson(["notebooks", "write", join(dir, "b.md"), "--content", "# B\n"]);
+      const b = (await manifestOf(dir)).notes.find((note) => note.path === "b.md")!.id;
+      expect((await cldJson<{ content: string }>(["notebooks", "cat", "Links:a"])).content).toBe("# A\n\n[B](b.md)\n");
+
+      const again = await cldJson<{ written: string[]; kept: unknown[] }>(["notebooks", "pull", dir]);
+      expect({ written: again.written, kept: again.kept }).toEqual({ written: [], kept: [] });
+      expect(await readFile(join(dir, "a.md"), "utf8")).toEndWith("[B](b.md)\n");
+
+      // Writing the file back turns the link that names a mirror file into a note link.
+      await cldJson(["notebooks", "write", join(dir, "a.md")]);
+      expect((await cldJson<{ content: string }>(["notebooks", "cat", "Links:a"])).content).toBe(`# A\n\n[B](note://${b})\n`);
+      expect(await readFile(join(dir, "a.md"), "utf8")).toEndWith("[B](b.md)\n");
+    }, 60_000);
+
     test("pull into an empty folder for an empty notebook creates just the manifest", async () => {
       await cldJson(["notebooks", "create", "Leer"]);
       const dir = join(home, "leer");

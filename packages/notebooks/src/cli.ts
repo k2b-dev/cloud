@@ -24,6 +24,7 @@ import {
   findManifestFolder,
   findManifestNote,
   findMirror,
+  localFileState,
   MANIFEST_FILE,
   type Manifest,
   type ManifestNote,
@@ -348,14 +349,9 @@ function notebooksCommands(locale?: string) {
     mirror: { root: string; manifest: Manifest },
     writtenNoteId?: string,
   ): Promise<{ manifest: Manifest; report: SyncReport }> => {
-    let manifest = mirror.manifest;
-    if (writtenNoteId) {
-      // The note now holds what was just uploaded; drop the stale record so its file is rewritten from the server copy.
-      manifest = { ...manifest, notes: manifest.notes.filter((note) => note.id !== writtenNoteId) };
-      const previous = mirror.manifest.notes.find((note) => note.id === writtenNoteId);
-      if (previous) await unlink(join(mirror.root, previous.path)).catch(() => undefined);
-    }
-    const synced = await syncMirror(ctx, { root: mirror.root, manifest, force: false });
+    // The written note now holds what was just uploaded, so its file takes the server copy.
+    const refetch = new Set(writtenNoteId ? [writtenNoteId] : []);
+    const synced = await syncMirror(ctx, { root: mirror.root, manifest: mirror.manifest, force: false, refetch });
     reportSync(ctx, synced.report);
     return synced;
   };
@@ -1148,9 +1144,8 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const operation = await buildEditOperation(flags);
           if (target.mirror) {
-            const { entry, root, manifest } = target.mirror;
-            const text = await readFile(join(root, entry.path), "utf8").catch(() => null);
-            if (text !== null && noteContentHash(mirrorFileContent(text, entry.path, manifestPaths(manifest))) !== entry.contentHash)
+            const { entry, root } = target.mirror;
+            if ((await localFileState(root, entry)).state === "modified")
               throw new Error(
                 t({
                   en: `${entry.path} has local changes. Write the file back first, or pull --force to discard them.`,
