@@ -136,6 +136,80 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(noTarget.stderr).toContain("No skill target configured");
 }, 30_000);
 
+test("profile rm signs a profile out, drops the plugin versions no other profile uses, and rewrites the skill", async () => {
+  const [v1, v2] = [await servedEchoPlugin("1.0.0"), await servedEchoPlugin("2.0.0")];
+  const clouds: Record<"a" | "b" | "c", PluginCloudState & { revoked: string[] }> = {
+    a: { plugins: [v1], authorizations: [], revoked: [] },
+    b: { plugins: [v2], authorizations: [], revoked: [] },
+    c: { plugins: [v2], authorizations: [], revoked: [], revokeStatus: 503 },
+  };
+  const cli = await setup(clouds);
+  const configPath = join(cli.dir, "config.json");
+  // b and c hold OAuth logins, so removing them revokes their refresh tokens; c's Cloud refuses.
+  const signedIn = await cli.config();
+  for (const profile of ["b", "c"]) {
+    signedIn.profiles[profile] = {
+      server: signedIn.profiles[profile].server,
+      oauth: {
+        accessToken: `${profile}-access`,
+        accessTokenExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        refreshToken: `${profile}-refresh`,
+      },
+    };
+  }
+  await writeFile(configPath, JSON.stringify(signedIn));
+  for (const profile of ["a", "b", "c"]) {
+    const installed = await cli.run(["--profile", profile, "plugins", "install", "echo"]);
+    expect(installed.exitCode, installed.stderr).toBe(0);
+  }
+  const skills = join(cli.dir, "agent-skills");
+  expect((await cli.run(["skills", "add", skills])).exitCode).toBe(0);
+  const skill = () => readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8");
+  expect(await skill()).toContain("| b | echo | 2.0.0 |");
+  const before = await readFile(configPath, "utf8");
+
+  // The current profile stays while others exist, a missing one is named, and without a terminal removal needs --yes.
+  const current = await cli.run(["profile", "rm", "a", "--yes"]);
+  expect(current.exitCode).toBe(1);
+  expect(current.stderr).toBe('Profile "a" is the current profile. Select another one first: `cld profile use <name>` (b, c).\n');
+  const german = await cli.run(["--locale", "de", "profile", "rm", "a", "--yes"]);
+  expect(german.stderr).toBe('Profil "a" ist das aktuelle Profil. Wähle zuerst ein anderes: `cld profile use <Name>` (b, c).\n');
+  expect((await cli.run(["profile", "rm", "missing", "--yes"])).stderr).toBe('Profile "missing" does not exist.\n');
+  const unconfirmed = await cli.run(["profile", "rm", "b"]);
+  expect(unconfirmed.exitCode).toBe(1);
+  expect(unconfirmed.stderr).toBe("Not a terminal; pass --yes to remove the profile non-interactively.\n");
+  expect(await readFile(configPath, "utf8")).toBe(before);
+  expect(clouds.b.revoked).toEqual([]);
+
+  // b is signed out at its Cloud and gone; c still locks 2.0.0, so the store and the skill keep it.
+  const removed = await cli.run(["profile", "rm", "b", "--yes"]);
+  expect(removed).toEqual({ exitCode: 0, stdout: 'Signed out and removed profile "b".\n', stderr: "" });
+  expect(clouds.b.revoked).toEqual(["b-refresh"]);
+  expect(Object.keys((await cli.config()).profiles).sort()).toEqual(["a", "c"]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest, v2.manifest.digest].sort());
+  expect(await skill()).not.toContain("| b |");
+  expect(await skill()).toContain("| c | echo | 2.0.0 |");
+  expect((await cli.run(["profile", "rm", "a", "-y"])).stderr).toContain("`cld profile use c`.");
+
+  // A refused revocation warns on stderr like `cld logout` and still removes c; stdout stays JSON.
+  // c was the last profile on 2.0.0: that version leaves the store and the skill.
+  const json = await cli.run(["--json", "profile", "rm", "c", "-y"]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(json.stderr).toBe("Warning: Remote OAuth revocation failed (503). Removing local credentials anyway.\n");
+  expect(JSON.parse(json.stdout)).toEqual({ profile: "c", removed: true });
+  expect(clouds.c.revoked).toEqual(["c-refresh"]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest]);
+  expect(await readdir(join(skills, "cloud-cli", "references", "echo"))).toEqual(["1.0.0"]);
+
+  // The only profile may go although it is current; nothing is current afterwards.
+  const last = await cli.run(["profile", "rm", "a", "--yes"]);
+  expect(last).toEqual({ exitCode: 0, stdout: 'Removed profile "a".\n', stderr: "" });
+  expect(await cli.config()).toEqual({ profiles: {}, skills: { targets: ["~/agent-skills"] } });
+  expect(await cli.stored()).toEqual([]);
+  expect(await skill()).toContain("No module is installed for any profile yet");
+  expect(clouds.a.revoked).toEqual([]);
+}, 30_000);
+
 test("a file that does not match the manifest leaves the store and the lock untouched", async () => {
   const plugin = await servedEchoPlugin("1.0.0");
   const cloud: PluginCloudState = {

@@ -41,9 +41,12 @@ cld profile list
 cld profile use portal
 cld auth status
 cld logout --profile portal
+cld profile rm portal
 ```
 
 An OAuth profile stays bound to the server it signed in to. To move it, run `cld login <profile> --server <url>` again. Re-login and `cld logout` revoke the previous refresh grant.
+
+`cld profile rm <name>` removes a profile for good: it signs the profile out like `cld logout`, deletes it with its installed plugins (plugin versions another profile uses stay), and rewrites the module table of this skill. It refuses the current profile while other profiles exist; run `cld profile use <other>` first. It asks for confirmation and, without a terminal, refuses unless `--yes` is given. Pass `--yes` only when the user asked to remove that exact profile.
 
 Keep the refresh token in fd0 instead of the config file:
 

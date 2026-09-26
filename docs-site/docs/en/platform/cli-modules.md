@@ -719,8 +719,8 @@ cld skills sync
 ```
 
 Every `cld plugins install`, `update`, and `remove`, every `cld login` that
-installs plugins, and every `cld update` rewrite all targets; `cld skills sync`
-does it on demand. `cld update --skills-dir <dir>` and `--claude-symlink` add
+installs plugins, every `cld profile rm`, and every `cld update` rewrite all
+targets; `cld skills sync` does it on demand. `cld update --skills-dir <dir>` and `--claude-symlink` add
 targets; `--no-skills` skips the rewrite once.
 
 `install` and `update` read the plugin's manifest, download every file, check
@@ -732,6 +732,13 @@ the module's app, version, and digest in the `cld` config. Profiles for
 different Clouds can use different versions of the same module; identical
 versions are stored once, and a version that no profile locks is deleted.
 Without `XDG_CONFIG_HOME`, the directory is `~/.config/cloud/cld/plugins/`.
+
+`cld profile rm <name>` removes a profile together with its lock. It signs the
+profile out first, revoking an OAuth login like `cld logout`, then deletes the
+versions no remaining profile locks and rewrites the skill. It asks for
+confirmation, or needs `--yes` without a terminal, and refuses the current
+profile while other profiles exist; `cld profile use <other>` selects another
+one first.
 
 A plugin needs the same plugin API version as `cld`. A newer API asks you to
 run `cld update`; an older one needs a newer Cloud.
