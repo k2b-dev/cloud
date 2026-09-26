@@ -2,12 +2,16 @@ import type { WorkspaceRevision } from "../../../service/workspace-revision";
 
 export type RevisionSnapshot = WorkspaceRevision & { canWrite: boolean; canAdmin: boolean };
 
-/** One in-flight check plus one coalesced follow-up; never acknowledges failed checks. */
+/**
+ * One in-flight check plus one coalesced follow-up; never acknowledges failed
+ * checks. Only the active resources matter: a changed structure or lost
+ * permission informs, a deleted active resource revokes the surface.
+ */
 export const createWorkspaceRevisionController = (options: {
   initial: RevisionSnapshot;
   activeKeys: string[];
   load: (signal: AbortSignal) => Promise<RevisionSnapshot>;
-  apply: (state: { changed: boolean; blocked: boolean; revoked: boolean }) => void;
+  apply: (state: { changed: boolean; revoked: boolean }) => void;
   markApplied: (cursor: string | null) => void;
   onError: (error: unknown) => void;
 }) => {
@@ -22,15 +26,12 @@ export const createWorkspaceRevisionController = (options: {
   let latest: RevisionSnapshot | undefined;
   const apply = (next: RevisionSnapshot) => {
     const revoked = options.activeKeys.some((key) => options.initial.resources[key] && !next.resources[key]);
-    const blocked =
+    const changed =
       revoked ||
       (options.initial.canAdmin && !next.canAdmin) ||
       (options.initial.canWrite && !next.canWrite) ||
       options.activeKeys.some((key) => baseline[key] !== next.resources[key]);
-    const changed = [...new Set([...Object.keys(baseline), ...Object.keys(next.resources)])].some(
-      (key) => baseline[key] !== next.resources[key],
-    );
-    options.apply({ changed: changed || blocked, blocked, revoked });
+    options.apply({ changed, revoked });
   };
   const drain = async () => {
     if (disposed || running || !pending) return;

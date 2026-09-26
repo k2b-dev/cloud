@@ -2,6 +2,7 @@ import { expect, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import type { WorkspaceRevision } from "../../../service/workspace-revision";
 
 const domTest = isServer ? test.skip : test;
 type Options = Parameters<typeof import("./grids-metadata-events-provider").createGridsMetadataEventsProvider>[0];
@@ -57,7 +58,7 @@ domTest("structure changes preserve input, batch the notice, and reload only aft
     await Bun.sleep(300);
     expect(requests).toBe(2);
     expect(dom.root.querySelectorAll('[role="status"]')).toHaveLength(1);
-    expect(workspaceLiveStatus().blocked).toBe(true);
+    expect(workspaceLiveStatus().revoked).toBe(false);
     expect(input.value).toBe("unsaved");
     expect(reload).not.toHaveBeenCalled();
     const button = dom.root.querySelector<HTMLButtonElement>("button")!;
@@ -77,6 +78,64 @@ domTest("structure changes preserve input, batch the notice, and reload only aft
     fetchMock.mockRestore();
     reload.mockRestore();
     confirm.mockRestore();
+    dom.cleanup();
+  }
+});
+
+domTest("this tab's own structure writes and changes outside the active area stay silent", async () => {
+  const dom = createDomTestHarness();
+  const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
+  const { apiClient } = await import("../../../api/client");
+  const initial: WorkspaceRevision = { revision: "one", resources: { "table:TABLE1": "one", "view:VIEW01": "one", "table:OTHER1": "one" } };
+  let snapshot = { ...initial, canWrite: true, canAdmin: true };
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname === "/api/grids/views/VIEW01" && init?.method === "PATCH") {
+          // Filtering in the grid rewrites the view source; the server reports the row it wrote.
+          snapshot = { ...snapshot, revision: "two", resources: { ...snapshot.resources, "view:VIEW01": "own" } };
+          return Response.json({ id: "VIEW01" }, { headers: { "X-Grids-Workspace-Revision": "view:VIEW01=own" } });
+        }
+        return Response.json(snapshot);
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const dispose = render(
+    () =>
+      createComponent(WorkspaceMetadataRefresh, {
+        baseId: "BASE01",
+        initialCursor: null,
+        revision: initial,
+        activeKeys: ["table:TABLE1", "view:VIEW01"],
+        canWrite: true,
+        canAdmin: true,
+      }),
+    dom.root,
+  );
+  try {
+    callbacks.onReady?.(null);
+    await Bun.sleep(300);
+    const response = await apiClient.views[":viewId"].$patch({ param: { viewId: "VIEW01" }, json: { source: "from Items where x = 1" } });
+    expect(response.ok).toBe(true);
+    callbacks.onEvent?.("s6t.test.own");
+    await Bun.sleep(300);
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+    // Another table or a new resource in the Base does not concern this area.
+    snapshot = { ...snapshot, revision: "three", resources: { ...snapshot.resources, "table:OTHER1": "two", "form:NEW001": "one" } };
+    callbacks.onEvent?.("s6t.test.other");
+    await Bun.sleep(300);
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+    // A foreign change to the active table does.
+    snapshot = { ...snapshot, revision: "four", resources: { ...snapshot.resources, "table:TABLE1": "foreign" } };
+    callbacks.onEvent?.("s6t.test.foreign");
+    await Bun.sleep(300);
+    expect(dom.root.querySelector('[role="status"]')?.textContent).toContain("Workspace changed");
+    expect(dom.root.textContent).not.toContain("paused");
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
     dom.cleanup();
   }
 });

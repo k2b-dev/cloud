@@ -53,8 +53,7 @@ export const workspaceMessages = i18n.define({
       limitedAccess: ({ forms, documents }: { forms: number; documents: number }) =>
         `You have access to ${[forms ? `${forms} form${forms === 1 ? "" : "s"}` : "", documents ? `${documents} document template${documents === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ")}. Choose one in the sidebar.`,
       noTablesCreate: "No tables yet. Choose “New table” in the sidebar.",
-      structureChanged: "The structure of this base has changed. Reload when you are ready; your current inputs stay open.",
-      structureWriteBlocked: "This area has changed. Your inputs are preserved, but saving is paused. Reload before editing further.",
+      structureChanged: "The structure of this area has changed. Reload when you are ready; your current inputs stay open.",
       reloadDraftWarning: "Reload this page? Unsaved inputs will be discarded.",
     },
     de: {
@@ -107,9 +106,8 @@ export const workspaceMessages = i18n.define({
       limitedAccess: ({ forms, documents }) =>
         `Du hast Zugriff auf ${[forms ? `${forms} ${forms === 1 ? "Formular" : "Formulare"}` : "", documents ? `${documents} ${documents === 1 ? "Dokumentvorlage" : "Dokumentvorlagen"}` : ""].filter(Boolean).join(" und ")}. Wähle einen Eintrag in der Seitenleiste aus.`,
       noTablesCreate: "Noch keine Tabellen. Wähle „Neue Tabelle“ in der Seitenleiste aus.",
-      structureChanged: "Die Struktur dieser Base wurde geändert. Lade neu, wenn du bereit bist. Deine aktuellen Eingaben bleiben offen.",
-      structureWriteBlocked:
-        "Dieser Bereich wurde geändert. Deine Eingaben bleiben erhalten, Speichern ist aber pausiert. Lade vor weiteren Änderungen neu.",
+      structureChanged:
+        "Die Struktur dieses Bereichs wurde geändert. Lade neu, wenn du bereit bist. Deine aktuellen Eingaben bleiben offen.",
       reloadDraftWarning: "Seite neu laden? Ungespeicherte Eingaben werden verworfen.",
     },
   },

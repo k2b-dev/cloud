@@ -53,6 +53,7 @@ import {
   getWorkflowDocumentConfirmation,
   getWorkflowRunScope,
 } from "../service/workflow-runs";
+import { workspaceRevisionHeader } from "../service/workspace-revision";
 import { projectGridRecord, projectPublishedRecords, requiredProjected } from "./custom-app-public-dto";
 import { loadPublishedCustomAppPage } from "./custom-app-published-page";
 import { resolvePublishedCustomAppGlobalRuntime, resolvePublishedCustomAppRuntime } from "./custom-app-published-runtime";
@@ -73,6 +74,7 @@ import { runWithQueryAdmission } from "./query-admission";
 import { internalIdParam, requirePublicIdParam } from "./route-params";
 import { v } from "./validator";
 import { ScannerLauncherRequestSchema, toPublicWorkflowError, toPublicWorkflowPayloads } from "./workflow-api-shared";
+import { acknowledgeWorkspaceWrite } from "./workspace";
 
 const DefinitionBaseSchema = z.object({ baseId: ShortIdSchema });
 const CustomAppCreateSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
@@ -1805,7 +1807,7 @@ export const createCustomAppsApi = (
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.customApp.saveDraft(app.id, c.req.valid("json").definition, getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
-      c.header("X-Grids-Workspace-Revision", result.data.workspaceRevision);
+      c.header(workspaceRevisionHeader, `app:${app.shortId}=${result.data.workspaceRevision}`);
       return c.json(await projectDraftSave(result.data));
     })
     .post("/:appId/restore", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
@@ -1831,6 +1833,7 @@ export const createCustomAppsApi = (
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.customApp.publish(app.id, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
+      await acknowledgeWorkspaceWrite(c, app.baseId, `app:${app.shortId}`);
       return c.json(await projectCustomApp(result.data));
     })
     .post("/:appId/unpublish", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
@@ -1840,6 +1843,7 @@ export const createCustomAppsApi = (
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.customApp.unpublish(app.id, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
+      await acknowledgeWorkspaceWrite(c, app.baseId, `app:${app.shortId}`);
       return c.json(await projectCustomApp(result.data));
     })
     .delete("/:appId", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {

@@ -1,5 +1,5 @@
 import { type AuthContext, auth } from "@k2b/cloud/server";
-import { Hono, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 import {
@@ -9,10 +9,21 @@ import {
 import { loadRecordDetailData } from "../frontend/_components/workspace/workspace-record-detail-state";
 import { loadWorkflowRunDetail } from "../frontend/_components/workspace/workspace-workflow-state";
 import { gridsService } from "../service";
-import { loadWorkspaceRevision } from "../service/workspace-revision";
+import { loadResourceRevision, loadWorkspaceRevision, workspaceRevisionHeader } from "../service/workspace-revision";
 import { apiMessages } from "./messages";
 import { currentActorViewer, gateAt } from "./permissions";
 import { v } from "./validator";
+
+/**
+ * Tells the writing tab which structure revision its own write produced so the
+ * workspace notice stays quiet for it. Read after the commit, so a concurrent
+ * foreign write in the same instant is acknowledged along with it; the server
+ * validates every later write anyway.
+ */
+export const acknowledgeWorkspaceWrite = async (c: Context, baseId: string, key: string) => {
+  const revision = await loadResourceRevision(baseId, key);
+  if (revision) c.header(workspaceRevisionHeader, `${key}=${revision}`);
+};
 
 export const createWorkspaceApi = (
   deps: {

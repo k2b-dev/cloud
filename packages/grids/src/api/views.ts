@@ -18,6 +18,7 @@ import {
 } from "./public-dto";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
 import { v } from "./validator";
+import { acknowledgeWorkspaceWrite } from "./workspace";
 
 const gqlDiagnosticMessage = (diagnostics: Array<{ message: string }>): string =>
   diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";
@@ -192,7 +193,9 @@ const app = new Hono<AuthContext>()
         },
         currentActorUserId(c),
       );
-      return result.ok ? c.json(await toPublicView(result.data)) : c.json({ message: result.error.message }, result.error.status);
+      if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      await acknowledgeWorkspaceWrite(c, table.baseId, `view:${view.shortId}`);
+      return c.json(await toPublicView(result.data));
     },
   )
 

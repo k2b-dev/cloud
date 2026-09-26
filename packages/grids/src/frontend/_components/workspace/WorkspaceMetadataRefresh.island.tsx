@@ -4,7 +4,7 @@ import { apiClient } from "../../../api/client";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { createGridsMetadataEventsProvider } from "./grids-metadata-events-provider";
 import { workspaceMessages } from "./messages";
-import { setWorkspaceLiveStatus, workspaceLiveStatus } from "./workspace-live-state";
+import { setWorkspaceLiveStatus, workspaceLiveStatus, workspaceResourceAppliedEvent } from "./workspace-live-state";
 import { createWorkspaceRevisionController } from "./workspace-revision-controller";
 
 export default function WorkspaceMetadataRefresh(props: {
@@ -32,7 +32,7 @@ export default function WorkspaceMetadataRefresh(props: {
       if (disposed || revoked) return;
       revoked = true;
       controller.dispose();
-      setWorkspaceLiveStatus({ blocked: true, revoked: true, message: t().accessRevoked });
+      setWorkspaceLiveStatus({ revoked: true, message: t().accessRevoked });
       dialogCore.close();
       // Sidebar is SSR-owned: hide its resource labels along with island content.
       const workspace = document.getElementById(`grids-workspace-${props.baseId}`);
@@ -55,7 +55,6 @@ export default function WorkspaceMetadataRefresh(props: {
         setFailed(false);
         if (state.revoked) return revoke();
         setChanged(state.changed);
-        setWorkspaceLiveStatus({ blocked: state.blocked, revoked: false, message: t().structureWriteBlocked });
       },
       markApplied: (cursor) => provider.markApplied(cursor),
       onError: () => setFailed(true),
@@ -74,13 +73,13 @@ export default function WorkspaceMetadataRefresh(props: {
       },
     });
     provider.connect();
+    // Short ids are unique across Bases, so no Base check is needed here.
     const applied = (raw: Event) => {
-      const { baseId, key, revision } = (raw as CustomEvent<{ baseId: string; key: string; revision: string }>).detail;
-      if (baseId !== props.baseId) return;
+      const { key, revision } = (raw as CustomEvent<{ key: string; revision: string }>).detail;
       controller.acknowledge(key, revision);
       controller.check();
     };
-    document.addEventListener("grids:workspace-resource-applied", applied);
+    document.addEventListener(workspaceResourceAppliedEvent, applied);
     // Detect missed best-effort publications, without reloading record data.
     const recheck = () => {
       if (!revoked && document.visibilityState === "visible") controller.check();
@@ -91,10 +90,10 @@ export default function WorkspaceMetadataRefresh(props: {
       disposed = true;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", recheck);
-      document.removeEventListener("grids:workspace-resource-applied", applied);
+      document.removeEventListener(workspaceResourceAppliedEvent, applied);
       controller.dispose();
       provider.dispose();
-      setWorkspaceLiveStatus({ blocked: false, revoked: false, message: "" });
+      setWorkspaceLiveStatus({ revoked: false, message: "" });
     });
   });
 
@@ -105,15 +104,7 @@ export default function WorkspaceMetadataRefresh(props: {
           icon="ti ti-refresh"
           title={workspaceLiveStatus().revoked ? t().accessDenied : failed() && !changed() ? t().liveMetadataFailed : t().workspaceChanged}
         >
-          <p>
-            {workspaceLiveStatus().revoked
-              ? t().accessRevoked
-              : workspaceLiveStatus().blocked
-                ? t().structureWriteBlocked
-                : failed()
-                  ? t().liveUpdatesStoppedDetail
-                  : t().structureChanged}
-          </p>
+          <p>{workspaceLiveStatus().revoked ? t().accessRevoked : failed() ? t().liveUpdatesStoppedDetail : t().structureChanged}</p>
           <Button variant="secondary" class="mt-3" onClick={() => void reload()}>
             {t().reload}
           </Button>

@@ -7,7 +7,7 @@ order: 150
 ---
 ## The Base structure changed {icon="refresh"}
 
-Structure changes show one **Reload** notice, never an automatic page reload. Open inputs stay intact. If the active area changed, saving pauses: keep your draft elsewhere before confirming Reload. Unrelated changes do not block editing. Lost access or a deleted active resource hides the affected workspace immediately.
+When someone else changes the structure of the area you are working in, one **Reload** notice appears; the page never reloads on its own, and saving keeps working. Structure means the table name and its fields, a View's source and table, or an App's definition; column widths, display modes, view layouts, field order, and changes elsewhere in the Base show nothing. Your own edits in this tab never trigger the notice. Open inputs stay intact until you confirm Reload; a save that no longer fits the current structure, such as a value for a deleted field, is rejected by the server with a clear message. Lost access or a deleted active resource hides the affected workspace immediately.
 
 ## A resource is missing or will not open {icon="lifebuoy"}
 
