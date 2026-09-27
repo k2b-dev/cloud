@@ -21,7 +21,7 @@ When you create an item, Spaces initially selects a task or event based on the c
 - **Blocked by:** Add every unfinished task that must be completed first. A blocked task cannot be completed until all active blockers are complete. Dependencies must stay within one Space and cannot form a cycle.
 - **Blocks:** Open the task details to see the reverse direction: every task that currently depends on this task.
 - **Related tasks:** Link tasks that share context but do not depend on each other. A related-task link is not a blocker.
-- **Links:** Attach Cloud resources and external pages such as the GitHub issue a task implements. GitHub issue and pull request links show their title and open, closed, or merged state.
+- **Links & resources:** Attach Cloud resources and external pages such as the GitHub issue a task implements. GitHub issue and pull request links show their title and open, closed, or merged state.
 - **Checklist:** Break a task into small steps when a checkbox and label are enough. Checklist entries intentionally have no assignees, dates, or separate detail view.
 - **Attachments:** Add screenshots and other images to a task when the work needs visual context, such as a bug report. Spaces downscales large source images before uploading them. Select an existing image to open the attachment gallery, download the stored image, or remove it. Each task supports up to 20 images. Attachments and their automation links follow the task's read and write permissions.
 - **Recurrence:** Use recurring events for repeated appointments or routines. Keep one-off tasks as normal tasks.
@@ -46,14 +46,17 @@ Press **Cmd/Ctrl+Alt+N** to create a task, or an event in calendar view, and pre
 
 ## Implementation work and handoffs {icon="notes"}
 
-Tasks can carry a progress note and a completion result, shown under **Work and
-handoff** in their details. Reopening keeps the last result.
+Tasks can carry a progress note and a completion result. The **Work** group in
+the task details shows them as **Latest status** and **Last result**, below the
+**Assigned** people. Reopening keeps the last result.
 
 Press **I'm on it** on a board card or in the task details to claim a task; a
 second click releases it, and in the details you can leave a short handoff note
 on release. While a task is claimed, the card shows the holder's avatar with a
 green ring first among the assignees in any column, and the **In progress**
-filter lists claimed tasks. A claim only marks who is working on it right now;
+filter lists claimed tasks. In the details, the holder leads the **Assigned**
+list with the same ring and the time they started; a holder who is not assigned
+is marked as such. A claim only marks who is working on it right now;
 assignment and the column do not change. CLI workers and service accounts claim
 the same way and appear the same way.
 

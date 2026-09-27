@@ -1,5 +1,4 @@
 import { Avatar, type AvatarSize } from "@k2b/ui";
-import { Show } from "solid-js";
 import type { SpaceItemClaim } from "@/contracts";
 import { useSpaceMessages } from "../../../messages";
 import { isOwnClaim } from "./claim";
@@ -8,8 +7,6 @@ type Props = {
   claim: SpaceItemClaim;
   currentUserId: string;
   size?: AvatarSize;
-  /** Render the holder's name next to the avatar, in the same row layout as the assignees. */
-  showName?: boolean;
   class?: string;
 };
 
@@ -42,9 +39,6 @@ export default function ClaimAvatar(props: Props) {
         size={props.size ?? "xs"}
         class="border-2 border-[var(--k2b-success-text)]"
       />
-      <Show when={props.showName}>
-        <span class="min-w-0 flex-1 truncate text-sm">{own() ? t.youAreOnIt : props.claim.displayName}</span>
-      </Show>
     </span>
   );
 }

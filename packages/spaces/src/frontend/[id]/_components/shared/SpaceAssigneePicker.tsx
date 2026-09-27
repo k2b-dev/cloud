@@ -1,8 +1,10 @@
+import { type DateContext, dates } from "@k2b/stdlib";
 import { Avatar, Combobox, type ComboboxOption, IconButton } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { SpaceItemAssignee } from "@/contracts";
+import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
+import ClaimAvatar from "./claim/ClaimAvatar";
 
 type SpaceAssigneePickerProps = {
   spaceId: string;
@@ -11,6 +13,10 @@ type SpaceAssigneePickerProps = {
   disabled?: boolean;
   placeholder?: string;
   variant?: "chips" | "rows";
+  /** Rows only: the claim holder leads the list with its success ring and claim time, and appears once. */
+  claim?: SpaceItemClaim | null;
+  currentUserId?: string;
+  dateConfig?: DateContext;
 };
 
 const selectedIds = (assignees: SpaceItemAssignee[]) => assignees.map((assignee) => assignee.id);
@@ -19,10 +25,23 @@ const removeAssignee = (assignees: SpaceItemAssignee[], id: string) => assignees
 
 type AssigneeOption = ComboboxOption & { avatarHash: string | null };
 
+const avatarSrc = (assignee: SpaceItemAssignee) =>
+  assignee.avatarHash
+    ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
+    : undefined;
+
 export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
   const t = useSpaceMessages();
   const variant = () => props.variant ?? "chips";
   const current = () => props.value();
+  const claim = () => (variant() === "rows" ? (props.claim ?? null) : null);
+  const holderId = () => {
+    const actor = claim()?.actor;
+    return actor?.kind === "user" ? actor.id : null;
+  };
+  /** The holder's own assignee entry, when the holder is also assigned. */
+  const assignedHolder = () => current().find((assignee) => assignee.id === holderId());
+  const others = () => current().filter((assignee) => assignee.id !== holderId());
 
   const fetchAssignableUsers = async (query: string, signal: AbortSignal): Promise<AssigneeOption[]> => {
     const res = await apiClient[":id"]["assignable-users"].$get(
@@ -53,9 +72,23 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
 
   const remove = (id: string) => props.onChange(removeAssignee(current(), id));
 
+  const rowRemoveButton = (assignee: SpaceItemAssignee) => (
+    <Show when={!props.disabled}>
+      <IconButton
+        label={t.removeAssignee({ name: assignee.displayName })}
+        size="xs"
+        onClick={() => remove(assignee.id)}
+        class="text-zinc-400 opacity-0 transition-opacity hover:text-red-500 focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+        title={t.removeAssignee({ name: assignee.displayName })}
+      >
+        <i class="ti ti-x text-sm" />
+      </IconButton>
+    </Show>
+  );
+
   return (
     <div class="flex flex-col gap-2">
-      <Show when={current().length > 0}>
+      <Show when={current().length > 0 || claim()}>
         <Show
           when={variant() === "rows"}
           fallback={
@@ -63,15 +96,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
               <For each={current()}>
                 {(assignee) => (
                   <span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] px-2 py-1 text-xs">
-                    <Avatar
-                      name={assignee.displayName}
-                      src={
-                        assignee.avatarHash
-                          ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
-                          : undefined
-                      }
-                      size="xs"
-                    />
+                    <Avatar name={assignee.displayName} src={avatarSrc(assignee)} size="xs" />
                     <span>{assignee.displayName}</span>
                     <Show when={!props.disabled}>
                       <IconButton
@@ -90,32 +115,30 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
           }
         >
           <div class="flex flex-col gap-1">
-            <For each={current()}>
+            <Show when={claim()}>
+              {(holder) => (
+                <div class="group flex items-center gap-2" data-spaces-claim-holder>
+                  <ClaimAvatar claim={holder()} currentUserId={props.currentUserId ?? ""} />
+                  <div class="min-w-0 flex-1">
+                    <span class="block truncate text-sm">{holder().displayName}</span>
+                    <span class="block truncate text-xs text-dimmed">
+                      {t.workingSince}{" "}
+                      <time datetime={holder().claimedAt}>{dates.formatDateTime(holder().claimedAt, props.dateConfig)}</time>
+                      <Show when={!assignedHolder()}> · {t.claimNotAssigned}</Show>
+                    </span>
+                  </div>
+                  <Show when={assignedHolder()}>{(assignee) => rowRemoveButton(assignee())}</Show>
+                </div>
+              )}
+            </Show>
+            <For each={others()}>
               {(assignee) => (
                 <div class="group flex items-center gap-2">
-                  <Avatar
-                    name={assignee.displayName}
-                    src={
-                      assignee.avatarHash
-                        ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
-                        : undefined
-                    }
-                    size="xs"
-                  />
+                  <Avatar name={assignee.displayName} src={avatarSrc(assignee)} size="xs" />
                   <div class="min-w-0 flex-1">
                     <span class="block truncate text-sm">{assignee.displayName}</span>
                   </div>
-                  <Show when={!props.disabled}>
-                    <IconButton
-                      label={t.removeAssignee({ name: assignee.displayName })}
-                      size="xs"
-                      onClick={() => remove(assignee.id)}
-                      class="text-zinc-400 opacity-0 transition-all hover:text-red-500 focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-                      title={t.removeAssignee({ name: assignee.displayName })}
-                    >
-                      <i class="ti ti-x text-sm" />
-                    </IconButton>
-                  </Show>
+                  {rowRemoveButton(assignee)}
                 </div>
               )}
             </For>

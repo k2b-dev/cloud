@@ -45,7 +45,7 @@ Spaces owns imported meeting state, recurrence, organizers, attendees, and invit
 
 ## Link resources and pages to work {icon="link"}
 
-Every item has one **Links** list for Cloud resources and external pages. In an editable item, use **Add link** to attach an `http(s)` URL with an optional label, or **Link Cloud resource** to find and attach any currently accessible resource supported by Cloud search. Each item holds up to 20 external links.
+Every item has one **Links & resources** list for Cloud resources and external pages. In an editable item, use **Add link** to attach an `http(s)` URL with an optional label, or **Link Cloud resource** to find and attach any currently accessible resource supported by Cloud search. Each item holds up to 20 external links.
 
 A link to a GitHub issue or pull request shows `repository#number`, the title, and whether it is open, closed, or merged. Other links show the site's icon and host, or the label you gave them. Previews are read-only and refresh a few minutes after the state changes on GitHub; Spaces never writes to GitHub. Public repositories need no setup. For private repositories, a Space administrator can store a GitHub token under **Space settings › GitHub**; without one, private links appear as plain links. Link a task to its issue instead of restating the issue in the description.
 
@@ -53,4 +53,4 @@ A Space item can keep stable references to resources owned by other Cloud applic
 
 The reference belongs to the shared Space item, not to the person who created it. Space access controls who can see or remove the link, while the target application checks its own current permission whenever someone opens the resource. If the target is removed or access changes, the stored label remains visible to Space readers and a writer can unlink the unavailable reference.
 
-Links to other Space tasks appear separately as **Related tasks**. These links provide context only: they do not block either task and may point to a task in another Space when both items are accessible.
+Links to other Space tasks appear separately as **Related tasks**, directly above that list. These links provide context only: they do not block either task and may point to a task in another Space when both items are accessible.
