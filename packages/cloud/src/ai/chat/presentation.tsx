@@ -27,9 +27,11 @@ export type AiChatTimelineSession = {
 
 export { type AiChatActions, AiChatActionsProvider };
 
-const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";
-
 type AssistantBlock = AiAssistantTimelineItem["blocks"][number];
+
+// Disclosure rows span the full message column so their chevrons share one right edge.
+const isWideBlock = (block: AssistantBlock) =>
+  block.kind === "tool" || block.kind === "compaction" || (block.kind === "thinking" && block.text.trim().length > 0);
 
 type SurveyResultBlock = Extract<AssistantBlock, { kind: "tool" }>;
 type SurveySegment = { type: "assistant"; blocks: AssistantBlock[] } | { type: "survey"; block: SurveyResultBlock };

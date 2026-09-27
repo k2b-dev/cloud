@@ -11,15 +11,14 @@ test("uses the shared message streaming state before the first model block", () 
   expect(presentationSource).toContain('kind: "message"');
   expect(presentationSource).toContain('status: "streaming"');
   expect(presentationSource).not.toContain("Generating response");
-  expect(blocksSource).toContain('label="Thinking"');
-  expect(blocksSource).toContain('label="Show reasoning"');
+  expect(blocksSource).toContain("label={t().thinking}");
+  expect(blocksSource).toContain("label={t().showReasoning}");
 });
 
-test("uses the full message width for every tool, including persisted messages", () => {
+test("uses the full message width for every disclosure row, including persisted messages", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
   const cloudStyles = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
 
-  expect(presentationSource).toContain('const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";');
   expect(presentationSource).toContain('class: segment.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
   expect(presentationSource).toContain('class: blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{\s*width:\s*100%;/);

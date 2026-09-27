@@ -187,6 +187,9 @@ latest tool; afterward it summarizes the kinds of work performed, including a
 failure count. Expanding the group reveals its individual tools. Expanding a
 tool reveals input and output inside a bounded, scrollable region; payloads are
 rendered lazily. No tool group hides intervening Markdown or user controls.
+A response with a tool, reasoning, or compaction disclosure spans the full
+message column, so disclosure chevrons share one right edge whether the
+response shows one row or several.
 
 Capability titles and application icons come from the saved presentation.
 Approval prompts retain their application identity and explicit decision
