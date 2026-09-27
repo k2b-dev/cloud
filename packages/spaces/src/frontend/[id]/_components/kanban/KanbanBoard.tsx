@@ -67,12 +67,15 @@ type DropIntent =
     }
   | { kind: "wormhole"; wormholeId: string };
 
+/** Where the card lands, named by the card the user saw next to it; the server picks the rank from the whole column. */
+type MovePosition = { afterItemId?: string; beforeItemId?: string };
+
 type MoveContext = {
   previousBuckets: KanbanBucketInitial[];
   sourceBucketKey: string;
   targetBucketKey: string;
   targetColumnId: string;
-  targetRank: string;
+  position: MovePosition;
   targetIndex: number;
   targetCompleted: boolean;
   claimId: string | undefined;
@@ -82,7 +85,6 @@ type TransferContext = {
   previousBuckets: KanbanBucketInitial[];
 };
 
-const RANK_STEP = 1024n;
 const boardScrollMemory = new Map<string, { left: number; top: number }>();
 
 const priorityMeta: Record<string, { icon: string; color: string }> = {
@@ -97,37 +99,17 @@ const buildItemUrl = (baseUrl: string, itemId: string) => {
   return `${baseUrl}${sep}item=${itemId}`;
 };
 
-const toRank = (value: string) => {
-  try {
-    return BigInt(value);
-  } catch {
-    return 0n;
-  }
-};
-
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-const betweenRanks = (before: bigint | null, after: bigint | null): bigint | null => {
-  if (before === null && after === null) return RANK_STEP;
-  if (before === null) {
-    if (after! > RANK_STEP) return after! - RANK_STEP;
-    return after! - 1n;
-  }
-  if (after === null) return before + RANK_STEP;
-  if (after <= before) return null;
-  const gap = after - before;
-  if (gap <= 1n) return null;
-  return before + gap / 2n;
-};
-
-const computeInsertRank = (items: SpaceItem[], insertIndex: number): bigint => {
-  const before = insertIndex > 0 ? items[insertIndex - 1] : null;
-  const after = insertIndex < items.length ? items[insertIndex] : null;
-  const midpoint = betweenRanks(before ? toRank(before.rank) : null, after ? toRank(after.rank) : null);
-  if (midpoint !== null) return midpoint;
-  if (before) return toRank(before.rank) + 1n;
-  if (after) return toRank(after.rank) - 1n;
-  return RANK_STEP;
+/**
+ * Names the loaded card the moved card lands after, or before at the top of a column. The server
+ * places it next to that card, so unloaded cards of a paged column cannot tie with or pass it.
+ */
+const movePosition = (items: SpaceItem[], insertIndex: number): MovePosition => {
+  const after = items[insertIndex - 1];
+  if (after) return { afterItemId: after.id };
+  const before = items[insertIndex];
+  return before ? { beforeItemId: before.id } : {};
 };
 
 const buildRequest = (params: { bucket: KanbanBucketInitial; page: number; pageSize: number }): ItemFilter => {
@@ -444,11 +426,9 @@ export default function KanbanBoard(props: Props) {
 
       const targetItemsWithoutSource = resolved.targetBucket.items.filter((item) => item.id !== itemId);
       const targetIndexClamped = clamp(targetIndex, 0, targetItemsWithoutSource.length);
-      const targetRank = computeInsertRank(targetItemsWithoutSource, targetIndexClamped);
       const optimisticUpdated: SpaceItem = {
         ...resolved.source.item,
         columnId: targetColumnId,
-        rank: targetRank.toString(),
         completedAt: resolved.targetBucket.isDone ? new Date().toISOString() : null,
       };
 
@@ -481,7 +461,7 @@ export default function KanbanBoard(props: Props) {
         sourceBucketKey: resolved.source.bucket.key,
         targetBucketKey: resolved.targetBucket.key,
         targetColumnId,
-        targetRank: targetRank.toString(),
+        position: movePosition(targetItemsWithoutSource, targetIndexClamped),
         targetIndex: targetIndexClamped,
         targetCompleted: resolved.targetBucket.isDone,
         claimId: resolved.targetBucket.isDone ? ownClaimId(resolved.source.item.claim, props.currentUserId) : undefined,
@@ -492,7 +472,7 @@ export default function KanbanBoard(props: Props) {
         param: { id: props.spaceId, itemId: vars.itemId },
         json: {
           columnId: ctx.targetColumnId,
-          rank: ctx.targetRank,
+          ...ctx.position,
           completed: ctx.targetCompleted,
           claimId: ctx.claimId,
         },

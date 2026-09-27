@@ -471,15 +471,27 @@ export const SplitRecurringItemSchema = z
   });
 export type SplitRecurringItem = z.infer<typeof SplitRecurringItemSchema>;
 
-export const MoveItemSchema = z.object({
-  columnId: ResourceShortIdSchema.describe("Target column ID"),
-  rank: z
-    .string()
-    .regex(/^-?\d+$/)
-    .describe("Target rank value"),
-  completed: z.boolean().optional().describe("Optional completion state override after move"),
-  claimId: UuidSchema.optional().describe("Current worker claim ID; required to complete a claimed task by moving it"),
-});
+export const MoveItemSchema = z
+  .object({
+    columnId: ResourceShortIdSchema.describe("Target column ID"),
+    afterItemId: ResourceShortIdSchema.optional().describe(
+      "Place the item directly after this item of the target column; the server computes the rank",
+    ),
+    beforeItemId: ResourceShortIdSchema.optional().describe(
+      "Place the item directly before this item of the target column; the server computes the rank",
+    ),
+    rank: z
+      .string()
+      .regex(/^-?\d+$/)
+      .optional()
+      .describe("Absolute rank stored as given; ignored when afterItemId or beforeItemId is set"),
+    completed: z.boolean().optional().describe("Optional completion state override after move"),
+    claimId: UuidSchema.optional().describe("Current worker claim ID; required to complete a claimed task by moving it"),
+  })
+  .refine((data) => data.afterItemId === undefined || data.beforeItemId === undefined, {
+    message: "Pass either afterItemId or beforeItemId, not both",
+    path: ["beforeItemId"],
+  });
 export type MoveItem = z.infer<typeof MoveItemSchema>;
 
 export const CreateWormholeSchema = z.object({

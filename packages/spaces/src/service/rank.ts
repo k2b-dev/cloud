@@ -18,12 +18,13 @@ export const rank = {
     const maxRank = toBigInt(max);
     return maxRank > 0n ? maxRank + RANK_STEP : RANK_STEP;
   },
+  /** A rank strictly between two neighbors, one step beyond an open end, or null when no integer fits. */
   between: (before: RankValue, after: RankValue): bigint | null => {
     const prev = before === null || before === undefined ? null : toBigInt(before);
     const next = after === null || after === undefined ? null : toBigInt(after);
 
     if (prev === null && next === null) return RANK_STEP;
-    if (prev === null) return next! > 1n ? next! / 2n : null;
+    if (prev === null) return next! - RANK_STEP;
     if (next === null) return prev + RANK_STEP;
     if (next <= prev) return null;
 

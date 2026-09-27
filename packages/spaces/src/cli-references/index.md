@@ -92,7 +92,7 @@ cld spaces create "Hiring" --description "Open roles"
 - `set` changes only the fields you pass. `--description <text>` or `--from <file|->` replaces the description (5,000 characters at most). Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
 - Dates accept ISO datetimes or `YYYY-MM-DD`. A date-only deadline or end means the end of that day (UTC); a start means its beginning.
-- `mv` moves an item to another column of its own space. Moving between spaces is done with wormholes in the web interface.
+- `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
 
 ## Track implementation work and handoffs

@@ -1904,23 +1904,108 @@ export const remove = async (params: { id: string; actor?: SpaceActivityIdentity
   return { ok: true, data: undefined };
 };
 
+type ColumnNeighbor = { id: string; rank: string };
+
 /**
- * Move an item to a different column/rank
+ * Picks the rank that places `itemId` next to its anchor in `columnId`, or at the top without one.
+ * It reads the real neighbors in list order (`rank, id`), including items a paged client has not
+ * loaded. When no integer fits between them (a tie or an exhausted gap), it renumbers the column
+ * one step apart and leaves the slot after the previous neighbor free.
+ */
+const placeInColumn = async (
+  tx: SqlExecutor,
+  params: { itemId: string; columnId: string; afterItemId?: string; beforeItemId?: string },
+): Promise<MutationResult<bigint>> => {
+  const { itemId, columnId } = params;
+  const anchorId = params.afterItemId ?? params.beforeItemId;
+  let anchor: ColumnNeighbor | null = null;
+  if (anchorId) {
+    const [row] = await tx<(ColumnNeighbor & { column_id: string })[]>`
+      SELECT id, rank::text AS rank, column_id FROM spaces.items WHERE id = ${anchorId}::uuid
+    `;
+    if (!row || row.column_id !== columnId)
+      return { ok: false, error: "The neighboring item is no longer in the target column; reload and try again", status: 409 };
+    anchor = { id: row.id, rank: row.rank };
+  }
+
+  let prev: ColumnNeighbor | null = null;
+  let next: ColumnNeighbor | null = null;
+  if (anchor && params.afterItemId) {
+    prev = anchor;
+    const [row] = await tx<ColumnNeighbor[]>`
+      SELECT item.id, item.rank::text AS rank FROM spaces.items AS item
+      WHERE item.column_id = ${columnId}::uuid AND item.id <> ${itemId}::uuid
+        AND (item.rank, item.id) > (${anchor.rank}::bigint, ${anchor.id}::uuid)
+      ORDER BY item.rank, item.id
+      LIMIT 1
+    `;
+    next = row ?? null;
+  } else if (anchor) {
+    next = anchor;
+    const [row] = await tx<ColumnNeighbor[]>`
+      SELECT item.id, item.rank::text AS rank FROM spaces.items AS item
+      WHERE item.column_id = ${columnId}::uuid AND item.id <> ${itemId}::uuid
+        AND (item.rank, item.id) < (${anchor.rank}::bigint, ${anchor.id}::uuid)
+      ORDER BY item.rank DESC, item.id DESC
+      LIMIT 1
+    `;
+    prev = row ?? null;
+  } else {
+    const [row] = await tx<ColumnNeighbor[]>`
+      SELECT item.id, item.rank::text AS rank FROM spaces.items AS item
+      WHERE item.column_id = ${columnId}::uuid AND item.id <> ${itemId}::uuid
+      ORDER BY item.rank, item.id
+      LIMIT 1
+    `;
+    next = row ?? null;
+  }
+
+  const between = rank.between(prev?.rank, next?.rank);
+  if (between !== null) return { ok: true, data: between };
+  // `between` only fails with neighbors on both sides.
+  const previous = prev!;
+  await tx`
+    UPDATE spaces.items AS item
+    SET rank = (ordered.position + CASE WHEN (ordered.rank, ordered.id) > (${previous.rank}::bigint, ${previous.id}::uuid) THEN 1 ELSE 0 END)
+      * ${rank.toDb(rank.step())}::bigint
+    FROM (
+      SELECT id, rank, row_number() OVER (ORDER BY rank, id) AS position
+      FROM spaces.items
+      WHERE column_id = ${columnId}::uuid AND id <> ${itemId}::uuid
+    ) AS ordered
+    WHERE item.id = ordered.id
+  `;
+  const [renumbered] = await tx<{ rank: string }[]>`SELECT rank::text AS rank FROM spaces.items WHERE id = ${previous.id}::uuid`;
+  return { ok: true, data: rank.parse(renumbered!.rank) + rank.step() };
+};
+
+/**
+ * Move an item to a column. `afterItemId` or `beforeItemId` place it next to that item of the
+ * target column and win over `rank`; an explicit `rank` is stored as given; with neither, the
+ * item goes to the top of the column. The per-Space advisory lock serializes moves, so each
+ * placement sees the neighbors committed by earlier moves.
  */
 export const move = async (params: {
   id: string;
   columnId: string;
-  rank: string;
+  afterItemId?: string;
+  beforeItemId?: string;
+  rank?: string;
   completed?: boolean;
   claimId?: string;
   actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
-  const { id, columnId } = params;
-  let targetRank: bigint;
-  try {
-    targetRank = rank.parse(params.rank);
-  } catch {
-    return { ok: false, error: "Invalid rank", status: 400 };
+  const { id, columnId, afterItemId, beforeItemId } = params;
+  if (afterItemId !== undefined && beforeItemId !== undefined)
+    return { ok: false, error: "Pass either afterItemId or beforeItemId, not both", status: 400 };
+  if (afterItemId === id || beforeItemId === id) return { ok: false, error: "An item cannot be placed next to itself", status: 400 };
+  let explicitRank: bigint | null = null;
+  if (afterItemId === undefined && beforeItemId === undefined && params.rank !== undefined) {
+    try {
+      explicitRank = rank.parse(params.rank);
+    } catch {
+      return { ok: false, error: "Invalid rank", status: 400 };
+    }
   }
 
   const completedAt = typeof params.completed === "boolean" ? (params.completed ? new Date() : null) : undefined;
@@ -1945,6 +2030,12 @@ export const move = async (params: {
     const [column] = await tx<{ space_id: string }[]>`SELECT space_id FROM spaces.columns WHERE id = ${columnId}`;
     if (!column || column.space_id !== existing.space_id) {
       return { ok: false, error: "Column not found in space", status: 400 };
+    }
+    let targetRank = explicitRank;
+    if (targetRank === null) {
+      const placed = await placeInColumn(tx, { itemId: id, columnId, afterItemId, beforeItemId });
+      if (!placed.ok) return placed;
+      targetRank = placed.data;
     }
     const [row] =
       completedAt === undefined

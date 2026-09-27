@@ -7,6 +7,7 @@ import {
   CreateWormholeSchema,
   ItemFilterSchema,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
+  MoveItemSchema,
   OverlapQuerySchema,
   ReorderColumnsSchema,
   ReorderWormholesSchema,
@@ -35,6 +36,22 @@ describe("Spaces contract time ranges", () => {
     expect(UpdateItemSchema.safeParse({ startsAt: START, endsAt: BEFORE_START }).success).toBe(false);
     expect(CalendarQuerySchema.safeParse({ from: START, to: BEFORE_START }).success).toBe(false);
     expect(OverlapQuerySchema.safeParse({ from: START, to: BEFORE_START }).success).toBe(false);
+  });
+});
+
+describe("Spaces item move contract", () => {
+  test("accepts one neighbor anchor, a legacy rank, both together, or no position", () => {
+    expect(MoveItemSchema.safeParse({ columnId, afterItemId: "Item01" }).success).toBe(true);
+    expect(MoveItemSchema.safeParse({ columnId, beforeItemId: "Item01" }).success).toBe(true);
+    expect(MoveItemSchema.safeParse({ columnId, rank: "-2048" }).success).toBe(true);
+    expect(MoveItemSchema.safeParse({ columnId, afterItemId: "Item01", rank: "2048" }).success).toBe(true);
+    expect(MoveItemSchema.safeParse({ columnId }).success).toBe(true);
+  });
+
+  test("rejects two anchors, malformed anchors, and non-integer ranks", () => {
+    expect(MoveItemSchema.safeParse({ columnId, afterItemId: "Item01", beforeItemId: "Item02" }).success).toBe(false);
+    expect(MoveItemSchema.safeParse({ columnId, afterItemId: "11111111-1111-4111-8111-111111111111" }).success).toBe(false);
+    expect(MoveItemSchema.safeParse({ columnId, rank: "1.5" }).success).toBe(false);
   });
 });
 

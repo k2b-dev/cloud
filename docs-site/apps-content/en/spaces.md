@@ -102,6 +102,19 @@ Task checklist entries are deliberately small: one completion state and one
 label, without separate assignees, dates, or detail pages. Checklist changes
 also count as task activity.
 
+A Kanban column loads 30 cards at a time. A dropped card lands directly below
+the card it was dropped under, or at the top when dropped above the first card,
+and keeps that position after a reload, even when the column holds more cards
+than the board has loaded. The board names that neighboring card, and Spaces
+places the item in the full column. API clients use the same contract:
+`POST /api/spaces/:id/items/:itemId/move` takes `columnId` and either
+`afterItemId` or `beforeItemId`, an item of the target column. Without either,
+the item goes to the top of the column. An explicit `rank` is still stored as
+given, but a neighbor wins when both are sent. Moves in one Space apply one at
+a time, so concurrent drops never share a position. If the neighbor has left
+the target column in the meantime, the move fails with `409` and changes
+nothing; reload the column and try again.
+
 Spaces keeps common actions keyboard-first. Outside form fields and dialogs,
 **C** creates an item and **Cmd/Ctrl+Shift+K** opens scoped search. These actions
 also appear in Cloud search and Layout Help. A focused Kanban card supports
