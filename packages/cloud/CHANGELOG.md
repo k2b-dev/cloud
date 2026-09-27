@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.17.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.16.1...npm-cloud-v0.17.0) (2026-09-27)
+
+
+### Features
+
+* **assistant:** delete chat files from the Files list ([#347](https://github.com/k2b-dev/cloud/issues/347)) ([5246601](https://github.com/k2b-dev/cloud/commit/52466014b27cc5405041ecfe4a8c01fe9709483a))
+
+
+### Bug Fixes
+
+* **cloud:** keep lone reasoning rows at the full chat column width ([#340](https://github.com/k2b-dev/cloud/issues/340)) ([cc85a41](https://github.com/k2b-dev/cloud/commit/cc85a41f9670f51656eaab2bdcfb63a4ae13c07e))
+* **test:** delete the Sync namespaces integration tests leave on the broker ([#328](https://github.com/k2b-dev/cloud/issues/328)) ([42709f2](https://github.com/k2b-dev/cloud/commit/42709f232cd8bd1489b32f5db40f09781b370edd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.6.3 to 0.7.0
+
 ## [0.16.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.16.0...npm-cloud-v0.16.1) (2026-09-27)
 
 

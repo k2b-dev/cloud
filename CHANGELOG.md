@@ -3,6 +3,29 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.21.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.20.0...cloud-v0.21.0) (2026-09-27)
+
+
+### Features
+
+* **assistant:** delete chat files from the Files list ([#347](https://github.com/k2b-dev/cloud/issues/347)) ([5246601](https://github.com/k2b-dev/cloud/commit/52466014b27cc5405041ecfe4a8c01fe9709483a))
+* **spaces:** group the item detail panel by planning, content, work, and context ([#325](https://github.com/k2b-dev/cloud/issues/325)) ([38436fa](https://github.com/k2b-dev/cloud/commit/38436fac87380971530c6b7b1471f299da6667ea)), closes [#322](https://github.com/k2b-dev/cloud/issues/322)
+* **spaces:** keep dropped cards where they land in paged Kanban columns ([#327](https://github.com/k2b-dev/cloud/issues/327)) ([174b2e3](https://github.com/k2b-dev/cloud/commit/174b2e319af571c7522de559ddf23520d7cdd853)), closes [#312](https://github.com/k2b-dev/cloud/issues/312)
+
+
+### Bug Fixes
+
+* **cloud:** keep lone reasoning rows at the full chat column width ([#340](https://github.com/k2b-dev/cloud/issues/340)) ([cc85a41](https://github.com/k2b-dev/cloud/commit/cc85a41f9670f51656eaab2bdcfb63a4ae13c07e))
+* **grids:** keep all columns visible when saving a field on a new table ([#344](https://github.com/k2b-dev/cloud/issues/344)) ([f0988ad](https://github.com/k2b-dev/cloud/commit/f0988ad1c7e1d0ae216a4762f0a6cc4d99f1e0ee)), closes [#330](https://github.com/k2b-dev/cloud/issues/330)
+* **grids:** keep the records search on one line ([#346](https://github.com/k2b-dev/cloud/issues/346)) ([a7b7520](https://github.com/k2b-dev/cloud/commit/a7b75200a9ba45d9b24109f9fd301a9085d43ab8))
+* **grids:** show linked record labels in relation cells, pickers, and filters ([#339](https://github.com/k2b-dev/cloud/issues/339)) ([0491e6e](https://github.com/k2b-dev/cloud/commit/0491e6e7d294e6327ae85b5e5c4347b6a12a5300))
+* **grids:** show record loading in the search icon instead of a transient refresh button ([#342](https://github.com/k2b-dev/cloud/issues/342)) ([6fccac8](https://github.com/k2b-dev/cloud/commit/6fccac8bbfd68cd66c934ec0cb44457369ac62c8)), closes [#329](https://github.com/k2b-dev/cloud/issues/329)
+* **spaces:** read CLI dates in the user's timezone like the web interface ([#348](https://github.com/k2b-dev/cloud/issues/348)) ([93fe6b5](https://github.com/k2b-dev/cloud/commit/93fe6b5f303dd19045772b0ff33828b167958a43))
+* **test:** delete the Sync namespaces integration tests leave on the broker ([#328](https://github.com/k2b-dev/cloud/issues/328)) ([42709f2](https://github.com/k2b-dev/cloud/commit/42709f232cd8bd1489b32f5db40f09781b370edd))
+* **ui:** keep sidebar row menus open while the pointer moves into them ([#338](https://github.com/k2b-dev/cloud/issues/338)) ([fdae52d](https://github.com/k2b-dev/cloud/commit/fdae52de7bbedbb5fbfed050d37cc7ffdd6398f7))
+* **ui:** preview PDFs from loaded bytes when no inline URL exists ([#341](https://github.com/k2b-dev/cloud/issues/341)) ([1f15850](https://github.com/k2b-dev/cloud/commit/1f158501cb1d84dacc81db58abf6a92d2a0590f7))
+* **ui:** reveal a nav tree row's actions only for that row ([#343](https://github.com/k2b-dev/cloud/issues/343)) ([f039ab2](https://github.com/k2b-dev/cloud/commit/f039ab2ba1e99226d2746c86582cc8c3b415c5e5))
+
 ## [0.20.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.3...cloud-v0.20.0) (2026-09-27)
 
 
