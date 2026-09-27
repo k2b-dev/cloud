@@ -56,10 +56,11 @@ jobs:
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
           shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/workflows/)'
-          # An application's production bundle depends on its package, @k2b/ui, and the shared inputs.
+          # An application's production bundle depends on its package, the shared inputs, and the
+          # non-application packages: @k2b/ui, and packages/cloud-cli, whose install script core bundles.
           bundles=()
           for app in $apps; do
-            if [[ "$(match "$shared|^packages/ui/|^packages/$app/")" == true ]]; then bundles+=("$app"); fi
+            if [[ "$(match "$shared|^packages/(ui|cloud-cli)/|^packages/$app/")" == true ]]; then bundles+=("$app"); fi
           done
           {
             echo "cloud=$(match "$shared")"
