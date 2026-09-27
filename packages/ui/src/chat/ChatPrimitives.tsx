@@ -182,13 +182,15 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
         <div class="k2b-chat-message__attachments" role="list" aria-label={messages().attachments}>
           <For each={props.attachments}>
             {(attachment) => {
+              // A preview that no longer loads, such as a deleted file, falls back to the attachment icon.
+              const [previewFailed, setPreviewFailed] = createSignal(false);
               const content = () => (
                 <>
                   <Show
-                    when={attachment.kind === "image" && attachment.previewUrl}
+                    when={attachment.kind === "image" && attachment.previewUrl && !previewFailed()}
                     fallback={<i class={attachmentIcon(attachment)} aria-hidden="true" />}
                   >
-                    <img src={attachment.previewUrl} alt={attachment.alt ?? attachment.name} />
+                    <img src={attachment.previewUrl} alt={attachment.alt ?? attachment.name} onError={() => setPreviewFailed(true)} />
                   </Show>
                   <Show when={attachment.kind !== "image"}>
                     <span>{attachment.name}</span>

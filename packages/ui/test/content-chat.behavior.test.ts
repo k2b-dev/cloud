@@ -235,6 +235,30 @@ describe("@k2b/ui content and chat behavior", () => {
     dom.cleanup();
   });
 
+  test("falls back to the attachment icon when an image preview no longer loads", async () => {
+    const dom = createDomTestHarness();
+    const { Chat } = await import("../src/chat");
+
+    const dispose = render(
+      () =>
+        createComponent(Chat.Message, {
+          role: "user",
+          children: "See the photo",
+          attachments: [{ id: "photo", name: "photo.png", kind: "image", icon: "ti ti-photo", previewUrl: "/files/deleted/photo.png" }],
+        }),
+      dom.root,
+    );
+
+    const attachment = dom.root.querySelector<HTMLElement>(".k2b-chat-message__attachment")!;
+    attachment.querySelector("img")!.dispatchEvent(new Event("error"));
+    expect(attachment.querySelector("img")).toBeNull();
+    expect(attachment.querySelector("i.ti-photo")).not.toBeNull();
+    expect(attachment.title).toBe("photo.png");
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("reports and follows controlled ChatActivity disclosure changes", async () => {
     const dom = createDomTestHarness();
     const { Chat } = await import("../src/chat");
