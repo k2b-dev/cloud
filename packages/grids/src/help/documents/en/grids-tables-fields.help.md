@@ -34,7 +34,7 @@ Date-time display, date-based filters, formulas, exports, and document folders u
 
 ## Fields that connect or calculate {icon="table"}
 
-- **Relation** links one record to one or several records in another table. The target table's record label is shown in pickers and cells.
+- **Relation** links one record to one or several records in another table. Cells, cards, pickers, and filters show the target table's record label.
 - **Lookup** displays one field from a related record without copying it.
 - **Rollup** summarizes values reached through a relation.
 - **Formula** calculates from the current Draft's fields. Finalization freezes the result.

@@ -23,10 +23,9 @@ import { tableMessages } from "./messages";
  * can share relation links, formatting, and aggregate footers without
  * dragging in page-specific toolbar or detail-panel state.
  *
- * Field values are rendered through `FieldValue`, including relation
- * labels from each record's pre-fetched `expanded` map. Zero render-time
- * DB calls — the batched-once `attachRelationExpansion` pass on the
- * server is the only roundtrip cost.
+ * Field values are rendered through `FieldValue`. Relation cells take
+ * their labels from `relationLabels`, which the query response builds
+ * once per page, so rendering makes no extra requests.
  */
 type Props = {
   /** The list-call response. Items + schema + cursor in one prop. */
@@ -36,6 +35,8 @@ type Props = {
   /** Optional table UUID -> short id map so relation links use path routes. */
   /** Optional field catalog for resolving lookup target display types. */
   fieldsByTable?: Record<string, Field[]>;
+  /** Record id -> label for linked records, from the query response. */
+  relationLabels?: Record<string, string>;
   /**
    * Row click handler. Omit to render rows as non-interactive
    * (cursor stays default, no hover state). The records page passes
@@ -171,6 +172,7 @@ export default function DatabaseTable(props: Props) {
       allFields={props.result.fields}
       baseId={props.baseId}
       fieldsByTable={props.fieldsByTable}
+      relationLabels={props.relationLabels}
       dateConfig={props.dateConfig}
       format={displayFormat(field)}
       mode="table"

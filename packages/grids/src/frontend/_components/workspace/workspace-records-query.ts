@@ -248,7 +248,6 @@ const loadListedInitialRecords = async (
     recordMeta: query.effectiveRecordMeta,
     sort: query.effectiveSort,
     cursor: args.recordsState.cursor,
-    includeRelations: true,
     viewer,
     dateConfig: args.dateConfig,
     computedColumns: query.effective.columns?.filter(isComputedColumn),
@@ -299,5 +298,8 @@ export const loadInitialRecords = async (args: InitialRecordsArgs) => {
     query.effectiveGroupBy.length > 0 && !args.trashMode
       ? await loadGroupedInitialRecords(args, query, viewer)
       : await loadListedInitialRecords(args, query, viewer);
+  // Filter chips name related records that the first page may not contain.
+  const filterLabels = await gridsService.relations.buildFilterLabelCache(query.effectiveFilter, args.fields, viewer);
+  data.relationLabels = { ...filterLabels, ...data.relationLabels };
   return { ...query, ...data };
 };

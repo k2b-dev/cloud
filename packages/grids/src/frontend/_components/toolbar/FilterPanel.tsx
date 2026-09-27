@@ -36,6 +36,8 @@ type Props = {
   fields: Field[];
   rows: () => FilterLeaf[];
   onRowsChange: (next: FilterLeaf[]) => void;
+  /** Record id -> label for relation filter values, from the query response. */
+  relationLabels?: Record<string, string>;
   dateConfig?: DateContext;
 };
 
@@ -142,6 +144,7 @@ export default function FilterPanel(props: Props) {
                 op={op()}
                 value={leaf().value}
                 onChange={(v) => updateLeaf(index, { value: v })}
+                relationLabels={props.relationLabels}
                 dateConfig={props.dateConfig}
               />
 
@@ -195,6 +198,7 @@ function FilterValueInput(props: {
   op: FilterOp | null;
   value: unknown;
   onChange: (v: unknown) => void;
+  relationLabels?: Record<string, string>;
   dateConfig?: DateContext;
 }) {
   const locale = useLocale();
@@ -343,7 +347,7 @@ function FilterValueInput(props: {
               <RelationPicker
                 targetTableId={targetTableId}
                 value={() => (Array.isArray(props.value) ? (props.value as string[]) : [])}
-                labels={() => ({})}
+                labels={() => props.relationLabels ?? {}}
                 multi
                 onChange={(v) => props.onChange(v)}
               />

@@ -1,6 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as relationTargets from "./relation-targets";
 import { collectHydratedRelationTargetIds } from "./relation-targets";
-import { enrichRecordsWithComputedColumns, enrichRecordsWithFormulas, relationLabelFields } from "./relations";
+import {
+  buildRelationFilterLabelCache,
+  enrichRecordsWithComputedColumns,
+  enrichRecordsWithFormulas,
+  relationLabelFields,
+} from "./relations";
 import type { Field, GridRecord } from "./types";
 
 // =============================================================================
@@ -83,6 +89,59 @@ describe("collectHydratedRelationTargetIds", () => {
     expect([...collectHydratedRelationTargetIds([first, second], [relation]).entries()]).toEqual([
       ["target-table", new Set(["target-1", "target-2"])],
     ]);
+  });
+});
+
+describe("buildRelationFilterLabelCache", () => {
+  test("labels the related records that live relation filters name, at any depth", async () => {
+    const customers = "10000000-0000-4000-8000-000000000001";
+    const acme = "20000000-0000-4000-8000-000000000001";
+    const globex = "20000000-0000-4000-8000-000000000002";
+    const initech = "20000000-0000-4000-8000-000000000003";
+    const customer = mkField({ id: "customer", type: "relation", config: { targetTableId: customers } });
+    const retired = mkField({ id: "retired", type: "relation", config: { targetTableId: customers }, deletedAt: "2026-02-01T00:00:00Z" });
+    const note = mkField({ id: "note", type: "text" });
+    const label = mkField({ id: "label", type: "text", presentable: true });
+    const requested: Array<Map<string, Set<string>>> = [];
+    const load = spyOn(relationTargets, "loadRelationTargetsBatch").mockImplementation(async (idsByTargetTable) => {
+      requested.push(new Map(idsByTargetTable));
+      return new Map([
+        [
+          customers,
+          {
+            fields: [label],
+            records: [
+              { id: acme, data: { label: "Acme" } },
+              { id: globex, data: { label: "Globex" } },
+            ],
+          },
+        ],
+      ]);
+    });
+    try {
+      const labels = await buildRelationFilterLabelCache(
+        {
+          op: "AND",
+          filters: [
+            { fieldId: "customer", op: "containsAny", value: [acme] },
+            {
+              op: "OR",
+              filters: [
+                { fieldId: "customer", op: "containsAny", value: [globex, "not-a-record-id"] },
+                { fieldId: "note", op: "equals", value: initech },
+              ],
+            },
+            { fieldId: "retired", op: "containsAny", value: [initech] },
+          ],
+        },
+        [customer, retired, note],
+      );
+
+      expect(requested).toEqual([new Map([[customers, new Set([acme, globex])]])]);
+      expect(labels).toEqual({ [acme]: "Acme", [globex]: "Globex" });
+    } finally {
+      load.mockRestore();
+    }
   });
 });
 

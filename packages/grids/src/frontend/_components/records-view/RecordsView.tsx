@@ -431,11 +431,11 @@ export default function RecordsView(props: Props) {
     queueWorkflow: queueBulkWorkflow,
   } = bulkSelection;
 
-  // Relation labels: SSR seeded a static prop, the API endpoint now
-  // also emits `relationLabels` for group-mode bucket keys. Merge both
-  // so GroupedTable / DatabaseTable see one consistent UUID→label
-  // map regardless of which data path filled it. Server-side labels
-  // take precedence (newer ground truth).
+  // Relation labels: SSR seeded a static prop, and every query response
+  // carries labels for its relation cells, bucket keys, and relation
+  // filter values. Merge both so the table, cards, groups, detail, and
+  // filter chips see one consistent id→label map. Newer responses take
+  // precedence.
   const mergedRelationLabels = () => ({
     ...props.relationLabels,
     ...liveRelationLabels(),
@@ -755,6 +755,7 @@ export default function RecordsView(props: Props) {
                   onAddComputedColumn={openAddComputedColumn}
                   onClearColumns={clearComputedColumns}
                   currentSearch={search()}
+                  relationLabels={mergedRelationLabels()}
                   forms={forms()}
                   canWrite={props.canWrite}
                   canDirectWrite={canDirectWrite()}

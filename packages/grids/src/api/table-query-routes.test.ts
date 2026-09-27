@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { err, fail, ok } from "@k2b/stdlib";
 import { BoundedQueryTimeoutError } from "../service/bounded-query";
+import * as publicResources from "../service/public-resources";
 import * as querySettings from "../service/query-settings";
 import { createTableQueryRoutes } from "./table-query-routes";
 
@@ -45,6 +46,10 @@ const makeDeps = (
     onExecute?: (body: Parameters<RouteDeps["executeQuery"]>[2]) => void;
     listError?: Error;
     fields?: Array<{ id: string; shortId: string; type: string; config: Record<string, unknown> }>;
+    items?: Array<Record<string, unknown>>;
+    relationLabels?: Record<string, string>;
+    filterLabels?: Record<string, string>;
+    onFilterLabels?: (filter: unknown) => void;
   } = {},
 ): RouteDeps => {
   const rank = { none: 0, read: 1, write: 2, admin: 3 };
@@ -59,12 +64,19 @@ const makeDeps = (
       list: async (options: Record<string, unknown>) => {
         overrides.onList?.(options);
         if (overrides.listError) throw overrides.listError;
-        return { ok: true, data: { items: [], nextCursor: null, filePreviews: {} } };
+        return { ok: true, data: { items: overrides.items ?? [], nextCursor: null, filePreviews: {} } };
       },
       aggregate: async () => ({ ok: true, data: {} }),
       group: async () => ({ ok: true, data: { buckets: [], nextCursor: null, explode: false } }),
     },
-    relations: { buildLabelCacheForGroupedKeys: async () => ({}) },
+    relations: {
+      buildLabelCache: async () => overrides.relationLabels ?? {},
+      buildLabelCacheForGroupedKeys: async () => ({}),
+      buildFilterLabelCache: async (filter: unknown) => {
+        overrides.onFilterLabels?.(filter);
+        return overrides.filterLabels ?? {};
+      },
+    },
   };
   const compileGql: RouteDeps["compileGql"] = async (_context, options) => {
     overrides.onCompile?.(options as unknown as Record<string, unknown>);
@@ -164,7 +176,7 @@ describe("table query routes", () => {
     expect(response.status).toBe(200);
     expect(compileOptions).toMatchObject({ baseId, tableId, source: view.source });
     expect(listCalls).toBe(1);
-    expect(await response.json()).toEqual({ items: [], nextCursor: null, filePreviews: {} });
+    expect(await response.json()).toEqual({ items: [], nextCursor: null, relationLabels: {}, filePreviews: {} });
   });
 
   test("uses a complete structured query instead of recompiling its validated saved-view context", async () => {
@@ -238,6 +250,64 @@ describe("table query routes", () => {
 
     expect(response.status).toBe(200);
     expect(options?.filter).toEqual({ fieldId, op: "equals", value: "ready" });
+  });
+
+  test("labels linked records and relation filter values in a stored flat list", async () => {
+    const relationFieldId = "77777777-7777-4777-8777-777777777777";
+    const recordId = "99999999-9999-4999-8999-999999999999";
+    const linkedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const filteredId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const publicIds = new Map([
+      [tableId, tablePublicId],
+      [linkedId, "L1NKED"],
+      [filteredId, "F1LTER"],
+    ]);
+    const internalIds = new Map([...publicIds].map(([internalId, publicId]) => [publicId, internalId]));
+    const spies = [
+      spyOn(publicResources, "projectPublicIds").mockImplementation(
+        async (_type, ids) => new Map(ids.flatMap((id) => (publicIds.has(id) ? [[id, publicIds.get(id)!] as const] : []))),
+      ),
+      spyOn(publicResources, "resolvePublicIds").mockImplementation(
+        async (_type, ids) => new Map(ids.flatMap((id) => (internalIds.has(id) ? [[id, internalIds.get(id)!] as const] : []))),
+      ),
+    ];
+    let filterForLabels: unknown;
+    try {
+      const response = await requestQuery(
+        makeDeps({
+          tableReadable: true,
+          fields: [{ id: relationFieldId, shortId: "F1ELD1", type: "relation", config: { targetTableId: tableId } }],
+          items: [
+            {
+              id: recordId,
+              shortId: "REC001",
+              tableId,
+              data: { [relationFieldId]: [linkedId] },
+              version: 1,
+              deletedAt: null,
+              createdBy: null,
+              updatedBy: null,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          relationLabels: { [linkedId]: "Acme" },
+          filterLabels: { [filteredId]: "Globex" },
+          onFilterLabels: (filter) => {
+            filterForLabels = filter;
+          },
+        }),
+        { query: { filter: { fieldId: "F1ELD1", op: "containsAny", value: ["F1LTER"] } } },
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.items[0].data).toEqual({ F1ELD1: ["L1NKED"] });
+      expect(body.relationLabels).toEqual({ L1NKED: "Acme", F1LTER: "Globex" });
+      expect(filterForLabels).toEqual({ fieldId: relationFieldId, op: "containsAny", value: [filteredId] });
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
   });
 
   test("rejects UUID and five-character structured public ids", async () => {

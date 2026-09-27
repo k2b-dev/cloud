@@ -4,6 +4,7 @@ export { enrichRecordsWithComputedColumns, enrichRecordsWithFormulas } from "./r
 export {
   buildLabelCacheForGroupedKeys,
   buildPinnedRelationLabelCache,
+  buildRelationFilterLabelCache,
   buildRelationLabelCache,
   buildRelationLabelCacheForIds,
   lookupRecords,

@@ -18,6 +18,7 @@ type FlatRecordsPage = {
   items: GridRecord[];
   nextCursor: string | null;
   filePreviews: FilePreviews;
+  relationLabels: NonNullable<TableQueryResult["relationLabels"]>;
 };
 
 type GroupedRecordsPage = {
@@ -40,6 +41,7 @@ export const reconcileFlatRecordsPage = (
       items,
       nextCursor: nextCursorWithinLimit(response.nextCursor ?? null, items.length, absoluteLimit),
       filePreviews: response.filePreviews ?? {},
+      relationLabels: response.relationLabels ?? {},
     };
   }
 
@@ -50,6 +52,7 @@ export const reconcileFlatRecordsPage = (
     items,
     nextCursor: nextCursorWithinLimit(response.nextCursor ?? null, items.length, absoluteLimit),
     filePreviews: { ...current.filePreviews, ...(response.filePreviews ?? {}) },
+    relationLabels: { ...current.relationLabels, ...(response.relationLabels ?? {}) },
   };
 };
 
@@ -197,6 +200,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     items: (options.initialData.items ?? []) as GridRecord[],
     nextCursor: options.initialData.nextCursor ?? null,
     filePreviews: options.initialData.filePreviews ?? {},
+    relationLabels: options.initialData.relationLabels ?? {},
   });
   const [groupedPage, setGroupedPage] = createSignal<GroupedRecordsPage>({
     buckets: options.initialData.buckets ?? [],
@@ -267,8 +271,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   const items = () => (options.isGrouped() ? [] : flatPage().items);
   const buckets = () => groupedPage().buckets;
   const aggregates = () => (revoked ? {} : (recordsQuery.latest()?.aggregates ?? {}));
-  const relationLabels = () =>
-    revoked ? {} : options.isGrouped() ? groupedPage().relationLabels : (recordsQuery.latest()?.relationLabels ?? {});
+  const relationLabels = () => (revoked ? {} : options.isGrouped() ? groupedPage().relationLabels : flatPage().relationLabels);
 
   const replaceRecord = (record: GridRecord) => {
     if (options.isGrouped()) return;
@@ -311,7 +314,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     setLivePending(false);
     liveCommitId++;
     staleResourceEpochFloor = recordsQuery.fetchEpoch();
-    setFlatPage({ items: [], nextCursor: null, filePreviews: {} });
+    setFlatPage({ items: [], nextCursor: null, filePreviews: {}, relationLabels: {} });
     setGroupedPage({ buckets: [], nextCursor: null, relationLabels: {}, explode: false });
     recordsQuery.mutate({
       items: [],

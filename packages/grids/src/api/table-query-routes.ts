@@ -391,7 +391,6 @@ const runListQuery = async (
     search: query.search ?? null,
     recordMeta: query.recordMeta ?? null,
     sort: query.sort,
-    includeRelations: true,
     viewer,
     dateConfig,
     computedColumns: query.columns?.filter((column): column is ComputedColumnSpec => "kind" in column && column.kind === "computed"),
@@ -427,6 +426,7 @@ const runListQuery = async (
       items: listResult.data.items,
       aggregates,
       nextCursor: listResult.data.nextCursor,
+      relationLabels: await deps.service.relations.buildLabelCache(listResult.data.items, params.tableFields, viewer),
       filePreviews: listResult.data.filePreviews,
     },
   };
@@ -508,9 +508,11 @@ export const createTableQueryRoutes = (deps: TableQueryRouteDeps = defaultDeps) 
             : resolved.data.query.groupBy?.length
               ? await runGroupedQuery(deps, params)
               : await runListQuery(deps, params);
-        return result.ok
-          ? c.json(await toPublicTableQueryResponse(result.data, resolvedFields))
-          : c.json({ message: result.message }, result.status);
+        if (!result.ok) return c.json({ message: result.message }, result.status);
+        // Filter chips name related records that the result page may not contain.
+        const filterLabels = await deps.service.relations.buildFilterLabelCache(resolved.data.query.filter, resolvedFields, viewer);
+        const relationLabels = { ...filterLabels, ...result.data.relationLabels };
+        return c.json(await toPublicTableQueryResponse({ ...result.data, relationLabels }, resolvedFields));
       } catch (error) {
         if (isBoundedQueryTimeoutError(error)) {
           c.header("Retry-After", "1");

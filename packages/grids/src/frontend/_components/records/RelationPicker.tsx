@@ -1,4 +1,5 @@
 import { MultiSelectInput, type MultiSelectOption, useLocale } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { recordMessages } from "./messages";
 import RecordPicker from "./RecordPicker";
 import { fetchRecordLookup, type RecordLookupItem } from "./record-lookup";
@@ -29,7 +30,8 @@ type Props = {
   value: () => string[];
   /** Pre-resolved labels for the currently-linked ids — passed in by
    *  the parent (RecordDetailPanel reuses the SSR-built relationLabels
-   *  cache). Missing entries fall back to an 8-char id prefix. */
+   *  cache). Records picked here keep the label their lookup returned;
+   *  other missing entries read as unavailable. */
   labels: () => Record<string, string>;
   /** True = multi-relation (array of ids). False = single (single-id
    *  array, picker replaces on select). Maps to the relation field's
@@ -47,11 +49,10 @@ export default function RelationPicker(props: Props) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
   const excludedIds = () => [...new Set([...props.value(), ...(props.excludeIds?.() ?? [])])];
-  const labelFor = (id: string): string => {
-    const fromProp = props.labels()[id];
-    if (fromProp) return fromProp;
-    return t().unavailableRecord;
-  };
+  // selectedOptions override the label MultiSelectInput cached on pick, so
+  // remember what our own lookups returned for ids the parent cannot label yet.
+  const [lookupLabels, setLookupLabels] = createSignal<Record<string, string>>({});
+  const labelFor = (id: string): string => props.labels()[id] || lookupLabels()[id] || t().unavailableRecord;
 
   const toOption = (item: LookupItem): MultiSelectOption => ({ id: item.id, label: item.label, icon: "ti ti-link" });
 
@@ -100,6 +101,7 @@ export default function RelationPicker(props: Props) {
           signal,
           locale: locale(),
         });
+        setLookupLabels((known) => ({ ...known, ...Object.fromEntries(items.map((item) => [item.id, item.label])) }));
         return items.map(toOption);
       }}
     />

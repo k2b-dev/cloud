@@ -32,7 +32,7 @@ Die Darstellung von Werten vom Typ Datum und Uhrzeit, datumsbezogene Filter, For
 
 ## Verknüpfte oder berechnete Felder {icon="table"}
 
-- **Relation** verknüpft einen Datensatz mit einem oder mehreren Datensätzen in einer anderen Tabelle. Die Datensatzbezeichnung der Zieltabelle erscheint in Auswahlfeldern und Zellen.
+- **Relation** verknüpft einen Datensatz mit einem oder mehreren Datensätzen in einer anderen Tabelle. Zellen, Karten, Auswahlfelder und Filter zeigen die Datensatzbezeichnung der Zieltabelle.
 - **Lookup** zeigt ein Feld aus einem verknüpften Datensatz an, ohne es zu kopieren.
 - **Rollup** fasst Werte zusammen, die über eine Relation erreichbar sind.
 - **Formel** berechnet aus den Feldern des aktuellen Entwurfs einen Wert. Die Finalisierung schreibt ihn fest.

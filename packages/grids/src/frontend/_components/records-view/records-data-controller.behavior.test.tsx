@@ -187,3 +187,31 @@ domTest("a denied canonical read revokes the result without waiting for the sock
     state.dispose();
   }
 });
+
+const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Condition was not met in time");
+    await Bun.sleep(5);
+  }
+};
+
+domTest("relation labels follow each refetch and stay with earlier pages when more records load", async () => {
+  fetchRecords = async () => ({ items: [record("old")], nextCursor: null, relationLabels: { REL001: "Acme" } });
+  const state = await mount();
+  try {
+    await waitFor(() => state.controller.relationLabels().REL001 === "Acme");
+
+    fetchRecords = async () => ({ items: [record("a")], nextCursor: "page-2", relationLabels: { REL002: "Globex" } });
+    callbacks.onReady?.("s6t.test.7");
+    await waitFor(() => state.controller.items()[0]?.id === "a");
+    expect(state.controller.relationLabels()).toEqual({ REL002: "Globex" });
+
+    fetchRecords = async () => ({ items: [record("b")], nextCursor: null, relationLabels: { REL003: "Initech" } });
+    state.controller.loadNextPage();
+    await waitFor(() => state.controller.items().length === 2);
+    expect(state.controller.relationLabels()).toEqual({ REL002: "Globex", REL003: "Initech" });
+  } finally {
+    state.dispose();
+  }
+});
