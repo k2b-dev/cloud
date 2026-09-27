@@ -40,6 +40,7 @@ Each one exists for a reason and has a removal condition.
 | `sharp` | One native build across the workspace; two versions would double the native download and install time. | All dependents share one range. |
 | `@xmldom/xmldom` | Pin above the multiple-root-element advisory (GHSA-crh6-fp67-6883) for XML consumers such as calendar and DATEV imports. | The transitive dependents resolve to a patched release. |
 | `svgo` | Pin the 3.x line used by icon and asset builds so a stray 2.x copy does not enter the tree. | All dependents share one range. |
+| `lodash-es` | Pin above the `_.template` code-injection advisory (GHSA-r5fr-rjxr-66jc). Mermaid 12 requires chevrotain `~11.1.2`, and chevrotain 11.1.2 with its `@chevrotain/*` packages pins `lodash-es` exactly at the vulnerable 4.17.23, so no in-range update reaches the fix. | The chevrotain release that mermaid resolves reaches a patched `lodash-es` on its own. |
 
 The origin of each override is `git log -S'"<name>"' -- package.json`. The
 supply-chain hardening commit (`506eb4895`) added `fast-uri`, `nanoid`, and
