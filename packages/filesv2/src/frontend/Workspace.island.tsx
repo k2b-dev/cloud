@@ -481,7 +481,6 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   const centered = (content: () => ReturnType<typeof Placeholder>) => (
     <div class="flex min-h-0 flex-1 items-center justify-center">{content()}</div>
   );
-  const trashId = (baseId: string) => `${baseId}:trash`;
   const editorBack = (launch: NonNullable<WorkspaceSnapshot["editor"]>) =>
     filesUrl(launch.base.id, launch.entry.path.split("/").slice(0, -1).join("/"), null, launch.entry.path);
   // The shell's title follows the open document; the app name returns once the editor is left.
@@ -551,11 +550,10 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
               <AppWorkspace.NavTree
                 ariaLabel={t().storage}
                 selectedId={
-                  snapshot().selectedId && currentView() === "trash"
-                    ? trashId(snapshot().selectedId!)
-                    : snapshot().selectedId && !currentView()
-                      ? treeId(snapshot().selectedId!, currentPath())
-                      : null
+                  // The trash opens from its storage root's listing, so that root stays highlighted while it is open.
+                  snapshot().selectedId && (!currentView() || currentView() === "trash")
+                    ? treeId(snapshot().selectedId!, currentPath())
+                    : null
                 }
                 expandedIds={expanded()}
                 onExpandedIdsChange={(ids) => {
@@ -578,14 +576,6 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                       <Show when={base.status === "existing"}>
                         <For each={folders()[treeId(base.id, "")] ?? []}>{(entry) => <Folder baseId={base.id} entry={entry} />}</For>
                         <MoreFolders baseId={base.id} path="" />
-                        <AppWorkspace.NavTree.Item
-                          id={trashId(base.id)}
-                          label={treeLabel(trashId(base.id), b().trashTitle)}
-                          icon="ti ti-trash"
-                          href={viewUrl(base.id, "trash")}
-                          navigation="enhanced"
-                          onNavigate={(event) => withSpinner(trashId(base.id), () => onNavigate(event))}
-                        />
                       </Show>
                     </AppWorkspace.NavTree.Item>
                   )}
@@ -751,7 +741,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                           filesUrl(directory().base.id, path, null, null, null, null, currentBrowse()),
                         )
                       }
-                      onOpenTrash={() => goTree(trashId(directory().base.id), viewUrl(directory().base.id, "trash"))}
+                      onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
                       onSearch={(query) =>
                         void go(filesUrl(directory().base.id, directory().path, null, null, query, null, currentBrowse()))
                       }

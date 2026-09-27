@@ -393,8 +393,9 @@ export default function Browser(props: {
       lastSource = source;
     }
   });
+  // A settled navigation leaves no row opening, also when it failed or ended on the folder already shown.
   createEffect(() => {
-    if (!props.pending && props.error) setOpening(null);
+    if (!props.pending) setOpening(null);
   });
   const canCreate = () => props.directory.actions?.create !== false;
   const movable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.move !== false);
@@ -1105,11 +1106,15 @@ export default function Browser(props: {
     selection.clear();
     props.onOpenDirectory?.(parentPath(folder()));
   };
+  const openTrash = () => {
+    setOpening("trash");
+    props.onOpenTrash?.();
+  };
   const virtualBefore = (): VirtualRow[] =>
     folder() && !searching() && view().view !== "tree" ? [{ key: "up", label: "..", icon: "ti ti-folder-up", onClick: goUp }] : [];
   const virtualAfter = (): VirtualRow[] =>
     !folder() && !searching() && props.onOpenTrash
-      ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: () => props.onOpenTrash?.() }]
+      ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: openTrash }]
       : [];
   // Virtual rows join the tile grid as entries with a reserved path; they are never selectable.
   const virtualKey = (row: VirtualRow) => `\u0000${row.key}`;
