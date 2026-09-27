@@ -113,7 +113,7 @@ Eine Vorlage besitzt einen Datenteil und bis zu vier Layoutteile. Die GQL-Quelle
 | Fußzeile | Liquid + HTML | Optionale Fußzeile auf jeder Seite. | Rechtliche Fußzeile, Bankdaten und Seitenplatzhalter wie `<span class="pageNumber"></span>` und `<span class="totalPages"></span>`. |
 | Seiten-CSS | Liquid + CSS | Optionales CSS, das in den PDF-Inhalt eingefügt wird. | @page-Größe/-Ränder, Tabellenköpfe, Seitenumbrüche, Drucktypografie. |
 
-PDFs werden offline erzeugt: Skripte laufen nicht, und entfernte Bilder, Stylesheets und Schriften werden nicht geladen. Nutze für Bilder Datensatzbilder, `app.logoDataUri`, `barcode_data_url` oder andere `data:`-URLs.
+PDFs werden offline erzeugt: Skripte laufen nicht, und entfernte Bilder, Stylesheets und Schriften werden nicht geladen. Nutze für Bilder Datensatzbilder, `barcode_data_url` oder andere `data:`-URLs. `app.logoDataUri` zeigt das in der Cloud-Administration hochgeladene Logo; ein als Webadresse gesetztes Logo wird nicht geladen.
 
 ## Verfügbare Daten verstehen {icon="layout-grid"}
 
