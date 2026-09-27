@@ -49,9 +49,7 @@ export function createDeleteUserAction(props: { user: DeleteTarget; onDeleted: (
     try {
       const confirmed = await prompts.confirm(
         <div class="flex flex-col gap-2">
-          <p class="font-medium break-words">
-            {props.user.displayName || props.user.uid} · {props.user.mail}
-          </p>
+          <p class="font-medium break-words">{[props.user.displayName || props.user.uid, props.user.mail].filter(Boolean).join(" · ")}</p>
           <p>{messages().deleteUserExplanation({ freeIpa: props.user.provider === "ipa" })}</p>
           <p class="text-sm text-dimmed">{messages().deleteUserNoTransfer}</p>
         </div>,

@@ -55,6 +55,7 @@ export default ssr<AuthContext>(async (c) => {
   const sessionUser = expectUserBackedActor(c);
   const categoryPolicy = await readAccountCategoryPolicy();
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
   const approvalConfig = await appApproval.config().catch(() => null);
 
   const listState = parseUsersListState({
@@ -289,7 +290,12 @@ export default ssr<AuthContext>(async (c) => {
               </div>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
-              <UserActions user={user} listHref={buildUsersUrl(listState)} freeIpaEnabled={freeIpaEnabled} />
+              <UserActions
+                user={user}
+                listHref={buildUsersUrl(listState)}
+                freeIpaEnabled={freeIpaEnabled}
+                localEmailOptional={localEmailOptional}
+              />
               {approvalConfig?.enabled && approvalConfig.adminPairing && !isExpired && categoryPolicy[accountCategory(user)].enabled && (
                 <ButtonLink href={`/me/security/pair?userId=${user.id}`} variant="secondary" size="sm">
                   <i class="ti ti-device-mobile" />

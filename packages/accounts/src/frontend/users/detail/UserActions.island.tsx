@@ -7,6 +7,7 @@ type UserActionsProps = {
   user: User;
   listHref: string;
   freeIpaEnabled: boolean;
+  localEmailOptional: boolean;
 };
 
 export default function UserActions(props: UserActionsProps) {

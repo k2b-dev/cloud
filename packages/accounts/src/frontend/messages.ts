@@ -331,11 +331,11 @@ export const accountsMessages = i18n.define({
       localWelcomeSent: "The welcome email with the local sign-in instructions was sent.",
       welcomeNotSent: "The welcome email was not sent automatically.",
       createdWithoutEmail:
-        "No welcome email was sent because the account has no email address. Open the account to pair a sign-in app or create a one-time login token.",
+        "No welcome email was sent because the account has no email address. Open the account and create a one-time login token for the first sign-in. If administrator-assisted pairing is allowed, you can pair a sign-in app there instead.",
       emailOptionalHelp:
         "Optional for this account type. Without an email address, email sign-in links, welcome emails and email notifications are unavailable.",
       localWithoutEmailHelp:
-        "No password and no welcome email are created. Without an email address, this person signs in with a paired app or a passkey. After creating the account, open it to pair a sign-in app or create a one-time login token.",
+        "No password and no welcome email are created. Without an email address, this person signs in with a paired app or a passkey. After creating the account, open it and create a one-time login token for the first sign-in, or pair a sign-in app if administrator-assisted pairing is allowed.",
       ipaAccountCreated: "FreeIPA account created.",
       localAccountCreated: "Local account created.",
       actionNotice: "Follow-up notice",
@@ -382,6 +382,10 @@ export const accountsMessages = i18n.define({
       editUser: "Edit user",
       emailSyncWarning:
         "The email address is the primary synchronization key between FreeIPA and the local database. Changing it can affect account linking.",
+      removeEmailQuestion: ({ email }: { email: string }) => `Remove “${email}”?`,
+      removeEmailDescription: ({ name }: { name: string }) =>
+        `${name} will no longer receive email sign-in links, account emails or email notifications. Afterwards, they can sign in only with a paired app, a passkey or a one-time login token.`,
+      removeEmail: "Remove email address",
       phone: "Phone",
       phonePlaceholder: "Phone number…",
       visibleToAccounts: "Visible to all account holders.",
@@ -1136,11 +1140,11 @@ export const accountsMessages = i18n.define({
       localWelcomeSent: "Die Willkommens-E-Mail mit den Hinweisen zur lokalen Anmeldung wurde gesendet.",
       welcomeNotSent: "Die Willkommens-E-Mail wurde nicht automatisch gesendet.",
       createdWithoutEmail:
-        "Es wurde keine Willkommens-E-Mail gesendet, weil das Konto keine E-Mail-Adresse hat. Öffne das Konto, um eine Anmelde-App zu koppeln oder ein einmaliges Anmeldetoken zu erstellen.",
+        "Es wurde keine Willkommens-E-Mail gesendet, weil das Konto keine E-Mail-Adresse hat. Öffne das Konto und erstelle ein einmaliges Anmeldetoken für die erste Anmeldung. Dürfen Administratoren bei der Kopplung helfen, kannst du dort stattdessen eine Anmelde-App koppeln.",
       emailOptionalHelp:
         "Für diesen Kontotyp optional. Ohne E-Mail-Adresse stehen Anmeldelinks, Willkommens-E-Mails und E-Mail-Benachrichtigungen nicht zur Verfügung.",
       localWithoutEmailHelp:
-        "Es werden weder ein Passwort noch eine Willkommens-E-Mail erstellt. Ohne E-Mail-Adresse meldet sich die Person mit einer gekoppelten App oder einem Passkey an. Öffne das Konto nach dem Erstellen, um eine Anmelde-App zu koppeln oder ein einmaliges Anmeldetoken zu erstellen.",
+        "Es werden weder ein Passwort noch eine Willkommens-E-Mail erstellt. Ohne E-Mail-Adresse meldet sich die Person mit einer gekoppelten App oder einem Passkey an. Öffne das Konto nach dem Erstellen und erstelle ein einmaliges Anmeldetoken für die erste Anmeldung, oder kopple dort eine Anmelde-App, wenn Administratoren bei der Kopplung helfen dürfen.",
       ipaAccountCreated: "FreeIPA-Konto erstellt.",
       localAccountCreated: "Lokales Konto erstellt.",
       actionNotice: "Hinweis zur Nacharbeit",
@@ -1186,6 +1190,10 @@ export const accountsMessages = i18n.define({
       editUser: "Benutzer bearbeiten",
       emailSyncWarning:
         "Die E-Mail-Adresse ist der primäre Synchronisierungsschlüssel zwischen FreeIPA und der lokalen Datenbank. Eine Änderung kann die Kontoverknüpfung beeinflussen.",
+      removeEmailQuestion: ({ email }) => `„${email}“ entfernen?`,
+      removeEmailDescription: ({ name }) =>
+        `${name} erhält dann keine Anmeldelinks, Konto-E-Mails oder E-Mail-Benachrichtigungen mehr. Danach ist die Anmeldung nur noch mit einer gekoppelten App, einem Passkey oder einem einmaligen Anmeldetoken möglich.`,
+      removeEmail: "E-Mail-Adresse entfernen",
       phone: "Telefon",
       phonePlaceholder: "Telefonnummer…",
       visibleToAccounts: "Für alle Kontoinhaber sichtbar.",
