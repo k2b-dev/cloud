@@ -35,6 +35,7 @@ import CodeDisplay, { type CodeDisplayLanguage } from "./CodeDisplay";
 import { type DelimitedPreferences, decodeDelimitedContent, readDelimitedPreferences } from "./delimited-preferences";
 import { type FileViewFile, fileViewExtension, getFileViewPreviewKind, parseDelimitedText } from "./file-view-preview";
 import MarkdownView from "./MarkdownView";
+import PdfPreview from "./PdfPreview";
 import StructuredDataPreview, { type StructuredDataValue } from "./StructuredDataPreview";
 
 export type { FileViewFile, FileViewPreviewKind } from "./file-view-preview";
@@ -64,6 +65,7 @@ export type FileViewProps = {
   crossOrigin?: "anonymous" | "use-credentials";
   /** Native media failed to load; the host can renew a signed URL and offer retry. */
   onPreviewError?: () => void;
+  /** Download actions only; never a preview source, because an attachment response does not render inline. */
   downloadHref?: string | null;
   /** App-specific renderers matched before the built-ins for this instance. */
   renderers?: readonly FileViewRenderer[];
@@ -532,11 +534,48 @@ function ImageRenderer(props: FileViewRendererProps) {
   );
 }
 
+const pdfBlob = (content: FileViewContent): Blob => {
+  if (content.encoding === "utf8") return new Blob([content.content], { type: "application/pdf" });
+  const binary = atob(content.content);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: "application/pdf" });
+};
+
+/**
+ * A host inline URL goes to the browser's native viewer. Without one, the
+ * loaded bytes become a local PDF Blob: a download URL is an attachment and
+ * would leave a native viewer empty.
+ */
 function PdfRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
-  const href = () => props.previewHref ?? props.downloadHref;
+  // A new Blob remounts the preview, so changed bytes show the new file. A revision refetch
+  // often returns the same bytes (the Assistant refetches on every tool step); keeping the
+  // Blob then keeps the reader's page instead of reloading the viewer.
+  const bytes = createMemo(() => props.content, undefined, {
+    equals: (previous, next) => previous.encoding === next.encoding && previous.content === next.content,
+  });
+  const blob = createMemo(() => (props.previewHref || !bytes().content ? null : pdfBlob(bytes())));
   return (
-    <Show when={href()} fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={messages().noInlinePreview} />}>
+    <Show
+      when={props.previewHref}
+      fallback={
+        <Show
+          keyed
+          when={blob()}
+          fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={messages().noInlinePreview} />}
+        >
+          {(pdf) => (
+            <PdfPreview
+              autoLoad
+              title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+              request={async () => pdf}
+              class="k2b-content-file-view__pdf"
+            />
+          )}
+        </Show>
+      }
+    >
       {(href) => <object data={href()} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
     </Show>
   );
@@ -668,8 +707,7 @@ export default function FileView(props: FileViewProps) {
     onError: (error) => toast.error(error.message),
   });
   const nativePreviewHref = createMemo(() => {
-    const kind = getFileViewPreviewKind(props.file);
-    const href = props.previewHref ?? (kind === "pdf" ? props.downloadHref : null);
+    const href = props.previewHref;
     if (!href) return null;
     const separator = href.includes("?") ? "&" : "?";
     return `${href}${separator}preview-revision=${nativeRevision()}`;

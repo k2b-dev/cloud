@@ -84,9 +84,18 @@ optional preview and download URLs. Text, Markdown, JSON, delimited text,
 images, PDF, audio, and video use built-in renderers. Supplying `save` enables
 editing for compatible text renderers.
 
+`previewHref` is an authenticated URL that answers inline. With it, images,
+PDF, audio, and video render natively from that URL and `load` is not called.
+`downloadHref` only adds download actions; it is never a preview source,
+because browsers do not show an attachment response inline. Without
+`previewHref`, a PDF renders from the bytes `load` returns, in a
+[`PdfPreview`](/en/ui/content/media) frame whose "Open preview" action opens it
+in the browser's own viewer.
+
 Pass `revision` to refetch a `FileView` whose path did not change. A
 `FileBrowserPanel` forwards its `refreshKey` to both the file list and the
-selected preview.
+selected preview. A PDF preview reloads only when the refetched bytes differ,
+so an unchanged file keeps its open page.
 
 Markdown files edit through `MarkdownEditor`. Other UTF-8 source and text files
 use a plain monospace textarea inside the same editor chrome, so Markdown

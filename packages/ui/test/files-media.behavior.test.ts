@@ -246,6 +246,97 @@ describe("@k2b/ui files and media runtime behavior", () => {
     dom.cleanup();
   });
 
+  for (const downloadHref of ["/api/files/content?path=%2Freports%2Fq3.pdf", undefined]) {
+    test(`previews a PDF from its loaded bytes and remounts only for changed bytes (downloadHref ${downloadHref ? "set" : "absent"})`, async () => {
+      const dom = createDomTestHarness();
+      const { default: FileView } = await import("../src/content/FileView");
+      const created: Blob[] = [];
+      const revoked: string[] = [];
+      const originalCreate = URL.createObjectURL;
+      const originalRevoke = URL.revokeObjectURL;
+      URL.createObjectURL = (blob) => {
+        created.push(blob as Blob);
+        return `blob:pdf-${created.length}`;
+      };
+      URL.revokeObjectURL = (url) => revoked.push(url);
+      const [revision, setRevision] = createSignal(1);
+      // The second refetch returns the same bytes, as a host revision bump often does.
+      const versions = ["%PDF-1.7 v1", "%PDF-1.7 v1", "%PDF-1.7 v2"];
+      let loads = 0;
+
+      try {
+        const dispose = render(
+          () =>
+            createComponent(FileView, {
+              file: { path: "/reports/q3.pdf" },
+              get revision() {
+                return revision();
+              },
+              load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: btoa(versions[loads++]!) }),
+              downloadHref,
+            }),
+          dom.root,
+        );
+        await flush();
+
+        expect(loads).toBe(1);
+        expect(dom.root.querySelector("object")).toBeNull();
+        expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-1");
+        expect(created[0]?.type).toBe("application/pdf");
+        expect(await created[0]?.text()).toBe("%PDF-1.7 v1");
+        const frame = dom.root.querySelector("iframe");
+
+        setRevision(2);
+        await flush();
+        expect(loads).toBe(2);
+        expect(dom.root.querySelector("iframe")).toBe(frame);
+        expect(created).toHaveLength(1);
+        expect(revoked).toEqual([]);
+
+        setRevision(3);
+        await flush();
+        expect(loads).toBe(3);
+        expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-2");
+        expect(await created[1]?.text()).toBe("%PDF-1.7 v2");
+        expect(revoked).toEqual(["blob:pdf-1"]);
+
+        dispose();
+        expect(revoked).toEqual(["blob:pdf-1", "blob:pdf-2"]);
+      } finally {
+        URL.createObjectURL = originalCreate;
+        URL.revokeObjectURL = originalRevoke;
+        dom.cleanup();
+      }
+    });
+  }
+
+  test("keeps a host inline PDF URL on the native object without loading bytes", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    let loads = 0;
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/invoice.pdf", mediaType: "application/pdf" },
+          load: async () => {
+            loads++;
+            return { encoding: "base64" as const, mediaType: "application/pdf", content: "" };
+          },
+          previewHref: "/inline/invoice.pdf",
+          downloadHref: "/download/invoice.pdf",
+        }),
+      dom.root,
+    );
+    await flush();
+
+    expect(loads).toBe(0);
+    expect(dom.root.querySelector("object")?.getAttribute("data")).toBe("/inline/invoice.pdf?preview-revision=0");
+    expect(dom.root.querySelector("iframe")).toBeNull();
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("revokes a PDF object URL produced after the preview was disposed", async () => {
     const dom = createDomTestHarness();
     const { default: PdfPreview } = await import("../src/content/PdfPreview");
@@ -266,7 +357,11 @@ describe("@k2b/ui files and media runtime behavior", () => {
 
     try {
       const dispose = render(() => createComponent(PdfPreview, { request: () => request }), dom.root);
-      dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")?.click();
+      // Call Solid's delegated handler directly: FileView tests above loaded PdfPreview against an earlier document.
+      const button = dom.root.querySelector<HTMLButtonElement & { $$click?: (event: MouseEvent) => void }>(
+        ".k2b-content-pdf-preview__actions button:last-child",
+      );
+      button?.$$click?.(new MouseEvent("click"));
       dispose();
       resolveRequest(new Blob([], { type: "application/pdf" }));
       await flush();
