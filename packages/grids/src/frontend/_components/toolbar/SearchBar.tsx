@@ -27,7 +27,10 @@ type Props = {
  * Free-text search input. Pure controlled component — owns its own
  * debounced typing buffer and emits committed values via
  * `onSearchChange`. Column-scope (which fields to search in) lives
- * inline as a compact multi-select on the right.
+ * inline as a compact multi-select on the right. Search and scope form
+ * one unit that never wraps; the parent row decides where it breaks.
+ * The scope takes up to 16rem and gives way down to 10rem on narrow
+ * units; its width never depends on the selected columns.
  */
 export default function SearchBar(props: Props) {
   const locale = useLocale();
@@ -66,8 +69,8 @@ export default function SearchBar(props: Props) {
   };
 
   return (
-    <div class="flex w-full min-w-0 flex-wrap gap-2">
-      <div class="min-w-64 flex-[1_1_24rem]">
+    <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
+      <div class="min-w-0 flex-[1_1_24rem]">
         <TextInput
           name="grids-record-search"
           type="search"

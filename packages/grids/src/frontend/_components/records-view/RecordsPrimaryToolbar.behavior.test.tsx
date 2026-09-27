@@ -145,3 +145,42 @@ domTest("the manual refresh appears only when a live reconciliation needs a retr
     toolbar.dispose();
   }
 });
+
+const sharedParent = (first: Element, second: Element) => {
+  let node = first.parentElement;
+  while (node && !node.contains(second)) node = node.parentElement;
+  if (!node) throw new Error("elements share no ancestor");
+  return node;
+};
+const classes = (element: Element | null) => Array.from(element?.classList ?? []);
+
+domTest("search and scope stay one unbroken unit while the count and actions wrap together", async () => {
+  const toolbar = await mount([field]);
+  try {
+    const search = toolbar.searchInput();
+    const scope = toolbar.row.querySelector('[role="combobox"]');
+    const count = Array.from(toolbar.row.querySelectorAll("span")).find((span) => span.textContent === "3 records");
+    const actions = Array.from(toolbar.row.querySelectorAll("button")).find((button) => button.textContent?.includes("Actions"));
+    if (!search || !scope || !count || !actions) throw new Error("toolbar controls missing");
+
+    // Layout classes are the contract here: the search unit never wraps, and the row
+    // gives it 24rem before the count and actions move to their own line as one group.
+    const searchUnit = sharedParent(search, scope);
+    expect(classes(searchUnit)).toEqual(expect.arrayContaining(["flex", "flex-nowrap"]));
+    expect(classes(searchUnit)).not.toContain("flex-wrap");
+    expect(searchUnit.contains(count)).toBe(false);
+    expect(searchUnit.parentElement?.parentElement).toBe(toolbar.row);
+    expect(classes(searchUnit.parentElement)).toContain("flex-[1_1_24rem]");
+    // The scope shrinks to 10rem only on narrow units; with room it grows to 16rem so selected column pills stay readable.
+    const scopeSlot = Array.from(searchUnit.children).find((child) => child.contains(scope)) ?? null;
+    expect(classes(scopeSlot)).toEqual(expect.arrayContaining(["min-w-40", "flex-[0_1_16rem]"]));
+
+    const trailing = sharedParent(count, actions);
+    expect(trailing.parentElement).toBe(toolbar.row);
+    expect(trailing.contains(search)).toBe(false);
+    expect(classes(trailing)).toContain("ml-auto");
+    expect(classes(toolbar.row)).toContain("flex-wrap");
+  } finally {
+    toolbar.dispose();
+  }
+});

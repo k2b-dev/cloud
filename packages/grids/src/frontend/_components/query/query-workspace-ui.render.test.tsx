@@ -91,7 +91,5 @@ describe("query workspace UI contracts", () => {
 
     expect(html).toContain('<strong class="truncate">Name</strong>');
     expect(html).toContain('<small class="shrink-0 text-dimmed">text</small>');
-    expect(html).toContain("flex-[1_1_24rem]");
-    expect(html).toContain("flex-[0_1_16rem]");
   });
 });
