@@ -61,6 +61,16 @@ when the audience or lifecycle is different.
 Tasks use deadlines; events use a schedule and may recur. Views, filters, and
 grouping change how items are presented, not which resource owns them.
 
+The item details read top to bottom. A task starts with **Planning**: due date,
+estimate, priority, and tags, plus a hint that jumps to the first active blocker
+while any remain. The description, checklist, and attachments follow; then
+**Assigned**, **Latest status**, and **Last result**; then **Blocked by**,
+**Blocks**, **Related tasks**, and **Links & resources**; then comments and the
+collapsed **Details**. An event shows its schedule under **Planning**, then its
+location, link, and invitations, its content, the assigned people, links,
+comments, and details. Parts without content stay hidden unless you can edit
+them.
+
 In list and table views, search updates results without reloading the page or
 moving focus out of the search field. The URL follows the displayed results,
 so you can share or reload the filtered view. While a search loads, the previous
@@ -76,7 +86,7 @@ editor and unfinished comment in place. If you select another item while a
 calendar date change is loading, the completed date change keeps your newer
 selection.
 
-An item's **Links** list holds Cloud resource references and external URLs
+An item's **Links & resources** list holds Cloud resource references and external URLs
 (at most 20 URLs per item). A GitHub issue or pull request link renders as
 `repo#number` with its title and open, closed, or merged state; other links
 show the site's favicon and host or the label you gave them. Previews are
@@ -192,9 +202,10 @@ of up to 100. Follow the returned cursor to retrieve every destination.
 ## Implementation tasks and agent handoffs
 
 Spaces supports flat implementation tasks with blockers, shared progress notes,
-completion results and explicit worker claims. Progress and the latest result
-appear in the task details; reopening preserves the result. Earlier notes are
-recorded in task activity.
+completion results and explicit worker claims. The task details show the
+latest progress note as **Latest status** and the latest result as **Last
+result**, below the **Assigned** list; reopening preserves the result. Earlier
+notes are recorded in task activity.
 
 A claim says who is working on a task right now; assignment says who is
 responsible, and the Kanban column stays the only status. People claim from the
@@ -202,9 +213,11 @@ board card or the task details with **I'm on it** and release with a second
 click, optionally leaving a handoff note that is saved as progress. In any
 column, the board card puts the holder first in its avatar stack with a green
 ring, shows them once even when they are also assigned, and never hides them in
-the `+N` overflow. The details show the holder in the same row style as the
-assignees, with the claim time. People and service accounts render the same
-way. Somebody else's claim cannot be overwritten; a Space admin may **take
+the `+N` overflow. In the task details, the holder leads the **Assigned** list
+in the same row style with the green ring and the time they started working.
+An assigned holder appears once; a holder who is not assigned, such as a
+service account, still leads and is marked as not assigned. People and service
+accounts render the same way. Somebody else's claim cannot be overwritten; a Space admin may **take
 over** after confirming, which is the admin recovery of the exact observed
 claim followed by a fresh claim.
 Completing a claimed task, including a drag into a done column, requires the

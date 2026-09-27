@@ -186,6 +186,18 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(cssRule(".k2b-ui .k2b-choice-popover")).toContain("transition: none");
   });
 
+  test("names the options popover after an aria-label when the layout shows the field name", () => {
+    const select = renderToString(() => createComponent(Select, { "aria-label": "Priority", value: () => null, options: ["High", "Low"] }));
+    const multi = renderToString(() =>
+      createComponent(MultiSelectInput, { "aria-label": "Tags", value: () => [], options: ["Release", "Docs"] }),
+    );
+    const unnamed = renderToString(() => createComponent(Select, { value: () => null, options: ["High"] }));
+
+    expect(select).toContain('class="k2b-choice-popover" role="group" aria-label="Priority"');
+    expect(multi).toContain('class="k2b-choice-popover" role="group" aria-label="Tags"');
+    expect(unnamed).toContain('class="k2b-choice-popover" role="group" aria-label="Options"');
+  });
+
   test("renders overlapping Select groups with an initial group filter", () => {
     const html = renderToString(() =>
       createComponent(Select, {

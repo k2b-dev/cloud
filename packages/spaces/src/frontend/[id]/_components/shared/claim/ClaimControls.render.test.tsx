@@ -148,13 +148,10 @@ describe("Spaces claim controls", () => {
     expect(bot).toContain('class="ti ti-api"');
     expect(bot).toContain('title="Task worker is on it"');
 
-    const own = avatar({ claim: ownClaim, showName: true }, "de");
+    const own = avatar({ claim: ownClaim }, "de");
     expect(own).toContain('data-own-claim="true"');
     expect(own).toContain('title="Du arbeitest daran"');
-    // Same row as an assignee: extra-small avatar, gap-2, plain text-sm name.
-    expect(own).toContain("items-center gap-2");
-    expect(own).toContain('<span class="min-w-0 flex-1 truncate text-sm">Du arbeitest daran</span>');
-    expect(avatar({ showName: true })).toContain(">Mira Beck</span>");
+    expect(own).toContain('alt="Du arbeitest daran"');
   });
 
   test("draws a person with the same initials as claim holder and as assignee", () => {

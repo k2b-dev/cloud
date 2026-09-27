@@ -21,7 +21,7 @@ Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunäch
 - **Blockiert durch:** Füge jede noch offene Aufgabe hinzu, die zuerst abgeschlossen werden muss. Eine blockierte Aufgabe kann erst abgeschlossen werden, wenn alle aktiven blockierenden Aufgaben erledigt sind. Abhängigkeiten müssen innerhalb eines Space bleiben und dürfen keinen Zyklus bilden.
 - **Blockiert:** Öffne die Aufgabendetails, um die umgekehrte Richtung zu sehen: alle Aufgaben, die derzeit von dieser Aufgabe abhängen.
 - **Verwandte Aufgaben:** Verknüpfe Aufgaben, die einen gemeinsamen Kontext haben, aber nicht voneinander abhängen. Eine solche Verknüpfung blockiert keine Aufgabe.
-- **Links:** Hänge Cloud-Ressourcen und externe Seiten an, etwa das GitHub-Issue, das eine Aufgabe umsetzt. Links auf GitHub-Issues und Pull Requests zeigen Titel und Status: offen, geschlossen oder gemergt.
+- **Links & Ressourcen:** Hänge Cloud-Ressourcen und externe Seiten an, etwa das GitHub-Issue, das eine Aufgabe umsetzt. Links auf GitHub-Issues und Pull Requests zeigen Titel und Status: offen, geschlossen oder gemergt.
 - **Checkliste:** Teile eine Aufgabe in kleine Schritte auf, wenn Checkbox und Bezeichnung ausreichen. Checklistenpunkte haben bewusst keine Zuständigkeiten, Termine oder eigene Detailansicht.
 - **Anhänge:** Füge einer Aufgabe Screenshots oder andere Bilder hinzu, wenn die Arbeit visuellen Kontext benötigt, etwa bei einem Fehlerbericht. Spaces verkleinert große Ausgangsbilder vor dem Hochladen. Wähle ein vorhandenes Bild aus, um die Anhangsgalerie zu öffnen, das gespeicherte Bild herunterzuladen oder es zu entfernen. Jede Aufgabe unterstützt bis zu 20 Bilder. Für Anhänge und ihre Automatisierungsverknüpfungen gelten dieselben Lese- und Schreibrechte wie für die Aufgabe.
 - **Wiederholung:** Verwende wiederkehrende Termine für regelmäßige Besprechungen oder Abläufe. Einmalige Aufgaben bleiben normale Aufgaben.
@@ -46,18 +46,21 @@ Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Te
 
 ## Umsetzung und Übergabe {icon="notes"}
 
-Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten.
-Beides erscheint unter **Arbeit und Übergabe** in den Details. Beim Wiederöffnen
-bleibt das letzte Ergebnis erhalten.
+Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten. Die
+Aufgabendetails zeigen beides als **Letzter Stand** und **Letztes Ergebnis**
+unter der Liste **Zuständig**. Beim Wiederöffnen bleibt das letzte Ergebnis
+erhalten.
 
 Mit **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails
 übernimmst du eine Aufgabe; ein zweiter Klick gibt sie frei, und in den Details
 kannst du dabei eine kurze Übergabenotiz hinterlassen. Solange eine Aufgabe
 übernommen ist, zeigt die Karte in jeder Spalte den Avatar der Person mit grünem
 Ring vor den Zuständigen, und der Filter **In Arbeit** listet übernommene
-Aufgaben. Eine Übernahme markiert nur, wer gerade daran arbeitet; Zuweisung und
-Spalte ändern sich nicht. CLI-Worker und Service-Accounts übernehmen auf
-demselben Weg und erscheinen gleich.
+Aufgaben. In den Details steht diese Person mit demselben Ring und der Zeit, seit
+der sie daran arbeitet, zuerst unter **Zuständig**; ist sie nicht zugewiesen,
+steht das dabei. Eine Übernahme markiert nur, wer gerade daran arbeitet;
+Zuweisung und Spalte ändern sich nicht. CLI-Worker und Service-Accounts
+übernehmen auf demselben Weg und erscheinen gleich.
 
 Übernahmen laufen nicht automatisch ab und lassen sich nicht überschreiben.
 Eine übernommene Aufgabe erledigen, auch per Ziehen in eine Erledigt-Spalte,
