@@ -67,19 +67,30 @@ const checkDetailPanelMigration = (packagesRoot: string, packageNames: string[],
 
 type Report = (file: string, message: string) => void;
 
+/** Blanks comments but keeps their newlines, so reported lines stay exact. */
+const blankComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\/|(?<!:)\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
+
 /**
  * `--ui-focus` is a complete box-shadow, so a color position (border, outline,
  * background, `color-mix`) drops the declaration at computed-value time.
- * Returns the owner of each misuse: the last CSS property, style key, or
- * Tailwind `utility-[` before the reference. Custom properties may alias it.
+ * Returns the owner of each misuse: the last CSS property, style key,
+ * `.style.` assignment, or Tailwind `utility-[` in the same declaration (text
+ * after the last `;`, `{`, or `}`). A key colon directly follows its name in
+ * formatted code, which keeps a ternary's ` : ` from posing as a key. References
+ * without an owner, such as a constant or custom property alias, pass.
  */
-const focusShadowMisuses = (source: string): { line: number; owner: string }[] =>
-  [...source.matchAll(/var\(\s*--ui-focus\s*\)/g)].flatMap((match) => {
-    const before = source.slice(0, match.index);
-    const owner = [...before.matchAll(/(-{0,2}[A-Za-z][\w-]*)(?:["']?\s*:|-\[)/g)].at(-1)?.[1] ?? "";
-    if (owner.startsWith("--") || ["box-shadow", "boxShadow", "shadow"].includes(owner)) return [];
-    return [{ line: before.split("\n").length, owner: owner || "unknown" }];
+const focusShadowMisuses = (source: string): { line: number; owner: string }[] => {
+  const code = blankComments(source);
+  return [...code.matchAll(/var\(\s*--ui-focus\s*\)/g)].flatMap((match) => {
+    const before = code.slice(0, match.index);
+    const declaration = before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("{"), before.lastIndexOf("}")) + 1);
+    const last = [...declaration.matchAll(/\.style\.(\w+)\s*=|(-{0,2}[A-Za-z][\w-]*)(?:["']?:|-\[)/g)].at(-1);
+    const owner = last?.[1] ?? last?.[2];
+    if (!owner || owner.startsWith("--") || ["box-shadow", "boxShadow", "shadow"].includes(owner)) return [];
+    return [{ line: before.split("\n").length, owner }];
   });
+};
 
 const checkEmbeddableUiStyles = (packagesRoot: string, report: Report) => {
   const uiStylesheet = join(packagesRoot, "ui", "src", "styles", "index.css");

@@ -96,10 +96,22 @@ test("CSS check accepts --ui-focus only as a box-shadow", async () => {
 );
 `,
     );
+    await writeFile(
+      join(fixture, "packages/example/src/ring.ts"),
+      `// Focus: var(--ui-focus) stays a box-shadow.
+const palette = { color: "red" };
+export const ring = "var(--ui-focus)";
+export const toggled = (active: boolean) => ({ "box-shadow": active ? "none" : "var(--ui-focus)", palette });
+export const paint = (element: HTMLElement) => {
+  element.style.boxShadow = "var(--ui-focus)";
+  element.style.borderColor = "var(--ui-focus)";
+};
+`,
+    );
     await writeFile(join(fixture, "packages/example/src/Page.test.tsx"), 'expect(style).toStartWith("var(--ui-focus),");\n');
     await writeFile(
       join(fixture, "packages/example/src/focus.css"),
-      ".row:focus-visible {\n  box-shadow:\n    var(--ui-shadow-surface),\n    var(--ui-focus);\n}\n.marquee { border: 1px solid var(--ui-focus); }\n",
+      ".row:focus-visible {\n  box-shadow:\n    var(--ui-shadow-surface),\n    var(--ui-focus);\n}\n.marquee { border: 1px solid var(--ui-focus); }\n/* Focus: keep var(--ui-focus) as box-shadow */\n",
     );
     const findings = await rule.run({ workspaceRoot: fixture, fix: false, flags: new Set() });
     const misuses = findings
@@ -112,6 +124,7 @@ test("CSS check accepts --ui-focus only as a box-shadow", async () => {
       "packages/example/src/Page.tsx:6 outline",
       "packages/example/src/Page.tsx:7 outline-color",
       "packages/example/src/focus.css:6 border",
+      "packages/example/src/ring.ts:7 borderColor",
     ]);
   } finally {
     await rm(fixture, { recursive: true, force: true });
