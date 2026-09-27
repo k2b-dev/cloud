@@ -88,6 +88,8 @@ type Props = {
   tableDescription: string | null;
   tableIcon?: string | null;
   tableColumns: FieldColumnSpec[];
+  /** The table version `tableColumns` belongs to. */
+  tableUpdatedAt: string;
   tableAuditPolicy: TableAuditPolicy;
   tableMutationPolicy: TableMutationPolicy;
   /** Table-level setting: when true, records should be created through forms. */
@@ -143,6 +145,7 @@ export default function RecordsView(props: Props) {
   const [tableDescription, setTableDescription] = createSignal(props.tableDescription);
   const [tableIcon, setTableIcon] = createSignal(props.tableIcon ?? null);
   const [tableColumns, setTableColumns] = createSignal<FieldColumnSpec[]>(props.tableColumns);
+  const [tableUpdatedAt, setTableUpdatedAt] = createSignal(props.tableUpdatedAt);
   const [tableAuditPolicy, setTableAuditPolicy] = createSignal<TableAuditPolicy>(props.tableAuditPolicy);
   const [tableMutationPolicy, setTableMutationPolicy] = createSignal<TableMutationPolicy>(props.tableMutationPolicy);
   const mutationSourceAllowed = (source: "direct" | "form" | "workflow") => {
@@ -618,6 +621,7 @@ export default function RecordsView(props: Props) {
   };
 
   const {
+    reloadTableColumns,
     effectiveViewColumns,
     visibleGroupedColumnOrder,
     hiddenViewColumnCount,
@@ -640,6 +644,8 @@ export default function RecordsView(props: Props) {
     setFields,
     tableColumns,
     setTableColumns,
+    tableUpdatedAt,
+    setTableUpdatedAt,
     query,
     setQuery,
     viewColumns,
@@ -665,6 +671,9 @@ export default function RecordsView(props: Props) {
     setTableIcon,
     tableColumns,
     setTableColumns,
+    tableUpdatedAt,
+    setTableUpdatedAt,
+    reloadTableColumns,
     tableDisplayConfig,
     setTableDisplayConfig,
     tableAuditPolicy,
@@ -686,7 +695,6 @@ export default function RecordsView(props: Props) {
     canManageTable: props.canManageTable,
     canManageBase: props.canManageBase,
     dateConfig: props.dateConfig,
-    fieldCreatedDisplayFailed: t().fieldCreatedDisplayFailed,
     refetch: () => void refetch(),
     setViewDisplayConfig,
   });

@@ -2,7 +2,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
 import { apiClient } from "../../../api/client";
-import type { PublicField as Field, PublicTable as Table, PublicView as View } from "../../../api/public-dto";
+import type { PublicField as Field, PublicView as View } from "../../../api/public-dto";
 import type { AggregationSpec, ColumnSpec, FieldColumnSpec, GroupBySpec, RecordDisplayConfig, RecordQuery } from "../../../contracts";
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { openViewColumnSettingsDialog } from "../dialogs/ViewColumnSettingsDialog";
@@ -56,6 +56,9 @@ type RecordsViewColumnControllerOptions = {
   setFields: Setter<Field[]>;
   tableColumns: Accessor<FieldColumnSpec[]>;
   setTableColumns: Setter<FieldColumnSpec[]>;
+  /** The table version `tableColumns` belongs to; a column write names it so a write from an older state fails. */
+  tableUpdatedAt: Accessor<string>;
+  setTableUpdatedAt: Setter<string>;
   query: Accessor<RecordQuery>;
   setQuery: Setter<RecordQuery>;
   viewColumns: Accessor<ColumnSpec[] | undefined>;
@@ -75,6 +78,8 @@ export const createRecordsViewColumnController = ({
   setFields,
   tableColumns,
   setTableColumns,
+  tableUpdatedAt,
+  setTableUpdatedAt,
   query,
   setQuery,
   viewColumns,
@@ -150,18 +155,64 @@ export const createRecordsViewColumnController = ({
     onError: (e) => prompts.error(e.message),
   });
 
-  const patchTableColumnsMut = mutations.create<Table, FieldColumnSpec[]>({
-    mutation: async (columns) => {
+  /**
+   * Re-reads the table's columns, version, and fields. Only the default table view writes table columns, and it holds
+   * every live field. Returns false when the table could not be read.
+   */
+  const reloadTableColumns = async (): Promise<boolean> => {
+    try {
+      const [tableRes, fieldsRes] = await Promise.all([
+        apiClient.tables[":tableId"].$get({ param: { tableId: props.tableId } }),
+        apiClient.fields["by-table"][":tableId"].$get({ param: { tableId: props.tableId } }),
+      ]);
+      if (!tableRes.ok || !fieldsRes.ok) return false;
+      const [table, nextFields] = await Promise.all([tableRes.json(), fieldsRes.json()]);
+      setTableColumns(table.columns);
+      setTableUpdatedAt(table.updatedAt);
+      setFields([...nextFields].sort((a, b) => a.position - b.position));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  /** Writes the complete column list for the table version shown. A failed write shows the table's current columns again. */
+  const writeTableColumns = async (columns: FieldColumnSpec[]): Promise<boolean> => {
+    let message = t().saveTableColumnsFailed;
+    try {
       const res = await apiClient.tables[":tableId"].$patch({
         param: { tableId: props.tableId },
-        json: { columns: columns.map((column) => cleanViewColumn(column)).filter(isFieldColumn) },
+        json: { columns, expectedUpdatedAt: tableUpdatedAt() },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, t().saveTableColumnsFailed));
-      return res.json();
-    },
-    onSuccess: (table) => setTableColumns(table.columns),
-    onError: (e) => prompts.error(e.message),
-  });
+      if (res.ok) {
+        setTableUpdatedAt((await res.json()).updatedAt);
+        return true;
+      }
+      message = await errorMessage(res, message);
+      // 409: the table changed since this page read it, for example in another tab. Its reloaded columns are the new base.
+      if ((await reloadTableColumns()) && res.status === 409) message = t().tableColumnsChanged;
+    } catch {
+      await reloadTableColumns();
+    }
+    prompts.error(message);
+    return false;
+  };
+
+  // One column write runs at a time, so a quick second change builds on the version the first one produced. A failed
+  // write reloads the table; changes queued before that reload are dropped because they build on the failed state.
+  let columnWrites: Promise<void> | undefined;
+  let columnWriteGeneration = 0;
+  const saveTableColumns = (columns: FieldColumnSpec[]) => {
+    const generation = columnWriteGeneration;
+    const run = async () => {
+      if (generation === columnWriteGeneration && !(await writeTableColumns(columns))) columnWriteGeneration += 1;
+    };
+    const write = columnWrites ? columnWrites.then(run) : run();
+    columnWrites = write;
+    void write.finally(() => {
+      if (columnWrites === write) columnWrites = undefined;
+    });
+  };
 
   const cleanViewColumn = (column: ColumnSpec): ColumnSpec =>
     isComputedColumn(column)
@@ -199,7 +250,7 @@ export const createRecordsViewColumnController = ({
     if (JSON.stringify(fieldColumns) === JSON.stringify(shown)) return;
     const shownIds = new Set(shown.filter(isFieldColumn).map((column) => column.fieldId));
     setTableColumns(fieldColumns);
-    patchTableColumnsMut.mutate(fieldColumns);
+    saveTableColumns(fieldColumns);
     // A field that becomes a stored table column no longer hides in the table, so its field setting follows.
     void clearHideInTable(
       fieldColumns.map((column) => column.fieldId).filter((fieldId) => !shownIds.has(fieldId)),
@@ -469,6 +520,7 @@ export const createRecordsViewColumnController = ({
   };
 
   return {
+    reloadTableColumns,
     effectiveViewColumns,
     visibleGroupedColumnOrder,
     hiddenViewColumnCount,

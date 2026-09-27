@@ -60,13 +60,16 @@ properties except `kind` and adds `auditPolicy` and `disableDirectInsert`.
 | `kind` | Create only: `stored` (default) or `federated` (Combined table). Cannot change an existing table's kind. |
 | `description` | Optional string, up to 1,000 characters; `null` clears it. |
 | `icon` | Optional icon name, up to 200 characters; `null` clears it. |
-| `columns` | Ordered array of `{fieldId, label?, format?}`. `label` is trimmed, 1–120 characters; `format` uses [Display formats](#display-formats). Empty by default. These are presentation columns, not new field definitions. |
+| `columns` | Ordered array of `{fieldId, label?, format?}`. `label` is trimmed, 1–120 characters; `format` uses [Display formats](#display-formats). Empty by default. These are presentation columns, not new field definitions. An empty list shows every field without `hideInTable` in field order. A nonempty list is a complete replacement that shows only the listed fields; `fields create` appends the new field to it unless the field has `hideInTable`, and `fields delete` removes the field from it. |
 | `displayConfig` | [Display configuration](#display-formats); default `{ "mode": "table" }`. |
 | `auditPolicy` | Update only; server-enforced questions for update/delete/restore. Default `{}`. See below. |
 | `disableDirectInsert` | Update only; default `false`. Removes direct insertion from the table experience. For server-enforced restrictions across clients, configure mutation policy rather than treating this UI option as authorization. |
+| `expectedUpdatedAt` | Update only; optional. The table's `updatedAt` from your last read. When the table changed since then, the update fails with `409` and changes nothing; read the table again, rebuild the change, and retry. Creating or deleting a field also changes `updatedAt`. Omit it only for a deliberate unconditional write. |
 
 Create the table, create its fields, then configure columns, card covers, or
-calendar dates with those returned field IDs. A new table cannot reference
+calendar dates with those returned field IDs. Send a changed `columns` list with
+the `expectedUpdatedAt` of the table you built it from, so a field another
+client created in the meantime is not dropped. A new table cannot reference
 fields before they exist. Ordinary table columns contain stored field
 references only; use a View for presentation-only computed columns.
 
@@ -78,7 +81,8 @@ Example table update, after creating the referenced fields:
     { "fieldId": "Number", "label": "Invoice" },
     { "fieldId": "Amount", "format": { "kind": "decimal", "precision": 2 } }
   ],
-  "displayConfig": { "mode": "cards", "cards": { "fieldIds": ["Number", "Amount"] } }
+  "displayConfig": { "mode": "cards", "cards": { "fieldIds": ["Number", "Amount"] } },
+  "expectedUpdatedAt": "2026-09-27T14:33:37.123Z"
 }
 ```
 
@@ -195,7 +199,7 @@ common options but **does not change `type`**. `config` is owned by the type.
 | `position` | Optional integer; use `fields reorder` for an explicit overall order. |
 | `required` | Default `false`; checked during record validation, not a display-only hint. |
 | `presentable` | Default `false`; contributes to the record label used in lookups, links, and pickers. It is not the record's public ID. |
-| `hideInTable` | Default `false`; presentation only, not a secrecy or access boundary. |
+| `hideInTable` | Default `false`; presentation only, not a secrecy or access boundary. A new field without it is appended to a table's nonempty `columns` list. |
 | `defaultValue` | Type-specific input, validated like that type; default `null`. New record default, not an expression or backfill. Date fields also accept `{"kind":"now"}`; use the same value on a Form's `user_input` entry for a visible current-date suggestion when opening a creation form. Existing record dates are not replaced. |
 | `indexed` | Default `false`; performance setting, not uniqueness. Supports `number`, `percent`, `duration`, `date`, `boolean`, `text`, `longtext`, `id`, and single `select`; unsupported shapes do not gain a nested index. |
 | `uniqueConstraint` | Default `false`; supported for `text`, `longtext`, `number`, `percent`, `date`, `boolean`, `id`. Generated `id` always enforces uniqueness on stored tables. Existing conflicting values block activation. |

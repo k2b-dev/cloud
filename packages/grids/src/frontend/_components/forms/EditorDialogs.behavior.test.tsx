@@ -114,7 +114,7 @@ domTest("field save retains partial success and retries only table display; all 
       tableKind: "stored",
       otherTables: [],
       fieldsByTable: {},
-      tableColumns: [{ fieldId: field.id }],
+      tableColumns: () => ({ columns: [{ fieldId: field.id }], derived: false, updatedAt: "2026-09-27T00:00:00.000Z" }),
       onSaved: () => {
         saved++;
       },

@@ -15,6 +15,7 @@ import type {
 const domTest = isServer ? test.skip : test;
 
 const TABLE_ID = "TABLE1";
+const LOADED_AT = "2026-09-27T00:00:00.000Z";
 
 const makeField = (id: string, name: string, position: number, options: { hideInTable?: boolean } = {}): PublicField => ({
   id,
@@ -38,38 +39,79 @@ const makeField = (id: string, name: string, position: number, options: { hideIn
 
 type ApiRequest = { method: string; path: string; body: Record<string, unknown> | undefined };
 
-/** Serves the field and table writes of the records admin flow and keeps field names unique like the server. */
-const installGridsApi = (initialFields: PublicField[], options: { failFieldWrites?: boolean } = {}) => {
+/**
+ * Serves the records admin flow like the Grids API: field names stay unique, field creation and deletion keep the
+ * table's column list current and change its version, a column write naming an older version conflicts, and one
+ * naming an unknown field is rejected.
+ */
+const installGridsApi = (initialFields: PublicField[], options: { columns?: FieldColumnSpec[]; failFieldWrites?: boolean } = {}) => {
   const originalFetch = globalThis.fetch;
   const requests: ApiRequest[] = [];
   const fields = [...initialFields];
+  const table = { columns: [...(options.columns ?? [])], updatedAt: LOADED_AT };
+  let version = 0;
+  let fieldCount = fields.length;
+  const touchTable = () => {
+    version += 1;
+    table.updatedAt = new Date(Date.parse(LOADED_AT) + version * 1000).toISOString();
+  };
+  const createField = (name: string) => {
+    fieldCount += 1;
+    const created = makeField(`FIELD${fieldCount}`, name, fieldCount - 1);
+    fields.push(created);
+    if (table.columns.length > 0 && !created.hideInTable) table.columns = [...table.columns, { fieldId: created.id }];
+    touchTable();
+    return created;
+  };
+  const tableJson = () => ({ id: TABLE_ID, columns: table.columns, displayConfig: { mode: "table" }, updatedAt: table.updatedAt });
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input), "http://localhost").pathname;
       const method = init?.method ?? "GET";
       const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined;
       requests.push({ method, path, body });
-      if (method === "POST" && path === `/api/grids/fields/by-table/${TABLE_ID}`) {
+      if (path === `/api/grids/fields/by-table/${TABLE_ID}`) {
+        if (method === "GET") return Response.json(fields);
         const name = String(body?.name);
         if (fields.some((field) => field.name.trim().toLowerCase() === name.trim().toLowerCase())) {
           return Response.json({ message: "The field name must be unique within this Table." }, { status: 409 });
         }
-        const created = makeField(`FIELD${fields.length + 1}`, name, fields.length);
-        fields.push(created);
-        return Response.json(created);
+        return Response.json(createField(name));
       }
+      if (path.endsWith("/dependents")) return Response.json({ hasBlocking: false, dependents: [] });
       const field = fields.find((candidate) => path === `/api/grids/fields/${candidate.id}`);
       if (method === "PATCH" && field && options.failFieldWrites) throw new TypeError("Failed to fetch");
       if (method === "PATCH" && field) {
         Object.assign(field, body);
         return Response.json(field);
       }
-      if (method === "PATCH" && path === `/api/grids/tables/${TABLE_ID}`) return Response.json({ id: TABLE_ID, columns: body?.columns });
+      if (method === "DELETE" && field) {
+        fields.splice(fields.indexOf(field), 1);
+        table.columns = table.columns.filter((column) => column.fieldId !== field.id);
+        touchTable();
+        return new Response(null, { status: 204 });
+      }
+      if (path === `/api/grids/tables/${TABLE_ID}`) {
+        if (method === "GET") return Response.json(tableJson());
+        if (body?.expectedUpdatedAt !== undefined && body.expectedUpdatedAt !== table.updatedAt) {
+          return Response.json({ message: "This Table changed since you loaded it." }, { status: 409 });
+        }
+        const columns = body?.columns as FieldColumnSpec[] | undefined;
+        if (columns?.some((column) => !fields.some((field) => field.id === column.fieldId))) {
+          return Response.json({ message: "The Table configuration references an unknown field." }, { status: 400 });
+        }
+        if (columns) table.columns = columns;
+        touchTable();
+        return Response.json(tableJson());
+      }
       return Response.json({ message: `Unexpected ${method} ${path}` }, { status: 500 });
     },
     { preconnect: originalFetch.preconnect },
   );
   return {
+    table,
+    /** Another tab, user, or the CLI creates a field. */
+    createFieldElsewhere: createField,
     tableWrites: () => requests.filter((request) => request.method === "PATCH" && request.path === `/api/grids/tables/${TABLE_ID}`),
     fieldWrites: () => requests.filter((request) => request.method === "PATCH" && request.path.startsWith("/api/grids/fields/")),
     restore: () => {
@@ -125,6 +167,7 @@ const createDefaultTableView = async (initial: {
   const [tableDescription, setTableDescription] = createSignal<string | null>(null);
   const [tableIcon, setTableIcon] = createSignal<string | null>(null);
   const [tableColumns, setTableColumns] = createSignal<FieldColumnSpec[]>(initial.columns);
+  const [tableUpdatedAt, setTableUpdatedAt] = createSignal(LOADED_AT);
   const [tableDisplayConfig, setTableDisplayConfig] = createSignal<RecordDisplayConfig>({ mode: "table" });
   const [tableAuditPolicy, setTableAuditPolicy] = createSignal<TableAuditPolicy>({});
   const [tableMutationPolicy, setTableMutationPolicy] = createSignal<TableMutationPolicy>({ mode: "all" });
@@ -140,6 +183,8 @@ const createDefaultTableView = async (initial: {
     setFields,
     tableColumns,
     setTableColumns,
+    tableUpdatedAt,
+    setTableUpdatedAt,
     query,
     setQuery,
     viewColumns,
@@ -164,6 +209,9 @@ const createDefaultTableView = async (initial: {
     setTableIcon,
     tableColumns,
     setTableColumns,
+    tableUpdatedAt,
+    setTableUpdatedAt,
+    reloadTableColumns: columns.reloadTableColumns,
     tableDisplayConfig,
     setTableDisplayConfig,
     tableAuditPolicy,
@@ -182,12 +230,11 @@ const createDefaultTableView = async (initial: {
     fieldsByTable: {},
     canManageTable: true,
     canManageBase: true,
-    fieldCreatedDisplayFailed: "The field was created, but the table display could not be updated.",
     refetch: () => {},
     setViewDisplayConfig,
   });
   const visibleFieldIds = () => (columns.effectiveViewColumns() ?? []).filter(isFieldColumn).map((column) => column.fieldId);
-  return { admin, columns, fields, setFields, tableColumns, visibleFieldIds };
+  return { admin, columns, fields, setFields, tableColumns, tableUpdatedAt, visibleFieldIds };
 };
 
 type DefaultTableView = Awaited<ReturnType<typeof createDefaultTableView>>;
@@ -288,7 +335,7 @@ domTest("the default table view shows fields its column list hides again", async
     ],
     columns: [{ fieldId: "FIELD1" }],
   };
-  const api = installGridsApi(initial.fields);
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
   const { dialogCore } = await import("@k2b/ui");
   const view = await createDefaultTableView(initial);
   const dispose = await renderAdminToolbar(dom.root, view);
@@ -301,15 +348,12 @@ domTest("the default table view shows fields its column list hides again", async
     expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3"]);
     expect(buttonNamed(dom.document, "Add column")).toBeUndefined();
 
-    // A field added afterwards appears next to the restored columns without a reload.
+    // A field added afterwards appears next to the restored columns without a reload; the server adds its column.
     await addTextField(dom.document, view.admin, "Activities");
-    expect(api.tableWrites().at(-1)!.body?.columns).toEqual([
-      { fieldId: "FIELD1" },
-      { fieldId: "FIELD2" },
-      { fieldId: "FIELD3" },
-      { fieldId: "FIELD4" },
-    ]);
+    expect(api.tableWrites()).toHaveLength(1);
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }, { fieldId: "FIELD4" }]);
     expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3", "FIELD4"]);
+    expect(view.tableUpdatedAt()).toBe(api.table.updatedAt);
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     dispose();
@@ -324,7 +368,7 @@ domTest("a new field named like a hidden field offers to show that column", asyn
     fields: [makeField("FIELD1", "First name", 0), makeField("FIELD2", "Last name", 1)],
     columns: [{ fieldId: "FIELD1" }],
   };
-  const api = installGridsApi(initial.fields);
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
   const { dialogCore } = await import("@k2b/ui");
   try {
     const view = await createDefaultTableView(initial);
@@ -363,7 +407,7 @@ domTest("hiding and showing fields on a new table keeps its column list derived"
     ],
     columns: [],
   };
-  const api = installGridsApi(initial.fields);
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
   const { dialogCore } = await import("@k2b/ui");
   const view = await createDefaultTableView(initial);
   const dispose = await renderAdminToolbar(dom.root, view);
@@ -403,7 +447,7 @@ domTest("unsaved computed columns leave the table and Hide in table alone until 
     columns: [{ fieldId: "FIELD1" }],
     viewColumns: [{ fieldId: "FIELD1" }, { kind: "computed" as const, id: "computed_total", label: "Total", expression: "1" }],
   };
-  const api = installGridsApi(initial.fields);
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
   try {
     const view = await createDefaultTableView(initial);
     view.columns.showFlatViewColumns(["FIELD2"]);
@@ -434,7 +478,7 @@ domTest("clearing unsaved computed columns keeps a new table's column list deriv
       { kind: "computed" as const, id: "computed_total", label: "Total", expression: "1" },
     ],
   };
-  const api = installGridsApi(initial.fields);
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
   try {
     const view = await createDefaultTableView(initial);
     view.columns.clearComputedColumns();
@@ -455,7 +499,7 @@ domTest("columns are only offered where records render as a table", async () => 
     columns: [],
     renderMode: "cards" as const,
   };
-  const api = installGridsApi(initial.fields);
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
   const { dialogCore } = await import("@k2b/ui");
   const view = await createDefaultTableView(initial);
   const dispose = await renderAdminToolbar(dom.root, view);
@@ -479,7 +523,7 @@ domTest("a failed Hide in table update after Add column reports the mismatch", a
     fields: [makeField("FIELD1", "First name", 0), makeField("FIELD2", "Internal note", 1, { hideInTable: true })],
     columns: [{ fieldId: "FIELD1" }],
   };
-  const api = installGridsApi(initial.fields, { failFieldWrites: true });
+  const api = installGridsApi(initial.fields, { columns: initial.columns, failFieldWrites: true });
   const { dialogCore } = await import("@k2b/ui");
   try {
     const view = await createDefaultTableView(initial);
@@ -489,6 +533,115 @@ domTest("a failed Hide in table update after Add column reports the mismatch", a
     );
     expect(api.tableWrites().map((request) => request.body?.columns)).toEqual([[{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }]]);
     expect(view.fields()[1]!.hideInTable).toBe(true);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+const deleteFieldThroughEditor = async (document: Document, view: DefaultTableView, field: PublicField) => {
+  const { dialogCore } = await import("@k2b/ui");
+  view.admin.openFieldSettings(field);
+  await until(() => Boolean(buttonNamed(document, "Delete field")));
+  buttonNamed(document, "Delete field")!.click();
+  await until(() => Boolean(buttonNamed(document, "Delete")));
+  buttonNamed(document, "Delete")!.click();
+  await until(() => !dialogCore.isOpen());
+};
+
+domTest("fields added after deleting listed fields stay visible without a reload", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [
+      makeField("FIELD1", "Name", 0),
+      makeField("FIELD2", "Status", 1),
+      makeField("FIELD3", "Owner", 2),
+      makeField("FIELD4", "Notes", 3),
+    ],
+    columns: [{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }, { fieldId: "FIELD4" }],
+  };
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    const view = await createDefaultTableView(initial);
+    await deleteFieldThroughEditor(dom.document, view, view.fields()[2]!);
+    await deleteFieldThroughEditor(dom.document, view, view.fields()[2]!);
+    expect(view.tableColumns()).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }]);
+
+    await addTextField(dom.document, view.admin, "Responsible");
+    await addTextField(dom.document, view.admin, "Activity");
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD5" }, { fieldId: "FIELD6" }]);
+    expect(view.tableColumns()).toEqual(api.table.columns);
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD5", "FIELD6"]);
+    // The server keeps the column list current; the browser writes no column list of its own.
+    expect(api.tableWrites()).toEqual([]);
+    expect(view.tableUpdatedAt()).toBe(api.table.updatedAt);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a column change from an outdated table reloads it instead of dropping a field", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "Name", 0), makeField("FIELD2", "Status", 1)],
+    columns: [{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }],
+  };
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    const view = await createDefaultTableView(initial);
+    api.createFieldElsewhere("Activities");
+
+    view.columns.moveViewColumnInline({ fieldId: "FIELD2" }, -1);
+    await until(() => dom.document.body.textContent?.includes("The table's columns changed in the meantime") === true);
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }]);
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3"]);
+    expect(view.fields().map((field) => field.id)).toEqual(["FIELD1", "FIELD2", "FIELD3"]);
+    while (dialogCore.isOpen()) dialogCore.close();
+
+    // Trying again builds on the reloaded table, and quick successive changes each build on the previous save.
+    view.columns.moveViewColumnInline({ fieldId: "FIELD2" }, -1);
+    view.columns.moveViewColumnInline({ fieldId: "FIELD3" }, -1);
+    await until(() => api.tableWrites().length === 3 && view.tableUpdatedAt() === api.table.updatedAt);
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD2" }, { fieldId: "FIELD3" }, { fieldId: "FIELD1" }]);
+    expect(view.visibleFieldIds()).toEqual(["FIELD2", "FIELD3", "FIELD1"]);
+    expect(dialogCore.isOpen()).toBe(false);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a field save over an outdated column list reloads the table and saves again on retry", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "Name", 0), makeField("FIELD2", "Status", 1)],
+    columns: [{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }],
+  };
+  const api = installGridsApi(initial.fields, { columns: initial.columns });
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    const view = await createDefaultTableView(initial);
+    view.admin.openFieldSettings(view.fields()[0]!);
+    await until(() => Boolean(inputFor(dom.document, "Table column name")));
+    api.createFieldElsewhere("Activities");
+
+    change(inputFor(dom.document, "Table column name")!, "Full name");
+    buttonNamed(dom.document, "Save")!.click();
+    await until(() => dom.document.body.textContent?.includes("The table's columns changed in the meantime") === true);
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }]);
+
+    buttonNamed(dom.document, "Save")!.click();
+    await until(() => !dialogCore.isOpen());
+    expect(api.fieldWrites()).toHaveLength(1);
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD1", label: "Full name" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }]);
+    expect(view.tableColumns()).toEqual(api.table.columns);
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3"]);
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     api.restore();

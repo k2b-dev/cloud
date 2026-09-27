@@ -477,7 +477,8 @@ describe("classic resource route contracts", () => {
         );
         expect(tableUpdate.status).toBe(200);
         expect(tableUpdate.headers.get("X-Grids-Workspace-Revision")).toMatch(new RegExp(`^table:${fixture.tablePublicId}=[0-9a-f]{32}$`));
-        expect(await tableUpdate.json()).toMatchObject({
+        const updatedTable = (await tableUpdate.json()) as { updatedAt: string };
+        expect(updatedTable).toMatchObject({
           id: fixture.tablePublicId,
           columns: [{ fieldId: createdFieldBody.id }],
           displayConfig: { cards: { imageFieldId: createdFieldBody.id, fieldIds: [createdFieldBody.id] } },
@@ -491,6 +492,21 @@ describe("classic resource route contracts", () => {
             )
           ).status,
         ).toBe(400);
+        // A list from an older table version conflicts, even when it names a field that no longer exists.
+        const staleColumns = await app.request(
+          `/tables/${fixture.tablePublicId}`,
+          jsonRequest(fixture.tokens.admin, { columns: [{ fieldId: "MISS01" }], expectedUpdatedAt: "2000-01-01T00:00:00.000Z" }, "PATCH"),
+        );
+        expect(staleColumns.status).toBe(409);
+        const currentColumns = await app.request(
+          `/tables/${fixture.tablePublicId}`,
+          jsonRequest(
+            fixture.tokens.admin,
+            { columns: [{ fieldId: createdFieldBody.id, label: "Public notes" }], expectedUpdatedAt: updatedTable.updatedAt },
+            "PATCH",
+          ),
+        );
+        expect(currentColumns.status).toBe(200);
 
         const createdView = await app.request(
           `/views/by-table/${fixture.tablePublicId}`,

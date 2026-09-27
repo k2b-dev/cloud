@@ -256,9 +256,47 @@ const prepareFieldCreate = async (input: CreateFieldInput, locale?: string): Pro
   });
 };
 
-const insertPreparedField = async (state: FieldCreateState, actorId: string | null, locale?: string): Promise<Result<Field>> =>
-  sql.begin(async (tx): Promise<Result<Field>> => {
+type InsertedField = { field: Field; columnsChanged: boolean };
+
+type LockedTableColumns = { base_id: string; columns: unknown };
+
+/**
+ * A stored column list shows only the fields it names, so a new field joins its end unless it hides in the table. An
+ * empty list derives the columns from the fields and stays empty. Either way the table version changes, so a column
+ * write built from the table before this field existed fails instead of dropping it.
+ */
+const addFieldToTableColumns = async (tx: SqlClient, table: LockedTableColumns, field: Field, actorId: string | null) => {
+  const parsed = FieldColumnSpecSchema.array().safeParse(table.columns ?? []);
+  if (!parsed.success || parsed.data.length === 0 || field.hideInTable) {
+    await tx`UPDATE grids.tables SET updated_at = now() WHERE id = ${field.tableId}::uuid`;
+    return false;
+  }
+  const columns = [...parsed.data, { fieldId: field.id }];
+  await tx`UPDATE grids.tables SET columns = ${columns}::jsonb, updated_at = now() WHERE id = ${field.tableId}::uuid`;
+  await logAudit(
+    {
+      baseId: table.base_id,
+      tableId: field.tableId,
+      userId: actorId,
+      action: "updated",
+      diff: { columns: { old: parsed.data, new: columns } },
+    },
+    tx,
+  );
+  return true;
+};
+
+const insertPreparedField = async (state: FieldCreateState, actorId: string | null, locale?: string): Promise<Result<InsertedField>> =>
+  sql.begin(async (tx): Promise<Result<InsertedField>> => {
     await lockFinalizedSchema(tx, state.candidate.tableId);
+    // Field deletion and table updates take the same lock, so the column list read here stays current until commit.
+    const [table] = await tx<LockedTableColumns[]>`
+      SELECT base_id::text AS base_id, columns
+      FROM grids.tables
+      WHERE id = ${state.candidate.tableId}::uuid AND deleted_at IS NULL
+      FOR UPDATE
+    `;
+    if (!table) return fail(err.notFound(getGridsCrudMessages(locale).table));
     const bound = await bindAuthoredField(tx, state.candidate, locale);
     if (!bound.ok) return bound;
     const field = bound.data;
@@ -307,7 +345,8 @@ const insertPreparedField = async (state: FieldCreateState, actorId: string | nu
       },
       tx,
     );
-    return ok(inserted);
+    const columnsChanged = await addFieldToTableColumns(tx, table, inserted, actorId);
+    return ok({ field: inserted, columnsChanged });
   });
 
 const prepareCreateUniqueIndex = async (field: Field, locale?: string): Promise<Result<boolean>> => {
@@ -325,7 +364,7 @@ const insertWithUniqueIndexCleanup = async (
   actorId: string | null,
   uniqueIndexCreated: boolean,
   locale?: string,
-): Promise<Result<Field>> => {
+): Promise<Result<InsertedField>> => {
   try {
     const inserted = await insertPreparedField(state, actorId, locale);
     if (inserted.ok || !uniqueIndexCreated) return inserted;
@@ -336,7 +375,7 @@ const insertWithUniqueIndexCleanup = async (
       const cleanup = await cleanupPreparedUniqueIndex(state.candidate.id);
       if (!cleanup.ok) throw new AggregateError([error, cleanup.error], cleanup.error.message);
     }
-    if (typeof error === "object" && error !== null && "ok" in error && error.ok === false) return error as Result<Field>;
+    if (typeof error === "object" && error !== null && "ok" in error && error.ok === false) return error as Result<InsertedField>;
     throw error;
   }
 };
@@ -348,7 +387,7 @@ export const create = async (input: CreateFieldInput, actorId: string | null, lo
   if (!uniqueIndex.ok) return uniqueIndex;
   const inserted = await insertWithUniqueIndexCleanup(prepared.data, actorId, uniqueIndex.data, locale);
   if (!inserted.ok) return inserted;
-  const field = inserted.data;
+  const { field, columnsChanged } = inserted.data;
 
   if (field.indexed) {
     void ensureFieldIndex(field.id, field.type, field.tableId, field.config);
@@ -359,6 +398,13 @@ export const create = async (input: CreateFieldInput, actorId: string | null, lo
     resource: { kind: "field", id: field.id, tableId: input.tableId },
     actorId,
   });
+  if (columnsChanged) {
+    await emitTableMetadataEvent(input.tableId, {
+      type: "table.updated",
+      resource: { kind: "table", id: input.tableId, tableId: input.tableId },
+      actorId,
+    });
+  }
   if (prepared.data.tableKind === "federated") await refreshForTableSchemaChange(input.tableId, actorId);
   return ok(field);
 };

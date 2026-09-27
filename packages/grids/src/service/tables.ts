@@ -191,6 +191,13 @@ const ensureUniqueTableName = async (
   return (row?.count ?? 0) === 0 ? ok() : fail(err.conflict(messages.tableNameUnique));
 };
 
+/**
+ * An update may name the table version it builds on. Column lists are full replacements, so a list built from an
+ * older version would silently drop fields added since; such an update fails instead. Omitting it skips the check.
+ */
+export const isStaleTableVersion = (table: Pick<Table, "updatedAt">, expectedUpdatedAt: string | undefined): boolean =>
+  expectedUpdatedAt !== undefined && Date.parse(expectedUpdatedAt) !== Date.parse(table.updatedAt);
+
 export const create = async (input: CreateTableInput, actorId: string | null, locale?: string): Promise<Result<Table>> => {
   const messages = getGridsCrudMessages(locale);
   const name = input.name.trim();
@@ -268,6 +275,7 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
     `;
     if (!lockedRow) return fail(err.notFound(messages.table));
     const existing = mapRow(lockedRow);
+    if (isStaleTableVersion(existing, input.expectedUpdatedAt)) return fail(err.conflict(messages.tableChanged));
 
     const name = input.name?.trim();
     if (name !== undefined && name.length === 0) return fail(err.badInput(messages.nameEmpty));
