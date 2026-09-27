@@ -152,12 +152,14 @@ special, use the resolved runtime variables, and name the file
 
 Keep a test that needs one of these targets out of the Playwright suites
 (`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`
-variables, so the test would only ever be skipped there. A package whose
-`test:integration` script prepares infrastructure of its own still runs every
-integration file. Assistant's runner, for example, gives its artifact service
-suite disposable PostgreSQL and rsql containers and runs every other Assistant
-integration file, such as the Code Mode PDF test against Gotenberg, against the
-`CLOUD_TEST_*` targets.
+variables, so the test would only ever be skipped there.
+
+When a package has a `test:integration` script, `bun run test --integration`
+runs that script instead of the package's integration files, so the script
+must run every one of them. Assistant's runner, for example, gives its
+artifact service suite disposable PostgreSQL and rsql containers and runs
+every other Assistant integration file, such as the Code Mode PDF test against
+Gotenberg, against the `CLOUD_TEST_*` targets.
 
 ### Sync namespaces on the test broker
 
