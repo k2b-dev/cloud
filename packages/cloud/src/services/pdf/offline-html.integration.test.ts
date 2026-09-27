@@ -4,6 +4,7 @@ import {
   type GotenbergTrap,
   probeCss,
   probeDocument,
+  probeNavigation,
   probeTemplate,
   startGotenbergTrap,
 } from "../../../../../scripts/fixtures/gotenberg-trap";
@@ -58,6 +59,19 @@ suiteFor("gotenberg")("offline HTML in Gotenberg", () => {
     const offline = await readPdf((await renderHtmlToPdfWithConfig(input, config)).pdf);
     expect(await trap.takeRequests()).toEqual([]);
     expect(offline.pages).toBe(1);
+  }, 60_000);
+
+  test("renderHtmlToPdf keeps the document from navigating away", async () => {
+    const navigation = probeNavigation(trap.origin, "navigation");
+
+    const unfiltered = await readPdf(await trap.renderUnfiltered({ html: navigation.html }));
+    expect(await trap.takeRequests()).toContain(navigation.path);
+    expect(unfiltered.text).toContain("trap");
+    expect(unfiltered.text).not.toContain(navigation.text);
+
+    const offline = await readPdf((await renderHtmlToPdfWithConfig({ html: navigation.html }, config)).pdf);
+    expect(await trap.takeRequests()).toEqual([]);
+    expect(offline.text).toContain(navigation.text);
   }, 60_000);
 
   test("Liquid templates render the body, page CSS, header, and footer offline", async () => {

@@ -27,10 +27,12 @@ export async function executePdf(input: unknown, config: GotenbergConfig, option
   if (request.operation !== "attach" && bytes > bounded.maxHtmlBytes)
     throw new GotenbergRenderError("html_too_large", "HTML and assets exceed the configured input budget.");
   if (request.operation === "attach") return attachPdfFilesWithConfig(request, bounded, options);
-  // The platform renderer applies its offline HTML mode to the document, header and footer.
+  // Code Mode documents render in standards mode, with or without their own doctype. The platform
+  // renderer applies its offline HTML mode to the document, header and footer.
+  const html = `<!doctype html>${request.html}`;
   return request.operation === "facturX"
-    ? renderFacturXHtmlToPdfWithConfig({ ...request, conformanceLevel: request.profile }, bounded, options)
-    : renderHtmlToPdfWithConfig(request, bounded, options);
+    ? renderFacturXHtmlToPdfWithConfig({ ...request, html, conformanceLevel: request.profile }, bounded, options)
+    : renderHtmlToPdfWithConfig({ ...request, html }, bounded, options);
 }
 
 export const studioPdf = {

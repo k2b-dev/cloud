@@ -132,6 +132,16 @@ export const probeDocument = (origin: string, label: string): { html: string; pa
   };
 };
 
+/**
+ * A document that navigates to the trap once it loads, which a content
+ * policy cannot prevent. An unfiltered render prints the trap's response.
+ */
+export const probeNavigation = (origin: string, label: string): { html: string; path: string; text: string } => ({
+  html: `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=${origin}/${label}/refresh"></head><body><p>${label} stayed local</p></body></html>`,
+  path: `/${label}/refresh`,
+  text: `${label} stayed local`,
+});
+
 /** Page CSS that loads the trap and, by closing its style element, adds a page with a script. */
 export const probeCss = (origin: string, label: string): { css: string; paths: string[] } => ({
   css: `@import url("${origin}/${label}/css-import"); body { background-image: url("${origin}/${label}/css-background"); }

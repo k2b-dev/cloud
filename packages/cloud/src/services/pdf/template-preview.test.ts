@@ -73,10 +73,11 @@ describe("template PDF preview renderer", () => {
 
     expect(result.ok).toBe(true);
     expect([...files.keys()]).toEqual(["index.html", "header.html", "footer.html"]);
-    for (const html of files.values()) {
-      expect(html).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
-      expect(html).not.toContain("<script");
-    }
+    // Page CSS wraps the body in a standards-mode document; the header and footer have no doctype.
+    expect(files.get("index.html")).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
+    expect(files.get("header.html")).toStartWith('<meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
+    expect(files.get("footer.html")).toStartWith('<meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
+    for (const html of files.values()) expect(html).not.toContain("<script");
     expect(files.get("index.html")).toContain("<p>Ada</p>");
   });
 

@@ -53,6 +53,7 @@ test("HTML render forwards page options, assets, tagging and offline policy", as
           expect(await file.text()).toContain("default-src 'none'");
           expect(await file.text()).not.toContain("<script");
         }
+        expect(await files[0]!.text()).toStartWith('<!doctype html><meta charset="utf-8">');
         expect(await files[0]!.text()).toContain("h1{color:red}");
         return new Response("%PDF-ok", { headers: { "Content-Type": "application/pdf" } });
       },

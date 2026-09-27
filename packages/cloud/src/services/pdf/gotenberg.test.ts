@@ -73,8 +73,8 @@ describe("Gotenberg PDF renderer", () => {
       "header.html": "<p>Head</p>",
       "footer.html": "<p>Foot</p>",
     })) {
-      expect(files.get(name)).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
-      expect(files.get(name)).toEndWith(content);
+      expect(files.get(name)).toStartWith('<meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
+      expect(files.get(name)).toEndWith(`${content}<!---->`);
     }
   });
 

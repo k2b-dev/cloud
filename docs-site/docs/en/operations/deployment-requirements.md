@@ -213,10 +213,10 @@ a Gotenberg instance dedicated to Cloud and let it enforce the same:
 
 - start it with `--chromium-disable-javascript=true`;
 - start it with `--chromium-allow-list='^file:///tmp/.*'`, which confines
-  Chromium to Gotenberg's request directory. `data:` URLs keep working. If you
-  use `--chromium-deny-list` instead, for example to block private address
-  ranges, keep its default `^file:(?!//\/tmp/).*` entry, because setting the
-  flag replaces the default;
+  Chromium to local files in Gotenberg's working directory, `/tmp`. `data:`
+  URLs keep working. If you use `--chromium-deny-list` instead, for example
+  to block private address ranges, keep its default `^file:(?!//\/tmp/).*`
+  entry, because setting the flag replaces the default;
 - give the container no outbound network access: attach it only to a private
   network through which Cloud services reach it, with no route to other
   internal services, cloud metadata endpoints, or the internet.

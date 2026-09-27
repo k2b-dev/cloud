@@ -10,7 +10,7 @@ const config = {
 } satisfies GotenbergConfig;
 
 describe("Markdown PDF renderer", () => {
-  test("builds standalone CSP-protected preset, layered, and custom documents", () => {
+  test("builds standalone preset, layered, and custom documents", () => {
     const html = buildMarkdownPdfHtml({
       markdown: "# Report\n\n| A | B |\n| - | - |\n| 1 | 2 |",
       templateId: "report",
@@ -22,8 +22,6 @@ describe("Markdown PDF renderer", () => {
     });
     const custom = buildMarkdownPdfHtml({ markdown: "# Custom", customCss: "h1 { color: rebeccapurple; }" });
 
-    expect(html).toContain('<meta http-equiv="Content-Security-Policy"');
-    expect(html).toContain("default-src 'none'");
     expect(html).toContain('<main class="markdown-document"><h1>Report</h1>');
     expect(html).toContain("<table>");
     expect(html).toContain("font-family: system-ui");
@@ -91,6 +89,7 @@ describe("Markdown PDF renderer", () => {
       },
     });
 
+    expect(uploaded).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
     expect(uploaded).toContain("#f7f7f8");
     expect(uploaded).toContain("<h1>Rendered</h1>");
     expect(new TextDecoder().decode(result.pdf)).toBe("%PDF-test");

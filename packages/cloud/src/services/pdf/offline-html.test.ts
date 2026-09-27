@@ -3,12 +3,20 @@ import { offlineHtml } from "./offline-html";
 
 const POLICY =
   "default-src 'none'; style-src 'unsafe-inline' file: data:; img-src file: data:; font-src file: data:; base-uri 'none'; form-action 'none'";
+const OFFLINE_META = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}">`;
 
 describe("offline HTML", () => {
   test("puts the policy ahead of the caller's document", () => {
-    const html = offlineHtml("<!doctype html><html><head><title>Invoice</title></head><body><p>Hi</p></body></html>");
-    expect(html).toStartWith(`<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}">`);
-    expect(html).toEndWith("<!doctype html><html><head><title>Invoice</title></head><body><p>Hi</p></body></html>");
+    const content = "<!doctype html><html><head><title>Invoice</title></head><body><p>Hi</p></body></html>";
+    expect(offlineHtml(content)).toBe(`<!doctype html>${OFFLINE_META}${content}`);
+  });
+
+  test("keeps the caller's rendering mode", () => {
+    expect(offlineHtml("<p>No doctype</p>")).toBe(`${OFFLINE_META}<p>No doctype</p>`);
+    const legacy = '\n<!-- Invoice -->\n<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"><p>Legacy</p>';
+    expect(offlineHtml(legacy)).toBe(`<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">${OFFLINE_META}${legacy}`);
+    expect(offlineHtml("<p>Text</p><!doctype html>")).toStartWith(OFFLINE_META);
+    expect(offlineHtml("<!-- open comment <!doctype html>")).toStartWith(OFFLINE_META);
   });
 
   test("removes elements that run code, navigate, embed documents, or open connections", () => {
@@ -24,6 +32,7 @@ describe("offline HTML", () => {
         '<script src="http://remote.test/script.js"></script>',
         "<script>document.title = 'changed'</script>",
         '<svg><script href="http://remote.test/svg.js"></script></svg>',
+        '<noscript><img src="http://remote.test/noscript"></noscript>',
         '<iframe src="http://remote.test/frame"></iframe>',
         '<iframe srcdoc="<p>remote.test</p>"></iframe>',
         '<frameset><frame src="http://remote.test/frame"></frameset>',
@@ -39,9 +48,14 @@ describe("offline HTML", () => {
     expect(html.match(/<meta /g)).toHaveLength(2);
   });
 
+  test("leaves the text around a removed element unchanged", () => {
+    const html = offlineHtml('<<script></script>b>Bold</b> <<link rel="icon">i>Italic</i>');
+    expect(html).toEndWith("<<!---->b>Bold</b> <<!---->i>Italic</i>");
+  });
+
   test("keeps styles, images, links, and stylesheets that the policy confines", () => {
     const content =
       '<link rel="Stylesheet" href="styles.css"><style>h1 { color: red; }</style><img src="logo.png"><img src="data:image/png;base64,AA=="><a href="https://example.com">Terms</a>';
-    expect(offlineHtml(content)).toEndWith(content);
+    expect(offlineHtml(content)).toBe(`${OFFLINE_META}${content}`);
   });
 });

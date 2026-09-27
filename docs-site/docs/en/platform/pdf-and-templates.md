@@ -43,15 +43,16 @@ enabled. The result contains PDF bytes and the returned content type.
 
 Cloud renders every HTML document, header, and footer offline, including
 Markdown, Liquid templates, and Factur-X invoices. Before the HTML reaches
-Gotenberg, Cloud removes scripts, frames, embedded objects, `base` and `meta`
-elements, and links other than stylesheets. It then adds a Content Security
-Policy that allows inline styles, plus named assets and `data:` URLs for
-stylesheets, images, and fonts.
+Gotenberg, Cloud removes scripts, `noscript` content, frames, embedded
+objects, `base` and `meta` elements, and links other than stylesheets. It
+then adds a Content Security Policy that allows inline styles, plus named
+assets and `data:` URLs for stylesheets, images, and fonts.
 
 As a result, JavaScript does not run and remote URLs are not loaded. Pass
 images, fonts, and CSS as named `assets` or embed them as `data:` URLs.
-Hyperlinks stay clickable in the PDF. Cloud adds `<!doctype html>`, so HTML
-without its own doctype renders in standards mode.
+Hyperlinks stay clickable in the PDF. The rendering mode stays the
+caller's: a leading doctype still applies, and HTML without one renders in
+quirks mode.
 
 ## Render untrusted Markdown
 
@@ -185,6 +186,7 @@ location or grant access to a source file.
 The server helpers accept application-owned HTML and render it offline.
 Applications exposing them to untrusted input must still enforce authentication
 and input budgets. Assistant Studio's worker API does not expose arbitrary
-Gotenberg endpoints or connection settings. Operators must retain Gotenberg's
-request-directory file isolation and should keep Gotenberg itself offline; see
+Gotenberg endpoints or connection settings. Operators must keep Gotenberg's
+file access limited to its working directory, `/tmp`, and should keep
+Gotenberg itself offline; see
 [Deployment requirements](/en/docs/operations/deployment-requirements#keep-gotenberg-offline).
