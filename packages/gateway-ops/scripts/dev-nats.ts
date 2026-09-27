@@ -7,12 +7,17 @@ import { nkeys } from "@nats-io/transport-node";
  * `max_bytes` of a stream against its account, 1 GiB per Sync topic, queue,
  * job, and dead-letter stream, so the file limit bounds reservations, not
  * data: a full integration run stores under 3 MiB but reserves up to 10 GiB
- * at once (the Pulse runtime Sync test). 20 GiB holds one run plus the
- * streams a killed test process leaves behind until the one-hour sweep in
- * `scripts/fixtures/test-sync.ts` deletes them. Tests keep a few KiB in
- * memory streams; 16 MiB admits one message of the server's `max_payload`.
+ * at once (the Pulse runtime Sync test). Parallel agents run up to four
+ * integration runs against this broker at once (the Postgres note in
+ * `compose.yml`), so 50 GiB holds four runs at their peak plus the streams a
+ * killed test process leaves behind until the one-hour sweep in
+ * `scripts/fixtures/test-sync.ts` deletes them. A single server enables
+ * JetStream only when this limit fits into its storage, 75% of the free disk
+ * space at startup, so the NATS volume needs about 67 GiB free. Tests keep a
+ * few KiB in memory streams; 16 MiB admits one message of the server's
+ * `max_payload`.
  */
-const testJetStream = "{ max_file: 20GB, max_mem: 16MB }";
+const testJetStream = "{ max_file: 50GB, max_mem: 16MB }";
 
 /** Reads a persistent user NKey seed, creating it once; an existing seed is never rotated. */
 const userSeed = async (path: string): Promise<Uint8Array> => {

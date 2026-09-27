@@ -293,11 +293,18 @@ infrastructure:
 - `DEV` holds the application streams. Applications connect without
   credentials.
 - `TEST` holds the streams of integration tests. Tests authenticate with
-  `.local/nats/test.creds`. The account may reserve at most 20 GiB of
-  JetStream storage, twice the peak of a full integration run, so a test run
-  or the streams it leaves behind cannot exhaust the storage of `DEV`.
+  `.local/nats/test.creds`. The account may reserve at most 50 GiB of
+  JetStream storage: enough for four parallel integration runs at their peak
+  of 10 GiB each, plus the streams of a killed test process. Test runs, and
+  the streams they leave behind, therefore cannot exhaust the storage of
+  `DEV`.
 - `$SYS` serves the Gateway Ops diagnostics. Its seed is mounted only in
   Gateway Ops.
+
+NATS enables JetStream only when the `TEST` limit fits into its storage, by
+default 75% of the free disk space of its volume at startup. Keep about
+67 GiB free for Docker; otherwise the NATS container stops with
+`insufficient storage resources available`.
 
 The seeds and `test.creds` stay outside Git. Before invoking infrastructure
 Compose directly, run `bun packages/gateway-ops/scripts/dev-nats.ts`.
