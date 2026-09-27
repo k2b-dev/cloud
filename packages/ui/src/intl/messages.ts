@@ -689,7 +689,7 @@ const uiMessages = i18n.define({
       closeNamed: ({ name }) => `${name} schließen`,
       goToImage: ({ index }) => `Zu Bild ${index} wechseln`,
       pinDigit: ({ index, total }) => `PIN-Ziffer ${index} von ${total}`,
-      moreSelected: ({ count }) => `${count} weitere ausgewählt`,
+      moreSelected: ({ count }) => `${count} weitere ${count === 1 ? "Option" : "Optionen"} ausgewählt`,
       removeNamed: ({ name }) => `${name} entfernen`,
       resizeCrop: ({ handle }) => `Zuschneidebereich am Griff ${handle} skalieren`,
       range: "Zeitraum",

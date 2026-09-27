@@ -132,14 +132,19 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
       values.querySelectorAll<HTMLElement>(":scope > .k2b-choice-pill"),
       (pill) => pill.getBoundingClientRect().width,
     );
-    const count = fitChoicePills(
+    const fit = fitChoicePills(
       values.getBoundingClientRect().width,
       pills,
       Number.parseFloat(getComputedStyle(values).columnGap) || 0,
       moreRef?.isConnected ? moreRef.getBoundingClientRect().width : 0,
     );
     delete values.dataset.measuring;
-    setVisibleCount(count);
+    // Hidden pills leave the flow. While any are hidden the strip keeps the
+    // whole row as its preferred width, so a container sized by its content
+    // does not shrink with the collapse and grows back once it has room. The
+    // strip still flexes to the trigger's width.
+    values.style.width = fit.visible < pills.length ? `${fit.rowWidth}px` : "";
+    setVisibleCount(fit.visible);
   };
   const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => fitValues());
   onCleanup(() => resizeObserver?.disconnect());
@@ -305,6 +310,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                   ref={(element) => {
                     moreRef = element;
                     resizeObserver?.observe(element);
+                    onCleanup(() => resizeObserver?.unobserve(element));
                   }}
                   class="k2b-multi-select-trigger__more"
                   title={

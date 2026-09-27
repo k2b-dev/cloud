@@ -60,7 +60,7 @@ const setSolidInputValue = (input: HTMLInputElement, value: string) => {
  * Deterministic layout for MultiSelectInput overflow: the pill strip is as wide
  * as `available()`, a pill is 28px plus 8px per label character, the "+N"
  * summary is 32px, and pills sit 4px apart. The test ResizeObserver reports a
- * trigger resize on demand.
+ * trigger resize on demand and tracks the elements it observes.
  */
 const installPillLayout = (dom: DomTestHarness, available: () => number) => {
   const prototype = dom.window.HTMLElement.prototype as unknown as HTMLElement;
@@ -88,18 +88,26 @@ const installPillLayout = (dom: DomTestHarness, available: () => number) => {
   dom.document.head.append(style);
 
   const observers: Array<{ callback: ResizeObserverCallback; observer: ResizeObserver }> = [];
+  const observed = new Set<Element>();
   class TestResizeObserver {
     constructor(callback: ResizeObserverCallback) {
       observers.push({ callback, observer: this as unknown as ResizeObserver });
     }
-    observe() {}
-    unobserve() {}
-    disconnect() {}
+    observe(element: Element) {
+      observed.add(element);
+    }
+    unobserve(element: Element) {
+      observed.delete(element);
+    }
+    disconnect() {
+      observed.clear();
+    }
   }
   Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, writable: true, value: TestResizeObserver });
 
   return {
     measuredOutsideMeasuring,
+    observed,
     resize: () => {
       for (const { callback, observer } of observers) callback([], observer);
     },
@@ -501,6 +509,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
       hiddenLabels: undefined,
     });
     expect(values.dataset.overflowing).toBeUndefined();
+    expect(values.style.width).toBe("");
 
     available = 240;
     layout.resize();
@@ -511,6 +520,9 @@ describe("@k2b/ui choice and date browser behavior", () => {
       hiddenLabels: "Delta, Epsilon",
     });
     expect(values.dataset.overflowing).toBe("true");
+    // Hidden pills leave the flow, so the strip keeps the whole row as its
+    // preferred width: a container sized by its content can grow back.
+    expect(values.style.width).toBe("364px");
 
     available = 160;
     layout.resize();
@@ -525,6 +537,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
     available = 400;
     layout.resize();
     expect(pillSummary(dom.root).visible).toHaveLength(5);
+    expect(values.style.width).toBe("");
     expect(layout.measuredOutsideMeasuring).toEqual([]);
     expect(values.dataset.measuring).toBeUndefined();
 
@@ -554,7 +567,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
     const trigger = dom.root.querySelector<HTMLElement>(".k2b-multi-select-trigger")!;
     const press = (key: string) => trigger.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 
-    expect(pillSummary(dom.root)).toMatchObject({ visible: ["Alpha"], more: "+2", announced: "2 weitere ausgewählt" });
+    expect(pillSummary(dom.root)).toMatchObject({ visible: ["Alpha"], more: "+2", announced: "2 weitere Optionen ausgewählt" });
 
     press("ArrowDown");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -563,7 +576,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(pillSummary(dom.root)).toEqual({
       visible: ["Alpha"],
       more: "+1",
-      announced: "1 weitere ausgewählt",
+      announced: "1 weitere Option ausgewählt",
       hiddenLabels: "Beta",
     });
 
@@ -571,6 +584,20 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(value()).toEqual(["alpha"]);
     expect(pillSummary(dom.root).visible).toEqual(["Alpha"]);
     expect(dom.root.querySelector(".k2b-multi-select-trigger__more")).toBeNull();
+
+    // A removed summary stops being observed; toggling it does not pile up detached elements.
+    const observedSummaries = () =>
+      [...layout.observed]
+        .filter((element) => element.classList.contains("k2b-multi-select-trigger__more"))
+        .map((element) => (element.isConnected ? "connected" : "detached"));
+    expect(observedSummaries()).toEqual([]);
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      setValue(["alpha", "beta"]);
+      expect(pillSummary(dom.root).more).toBe("+1");
+      expect(observedSummaries()).toEqual(["connected"]);
+      setValue(["alpha"]);
+      expect(observedSummaries()).toEqual([]);
+    }
 
     dispose();
     layout.restore();

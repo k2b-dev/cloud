@@ -156,9 +156,11 @@ pill is at most `9rem` wide and shows its full label as a tooltip. The dropdown
 still lists every selected option, and Backspace in the open dropdown removes
 the last selection, including a hidden one.
 
-The trigger fills its container. Size that container independently of the
-selection; a container that shrinks to fit its content grows with the pills
-instead, and nothing collapses.
+The trigger fills its container. A container sized by its content grows with
+the pills; the field collapses them only while a maximum width or flex
+shrinking holds that container narrower, and shows them again once it has
+room. A flex item that wraps the field needs `min-width: 0` to shrink below its
+pills.
 
 ## SelectChip
 

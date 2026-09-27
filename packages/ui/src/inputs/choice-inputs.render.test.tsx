@@ -715,18 +715,22 @@ describe("@k2b/ui complete choice input migrations", () => {
 
   test("fits whole pills and reserves room for the summary of the rest", () => {
     const widths = [60, 40, 50, 30];
-    // 180px of pills plus three 4px gaps.
-    expect(fitChoicePills(192, widths, 4, 24)).toBe(4);
+    const visible = (available: number) => fitChoicePills(available, widths, 4, 24).visible;
+    // 180px of pills plus three 4px gaps, whatever room the row gets.
+    expect(fitChoicePills(192, widths, 4, 24)).toEqual({ visible: 4, rowWidth: 192 });
+    expect(fitChoicePills(100, widths, 4, 24).rowWidth).toBe(192);
+    // Layout rounding below half a pixel does not collapse a row given its own width.
+    expect(visible(191.6)).toBe(4);
     // The summary takes 24px, each kept pill its gap and width: 88, 132, 186.
-    expect(fitChoicePills(191, widths, 4, 24)).toBe(3);
-    expect(fitChoicePills(185, widths, 4, 24)).toBe(2);
-    expect(fitChoicePills(132, widths, 4, 24)).toBe(2);
-    expect(fitChoicePills(131, widths, 4, 24)).toBe(1);
+    expect(visible(191)).toBe(3);
+    expect(visible(185)).toBe(2);
+    expect(visible(132)).toBe(2);
+    expect(visible(131)).toBe(1);
     // The first pill stays and truncates, however narrow the strip gets.
-    expect(fitChoicePills(40, widths, 4, 24)).toBe(1);
+    expect(visible(40)).toBe(1);
     // No layout yet: nothing collapses.
-    expect(fitChoicePills(0, widths, 4, 24)).toBe(4);
-    expect(fitChoicePills(100, [], 4, 24)).toBe(0);
+    expect(visible(0)).toBe(4);
+    expect(fitChoicePills(100, [], 4, 24)).toEqual({ visible: 0, rowWidth: 0 });
   });
 
   test("aborts stale async option requests and keeps the latest result", async () => {
