@@ -1,3 +1,4 @@
+import { AppApprovalClientError } from "@k2b/cloud/browser/app-approval";
 import {
   CopyButton,
   DescriptionList,
@@ -9,11 +10,18 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { type Authenticator, type Failure, failure } from "./authenticator";
+import { type Authenticator, failure } from "./authenticator";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
 import type { Binding, CloudDetails } from "./storage";
+
+type Problem = "forbidden" | "unsupported" | "unavailable";
+/** Only HTTP 400 comes from a Cloud without the `account` command; any other failure means the check did not succeed. */
+const problemOf = (error: unknown): Problem => {
+  if (error instanceof AppApprovalClientError && error.status === 400) return "unsupported";
+  return failure(error) === "forbidden" ? "forbidden" : "unavailable";
+};
 
 /** What this device knows about one connected Cloud: the account it signs in and its own pairing. */
 export function Details(props: { auth: Authenticator; binding: Binding; close: () => void }) {
@@ -21,7 +29,7 @@ export function Details(props: { auth: Authenticator; binding: Binding; close: (
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   const [record, setRecord] = createSignal(props.binding);
   const [fresh, setFresh] = createSignal<CloudDetails>();
-  const [problem, setProblem] = createSignal<Failure>();
+  const [problem, setProblem] = createSignal<Problem>();
   const [loading, setLoading] = createSignal(true);
   const abort = new AbortController();
   onCleanup(() => abort.abort());
@@ -36,7 +44,7 @@ export function Details(props: { auth: Authenticator; binding: Binding; close: (
       if (!props.auth.online()) throw new Error("offline");
       setFresh(await props.auth.account(props.binding, abort.signal));
     } catch (error) {
-      if (!abort.signal.aborted) setProblem(failure(error));
+      if (!abort.signal.aborted) setProblem(problemOf(error));
     } finally {
       setLoading(false);
     }
@@ -47,9 +55,10 @@ export function Details(props: { auth: Authenticator; binding: Binding; close: (
   const notice = () => {
     const reason = problem();
     if (!reason) return undefined;
-    if (reason === "forbidden") return t().forbidden;
-    if (reason === "stale") return t().detailsUnsupported;
+    if (reason === "unsupported") return t().detailsUnsupported;
+    // Without a fresh answer, any account details shown are the saved copy: say when it was saved.
     const saved = details();
+    if (reason === "forbidden") return saved ? `${t().forbidden} ${t().detailsSaved({ date: date(saved.checkedAt) })}` : t().forbidden;
     return saved ? t().detailsCached({ date: date(saved.checkedAt) }) : t().detailsUnreachable;
   };
   const account = (value: CloudDetails): DescriptionListItem[] => [

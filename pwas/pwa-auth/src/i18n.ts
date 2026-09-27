@@ -207,6 +207,7 @@ export const authMessages = i18n.define({
       detailsLoading: "Loading account details…",
       detailsUnreachable: "This Cloud cannot be reached right now. Account details appear once it is reachable.",
       detailsCached: ({ date }: { date: string }) => `This Cloud cannot be reached right now. Showing details saved on ${date}.`,
+      detailsSaved: ({ date }: { date: string }) => `Showing details saved on ${date}.`,
       detailsUnsupported: "This Cloud does not share account details yet. They appear once the Cloud is updated.",
     },
     de: {
@@ -424,6 +425,7 @@ export const authMessages = i18n.define({
       detailsLoading: "Kontodaten werden geladen…",
       detailsUnreachable: "Diese Cloud ist gerade nicht erreichbar. Die Kontodaten erscheinen, sobald sie erreichbar ist.",
       detailsCached: ({ date }) => `Diese Cloud ist gerade nicht erreichbar. Angezeigt werden die Angaben vom ${date}.`,
+      detailsSaved: ({ date }) => `Angezeigt werden die Angaben vom ${date}.`,
       detailsUnsupported: "Diese Cloud stellt noch keine Kontodaten bereit. Sie erscheinen nach einem Update der Cloud.",
     },
   },

@@ -242,9 +242,10 @@ the email or **Not set**. It also shows the device name, the pairing date and
 the last approval from this device. The app asks the Cloud through the signed
 device channel each time the details open, so the request never passes through
 the Cloud Login server. It keeps a copy with the other encrypted connection
-data. When the Cloud cannot be reached, the app shows that copy with the date
-it was saved. A Cloud without this feature shows only the device facts. The
-last approval is recorded on this device and appears after the next approval.
+data. When the Cloud cannot be reached or no longer accepts this device, the app
+shows that copy with the date it was saved. A Cloud without this feature shows
+only the device facts. The last approval is recorded on this device and appears
+after the next approval.
 
 ## Approve and recover
 

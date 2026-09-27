@@ -75,6 +75,28 @@ export const storage = {
     return Promise.all(rows.map((row) => read("bindings", row.id, row, (v) => bindingSchema.parse(v))));
   },
   saveBinding: (binding: Binding) => save("bindings", binding),
+  /** Merges facts learned after pairing into the saved binding. Skips the write, and returns false,
+   * when another tab renamed, updated or removed the binding since it was read. */
+  updateBinding: async (id: string, change: Pick<Binding, "details" | "approvedAt">) => {
+    const row = await guarded<SealedRecord | undefined>("bindings", "readonly", (s) => s.get(id));
+    if (!row) return false;
+    const current = await read("bindings", id, row, (v) => bindingSchema.parse(v));
+    const owner = currentSession();
+    const blob = await owner.sealRecord({ ...current, ...change }, JSON.stringify(["bindings", id]));
+    owner.check();
+    let written = false;
+    await guarded("bindings", "readwrite", (store) => {
+      const get = store.get(id);
+      get.onsuccess = () => {
+        const latest: SealedRecord | undefined = get.result;
+        if (latest?.blob.iv !== row.blob.iv || latest.blob.data !== row.blob.data) return;
+        store.put({ id, vault: owner.id, blob }, id);
+        written = true;
+      };
+      return get;
+    });
+    return written;
+  },
   removeBinding: (id: string) => guarded("bindings", "readwrite", (s) => s.delete(id)),
   enrollment: async (id: string) => {
     const row = await guarded<SealedRecord | undefined>("enrollments", "readonly", (s) => s.get(id));

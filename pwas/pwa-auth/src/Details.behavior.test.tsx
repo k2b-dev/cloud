@@ -156,6 +156,42 @@ test("without a saved copy, an unreachable or older Cloud explains why account d
   );
 });
 
+test("only HTTP 400 means an older Cloud; a conflict, missing route or bad input reads as unreachable", async () => {
+  const { closeDialogs } = await import("./dialog");
+  for (const error of [
+    new AppApprovalClientError("HTTP", 409),
+    new AppApprovalClientError("HTTP", 404),
+    new AppApprovalClientError("INVALID_INPUT"),
+  ]) {
+    const { auth } = fakeAuth({
+      account: async () => {
+        throw error;
+      },
+    });
+    const { dialog } = await showDetails(auth);
+    expect(text(dialog.querySelector('[role="status"]')!)).toBe(
+      "This Cloud cannot be reached right now. Account details appear once it is reachable.",
+    );
+    closeDialogs();
+    await Bun.sleep(40);
+    dispose();
+  }
+});
+
+test("when the Cloud no longer accepts this device, the saved copy says when it was saved", async () => {
+  const { auth } = fakeAuth({
+    stored: { ...binding, details },
+    account: async () => {
+      throw new AppApprovalClientError("HTTP", 403);
+    },
+  });
+  const { dialog } = await showDetails(auth);
+  const status = dialog.querySelector('[role="status"]')!;
+  expect(text(status)).toStartWith("This device or account is unavailable. Check account access and device status in Cloud.");
+  expect(text(status)).toContain(" Showing details saved on Sep 20, 2026");
+  expect(text(dialog)).toContain("vkolb");
+});
+
 test("German labels follow the app language", async () => {
   const { auth } = fakeAuth({});
   const { button, dialog } = await showDetails(auth, "de");

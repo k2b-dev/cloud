@@ -142,13 +142,10 @@ export function createAuthenticator(vault: import("./vault").Vault) {
   });
   /** The latest saved record, including facts kept for Cloud details. */
   const stored = async (binding: Binding) => (await storage.bindings()).find((b) => b.id === binding.id);
-  // Facts kept for Cloud details. Merges into the latest record; a failed write only loses the display copy.
-  const remember = async (binding: Binding, change: Pick<Binding, "details" | "approvedAt">) => {
-    try {
-      const latest = await stored(binding);
-      if (latest) await storage.saveBinding({ ...latest, ...change });
-    } catch {}
-  };
+  // Facts kept for Cloud details. Skipped when another tab renamed or disconnected the Cloud meanwhile;
+  // a failed or skipped write only loses this display copy.
+  const remember = (binding: Binding, change: Pick<Binding, "details" | "approvedAt">) =>
+    storage.updateBinding(binding.id, change).catch(() => false);
   /** Asks the Cloud which account this device signs in and keeps a copy for offline viewing. */
   const account = async (binding: Binding, signal?: AbortSignal): Promise<CloudDetails> => {
     const owner = vault.session();
