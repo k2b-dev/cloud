@@ -145,16 +145,21 @@
   color: var(--k2b-text);
   cursor: default;
 }
-/* Zebra uses :where() so hover and selection below keep winning at equal specificity; the tree relies on indentation instead. */
-.filesv2-list:not([data-tree]) .filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
+/* Row fills share one specificity, so source order decides: zebra, hover, checked, then drop target. The tree relies on indentation instead of zebra. */
+:where(.filesv2-list:not([data-tree])) .filesv2-list__row:nth-child(even of :where(.filesv2-list__row)) {
   background: color-mix(in srgb, var(--k2b-surface-muted) 55%, transparent);
 }
 .filesv2-list__row:hover {
   background: color-mix(in srgb, var(--k2b-hover) 60%, transparent);
 }
-.filesv2-list__row[aria-selected="true"],
-.filesv2-list__row[aria-selected="true"]:hover {
+/* Only checked rows are filled; outside select mode the highlighted entry is the active row below. */
+:where(.filesv2-list[data-selecting]) .filesv2-list__row[aria-selected="true"] {
   background: var(--k2b-selected);
+}
+/* The active row in list and tree alike: no fill of its own, so it never looks hovered. */
+.filesv2-list__row--active .filesv2-list__name {
+  font-weight: 600;
+  color: var(--k2b-action);
 }
 .filesv2-list__row:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);
@@ -355,10 +360,6 @@
 }
 .filesv2-list__row--virtual {
   color: var(--k2b-text-secondary);
-}
-.filesv2-list__row[aria-current="location"] .filesv2-list__name {
-  font-weight: 600;
-  color: var(--k2b-action);
 }
 .filesv2-grid-check {
   position: absolute;

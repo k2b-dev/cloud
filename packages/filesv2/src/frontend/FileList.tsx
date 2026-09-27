@@ -5,6 +5,7 @@ export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-$
 
 import type { FileEntry } from "../contracts";
 import FileThumbnail from "./FileThumbnail";
+import { fileIcon } from "./file-preview";
 
 /** One flat row list; tree mode adds depth and disclosure, search mode shows the path below the folder. */
 export type FileRow = FileEntry & { depth?: number; expanded?: boolean; loading?: boolean; more?: boolean };
@@ -55,10 +56,23 @@ export default function FileList(props: {
     props.pathBase !== undefined && props.pathBase !== null
       ? `/${props.pathBase ? row.path.slice(props.pathBase.length + 1) : row.path}`
       : row.name;
+  /**
+   * The row the browser is on: the tree's current folder, or outside select mode the entry whose details are open.
+   * It is marked by its name, not a fill, so hover and checked rows keep their backgrounds to themselves.
+   */
+  const active = (row: FileRow) =>
+    (props.tree && props.currentPath === row.path) || (!props.selecting && props.selection.selected().has(row.path));
   const icon = (row: FileRow) => {
     const busy = row.loading || props.opening === row.path;
     if (busy) return <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />;
     if (props.tree && row.directory) return <i class={row.expanded ? "ti ti-folder-open" : "ti ti-folder"} aria-hidden="true" />;
+    // In the flat list an active folder opens like the tree's current one; folders with their own icon keep it.
+    if (row.directory && active(row))
+      return (
+        <span class="filesv2-thumbnail" aria-hidden="true">
+          <i class={fileIcon(row).replace(/\bti-folder(?= |$)/, "ti-folder-open")} />
+        </span>
+      );
     return <FileThumbnail baseId={props.baseId} entry={row} />;
   };
   const ariaSort = (key: "name" | "modified" | "size") =>
@@ -144,6 +158,7 @@ export default function FileList(props: {
               {...props.rowProps?.(row)}
               role="row"
               class="filesv2-list__row"
+              classList={{ "filesv2-list__row--active": active(row) }}
               style={{ "--depth": row.depth ?? 0 }}
               aria-selected={props.selection.selected().has(row.path)}
               aria-expanded={props.tree && row.directory ? !!row.expanded : undefined}

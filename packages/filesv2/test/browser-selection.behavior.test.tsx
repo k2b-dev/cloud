@@ -328,3 +328,124 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   await flush();
   expect(dom.root.textContent).toContain("Latest.txt");
 });
+
+test("list and tree mark their active row with one class; checked rows in select mode are selected, not active", async () => {
+  const dom = createDomTestHarness();
+  const { default: Browser } = await import("../src/frontend/Browser");
+  const folder = (path: string) => ({ name: path.split("/").at(-1)!, path, directory: true, size: 0, modified: "2026-01-01T00:00:00Z" });
+  const current: DirectoryResult = {
+    ...initial,
+    path: "Projects",
+    items: [folder("Projects/Drafts"), { ...initial.items[0]!, name: "Notes.md", path: "Projects/Notes.md" }],
+  };
+  const dispose = render(
+    () => (
+      <Browser
+        directory={current}
+        bases={[initial.base]}
+        cloudUrl="https://cloud.test"
+        source="/app/filesv2?base=home&path=Projects"
+        onNavigate={async () => {}}
+      />
+    ),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  await flush();
+  const row = (name: string) =>
+    [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(
+      (node) => node.querySelector(".filesv2-list__name")?.textContent === name,
+    )!;
+  const active = () => [...dom.root.querySelectorAll(".filesv2-list__row--active .filesv2-list__name")].map((node) => node.textContent);
+  const icon = (name: string) => row(name).querySelector(".filesv2-list__cell--icon i")!.classList;
+  const button = (text: string) =>
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === text)!;
+  expect(active()).toEqual([]);
+  expect(icon("Drafts").contains("ti-folder")).toBeTrue();
+
+  // List: the entry whose details are open is the active row; a folder opens its icon like the tree's current folder.
+  row("Notes.md").click();
+  await flush();
+  expect(active()).toEqual(["Notes.md"]);
+  row("Drafts").querySelector<HTMLButtonElement>('[aria-label="Details: Drafts"]')!.click();
+  await flush();
+  expect(active()).toEqual(["Drafts"]);
+  expect(row("Drafts").getAttribute("aria-selected")).toBe("true");
+  expect(icon("Drafts").contains("ti-folder-open")).toBeTrue();
+
+  // Select mode: checked rows stay selected for assistive technology and the fill, but none is active.
+  button("Select").click();
+  await flush();
+  row("Notes.md").click();
+  await flush();
+  expect(dom.root.querySelector('[role="grid"]')?.getAttribute("data-selecting")).toBe("true");
+  expect(row("Notes.md").getAttribute("aria-selected")).toBe("true");
+  expect(active()).toEqual([]);
+  expect(icon("Drafts").contains("ti-folder-open")).toBeFalse();
+  button("Done").click();
+  await flush();
+
+  // Tree: the current folder carries the same class next to its location marker.
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((node) => node.textContent?.includes("Tree"))!.click();
+  await flush();
+  branchRequests[0]!.resolve(Response.json({ ...initial, items: [folder("Archive"), folder("Projects")] }));
+  await flush();
+  expect(active()).toEqual(["Projects"]);
+  expect(row("Projects").getAttribute("aria-current")).toBe("location");
+  expect(icon("Projects").contains("ti-folder-open")).toBeTrue();
+  expect(row("Archive").classList.contains("filesv2-list__row--active")).toBeFalse();
+});
+
+test("outside select mode Shift+Arrow moves the one active row; in select mode it still extends the range", async () => {
+  const dom = createDomTestHarness();
+  const { default: Browser } = await import("../src/frontend/Browser");
+  const items = ["A.txt", "B.txt", "C.txt"].map((name) => ({ ...initial.items[0]!, name, path: name }));
+  const dispose = render(
+    () => (
+      <Browser
+        directory={{ ...initial, items }}
+        bases={[initial.base]}
+        cloudUrl="https://cloud.test"
+        source="/app/filesv2?base=home"
+        onNavigate={async () => {}}
+      />
+    ),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  await flush();
+  const row = (name: string) =>
+    [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find(
+      (node) => node.querySelector(".filesv2-list__name")?.textContent === name,
+    )!;
+  const names = (selector: string) => [...dom.root.querySelectorAll(`${selector} .filesv2-list__name`)].map((node) => node.textContent);
+  const shiftDown = (name: string) => {
+    const event = new KeyboardEvent("keydown", { key: "ArrowDown", shiftKey: true, bubbles: true, cancelable: true });
+    row(name).dispatchEvent(event);
+    return event;
+  };
+
+  row("A.txt").click();
+  await flush();
+  expect(shiftDown("A.txt").defaultPrevented).toBeTrue();
+  await flush();
+  shiftDown("B.txt");
+  await flush();
+  expect(names(".filesv2-list__row--active")).toEqual(["C.txt"]);
+  expect(names('.filesv2-list__row[aria-selected="true"]')).toEqual(["C.txt"]);
+
+  [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === "Select")!.click();
+  await flush();
+  row("A.txt").click();
+  await flush();
+  shiftDown("A.txt");
+  await flush();
+  expect(names('.filesv2-list__row[aria-selected="true"]')).toEqual(["A.txt", "B.txt"]);
+  expect(names(".filesv2-list__row--active")).toEqual([]);
+});
