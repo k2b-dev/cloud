@@ -61,10 +61,12 @@ test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set 
       await Bun.sleep(1);
     }
     expect((await render).pages).toHaveLength(1);
+    // Each pool must be seen, so a renamed thread fails here instead of passing unchecked.
     expect(peak.get("tokio-rt-worker")).toBeGreaterThan(0);
     expect(peak.get("tokio-rt-worker")).toBeLessThanOrEqual(2);
-    expect(peak.get("Bun Pool") ?? 0).toBeLessThanOrEqual(2);
-    expect(peak.get("HeapHelper") ?? 0).toBeLessThanOrEqual(1);
+    expect(peak.get("Bun Pool")).toBeGreaterThan(0);
+    expect(peak.get("Bun Pool")).toBeLessThanOrEqual(2);
+    expect(peak.get("HeapHelper")).toBe(1);
   } finally {
     spawn.mockRestore();
   }
