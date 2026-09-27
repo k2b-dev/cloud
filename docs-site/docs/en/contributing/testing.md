@@ -150,6 +150,17 @@ A new integration test needs no configuration of its own: import nothing
 special, use the resolved runtime variables, and name the file
 `*.integration.test.ts`.
 
+Keep a test that needs one of these targets out of the Playwright suites
+(`*.browser.test.ts`): the nightly browser job sets no `CLOUD_TEST_*`
+variables, so the test would only ever be skipped there.
+
+When a package has a `test:integration` script, `bun run test --integration`
+runs that script instead of the package's integration files, so the script
+must run every one of them. Assistant's runner, for example, gives its
+artifact service suite disposable PostgreSQL and rsql containers and runs
+every other Assistant integration file, such as the Code Mode PDF test against
+Gotenberg, against the `CLOUD_TEST_*` targets.
+
 ### Sync namespaces on the test broker
 
 Integration tests share one NATS JetStream account, locally the `TEST`
@@ -197,8 +208,9 @@ through their own runner with disposable containers. See
 ## What CI runs
 
 The pull request `gate` runs `bun run check`, `bun run test`, the integration
-suites against PostgreSQL 17, NATS JetStream, and Valkey, Grids certification,
-and an image boot smoke when `packages/cloud` or the `Dockerfile` changed.
+suites against PostgreSQL 17, NATS JetStream, Valkey, and Gotenberg, the Grids
+certification, and an image boot smoke when `packages/cloud` or the
+`Dockerfile` changed.
 Run the same commands locally before opening a pull request.
 
 The gate also builds the production bundle of every application whose package
