@@ -802,7 +802,7 @@ export default function ItemDetailPanel(props: Props) {
                   </Button>
                   <Show when={!isEvent() && !isCompleted()}>{claimButton()}</Show>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void handleEdit()} disabled={isLoading()}>
-                    <i class="ti ti-pencil" aria-hidden="true" /> Edit
+                    <i class="ti ti-pencil" aria-hidden="true" /> {t.edit}
                   </Button>
                 </Show>
                 <Show when={props.recurringContext}>

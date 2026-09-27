@@ -167,7 +167,6 @@ export default function CommentsSection(props: Props) {
               avatar={
                 <Avatar
                   name={comment.userName ?? t.unknownUser}
-                  fallback={((comment.userName ?? t.unknownUser).trim() || "?").slice(0, 2).toUpperCase()}
                   src={
                     comment.userId && comment.userAvatarHash
                       ? `/api/accounts/users/${encodeURIComponent(comment.userId)}/avatar?rev=${encodeURIComponent(comment.userAvatarHash)}`

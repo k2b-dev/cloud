@@ -128,6 +128,8 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain("Load earlier comments");
     expect(html).toContain('aria-label="Edit comment"');
     expect(html).toContain('class="ti ti-pencil"');
+    // The assignee row and the comment author show the same person with the shared avatar initials.
+    expect(html.match(/aria-label="Valentin Kolb avatar">VK</g)).toHaveLength(2);
     expect(html).toContain('aria-label="Delete comment"');
     expect(html).toContain('aria-label="Close item details"');
     expect(html).toContain('aria-label="More item actions"');
@@ -400,6 +402,16 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain(
       'class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4" style="color:var(--k2b-text-muted)"><i class="ti ti-repeat"',
     );
+  });
+
+  test("labels the header edit action in the reader's language", () => {
+    const header = (locale: string) => {
+      const html = renderPanel({ item: task }, locale);
+      return html.slice(0, html.indexOf("</header>"));
+    };
+    expect(header("en")).toContain("Edit</span></button>");
+    expect(header("de")).toContain("Bearbeiten</span></button>");
+    expect(header("de")).not.toContain("Edit</span>");
   });
 
   test("offers the add-link and Cloud resource picker actions before the first link", () => {

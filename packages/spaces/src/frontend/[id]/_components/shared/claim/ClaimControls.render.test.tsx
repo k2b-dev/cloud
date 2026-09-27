@@ -157,6 +157,11 @@ describe("Spaces claim controls", () => {
     expect(avatar({ showName: true })).toContain(">Mira Beck</span>");
   });
 
+  test("draws a person with the same initials as claim holder and as assignee", () => {
+    expect(avatar({ claim: { ...otherClaim, displayName: "Peter Fox" } })).toContain(">PF</span>");
+    expect(stack({ assignees: [{ ...person(1), displayName: "Peter Fox" }] })).toContain(">PF</span>");
+  });
+
   test("leads the card avatar stack with the claim holder, once, and never folds them into the overflow", () => {
     const crowd = Array.from({ length: 12 }, (_, index) => person(index + 1));
 

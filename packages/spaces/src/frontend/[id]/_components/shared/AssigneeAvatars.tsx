@@ -48,7 +48,6 @@ export default function AssigneeAvatars(props: Props) {
             {(assignee) => (
               <Avatar
                 name={assignee.displayName}
-                fallback={(assignee.displayName.trim() || "?").slice(0, 2).toUpperCase()}
                 src={
                   assignee.avatarHash
                     ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
