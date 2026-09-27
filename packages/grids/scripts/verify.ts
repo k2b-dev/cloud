@@ -28,7 +28,6 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
 import { SQL, sql } from "bun";
 import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
 
@@ -53,7 +52,7 @@ if (argv.includes("--bootstrap")) {
     VALUES ('grids-verification', 'local', 'user', 'Grids', 'Verification', 'Grids Verification')`;
   await sql.close();
 } else {
-  const { createDisposableDatabase, requireInfra, testInfra } = await import("../../../scripts/fixtures/test-infra");
+  const { connectTestNats, createDisposableDatabase, requireInfra, testInfra } = await import("../../../scripts/fixtures/test-infra");
   await requireInfra("database", "nats", "gotenberg");
   const adminUrl = localVerificationUrl("PostgreSQL", testInfra.database);
   const syncUrl = localVerificationUrl("NATS", testInfra.nats);
@@ -188,7 +187,7 @@ if (argv.includes("--bootstrap")) {
   process.once("SIGTERM", interrupted);
   try {
     const [postgres] = await admin<{ version: string }[]>`SELECT version()`;
-    const nats = await connect({ servers: syncUrl.toString(), timeout: 5_000, reconnect: false, ignoreClusterUpdates: true });
+    const nats = await connectTestNats({ timeout: 5_000, reconnect: false, ignoreClusterUpdates: true });
     let natsVersion: string | undefined;
     try {
       const manager = await jetstreamManager(nats);

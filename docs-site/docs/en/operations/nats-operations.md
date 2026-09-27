@@ -127,7 +127,7 @@ the complete environment contract. If cluster diagnostics are not configured,
 the page distinguishes that state from an unavailable broker.
 
 For development credentials and Compose setup, see
-[Monorepo development](/en/docs/operations/monorepo-development#configure-local-nats-diagnostics).
+[Monorepo development](/en/docs/operations/monorepo-development#configure-local-nats-accounts).
 
 ## Inspect a failing deployment
 

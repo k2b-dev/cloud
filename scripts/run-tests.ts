@@ -177,7 +177,7 @@ const run = async (): Promise<void> => {
 
   const natsTarget = readTestTarget(process.env, "nats");
   if (natsTarget) {
-    const swept = await sweepStaleTestNamespaces(natsTarget.split(",").map((server) => server.trim()));
+    const swept = await sweepStaleTestNamespaces();
     if (swept.namespaces > 0) {
       console.log(`Removed ${swept.streams} stream(s) of ${swept.namespaces} abandoned test Sync namespace(s).`);
     }

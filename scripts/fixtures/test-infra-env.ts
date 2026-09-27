@@ -11,6 +11,8 @@
  * `.env`. Every other target is removed when missing, because "unset" is the
  * documented off switch for those clients (`NATS_SERVERS` defaults to none).
  */
+import { isAbsolute } from "node:path";
+
 export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql";
 
 export type InfraMapping = { test: string; runtime: string[]; unset?: string };
@@ -32,6 +34,21 @@ export const readTestTarget = (env: Record<string, string | undefined>, kind: In
   env[infraMappings[kind].test]?.trim() || undefined;
 
 /**
+ * The `.creds` file of the NATS test identity, or `undefined` for a broker
+ * without authentication. It becomes the runtime `NATS_CREDS_FILE`, so a test
+ * never authenticates with the credentials of an installation from `.env`.
+ */
+export const readTestNatsCredsFile = (env: Record<string, string | undefined>): string | undefined => {
+  const file = env.CLOUD_TEST_NATS_CREDS_FILE?.trim() || undefined;
+  if (file && !isAbsolute(file)) {
+    throw new Error(
+      `CLOUD_TEST_NATS_CREDS_FILE must be an absolute path (got "${file}"): test processes run in their package directories.`,
+    );
+  }
+  return file;
+};
+
+/**
  * Runtime variables for the `CLOUD_TEST_*` targets in `env`: every alias gets
  * the target, its fail-fast address, or `undefined` when it must be removed.
  */
@@ -41,6 +58,7 @@ export const testRuntimeEnv = (env: Record<string, string | undefined>): Record<
     const value = readTestTarget(env, kind) ?? mapping.unset;
     for (const runtime of mapping.runtime) out[runtime] = value;
   }
+  out.NATS_CREDS_FILE = readTestNatsCredsFile(env);
   return out;
 };
 

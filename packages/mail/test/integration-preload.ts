@@ -1,6 +1,6 @@
 import { afterAll } from "bun:test";
 import { sql } from "bun";
-import { createDisposableDatabase, natsServers, testInfra } from "../../../scripts/fixtures/test-infra";
+import { createDisposableDatabase, requireInfra, testInfra } from "../../../scripts/fixtures/test-infra";
 import { deleteTestNamespace } from "../../../scripts/fixtures/test-sync";
 
 /**
@@ -18,6 +18,8 @@ import { deleteTestNamespace } from "../../../scripts/fixtures/test-sync";
  * derived from it.
  */
 if (testInfra.database && testInfra.nats) {
+  // The process sync below connects before any suite checks the NATS test identity.
+  await requireInfra("nats");
   const database = await createDisposableDatabase("mail");
   process.env.DATABASE_URL = database.url;
 
@@ -46,7 +48,7 @@ if (testInfra.database && testInfra.nats) {
   afterAll(async () => {
     try {
       await runtime.stop();
-      await deleteTestNamespace(natsServers(), namespace);
+      await deleteTestNamespace(namespace);
     } finally {
       await sql.close().catch(() => undefined);
       await database.drop();

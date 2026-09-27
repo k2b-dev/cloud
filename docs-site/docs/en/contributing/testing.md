@@ -83,6 +83,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | --- | --- |
 | `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_test` |
 | `CLOUD_TEST_NATS_SERVERS` | `nats://127.0.0.1:4222` |
+| `CLOUD_TEST_NATS_CREDS_FILE` | `/path/to/cloud/.local/nats/test.creds` (absolute path) |
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6379` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
@@ -114,9 +115,24 @@ The database name must end in `_test`. Integration tests create and delete
 rows; the fixture refuses any other name. Never point them at the development
 database.
 
+The same rule holds for NATS. The development broker keeps the application
+streams in the `DEV` account, which accepts connections without credentials,
+and bounds tests in the `TEST` account
+([Configure local NATS accounts](/en/docs/operations/monorepo-development#configure-local-nats-accounts)).
+`CLOUD_TEST_NATS_CREDS_FILE` names the `.creds` file of the test identity,
+`.local/nats/test.creds` in the checkout that runs the stack, also when the
+tests run from a worktree. It becomes the runtime `NATS_CREDS_FILE`; tests
+never use one from the environment or `.env`.
+Tests that open their own connection use `connectTestNats()` from
+`scripts/fixtures/test-infra`; `bun run check` fails when test code connects
+without credentials. Both `connectTestNats()` and the fixture's NATS check
+refuse a connection that lands in `DEV`. A broker without accounts, like the
+one in CI, needs no credentials file.
+
 ```bash
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
+CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
 bun run test --integration
 ```
@@ -136,11 +152,12 @@ special, use the resolved runtime variables, and name the file
 
 ### Sync namespaces on the test broker
 
-Integration tests share one NATS JetStream account, which locally is the
-development stack's own broker, and @k2b/sync keeps them apart only by
-namespace. JetStream reserves the full size of every stream, 1 GiB per topic,
-job, and dead-letter stream by default, so each namespace a test leaves behind
-blocks 1.5 to 2 GiB. The fixture therefore cleans up after every test process:
+Integration tests share one NATS JetStream account, locally the `TEST`
+account of the development broker, and @k2b/sync keeps them apart only by
+namespace. JetStream reserves the full size of every stream against the
+account, 1 GiB per topic, job, and dead-letter stream by default, so each
+namespace a test leaves behind blocks 1.5 to 2 GiB of the account's limit. The
+fixture therefore cleans up after every test process:
 
 - Each test process gets its own namespace, `test-<8 hex digits>`, as
   `SYNC_NAMESPACE`. It replaces any value from the environment or `.env`.

@@ -4,10 +4,10 @@ import { request as httpRequest } from "node:http";
 import { sendPinnedWebPush } from "@k2b/cloud/services/notifications/web-push-transport";
 import { createSync, type Sync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect, type NatsConnection } from "@nats-io/transport-node";
+import type { NatsConnection } from "@nats-io/transport-node";
 import { SQL } from "bun";
 import webpush from "web-push";
-import { createDisposableDatabase, natsServers, suiteFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
+import { connectTestNats, createDisposableDatabase, suiteFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { createPushService, migrate, type PushMessage, type PushService } from "./push";
 import { createPushRoutes } from "./routes";
 
@@ -60,7 +60,7 @@ suite("Cloud Login push service", () => {
         return new Response(null, { status: statuses.get(path)?.shift() ?? 201 });
       },
     });
-    connection = await connect({ servers: natsServers() });
+    connection = await connectTestNats();
     sync = createSync({ connection, namespace, application: "cloud-login", defaults: { replicas: 1 } });
     service = createPushService({
       sync,

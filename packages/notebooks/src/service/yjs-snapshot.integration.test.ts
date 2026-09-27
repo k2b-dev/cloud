@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { SQL, sql } from "bun";
-import { natsServers, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const databaseName = process.env.NOTEBOOKS_SNAPSHOT_DB_CHILD;
 if (!databaseName) {
@@ -46,9 +46,8 @@ if (!databaseName) {
     const [database] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
     expect(database?.name).toBe(databaseName);
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
-    const connection = await connect({ servers: natsServers() });
+    const connection = await connectTestNats();
     const namespace = testSyncNamespace("notebooks-snapshot");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);

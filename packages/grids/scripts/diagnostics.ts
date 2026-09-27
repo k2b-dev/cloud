@@ -4,9 +4,8 @@ import { cpus, freemem, loadavg, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
 import { SQL } from "bun";
-import { testInfra } from "../../../scripts/fixtures/test-infra";
+import { connectTestNats, requireInfra, testInfra } from "../../../scripts/fixtures/test-infra";
 import { type DiagnosticReport, writeDiagnosticReport } from "./diagnostics-report";
 import { localVerificationUrl } from "./verification";
 
@@ -20,7 +19,8 @@ if (options.help) {
   console.log(`Usage: bun packages/grids/scripts/diagnostics.ts [--report-dir <dir>]
 
 Runs the Grids performance diagnostics on a disposable database. Infrastructure
-comes from CLOUD_TEST_DATABASE_URL, CLOUD_TEST_NATS_SERVERS and CLOUD_TEST_GOTENBERG_URL.
+comes from CLOUD_TEST_DATABASE_URL, CLOUD_TEST_NATS_SERVERS and CLOUD_TEST_GOTENBERG_URL;
+CLOUD_TEST_NATS_CREDS_FILE names the NATS test identity on the development broker.
 
 Options:
   --report-dir <dir>   Parent directory for the report (default: system temp directory)
@@ -30,7 +30,9 @@ Options:
 }
 const root = resolve(import.meta.dir, "../../..");
 const source = localVerificationUrl("PostgreSQL", testInfra.database);
-const nats = localVerificationUrl("NATS", testInfra.nats ?? "nats://127.0.0.1:4222");
+const nats = localVerificationUrl("NATS", testInfra.nats);
+// The worker reuses this identity through NATS_CREDS_FILE; refuse the development account before it starts.
+await requireInfra("nats");
 const pdf = localVerificationUrl("Gotenberg", testInfra.gotenberg ?? "http://localhost:3001");
 const name = `grids_verify_${crypto.randomUUID().replaceAll("-", "")}`;
 const namespace = `grids-diagnostics-${crypto.randomUUID()}`;
@@ -158,7 +160,7 @@ try {
     await admin.close();
     try {
       // The parent also cleans up after a killed worker, whose finally cannot run.
-      const connection = await connect({ servers: nats.toString(), timeout: 5_000, reconnect: false, ignoreClusterUpdates: true });
+      const connection = await connectTestNats({ timeout: 5_000, reconnect: false, ignoreClusterUpdates: true });
       try {
         const manager = await jetstreamManager(connection);
         for await (const stream of manager.streams.list()) {

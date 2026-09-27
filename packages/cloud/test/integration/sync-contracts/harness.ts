@@ -1,10 +1,9 @@
 import { createSync, type Sync } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
-import { natsServers, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 
 /** A private Sync namespace on the test broker; `close()` removes every stream it declared. */
 export const openSync = async (label: string): Promise<{ sync: Sync; close: () => Promise<void> }> => {
-  const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+  const connection = await connectTestNats({ ignoreClusterUpdates: true });
   const sync = createSync({
     connection,
     namespace: testSyncNamespace(`contract-${label}`),

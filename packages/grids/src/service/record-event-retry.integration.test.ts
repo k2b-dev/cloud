@@ -3,8 +3,7 @@ import { createHash } from "node:crypto";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
-import { requireInfra, testFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, requireInfra, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { connectGridsTestSync } from "../sync-test-utils";
 import type { RecordEventDeliveryFailureInput } from "./record-event-delivery-failures";
 import { type GridsRecordEvent, RECORD_EVENT_WORK_PARTITIONS, recordEventWorkQueue, requeueRecordEventWork } from "./record-events";
@@ -129,7 +128,7 @@ natsTest(
   "workers reopen the existing queue and preserve accepted work without resource drift",
   async () => {
     await requireInfra("nats");
-    const connection = await connect({ servers: testInfra.nats, ignoreClusterUpdates: true });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("grids-cutover");
     const previous = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
     const current = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });

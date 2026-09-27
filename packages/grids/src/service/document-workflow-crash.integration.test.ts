@@ -7,9 +7,8 @@ import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { WORKFLOW_RUN_LEASE_MS } from "@k2b/cloud/workflows/store";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
 import { type SQL, sql } from "bun";
-import { testFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { localVerificationUrl } from "../../scripts/verification";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -129,10 +128,7 @@ async function runAcceptance() {
   const reports = await mkdtemp(join(process.env.GRIDS_VERIFY_REPORTS_DIR ?? tmpdir(), "grids-crash-"));
   console.info(`Crash acceptance evidence: ${reports}`);
   const namespace = testSyncNamespace("grids-crash");
-  const connection = await connect({
-    servers: nats.toString(),
-    ignoreClusterUpdates: true,
-  });
+  const connection = await connectTestNats({ ignoreClusterUpdates: true });
   const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
   bindProcessSync(sync);
   const accepted: { path: string; key: string | null; body: string }[] = [];

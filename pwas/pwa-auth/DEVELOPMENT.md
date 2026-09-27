@@ -31,8 +31,11 @@ through the real Web Push transport to a local fake push service:
 
 ```sh
 CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
-  bun test pwas/pwa-auth/server/push.integration.test.ts
+  CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds bun test pwas/pwa-auth/server/push.integration.test.ts
 ```
+
+`CLOUD_TEST_NATS_CREDS_FILE` is the absolute path of `.local/nats/test.creds` in
+the checkout that runs the development stack.
 
 It never contacts a real push service. Real delivery to iPhone, Android and
 desktop browsers still needs device acceptance with a deployed HTTPS origin.

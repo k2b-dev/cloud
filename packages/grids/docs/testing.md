@@ -2,7 +2,7 @@
 
 ## Lightweight performance diagnosis
 
-From the repository root, run `bun packages/grids/scripts/diagnostics.ts` with `CLOUD_TEST_DATABASE_URL`, `CLOUD_TEST_NATS_SERVERS`, and `CLOUD_TEST_GOTENBERG_URL` set.
+From the repository root, run `bun packages/grids/scripts/diagnostics.ts` with `CLOUD_TEST_DATABASE_URL`, `CLOUD_TEST_NATS_SERVERS`, `CLOUD_TEST_NATS_CREDS_FILE`, and `CLOUD_TEST_GOTENBERG_URL` set.
 It uses the same local PostgreSQL, NATS, Gotenberg and `PDFTOTEXT` prerequisites
 as verification below, plus Docker with the local `valkey/valkey:8-alpine` image.
 It reuses those services and starts one small, temporary Valkey cache. Settings
@@ -47,6 +47,9 @@ Gotenberg and Poppler's `pdftotext` executable. It reads the root `.env` and use
 - `DATABASE_URL` for PostgreSQL;
 - `REDIS_URL` for Valkey;
 - `CLOUD_TEST_NATS_SERVERS` for NATS (for example `nats://127.0.0.1:4222`);
+- `CLOUD_TEST_NATS_CREDS_FILE` for the NATS test identity on the development
+  broker (the absolute path of `.local/nats/test.creds` in the checkout that
+  runs the development stack);
 - `CLOUD_TEST_GOTENBERG_URL` for Gotenberg (for example `http://localhost:3001`);
 - `PDFTOTEXT` for an optional executable path (default: `pdftotext` on `PATH`).
 

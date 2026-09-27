@@ -2,8 +2,7 @@ import { expect } from "bun:test";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
-import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { createYjsAwarenessTopic, NODE_ID, type YjsAwarenessEvent } from "./yjs-sync";
 
 // Regression for #70: JetStream rejects a stream whose duplicate window exceeds
@@ -11,7 +10,7 @@ import { createYjsAwarenessTopic, NODE_ID, type YjsAwarenessEvent } from "./yjs-
 testFor("nats")(
   "awareness topic provisions on JetStream and delivers an event",
   async () => {
-    const connection = await connect({ servers: natsServers() });
+    const connection = await connectTestNats();
     const namespace = testSyncNamespace("notebooks-awareness");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);

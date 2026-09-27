@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SQL, sql } from "bun";
-import { natsServers, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 /**
  * The shared Yjs log (#166): one topic for every note keeps the JetStream
@@ -137,13 +137,14 @@ if (!databaseName) {
     return id;
   };
 
-  /** Bind a fresh Sync namespace on `servers` for one scenario; streams are deleted afterwards. */
+  const testNats = () => connectTestNats({ ignoreClusterUpdates: true });
+
+  /** Bind a fresh Sync namespace on the connection `open` returns for one scenario; streams are deleted afterwards. */
   const withSync = async (
-    servers: string[],
+    open: () => ReturnType<typeof connect>,
     run: (namespace: string, manager: Awaited<ReturnType<typeof jetstreamManager>>) => Promise<void>,
-    auth: { user?: string; pass?: string } = {},
   ): Promise<void> => {
-    const connection = await connect({ servers, ignoreClusterUpdates: true, ...auth });
+    const connection = await open();
     const namespace = testSyncNamespace("notebooks-shared-log");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
@@ -188,7 +189,7 @@ if (!databaseName) {
     const notebookId = await setupSchema();
     const bounded = process.env.NOTEBOOKS_BOUNDED_NATS!;
     await withSync(
-      [bounded],
+      () => connect({ servers: [bounded], ignoreClusterUpdates: true, user: "app", pass: "app" }),
       async (_namespace, manager) => {
         const noteIds: string[] = [];
         for (let i = 0; i < 50; i++) {
@@ -227,13 +228,12 @@ if (!databaseName) {
         const { isStorageExhausted } = await import("./yjs-sync");
         expect(isStorageExhausted(failure)).toBe(true);
       },
-      { user: "app", pass: "app" },
     );
   }, 120_000);
 
   test("legacy per-note topics are republished, kept while written, and deleted once quiet", async () => {
     const notebookId = await setupSchema();
-    await withSync(natsServers(), async (namespace, manager) => {
+    await withSync(testNats, async (namespace, manager) => {
       const notes = await import("./notes");
       const { legacyYjsTopic, NODE_ID, toBase64, YJS_TOPIC_ID } = await import("./yjs-sync");
       const { migrateLegacyYjsTopics, LEGACY_QUIET_MS } = await import("./yjs-legacy-migration");
@@ -306,7 +306,7 @@ if (!databaseName) {
 
   test("cursors resume exactly across interleaved notes; idle watermarks survive front eviction; real gaps recover", async () => {
     const notebookId = await setupSchema();
-    await withSync(natsServers(), async (namespace, manager) => {
+    await withSync(testNats, async (namespace, manager) => {
       const notes = await import("./notes");
       const { createYjsTopic, replayYjsTopicToCursor } = await import("./yjs-sync");
       const { yjsSnapshotWorker } = await import("./yjs-snapshot-worker");

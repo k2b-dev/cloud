@@ -211,9 +211,9 @@ testFor("nats")(
   addUser(1); addUser(2); addUser(3);
   setSystemTime();
   const { createSync } = await import("@k2b/sync");
-  const { connect } = await import("@nats-io/transport-node");
+  const { connectTestNats } = await import(dir + "/../../../../../scripts/fixtures/test-nats.ts");
   const { jetstreamManager } = await import(Bun.resolveSync("@nats-io/jetstream", new URL(".", import.meta.resolve("@k2b/sync")).pathname));
-  const connection = await connect({ servers: (process.env.CLOUD_TEST_NATS_SERVERS ?? "").split(","), timeout: 2000 });
+  const connection = await connectTestNats({ timeout: 2000 });
   const namespace = ${JSON.stringify(testSyncNamespace("ipa-backfill"))};
   const attempted = [];
   let failAfterAcceptance = true;

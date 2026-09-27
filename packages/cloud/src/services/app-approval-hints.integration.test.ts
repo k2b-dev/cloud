@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
-import { natsServers, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { syncLoginDecisionHints } from "./app-approval";
 
 suiteFor("nats")("app login decision hints", () => {
   test("a published decision wakes the browser waiting for that request", async () => {
-    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const sync = createSync({
       connection,
       namespace: testSyncNamespace("app-login"),

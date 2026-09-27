@@ -1,15 +1,14 @@
 import { expect, spyOn } from "bun:test";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync, RetentionGapError } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
 import * as Y from "yjs";
-import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { createYjsTopic, MalformedSyncEventError, NODE_ID, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
 
 testFor("nats")(
   "Yjs replay uses a finite head, rejects retention gaps and preserves subsequent edits",
   async () => {
-    const connection = await connect({ servers: natsServers() });
+    const connection = await connectTestNats();
     const namespace = testSyncNamespace("notebooks-yjs");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);

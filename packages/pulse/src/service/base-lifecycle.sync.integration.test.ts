@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
-import { testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const syncTest = testFor("database", "nats");
 
@@ -8,7 +8,6 @@ syncTest(
   "a coalesced deletion runs through NATS and keeps one observed span with its summary",
   async () => {
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const { observeSyncEvent } = await import("@k2b/cloud/services/logging/trace");
     const { startPulseBaseJobs, submitBaseDeletionJob, stopPulseBaseDeletionJob, stopPulseBaseDataClearJob } = await import(
@@ -17,11 +16,7 @@ syncTest(
     const { newShortId } = await import("../lib/short-id");
     const { initializeSchema } = await import("../schema");
     await initializeSchema();
-    const connection = await connect({
-      servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
-      ignoreClusterUpdates: true,
-      name: "pulse-deletion-test",
-    });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true, name: "pulse-deletion-test" });
     const namespace = testSyncNamespace("pulse-lifecycle");
     const sync = createSync({ connection, namespace, application: "pulse", defaults: { replicas: 1 }, observe: observeSyncEvent });
     const baseId = crypto.randomUUID();
