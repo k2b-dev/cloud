@@ -425,6 +425,17 @@ administrator as actor, the device as target and the account as
 browser notifications when they have no email address. Delivery is best
 effort: the revocation stands when no channel reaches them.
 
+Revoking a device does not end the sessions it already approved. They stay
+valid until they expire after **Session Expiry Hours** (8 by default) or until
+the account is signed out everywhere, for example when the person resets
+their FreeIPA password with **Reset password** on the sign-in page. Accounts
+has no separate action that ends another account's sessions.
+
+The list and revocation cover devices paired at the Cloud's current address
+(`app.url`), which are the only ones that can approve sign-ins. Devices paired
+under an earlier address work again if `app.url` changes back, so review the
+list after such a change.
+
 To replace a lost device, revoke it and then pair a new one with
 [administrator-assisted pairing](#pair-a-device).
 
@@ -432,20 +443,26 @@ To replace a lost device, revoke it and then pair a new one with
 
 Revocation before completion prevents even an approved request from being used.
 Completion's database commit is the authorization boundary: later revocation
-does not cancel issuance already authorized or existing sessions. Revoke
-sessions separately during incident recovery.
+does not cancel issuance already authorized or existing sessions. Those
+sessions end when they expire or when the account is signed out everywhere.
 
 When Cloud signs an account out everywhere, it also revokes every paired
 device of that account, including devices paired while the Cloud used another
-address. This happens after a FreeIPA password reset, when an administrator
-switches the account's provider or demotes it to a guest, when FreeIPA
-synchronization removes or demotes it, and when Cloud ends the sessions of an
-expired account. Outstanding login requests from before that point stay unusable.
-A pairing started in a session that was signed out cannot be confirmed. The
-person pairs again after signing in; assisted pairing works as usual.
+address. Each device gets an `auth.app.device.revoke` audit entry without an
+actor, with the account as `targetUserId` and `reason: "sign_out_everywhere"`.
+This happens after a FreeIPA password reset from the sign-in page,
+when an administrator changes the account's provider (including creating a
+FreeIPA account for an existing local account) or demotes it to a guest, and
+when FreeIPA synchronization or the account lifecycle job demotes or deletes a
+FreeIPA account, for example an expired one. Outstanding login requests from
+before that point stay unusable. A pairing started in a session that was
+signed out cannot be confirmed. The person pairs again after signing in;
+assisted pairing works as usual.
 
 Account expiry and current category policy are checked on device operations and
-completion. FreeIPA users use the synchronized **Cloud account**: there is no
+completion. Expiry alone does not revoke devices: they cannot approve sign-ins
+while the account is expired and work again when an administrator extends it.
+FreeIPA users use the synchronized **Cloud account**: there is no
 live FreeIPA password, OTP or Kerberos check. Enabling this method permits an
 independent Cloud credential for these accounts. Upstream disablement not yet
 synchronized into Cloud cannot be observed here. Keep synchronization healthy

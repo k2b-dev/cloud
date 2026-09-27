@@ -80,9 +80,10 @@ with its name, when it was paired and when it was last used.
 2. Choose the revoke button in its row, then **Revoke device** to confirm.
 
 The device can no longer approve sign-ins for that account, including a
-request it already approved but that has not finished. Existing sessions stay
-signed in. Cloud records the revocation in the audit log and notifies the
-person if it can reach them by email or browser notification.
+request it already approved but that has not finished. Sessions it already
+approved stay signed in until they expire; Accounts has no action that ends
+another account's sessions. Cloud records the revocation in the audit log and
+notifies the person if it can reach them by email or browser notification.
 To set up a replacement, use [Help someone pair a device](#help-someone-pair-a-device).
 
 From the terminal, administrators use
