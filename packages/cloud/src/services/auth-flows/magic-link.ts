@@ -60,13 +60,25 @@ const resolveEmailForUsername = async (username: string): Promise<string | null>
   return mail ? normalizeEmail(mail) : null;
 };
 
-export const request = async (
-  params: { email: string; redirectTo?: string; locale?: string; category?: "guest" | "login" },
-  notificationSender: AuthNotificationSender,
-): Promise<{ ok: true } | { ok: false; status: 400; message: string }> => {
+type SignInLinkRequest = { email: string; redirectTo?: string; locale?: string; category?: "guest" | "login" };
+
+/**
+ * Accepts a sign-in link request without revealing whether an account exists.
+ * The lookup and delivery run after this returns, so existing, unknown and
+ * mail-less accounts get the same response in the same time. `settled`
+ * resolves when that background work has finished; it never rejects.
+ */
+export const request = (params: SignInLinkRequest, notificationSender: AuthNotificationSender): { ok: true; settled: Promise<void> } => {
+  const settled = deliverSignInLink(params, notificationSender).catch((error) => {
+    log.error("Sign-in link request failed", { error: error instanceof Error ? error.message : String(error) });
+  });
+  return { ok: true, settled };
+};
+
+const deliverSignInLink = async (params: SignInLinkRequest, notificationSender: AuthNotificationSender): Promise<void> => {
   const identifier = params.email.trim();
   const email = identifier.includes("@") ? normalizeEmail(identifier) : await resolveEmailForUsername(identifier);
-  if (!email) return { ok: true };
+  if (!email) return;
   const hasIpaUser = await hasIpaAccountForEmail(email);
   const userRows = hasIpaUser
     ? []
@@ -77,25 +89,25 @@ export const request = async (
   const allowSelfRegistration = await settings.get<boolean>("user.allow_self_registration");
 
   if (hasIpaUser) {
-    if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return { ok: true };
+    if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return;
     if (await claimIpaHintCooldown(email)) {
-      void sendIpaEmailLoginHint({ email, redirectTo: params.redirectTo, locale: params.locale }, notificationSender).catch((error) => {
+      await sendIpaEmailLoginHint({ email, redirectTo: params.redirectTo, locale: params.locale }, notificationSender).catch((error) => {
         log.warn("Failed to send FreeIPA email-login hint", {
           email,
           error: error instanceof Error ? error.message : String(error),
         });
       });
     }
-    return { ok: true };
+    return;
   }
 
   if (localUser && ((params.category && accountCategory(localUser) !== params.category) || !(await isAccountCategoryAllowed(localUser))))
-    return { ok: true };
+    return;
   if (
     !localUser &&
     (!allowSelfRegistration || params.category === "login" || !(await isAccountCategoryAllowed({ provider: "local", profile: "guest" })))
   ) {
-    return { ok: true };
+    return;
   }
 
   const token = await providers.local.auth.createMagicLinkToken({ email, category: params.category, ttlSeconds: 300 });
@@ -106,27 +118,51 @@ export const request = async (
     const result = await notificationSender.sendMagicLink({ email, token, magicLink, locale: params.locale });
     if (result.status === "error") log.error("Magic link delivery failed", { notificationId: result.id });
   } catch (error) {
-    // Keep the response generic to prevent account enumeration. The durable
-    // sender records accepted delivery failures; pre-persistence failures land here.
+    // The durable sender records accepted delivery failures; pre-persistence failures land here.
     log.error("Magic link notification could not be accepted", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-
-  return { ok: true };
 };
 
-export const verify = async (params: {
-  token: string;
-}): Promise<
-  | { ok: true; userId: string; user: User; email: string; createdGuest: boolean }
+type VerifyResult =
+  | { ok: true; userId: string; user: User; email: string | null; createdGuest: boolean }
   | { ok: false; status: 401; message: string }
-  | { ok: false; status: number; message: string }
-> => {
+  | { ok: false; status: number; message: string };
+
+const signIn = async (params: {
+  userId: string;
+  email?: string;
+  createdGuest?: boolean;
+  category?: "guest" | "login";
+}): Promise<VerifyResult> => {
+  const user = await accounts.users.get({ id: params.userId });
+  if (!user) {
+    return { ok: false, status: 401, message: "User not found" };
+  }
+  if (!(await isAccountCategoryAllowed(user)) || (params.category && accountCategory(user) !== params.category))
+    return { ok: false, status: 403, message: "This account cannot sign in through this category. Contact an administrator." };
+  return { ok: true, userId: params.userId, user, email: params.email ?? user.mail, createdGuest: params.createdGuest ?? false };
+};
+
+/** Administrator-issued tokens name the account itself, so they work without an email address. */
+const verifyAccountToken = async (userId: string): Promise<VerifyResult> => {
+  const [row] = await sql<{ expired: boolean }[]>`
+    SELECT account_expires IS NOT NULL AND account_expires <= now() AS expired
+    FROM auth.users
+    WHERE id = ${userId}::uuid AND provider = 'local'
+  `;
+  if (!row) return { ok: false, status: 401, message: "Invalid or expired token" };
+  if (row.expired) return { ok: false, status: 403, message: "Your account has expired. Contact an administrator." };
+  return signIn({ userId });
+};
+
+export const verify = async (params: { token: string }): Promise<VerifyResult> => {
   const payload = await providers.local.auth.consumeMagicLinkToken(params.token);
   if (!payload) {
     return { ok: false, status: 401, message: "Invalid or expired token" };
   }
+  if ("userId" in payload) return verifyAccountToken(payload.userId);
 
   const { email, category } = payload;
   const normalizedEmail = normalizeEmail(email);
@@ -186,12 +222,5 @@ export const verify = async (params: {
     createdGuest = true;
   }
 
-  const user = await accounts.users.get({ id: userId });
-  if (!user) {
-    return { ok: false, status: 401, message: "User not found" };
-  }
-  if (!(await isAccountCategoryAllowed(user)) || (category && accountCategory(user) !== category))
-    return { ok: false, status: 403, message: "This account cannot sign in through this category. Contact an administrator." };
-
-  return { ok: true, userId, user, email, createdGuest };
+  return signIn({ userId, email, createdGuest, category });
 };

@@ -330,6 +330,12 @@ export const accountsMessages = i18n.define({
       ipaWelcomeSent: "The welcome email with the initial FreeIPA instructions was sent.",
       localWelcomeSent: "The welcome email with the local sign-in instructions was sent.",
       welcomeNotSent: "The welcome email was not sent automatically.",
+      createdWithoutEmail:
+        "No welcome email was sent because the account has no email address. Open the account to pair a sign-in app or create a one-time login token.",
+      emailOptionalHelp:
+        "Optional for this account type. Without an email address, email sign-in links, welcome emails and email notifications are unavailable.",
+      localWithoutEmailHelp:
+        "No password and no welcome email are created. Without an email address, this person signs in with a paired app or a passkey. After creating the account, open it to pair a sign-in app or create a one-time login token.",
       ipaAccountCreated: "FreeIPA account created.",
       localAccountCreated: "Local account created.",
       actionNotice: "Follow-up notice",
@@ -1129,6 +1135,12 @@ export const accountsMessages = i18n.define({
       ipaWelcomeSent: "Die Willkommens-E-Mail mit den ersten FreeIPA-Schritten wurde gesendet.",
       localWelcomeSent: "Die Willkommens-E-Mail mit den Hinweisen zur lokalen Anmeldung wurde gesendet.",
       welcomeNotSent: "Die Willkommens-E-Mail wurde nicht automatisch gesendet.",
+      createdWithoutEmail:
+        "Es wurde keine Willkommens-E-Mail gesendet, weil das Konto keine E-Mail-Adresse hat. Öffne das Konto, um eine Anmelde-App zu koppeln oder ein einmaliges Anmeldetoken zu erstellen.",
+      emailOptionalHelp:
+        "Für diesen Kontotyp optional. Ohne E-Mail-Adresse stehen Anmeldelinks, Willkommens-E-Mails und E-Mail-Benachrichtigungen nicht zur Verfügung.",
+      localWithoutEmailHelp:
+        "Es werden weder ein Passwort noch eine Willkommens-E-Mail erstellt. Ohne E-Mail-Adresse meldet sich die Person mit einer gekoppelten App oder einem Passkey an. Öffne das Konto nach dem Erstellen, um eine Anmelde-App zu koppeln oder ein einmaliges Anmeldetoken zu erstellen.",
       ipaAccountCreated: "FreeIPA-Konto erstellt.",
       localAccountCreated: "Lokales Konto erstellt.",
       actionNotice: "Hinweis zur Nacharbeit",

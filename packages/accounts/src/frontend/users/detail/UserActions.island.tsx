@@ -99,11 +99,15 @@ export default function UserActions(props: UserActionsProps) {
               },
             ]
           : []),
-        {
-          icon: "ti ti-send",
-          label: messages().notify,
-          action: actions.handleNotify,
-        },
+        ...(actions.canNotify
+          ? [
+              {
+                icon: "ti ti-send",
+                label: messages().notify,
+                action: actions.handleNotify,
+              },
+            ]
+          : []),
         ...(actions.canSetExpiry
           ? [
               {

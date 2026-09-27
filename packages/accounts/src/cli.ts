@@ -649,7 +649,9 @@ export default defineCliCommands({
       summary: "Create an account",
       flags: {
         provider: flag.enum(PROVIDERS, { required: true }),
-        email: flag.string({ required: true }),
+        email: flag.string({
+          description: "Required for FreeIPA and guest accounts; a local full account may omit it when the installation allows that",
+        }),
         givenName: flag.string({ name: "given-name", required: true }),
         sn: flag.string({ aliases: ["surname"], required: true, description: "Last name" }),
         displayName: flag.string({ name: "display-name" }),
@@ -659,7 +661,8 @@ export default defineCliCommands({
       },
       async run({ ctx, flags }) {
         if (!flags.provider) throw new Error("Missing required flag --provider.");
-        if (!flags.email || !flags.givenName || !flags.sn) throw new Error("Missing required account profile flags.");
+        if (!flags.givenName || !flags.sn) throw new Error("Missing required account profile flags.");
+        if (flags.provider === "ipa" && !flags.email) throw new Error("FreeIPA accounts need --email.");
         if (flags.provider === "ipa" && flags.profile)
           throw new Error("FreeIPA account profiles are derived from group membership; omit --profile.");
         if (flags.provider === "ipa" && flags.admin)
@@ -701,15 +704,20 @@ export default defineCliCommands({
         sn: flag.string({ aliases: ["surname"], description: "Last name" }),
         displayName: flag.string({ name: "display-name" }),
         mail: flag.string({ aliases: ["email"] }),
+        removeEmail: flag.boolean({
+          name: "remove-email",
+          description: "Remove the email address of a local full account; the installation must allow accounts without email",
+        }),
         phone: flag.string({ description: "IPA phone field" }),
       },
       async run({ ctx, args, flags }) {
+        if (flags.removeEmail && flags.mail !== undefined) throw new Error("Use either --mail or --remove-email.");
         const user = await resolveUserRef(ctx, args.user);
         const body = compact({
           givenname: flags.givenName,
           sn: flags.sn,
           displayName: flags.displayName,
-          mail: flags.mail,
+          mail: flags.removeEmail ? null : flags.mail,
           ipa: flags.phone === undefined ? undefined : { phone: flags.phone },
         });
         if (Object.keys(body).length === 0) throw new Error("Pass at least one profile field to update.");

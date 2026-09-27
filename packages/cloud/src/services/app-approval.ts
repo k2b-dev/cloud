@@ -286,14 +286,17 @@ export const createAppApprovalService = (
     cleanup,
     maintain: async (notify: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>, signal?: AbortSignal) => {
       await cleanup();
-      const rows = await db<
-        DeviceRow[]
-      >`SELECT * FROM auth.app_devices WHERE notified_at IS NULL ORDER BY created_at LIMIT ${limits.pageSize}`;
+      const rows = await db<(DeviceRow & { has_email: boolean })[]>`
+        SELECT d.*, COALESCE(btrim(u.mail), '') <> '' AS has_email
+        FROM auth.app_devices d JOIN auth.users u ON u.id = d.user_id
+        WHERE d.notified_at IS NULL ORDER BY d.created_at LIMIT ${limits.pageSize}`;
       for (const row of rows) {
         signal?.throwIfAborted();
         // The notification owner deduplicates by deviceId. A crash after send
         // but before this marker is safe; no external effect precedes enrollment.
-        await notify({ deviceId: row.id, userId: row.user_id, name: row.name, assisted: row.assisted });
+        // The notice is email-only, so an account without email relies on the
+        // enrollment audit entry instead of a delivery that can only fail.
+        if (row.has_email) await notify({ deviceId: row.id, userId: row.user_id, name: row.name, assisted: row.assisted });
         await db`UPDATE auth.app_devices SET notified_at=now() WHERE id=${row.id}::uuid AND notified_at IS NULL`;
       }
     },

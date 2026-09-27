@@ -42,6 +42,7 @@ export default ssr<AuthContext>(async (c) => {
     value === "all" ? t.all : value === "pending" ? t.pending : value === "completed" ? t.completed : t.denied;
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
   const categoryPolicy = await readAccountCategoryPolicy();
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
@@ -95,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
               </ButtonLink>
             ))}
             <div class="ml-auto">
-              <CreateUserForm freeIpaEnabled={freeIpaEnabled} categoryPolicy={categoryPolicy} />
+              <CreateUserForm freeIpaEnabled={freeIpaEnabled} localEmailOptional={localEmailOptional} categoryPolicy={categoryPolicy} />
             </div>
           </div>
 
@@ -135,6 +136,7 @@ export default ssr<AuthContext>(async (c) => {
                               buttonLabel={t.create}
                               buttonIcon="ti ti-user-plus"
                               freeIpaEnabled={freeIpaEnabled}
+                              localEmailOptional={localEmailOptional}
                               prefill={{
                                 requestId: request.id,
                                 email: request.email,

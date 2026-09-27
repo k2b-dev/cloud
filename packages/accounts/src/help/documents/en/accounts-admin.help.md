@@ -31,6 +31,7 @@ disappear from the list; you cannot delete your own account.
 
 :::reference
 - **Users:** Search accounts by uid, name, or email. Filter by provider and profile, then open a user to edit profile fields, avatar, roles, provider, expiry, and group membership.
+- **Accounts without email:** When Administration allows local accounts without email, a Login account can be created without an address, or its address can be removed by clearing the field. The person signs in with a paired app or a passkey. Pair their first device with **Pair sign-in app**, or share a one-time **Login token**. Email-only actions such as **Notify** are hidden for these accounts.
 - **Groups:** Open a group to review facts, members, managers, and parent groups. Managers can add or remove users and groups where mutations are available.
 - **Linux identities:** While enabled in Administration → Accounts & sign-in → Linux identities, new local full accounts and promoted guests receive Linux attributes automatically. Administrators can assign missing attributes to older accounts and override home and shell. FreeIPA values are read-only. Local groups can receive a GID after global setup. These actions do not enable computer login or sudo.
 - **Deleted accounts:** Review accounts removed by manual action, expiry cleanup, FreeIPA demotion, or sync scope changes. Metadata remains available from the row details.

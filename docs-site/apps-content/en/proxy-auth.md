@@ -5,7 +5,7 @@ section: Platform
 order: 330
 description: Traefik ForwardAuth clients that protect external services with Cloud groups.
 tags: [proxy-auth, forward-auth, traefik]
-updated: 2026-09-07
+updated: 2026-09-27
 ---
 
 # Proxy Auth
@@ -35,6 +35,9 @@ Cloud groups that may enter, and places the generated verify URL in Traefik.
 | Login redirect | The result for a request without a valid Cloud session |
 | Forbidden result | The result for a signed-in user outside the allowed groups |
 | Identity headers | User, email, and effective groups returned after an allowed check |
+
+`X-Forwarded-Email` is empty for a local account without an email address.
+Upstreams that identify people should use the `X-Forwarded-User` username.
 
 The verify URL is middleware configuration, not a link that users should open.
 Users visit the protected service; Traefik performs the verification request.

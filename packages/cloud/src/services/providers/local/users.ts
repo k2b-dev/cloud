@@ -13,10 +13,30 @@ import * as settings from "../../settings";
 type DbRow = Record<string, unknown>;
 
 export type LocalUserCreateData = {
-  email: string;
+  /** Blank or missing stores NULL, which the email policy below allows only for full accounts. */
+  email?: string | null;
   givenname?: string;
   sn?: string;
   displayName?: string;
+};
+
+/** Created and repaired by the emergency admin login; it never needs an email address. */
+const EMERGENCY_ADMIN_UID = "admin";
+
+/**
+ * A local account may lack an email only as a full account while
+ * `user.local_email_optional` is on. The setting guards writes only, so
+ * existing accounts stay valid when it is turned off.
+ */
+const missingEmailError = async (profile: UserProfile, uid?: string): Promise<MutationResult<never> | null> => {
+  if (uid === EMERGENCY_ADMIN_UID) return null;
+  if (profile !== "user") return { ok: false, error: "Guest accounts need an email address.", status: 400 };
+  if (await settings.get<boolean>("user.local_email_optional")) return null;
+  return {
+    ok: false,
+    error: "Local accounts need an email address. Administrators can allow accounts without one in the account settings.",
+    status: 400,
+  };
 };
 
 const createLocalUid = async (): Promise<string> => {
@@ -31,7 +51,11 @@ export const create = async (params: {
   admin?: boolean;
   actor?: AuditActor;
 }): Promise<MutationResult<{ id: string }>> => {
-  const email = normalizeAccountEmail(params.data.email);
+  const email = normalizeAccountEmail(params.data.email ?? "") || null;
+  if (!email) {
+    const missing = await missingEmailError(params.profile);
+    if (missing) return missing;
+  }
   const uid = await createLocalUid();
   const admin = resolveStoredAdminState({
     provider: "local",
@@ -43,8 +67,10 @@ export const create = async (params: {
     return await writeLocalAccount(async (tx) => {
       if (!(await isAccountCategoryAllowed({ provider: "local", profile: params.profile }, tx)))
         return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
-      await lockAccountEmail(tx, email);
-      if ((await findAccountsByEmail(tx, email)).length > 0) return emailAlreadyUsed();
+      if (email) {
+        await lockAccountEmail(tx, email);
+        if ((await findAccountsByEmail(tx, email)).length > 0) return emailAlreadyUsed();
+      }
       const rows = await tx<{ id: string }[]>`
       INSERT INTO auth.users (
         uid,
@@ -118,18 +144,23 @@ export const update = async (params: {
     givenname?: string;
     sn?: string;
     displayName?: string;
-    mail?: string;
+    /** `null` or blank removes the address when the email policy below allows it. */
+    mail?: string | null;
   };
 }): Promise<MutationResult<void>> => {
   return sql.begin(async (tx) => {
-    if (params.data.mail !== undefined) await lockAccountEmail(tx, params.data.mail);
+    const email = params.data.mail === undefined ? undefined : normalizeAccountEmail(params.data.mail ?? "");
+    if (email) await lockAccountEmail(tx, email);
     else await tx`LOCK TABLE auth.users IN ROW EXCLUSIVE MODE`;
-    const [existing] = await tx<{ mail: string | null }[]>`
-      SELECT mail FROM auth.users WHERE id = ${params.id}::uuid AND provider = 'local' FOR UPDATE
+    const [existing] = await tx<{ uid: string; profile: UserProfile; mail: string | null }[]>`
+      SELECT uid, profile, mail FROM auth.users WHERE id = ${params.id}::uuid AND provider = 'local' FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Local user not found", status: 404 };
-    const email = params.data.mail === undefined ? undefined : normalizeAccountEmail(params.data.mail);
     const changed = email !== undefined && email !== normalizeAccountEmail(existing.mail ?? "");
+    if (changed && !email) {
+      const missing = await missingEmailError(existing.profile, existing.uid);
+      if (missing) return missing;
+    }
     if (changed && email && (await findAccountsByEmail(tx, email)).some((row) => row.id !== params.id)) return emailAlreadyUsed();
     await tx`
       UPDATE auth.users
@@ -150,8 +181,8 @@ export const setProfile = async (params: {
   actor?: AuditActor;
 }): Promise<MutationResult<void>> => {
   const result = await writeLocalAccount(async (tx) => {
-    const rows = await tx<{ provider: string; profile: UserProfile; admin: boolean }[]>`
-    SELECT provider, profile, admin
+    const rows = await tx<{ provider: string; profile: UserProfile; admin: boolean; mail: string | null }[]>`
+    SELECT provider, profile, admin, mail
     FROM auth.users
     WHERE id = ${params.id}::uuid
   `;
@@ -159,6 +190,8 @@ export const setProfile = async (params: {
     if (rows[0]!.provider !== "local") {
       return { ok: false, error: "Only local accounts can change profile locally", status: 400 };
     }
+    if (params.profile === "guest" && !rows[0]!.mail?.trim())
+      return { ok: false, error: "Guest accounts need an email address.", status: 400 };
     if (rows[0]!.profile !== params.profile && !(await isAccountCategoryAllowed({ provider: "local", profile: params.profile }, tx)))
       return { ok: false, error: "This account category is disabled. Contact an administrator.", status: 403 };
 

@@ -830,7 +830,12 @@ const sectionIdForEntry = (entry: SettingFieldDef): string => {
 
   if (entry.key.startsWith("user.app_approval.")) return "user.appApproval";
   if (entry.key === "user.action_notice") return "user.actionNotice";
-  if (entry.key === "user.allow_self_registration" || entry.key === "user.account_requests.enabled" || entry.key === "user.abbr_length")
+  if (
+    entry.key === "user.allow_self_registration" ||
+    entry.key === "user.local_email_optional" ||
+    entry.key === "user.account_requests.enabled" ||
+    entry.key === "user.abbr_length"
+  )
     return "user.registration";
   if (entry.key === "user.session.expiry_hours") {
     return "user.login";

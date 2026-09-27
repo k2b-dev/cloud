@@ -189,24 +189,19 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Request magic link login",
         description:
-          "Request a magic link token for local account sign-in. The `email` field accepts the email address or the username of the account; the link is always sent to the account's email address.",
+          "Request a magic link token for local account sign-in. The `email` field accepts the email address or the username of the account; the link is always sent to the account's email address. The response is the same, and returns equally fast, for existing, unknown and mail-less accounts.",
         responses: {
           200: jsonResponse(MessageResponseSchema, "Request accepted"),
-          400: jsonResponse(ErrorResponseSchema, "Email sign-in not available"),
         },
       }),
       v("json", EmailLoginSchema),
       async (c) => {
         const { email, redirectTo, category } = c.req.valid("json");
 
-        const requestResult = await authFlows.magicLink.request({ email, redirectTo, category, locale: getLocale(c) }, notificationSender);
-        if (!requestResult.ok) {
-          return c.json({ message: requestResult.message }, requestResult.status);
-        }
-
+        authFlows.magicLink.request({ email, redirectTo, category, locale: getLocale(c) }, notificationSender);
         log.info("Magic link requested", { identifier: email });
         return c.json({
-          message: "If this email can sign in with a login code, a code has been sent.",
+          message: "If this account can sign in by email, a sign-in code has been sent. If no message arrives, contact an administrator.",
         });
       },
     )
@@ -251,7 +246,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Request password reset",
         description:
-          "Request a one-time password reset email for an IPA-backed account. The response is always generic to avoid account enumeration.",
+          "Request a one-time password reset email for an IPA-backed account. The response is the same, and returns equally fast, for every address to avoid account enumeration.",
         responses: {
           200: jsonResponse(MessageResponseSchema, "Request accepted"),
         },
@@ -260,7 +255,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
       async (c) => {
         const { email, redirectTo } = c.req.valid("json");
 
-        const result = await authFlows.passwordReset.request({ email, redirectTo, locale: getLocale(c) }, notificationSender);
+        const result = authFlows.passwordReset.request({ email, redirectTo, locale: getLocale(c) }, notificationSender);
         return c.json({ message: result.message });
       },
     )

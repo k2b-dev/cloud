@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # OAuth clients and flows
@@ -106,6 +106,12 @@ are rejected.
 The OpenID Connect `sub` claim is the immutable Cloud user UUID. Human-readable
 account names remain available through `uid`; changing a login name does not
 change the subject seen by clients.
+
+The `email` claim is present only when the account has an email address.
+Local accounts can exist without one when the operator
+[allows it](/en/docs/accounts/registration#allow-local-accounts-without-email);
+their ID tokens and UserInfo responses omit `email` even with the `email` scope.
+Clients should identify users by `sub`.
 
 ## Device authorization flow
 

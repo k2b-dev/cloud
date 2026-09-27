@@ -101,6 +101,58 @@ describe("Accounts creation forms", () => {
     expect(results[0]).toMatchObject({ payload: { email: "ada.new@example.com" }, data: { id: "user-1" } });
   });
 
+  test("Login accounts may skip the email only while the installation allows it; guests never", async () => {
+    const dom = createDomTestHarness();
+    const { CreateUserDialog } = await import("../src/frontend/users/new/CreateUserForm.island");
+    const dispose = render(
+      () =>
+        createComponent(CreateUserDialog, {
+          categoryPolicy: DEFAULT_ACCOUNT_CATEGORY_POLICY,
+          freeIpaEnabled: false,
+          localEmailOptional: true,
+          close: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    input(dom.document, 'input[autocomplete="given-name"]', "Ada");
+    input(dom.document, 'input[autocomplete="family-name"]', "Lovelace");
+    button(dom.document, "Choose an account type").click();
+    await flush();
+    button(dom.document, "Guest").click();
+    await flush();
+    expect(dom.document.querySelector<HTMLInputElement>('input[type="email"]')!.required).toBe(true);
+    submit(dom.document);
+    await flush();
+    expect(requests).toHaveLength(0);
+
+    button(dom.document, "Guest").click();
+    await flush();
+    button(dom.document, "Login").click();
+    await flush();
+    expect(dom.document.querySelector<HTMLInputElement>('input[type="email"]')!.required).toBe(false);
+    expect(dom.document.body.textContent).toContain("signs in with a paired app or a passkey");
+    const welcome = [...dom.document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].at(-1)!;
+    expect(welcome.checked).toBe(false);
+    expect(welcome.disabled).toBe(true);
+    submit(dom.document);
+    await flush();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.payload).toMatchObject({ provider: "local", profile: "user", autoSendNotification: false });
+    expect(requests[0]!.payload.email).toBeUndefined();
+
+    // Typing an address restores the normal welcome flow.
+    requests[0]!.resolve(Response.json({ message: "Local accounts need an email address." }, { status: 400 }));
+    await flush();
+    input(dom.document, 'input[type="email"]', "ada@example.com");
+    await flush();
+    expect(welcome.checked).toBe(true);
+    expect(welcome.disabled).toBe(false);
+  });
+
   test("provider and profile switches preserve person data and clear incompatible administrator access", async () => {
     const dom = createDomTestHarness();
     const { CreateUserDialog } = await import("../src/frontend/users/new/CreateUserForm.island");

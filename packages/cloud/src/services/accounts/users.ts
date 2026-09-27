@@ -34,7 +34,8 @@ type CreateUserData = {
   provider: UserProvider;
   profile: UserProfile;
   admin?: boolean;
-  email: string;
+  /** Optional only for local full accounts while `user.local_email_optional` is on. */
+  email?: string | null;
   givenname: string;
   sn: string;
   displayName?: string;
@@ -47,7 +48,8 @@ type UpdateUserData = {
   givenname?: string;
   sn?: string;
   displayName?: string;
-  mail?: string;
+  /** `null` removes the address of a local account when its policy allows that. */
+  mail?: string | null;
   ipa?: {
     phone?: string;
     address?: {
@@ -456,6 +458,8 @@ export const create = async (params: {
     return { ok: true, data: { user } };
   }
 
+  const email = params.data.email?.trim();
+  if (!email) return { ok: false, error: "FreeIPA accounts need an email address.", status: 400 };
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
 
@@ -464,7 +468,7 @@ export const create = async (params: {
     profile: params.data.profile,
     accountExpires,
     data: {
-      email: params.data.email,
+      email,
       givenname: params.data.givenname,
       sn: params.data.sn,
       displayName: params.data.displayName,
@@ -489,12 +493,14 @@ export const update = async (params: { id: string; data: UpdateUserData }): Prom
   if (!user) return { ok: false, error: "User not found", status: 404 };
 
   if (user.provider === "ipa") {
+    const { mail, ...data } = params.data;
+    if (mail === null) return { ok: false, error: "FreeIPA accounts need an email address.", status: 400 };
     const serviceSession = await getServiceIpaSession();
     if (!serviceSession.ok) return serviceSession;
     return providers.ipa.users.update({
       ipaSession: serviceSession.data,
       id: params.id,
-      data: params.data,
+      data: mail === undefined ? data : { ...data, mail },
     });
   }
 
@@ -590,7 +596,7 @@ export const sendLoginLink = async (params: {
   }
   if (!user.mail) return { ok: false, error: "A local account requires an email address to receive a login link", status: 400 };
 
-  const token = await providers.local.auth.createMagicLinkToken({ email: user.mail, ttlSeconds: 300 });
+  const token = await providers.local.auth.createAccountLoginToken({ userId: user.id, ttlSeconds: 300 });
   const rawAppUrl = await settings.get<string>("app.url");
   const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
   try {
@@ -615,15 +621,9 @@ export const createLoginToken = async (params: {
   if (user.provider !== "local") {
     return { ok: false, error: "Login tokens are only available for local accounts", status: 400 };
   }
-  if (!user.mail) {
-    return { ok: false, error: "A local account requires an email address before a login token can be created", status: 400 };
-  }
 
   const expiresInSeconds = 300;
-  const token = await providers.local.auth.createMagicLinkToken({
-    email: user.mail,
-    ttlSeconds: expiresInSeconds,
-  });
+  const token = await providers.local.auth.createAccountLoginToken({ userId: user.id, ttlSeconds: expiresInSeconds });
   const rawAppUrl = await settings.get<string>("app.url");
   const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
 

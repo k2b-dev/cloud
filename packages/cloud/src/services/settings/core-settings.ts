@@ -502,6 +502,13 @@ export const CORE_SETTINGS = {
     default: false,
     description: "Allow creating a local guest account automatically during first email sign-in when no local account exists yet.",
   },
+  "user.local_email_optional": {
+    kind: "boolean",
+    label: "Allow local accounts without email",
+    default: false,
+    description:
+      "Administrators may create local full accounts without an email address or remove it later. These accounts sign in with a paired app or a passkey; email sign-in links, welcome emails and email notifications are unavailable to them. Guests and FreeIPA accounts still need an email address. Turning this off leaves existing accounts unchanged.",
+  },
   "user.abbr_length": {
     kind: "number",
     label: "Username Abbreviation Length",

@@ -15,7 +15,8 @@ const log = logger("auth:password-reset");
 
 const REQUEST_TTL_SECONDS = 900;
 const REQUEST_COOLDOWN_SECONDS = 60;
-const GENERIC_MESSAGE = "If this account can reset a password, a reset link has been sent.";
+const GENERIC_MESSAGE =
+  "If this account can reset a password, a reset link has been sent. If no message arrives, contact an administrator.";
 
 type ResetTarget = {
   userId: string;
@@ -161,27 +162,42 @@ const changeTemporaryPassword = async (params: {
   };
 };
 
-export const request = async (
-  params: { email: string; redirectTo?: string; locale?: string },
+type ResetRequest = { email: string; redirectTo?: string; locale?: string };
+
+/**
+ * Accepts a reset request without revealing whether an eligible account
+ * exists. The lookup and delivery run after this returns, so every address
+ * gets the same message in the same time. `settled` resolves when that
+ * background work has finished; it never rejects.
+ */
+export const request = (
+  params: ResetRequest,
   notificationSender: AuthNotificationSender,
-): Promise<{ ok: true; message: string }> => {
-  if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return { ok: true, message: GENERIC_MESSAGE };
+): { ok: true; message: string; settled: Promise<void> } => {
+  const settled = deliverResetLink(params, notificationSender).catch((error) => {
+    log.error("Password reset request failed", { error: error instanceof Error ? error.message : String(error) });
+  });
+  return { ok: true, message: GENERIC_MESSAGE, settled };
+};
+
+const deliverResetLink = async (params: ResetRequest, notificationSender: AuthNotificationSender): Promise<void> => {
+  if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return;
   const email = normalizeEmail(params.email);
   if (await isInCooldown(email)) {
     log.info("Password reset request ignored during cooldown");
-    return { ok: true, message: GENERIC_MESSAGE };
+    return;
   }
 
   const freeIpaConfig = await getFreeIpaConfig();
   if (!freeIpaConfig.enabled || !freeIpaConfig.configured) {
     log.info("Password reset request accepted while FreeIPA is unavailable");
-    return { ok: true, message: GENERIC_MESSAGE };
+    return;
   }
 
   const target = await resolveResetTarget(email);
   if (!target) {
     log.info("Password reset request accepted without eligible target");
-    return { ok: true, message: GENERIC_MESSAGE };
+    return;
   }
 
   try {
@@ -194,7 +210,6 @@ export const request = async (
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  return { ok: true, message: GENERIC_MESSAGE };
 };
 
 export const complete = async (params: { token?: string; newPassword: string }): Promise<ResetAttemptSuccess | ResetAttemptFailure> => {

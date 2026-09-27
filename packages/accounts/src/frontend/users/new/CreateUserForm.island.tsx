@@ -48,7 +48,7 @@ type CreateUserPayload =
       provider: "local";
       profile: LocalProfile;
       admin?: boolean;
-      email: string;
+      email?: string;
       givenname: string;
       sn: string;
       displayName?: string;
@@ -70,12 +70,15 @@ type Props = {
   autoOpen?: boolean;
   hideButton?: boolean;
   freeIpaEnabled?: boolean;
+  /** Mirrors `user.local_email_optional`; the server enforces it. */
+  localEmailOptional?: boolean;
 };
 
 type AccountsCopy = ReturnType<typeof accountsMessages.resolve>["t"];
 
 export function CreateUserDialog(props: {
   freeIpaEnabled: boolean;
+  localEmailOptional?: boolean;
   categoryPolicy: AccountCategoryPolicy;
   prefill?: PrefillData;
   close: (result?: CreateFlowResult) => void;
@@ -101,6 +104,9 @@ export function CreateUserDialog(props: {
   const [autoSendNotification, setAutoSendNotification] = createSignal(true);
   const [displayNameTouched, setDisplayNameTouched] = createSignal(!!props.prefill?.displayName);
   const [errors, setErrors] = createSignal<Record<string, string>>({});
+  // Only full Login accounts may lack an email; guests, FreeIPA and requests keep it required.
+  const emailOptional = () => Boolean(props.localEmailOptional) && category() === "login" && !props.prefill;
+  const withoutEmail = () => emailOptional() && !email().trim();
 
   createEffect(() => {
     if (!displayNameTouched()) {
@@ -139,7 +145,7 @@ export function CreateUserDialog(props: {
   const validate = () => {
     const nextErrors: Record<string, string> = {};
     if (!category()) nextErrors.category = messages().chooseAccountType;
-    if (!email().trim()) nextErrors.email = messages().emailRequired;
+    if (!email().trim() && !emailOptional()) nextErrors.email = messages().emailRequired;
     if (!givenname().trim()) nextErrors.givenname = messages().firstNameRequired;
     if (!sn().trim()) nextErrors.sn = messages().lastNameRequired;
     setErrors(nextErrors);
@@ -166,11 +172,11 @@ export function CreateUserDialog(props: {
       provider: "local",
       profile: profile(),
       admin: profile() === "user" ? admin() : false,
-      email: email().trim(),
+      email: email().trim() || undefined,
       givenname: givenname().trim(),
       sn: sn().trim(),
       displayName: displayName().trim() || undefined,
-      autoSendNotification: autoSendNotification(),
+      autoSendNotification: autoSendNotification() && !withoutEmail(),
       requestId: props.prefill?.requestId,
     });
   };
@@ -252,7 +258,8 @@ export function CreateUserDialog(props: {
             label={messages().email}
             type="email"
             autocomplete="email"
-            required
+            required={!emailOptional()}
+            description={emailOptional() ? messages().emailOptionalHelp : undefined}
             value={email}
             onValueChange={setEmail}
             error={() => errors().email}
@@ -290,12 +297,12 @@ export function CreateUserDialog(props: {
             description={
               category() ? (provider() === "ipa" ? messages().ipaWelcomeDescription : messages().localWelcomeDescription) : undefined
             }
-            value={autoSendNotification}
+            value={() => autoSendNotification() && !withoutEmail()}
             onValueChange={(value) => {
               setAutoSendNotification(value);
               setDirty(true);
             }}
-            disabled={createMutation.loading()}
+            disabled={createMutation.loading() || withoutEmail()}
           />
           <Show when={category()}>
             <NoticeCard tone="info" bodyClass="flex flex-col gap-2">
@@ -303,10 +310,10 @@ export function CreateUserDialog(props: {
               <Show
                 when={provider() === "ipa"}
                 fallback={
-                  <>
+                  <Show when={!withoutEmail()} fallback={<p>{messages().localWithoutEmailHelp}</p>}>
                     <p>{messages().localLoginHelp({ loginLabel: props.categoryPolicy.login.label })}</p>
                     <p>{autoSendNotification() ? messages().localDeliveryHelp : messages().localNoDeliveryHelp}</p>
-                  </>
+                  </Show>
                 }
               >
                 <p>{messages().ipaAccessAfterCreation}</p>
@@ -338,7 +345,13 @@ export function CreateUserDialog(props: {
 
 const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse, t: AccountsCopy, locale: string, loginLabel: string) => {
   const isIpa = payload.provider === "ipa";
-  const notificationMessage = data.notificationSent ? (isIpa ? t.ipaWelcomeSent : t.localWelcomeSent) : t.welcomeNotSent;
+  const notificationMessage = data.notificationSent
+    ? isIpa
+      ? t.ipaWelcomeSent
+      : t.localWelcomeSent
+    : !isIpa && !payload.email
+      ? t.createdWithoutEmail
+      : t.welcomeNotSent;
 
   return prompts.dialog<"view">(
     (close) => (
@@ -409,7 +422,13 @@ export default function CreateUserForm(props: Props) {
     try {
       const result = await dialogCore.open<CreateFlowResult>(
         (close) => (
-          <CreateUserDialog freeIpaEnabled={freeIpaEnabled} categoryPolicy={props.categoryPolicy} prefill={props.prefill} close={close} />
+          <CreateUserDialog
+            freeIpaEnabled={freeIpaEnabled}
+            localEmailOptional={props.localEmailOptional}
+            categoryPolicy={props.categoryPolicy}
+            prefill={props.prefill}
+            close={close}
+          />
         ),
         {
           ...panelDialogOptions,

@@ -119,6 +119,10 @@ describe("account category administration", () => {
     expect(registration).toContain("user.action_notice");
     expect(registration).toContain("No notice will be shown for these sample values.");
     expect(registration).toContain("user.account_requests.enabled");
+    expect(registration).toContain("user.local_email_optional");
+    expect(registration).toContain("Allow local accounts without email");
+    expect(render(true, "de", "registration")).toContain("Lokale Konten ohne E-Mail-Adresse erlauben");
+    expect(login).not.toContain("user.local_email_optional");
     expect(registration).not.toContain("Guest accounts allowed");
     expect(registration).not.toContain("App website address (origin)");
     expect(accountSettingsSection("user.session.max_age")).toBe("sign-in");

@@ -21,6 +21,7 @@ export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const categoryPolicy = await readAccountCategoryPolicy();
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
   const listState = parseUsersListState({
     search: c.req.query("search"),
     page: c.req.query("page"),
@@ -79,7 +80,12 @@ export default ssr<AuthContext>(async (c) => {
               {t.duplicateEmails}
             </ButtonLink>
             <div class="ml-auto">
-              <CreateUserForm buttonClass="shrink-0" freeIpaEnabled={freeIpaEnabled} categoryPolicy={categoryPolicy} />
+              <CreateUserForm
+                buttonClass="shrink-0"
+                freeIpaEnabled={freeIpaEnabled}
+                localEmailOptional={localEmailOptional}
+                categoryPolicy={categoryPolicy}
+              />
             </div>
           </div>
 

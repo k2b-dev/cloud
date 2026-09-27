@@ -78,7 +78,7 @@ export function createUserActions(props: UserActionsProps) {
       givenname: string;
       sn: string;
       displayName: string;
-      mail?: string;
+      mail?: string | null;
       ipa?: {
         phone?: string;
       };
@@ -93,7 +93,8 @@ export function createUserActions(props: UserActionsProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().updateUserFailed);
       }
-      await notice("user.update", { email: vars.mail ?? props.user.mail ?? "", firstName: vars.givenname, lastName: vars.sn });
+      const email = vars.mail === undefined ? props.user.mail : vars.mail;
+      await notice("user.update", { email: email ?? "", firstName: vars.givenname, lastName: vars.sn });
     },
     onSuccess: () => refreshCurrentPath(),
     onError: (err) => prompts.error(err.message),
@@ -374,7 +375,8 @@ export function createUserActions(props: UserActionsProps) {
         givenname: result.givenname,
         sn: result.sn,
         displayName: result.displayName,
-        mail: result.mail || undefined,
+        // An emptied field removes the address; the server decides whether this account may lack one.
+        mail: (result.mail ?? "").trim() || (props.user.mail ? null : undefined),
         ...(props.user.provider === "ipa" ? { ipa: { phone: result.phone || undefined } } : {}),
       });
     }
@@ -560,7 +562,9 @@ export function createUserActions(props: UserActionsProps) {
   const isGuestProfile = props.user.profile === "guest";
   const isLocalAdmin = isLocalUser && props.user.roles.includes("admin");
   const canCreateIpa = props.freeIpaEnabled && isLocalUser && Boolean(props.user.mail);
-  const canCreateLoginToken = isLocalUser && Boolean(props.user.mail);
+  // Login tokens are bound to the account, so they also work without an email address.
+  const canCreateLoginToken = isLocalUser;
+  const canNotify = Boolean(props.user.mail);
   const canSetExpiry = canMutateUser;
   const auditByUserHref = `/app/accounts/audit?actor=${encodeURIComponent(props.user.id)}`;
   const auditOnUserHref = `/app/accounts/audit?target=${encodeURIComponent(props.user.id)}`;
@@ -571,6 +575,7 @@ export function createUserActions(props: UserActionsProps) {
     canCreateIpa,
     canCreateLoginToken,
     canMutateUser,
+    canNotify,
     canSetExpiry,
     handleCreateIpa,
     handleCreateLoginToken,

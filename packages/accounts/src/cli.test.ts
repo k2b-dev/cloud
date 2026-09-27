@@ -370,6 +370,35 @@ describe("accounts CLI", () => {
     ]);
   });
 
+  test("creates local full accounts without --email and leaves the policy to the server", async () => {
+    const { ctx, calls } = createContext(["users", "create"], { provider: "local", "given-name": "Ada", sn: "Lovelace" }, [
+      jsonResponse({ id: "u1", uid: "ada", accountExpires: null, notificationSent: false }, 201),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[0]?.path).toBe("/api/accounts/users");
+    const body = JSON.parse(String(calls[0]?.init?.body));
+    expect(body).toMatchObject({ provider: "local", profile: "user", givenname: "Ada", sn: "Lovelace" });
+    expect(body).not.toHaveProperty("email");
+
+    const ipa = createContext(["users", "create"], { provider: "ipa", "given-name": "Ada", sn: "Lovelace" });
+    await expect(accountsCli.run(ipa.ctx)).rejects.toThrow("FreeIPA accounts need --email.");
+    expect(ipa.calls).toHaveLength(0);
+  });
+
+  test("removes an email with --remove-email and rejects combining it with --mail", async () => {
+    const { ctx, calls } = createContext(["users", "update", "alice"], { "remove-email": true }, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ message: "User updated." }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[1]?.init?.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ mail: null });
+
+    const both = createContext(["users", "update", "alice"], { "remove-email": true, mail: "a@example.org" });
+    await expect(accountsCli.run(both.ctx)).rejects.toThrow("Use either --mail or --remove-email.");
+    expect(both.calls).toHaveLength(0);
+  });
+
   test("validates avatar input before resolving the user", async () => {
     const { ctx, calls } = createContext(["users", "avatar", "set", "alice"], {}, []);
 

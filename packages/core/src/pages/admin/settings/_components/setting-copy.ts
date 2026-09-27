@@ -178,6 +178,11 @@ const de: Record<string, SettingCopy> = {
     label: "Selbstregistrierung erlauben",
     description: "Erstellt bei der ersten E-Mail-Anmeldung automatisch ein lokales Gastkonto, wenn noch kein Konto vorhanden ist.",
   },
+  "user.local_email_optional": {
+    label: "Lokale Konten ohne E-Mail-Adresse erlauben",
+    description:
+      "Administratoren können lokale Vollkonten ohne E-Mail-Adresse anlegen oder die Adresse später entfernen. Diese Konten melden sich mit einer gekoppelten App oder einem Passkey an; Anmeldelinks, Willkommens-E-Mails und E-Mail-Benachrichtigungen stehen ihnen nicht zur Verfügung. Gäste und FreeIPA-Konten brauchen weiterhin eine E-Mail-Adresse. Beim Ausschalten bleiben bestehende Konten unverändert.",
+  },
   "user.abbr_length": { label: "Länge der Benutzerkürzel", description: "Länge zufällig erzeugter Benutzerkürzel für neue Konten." },
   "user.session.expiry_hours": { label: "Sitzungsdauer in Stunden", description: "Dauer, für die eine Anmeldung gültig bleibt." },
   "user.account.ipa_expires_days": {
