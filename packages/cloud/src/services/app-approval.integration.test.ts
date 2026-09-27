@@ -30,6 +30,7 @@ import {
 } from "./app-approval";
 import { createIdentityPublicRoutes } from "./identity";
 import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
+import { session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 
@@ -444,6 +445,225 @@ suite("isolated app approval protocol", () => {
     cfg.enabled = false;
     expect((await service.listDevices(owner.actor)).items[0]?.revokedAt).not.toBeNull();
     await expect(service.startLogin(owner.uid, "login")).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  });
+
+  test("only administrators list and revoke another account's devices, idempotently and audited", async () => {
+    const owner = await account(),
+      admin = await account(),
+      other = await account();
+    admin.actor.admin = true;
+    const device = await enroll(owner),
+      spare = await enroll(owner),
+      unrelated = await enroll(other);
+    const started = await service.startLogin(owner.uid, "login");
+    await approve(device, started.requestId);
+
+    for (const actor of [other.actor, { ...admin.actor, admin: false }, { ...owner.actor, admin: false }]) {
+      await expect(service.listUserDevices(actor, owner.id)).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+      await expect(service.revokeUserDevice(actor, owner.id, device.id)).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    }
+    expect((await service.listUserDevices(admin.actor, owner.id)).map((item) => item.id).sort()).toEqual([device.id, spare.id].sort());
+    // A device is addressed together with its account.
+    await expect(service.revokeUserDevice(admin.actor, other.id, device.id)).rejects.toMatchObject({ status: 404 });
+    await expect(service.revokeUserDevice(admin.actor, owner.id, unrelated.id)).rejects.toMatchObject({ status: 404 });
+
+    // Revocation works while app sign-in is switched off: it only removes access.
+    cfg.enabled = false;
+    const revoked = await service.revokeUserDevice(admin.actor, owner.id, device.id);
+    expect(revoked).toMatchObject({ revoked: true, device: { id: device.id, name: "Test device", revokedAt: expect.any(String) } });
+    expect(await service.revokeUserDevice(admin.actor, owner.id, device.id)).toMatchObject({ revoked: false, device: { id: device.id } });
+    cfg.enabled = true;
+
+    // The revoked device can neither poll, approve, nor complete the approval it already gave.
+    await expect(service.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const next = await service.startLogin(owner.uid, "login");
+    const [login] = await sql<{ challenge: string }[]>`SELECT challenge FROM auth.app_logins WHERE id=${next.requestId}::uuid`;
+    await expect(
+      service.deviceCommand(
+        await proof(device, {
+          operation: "decide",
+          requestId: next.requestId,
+          challenge: login!.challenge,
+          comparison: next.comparison,
+          decision: "approve",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // Other devices keep working, and the owner's own list still shows the revocation.
+    await approve(spare, next.requestId);
+    expect(await service.consumeLogin(next.requestId, next.browserSecret)).toBe(owner.id);
+    expect((await service.listUserDevices(admin.actor, owner.id)).map((item) => item.id)).toEqual([spare.id]);
+    expect((await service.listDevices(owner.actor)).items.find((item) => item.id === device.id)?.revokedAt).not.toBeNull();
+    expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }))).toMatchObject({ requests: [] });
+
+    const events = await sql<
+      { actor_user_id: string; target_type: string; metadata: { targetUserId?: string } }[]
+    >`SELECT actor_user_id, target_type, metadata FROM audit.events WHERE action='auth.app.device.revoke' AND target_id=${device.id}`;
+    expect(events).toEqual([{ actor_user_id: admin.id, target_type: "app_device", metadata: { targetUserId: owner.id } }]);
+  });
+
+  test("signing out everywhere revokes every paired device of the account", async () => {
+    const owner = await account(),
+      other = await account();
+    const device = await enroll(owner),
+      elsewhere = await enroll(owner, cloudB),
+      unrelated = await enroll(other);
+    const started = await service.startLogin(owner.uid, "login");
+    await approve(device, started.requestId);
+    const key = await keys();
+    const pairing = await service.startPairing(owner.actor);
+    const claim = { pairingId: pairing.pairingId, secret: pairing.secret, publicKey: key.publicKey, name: "In flight" };
+    const claimed = await service.claimPairing({
+      ...claim,
+      signature: await sign(key.privateKey, appPairingProofMessage(cfg.issuer, claim)),
+    });
+
+    await session.revokeAllForUser(owner.id);
+
+    await expect(service.consumeLogin(started.requestId, started.browserSecret)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(cloudB.deviceCommand(await proof(elsewhere, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // A pairing started from the revoked session cannot add a device afterwards.
+    await expect(service.confirmPairing(owner.actor, pairing.pairingId, claimed.comparison)).rejects.toMatchObject({
+      code: "REAUTHENTICATE",
+    });
+    const rows = await sql<
+      { id: string; revoked_at: Date | null }[]
+    >`SELECT id, revoked_at FROM auth.app_devices WHERE user_id=${owner.id}::uuid`;
+    expect(rows.map((row) => row.id).sort()).toEqual([device.id, elsewhere.id].sort());
+    expect(rows.every((row) => row.revoked_at)).toBe(true);
+    expect(await service.deviceCommand(await proof(unrelated, { operation: "pending" }))).toMatchObject({ requests: [] });
+    // Each device revocation is audited as a system consequence of the sign-out.
+    const events = await sql<
+      { target_id: string; actor_user_id: string | null; metadata: Record<string, unknown> }[]
+    >`SELECT target_id, actor_user_id, metadata FROM audit.events WHERE action='auth.app.device.revoke' AND metadata->>'targetUserId'=${owner.id} ORDER BY target_id`;
+    expect(events).toEqual(
+      [device.id, elsewhere.id].sort().map((id) => ({
+        target_id: id,
+        actor_user_id: null,
+        metadata: { targetUserId: owner.id, provenance: "system", reason: "sign_out_everywhere" },
+      })),
+    );
+
+    // After signing in again, the owner pairs a new device that works.
+    await createTestSession(owner.id);
+    const [family] = await sql<
+      { sid: string }[]
+    >`SELECT sid FROM auth.session_families WHERE user_id=${owner.id}::uuid ORDER BY issued_at DESC LIMIT 1`;
+    const replacement = await enroll({ ...owner, actor: { ...owner.actor, sid: family!.sid } });
+    const again = await service.startLogin(owner.uid, "login");
+    await approve(replacement, again.requestId);
+    expect(await service.consumeLogin(again.requestId, again.browserSecret)).toBe(owner.id);
+  });
+
+  test("an assisted pairing started before a sign-out everywhere cannot be confirmed", async () => {
+    const owner = await account(),
+      admin = await account();
+    admin.actor.admin = true;
+    cfg.adminPairing = true;
+    const claimAssisted = async () => {
+      const key = await keys();
+      const pairing = await service.startPairing(admin.actor, owner.id);
+      const claim = { pairingId: pairing.pairingId, secret: pairing.secret, publicKey: key.publicKey, name: "Assisted" };
+      const claimed = await service.claimPairing({
+        ...claim,
+        signature: await sign(key.privateKey, appPairingProofMessage(cfg.issuer, claim)),
+      });
+      return { pairing, claimed };
+    };
+    const stale = await claimAssisted();
+
+    await session.revokeAllForUser(owner.id);
+
+    // The administrator's session is still current, but the pairing belongs to the ended epoch.
+    await expect(service.inspectPairing(admin.actor, stale.pairing.pairingId)).rejects.toMatchObject({ code: "UNAVAILABLE", status: 404 });
+    await expect(service.confirmPairing(admin.actor, stale.pairing.pairingId, stale.claimed.comparison)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(await sql`SELECT id FROM auth.app_devices WHERE user_id=${owner.id}::uuid`).toHaveLength(0);
+    await service.cancelPairing(admin.actor, stale.pairing.pairingId);
+
+    // A pairing the administrator starts afterwards works as usual.
+    const fresh = await claimAssisted();
+    expect(await service.inspectPairing(admin.actor, fresh.pairing.pairingId)).toMatchObject({ state: "claimed" });
+    await service.confirmPairing(admin.actor, fresh.pairing.pairingId, fresh.claimed.comparison);
+    expect(await service.listUserDevices(admin.actor, owner.id)).toEqual([
+      expect.objectContaining({ id: fresh.claimed.deviceId, assisted: true, revokedAt: null }),
+    ]);
+  });
+
+  test.each([
+    ["self", "REAUTHENTICATE"],
+    ["assisted", "CONFLICT"],
+  ] as const)("a pairing confirmed during a sign-out everywhere cannot leave an active device (%s)", async (kind, code) => {
+    const owner = await account(),
+      admin = await account();
+    admin.actor.admin = true;
+    cfg.adminPairing = true;
+    const initiator = kind === "self" ? owner.actor : admin.actor;
+    const key = await keys();
+    const pairing = await service.startPairing(initiator, owner.id);
+    const claim = { pairingId: pairing.pairingId, secret: pairing.secret, publicKey: key.publicKey, name: "Racing" };
+    const claimed = await service.claimPairing({
+      ...claim,
+      signature: await sign(key.privateKey, appPairingProofMessage(cfg.issuer, claim)),
+    });
+    // Counts the sessions queued behind the lock holder, directly or behind each other.
+    const queued = async (holder: number, count: number) => {
+      for (let attempt = 0; attempt < 500; attempt += 1) {
+        const [row] = await sql<{ waiting: number }[]>`WITH RECURSIVE queue(pid) AS (
+            SELECT ${holder}::int
+            UNION SELECT a.pid FROM pg_stat_activity a JOIN queue q ON q.pid = ANY(pg_blocking_pids(a.pid))
+          ) SELECT count(*)::int - 1 AS waiting FROM queue`;
+        if (row!.waiting >= count) return;
+        await Bun.sleep(10);
+      }
+      throw new Error(`Expected ${count} sessions waiting for the account row`);
+    };
+    // Hold the account row, queue the sign-out first and the confirmation behind it. Checking the
+    // session or epoch before taking the lock would pass with the old epoch and insert the device afterwards.
+    const held = Promise.withResolvers<number>(),
+      release = Promise.withResolvers<void>();
+    const holder = sql.begin(async (tx) => {
+      const [row] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid FROM auth.users WHERE id=${owner.id}::uuid FOR UPDATE`;
+      held.resolve(row!.pid);
+      await release.promise;
+    });
+    try {
+      const pid = await held.promise;
+      const signOut = session.revokeAllForUser(owner.id);
+      await queued(pid, 1);
+      // Settle into a value: Bun's expect(...).rejects would wait for it before the lock is released.
+      const confirmed = service.confirmPairing(initiator, pairing.pairingId, claimed.comparison).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await queued(pid, 2);
+      release.resolve();
+      await signOut;
+      expect(await confirmed).toMatchObject({ code });
+    } finally {
+      release.resolve();
+      await holder;
+    }
+    expect(await sql`SELECT id FROM auth.app_devices WHERE user_id=${owner.id}::uuid AND revoked_at IS NULL`).toHaveLength(0);
+  });
+
+  test("request-time expiry ends sessions but keeps paired devices for when it is lifted", async () => {
+    for (const authenticate of [session.authenticate, session.authenticateUserId]) {
+      const owner = await account(),
+        device = await enroll(owner);
+      expect(await authenticate(owner.token)).not.toBeNull();
+      await sql`UPDATE auth.users SET account_expires=now()-interval '1 minute' WHERE id=${owner.id}::uuid`;
+      expect(await authenticate(owner.token)).toBeNull();
+      await expect(service.deviceCommand(await proof(device, { operation: "pending" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      await sql`UPDATE auth.users SET account_expires=NULL WHERE id=${owner.id}::uuid`;
+      // The expired request ended the session; the device works again without re-pairing.
+      expect(await authenticate(owner.token)).toBeNull();
+      expect(await service.deviceCommand(await proof(device, { operation: "pending" }))).toMatchObject({ requests: [] });
+    }
   });
 
   test("account epoch changes, expiry and deletion invalidate credentials and requests", async () => {

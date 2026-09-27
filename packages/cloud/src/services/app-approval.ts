@@ -115,6 +115,8 @@ type PairingRow = {
   initiated_by: string;
   initiator_sid: string;
   assisted: boolean;
+  /** The target account's epoch at start; a sign-out everywhere moves it and voids the pairing. */
+  auth_epoch: string | null;
   secret_hash: string;
   state: string;
   expires_at: Date;
@@ -137,6 +139,8 @@ type LoginRow = {
   expires_at: Date;
 };
 export type AppApprovalActor = { userId: string; sid: string; admin: boolean };
+/** Administration of another account's devices needs current admin authority, not a recent session. */
+export type AppDeviceAdministrator = Pick<AppApprovalActor, "userId" | "admin">;
 export type AppDeviceEnrollmentNotice = { deviceId: string; userId: string; name: string; assisted: boolean };
 /** Best-effort wake-ups for browsers waiting on a login decision. Postgres stays authoritative. */
 export type AppLoginDecisionHints = {
@@ -250,7 +254,7 @@ export const createAppApprovalService = (
       (pairing.assisted && (!actor.admin || !cfg.adminPairing))
     )
       return reject("FORBIDDEN", 403);
-    await eligible(tx, pairing.user_id);
+    return eligible(tx, pairing.user_id);
   };
   const activeDevice = async (tx: SQL, id: string, issuer: string): Promise<DeviceRow> => {
     const [device] = await tx<DeviceRow[]>`SELECT * FROM auth.app_devices WHERE id = ${id}::uuid AND issuer = ${issuer} FOR UPDATE`;
@@ -314,13 +318,13 @@ export const createAppApprovalService = (
         await fresh(tx, actor);
         if (targetId !== actor.userId && (!actor.admin || !cfg.adminPairing)) return reject("FORBIDDEN", 403);
         await tx`SELECT id FROM auth.users WHERE id = ${targetId}::uuid FOR UPDATE`;
-        await eligible(tx, targetId);
+        const target = await eligible(tx, targetId);
         const [count] = await tx<
           { count: number }[]
         >`SELECT count(*)::int AS count FROM auth.app_pairings WHERE issuer = ${cfg.issuer} AND user_id = ${targetId}::uuid AND expires_at > now() AND state IN ('pending','claimed')`;
         if ((count?.count ?? 0) >= limits.pendingPerAccount) return reject("LIMIT_REACHED", 429);
-        await tx`INSERT INTO auth.app_pairings(id, issuer, user_id, initiated_by, initiator_sid, assisted, secret_hash, expires_at)
-          VALUES (${id}::uuid,${cfg.issuer},${targetId}::uuid,${actor.userId}::uuid,${actor.sid}::uuid,${targetId !== actor.userId},${hash(token)},${expiresAt})`;
+        await tx`INSERT INTO auth.app_pairings(id, issuer, user_id, initiated_by, initiator_sid, assisted, auth_epoch, secret_hash, expires_at)
+          VALUES (${id}::uuid,${cfg.issuer},${targetId}::uuid,${actor.userId}::uuid,${actor.sid}::uuid,${targetId !== actor.userId},${target.auth_epoch},${hash(token)},${expiresAt})`;
         await record(tx, "pairing.start", actor.userId, id, { targetUserId: targetId, assisted: targetId !== actor.userId });
         return { protocol: APP_APPROVAL_PROTOCOL, issuer: cfg.issuer, pairingId: id, secret: token, expiresAt: iso(expiresAt) };
       });
@@ -356,7 +360,8 @@ export const createAppApprovalService = (
       return db.begin(async (tx) => {
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id = ${id}::uuid AND issuer = ${cfg.issuer}`;
         if (!p || new Date(p.expires_at).getTime() <= Date.now()) return reject("UNAVAILABLE", 404);
-        await authorizePairing(tx, actor, p, cfg);
+        // A pairing from before the account was signed out everywhere reads as expired.
+        if ((await authorizePairing(tx, actor, p, cfg)).auth_epoch !== p.auth_epoch) return reject("UNAVAILABLE", 404);
         return { state: p.state, name: p.name, comparison: p.comparison, deviceId: p.device_id, userId: p.user_id };
       });
     },
@@ -373,8 +378,11 @@ export const createAppApprovalService = (
           !p.name
         )
           return reject("CONFLICT", 409);
-        await authorizePairing(tx, actor, p, cfg);
+        // Lock the account before checking the session and epoch: a concurrent sign-out
+        // everywhere either revokes this device after it exists, or fails these checks.
+        // The epoch also voids assisted pairings, whose administrator session outlives it.
         await tx`SELECT id FROM auth.users WHERE id = ${p.user_id}::uuid FOR UPDATE`;
+        if ((await authorizePairing(tx, actor, p, cfg)).auth_epoch !== p.auth_epoch) return reject("CONFLICT", 409);
         const [count] = await tx<
           { count: number }[]
         >`SELECT count(*)::int AS count FROM auth.app_devices WHERE issuer = ${cfg.issuer} AND user_id = ${p.user_id}::uuid AND revoked_at IS NULL`;
@@ -421,6 +429,31 @@ export const createAppApprovalService = (
         if (name !== undefined) await tx`UPDATE auth.app_devices SET name=${name} WHERE id=${id}::uuid`;
         else await tx`UPDATE auth.app_devices SET revoked_at=COALESCE(revoked_at,now()) WHERE id=${id}::uuid`;
         await record(tx, name === undefined ? "device.revoke" : "device.rename", actor.userId, id);
+      });
+    },
+    /** Active devices of any account, for administrators. Bounded by the active-device limit. */
+    listUserDevices: async (actor: AppDeviceAdministrator, userId: string): Promise<AppDeviceView[]> => {
+      if (!actor.admin) return reject("FORBIDDEN", 403);
+      const cfg = await config(false);
+      const rows = await db<
+        DeviceRow[]
+      >`SELECT * FROM auth.app_devices WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL ORDER BY created_at, id LIMIT ${limits.devicesPerAccount}`;
+      return rows.map(view);
+    },
+    /** Idempotent: `revoked` is true only for the call that revoked the device. Works while the account is
+     * expired or app sign-in is disabled, because revocation only removes access. */
+    revokeUserDevice: async (actor: AppDeviceAdministrator, userId: string, id: string) => {
+      if (!actor.admin) return reject("FORBIDDEN", 403);
+      const cfg = await config(false);
+      return db.begin(async (tx) => {
+        const [device] = await tx<
+          DeviceRow[]
+        >`SELECT * FROM auth.app_devices WHERE id=${id}::uuid AND issuer=${cfg.issuer} AND user_id=${userId}::uuid FOR UPDATE`;
+        if (!device) return reject("UNAVAILABLE", 404);
+        if (device.revoked_at) return { device: view(device), revoked: false };
+        const [row] = await tx<DeviceRow[]>`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${id}::uuid RETURNING *`;
+        await record(tx, "device.revoke", actor.userId, id, { targetUserId: userId });
+        return { device: view(row!), revoked: true };
       });
     },
     startLogin: async (identifier: string, category: AccountCategory) => {

@@ -38,7 +38,7 @@ const accept = async (token: string, body: unknown, origin = issuer) =>
 
 suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
   beforeAll(async () => {
-    for (const name of ["auth", "audit", "settings", "logging"])
+    for (const name of ["auth", "app-approval", "audit", "settings", "logging"])
       await (await import(`../../../core/src/migrate/core/${name}.ts`)).migrate();
     await settings.set("app.url", issuer);
     await settings.set("legal.terms.content", "Fixture terms");

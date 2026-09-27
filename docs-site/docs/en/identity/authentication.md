@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # Request identity
@@ -163,7 +163,9 @@ The cookie is:
 - valid for the configured `user.session.expiry_hours`.
 
 Signing out removes the current session. Revoking all sessions for a user
-invalidates every older session.
+with `auth.session.revokeAllForUser` invalidates every older session and also
+revokes the account's paired
+[sign-in devices](/en/docs/operations/app-approval#what-revocation-ends).
 
 After credential verification, Core completes browser sign-in through
 `/auth/continue`. If the account has not accepted the terms yet, the new session

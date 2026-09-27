@@ -52,6 +52,11 @@ mögliche Unterstützung durch die Administration. Benenne Geräte um oder
 widerrufe Geräte, die du nicht mehr kontrollierst. Der Widerruf verhindert neue
 Anmeldungen, beendet aber keine bestehenden Sitzungen. Die Verwaltung bleibt
 auch bei deaktivierter App-Anmeldung verfügbar.
+Hast du dein Gerät verloren und kannst dich nicht anmelden, bitte die
+Administration, es zu widerrufen. Setzt du dein Passwort mit **Passwort
+zurücksetzen** auf der Anmeldeseite zurück oder meldet Cloud dein Konto auf
+andere Weise überall ab, werden auch deine gekoppelten Geräte widerrufen;
+kopple sie danach neu.
 
 Koppeln, Umbenennen und Widerrufen können eine Bestätigung deiner Identität verlangen.
 Melde dich mit demselben Account an, ohne dich vorher abzumelden.

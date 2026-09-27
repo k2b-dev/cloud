@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
 import { notifications, renderTemplate } from "@k2b/cloud/services";
-import type { AccountsNotificationSender } from "@k2b/cloud/services/accounts/notification-sender";
+import type { AccountNotificationDeliveryResult, AccountsNotificationSender } from "@k2b/cloud/services/accounts/notification-sender";
 import * as settings from "@k2b/cloud/services/settings";
 import { dates, i18n } from "@k2b/stdlib";
 import { z } from "zod";
@@ -24,6 +24,9 @@ const notificationMessages = i18n.define({
       requestUpdate: "Account request update",
       requestReviewed: "Your account request was reviewed.",
       administrativeMessage: "You received a new message from the administration.",
+      deviceRevoked: "Sign-in device revoked",
+      deviceRevokedBody: ({ name }: { name: string }) =>
+        `An administrator revoked the device “${name}”. It can no longer approve Cloud sign-ins. To keep using app sign-in, pair a device again or contact your administrator.`,
     },
     de: {
       loginTitle: "Anmeldecode",
@@ -36,6 +39,9 @@ const notificationMessages = i18n.define({
       requestUpdate: "Aktualisierung deiner Kontoanfrage",
       requestReviewed: "Deine Kontoanfrage wurde geprüft.",
       administrativeMessage: "Du hast eine neue Nachricht von der Verwaltung erhalten.",
+      deviceRevoked: "Anmeldegerät widerrufen",
+      deviceRevokedBody: ({ name }) =>
+        `Die Verwaltung hat das Gerät „${name}“ widerrufen. Es kann keine Cloud-Anmeldungen mehr bestätigen. Um die App-Anmeldung weiter zu nutzen, kopple erneut ein Gerät oder wende dich an die Verwaltung.`,
     },
   },
 });
@@ -156,13 +162,41 @@ export const NOTIFICATIONS = {
     render: ({ subject }, { locale }) => ({ title: subject, body: text(locale).administrativeMessage, targetHref: "/me/notifications" }),
     email: ({ subject, rawHtml }) => ({ subject, rawHtml }),
   }),
+  deviceRevoked: notification({
+    recipient: "user",
+    label: "Sign-in device revoked",
+    description: "Security notice when an administrator revokes a device that approves Cloud sign-ins.",
+    presentation: presentation(
+      "Anmeldegerät widerrufen",
+      "Sicherheitshinweis, wenn die Verwaltung ein Gerät widerruft, das Cloud-Anmeldungen bestätigt.",
+    ),
+    // Best effort: a person without email still gets a browser notice where one is set up.
+    delivery: { recommended: ["email", "browser"] },
+    data: z.object({ name: z.string() }),
+    render: ({ name }, { locale }) => ({
+      title: text(locale).deviceRevoked,
+      body: text(locale).deviceRevokedBody({ name }),
+      targetHref: "/me/security",
+    }),
+    email: ({ name }, { locale }) => ({ subject: text(locale).deviceRevoked, content: text(locale).deviceRevokedBody({ name }) }),
+  }),
 };
 
 type AccountsNotificationDescriptors = BoundNotificationMap<"accounts", typeof NOTIFICATIONS>;
 
+export type AccountsAppNotificationSender = AccountsNotificationSender & {
+  sendDeviceRevoked: (input: {
+    deviceId: string;
+    userId: string;
+    name: string;
+    sentBy: string;
+    locale?: string;
+  }) => Promise<AccountNotificationDeliveryResult>;
+};
+
 const fingerprint = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-export const createAccountsNotificationSender = (definitions: AccountsNotificationDescriptors): AccountsNotificationSender => ({
+export const createAccountsNotificationSender = (definitions: AccountsNotificationDescriptors): AccountsAppNotificationSender => ({
   sendLoginLink: async ({ email, token, magicLink, locale }) =>
     notifications.send(definitions.loginLink, {
       recipient: { email },
@@ -197,6 +231,14 @@ export const createAccountsNotificationSender = (definitions: AccountsNotificati
       recipient: { userId },
       data: { subject, rawHtml },
       idempotencyKey,
+      sentBy,
+      locale: await configuredLocale(locale),
+    }),
+  sendDeviceRevoked: async ({ deviceId, userId, name, sentBy, locale }) =>
+    notifications.send(definitions.deviceRevoked, {
+      recipient: { userId },
+      data: { name },
+      idempotencyKey: `device-revoked:${deviceId}`,
       sentBy,
       locale: await configuredLocale(locale),
     }),

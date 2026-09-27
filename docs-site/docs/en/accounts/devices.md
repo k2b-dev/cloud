@@ -3,9 +3,9 @@ title: Pair and manage sign-in devices
 navTitle: Devices
 section: Accounts & sign-in
 order: 1085
-description: Pair a sign-in app with QR or a copy link, and remove a lost device.
+description: Pair a sign-in app with QR or a copy link, and remove a lost device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-09-09
+updated: 2026-09-27
 ---
 
 # Pair and manage sign-in devices
@@ -64,6 +64,33 @@ Removing a Cloud locally from the authenticator and revoking its Cloud
 credential are different actions. For a lost device, use Cloud's device list.
 If browser data is lost or no configured unlock method works, sign in through
 another allowed Cloud method, revoke the old credential and pair again.
+If you cannot sign in at all, ask an administrator to revoke the device.
+
+Cloud also revokes all your paired devices when it signs your account out
+everywhere, for example after you reset your FreeIPA password with
+**Reset password** on the sign-in page or an administrator changes your
+account's provider.
+Pair again after signing in.
+
+## Revoke a device for someone
+
+When someone loses a device and cannot sign in, an administrator opens
+**Accounts → Users → the user**. **Sign-in devices** lists each active device
+with its name, when it was paired and when it was last used.
+
+1. Find the lost device by name and last use.
+2. Choose the revoke button in its row, then **Revoke device** to confirm.
+
+The device can no longer approve sign-ins for that account, including a
+request it already approved but that has not finished. Sessions it already
+approved stay signed in until they expire; Accounts has no action that ends
+another account's sessions. Cloud records the revocation in the audit log and
+notifies the person if it can reach them by email or browser notification.
+To set up a replacement, use [Help someone pair a device](#help-someone-pair-a-device).
+
+From the terminal, administrators use
+`cld accounts users devices list <user>` and
+`cld accounts users devices revoke <user> <device-id> --yes`.
 
 See [Cloud Login](/en/docs/operations/cloud-login#protect-the-app) for app-lock
 recovery. A synced passkey is not a backup of the authenticator's local vault.

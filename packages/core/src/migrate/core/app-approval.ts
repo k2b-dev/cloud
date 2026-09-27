@@ -12,6 +12,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
   // Opaque authenticator push token; it can only trigger a wake-up notification.
   await db`ALTER TABLE auth.app_devices ADD COLUMN IF NOT EXISTS push_token TEXT`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_devices_owner ON auth.app_devices(issuer, user_id, created_at, id)`.simple();
+  // Signing an account out everywhere revokes its devices under every issuer, often in per-user loops.
+  await db`CREATE INDEX IF NOT EXISTS app_devices_user ON auth.app_devices(user_id)`.simple();
   await db`CREATE TABLE IF NOT EXISTS auth.app_pairings (
     id UUID PRIMARY KEY, issuer TEXT NOT NULL, user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     initiated_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -21,6 +23,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     device_id UUID, public_key JSONB, name TEXT, comparison TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  // The target account's epoch at start: signing out everywhere voids pairings that are still open.
+  await db`ALTER TABLE auth.app_pairings ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_pairings_expiry ON auth.app_pairings(expires_at)`.simple();
   await db`CREATE TABLE IF NOT EXISTS auth.app_logins (
     id UUID PRIMARY KEY, issuer TEXT NOT NULL, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,

@@ -12,7 +12,7 @@ const current = process.env.OAUTH_VERIFY_VERSION === "current";
 const core = process.env.APP_ID === "core";
 const router = new Hono<AuthContext>();
 if (core) {
-  for (const name of ["auth", "audit", "settings", "logging"]) {
+  for (const name of ["auth", "app-approval", "audit", "settings", "logging"]) {
     await (await import(`../../../core/src/migrate/core/${name}.ts`)).migrate();
   }
   // Settings are seeded in the fixture's own Valkey, not overridden functions.

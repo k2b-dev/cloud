@@ -1,4 +1,4 @@
-import { accountCategory, accountCategoryLabel } from "@k2b/cloud/contracts";
+import { type AppDeviceView, accountCategory, accountCategoryLabel } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
@@ -28,6 +28,7 @@ import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
 import AddToGroup from "./AddToGroup.island";
 import LinuxIdentity from "./LinuxIdentity.island";
+import RevokeUserDevice from "./RevokeUserDevice.island";
 import UserActions from "./UserActions.island";
 
 const formatAddress = (a: {
@@ -71,7 +72,7 @@ export default ssr<AuthContext>(async (c) => {
   const isIpaUser = user.provider === "ipa";
   const isGuestProfile = user.profile === "guest";
 
-  const [pendingRequestsPage, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage] = await Promise.all([
+  const [pendingRequestsPage, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage, devices] = await Promise.all([
     accountsService.accountRequest.list({
       access: { userId: sessionUser.id, isAdmin: true },
       filter: { status: "pending" },
@@ -94,7 +95,10 @@ export default ssr<AuthContext>(async (c) => {
       pagination: { page: 1, perPage: 100 },
       filter: { userId: id, serviceAccountKind: "user_delegated", credentialStatus: "active" },
     }),
+    // Null renders an explicit error state instead of hiding a device an admin may need to revoke.
+    appApproval.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
   ]);
+  const showDevices = Boolean(approvalConfig?.enabled) || devices === null || devices.length > 0;
 
   const directGroupsPage = await (directGroupIds.length > 0
     ? accountsService.group.list({
@@ -238,6 +242,12 @@ export default ssr<AuthContext>(async (c) => {
     { id: "created", header: t.created, value: (key) => key.createdAt, cellClass: "whitespace-nowrap" },
     { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
   ];
+  const deviceColumns: DataTableColumn<AppDeviceView>[] = [
+    { id: "device", header: t.device, value: (device) => device.name, cellClass: "min-w-[14rem]" },
+    { id: "paired", header: t.pairedSince, value: (device) => device.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "lastUsed", header: t.lastUsed, value: (device) => device.lastUsedAt, cellClass: "whitespace-nowrap" },
+    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
+  ];
 
   return () => (
     <Layout
@@ -348,6 +358,51 @@ export default ssr<AuthContext>(async (c) => {
               <Placeholder surface="paper" description={<>{t.noActiveApiKeys}</>} />
             )}
           </div>
+
+          {showDevices && (
+            <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-devices">
+              <div class="min-w-0">
+                <h2 class="text-base font-semibold text-primary">{t.signInDevices}</h2>
+                {devices && <p class="mt-1 text-xs text-dimmed">{t.signInDevicesSummary({ count: devices.length })}</p>}
+              </div>
+
+              {devices === null ? (
+                <Placeholder surface="paper" state="error" description={<>{t.devicesUnavailable}</>} />
+              ) : devices.length > 0 ? (
+                <Paper class="overflow-hidden">
+                  <DataTable
+                    rows={devices}
+                    columns={deviceColumns}
+                    getRowId={(device) => device.id}
+                    hoverRows
+                    highlightColumns={false}
+                    class="overflow-x-auto"
+                    scrollPreserveKey="accounts-user-devices"
+                    renderCell={({ row: device, col }) => {
+                      if (col.id === "device")
+                        return (
+                          <div class="flex min-w-0 flex-col gap-1">
+                            <span class="truncate font-medium text-primary">{device.name}</span>
+                            {device.assisted && <span class="truncate text-xs text-dimmed">{t.pairedWithAdmin}</span>}
+                          </div>
+                        );
+                      if (col.id === "paired") return <span class="text-dimmed">{dates.formatDateTime(device.createdAt, { locale })}</span>;
+                      if (col.id === "lastUsed")
+                        return (
+                          <span class="text-dimmed">
+                            {device.lastUsedAt ? dates.formatDateTime(device.lastUsedAt, { locale }) : t.notUsedYet}
+                          </span>
+                        );
+                      if (col.id === "actions") return <RevokeUserDevice userId={user.id} deviceId={device.id} name={device.name} />;
+                      return "";
+                    }}
+                  />
+                </Paper>
+              ) : (
+                <Placeholder surface="paper" description={<>{t.noPairedDevices}</>} />
+              )}
+            </div>
+          )}
 
           <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-memberships">
             <div class="flex flex-wrap items-end justify-between gap-2">

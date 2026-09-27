@@ -16,7 +16,8 @@ for every Cloud/account pairing. There is no central credential server or
 Cloud-cookie sharing.
 
 Cloud includes app sign-in, device management under **My account → Security**,
-and administrator-assisted pairing from a user's Accounts detail page.
+and administrator-assisted pairing and device revocation from a user's
+Accounts detail page.
 The [Cloud Login authenticator](./cloud-login.md) is deployed separately. Existing email, FreeIPA
 password and passkey sign-ins remain available; enabling app approval does not
 remove them or grant Linux access.
@@ -400,23 +401,81 @@ including revoked ones, as `{items,nextCursor}`. Items contain
 Both require recent authentication and ownership. Management remains available
 when app approval is disabled.
 
+### Revoke a device for someone else
+
+A person who lost their only paired device cannot sign in to revoke it.
+Administrators open **Accounts → Users → the user**. **Sign-in devices** lists
+the account's active devices with their name, pairing date and last use.
+**Revoke device** asks for confirmation, then stops that device from approving
+sign-ins. Administrators can do the same through the Accounts API and the
+CLI:
+
+| Surface | List | Revoke |
+| --- | --- | --- |
+| HTTP | `GET /api/accounts/users/{id}/devices` returns `{devices}` with the item fields above | `DELETE /api/accounts/users/{id}/devices/{deviceId}` |
+| CLI | `cld accounts users devices list <user>` | `cld accounts users devices revoke <user> <device-id> --yes` |
+
+Only administrators can list or revoke another account's devices; everyone
+else gets 403. The list contains active devices only. No recent sign-in is
+required, and revocation works while app sign-in is disabled or the account
+has expired. Repeating a revocation succeeds without changing anything. The
+first revocation writes an `auth.app.device.revoke` audit entry naming the
+administrator as actor, the device as target and the account as
+`targetUserId`. It also notifies the person, by default by email and browser
+notification; the person can change these channels. Delivery is best effort:
+the revocation stands when no channel reaches them.
+
+Revoking a device does not end the sessions it already approved. They stay
+valid until they expire after **Session Expiry Hours** (8 by default) or until
+the account is signed out everywhere, for example when the person resets
+their FreeIPA password with **Reset password** on the sign-in page. Accounts
+has no separate action that ends another account's sessions.
+
+The list and revocation cover devices paired at the Cloud's current address
+(`app.url`), which are the only ones that can approve sign-ins. Devices paired
+under an earlier address work again if `app.url` changes back, so review the
+list after such a change.
+
+To replace a lost device, revoke it and then pair a new one with
+[administrator-assisted pairing](#pair-a-device).
+
+### What revocation ends
+
 Revocation before completion prevents even an approved request from being used.
 Completion's database commit is the authorization boundary: later revocation
-does not cancel issuance already authorized or existing sessions. Revoke
-sessions separately during incident recovery. Conversely, session revocation
-does not delete device credentials; changes to the account authentication epoch
-invalidate outstanding login requests.
+does not cancel issuance already authorized or existing sessions. Those
+sessions end when they expire or when the account is signed out everywhere.
+
+When Cloud signs an account out everywhere, it also revokes every paired
+device of that account, including devices paired while the Cloud used another
+address. Each device gets an `auth.app.device.revoke` audit entry without an
+actor, with the account as `targetUserId` and `reason: "sign_out_everywhere"`.
+This happens after a FreeIPA password reset from the sign-in page,
+when an administrator changes the account's provider (including creating a
+FreeIPA account for an existing local account) or demotes it to a guest, and
+when FreeIPA synchronization or the account lifecycle job demotes or deletes a
+FreeIPA account, for example an expired one. A temporary password that an
+administrator sets with **Reset password** in Accounts or
+`cld accounts users reset-password` does not sign the account out.
+
+Outstanding login requests from before that point stay unusable, and so do
+pairings started before it, including administrator-assisted ones. The person
+pairs again after signing in, or an administrator starts a new assisted
+pairing.
 
 Account expiry and current category policy are checked on device operations and
-completion. FreeIPA users use the synchronized **Cloud account**: there is no
+completion. Expiry alone does not revoke devices: they cannot approve sign-ins
+while the account is expired and work again when an administrator extends it.
+FreeIPA users use the synchronized **Cloud account**: there is no
 live FreeIPA password, OTP or Kerberos check. Enabling this method permits an
 independent Cloud credential for these accounts. Upstream disablement not yet
 synchronized into Cloud cannot be observed here. Keep synchronization healthy
 or disable app approval when immediate upstream revocation is required.
 
 Recovery uses an existing supported login method followed by recent-session
-device revocation. This API introduces no email override for FreeIPA, grants
-no Linux access, and removes no passkeys.
+device revocation, or an administrator who revokes the device. This API
+introduces no email override for FreeIPA, grants no Linux access, and removes
+no passkeys.
 
 ## Verify the integration
 

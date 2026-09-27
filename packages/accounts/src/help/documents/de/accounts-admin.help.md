@@ -43,6 +43,7 @@ du nicht löschen.
 
 :::reference
 - **Dienstkonten:** Liste aktive oder widerrufene API-Schlüssel auf, filtere nach personen- oder ressourcengebundenen Eigentümern und widerrufe aktive Schlüssel, wenn der Zugriff enden soll.
+- **Anmeldegeräte:** Die Seite eines Benutzers zeigt die Geräte, die seine App-Anmeldungen bestätigen, mit Kopplungsdatum und letzter Verwendung. Widerrufe dort ein verlorenes Gerät; bestehende Sitzungen bleiben angemeldet, und der Benutzer wird benachrichtigt.
 - **Benachrichtigungen:** Erstelle administrative Benachrichtigungsentwürfe, prüfe die Empfängervorschau, schließe den Batch ab und prüfe Zustellzähler oder fehlgeschlagene Empfänger.
 - **Anfragen:** Erstelle Konten aus offenen Anfragen oder lehne Anfragen ab. Eine angegebene Begründung wird per E-Mail versendet. Bestehende Anfragen bleiben verfügbar, wenn neue Anfragen in der Administration deaktiviert werden.
 :::

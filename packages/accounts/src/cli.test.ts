@@ -192,6 +192,47 @@ describe("accounts CLI", () => {
     ]);
   });
 
+  test("lists and revokes a user's paired sign-in devices through the accounts API", async () => {
+    const devices = createContext(["users", "devices", "list", "alice"], {}, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({
+        devices: [
+          {
+            id: "d1",
+            name: "Phone",
+            createdAt: "2026-09-01T10:00:00.000Z",
+            lastUsedAt: null,
+            revokedAt: null,
+            assisted: true,
+          },
+        ],
+      }),
+    ]);
+    await accountsCli.run(devices.ctx);
+    expect(devices.calls.map((call) => call.path)).toEqual([
+      "/api/accounts/users?page=1&per_page=100&search=alice",
+      "/api/accounts/users/u1/devices",
+    ]);
+    expect(devices.tables[0]).toEqual([{ name: "Phone", pairedAt: "2026-09-01T10:00:00.000Z", lastUsedAt: "", assisted: "yes", id: "d1" }]);
+
+    const deviceId = "33333333-3333-4333-8333-333333333333";
+    const unconfirmed = createContext(["users", "devices", "revoke", "alice", deviceId], {}, []);
+    await expect(accountsCli.run(unconfirmed.ctx)).rejects.toThrow("without --yes");
+    expect(unconfirmed.calls).toHaveLength(0);
+    const byName = createContext(["users", "devices", "revoke", "alice", "Phone"], { yes: true }, []);
+    await expect(accountsCli.run(byName.ctx)).rejects.toThrow("device ID");
+    expect(byName.calls).toHaveLength(0);
+
+    const revoke = createContext(["users", "devices", "revoke", "alice", deviceId], { yes: true }, [
+      jsonResponse({ users: [user({})], pagination }),
+      jsonResponse({ message: "Device revoked." }),
+    ]);
+    await accountsCli.run(revoke.ctx);
+    expect(revoke.calls[1]?.path).toBe(`/api/accounts/users/u1/devices/${deviceId}`);
+    expect(revoke.calls[1]?.init?.method).toBe("DELETE");
+    expect(revoke.lines).toEqual(["Device revoked."]);
+  });
+
   test("guards destructive user mutations before resolving refs", async () => {
     const { ctx, calls } = createContext(["users", "set-admin", "alice"], { enabled: true }, []);
 
