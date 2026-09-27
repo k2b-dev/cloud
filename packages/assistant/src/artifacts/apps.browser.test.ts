@@ -187,6 +187,8 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     await page.waitForURL("**/edited");
+    // The edited page runs the app too; wait for its compile so it cannot land after the reset.
+    await page.getByText("Published calculator", { exact: true }).waitFor();
     compiledVersions.length = 0;
     await page.goto(new URL("/view", server.url).href);
     await page.getByText("Published calculator", { exact: true }).waitFor();
