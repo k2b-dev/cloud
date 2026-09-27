@@ -210,7 +210,9 @@ export default function Layout(props: LayoutProps) {
     user?.avatarHash && user.id
       ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
       : undefined;
-  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "lg:overflow-auto";
+  // From lg, `main` is the page scroller of regular pages. Its stable gutter
+  // keeps short and long pages at the same width where scrollbars take space.
+  const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "lg:overflow-auto lg:[scrollbar-gutter:stable]";
   const canvasStyle =
     [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
       .filter(Boolean)
