@@ -648,6 +648,7 @@ export default function RecordsView(props: Props) {
     aggregations,
     isGrouped,
     isSavedView,
+    renderMode,
     syncUrl,
     locale,
   });

@@ -39,7 +39,7 @@ const makeField = (id: string, name: string, position: number, options: { hideIn
 type ApiRequest = { method: string; path: string; body: Record<string, unknown> | undefined };
 
 /** Serves the field and table writes of the records admin flow and keeps field names unique like the server. */
-const installGridsApi = (initialFields: PublicField[]) => {
+const installGridsApi = (initialFields: PublicField[], options: { failFieldWrites?: boolean } = {}) => {
   const originalFetch = globalThis.fetch;
   const requests: ApiRequest[] = [];
   const fields = [...initialFields];
@@ -59,6 +59,7 @@ const installGridsApi = (initialFields: PublicField[]) => {
         return Response.json(created);
       }
       const field = fields.find((candidate) => path === `/api/grids/fields/${candidate.id}`);
+      if (method === "PATCH" && field && options.failFieldWrites) throw new TypeError("Failed to fetch");
       if (method === "PATCH" && field) {
         Object.assign(field, body);
         return Response.json(field);
@@ -102,9 +103,22 @@ const change = (input: HTMLInputElement, value: string) => {
   input.value = value;
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
+const toggleCheckbox = (document: Document, label: string) => {
+  const input = Array.from(document.querySelectorAll("label.k2b-checkbox-card"))
+    .find((node) => node.querySelector(".k2b-checkbox-card__text")?.textContent === label)
+    ?.querySelector("input");
+  if (!input) throw new Error(`No checkbox named ${label}`);
+  input.checked = !input.checked;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+};
 
 /** Wires the default table view's column and admin controllers the way RecordsView does. */
-const createDefaultTableView = async (initial: { fields: PublicField[]; columns: FieldColumnSpec[] }) => {
+const createDefaultTableView = async (initial: {
+  fields: PublicField[];
+  columns: FieldColumnSpec[];
+  viewColumns?: ColumnSpec[];
+  renderMode?: RecordDisplayConfig["mode"];
+}) => {
   const { createRecordsAdminController } = await import("./records-admin-controller");
   const { createRecordsViewColumnController, isFieldColumn } = await import("./records-view-columns");
   const [tableName, setTableName] = createSignal("People");
@@ -119,7 +133,7 @@ const createDefaultTableView = async (initial: { fields: PublicField[]; columns:
   const [forms, setForms] = createSignal<PublicForm[]>([]);
   const [, setViewDisplayConfig] = createSignal<RecordDisplayConfig | null>(null);
   const [query, setQuery] = createSignal<RecordQuery>({});
-  const [viewColumns, setViewColumns] = createSignal<ColumnSpec[] | undefined>(undefined);
+  const [viewColumns, setViewColumns] = createSignal<ColumnSpec[] | undefined>(initial.viewColumns);
   const columns = createRecordsViewColumnController({
     props: { activeView: null, tableId: TABLE_ID, baseId: "BASE01" },
     fields,
@@ -134,6 +148,7 @@ const createDefaultTableView = async (initial: { fields: PublicField[]; columns:
     aggregations: () => [],
     isGrouped: () => false,
     isSavedView: () => false,
+    renderMode: () => initial.renderMode ?? "table",
     syncUrl: () => {},
     locale: () => "en",
   });
@@ -172,7 +187,53 @@ const createDefaultTableView = async (initial: { fields: PublicField[]; columns:
     setViewDisplayConfig,
   });
   const visibleFieldIds = () => (columns.effectiveViewColumns() ?? []).filter(isFieldColumn).map((column) => column.fieldId);
-  return { admin, columns, fields, tableColumns, visibleFieldIds };
+  return { admin, columns, fields, setFields, tableColumns, visibleFieldIds };
+};
+
+type DefaultTableView = Awaited<ReturnType<typeof createDefaultTableView>>;
+
+const renderAdminToolbar = async (root: HTMLElement, view: DefaultTableView) => {
+  const { RecordsAdminToolbar } = await import("./RecordsAdminToolbar");
+  return render(
+    () => (
+      <RecordsAdminToolbar
+        savedView={false}
+        activeViewAvailable={false}
+        canEditActiveView={false}
+        hiddenViewColumnCount={view.columns.hiddenViewColumnCount()}
+        allowForms
+        formsButtonLabel="Forms"
+        onOpenTableSettings={() => {}}
+        onAddField={() => void view.admin.openAddField()}
+        onOpenForms={() => {}}
+        onOpenTemplates={() => {}}
+        onOpenViewSettings={() => {}}
+        onAddViewColumn={view.columns.openAddViewColumnDialog}
+        onDone={() => {}}
+      />
+    ),
+    root,
+  );
+};
+
+/** Shows the named columns through "Add column" and returns every column it offered. */
+const addColumns = async (document: Document, names: string[]) => {
+  buttonNamed(document, "Add column")!.click();
+  await until(() => document.querySelectorAll('[role="option"]').length > 0);
+  const offered = Array.from(document.querySelectorAll('[role="option"]'), (option) => option.getAttribute("aria-label"));
+  for (const name of names) document.querySelector<HTMLButtonElement>(`[role="option"][aria-label="${name}"]`)!.click();
+  await until(() => buttonNamed(document, "Add columns")?.disabled === false);
+  buttonNamed(document, "Add columns")!.click();
+  return offered;
+};
+
+const editField = async (document: Document, view: DefaultTableView, field: PublicField, edit: () => void) => {
+  const { dialogCore } = await import("@k2b/ui");
+  view.admin.openFieldSettings(field);
+  await until(() => Boolean(inputFor(document, "Table column name")));
+  edit();
+  buttonNamed(document, "Save")!.click();
+  await until(() => !dialogCore.isOpen());
 };
 
 const addTextField = async (document: Document, admin: { openAddField: () => Promise<void> }, name: string) => {
@@ -190,29 +251,22 @@ domTest("editing one field on a new table keeps every created field visible", as
   const api = installGridsApi([]);
   const { dialogCore } = await import("@k2b/ui");
   try {
-    const { admin, fields, tableColumns, visibleFieldIds } = await createDefaultTableView({ fields: [], columns: [] });
+    const view = await createDefaultTableView({ fields: [], columns: [] });
+    const { fields, tableColumns, visibleFieldIds } = view;
 
-    for (const name of ["First name", "Last name", "Activities"]) await addTextField(dom.document, admin, name);
+    for (const name of ["First name", "Last name", "Activities"]) await addTextField(dom.document, view.admin, name);
     expect(fields().map((field) => field.name)).toEqual(["First name", "Last name", "Activities"]);
     expect(tableColumns()).toEqual([]);
     expect(visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3"]);
 
     // Saving without a display change keeps the derived column list.
-    admin.openFieldSettings(fields()[2]!);
-    await until(() => Boolean(inputFor(dom.document, "Table column name")));
-    change(inputFor(dom.document, "Name")!, "Tasks");
-    buttonNamed(dom.document, "Save")!.click();
-    await until(() => !dialogCore.isOpen());
+    await editField(dom.document, view, fields()[2]!, () => change(inputFor(dom.document, "Name")!, "Tasks"));
     expect(fields()[2]!.name).toBe("Tasks");
     expect(api.tableWrites()).toEqual([]);
     expect(visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3"]);
 
     // A display change writes the complete list with only the edited column changed.
-    admin.openFieldSettings(fields()[1]!);
-    await until(() => Boolean(inputFor(dom.document, "Table column name")));
-    change(inputFor(dom.document, "Table column name")!, "Surname");
-    buttonNamed(dom.document, "Save")!.click();
-    await until(() => !dialogCore.isOpen());
+    await editField(dom.document, view, fields()[1]!, () => change(inputFor(dom.document, "Table column name")!, "Surname"));
     expect(api.tableWrites().map((request) => request.body?.columns)).toEqual([
       [{ fieldId: "FIELD1" }, { fieldId: "FIELD2", label: "Surname" }, { fieldId: "FIELD3" }],
     ]);
@@ -236,40 +290,11 @@ domTest("the default table view shows fields its column list hides again", async
   };
   const api = installGridsApi(initial.fields);
   const { dialogCore } = await import("@k2b/ui");
-  const { RecordsAdminToolbar } = await import("./RecordsAdminToolbar");
   const view = await createDefaultTableView(initial);
-  const dispose = render(
-    () => (
-      <RecordsAdminToolbar
-        savedView={false}
-        activeViewAvailable={false}
-        canEditActiveView={false}
-        hiddenViewColumnCount={view.columns.hiddenViewColumnCount()}
-        allowForms
-        formsButtonLabel="Forms"
-        onOpenTableSettings={() => {}}
-        onAddField={() => void view.admin.openAddField()}
-        onOpenForms={() => {}}
-        onOpenTemplates={() => {}}
-        onOpenViewSettings={() => {}}
-        onAddViewColumn={view.columns.openAddViewColumnDialog}
-        onDone={() => {}}
-      />
-    ),
-    dom.root,
-  );
+  const dispose = await renderAdminToolbar(dom.root, view);
   try {
     expect(view.visibleFieldIds()).toEqual(["FIELD1"]);
-    buttonNamed(dom.document, "Add column")!.click();
-    await until(() => dom.document.querySelectorAll('[role="option"]').length > 0);
-    expect(Array.from(dom.document.querySelectorAll('[role="option"]'), (option) => option.getAttribute("aria-label"))).toEqual([
-      "Last name",
-      "Internal note",
-    ]);
-    dom.document.querySelector<HTMLButtonElement>('[role="option"][aria-label="Last name"]')!.click();
-    dom.document.querySelector<HTMLButtonElement>('[role="option"][aria-label="Internal note"]')!.click();
-    await until(() => buttonNamed(dom.document, "Add columns")?.disabled === false);
-    buttonNamed(dom.document, "Add columns")!.click();
+    expect(await addColumns(dom.document, ["Last name", "Internal note"])).toEqual(["Last name", "Internal note"]);
     await until(() => api.tableWrites().length === 1 && view.fields()[2]!.hideInTable === false);
     expect(api.tableWrites()[0]!.body?.columns).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }]);
     expect(api.fieldWrites()).toEqual([{ method: "PATCH", path: "/api/grids/fields/FIELD3", body: { hideInTable: false } }]);
@@ -320,6 +345,150 @@ domTest("a new field named like a hidden field offers to show that column", asyn
     expect(api.tableWrites()[0]!.body?.columns).toEqual([{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }]);
     expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2"]);
     expect(view.fields()).toHaveLength(2);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("hiding and showing fields on a new table keeps its column list derived", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [
+      makeField("FIELD1", "First name", 0),
+      makeField("FIELD2", "Last name", 1),
+      makeField("FIELD3", "Internal note", 2),
+      makeField("FIELD4", "Notes", 3, { hideInTable: true }),
+    ],
+    columns: [],
+  };
+  const api = installGridsApi(initial.fields);
+  const { dialogCore } = await import("@k2b/ui");
+  const view = await createDefaultTableView(initial);
+  const dispose = await renderAdminToolbar(dom.root, view);
+  try {
+    // "Hide in table" alone hides a derived column; no column list is stored.
+    await editField(dom.document, view, view.fields()[2]!, () => toggleCheckbox(dom.document, "Hide in table"));
+    expect(view.fields()[2]!.hideInTable).toBe(true);
+    expect(view.tableColumns()).toEqual([]);
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2"]);
+
+    // "Add column" clears the setting and the column returns at its field position.
+    expect(await addColumns(dom.document, ["Notes"])).toEqual(["Internal note", "Notes"]);
+    await until(() => view.fields()[3]!.hideInTable === false);
+    expect(api.fieldWrites().at(-1)).toEqual({ method: "PATCH", path: "/api/grids/fields/FIELD4", body: { hideInTable: false } });
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD4"]);
+
+    await editField(dom.document, view, view.fields()[2]!, () => toggleCheckbox(dom.document, "Hide in table"));
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3", "FIELD4"]);
+
+    // Fields created elsewhere, for example through the CLI, keep appearing.
+    view.setFields((current) => [...current, makeField("FIELD5", "Activities", 4)]);
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2", "FIELD3", "FIELD4", "FIELD5"]);
+    expect(api.tableWrites()).toEqual([]);
+    expect(view.tableColumns()).toEqual([]);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    dispose();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("unsaved computed columns leave the table and Hide in table alone until they are cleared", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "First name", 0), makeField("FIELD2", "Internal note", 1, { hideInTable: true })],
+    columns: [{ fieldId: "FIELD1" }],
+    viewColumns: [{ fieldId: "FIELD1" }, { kind: "computed" as const, id: "computed_total", label: "Total", expression: "1" }],
+  };
+  const api = installGridsApi(initial.fields);
+  try {
+    const view = await createDefaultTableView(initial);
+    view.columns.showFlatViewColumns(["FIELD2"]);
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2"]);
+    // Writes start synchronously, so none is pending here.
+    expect(api.tableWrites()).toEqual([]);
+    expect(api.fieldWrites()).toEqual([]);
+
+    // Once the columns are stored on the table, the shown field no longer hides in the table either.
+    view.columns.clearComputedColumns();
+    await until(() => view.fields()[1]!.hideInTable === false);
+    expect(api.tableWrites().map((request) => request.body?.columns)).toEqual([[{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }]]);
+    expect(api.fieldWrites()).toEqual([{ method: "PATCH", path: "/api/grids/fields/FIELD2", body: { hideInTable: false } }]);
+  } finally {
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("clearing unsaved computed columns keeps a new table's column list derived", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "First name", 0), makeField("FIELD2", "Last name", 1)],
+    columns: [],
+    viewColumns: [
+      { fieldId: "FIELD1" },
+      { fieldId: "FIELD2" },
+      { kind: "computed" as const, id: "computed_total", label: "Total", expression: "1" },
+    ],
+  };
+  const api = installGridsApi(initial.fields);
+  try {
+    const view = await createDefaultTableView(initial);
+    view.columns.clearComputedColumns();
+    expect(view.visibleFieldIds()).toEqual(["FIELD1", "FIELD2"]);
+    expect(view.tableColumns()).toEqual([]);
+    // Writes start synchronously, so none is pending here.
+    expect(api.tableWrites()).toEqual([]);
+  } finally {
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("columns are only offered where records render as a table", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "First name", 0), makeField("FIELD2", "Internal note", 1, { hideInTable: true })],
+    columns: [],
+    renderMode: "cards" as const,
+  };
+  const api = installGridsApi(initial.fields);
+  const { dialogCore } = await import("@k2b/ui");
+  const view = await createDefaultTableView(initial);
+  const dispose = await renderAdminToolbar(dom.root, view);
+  try {
+    expect(buttonNamed(dom.document, "Add column")).toBeUndefined();
+    void addTextField(dom.document, view.admin, "Internal note");
+    await until(() => dom.document.body.textContent?.includes("The field name must be unique within this Table.") === true);
+    expect(buttonNamed(dom.document, "Show column")).toBeUndefined();
+    expect(api.fieldWrites()).toEqual([]);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    dispose();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a failed Hide in table update after Add column reports the mismatch", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "First name", 0), makeField("FIELD2", "Internal note", 1, { hideInTable: true })],
+    columns: [{ fieldId: "FIELD1" }],
+  };
+  const api = installGridsApi(initial.fields, { failFieldWrites: true });
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    const view = await createDefaultTableView(initial);
+    view.columns.showFlatViewColumns(["FIELD2"]);
+    await until(
+      () => dom.document.body.textContent?.includes("The column was added, but its field is still set to “Hide in table”.") === true,
+    );
+    expect(api.tableWrites().map((request) => request.body?.columns)).toEqual([[{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }]]);
+    expect(view.fields()[1]!.hideInTable).toBe(true);
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     api.restore();

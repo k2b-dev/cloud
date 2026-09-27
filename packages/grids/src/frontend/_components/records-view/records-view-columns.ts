@@ -3,7 +3,7 @@ import { prompts } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicField as Field, PublicTable as Table, PublicView as View } from "../../../api/public-dto";
-import type { AggregationSpec, ColumnSpec, FieldColumnSpec, GroupBySpec, RecordQuery } from "../../../contracts";
+import type { AggregationSpec, ColumnSpec, FieldColumnSpec, GroupBySpec, RecordDisplayConfig, RecordQuery } from "../../../contracts";
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { openViewColumnSettingsDialog } from "../dialogs/ViewColumnSettingsDialog";
 import { fieldTypeLabel } from "../fields/field-type-meta";
@@ -64,6 +64,7 @@ type RecordsViewColumnControllerOptions = {
   aggregations: Accessor<AggregationSpec[]>;
   isGrouped: Accessor<boolean>;
   isSavedView: Accessor<boolean>;
+  renderMode: Accessor<RecordDisplayConfig["mode"]>;
   syncUrl: (options: { replace: boolean }) => void;
   locale?: Accessor<string>;
 };
@@ -82,6 +83,7 @@ export const createRecordsViewColumnController = ({
   aggregations,
   isGrouped,
   isSavedView,
+  renderMode,
   syncUrl,
   locale,
 }: RecordsViewColumnControllerOptions) => {
@@ -190,11 +192,19 @@ export const createRecordsViewColumnController = ({
     setViewColumns(computed ? cleaned : undefined);
     setQuery((prev) => ({ ...prev, columns: computed ? cleaned : undefined }));
     syncUrl({ replace: true });
-    if (!computed) {
-      const fieldColumns = cleaned.filter(isFieldColumn);
-      setTableColumns(fieldColumns);
-      patchTableColumnsMut.mutate(fieldColumns);
-    }
+    if (computed) return;
+    const fieldColumns = cleaned.filter(isFieldColumn);
+    const shown = defaultViewColumns();
+    // An unchanged list needs no write, so a derived list stays derived.
+    if (JSON.stringify(fieldColumns) === JSON.stringify(shown)) return;
+    const shownIds = new Set(shown.filter(isFieldColumn).map((column) => column.fieldId));
+    setTableColumns(fieldColumns);
+    patchTableColumnsMut.mutate(fieldColumns);
+    // A field that becomes a stored table column no longer hides in the table, so its field setting follows.
+    void clearHideInTable(
+      fieldColumns.map((column) => column.fieldId).filter((fieldId) => !shownIds.has(fieldId)),
+      t().showInTableFailed,
+    );
   };
 
   const moveViewColumnInline = (column: ColumnSpec, direction: -1 | 1) => {
@@ -347,7 +357,8 @@ export const createRecordsViewColumnController = ({
 
   const flatHiddenFields = (): Field[] => {
     const columns = effectiveViewColumns();
-    if (!columns) return [];
+    // Columns can only be shown where the records render as a table.
+    if (!columns || renderMode() !== "table") return [];
     const visibleIds = new Set(columns.filter(isFieldColumn).map((column) => column.fieldId));
     return fields().filter((field) => !field.deletedAt && !visibleIds.has(field.id));
   };
@@ -363,21 +374,28 @@ export const createRecordsViewColumnController = ({
   const showFlatViewColumns = (fieldIds: string[]) => {
     const existing = effectiveViewColumns();
     if (!existing) return;
+    if (!isSavedView() && !viewColumns() && tableColumns().length === 0) {
+      // A derived column list shows every field without "Hide in table"; clearing that setting keeps the table derived.
+      void clearHideInTable(fieldIds, t().showColumnFailed);
+      return;
+    }
     const existingIds = new Set(existing.map(columnId));
     persistFlatViewColumns([...existing, ...fieldIds.filter((id) => !existingIds.has(id)).map((fieldId) => ({ fieldId }))]);
-    // Showing a field in the default table view undoes "Hide in table", so it clears that field setting as well.
-    if (!isSavedView()) void clearHideInTable(fieldIds);
   };
 
-  const clearHideInTable = async (fieldIds: string[]) => {
-    for (const field of fields().filter((candidate) => candidate.hideInTable && fieldIds.includes(candidate.id))) {
-      const res = await apiClient.fields[":fieldId"].$patch({ param: { fieldId: field.id }, json: { hideInTable: false } });
-      if (!res.ok) {
-        prompts.error(await errorMessage(res, t().showInTableFailed));
-        return;
+  const clearHideInTable = async (fieldIds: string[], failure: string) => {
+    try {
+      for (const field of fields().filter((candidate) => candidate.hideInTable && fieldIds.includes(candidate.id))) {
+        const res = await apiClient.fields[":fieldId"].$patch({ param: { fieldId: field.id }, json: { hideInTable: false } });
+        if (!res.ok) {
+          prompts.error(await errorMessage(res, failure));
+          return;
+        }
+        const updated = await res.json();
+        setFields((current) => current.map((candidate) => (candidate.id === updated.id ? updated : candidate)));
       }
-      const updated = await res.json();
-      setFields((current) => current.map((candidate) => (candidate.id === updated.id ? updated : candidate)));
+    } catch {
+      prompts.error(failure);
     }
   };
 

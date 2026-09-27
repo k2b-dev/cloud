@@ -87,6 +87,7 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       fieldsByTable: { ...options.fieldsByTable, [options.tableId]: options.fields() },
       // An empty table column list means "derive from the fields"; edit the list the table shows so a save keeps the other columns.
       tableColumns: resolveDefaultViewColumns(options.tableColumns(), options.fields()).filter(isFieldColumn),
+      derivedTableColumns: options.tableColumns().length === 0,
       dateConfig: options.dateConfig,
       onSaved: (updated) => syncFields(options.fields().map((candidate) => (candidate.id === updated.id ? updated : candidate))),
       onTableColumnsSaved: options.setTableColumns,

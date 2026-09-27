@@ -53,6 +53,8 @@ type OpenFieldEditArgs = {
   otherTables: Array<{ id: string; name: string }>;
   fieldsByTable: Record<string, PublicField[]>;
   tableColumns?: FieldColumnSpec[];
+  /** The table derives `tableColumns` from its fields (`columns: []`), so "Hide in table" alone decides visibility. */
+  derivedTableColumns?: boolean;
   dateConfig?: DateContext;
   onSaved: (next: PublicField) => void;
   onTableColumnsSaved?: (columns: FieldColumnSpec[]) => void;
@@ -94,6 +96,7 @@ function FieldEditDialog(props: { args: OpenFieldEditArgs; close: () => void; se
         otherTables={props.args.otherTables}
         fieldsByTable={props.args.fieldsByTable}
         tableColumns={props.args.tableColumns}
+        derivedTableColumns={props.args.derivedTableColumns}
         dateConfig={props.args.dateConfig}
         onDirtyChange={setDirty}
         onPendingChange={setPending}
@@ -133,6 +136,7 @@ function FieldEditor(props: {
   otherTables: Array<{ id: string; name: string }>;
   fieldsByTable: Record<string, PublicField[]>;
   tableColumns?: FieldColumnSpec[];
+  derivedTableColumns?: boolean;
   dateConfig?: DateContext;
   onSaved: (next: PublicField) => void;
   onFieldSaved: (next: PublicField) => void;
@@ -207,6 +211,8 @@ function FieldEditor(props: {
       label: columnLabel(),
       format: formatControls?.value(),
     });
+    // A derived list stays derived unless this visible column needs a stored label or format.
+    if (props.derivedTableColumns && (hideInTable() || (!nextColumn.label && !nextColumn.format))) return undefined;
     const next = props.tableColumns.filter((column) => column.fieldId !== props.field.id);
     if (!hideInTable()) {
       const existingIndex = props.tableColumns.findIndex((column) => column.fieldId === props.field.id);
