@@ -557,10 +557,53 @@ suite("isolated app approval protocol", () => {
     expect(await service.consumeLogin(again.requestId, again.browserSecret)).toBe(owner.id);
   });
 
-  test("a pairing confirmed during a sign-out everywhere cannot leave an active device", async () => {
-    const owner = await account();
+  test("an assisted pairing started before a sign-out everywhere cannot be confirmed", async () => {
+    const owner = await account(),
+      admin = await account();
+    admin.actor.admin = true;
+    cfg.adminPairing = true;
+    const claimAssisted = async () => {
+      const key = await keys();
+      const pairing = await service.startPairing(admin.actor, owner.id);
+      const claim = { pairingId: pairing.pairingId, secret: pairing.secret, publicKey: key.publicKey, name: "Assisted" };
+      const claimed = await service.claimPairing({
+        ...claim,
+        signature: await sign(key.privateKey, appPairingProofMessage(cfg.issuer, claim)),
+      });
+      return { pairing, claimed };
+    };
+    const stale = await claimAssisted();
+
+    await session.revokeAllForUser(owner.id);
+
+    // The administrator's session is still current, but the pairing belongs to the ended epoch.
+    await expect(service.inspectPairing(admin.actor, stale.pairing.pairingId)).rejects.toMatchObject({ code: "UNAVAILABLE", status: 404 });
+    await expect(service.confirmPairing(admin.actor, stale.pairing.pairingId, stale.claimed.comparison)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(await sql`SELECT id FROM auth.app_devices WHERE user_id=${owner.id}::uuid`).toHaveLength(0);
+    await service.cancelPairing(admin.actor, stale.pairing.pairingId);
+
+    // A pairing the administrator starts afterwards works as usual.
+    const fresh = await claimAssisted();
+    expect(await service.inspectPairing(admin.actor, fresh.pairing.pairingId)).toMatchObject({ state: "claimed" });
+    await service.confirmPairing(admin.actor, fresh.pairing.pairingId, fresh.claimed.comparison);
+    expect(await service.listUserDevices(admin.actor, owner.id)).toEqual([
+      expect.objectContaining({ id: fresh.claimed.deviceId, assisted: true, revokedAt: null }),
+    ]);
+  });
+
+  test.each([
+    ["self", "REAUTHENTICATE"],
+    ["assisted", "CONFLICT"],
+  ] as const)("a pairing confirmed during a sign-out everywhere cannot leave an active device (%s)", async (kind, code) => {
+    const owner = await account(),
+      admin = await account();
+    admin.actor.admin = true;
+    cfg.adminPairing = true;
+    const initiator = kind === "self" ? owner.actor : admin.actor;
     const key = await keys();
-    const pairing = await service.startPairing(owner.actor);
+    const pairing = await service.startPairing(initiator, owner.id);
     const claim = { pairingId: pairing.pairingId, secret: pairing.secret, publicKey: key.publicKey, name: "Racing" };
     const claimed = await service.claimPairing({
       ...claim,
@@ -579,7 +622,7 @@ suite("isolated app approval protocol", () => {
       throw new Error(`Expected ${count} sessions waiting for the account row`);
     };
     // Hold the account row, queue the sign-out first and the confirmation behind it. Checking the
-    // session before taking the lock would pass with the old epoch and insert the device afterwards.
+    // session or epoch before taking the lock would pass with the old epoch and insert the device afterwards.
     const held = Promise.withResolvers<number>(),
       release = Promise.withResolvers<void>();
     const holder = sql.begin(async (tx) => {
@@ -592,14 +635,14 @@ suite("isolated app approval protocol", () => {
       const signOut = session.revokeAllForUser(owner.id);
       await queued(pid, 1);
       // Settle into a value: Bun's expect(...).rejects would wait for it before the lock is released.
-      const confirmed = service.confirmPairing(owner.actor, pairing.pairingId, claimed.comparison).then(
+      const confirmed = service.confirmPairing(initiator, pairing.pairingId, claimed.comparison).then(
         () => null,
         (error: unknown) => error,
       );
       await queued(pid, 2);
       release.resolve();
       await signOut;
-      expect(await confirmed).toMatchObject({ code: "REAUTHENTICATE" });
+      expect(await confirmed).toMatchObject({ code });
     } finally {
       release.resolve();
       await holder;

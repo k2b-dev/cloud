@@ -115,6 +115,8 @@ type PairingRow = {
   initiated_by: string;
   initiator_sid: string;
   assisted: boolean;
+  /** The target account's epoch at start; a sign-out everywhere moves it and voids the pairing. */
+  auth_epoch: string | null;
   secret_hash: string;
   state: string;
   expires_at: Date;
@@ -252,7 +254,7 @@ export const createAppApprovalService = (
       (pairing.assisted && (!actor.admin || !cfg.adminPairing))
     )
       return reject("FORBIDDEN", 403);
-    await eligible(tx, pairing.user_id);
+    return eligible(tx, pairing.user_id);
   };
   const activeDevice = async (tx: SQL, id: string, issuer: string): Promise<DeviceRow> => {
     const [device] = await tx<DeviceRow[]>`SELECT * FROM auth.app_devices WHERE id = ${id}::uuid AND issuer = ${issuer} FOR UPDATE`;
@@ -316,13 +318,13 @@ export const createAppApprovalService = (
         await fresh(tx, actor);
         if (targetId !== actor.userId && (!actor.admin || !cfg.adminPairing)) return reject("FORBIDDEN", 403);
         await tx`SELECT id FROM auth.users WHERE id = ${targetId}::uuid FOR UPDATE`;
-        await eligible(tx, targetId);
+        const target = await eligible(tx, targetId);
         const [count] = await tx<
           { count: number }[]
         >`SELECT count(*)::int AS count FROM auth.app_pairings WHERE issuer = ${cfg.issuer} AND user_id = ${targetId}::uuid AND expires_at > now() AND state IN ('pending','claimed')`;
         if ((count?.count ?? 0) >= limits.pendingPerAccount) return reject("LIMIT_REACHED", 429);
-        await tx`INSERT INTO auth.app_pairings(id, issuer, user_id, initiated_by, initiator_sid, assisted, secret_hash, expires_at)
-          VALUES (${id}::uuid,${cfg.issuer},${targetId}::uuid,${actor.userId}::uuid,${actor.sid}::uuid,${targetId !== actor.userId},${hash(token)},${expiresAt})`;
+        await tx`INSERT INTO auth.app_pairings(id, issuer, user_id, initiated_by, initiator_sid, assisted, auth_epoch, secret_hash, expires_at)
+          VALUES (${id}::uuid,${cfg.issuer},${targetId}::uuid,${actor.userId}::uuid,${actor.sid}::uuid,${targetId !== actor.userId},${target.auth_epoch},${hash(token)},${expiresAt})`;
         await record(tx, "pairing.start", actor.userId, id, { targetUserId: targetId, assisted: targetId !== actor.userId });
         return { protocol: APP_APPROVAL_PROTOCOL, issuer: cfg.issuer, pairingId: id, secret: token, expiresAt: iso(expiresAt) };
       });
@@ -358,7 +360,8 @@ export const createAppApprovalService = (
       return db.begin(async (tx) => {
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.app_pairings WHERE id = ${id}::uuid AND issuer = ${cfg.issuer}`;
         if (!p || new Date(p.expires_at).getTime() <= Date.now()) return reject("UNAVAILABLE", 404);
-        await authorizePairing(tx, actor, p, cfg);
+        // A pairing from before the account was signed out everywhere reads as expired.
+        if ((await authorizePairing(tx, actor, p, cfg)).auth_epoch !== p.auth_epoch) return reject("UNAVAILABLE", 404);
         return { state: p.state, name: p.name, comparison: p.comparison, deviceId: p.device_id, userId: p.user_id };
       });
     },
@@ -375,10 +378,11 @@ export const createAppApprovalService = (
           !p.name
         )
           return reject("CONFLICT", 409);
-        // Lock the account before checking the session: a concurrent sign-out
-        // everywhere either revokes this device after it exists, or fails this check.
+        // Lock the account before checking the session and epoch: a concurrent sign-out
+        // everywhere either revokes this device after it exists, or fails these checks.
+        // The epoch also voids assisted pairings, whose administrator session outlives it.
         await tx`SELECT id FROM auth.users WHERE id = ${p.user_id}::uuid FOR UPDATE`;
-        await authorizePairing(tx, actor, p, cfg);
+        if ((await authorizePairing(tx, actor, p, cfg)).auth_epoch !== p.auth_epoch) return reject("CONFLICT", 409);
         const [count] = await tx<
           { count: number }[]
         >`SELECT count(*)::int AS count FROM auth.app_devices WHERE issuer = ${cfg.issuer} AND user_id = ${p.user_id}::uuid AND revoked_at IS NULL`;

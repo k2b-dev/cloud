@@ -454,10 +454,12 @@ This happens after a FreeIPA password reset from the sign-in page,
 when an administrator changes the account's provider (including creating a
 FreeIPA account for an existing local account) or demotes it to a guest, and
 when FreeIPA synchronization or the account lifecycle job demotes or deletes a
-FreeIPA account, for example an expired one. Outstanding login requests from
-before that point stay unusable. A pairing started in a session that was
-signed out cannot be confirmed. The person pairs again after signing in;
-assisted pairing works as usual.
+FreeIPA account, for example an expired one.
+
+Outstanding login requests from before that point stay unusable, and so do
+pairings started before it, including administrator-assisted ones. The person
+pairs again after signing in, or an administrator starts a new assisted
+pairing.
 
 Account expiry and current category policy are checked on device operations and
 completion. Expiry alone does not revoke devices: they cannot approve sign-ins

@@ -23,6 +23,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     device_id UUID, public_key JSONB, name TEXT, comparison TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
+  // The target account's epoch at start: signing out everywhere voids pairings that are still open.
+  await db`ALTER TABLE auth.app_pairings ADD COLUMN IF NOT EXISTS auth_epoch BIGINT`.simple();
   await db`CREATE INDEX IF NOT EXISTS app_pairings_expiry ON auth.app_pairings(expires_at)`.simple();
   await db`CREATE TABLE IF NOT EXISTS auth.app_logins (
     id UUID PRIMARY KEY, issuer TEXT NOT NULL, user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
