@@ -29,6 +29,8 @@ type Props = {
  * `onSearchChange`. Column-scope (which fields to search in) lives
  * inline as a compact multi-select on the right. Search and scope form
  * one unit that never wraps; the parent row decides where it breaks.
+ * The scope takes up to 16rem and gives way down to 10rem on narrow
+ * units; its width never depends on the selected columns.
  */
 export default function SearchBar(props: Props) {
   const locale = useLocale();
@@ -68,7 +70,7 @@ export default function SearchBar(props: Props) {
 
   return (
     <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
-      <div class="min-w-0 flex-1">
+      <div class="min-w-0 flex-[1_1_24rem]">
         <TextInput
           name="grids-record-search"
           type="search"
@@ -87,7 +89,7 @@ export default function SearchBar(props: Props) {
         />
       </div>
       <Show when={props.fields.length > 0}>
-        <div class="w-40 shrink-0">
+        <div class="min-w-40 flex-[0_1_16rem]">
           <MultiSelectInput
             aria-label={t().searchColumns}
             icon="ti ti-columns"

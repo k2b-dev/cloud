@@ -171,6 +171,9 @@ domTest("search and scope stay one unbroken unit while the count and actions wra
     expect(searchUnit.contains(count)).toBe(false);
     expect(searchUnit.parentElement?.parentElement).toBe(toolbar.row);
     expect(classes(searchUnit.parentElement)).toContain("flex-[1_1_24rem]");
+    // The scope shrinks to 10rem only on narrow units; with room it grows to 16rem so selected column pills stay readable.
+    const scopeSlot = Array.from(searchUnit.children).find((child) => child.contains(scope)) ?? null;
+    expect(classes(scopeSlot)).toEqual(expect.arrayContaining(["min-w-40", "flex-[0_1_16rem]"]));
 
     const trailing = sharedParent(count, actions);
     expect(trailing.parentElement).toBe(toolbar.row);
