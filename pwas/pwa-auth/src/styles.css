@@ -5,6 +5,13 @@ html {
   color-scheme: light dark;
 }
 
+/* The document never scrolls, so iOS has nothing to rubber-band; only .auth-scroll does. */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Apply at every scroll surface, including portalled dialogs. */
 * {
   touch-action: pan-x pan-y;
@@ -17,9 +24,10 @@ body {
   margin: 0;
 }
 
+/* Pinned to the viewport rather than sized in vh units, so the shell adds no document height. */
 .auth-app {
-  height: 100svh;
-  height: 100dvh;
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -124,10 +132,37 @@ body {
 .auth-main {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.auth-scroll {
+  flex: 1;
   overscroll-behavior-y: contain;
   display: grid;
   padding: 2rem max(1.5rem, env(safe-area-inset-right)) calc(2rem + env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+}
+/* ScrollArea reserves the classic-scrollbar gutter at the end only; both edges keep the list centered under the header and the note. */
+.k2b-ui .auth-scroll {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* The note stays pinned only where the height can spare it. On a phone in landscape it would cover a quarter of the screen, so the list gets that room. */
+.auth-footer {
+  display: none;
+  flex: none;
+  padding: 1rem max(1.5rem, env(safe-area-inset-right)) calc(1.25rem + env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+}
+@media (min-height: 30rem) {
+  .auth-footer {
+    display: block;
+  }
+  .auth-main:has(+ .auth-footer) > .auth-scroll {
+    padding-bottom: 1rem;
+  }
+}
+.auth-footer > p {
+  max-width: 33rem;
+  margin: 0 auto;
 }
 
 .auth-welcome {
@@ -297,6 +332,10 @@ body.k2b-ui textarea {
   white-space: nowrap;
 }
 
+/* Keep the panel in the dialog's flex chain so a short screen scrolls the body instead of clipping the footer. */
+.auth-security {
+  display: contents;
+}
 .k2b-dialog:has(.auth-security--success) {
   width: 9rem;
   min-width: 0;
@@ -355,11 +394,6 @@ body.k2b-ui textarea {
   min-width: 0;
 }
 
-.auth-clouds > .auth-recovery {
-  margin: auto 0 0;
-  padding-top: 1.5rem;
-}
-
 .auth-request {
   padding: 0.75rem;
   border: 1px solid color-mix(in srgb, var(--k2b-success-text) 24%, var(--k2b-border));
@@ -390,9 +424,14 @@ body.k2b-ui textarea {
 .auth-dialog-actions--end {
   justify-content: flex-end;
 }
+.auth-dialog-actions--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
 
 /* Push onboarding sits above the main content without taking its space. */
-.auth-main:has(> .auth-push-card) {
+.auth-scroll:has(> .auth-push-card) {
   grid-template-rows: auto 1fr;
   row-gap: 1.5rem;
 }
