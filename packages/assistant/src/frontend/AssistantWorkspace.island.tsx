@@ -1783,6 +1783,7 @@ export default function AssistantWorkspace(props: Props) {
                           <div class="contents">
                             <AssistantChatContextPanel
                               onOpenView={openContextView}
+                              onFileDeleted={(file) => artifactWorkspace.closeFile(file.conversationId, file.path)}
                               onSnapshotChange={setWorkspaceContext}
                               onOpenApp={(id, title, start) => artifactWorkspace.open(appTab(id, title, start))}
                               chatId={conversation().id}

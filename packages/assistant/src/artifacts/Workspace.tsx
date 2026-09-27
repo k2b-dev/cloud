@@ -13,6 +13,7 @@ import { artifactSourceRenderers } from "./SourceRenderer";
 import {
   appTab,
   closeWorkspaceTab,
+  fileTab,
   openWorkspaceTab,
   sourceTab,
   type WorkspaceState,
@@ -37,6 +38,12 @@ export function createArtifactWorkspace(initialHref?: string) {
     setMobile("workspace");
     syncUrl();
   };
+  const close = (key: string) => {
+    dirty.delete(key);
+    setState((state) => closeWorkspaceTab(state, key));
+    if (!state().tabs.length) setMobile("chat");
+    syncUrl();
+  };
   return {
     state,
     mobile,
@@ -56,11 +63,11 @@ export function createArtifactWorkspace(initialHref?: string) {
     setDirty: (key: string, value: boolean) => {
       value ? dirty.add(key) : dirty.delete(key);
     },
-    close: (key: string) => {
-      dirty.delete(key);
-      setState((state) => closeWorkspaceTab(state, key));
-      if (!state().tabs.length) setMobile("chat");
-      syncUrl();
+    close,
+    /** Closes the tab of a deleted chat file, discarding its unsaved edits. */
+    closeFile: (conversationId: string, path: string) => {
+      const key = fileTab(conversationId, path).key;
+      if (state().tabs.some((tab) => tab.key === key)) close(key);
     },
     hasDirty: () => dirty.size > 0,
   };
@@ -286,6 +293,7 @@ export function ArtifactWorkspace(props: {
                     }
                     category={tab.category}
                     onOpenView={props.onOpenView}
+                    onFileDeleted={(file) => props.controller.closeFile(file.conversationId, file.path)}
                     onOpenApp={(id, title, start) => props.controller.open(appTab(id, title, start))}
                   />
                 ) : tab.kind === "view" ? (

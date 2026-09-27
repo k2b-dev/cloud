@@ -104,6 +104,51 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("deletes one chat file only for its owner and reports a missing file", async () => {
+    const ownerId = await insertUser();
+    const otherId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: ownerId });
+    const archived = await aiConversations.createConversation({ ownerUserId: ownerId });
+    const file = { path: "/notes.md", bytes: new TextEncoder().encode("# Notes"), mediaType: "text/markdown" };
+    try {
+      await aiFileStore.createUserUpload({ conversationId: chat.id, ...file });
+      await aiFileStore.createToolArtifact({ conversationId: archived.id, ...file, producerCallKey: "test:notes" });
+      await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: ownerId });
+      const owner = await createTestSession(ownerId);
+      const other = await createTestSession(otherId);
+      const remove = (shortId: string, path: string, token: string) =>
+        aiRoutes.request(`/conversations/${shortId}/files?${new URLSearchParams({ path })}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+      const foreign = await remove(chat.shortId, file.path, other);
+      expect(foreign.status).toBe(404);
+      expect(await foreign.json()).toMatchObject({ message: "Conversation not found" });
+      const readOnly = await remove(archived.shortId, file.path, owner);
+      expect(readOnly.status).toBe(404);
+      expect(await aiFileStore.stat({ conversationId: chat.id, path: file.path })).not.toBeNull();
+      expect(await aiFileStore.stat({ conversationId: archived.id, path: file.path })).not.toBeNull();
+
+      const missing = await remove(chat.shortId, "/missing.md", owner);
+      expect(missing.status).toBe(404);
+      expect(await missing.json()).toMatchObject({ message: "File not found" });
+
+      const deleted = await remove(chat.shortId, file.path, owner);
+      expect(deleted.status).toBe(200);
+      expect(await deleted.json()).toEqual({ deleted: true });
+      expect(await aiFileStore.stat({ conversationId: chat.id, path: file.path })).toBeNull();
+      const content = await aiRoutes.request(`/conversations/${chat.shortId}/files/content?${new URLSearchParams({ path: file.path })}`, {
+        headers: { Authorization: `Bearer ${owner}` },
+      });
+      expect(content.status).toBe(404);
+      expect(await content.json()).toMatchObject({ message: "File not found" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id IN (${chat.id}::uuid, ${archived.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${otherId}::uuid)`;
+    }
+  });
+
   test("replaces a turn waiting for action when its user message is retried", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

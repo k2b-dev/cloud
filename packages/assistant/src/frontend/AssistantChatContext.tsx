@@ -1,7 +1,19 @@
 import type { AiConversationSource, AiProject, AiChatTaskView as AssistantChatTask } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { query } from "@k2b/stdlib/solid";
-import { Button, FileView, Lightbox, MarkdownView, Placeholder, prompts, StatusBadge, TextInput, useLocale } from "@k2b/ui";
+import {
+  Button,
+  type DetailPanelActionSecondary,
+  FileView,
+  Lightbox,
+  MarkdownView,
+  Placeholder,
+  prompts,
+  StatusBadge,
+  TextInput,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
@@ -42,7 +54,7 @@ import {
   useAssistantLive,
 } from "./assistant-live";
 import { formatDictationTimestamp } from "./dictation-files";
-import { assistantBrowserCopy, assistantBrowserText, useAssistantText } from "./ui-copy";
+import { assistantBrowserCopy, assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
@@ -58,6 +70,8 @@ export type ContextView = {
 };
 type ContextNavigation = {
   onOpenView?: (view: ContextView) => void;
+  /** Called after a chat file was deleted, so the host can close its open views. */
+  onFileDeleted?: (file: { conversationId: string; path: string }) => void;
   category?: ContextCategory;
 };
 
@@ -164,6 +178,7 @@ function AssistantChatContextView(
   const openRun = (taskId: string, occurrenceId: string) => void openAssistantTaskRun(taskId, occurrenceId, live);
   const locale = useLocale();
   const text = useAssistantText();
+  const copy = useAssistantCopy();
   const [search, setSearch] = createSignal("");
   const includes = (title: string) => !props.category || title.toLocaleLowerCase().includes(search().trim().toLocaleLowerCase());
   const section = (category: ContextCategory) => !props.category || props.category === category;
@@ -194,6 +209,32 @@ function AssistantChatContextView(
       ),
     });
   };
+  const deleting = new Set<string>();
+  const deleteChatFile = async (file: AssistantContextFile) => {
+    const chatId = props.state.context()?.chat.chatId;
+    if (!chatId || !file.source.remove || deleting.has(file.id)) return;
+    const confirmed = await prompts.confirm(copy().deleteChatFile({ name: file.displayName ?? file.path.replace(/^.*\//u, "") }), {
+      title: text("Delete file"),
+      confirmText: text("Delete"),
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    deleting.add(file.id);
+    try {
+      await file.source.remove(file.path);
+      props.onFileDeleted?.({ conversationId: chatId, path: file.path });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : text("File could not be deleted."), { title: text("Could not delete file") });
+    } finally {
+      deleting.delete(file.id);
+    }
+    // Reload the canonical list either way; a file deleted elsewhere disappears too.
+    await props.state.refresh();
+  };
+  const deleteAction = (file: AssistantContextFile): DetailPanelActionSecondary | undefined =>
+    file.scope === "chat" && file.source.remove
+      ? { icon: "ti ti-trash", label: text("Delete file"), variant: "danger", onClick: () => void deleteChatFile(file) }
+      : undefined;
   const openTask = (task: AssistantChatTask) =>
     props.onOpenView?.({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null });
   const overview = (category: ContextCategory, title: string) => {
@@ -534,6 +575,7 @@ function AssistantChatContextView(
                         scope={file.scope}
                         showScope={hasMixedScope(images())}
                         onClick={() => void openImages(file)}
+                        secondaryAction={deleteAction(file)}
                       />
                     )}
                   </For>
@@ -557,6 +599,7 @@ function AssistantChatContextView(
                         icon="ti ti-microphone"
                         title={file.displayName!}
                         onClick={() => void openFiles(voiceInputs(), file)}
+                        secondaryAction={deleteAction(file)}
                       />
                     )}
                   </For>
@@ -582,6 +625,7 @@ function AssistantChatContextView(
                         scope={file.scope}
                         showScope={hasMixedScope(regularFiles())}
                         onClick={() => void openFiles(regularFiles(), file)}
+                        secondaryAction={deleteAction(file)}
                       />
                     )}
                   </For>
@@ -667,7 +711,15 @@ export function AssistantChatContextContent(
     props.onPresenceChange?.(state.presence());
     props.onSnapshotChange?.(state.snapshot() ?? null);
   });
-  return <AssistantChatContextView state={state} onOpenApp={props.onOpenApp} category={props.category} onOpenView={props.onOpenView} />;
+  return (
+    <AssistantChatContextView
+      state={state}
+      onOpenApp={props.onOpenApp}
+      category={props.category}
+      onOpenView={props.onOpenView}
+      onFileDeleted={props.onFileDeleted}
+    />
+  );
 }
 
 export function AssistantChatContextPanel(
@@ -688,7 +740,13 @@ export function AssistantChatContextPanel(
   return (
     <Show when={state.presence() === true}>
       <AssistantChatContextSurface>
-        <AssistantChatContextView state={state} onOpenApp={props.onOpenApp} category={props.category} onOpenView={props.onOpenView} />
+        <AssistantChatContextView
+          state={state}
+          onOpenApp={props.onOpenApp}
+          category={props.category}
+          onOpenView={props.onOpenView}
+          onFileDeleted={props.onFileDeleted}
+        />
       </AssistantChatContextSurface>
     </Show>
   );

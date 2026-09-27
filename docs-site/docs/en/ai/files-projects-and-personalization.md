@@ -44,13 +44,17 @@ macOS spelling and its precomposed form address the same file (this also
 applies to Project files). Each file records whether it came from the user or
 the assistant; tools cannot overwrite a user upload. Default limits are 50 MB
 per file and 250 MB per conversation. Forking a conversation copies its files.
+The conversation owner can delete one file with
+`DELETE /conversations/:id/files?path=…`, which also backs
+`cld assistant files delete` and Assistant's file list. Reading or deleting a
+path that does not exist in the chat returns `404` with `File not found`.
 
 Every composer attachment is uploaded first. Messages and durable turn
 configuration keep file references instead of inline binary data. For each
 turn, Cloud snapshots the exact newly attached files and a bounded, newest-first
 file inventory into the system context as untrusted metadata. Attached file
 versions are copied atomically with the turn, so retries use the same bytes even
-when the conversation file changes later. A turn accepts at most eight files,
+when the conversation file changes or is deleted later. A turn accepts at most eight files,
 10 MB per image, and 40 MB of image input in total. Use `list_files` for the
 complete inventory and `read_file` or `view_image` before relying on a file's
 contents. In a Project chat, the same tools expose authorized shared Project

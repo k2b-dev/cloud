@@ -470,6 +470,8 @@ const germanText: Record<string, string> = {
   "Add Project files": "Dateien zum Projekt hinzufügen",
   "Delete file": "Datei löschen",
   "File deleted": "Datei gelöscht",
+  "Could not delete file": "Datei konnte nicht gelöscht werden",
+  "File could not be deleted.": "Die Datei konnte nicht gelöscht werden.",
   "Add Cloud reference": "Cloud-Referenz hinzufügen",
   "Cloud reference added": "Cloud-Referenz hinzugefügt",
   "Remove Cloud reference": "Cloud-Referenz entfernen",
@@ -522,6 +524,8 @@ const copy = i18n.define({
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
+      deleteChatFile: ({ name }: { name: string }) =>
+        `Delete “${name}” from this chat? Earlier messages keep their text, but their links to this file stop working.`,
       removeFromProject: ({ name }: { name: string }) => `Remove “${name}” from this Project?`,
       removeFromSkill: ({ name }: { name: string }) => `Remove "${name}" from this Skill?`,
       openExternalLink: ({ title, host }: { title: string; host: string }) => `Open “${title}” from ${host} in a new tab?`,
@@ -545,6 +549,8 @@ const copy = i18n.define({
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
+      deleteChatFile: ({ name }: { name: string }) =>
+        `„${name}“ aus diesem Chat löschen? Frühere Nachrichten bleiben erhalten, ihre Verweise auf diese Datei funktionieren aber nicht mehr.`,
       removeFromProject: ({ name }: { name: string }) => `„${name}“ aus diesem Projekt entfernen?`,
       removeFromSkill: ({ name }: { name: string }) => `„${name}“ aus diesem Skill entfernen?`,
       openExternalLink: ({ title, host }: { title: string; host: string }) => `„${title}“ von ${host} in einem neuen Tab öffnen?`,

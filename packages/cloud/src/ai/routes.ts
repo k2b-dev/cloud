@@ -200,6 +200,7 @@ const MemoryUpdateSchema = MemoryCreateSchema.partial().refine((value) => Object
 const MemoryIdSchema = z.string().regex(AI_SHORT_ID_PATTERN);
 
 const notFound = (c: Context<AuthContext>) => respond(c, fail(err.notFound("Conversation")));
+const fileNotFound = (c: Context<AuthContext>) => respond(c, fail(err.notFound("File")));
 
 const publicConversation = (conversation: AiConversation, projectId: string | null = null) => ({
   ...conversation,
@@ -1294,9 +1295,9 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const path = normalizeAiFilePath(c.req.valid("query").path);
-        if (!path) return notFound(c);
+        if (!path) return fileNotFound(c);
         const stored = await aiFileStore.read({ conversationId: conversation.id, path });
-        if (!stored) return notFound(c);
+        if (!stored) return fileNotFound(c);
         const filename = path.slice(path.lastIndexOf("/") + 1).replaceAll('"', "");
         return c.body(stored.bytes as unknown as ArrayBuffer, 200, {
           "Content-Type": stored.mediaType || "application/octet-stream",
@@ -1311,9 +1312,9 @@ export const aiRoutes = (() => {
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
         const path = normalizeAiFilePath(c.req.valid("query").path);
-        if (!path) return notFound(c);
+        if (!path) return fileNotFound(c);
         const removed = await aiFileStore.remove({ conversationId: conversation.id, path, recursive: false });
-        if (removed === 0) return notFound(c);
+        if (removed === 0) return fileNotFound(c);
         return respond(c, ok({ deleted: true }));
       })
       .put("/conversations/:conversationId/files/content", v("json", FileWriteSchema), async (c) => {

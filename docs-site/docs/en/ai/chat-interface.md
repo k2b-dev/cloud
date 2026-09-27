@@ -216,6 +216,16 @@ reloadable host workspace URL, or `null` for ordinary links. Plain clicks invoke
 URL. Assistant resolves only existing current-chat files and same-origin links.
 Conversation file paths are not website URLs; agents deliver files with `present`.
 
+Assistant's chat file list offers a trash action on every chat file: uploads,
+generated files, images, and voice inputs. It appears on row hover or keyboard
+focus and stays visible on touch devices. After confirmation, Assistant deletes
+the file through the conversation file route, closes the file's open workspace
+tab, and reloads the list. Shared Project files stay read-only in that list.
+Deletion never rewrites the chat history. Earlier messages keep their text; a
+Markdown link to the file becomes an ordinary link, opening a presented file
+reports `File not found`, and an image attachment shows its icon instead of the
+thumbnail.
+
 Completed turns preserve the same ordered timeline and show their elapsed
 wall-clock duration. They do not move earlier Markdown into a second outer
 work disclosure. Explicit disclosure choices survive streaming updates and a
