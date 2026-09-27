@@ -454,6 +454,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const open = (focus: "first" | "last" | false = "first") => {
     if (props.disabled || !menuRef || menuRef.matches(":popover-open")) return;
     menuRef.showPopover();
+    // The toggle event arrives a task later; expose the open state before focus moves into the menu.
+    setInternalOpen(true);
     attachViewportListeners();
     place();
     queueMicrotask(() => {
