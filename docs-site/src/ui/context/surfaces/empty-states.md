@@ -9,7 +9,10 @@ The application owns the message and any recovery action.
 
 Use `Placeholder` for an empty table, loading panel, or section that failed to
 load. Use the compact variant inside a section and the panel variant for a
-whole work area.
+whole work area; the panel variant centers its content in the height it
+receives, such as `class="flex-1"` in a column. Use the inline variant with
+`align="left"` for an empty list or sidebar section: one line with a small icon
+where the first row would be.
 
 `state` controls semantics and the default icon, while `variant` and `align`
 control layout independently. Name non-default layout choices in examples so
@@ -39,7 +42,7 @@ import {
 | `icon` | `string` | `loading` and `error` only | Overrides the Tabler icon class. `state="empty"` renders no icon unless one is passed. |
 | `action` | `JSX.Element` | none | Adds a recovery or creation action. |
 | `state` | `"empty" \| "loading" \| "error"` | `"empty"` | Selects state semantics and default icon. |
-| `variant` | `"compact" \| "panel"` | `"compact"` | Chooses section spacing or a larger work-area treatment. |
+| `variant` | `"compact" \| "inline" \| "panel"` | `"compact"` | Chooses stacked section spacing, one list row, or a larger work-area treatment. |
 | `surface` | `"none" \| "paper"` | `"none"` | Adds the shared paper surface. |
 | `align` | `"center" \| "left"` | `"center"` | Aligns the content. |
 | `class` | `string` | none | Adds classes to the root element. |
@@ -98,6 +101,13 @@ hydration; an island owns any callback-based action.
   align="left"
   title="Notes unavailable"
   description="Reload the page to try again."
+/>
+
+<Placeholder
+  variant="inline"
+  align="left"
+  icon="ti ti-file-text"
+  description="No notes yet"
 />
 
 <NotFoundState

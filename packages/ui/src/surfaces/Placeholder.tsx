@@ -5,7 +5,8 @@ import { Paper } from "./Paper";
 export type PlaceholderAlign = "center" | "left";
 export type PlaceholderSurface = "none" | "paper";
 export type PlaceholderState = "empty" | "loading" | "error";
-export type PlaceholderVariant = "compact" | "panel";
+/** `compact` stacks inside a section, `inline` is one row in a list or sidebar, `panel` fills a work area. */
+export type PlaceholderVariant = "compact" | "inline" | "panel";
 
 export type PlaceholderProps = {
   title?: JSX.Element;

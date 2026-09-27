@@ -172,7 +172,12 @@ export default ssr<AuthContext>(async (c) => {
                 />
               </div>
             ) : (
-              <Placeholder class="flex-1" icon="ti ti-file-text" description={tree.length === 0 ? t.noNotes : t.selectNote} />
+              <Placeholder
+                class="flex-1"
+                variant="panel"
+                icon="ti ti-file-text"
+                description={tree.length === 0 ? t.noNotes : t.selectNote}
+              />
             )}
           </AppWorkspace.Main>
 

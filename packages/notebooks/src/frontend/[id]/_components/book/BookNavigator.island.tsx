@@ -78,7 +78,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
         >
           {items(state().tree)}
         </AppWorkspace.NavTree>
-        {state().tree.length === 0 && <Placeholder description={t().empty} />}
+        {state().tree.length === 0 && <Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().empty} />}
       </AppWorkspace.SidebarSection>
       {state().tags.length > 0 && (
         <AppWorkspace.SidebarSection title={t().tags}>
