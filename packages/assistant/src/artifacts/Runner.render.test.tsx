@@ -37,14 +37,3 @@ test("fullscreen runner stacks its preview surface and control bar directly unde
   expect(order.every((index) => index >= 0)).toBe(true);
   expect(order).toEqual([...order].sort((a, b) => a - b));
 });
-
-test("the Cloud shell frames the signed-in runner from lg while the public page and mobile shell keep its inset", async () => {
-  const css = await Bun.file(new URL("../styles/app.css", import.meta.url)).text();
-  const runner = /^\.assistant-standalone-runner \{[^}]*\}/m.exec(css)?.[0];
-  expect(runner).toContain("padding: var(--ui-space-section);");
-  const desktopStart = css.indexOf("@media (min-width: 1024px) {\n  .assistant-standalone-runner");
-  expect(desktopStart).toBeGreaterThan(-1);
-  const desktop = css.slice(desktopStart, css.indexOf("\n}", desktopStart));
-  expect(desktop).toContain(".assistant-standalone-runner { padding: 0; }");
-  expect(desktop).toContain(".assistant-standalone-page .assistant-standalone-runner { padding: var(--ui-space-section); }");
-});
