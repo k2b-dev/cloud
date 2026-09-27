@@ -48,15 +48,17 @@ const bucket = (columnId: string, label: string, items: SpaceItem[], pages = { t
 
 type MoveRequest = { itemId: string; json: { columnId: string } & Record<string, unknown> };
 const moves: MoveRequest[] = [];
+const pending = () => new Promise<Response>(() => {});
 // Moves stay pending unless a test answers them, so the optimistic order is what the board shows.
-let answerMove: (request: MoveRequest) => Promise<Response> = () => new Promise<Response>(() => {});
+let answerMove: (request: MoveRequest) => Promise<Response> = pending;
+// Canonical refreshes stay pending unless a test answers them with the columns the server holds.
+let answerFilter: (columnId: string) => Promise<Response> = pending;
 if (!isServer) {
   mock.module("@/api/client", () => ({
     apiClient: {
       [":id"]: {
         items: {
-          // The canonical refresh after a move stays pending; the optimistic columns remain on screen.
-          filter: { $post: () => new Promise<Response>(() => {}) },
+          filter: { $post: (request: { json: { columnIds?: string[] } }) => answerFilter(request.json.columnIds?.[0] ?? "") },
           [":itemId"]: {
             move: {
               $post: (request: { param: { itemId: string }; json: MoveRequest["json"] }) => {
@@ -160,7 +162,24 @@ const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormhole
     await flush();
   };
   const slots = () => ["Open", "Review", "Later"].map((label) => `${label}: ${columnSlots(dom.document, label)}`);
-  return { dom, dispose, pointer, moveTo, slots };
+  const handleOf = (itemId: string) =>
+    dom.document.querySelector(`[data-item-id="${itemId}"]`)?.closest("article")?.querySelector("[data-dnd-card-handle]") ?? null;
+  /** Drags a card to `y` in `column`, releases it, and waits until the answered move has settled. */
+  const drop = async (itemId: string, column: number, y: number) => {
+    const card = dom.document.querySelector(`[data-item-id="${itemId}"]`)!.closest<HTMLElement>("article")!;
+    const sourceColumn = Array.from(dom.document.querySelectorAll(COLUMN_BODY)).indexOf(card.closest(COLUMN_BODY)!);
+    const sent = moves.length;
+    pointer("pointerdown", handleOf(itemId)!, columnX(sourceColumn), cardCenter(Number(card.dataset.cardIndex)));
+    await moveTo(column, y);
+    pointer("pointerup", dom.window as unknown as EventTarget, columnX(column), y);
+    // The handle returns once the answered move has settled and the board accepts the next drag.
+    for (let attempt = 0; attempt < 20 && (moves.length === sent || !handleOf(itemId)); attempt++) {
+      await flush();
+    }
+    expect(moves.length).toBe(sent + 1);
+    expect(handleOf(itemId)).not.toBeNull();
+  };
+  return { dom, dispose, pointer, moveTo, slots, drop };
 };
 
 describe("Spaces Kanban drop indicator", () => {
@@ -258,7 +277,7 @@ describe("Spaces Kanban drop indicator", () => {
     moves.length = 0;
     answerMove = async ({ itemId, json }) => Response.json(item(itemId, json.columnId, "0"));
     // Open shows its first page only: E and F exist on the server but are not loaded.
-    const { dom, dispose, pointer, moveTo, slots } = await renderBoard([
+    const { dom, dispose, slots, drop } = await renderBoard([
       bucket(
         "Col001",
         "Open",
@@ -271,22 +290,6 @@ describe("Spaces Kanban drop indicator", () => {
     // Unmounting aborts the pending canonical refreshes, which the board reports after the DOM is gone.
     const { prompts } = await import("@k2b/ui");
     const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
-    const handleOf = (itemId: string) =>
-      dom.document.querySelector(`[data-item-id="${itemId}"]`)?.closest("article")?.querySelector("[data-dnd-card-handle]") ?? null;
-    const drop = async (itemId: string, column: number, y: number) => {
-      const card = dom.document.querySelector(`[data-item-id="${itemId}"]`)!.closest<HTMLElement>("article")!;
-      const sourceColumn = Array.from(dom.document.querySelectorAll(COLUMN_BODY)).indexOf(card.closest(COLUMN_BODY)!);
-      const sent = moves.length;
-      pointer("pointerdown", handleOf(itemId)!, columnX(sourceColumn), cardCenter(Number(card.dataset.cardIndex)));
-      await moveTo(column, y);
-      pointer("pointerup", dom.window as unknown as EventTarget, columnX(column), y);
-      // The handle returns once the answered move has settled and the board accepts the next drag.
-      for (let attempt = 0; attempt < 20 && (moves.length === sent || !handleOf(itemId)); attempt++) {
-        await flush();
-      }
-      expect(moves.length).toBe(sent + 1);
-      expect(handleOf(itemId)).not.toBeNull();
-    };
 
     await drop("X", 0, cardCenter(0) - 10);
     expect(slots()).toEqual(["Open: X A B C D", "Review: Y Z", "Later: empty"]);
@@ -308,6 +311,55 @@ describe("Spaces Kanban drop indicator", () => {
     ]);
     expect(errors).not.toHaveBeenCalled();
 
+    dispose();
+    await flush();
+    errors.mockRestore();
+    dom.cleanup();
+  });
+
+  test("shows the columns Spaces holds after a rejected move, so the retry names a current neighbor", async () => {
+    moves.length = 0;
+    // What Spaces holds. Someone else has already moved C to Later; this board has not heard of it yet.
+    const server: Record<string, SpaceItem[]> = {
+      Col001: [item("A", "Col001", "1024"), item("B", "Col001", "2048")],
+      Col002: [item("X", "Col002", "1024"), item("Y", "Col002", "2048")],
+      Col003: [item("C", "Col003", "1024")],
+    };
+    answerFilter = async (columnId) => {
+      const items = server[columnId] ?? [];
+      return Response.json({ items, total: items.length, page: 1, pageSize: 30, totalPages: 1 });
+    };
+    answerMove = async ({ itemId, json }) => {
+      if (json.afterItemId === "C")
+        return Response.json({ message: "The neighboring item is no longer in the target column; reload and try again" }, { status: 409 });
+      const moved = item(itemId, json.columnId, "3072");
+      for (const columnId of Object.keys(server)) server[columnId] = server[columnId]!.filter((entry) => entry.id !== itemId);
+      server[json.columnId]!.push(moved);
+      return Response.json(moved);
+    };
+    const { dom, dispose, slots, drop } = await renderBoard([
+      bucket("Col001", "Open", [item("A", "Col001", "1024"), item("B", "Col001", "2048"), item("C", "Col001", "3072")]),
+      bucket("Col002", "Review", [item("X", "Col002", "1024"), item("Y", "Col002", "2048")]),
+      bucket("Col003", "Later", []),
+    ]);
+    const { prompts } = await import("@k2b/ui");
+    const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const settle = async (expected: string[]) => {
+      for (let attempt = 0; attempt < 20 && JSON.stringify(slots()) !== JSON.stringify(expected); attempt++) await flush();
+      expect(slots()).toEqual(expected);
+    };
+
+    await drop("Y", 0, cardCenter(2) + 10);
+    expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "C", completed: false } });
+    expect(errors).toHaveBeenCalledWith("The neighboring item is no longer in the target column; reload and try again");
+    await settle(["Open: A B", "Review: X Y", "Later: C"]);
+
+    await drop("Y", 0, cardCenter(1) + 10);
+    expect(moves.at(-1)).toEqual({ itemId: "Y", json: { columnId: "Col001", afterItemId: "B", completed: false } });
+    await settle(["Open: A B Y", "Review: X", "Later: C"]);
+    expect(errors).toHaveBeenCalledTimes(1);
+
+    answerFilter = pending;
     dispose();
     await flush();
     errors.mockRestore();

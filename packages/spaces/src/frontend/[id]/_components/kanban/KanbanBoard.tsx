@@ -509,12 +509,16 @@ export default function KanbanBoard(props: Props) {
       void invalidateSpacesData(["view"]).catch(() => prompts.error(t.moveRefreshFailed));
     },
     onError: (error, ctx) => {
-      if (ctx?.previousBuckets) {
+      if (ctx) {
+        // Show the columns Spaces holds rather than the board from before the drop: that board can
+        // still show a neighbor someone else moved or deleted, and every retry would name it again.
+        // The refresh is best effort; the failed move is the error to report.
         withBoardScrollPreserved(() => {
           withViewTransition(() => {
-            setBuckets(ctx.previousBuckets);
+            setOptimisticBuckets(null);
           });
         });
+        void invalidateSpacesData(["view"]).catch(() => undefined);
       }
       prompts.error(error.message);
     },
