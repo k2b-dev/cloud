@@ -549,8 +549,13 @@ const pdfBlob = (content: FileViewContent): Blob => {
  */
 function PdfRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
-  // A new Blob per loaded content remounts the preview, so a revision refetch shows the new bytes.
-  const blob = createMemo(() => (props.previewHref || !props.content.content ? null : pdfBlob(props.content)));
+  // A new Blob remounts the preview, so changed bytes show the new file. A revision refetch
+  // often returns the same bytes (the Assistant refetches on every tool step); keeping the
+  // Blob then keeps the reader's page instead of reloading the viewer.
+  const bytes = createMemo(() => props.content, undefined, {
+    equals: (previous, next) => previous.encoding === next.encoding && previous.content === next.content,
+  });
+  const blob = createMemo(() => (props.previewHref || !bytes().content ? null : pdfBlob(bytes())));
   return (
     <Show
       when={props.previewHref}

@@ -247,7 +247,7 @@ describe("@k2b/ui files and media runtime behavior", () => {
   });
 
   for (const downloadHref of ["/api/files/content?path=%2Freports%2Fq3.pdf", undefined]) {
-    test(`previews a PDF from its loaded bytes without an inline URL (downloadHref ${downloadHref ? "set" : "absent"})`, async () => {
+    test(`previews a PDF from its loaded bytes and remounts only for changed bytes (downloadHref ${downloadHref ? "set" : "absent"})`, async () => {
       const dom = createDomTestHarness();
       const { default: FileView } = await import("../src/content/FileView");
       const created: Blob[] = [];
@@ -260,6 +260,8 @@ describe("@k2b/ui files and media runtime behavior", () => {
       };
       URL.revokeObjectURL = (url) => revoked.push(url);
       const [revision, setRevision] = createSignal(1);
+      // The second refetch returns the same bytes, as a host revision bump often does.
+      const versions = ["%PDF-1.7 v1", "%PDF-1.7 v1", "%PDF-1.7 v2"];
       let loads = 0;
 
       try {
@@ -270,7 +272,7 @@ describe("@k2b/ui files and media runtime behavior", () => {
               get revision() {
                 return revision();
               },
-              load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: btoa(`%PDF-1.7 load ${++loads}`) }),
+              load: async () => ({ encoding: "base64" as const, mediaType: "application/pdf", content: btoa(versions[loads++]!) }),
               downloadHref,
             }),
           dom.root,
@@ -281,13 +283,21 @@ describe("@k2b/ui files and media runtime behavior", () => {
         expect(dom.root.querySelector("object")).toBeNull();
         expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-1");
         expect(created[0]?.type).toBe("application/pdf");
-        expect(await created[0]?.text()).toBe("%PDF-1.7 load 1");
+        expect(await created[0]?.text()).toBe("%PDF-1.7 v1");
+        const frame = dom.root.querySelector("iframe");
 
         setRevision(2);
         await flush();
         expect(loads).toBe(2);
+        expect(dom.root.querySelector("iframe")).toBe(frame);
+        expect(created).toHaveLength(1);
+        expect(revoked).toEqual([]);
+
+        setRevision(3);
+        await flush();
+        expect(loads).toBe(3);
         expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-2");
-        expect(await created[1]?.text()).toBe("%PDF-1.7 load 2");
+        expect(await created[1]?.text()).toBe("%PDF-1.7 v2");
         expect(revoked).toEqual(["blob:pdf-1"]);
 
         dispose();

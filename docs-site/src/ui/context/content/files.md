@@ -94,7 +94,8 @@ in the browser's own viewer.
 
 Pass `revision` to refetch a `FileView` whose path did not change. A
 `FileBrowserPanel` forwards its `refreshKey` to both the file list and the
-selected preview.
+selected preview. A PDF preview reloads only when the refetched bytes differ,
+so an unchanged file keeps its open page.
 
 Markdown files edit through `MarkdownEditor`. Other UTF-8 source and text files
 use a plain monospace textarea inside the same editor chrome, so Markdown
