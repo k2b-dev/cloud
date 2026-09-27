@@ -282,6 +282,7 @@ filename line. Long filenames truncate; the attachment row wraps when needed.
 Image attachments retain their thumbnail presentation. When a thumbnail no
 longer loads, for example because the file was deleted, the chip shows the
 attachment icon instead of a broken image and keeps the filename as its title.
+A changed `previewUrl` loads the thumbnail again.
 
 
 ## Application-owned model details

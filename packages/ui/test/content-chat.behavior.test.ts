@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
+import { createStore } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
 import type { ChatTimelineItem } from "../src/chat/ChatTimeline";
+import type { ChatAttachment } from "../src/chat/types";
 import { createDomTestHarness } from "./dom";
 
 describe("@k2b/ui content and chat behavior", () => {
@@ -238,13 +240,16 @@ describe("@k2b/ui content and chat behavior", () => {
   test("falls back to the attachment icon when an image preview no longer loads", async () => {
     const dom = createDomTestHarness();
     const { Chat } = await import("../src/chat");
+    const [attachments, setAttachments] = createStore<ChatAttachment[]>([
+      { id: "photo", name: "photo.png", kind: "image", icon: "ti ti-photo", previewUrl: "/files/deleted/photo.png" },
+    ]);
 
     const dispose = render(
       () =>
         createComponent(Chat.Message, {
           role: "user",
           children: "See the photo",
-          attachments: [{ id: "photo", name: "photo.png", kind: "image", icon: "ti ti-photo", previewUrl: "/files/deleted/photo.png" }],
+          attachments,
         }),
       dom.root,
     );
@@ -254,6 +259,10 @@ describe("@k2b/ui content and chat behavior", () => {
     expect(attachment.querySelector("img")).toBeNull();
     expect(attachment.querySelector("i.ti-photo")).not.toBeNull();
     expect(attachment.title).toBe("photo.png");
+
+    // The same attachment with a new preview URL gets another try.
+    setAttachments(0, "previewUrl", "/files/current/photo.png");
+    expect(attachment.querySelector("img")?.getAttribute("src")).toBe("/files/current/photo.png");
 
     dispose();
     dom.cleanup();
