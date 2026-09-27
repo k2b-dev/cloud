@@ -31,7 +31,7 @@ through the real Web Push transport to a local fake push service:
 
 ```sh
 CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
-  bun test pwas/pwa-auth/server/push.integration.test.ts
+  CLOUD_TEST_NATS_CREDS_FILE="$PWD/.local/nats/test.creds" bun test pwas/pwa-auth/server/push.integration.test.ts
 ```
 
 It never contacts a real push service. Real delivery to iPhone, Android and

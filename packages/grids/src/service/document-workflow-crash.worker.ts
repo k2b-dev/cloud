@@ -1,9 +1,10 @@
 /** Disposable child of the crash acceptance test; never an application worker entry point. */
 import { spyOn } from "bun:test";
+import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { bindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
+import { connect, credsAuthenticator } from "@nats-io/transport-node";
 import { sql } from "bun";
 import { localVerificationUrl } from "../../scripts/verification";
 import { DocumentTemplateRendererSchema } from "../contracts";
@@ -25,6 +26,7 @@ if (
 const connection = await connect({
   servers: localVerificationUrl("NATS", process.env.NATS_SERVERS).toString(),
   ignoreClusterUpdates: true,
+  ...(process.env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(process.env.NATS_CREDS_FILE)) } : {}),
 });
 const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
 bindProcessSync(sync);

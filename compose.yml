@@ -69,6 +69,18 @@ services:
   nats-1:
     <<: *nats
     container_name: ipa_nats_1
+    # Application data lived in the global account until the TEST account made
+    # DEV necessary. Once the prepared configuration defines DEV, move an
+    # existing store into it before NATS starts.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if grep -q '^  DEV ' /etc/nats/system.conf && [ -d '/data/jetstream/$$G' ] && [ ! -e /data/jetstream/DEV ]; then
+          mv '/data/jetstream/$$G' /data/jetstream/DEV
+        fi
+        exec nats-server "$$@"
+      - nats-server
     command: --config /etc/nats/nats.conf --name ipa_nats_1
     ports:
       - "127.0.0.1:${CLOUD_DEV_NATS_PORT:-4222}:4222"
@@ -157,7 +169,7 @@ configs:
           path: /data/freeipa
           execution: true
           index: false
-  # Prepared by `bun run dev`; contains only the admin public key.
+  # Prepared by `bun run dev`; defines the DEV, TEST, and $SYS accounts with public keys only.
   nats_system_config:
     file: ./.local/nats/system.conf
   nats_config:

@@ -34,10 +34,11 @@ export const unmanagedSyncNamespaces = (source: string): number[] =>
     .map((call) => source.slice(0, call.index).split("\n").length);
 
 /**
- * JetStream reserves every stream's full size, and tests share the development
- * broker, so a Sync namespace a test leaves behind blocks 1.5 to 2 GiB. The
- * fixture deletes only namespaces derived from its process namespace, and
- * `bun run test` sweeps only `test-` namespaces, so a test Sync must take its
+ * JetStream reserves every stream's full size, and tests share one account,
+ * locally the TEST account of the development broker, so a Sync namespace a
+ * test leaves behind blocks 1.5 to 2 GiB of its limit. The fixture deletes
+ * only namespaces derived from its process namespace, and `bun run test`
+ * sweeps only `test-` namespaces, so a test Sync must take its
  * namespace from `testSyncNamespace()`. Test code is every test file plus every
  * helper that imports the fixture. A Sync that must outlive the fixture's
  * cleanup, like a preload's, receives its own `test-` namespace through a

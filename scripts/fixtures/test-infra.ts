@@ -12,10 +12,11 @@
  * Import this module first in every integration test file. It is also loaded
  * as a `bun test` preload from `bunfig.toml` and by `scripts/run-tests.ts`.
  *
- * With a NATS target, each test process gets its own `test-` Sync namespace.
- * Its streams, and those of the namespaces derived from it with
- * `testSyncNamespace()`, are deleted once the process's tests are done
- * (`test-sync.ts`).
+ * With a NATS target, tests connect through `connectTestNats()` (`test-nats.ts`),
+ * which refuses the development account, and each test process gets its own
+ * `test-` Sync namespace. Its streams, and those of the namespaces derived
+ * from it with `testSyncNamespace()`, are deleted once the process's tests are
+ * done (`test-sync.ts`).
  *
  * Bun's default `redis` handle resolves `REDIS_URL` when the process starts,
  * before any preload runs. `bun run test` therefore exports the aliases into
@@ -26,6 +27,7 @@
  *
  *   CLOUD_TEST_DATABASE_URL   postgres://user:pass@host:5432/<name>_test
  *   CLOUD_TEST_NATS_SERVERS   nats://host:4222[,nats://host:4223]
+ *   CLOUD_TEST_NATS_CREDS_FILE absolute path of the test identity (.local/nats/test.creds)
  *   CLOUD_TEST_VALKEY_URL     redis://host:6379 (no database index)
  *   CLOUD_TEST_FILEGATE_URL   http://host:4000
  *   CLOUD_TEST_GOTENBERG_URL  http://host:3001
@@ -34,8 +36,10 @@
 import { afterAll, beforeAll, describe, test } from "bun:test";
 import { SQL, sql } from "bun";
 import { applyTestRuntimeEnv, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
+import { connectTestNats } from "./test-nats";
 
 export type { InfraKind } from "./test-infra-env";
+export { connectTestNats } from "./test-nats";
 
 const testOnlyDefaults: Record<string, string> = {
   APP_SECRET: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -97,7 +101,7 @@ export const testInfra: Readonly<Record<InfraKind, string | undefined>> = applyM
 
 const tcpReachable = async (url: string): Promise<void> => {
   const parsed = new URL(url);
-  const port = Number(parsed.port || (parsed.protocol === "nats:" ? 4222 : 6379));
+  const port = Number(parsed.port || 6379);
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`timeout connecting to ${parsed.hostname}:${port}`)), 3_000);
     Bun.connect({
@@ -140,8 +144,9 @@ const probes: Record<InfraKind, (target: string) => Promise<void>> = {
       await sql.close();
     }
   },
-  nats: async (target) => {
-    for (const server of target.split(",")) await tcpReachable(server.trim());
+  nats: async () => {
+    const connection = await connectTestNats({ timeout: 3_000, reconnect: false });
+    await connection.close();
   },
   valkey: tcpReachable,
   filegate: httpReachable,
@@ -160,7 +165,7 @@ export const requireInfra = async (...needs: InfraKind[]): Promise<void> => {
     if (!probe) {
       probe = probes[kind](target).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`${mappings[kind].test}=${target} is set but unreachable: ${message}`);
+        throw new Error(`${mappings[kind].test}=${target} is set but not usable: ${message}`);
       });
       verified.set(kind, probe);
     }
@@ -236,7 +241,7 @@ if (testInfra.nats) {
   try {
     afterAll(async () => {
       const { deleteTestNamespace } = await import("./test-sync");
-      await deleteTestNamespace(natsServers(), processNamespace);
+      await deleteTestNamespace(processNamespace);
     });
   } catch {
     // Loaded by a script outside `bun test` (integration bootstrap, Grids verification), which runs no tests.

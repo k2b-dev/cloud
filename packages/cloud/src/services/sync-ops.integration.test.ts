@@ -1,8 +1,7 @@
 import { expect } from "bun:test";
 import { createSync } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
 import { Hono } from "hono";
-import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import type { AuthContext } from "../server/middleware/auth";
 import { createSyncOpsRoutes } from "./sync-ops";
 
@@ -10,7 +9,7 @@ const integration = testFor("nats");
 integration(
   "installed Sync recovers a topic failure through the audited Cloud route without republishing",
   async () => {
-    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const sync = createSync({
       connection,
       namespace: testSyncNamespace("topic-ops"),
@@ -90,7 +89,7 @@ integration(
 integration(
   "installed Sync paginates queue failures after cursor deletion and reads exact details",
   async () => {
-    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const sync = createSync({
       connection,
       namespace: testSyncNamespace("dlq-pages"),

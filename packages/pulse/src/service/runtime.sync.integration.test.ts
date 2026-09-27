@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
-import { testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const syncTest = testFor("database", "nats");
 syncTest(
@@ -11,17 +11,13 @@ syncTest(
     await auth();
     await logging();
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const { pulseRuntime } = await import("./runtime");
     const { ingestBatch } = await import("./ingest-writer");
     const { newShortId } = await import("../lib/short-id");
     const { initializeSchema } = await import("../schema");
     await initializeSchema();
-    const connection = await connect({
-      servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
-      ignoreClusterUpdates: true,
-    });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("pulse-runtime");
     const sync = createSync({
       connection,

@@ -285,13 +285,26 @@ networks.
 
 Only the gateway publishes a host port. Do not publish each application.
 
-## Configure local NATS diagnostics
+## Configure local NATS accounts
 
-`bun run dev` prepares a local system identity under `.local/nats` before
-starting infrastructure. The seed stays outside Git and is mounted only in
-Gateway Ops. Application streams use the `$G` account; diagnostics use `$SYS`.
-Before invoking infrastructure Compose directly, run
-`bun packages/gateway-ops/scripts/dev-nats.ts`.
+`bun run dev` prepares three NATS accounts under `.local/nats` before starting
+infrastructure:
+
+- `DEV` holds the application streams. Applications connect without
+  credentials.
+- `TEST` holds the streams of integration tests. Tests authenticate with
+  `.local/nats/test.creds`. The account may reserve at most 20 GiB of
+  JetStream storage, twice the peak of a full integration run, so a test run
+  or the streams it leaves behind cannot exhaust the storage of `DEV`.
+- `$SYS` serves the Gateway Ops diagnostics. Its seed is mounted only in
+  Gateway Ops.
+
+The seeds and `test.creds` stay outside Git. Before invoking infrastructure
+Compose directly, run `bun packages/gateway-ops/scripts/dev-nats.ts`.
+
+Application streams used to live in the global `$G` account. The first start
+of the NATS container with these accounts moves the existing JetStream store
+into `DEV`, so the streams keep their data.
 
 ## Add a built-in application
 
@@ -354,9 +367,16 @@ loudly when a target is unreachable:
 ```bash
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
+CLOUD_TEST_NATS_CREDS_FILE="$PWD/.local/nats/test.creds" \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
 bun run test --integration
 ```
+
+`CLOUD_TEST_NATS_CREDS_FILE` puts the tests into the `TEST` account
+([Configure local NATS accounts](#configure-local-nats-accounts)) and must be
+an absolute path; from a worktree, point it at the file of the checkout that
+runs the development stack. Without it, a test connection lands in `DEV`, and
+the fixture refuses to run.
 
 If you [changed the host ports](#change-host-ports), use them in these URLs.
 The database name must end in `_test`; the fixture refuses anything else so a

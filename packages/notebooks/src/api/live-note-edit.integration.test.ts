@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 /**
  * An agent reads and edits a note through the CLI's HTTP routes while the note
@@ -33,7 +33,6 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
     const Y = await import("yjs");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const { jetstreamManager } = await import("@nats-io/jetstream");
     const server = await import("@k2b/cloud/server");
     const { oauthTokens } = await import("@k2b/cloud/services");
@@ -44,7 +43,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
     const { noteContentHash } = await import("../lib/note-edit");
     const { default: app } = await import("./index");
 
-    const connection = await connect({ servers: natsServers() });
+    const connection = await connectTestNats();
     const namespace = testSyncNamespace("notebooks-live-edit");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);

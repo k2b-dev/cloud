@@ -1,13 +1,12 @@
 import { expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
-import { natsServers, suiteFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
+import { connectTestNats, suiteFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import { createWorkflowWorker, notifyWorkflowWorker } from "./worker-runtime";
 
 suiteFor("nats")("workflow worker wake transport", () => {
   test("local and remote hints wake workers; lost hints recover and stop drains", async () => {
-    const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("workflow-wake");
     const sync = createSync({ connection, namespace, application: "worker-test", defaults: { replicas: 1 } });
     const remote = createSync({ connection, namespace, application: "publisher-test", defaults: { replicas: 1 } });

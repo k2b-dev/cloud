@@ -1,19 +1,22 @@
 /**
  * JetStream housekeeping for integration tests.
  *
- * Tests isolate their @k2b/sync resources only by namespace, on a broker that
- * locally is the development stack's own. JetStream reserves every stream's
- * full size (1 GiB per topic, job, and dead-letter stream by default), so a
- * namespace a test leaves behind blocks 1.5 to 2 GiB for a few kilobytes of
- * data. Every test namespace therefore starts with `test-`. The fixture deletes
- * a test process's namespaces once its tests are done, and `bun run test`
- * sweeps the namespaces that killed processes leave behind.
+ * Tests share one JetStream account and isolate their @k2b/sync resources only
+ * by namespace. Locally, that is the TEST account of the development broker,
+ * whose storage limit keeps tests away from the development account.
+ * JetStream reserves every stream's full size against that limit (1 GiB per
+ * topic, job, and dead-letter stream by default), so a namespace a test leaves
+ * behind blocks 1.5 to 2 GiB for a few kilobytes of data. Every test namespace
+ * therefore starts with `test-`. The fixture deletes a test process's
+ * namespaces once its tests are done, and `bun run test` sweeps the namespaces
+ * that killed processes leave behind.
  *
  * Streams are selected only through the `sync.namespace` metadata that
  * @k2b/sync writes, so other namespaces (`dev`, production) and streams
  * without that metadata are never touched.
  */
-import { connect, type NatsConnection } from "@nats-io/transport-node";
+import type { NatsConnection } from "@nats-io/transport-node";
+import { connectTestNats } from "./test-nats";
 
 export const testNamespacePrefix = "test-";
 
@@ -36,10 +39,10 @@ type ApiError = { err_code?: number; description?: string };
 const streamNotFound = 10059;
 const apiTimeout = { timeout: 5_000 };
 
-const withConnection = async <T>(servers: string[], run: (connection: NatsConnection) => Promise<T>): Promise<T> => {
-  const connection = await connect({ servers, name: "cloud-test-cleanup", ignoreClusterUpdates: true }).catch((error: unknown) => {
+const withConnection = async <T>(run: (connection: NatsConnection) => Promise<T>): Promise<T> => {
+  const connection = await connectTestNats({ name: "cloud-test-cleanup", ignoreClusterUpdates: true }).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cleaning up test Sync namespaces on ${servers.join(",")} failed: ${message}`, { cause: error });
+    throw new Error(`Cleaning up test Sync namespaces failed: ${message}`, { cause: error });
   });
   try {
     return await run(connection);
@@ -78,11 +81,11 @@ const deleteStreams = async (connection: NatsConnection, names: string[]): Promi
 const namespaceOf = (stream: StreamInfo): string | undefined => stream.config.metadata?.["sync.namespace"];
 
 /** Deletes the streams of test namespace `namespace` and of every namespace derived from it (`<namespace>-…`). */
-export const deleteTestNamespace = async (servers: string[], namespace: string): Promise<number> => {
+export const deleteTestNamespace = async (namespace: string): Promise<number> => {
   if (!namespace.startsWith(testNamespacePrefix)) {
     throw new Error(`Refusing to delete Sync namespace "${namespace}": test namespaces start with "${testNamespacePrefix}"`);
   }
-  return withConnection(servers, async (connection) => {
+  return withConnection(async (connection) => {
     const names = (await listStreams(connection))
       .filter((stream) => {
         const own = namespaceOf(stream);
@@ -120,8 +123,8 @@ export const staleTestNamespaces = (streams: StreamInfo[], now: number): Map<str
 };
 
 /** Deletes the test namespaces that killed or timed-out test processes left behind. */
-export const sweepStaleTestNamespaces = async (servers: string[], now = Date.now()): Promise<{ namespaces: number; streams: number }> =>
-  withConnection(servers, async (connection) => {
+export const sweepStaleTestNamespaces = async (now = Date.now()): Promise<{ namespaces: number; streams: number }> =>
+  withConnection(async (connection) => {
     const stale = staleTestNamespaces(await listStreams(connection), now);
     const names = [...stale.values()].flat();
     await deleteStreams(connection, names);

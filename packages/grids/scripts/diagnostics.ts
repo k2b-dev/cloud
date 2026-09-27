@@ -1,10 +1,10 @@
-import { closeSync, openSync } from "node:fs";
+import { closeSync, openSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { cpus, freemem, loadavg, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
+import { connect, credsAuthenticator } from "@nats-io/transport-node";
 import { SQL } from "bun";
 import { testInfra } from "../../../scripts/fixtures/test-infra";
 import { type DiagnosticReport, writeDiagnosticReport } from "./diagnostics-report";
@@ -158,7 +158,13 @@ try {
     await admin.close();
     try {
       // The parent also cleans up after a killed worker, whose finally cannot run.
-      const connection = await connect({ servers: nats.toString(), timeout: 5_000, reconnect: false, ignoreClusterUpdates: true });
+      const connection = await connect({
+        servers: nats.toString(),
+        timeout: 5_000,
+        reconnect: false,
+        ignoreClusterUpdates: true,
+        ...(process.env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(process.env.NATS_CREDS_FILE)) } : {}),
+      });
       try {
         const manager = await jetstreamManager(connection);
         for await (const stream of manager.streams.list()) {

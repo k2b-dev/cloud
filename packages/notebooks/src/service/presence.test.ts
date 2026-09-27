@@ -2,13 +2,12 @@ import { describe, expect } from "bun:test";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
-import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { join, leave, snapshot } from "./presence";
 
 describe("notebook presence", () => {
   testFor("nats")("preserves avatar identity while deduplicating a user's peers", async () => {
-    const connection = await connect({ servers: natsServers() });
+    const connection = await connectTestNats();
     const namespace = testSyncNamespace("notebooks-presence");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);

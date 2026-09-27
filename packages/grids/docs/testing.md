@@ -47,6 +47,8 @@ Gotenberg and Poppler's `pdftotext` executable. It reads the root `.env` and use
 - `DATABASE_URL` for PostgreSQL;
 - `REDIS_URL` for Valkey;
 - `CLOUD_TEST_NATS_SERVERS` for NATS (for example `nats://127.0.0.1:4222`);
+- `CLOUD_TEST_NATS_CREDS_FILE` for the NATS test identity on the development
+  broker (the absolute path of `.local/nats/test.creds`);
 - `CLOUD_TEST_GOTENBERG_URL` for Gotenberg (for example `http://localhost:3001`);
 - `PDFTOTEXT` for an optional executable path (default: `pdftotext` on `PATH`).
 

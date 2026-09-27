@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadavg } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { set as setSetting } from "@k2b/cloud/services/settings";
 import { createSync } from "@k2b/sync";
-import { connect } from "@nats-io/transport-node";
+import { connect, credsAuthenticator } from "@nats-io/transport-node";
 import { sql } from "bun";
 import type { GqlRuntimeTraceEnd } from "../src/api/gql-observability";
 import { executeGqlSourceForContext } from "../src/api/gql-runtime";
@@ -50,6 +51,7 @@ assert(namespace && namespace.startsWith("grids-diagnostics-"));
 const connection = await connect({
   servers: localVerificationUrl("NATS", process.env.SYNC_TEST_SERVERS).toString(),
   ignoreClusterUpdates: true,
+  ...(process.env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(process.env.NATS_CREDS_FILE)) } : {}),
 });
 const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
 bindProcessSync(sync);

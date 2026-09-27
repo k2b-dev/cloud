@@ -1,8 +1,7 @@
 import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
-import { connect } from "@nats-io/transport-node";
-import { requireInfra, testInfra, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
+import { connectTestNats, requireInfra, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 
 /**
  * Isolated broker session on `CLOUD_TEST_NATS_SERVERS`; `stop` removes only this namespace's streams.
@@ -12,7 +11,7 @@ import { requireInfra, testInfra, testSyncNamespace } from "../../../scripts/fix
  */
 export const connectGridsTestSync = async (namespace = testSyncNamespace("grids")) => {
   await requireInfra("nats");
-  const connection = await connect({ servers: testInfra.nats, ignoreClusterUpdates: true });
+  const connection = await connectTestNats({ ignoreClusterUpdates: true });
   const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
   bindProcessSync(sync);
   const stop = async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { natsServers, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 
 /** The notebooks module as a package plugin in a private config home; cld loads it like any installed module. */
@@ -73,7 +73,6 @@ if (process.env.NOTEBOOKS_CLI_CHILD !== "1") {
   beforeAll(async () => {
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const { jetstreamManager } = await import("@nats-io/jetstream");
     const server = await import("@k2b/cloud/server");
     const { oauthTokens } = await import("@k2b/cloud/services");
@@ -81,7 +80,7 @@ if (process.env.NOTEBOOKS_CLI_CHILD !== "1") {
     const { migrate } = await import("./migrate");
     const { default: app } = await import("./api");
 
-    const connection = await connect({ servers: natsServers() });
+    const connection = await connectTestNats();
     const namespace = testSyncNamespace("notebooks-cli");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);

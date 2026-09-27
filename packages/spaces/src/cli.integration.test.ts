@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { natsServers, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 import { newShortId } from "./lib/short-id";
 
@@ -65,7 +65,6 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
   beforeAll(async () => {
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const server = await import("@k2b/cloud/server");
     const { oauthTokens, toPgUuidArray } = await import("@k2b/cloud/services");
     spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
@@ -73,7 +72,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
     const { default: app } = await import("./api");
 
     // Item changes publish live events, so the API needs a bound Sync.
-    const connection = await connect({ servers: natsServers(), name: "spaces-cli-test" });
+    const connection = await connectTestNats({ name: "spaces-cli-test" });
     const sync = createSync({ connection, namespace: testSyncNamespace("spaces-cli"), application: "spaces", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const user: User = {

@@ -37,5 +37,5 @@ describe("staleTestNamespaces", () => {
 });
 
 test("deleteTestNamespace refuses a namespace outside the test prefix", async () => {
-  await expect(deleteTestNamespace([], "dev")).rejects.toThrow('Refusing to delete Sync namespace "dev"');
+  await expect(deleteTestNamespace("dev")).rejects.toThrow('Refusing to delete Sync namespace "dev"');
 });

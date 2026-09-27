@@ -34,4 +34,14 @@ describe("test runtime aliases", () => {
       for (const runtime of mapping.runtime) expect(env).not.toHaveProperty(runtime);
     }
   });
+
+  test("take the NATS identity only from CLOUD_TEST_NATS_CREDS_FILE", () => {
+    const inherited: Record<string, string | undefined> = { NATS_CREDS_FILE: "/run/secrets/installation.creds" };
+    applyTestRuntimeEnv(inherited);
+    expect(inherited).not.toHaveProperty("NATS_CREDS_FILE");
+    expect(testRuntimeEnv({ CLOUD_TEST_NATS_CREDS_FILE: " /cloud/.local/nats/test.creds " }).NATS_CREDS_FILE).toBe(
+      "/cloud/.local/nats/test.creds",
+    );
+    expect(() => testRuntimeEnv({ CLOUD_TEST_NATS_CREDS_FILE: ".local/nats/test.creds" })).toThrow("must be an absolute path");
+  });
 });

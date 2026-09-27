@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const natsTest = testFor("nats");
 
@@ -7,10 +7,8 @@ natsTest(
   "live topic replays from an empty snapshot and fans out to independent subscribers",
   async () => {
     const { createSync } = await import("@k2b/sync");
-    const { connect } = await import("@nats-io/transport-node");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
-    const connection = await connect({
-      servers: natsServers(),
+    const connection = await connectTestNats({
       ignoreClusterUpdates: true,
       name: "spaces-topic-test",
     });
