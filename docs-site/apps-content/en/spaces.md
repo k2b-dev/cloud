@@ -111,9 +111,13 @@ places the item in the full column. API clients use the same contract:
 `afterItemId` or `beforeItemId`, an item of the target column. Without either,
 the item goes to the top of the column. An explicit `rank` is still stored as
 given, but a neighbor wins when both are sent. Moves in one Space apply one at
-a time, so concurrent drops never share a position. If the neighbor has left
-the target column in the meantime, the move fails with `409` and changes
-nothing; reload the column and try again.
+a time, so concurrent drops never share a position. A neighbor that is not an
+item of the Space, for example because it was deleted or sent through a
+wormhole, fails with `404`. A neighbor in another column of the Space fails with
+`409`, as does one that leaves the target column while the move runs. Neither
+changes anything; reload the column and try again. After a rejected drop, the
+board shows the columns as Spaces holds them, so the next drop names a current
+neighbor.
 
 Spaces keeps common actions keyboard-first. Outside form fields and dialogs,
 **C** creates an item and **Cmd/Ctrl+Shift+K** opens scoped search. These actions

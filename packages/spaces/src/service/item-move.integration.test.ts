@@ -201,6 +201,7 @@ suite("Spaces item moves", () => {
     });
     // An anchor outside the target column means the client's picture is stale.
     expect(await move({ id: item.A!, columnId: column.Review!, afterItemId: item.B! })).toMatchObject({ ok: false, status: 409 });
+    // The route answers 404 for an unknown neighbor; one deleted after that check is no longer in the column here.
     expect(await move({ id: item.A!, columnId: column.Review!, afterItemId: crypto.randomUUID() })).toMatchObject({
       ok: false,
       status: 409,
