@@ -176,7 +176,7 @@ Use `--json` whenever a later action depends on the output. Pass multiline Markd
 
 ## Notebook as a local folder
 
-`cld notebooks pull <notebook> <dir>` mirrors a notebook into a folder of Markdown files. The mirror is one-way: it is for reading with any local tool (`rg`, an editor, another agent). Every change goes back through `write`, `edit`, `mv`, or `rm`; the CLI then updates the local files and the manifest immediately.
+`cld notebooks pull <notebook> <dir>` mirrors a notebook into a folder of Markdown files for any local tool (`rg`, an editor, another agent). Pull only downloads. Changes go back through `write`, `edit`, `mv`, or `rm`; they also accept mirror files, and the CLI then updates the local files and the manifest immediately.
 
 ### Layout
 
@@ -194,7 +194,9 @@ docs-mirror/
 
 - A note without children is `<slug>.md`. A note with children is a folder whose own content is `<slug>/index.md`.
 - When siblings share a slug, each file name carries the note ID: `<slug>--<id>.md` or `<slug>--<id>/`. A note whose slug is `index` always gets the suffix. The suffix exists only in mirror names; `<notebook>:<path>` never accepts it. A mirror file path always works as an address.
-- Attachments are downloaded to `_attachments/<id>-<file name>`. In the files, `attach://<id>` links become relative paths such as `../_attachments/Ab12Cd-plan.png`; writing a file back turns them into `attach://` links again. `note://` links stay as they are.
+- Attachments are downloaded to `_attachments/<id>-<file name>`. In the files, `attach://<id>` links become relative paths such as `../_attachments/Ab12Cd-plan.png`; writing a file back turns them into `attach://` links again.
+- Links to notes in the mirror become relative file paths in the same way: `[Backup](note://Ab12Cd#restore)` becomes `[Backup](../betrieb/backup.md#restore)`, so editors, Markdown viewers, and `rg` can follow them. Links to notes outside the mirror stay `note://` links.
+- Writing a file back turns every relative link to a note's file in the mirror into a `note://` link, including links you typed yourself, when the link is written the way pull writes it: the shortest relative path, such as `../betrieb/backup.md`, not `./../betrieb/backup.md`. Other relative links are uploaded as they are. Content that `edit` inserts through a mirror file is read the same way. Relative links resolve from the `--from` file when it lies in a mirror, otherwise from the mirror file you write or edit.
 - Each file starts with minimal front matter, followed by the exact note content:
 
   ```markdown
@@ -207,13 +209,13 @@ docs-mirror/
   ```
 
   `write` removes this front matter again. Other front matter in your content is kept as content.
-- `.cld-notebook.json` records the server, the notebook, and for each note its `path`, `contentHash`, and `updatedAt`: one entry per note, nothing else. Do not edit it.
+- `.cld-notebook.json` records the server, the notebook, and for each note its `path`, `contentHash` (the downloaded note content), `fileHash` (the file pull writes for that content), and `updatedAt`: one entry per note, nothing else. Do not edit it.
 
 ### Pull again
 
-Run `cld notebooks pull <dir>` (or `pull <notebook> <dir>`) at any time. Only notes whose `updatedAt` changed are downloaded; renamed and moved notes move their files, and files of deleted notes are removed. Pull reads the saved state; a change that someone is typing in the browser appears after the editor saves it, a few seconds later. `cat` always shows the live content.
+Run `cld notebooks pull <dir>` (or `pull <notebook> <dir>`) at any time. Only notes whose `updatedAt` changed are downloaded; renamed and moved notes move their files, and files of deleted notes are removed. When a linked note moves, appears, or is deleted, pull downloads the linking files again and updates their links. Pull reads the saved state; a change that someone is typing in the browser appears after the editor saves it, a few seconds later. `cat` always shows the live content.
 
-A file whose content differs from the manifest hash has local changes. Pull never overwrites or deletes such a file: it lists it with the reason and exits 1. A file with local changes whose note only moved moves along with its changes. `pull --force` discards local changes and makes the folder match the server.
+A file that differs from the server copy that pull wrote has local changes. While pull keeps a file for local changes, it compares the file with the server copy as it would write it at the current paths, so undoing your edits after a linked note moved still leaves a local change until you run `pull --force`. Pull never discards local changes: it lists the file with the reason and exits 1. Pull touches such a file only so that it can still be written back: when its own note moves, the file moves along with its changes and its relative links follow the new location; when a note it links to moves, that link follows the note, and a link to a note that left the mirror becomes its `note://` link. Everything else stays as you wrote it. If another local file holds the path a note needs, pull leaves that file alone: a moved note keeps its old file, and pull lists that file; a new note is not downloaded, and pull lists the path in the way. `pull --force` discards local changes and makes the folder match the server.
 
 Pull into a new or empty folder only; it refuses a non-empty folder without a manifest. For an empty notebook it writes just the manifest.
 
@@ -234,7 +236,7 @@ for f in $(find . -name '*.md'); do cld notebooks write ~/docs-mirror/${f#./} --
 - A `README.md` becomes an ordinary note titled after its heading. To make a file the content of its folder note, write it to `<folder>/index.md`; note that its heading then renames the folder, so write such files last or keep the heading equal to the folder name.
 - Running the loop again does not duplicate notes: a new file whose title already exists in that folder is refused with the existing path and ID. Update existing notes through their mirror files instead.
 - Run the loop sequentially. Parallel writes that create the same missing folder can create that folder twice.
-- Relative links between the Git files (`../x.md`, images) are copied verbatim; fix them afterward with `note://` or `attach://` links (`cld notebooks attach` prints one).
+- A relative link that names a file already in the mirror, as the shortest path from the target file, becomes a `note://` link. A link to a file that the loop writes later stays a relative link; write the linking mirror file once more to turn it into a note link. All other relative links between the Git files (`../x.md`, images) are copied verbatim; fix them afterward with `note://` or `attach://` links (`cld notebooks attach` prints one).
 
 The loop takes well under a second per file.
 
@@ -414,7 +416,7 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 | `rm <note>` | Delete with children; confirmation or `--yes`. |
 | `lock <note>` | Permanent lock; confirmation or `--yes`. |
 | `attach <note> <file>` | Upload and print a Markdown link. |
-| `pull [<notebook>] <dir>` | One-way Markdown mirror; `--force`. |
+| `pull [<notebook>] <dir>` | Download a notebook as a Markdown mirror; `--force`. |
 | `tags`, `backlinks`, `graph` | Tags, incoming links, link graph. |
 | `create <name>` | Empty notebook, or `--template <id>`. |
 | `templates`, `update`, `delete`, `export` | Notebook templates, settings, deletion, ZIP export. |

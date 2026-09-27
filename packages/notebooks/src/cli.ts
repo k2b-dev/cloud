@@ -24,14 +24,15 @@ import {
   findManifestFolder,
   findManifestNote,
   findMirror,
+  localFileState,
   MANIFEST_FILE,
   type Manifest,
   type ManifestNote,
-  mirrorFileContent,
+  manifestFiles,
   newManifest,
   type OutlineEntry,
   readManifest,
-  restoreAttachmentLinks,
+  restoreMirrorLinks,
   type SyncReport,
   stripFrontMatter,
   syncMirror,
@@ -113,8 +114,6 @@ const isHttpStatus = (error: unknown, status: number): boolean => error instance
 const expandHome = (path: string): string => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
 
 const looksLocal = (raw: string): boolean => parseCliAddress(raw).kind === "local";
-
-const depthOf = (path: string): number => path.split("/").length - 1;
 
 const formatNumberedLines = (content: string): string =>
   content
@@ -350,19 +349,28 @@ function notebooksCommands(locale?: string) {
     mirror: { root: string; manifest: Manifest },
     writtenNoteId?: string,
   ): Promise<{ manifest: Manifest; report: SyncReport }> => {
-    let manifest = mirror.manifest;
-    if (writtenNoteId) {
-      // The note now holds what was just uploaded; drop the stale record so its file is rewritten from the server copy.
-      manifest = { ...manifest, notes: manifest.notes.filter((note) => note.id !== writtenNoteId) };
-      const previous = mirror.manifest.notes.find((note) => note.id === writtenNoteId);
-      if (previous) await unlink(join(mirror.root, previous.path)).catch(() => undefined);
-    }
-    const synced = await syncMirror(ctx, { root: mirror.root, manifest, force: false });
+    // The written note now holds what was just uploaded, so its file takes the server copy.
+    const refetch = new Set(writtenNoteId ? [writtenNoteId] : []);
+    const synced = await syncMirror(ctx, { root: mirror.root, manifest: mirror.manifest, force: false, refetch });
     reportSync(ctx, synced.report);
     return synced;
   };
 
   const mirrorPathOf = (manifest: Manifest, noteId: string): string | undefined => manifest.notes.find((note) => note.id === noteId)?.path;
+
+  /**
+   * Content to upload, with the relative links that pull writes turned back into `note://` and `attach://` links. They
+   * resolve from the `--from` file when it lies in a mirror, otherwise from the mirror file being written (`target`).
+   */
+  const restoreUploadLinks = async (
+    content: string,
+    from: string | undefined,
+    target: { path: string; manifest: Manifest } | undefined,
+  ): Promise<string> => {
+    const origin = from !== undefined && from !== "-" ? await findMirror(expandHome(from)) : null;
+    const base = origin ? { path: origin.relPath, manifest: await readManifest(origin.root) } : target;
+    return base ? restoreMirrorLinks(content, base.path, manifestFiles(base.manifest)) : content;
+  };
 
   // ==========================
   // Commands
@@ -996,8 +1004,11 @@ function notebooksCommands(locale?: string) {
               );
             source = await readFile(join(ownFile.root, ownPath), "utf8");
           }
-          let content = stripFrontMatter(source);
-          if (ownPath) content = restoreAttachmentLinks(content, depthOf(ownPath));
+          let content = await restoreUploadLinks(
+            stripFrontMatter(source),
+            flags.from,
+            ownFile && ownPath ? { path: ownPath, manifest: ownFile.manifest } : undefined,
+          );
 
           if (destination.kind === "existing") {
             const { target } = destination;
@@ -1149,11 +1160,10 @@ function notebooksCommands(locale?: string) {
         ],
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
-          const operation = await buildEditOperation(flags);
+          let operation = await buildEditOperation(flags);
           if (target.mirror) {
             const { entry, root } = target.mirror;
-            const text = await readFile(join(root, entry.path), "utf8").catch(() => null);
-            if (text !== null && noteContentHash(mirrorFileContent(text, entry.path)) !== entry.contentHash)
+            if ((await localFileState(root, entry)).state === "modified")
               throw new Error(
                 t({
                   en: `${entry.path} has local changes. Write the file back first, or pull --force to discard them.`,
@@ -1161,6 +1171,15 @@ function notebooksCommands(locale?: string) {
                 }),
               );
           }
+          if ("content" in operation)
+            operation = {
+              ...operation,
+              content: await restoreUploadLinks(
+                operation.content,
+                flags.from,
+                target.mirror && { path: target.mirror.entry.path, manifest: target.mirror.manifest },
+              ),
+            };
           const request = {
             operations: [operation],
             ifUpdatedAt: flags.ifUpdatedAt,
@@ -1442,8 +1461,8 @@ function notebooksCommands(locale?: string) {
           de: "Ein Notizbuch in einen lokalen Ordner mit Markdown-Dateien spiegeln",
         }),
         description: t({
-          en: "One-way: only changed notes are downloaded; renamed, moved, and deleted notes follow. Files with local changes are never overwritten; they are listed and pull exits 1. --force discards them. An existing mirror can be pulled with just its folder.",
-          de: "Einweg: Nur geänderte Notizen werden geladen; umbenannte, verschobene und gelöschte Notizen folgen. Dateien mit lokalen Änderungen werden nie überschrieben; sie werden aufgelistet und pull endet mit 1. --force verwirft sie. Ein vorhandener Spiegel lässt sich nur mit seinem Ordner pullen.",
+          en: "Only changed notes are downloaded; renamed, moved, and deleted notes follow, and so do links to them. Local changes are never discarded: such files only move with their note and have their links to moved notes updated; they are listed and pull exits 1. --force discards them. An existing mirror can be pulled with just its folder.",
+          de: "Nur geänderte Notizen werden geladen; umbenannte, verschobene und gelöschte Notizen folgen, ebenso Links auf sie. Lokale Änderungen werden nie verworfen: Solche Dateien wandern nur mit ihrer Notiz mit, und ihre Links auf verschobene Notizen werden angepasst; sie werden aufgelistet und pull endet mit 1. --force verwirft sie. Ein vorhandener Spiegel lässt sich nur mit seinem Ordner pullen.",
         }),
         args: {
           first: arg.required({
