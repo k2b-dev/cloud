@@ -6,6 +6,9 @@ export interface Binding extends AppApprovalDevice {
   name: string;
   /** Push token this Cloud last accepted for sign-in wake-ups. */
   pushToken?: string;
+  details?: CloudDetails;
+  /** When this device last approved a sign-in for this Cloud. */
+  approvedAt?: string;
 }
 export interface Enrollment {
   comparison?: string;
@@ -35,7 +38,22 @@ const enrollmentSchema = z.object({
   deviceId: z.string().optional(),
   confirmed: z.boolean().optional(),
 });
-const bindingSchema = enrollmentSchema.extend({ deviceId: z.string(), pushToken: z.string().optional() });
+/** The account this device signs in, as the Cloud last reported it. Kept for offline viewing. */
+const detailsSchema = z.object({
+  uid: z.string(),
+  displayName: z.string(),
+  mail: z.string().nullable(),
+  deviceName: z.string(),
+  pairedAt: z.string(),
+  checkedAt: z.string(),
+});
+export type CloudDetails = z.infer<typeof detailsSchema>;
+const bindingSchema = enrollmentSchema.extend({
+  deviceId: z.string(),
+  pushToken: z.string().optional(),
+  details: detailsSchema.optional(),
+  approvedAt: z.string().optional(),
+});
 async function read<T>(name: string, id: string, record: SealedRecord, validate: (v: unknown) => T) {
   const owner = currentSession();
   if (record.vault !== owner.id) throw new Error("storage");

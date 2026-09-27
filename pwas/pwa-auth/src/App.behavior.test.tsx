@@ -66,6 +66,10 @@ mock.module("./authenticator", () => ({
       client: async () => {
         throw new Error("No network in this test");
       },
+      stored: async () => undefined,
+      account: async () => {
+        throw new Error("No network in this test");
+      },
       decide: noop,
       revoke: noop,
       syncPush: noop,
