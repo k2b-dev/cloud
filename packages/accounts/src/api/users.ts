@@ -94,7 +94,10 @@ type UserBackedActor = ReturnType<typeof expectUserBackedActor>;
 const deviceAdministrator = (actor: UserBackedActor) => ({ userId: actor.id, admin: actor.roles.includes("admin") });
 
 /** Runs a device operation for an existing account and maps app-approval refusals to the Accounts error contract. */
-const userDeviceResult = async <T>(id: string, run: () => Promise<T>): Promise<Result<T>> => {
+const userDeviceResult = async <T>(
+  id: string,
+  run: () => Promise<T>,
+): Promise<Result<T> | { ok: false; error: string; code: "UNAVAILABLE"; status: 503 }> => {
   if (!(await accountsService.user.getMinimal({ id }))) return fail(err.notFound("User"));
   try {
     return ok(await run());
@@ -102,7 +105,9 @@ const userDeviceResult = async <T>(id: string, run: () => Promise<T>): Promise<R
     if (!(error instanceof AppApprovalError)) throw error;
     if (error.status === 403) return fail(err.forbidden("Admin access required"));
     if (error.status === 404) return fail(err.notFound("Device"));
-    return fail(err.internal("App sign-in is unavailable"));
+    // An invalid stored app sign-in configuration, such as app.url, is not a server fault.
+    if (error.status === 503) return { ok: false, error: "App sign-in is unavailable", code: "UNAVAILABLE", status: 503 };
+    throw error;
   }
 };
 
@@ -650,6 +655,7 @@ const app = new Hono<AuthContext>()
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
         404: jsonResponse(ErrorResponseSchema, "User not found"),
+        503: jsonResponse(ErrorResponseSchema, "App sign-in configuration is invalid"),
       },
     }),
     v("param", UserIdParamSchema),
@@ -675,6 +681,7 @@ const app = new Hono<AuthContext>()
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
         404: jsonResponse(ErrorResponseSchema, "User or device not found"),
+        503: jsonResponse(ErrorResponseSchema, "App sign-in configuration is invalid"),
       },
     }),
     v("param", UserDeviceParamSchema),

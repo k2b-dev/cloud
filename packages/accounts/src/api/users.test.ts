@@ -152,3 +152,22 @@ test("a failed notice keeps the committed revocation, and unknown devices answer
     send.mockRestore();
   }
 });
+
+test("an invalid app sign-in configuration answers 503 on both device routes", async () => {
+  const getMinimal = spyOn(accountsAppService.user, "getMinimal").mockResolvedValue(minimalTarget as never);
+  const list = spyOn(appApproval, "listUserDevices").mockRejectedValue(new AppApprovalError("UNAVAILABLE", 503));
+  const revoke = spyOn(appApproval, "revokeUserDevice").mockRejectedValue(new AppApprovalError("UNAVAILABLE", 503));
+  try {
+    for (const res of [
+      await users.request(`/${targetId}/devices`),
+      await users.request(`/${targetId}/devices/${deviceId}`, { method: "DELETE" }),
+    ]) {
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ code: "UNAVAILABLE", message: "App sign-in is unavailable" });
+    }
+  } finally {
+    getMinimal.mockRestore();
+    list.mockRestore();
+    revoke.mockRestore();
+  }
+});
