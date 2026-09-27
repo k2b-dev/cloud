@@ -147,12 +147,21 @@ blocks 1.5 to 2 GiB. The fixture therefore cleans up after every test process:
 - A test that creates its own Sync instance takes its namespace from
   `testSyncNamespace("<label>")`, exported by `scripts/fixtures/test-infra`.
   The name is derived from the process namespace, so the test needs no
-  cleanup code of its own.
+  cleanup code of its own. `bun run check` fails when test code passes
+  `createSync` any other namespace.
 - When the process's tests are done, passed or failed, the fixture deletes
   the streams of the process namespace and of every namespace derived from it.
 - A killed or timed-out process never reaches that cleanup. `bun run test`
   therefore first deletes every test namespace whose streams were all created
   more than an hour ago, longer than any test process runs.
+
+The cleanup waits for all test files of a process only when Bun loads the
+fixture as a preload: under `bun run test`, and under a direct `bun test`
+started from the repository root or from a package whose `bunfig.toml`
+preloads the fixture, like Grids. A direct `bun test` from another package
+directory loads the fixture inside its first test file. The cleanup then runs
+before that file's own `afterAll` hooks and misses every later file, so what
+those files leave waits for the sweep of a later `bun run test`.
 
 The cleanup selects streams only by their `sync.namespace` metadata and never
 touches a namespace that does not start with `test-`, such as `dev`. Do not

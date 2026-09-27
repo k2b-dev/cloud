@@ -228,8 +228,10 @@ export const testSyncNamespace = (label: string): string => `${processNamespace}
 
 // Preload hooks run after every hook of the test files, in preload order. A later
 // preload that keeps a Sync running until its own `afterAll` (Mail) therefore uses
-// a namespace of its own and deletes it after draining. `bun run test` sweeps the
-// namespaces of killed processes (`test-sync.ts`).
+// a namespace of its own and deletes it after draining. Imported by a test file
+// instead, this hook belongs to that file: it runs before the file's own hooks and
+// misses later files. `bun run test` sweeps what remains and the namespaces of
+// killed processes (`test-sync.ts`).
 if (testInfra.nats) {
   try {
     afterAll(async () => {
