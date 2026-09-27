@@ -425,12 +425,18 @@ describe("changes", () => {
     const timed = await run(["add", "Roadmap:Launch review", "--starts-at", "2026-10-20T10:00:00Z", "--ends-at", "2026-10-20T11:00:00Z"]);
     expect(writes(timed.requests)[0]?.body).toMatchObject({ startsAt: "2026-10-20T10:00:00.000Z", endsAt: "2026-10-20T11:00:00.000Z" });
     expect(writes(timed.requests)[0]?.body).not.toHaveProperty("allDay");
+    // ISO bounds keep the stored all-day setting, so passing back an all-day event's instants cannot make it timed.
+    const moved = await run(["set", "Item01", "--starts-at", "2026-10-23T22:00:00Z", "--ends-at", "2026-10-25T23:00:00Z"]);
+    expect(writes(moved.requests)[0]?.body).toEqual({ startsAt: "2026-10-23T22:00:00.000Z", endsAt: "2026-10-25T23:00:00.000Z" });
     const exact = await run(["set", "Item01", "--deadline", "2026-10-20T10:00:00+02:00"]);
     expect(writes(exact.requests)[0]?.body).toEqual({ deadline: "2026-10-20T08:00:00.000Z" });
 
-    const impossible = await failing(["due", "Item01", "2026-02-30"]);
-    expect(impossible.stderr).toContain("<date> must be an ISO datetime or a YYYY-MM-DD date.");
-    expect(writes(impossible.requests)).toEqual([]);
+    // Impossible dates fail instead of rolling over; years before 100 would turn into 19xx.
+    for (const date of ["2026-02-30", "0026-10-20"]) {
+      const invalid = await failing(["due", "Item01", date]);
+      expect(invalid.stderr).toContain("<date> must be an ISO datetime or a YYYY-MM-DD date.");
+      expect(writes(invalid.requests)).toEqual([]);
+    }
   });
 });
 

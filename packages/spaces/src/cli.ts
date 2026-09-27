@@ -116,7 +116,8 @@ function spacesCommands(locale?: string) {
       );
     if (DATE_ONLY.test(value)) {
       const day = new Date(`${value}T00:00:00Z`);
-      if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== value) throw invalid();
+      // Rejects impossible dates such as 2026-02-30, and years before 100, which stdlib's wall-clock conversion reads as 19xx.
+      if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== value || day.getUTCFullYear() < 100) throw invalid();
       if (dateOnly === "end") day.setUTCDate(day.getUTCDate() + 1);
       const wallClock = `${day.toISOString().slice(0, 10)}T${dateOnly === "deadline" ? DATE_ONLY_DEADLINE_TIME : "00:00"}`;
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
