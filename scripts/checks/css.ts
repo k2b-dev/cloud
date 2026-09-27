@@ -67,6 +67,31 @@ const checkDetailPanelMigration = (packagesRoot: string, packageNames: string[],
 
 type Report = (file: string, message: string) => void;
 
+/** Blanks comments but keeps their newlines, so reported lines stay exact. */
+const blankComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\/|(?<!:)\/\/[^\n]*/g, (comment) => comment.replace(/[^\n]/g, " "));
+
+/**
+ * `--ui-focus` is a complete box-shadow, so a color position (border, outline,
+ * background, `color-mix`) drops the declaration at computed-value time.
+ * Returns the owner of each misuse: the last CSS property, style key,
+ * `.style.` assignment, or Tailwind `utility-[` in the same declaration (text
+ * after the last `;`, `{`, or `}`). A key colon directly follows its name in
+ * formatted code, which keeps a ternary's ` : ` from posing as a key. References
+ * without an owner, such as a constant or custom property alias, pass.
+ */
+const focusShadowMisuses = (source: string): { line: number; owner: string }[] => {
+  const code = blankComments(source);
+  return [...code.matchAll(/var\(\s*--ui-focus\s*\)/g)].flatMap((match) => {
+    const before = code.slice(0, match.index);
+    const declaration = before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("{"), before.lastIndexOf("}")) + 1);
+    const last = [...declaration.matchAll(/\.style\.(\w+)\s*=|(-{0,2}[A-Za-z][\w-]*)(?:["']?:|-\[)/g)].at(-1);
+    const owner = last?.[1] ?? last?.[2];
+    if (!owner || owner.startsWith("--") || ["box-shadow", "boxShadow", "shadow"].includes(owner)) return [];
+    return [{ line: before.split("\n").length, owner }];
+  });
+};
+
 const checkEmbeddableUiStyles = (packagesRoot: string, report: Report) => {
   const uiStylesheet = join(packagesRoot, "ui", "src", "styles", "index.css");
   const uiFontPreset = join(packagesRoot, "ui", "src", "fonts", "plex.css");
@@ -121,7 +146,7 @@ const checkEmbeddableUiStyles = (packagesRoot: string, report: Report) => {
 
 export const rule: Rule = {
   name: "css",
-  description: "Shared stylesheet cascade, token ownership, app style entrypoints, and removed utilities",
+  description: "Shared stylesheet cascade, token ownership and focus-ring usage, app style entrypoints, and removed utilities",
   run: async ({ workspaceRoot }) => {
     const packagesRoot = join(workspaceRoot, "packages");
     const sharedStylesRoot = join(packagesRoot, "cloud", "src", "styles");
@@ -153,7 +178,13 @@ export const rule: Rule = {
     }
 
     for (const file of packageNames.flatMap((name) => listFiles(join(packagesRoot, name), /\.(?:css|js|jsx|ts|tsx)$/))) {
-      const source = withoutCssComments(readFileSync(file, "utf8"));
+      const raw = readFileSync(file, "utf8");
+      if (!isTestFile(file)) {
+        for (const { line, owner } of focusShadowMisuses(raw)) {
+          findings.push({ file, line, message: `${owner} uses var(--ui-focus), a box-shadow; use it as box-shadow or pick a color token` });
+        }
+      }
+      const source = withoutCssComments(raw);
       const legacyNoticeClass = source.match(/\binfo-block(?:-(?:note|info|success|warning|danger|error))?(?![a-z-])/);
       if (legacyNoticeClass) report(file, `${legacyNoticeClass[0]} must use the shared NoticeCard contract`);
       for (const match of source.matchAll(/var\(\s*(--theme-[A-Za-z0-9_-]+)/g)) {
