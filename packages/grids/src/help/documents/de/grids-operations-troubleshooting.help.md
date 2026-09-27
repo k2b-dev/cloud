@@ -21,7 +21,7 @@ Lies die aktive Suche, Filter, Quellansicht, den Modus für gelöschte Datensät
 
 Nutze exakte Filter für berechnete Werte, Lookups, Rollups, Dateien, Datumswerte und leere Werte. Ergänze eine aussagekräftige Sortierung, bevor du dich auf die Seitenreihenfolge oder `offset` verlässt. Seiten sind aktuelle Lesevorgänge; Änderungen zwischen Seitenanfragen können passende Datensätze verschieben.
 
-Datensatzergebnisse aktualisieren sich an Ort und Stelle, auch nach Wiederverbindung. Filter, Sortierung und Summen werden neu berechnet; Datensätze können das Ergebnis verlassen. Offene Bearbeitungsdialoge behalten ihre Entwürfe und melden konkurrierende Änderungen. Stoppen Live-Updates, nutze die Aktualisieren-Aktion.
+Datensatzergebnisse aktualisieren sich an Ort und Stelle, auch nach Wiederverbindung. Während Datensätze laden oder sich aktualisieren, wird die Lupe im Suchfeld zu einem kleinen Ladesymbol. Filter, Sortierung und Summen werden neu berechnet; Datensätze können das Ergebnis verlassen. Offene Bearbeitungsdialoge behalten ihre Entwürfe und melden konkurrierende Änderungen. Schlägt eine automatische Aktualisierung fehl, wähle **Aktualisierungen verfügbar** neben der Datensatzanzahl, um es erneut zu versuchen. Stoppen Live-Updates, lade die Seite neu.
 
 ## Die Bearbeitung eines Datensatzes wurde abgelehnt {icon="table"}
 

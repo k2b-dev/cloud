@@ -232,6 +232,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   let staleResourceEpochFloor = -1;
   let liveCommitId = 0;
   let revoked = false;
+  // The records are current as of this cursor: the SSR cursor, captured before the page read, or the last applied refresh.
+  let appliedLiveCursor = options.initialEventCursor;
   const [refreshFailed, setRefreshFailed] = createSignal(false);
 
   const invalidate = () => {
@@ -391,6 +393,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       await options.onRefreshed(next);
       if (requestId !== refreshRequestId || revoked) return;
       liveProvider?.markApplied(cursorToApply);
+      if (cursorToApply) appliedLiveCursor = cursorToApply;
       if (pendingLiveCursor === cursorToApply) pendingLiveCursor = null;
 
       if (!options.isGrouped()) {
@@ -426,6 +429,11 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     }
   }
 
+  /** Records are loading, or a live reconciliation is pending or running. */
+  const busy = () => recordsQuery.data.loading || liveRefreshing() || (livePending() && !refreshFailed());
+  /** A failed live reconciliation waits for the manual refresh action instead of retrying on its own. */
+  const needsManualRefresh = () => refreshFailed() && (livePending() || liveRefreshing());
+
   createEffect(() => {
     if (revoked || refreshFailed() || !livePending()) return;
     if (liveRefreshing() || recordsQuery.data.loading || options.hasBlockingDialog() || liveRefreshTimer) return;
@@ -452,6 +460,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       initialCursor: options.initialEventCursor,
       locale: options.locale,
       onReady: (cursor) => {
+        // Resuming from the applied cursor replays every later event; only a new baseline or an outstanding reconciliation needs a read.
+        if (cursor && cursor === appliedLiveCursor && !livePending()) return;
         pendingLiveCursor = cursor;
         scheduleLiveRefresh();
       },
@@ -502,6 +512,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     nextCursor: () => (options.isGrouped() ? groupedPage().nextCursor : flatPage().nextCursor),
     livePending,
     liveRefreshing,
+    busy,
+    needsManualRefresh,
     highlightedRecordIds,
     invalidate,
     loadNextPage,

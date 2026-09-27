@@ -30,7 +30,25 @@ const record = (id: string): PublicGridRecord => ({
   updatedBy: null,
 });
 
-const mount = async (onRefreshed: () => Promise<void> = async () => {}) => {
+const liveEvent = (recordId: string) => ({
+  v: 1 as const,
+  baseId: "BASE01",
+  tableId: "TABLE1",
+  recordId,
+  type: "record.updated" as const,
+  version: 2,
+  changedFieldIds: [],
+  actorId: null,
+  occurredAt: "2026-09-01T00:00:00Z",
+});
+
+const until = async (condition: () => boolean) => {
+  const deadline = Date.now() + 2000;
+  while (!condition() && Date.now() < deadline) await Bun.sleep(5);
+  expect(condition()).toBe(true);
+};
+
+const mount = async ({ initialEventCursor = null }: { initialEventCursor?: string | null } = {}) => {
   const dom = createDomTestHarness();
   const { createRecordsDataController } = await import("./records-data-controller");
   let controller!: ReturnType<typeof createRecordsDataController>;
@@ -46,14 +64,14 @@ const mount = async (onRefreshed: () => Promise<void> = async () => {}) => {
           trashMode: false,
           source: () => ({ tableId: "TABLE1", query, cursor: cursor(), calendar: { view: "month", date: "2026-09-01" } }),
           initialData: { items: [record("old")], nextCursor: null },
-          initialEventCursor: null,
+          initialEventCursor,
           locale: "en",
           cursor,
           setCursor,
           isGrouped: () => false,
           hasBlockingDialog: () => false,
           onOptimisticDelete: () => {},
-          onRefreshed,
+          onRefreshed: async () => {},
           onRevoked: () => {
             revoked++;
           },
@@ -166,6 +184,69 @@ domTest("failed reconciliation keeps the old result without a retry loop or curs
     expect(applied).toEqual([]);
     expect(state.controller.items()[0]!.id).toBe("old");
     expect(state.controller.livePending()).toBe(true);
+    expect(state.controller.needsManualRefresh()).toBe(true);
+    expect(state.controller.busy()).toBe(false);
+
+    fetchRecords = async () => ({ items: [record("fresh")], nextCursor: null });
+    const retry = state.controller.refreshVisibleRecords();
+    expect(state.controller.needsManualRefresh()).toBe(true);
+    expect(state.controller.busy()).toBe(true);
+    await retry;
+    expect(state.controller.needsManualRefresh()).toBe(false);
+    expect(state.controller.busy()).toBe(false);
+    expect(state.controller.items()[0]!.id).toBe("fresh");
+  } finally {
+    state.dispose();
+  }
+});
+
+domTest("a ready that resumes from the cursor the records are current as of needs no reconciling read", async () => {
+  const state = await mount({ initialEventCursor: "s6t.test.3" });
+  let calls = 0;
+  fetchRecords = async () => {
+    calls++;
+    return { items: [record(`fresh-${calls}`)], nextCursor: null };
+  };
+  try {
+    // Scheduling a reconciliation marks it pending synchronously, so nothing pending means no read.
+    callbacks.onReady?.("s6t.test.3");
+    expect(state.controller.livePending()).toBe(false);
+    expect(state.controller.busy()).toBe(false);
+
+    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
+    expect(state.controller.busy()).toBe(true);
+    await until(() => applied.length === 1 && !state.controller.busy());
+    expect(applied).toEqual(["s6t.test.4"]);
+    expect(state.controller.items()[0]!.id).toBe("fresh-1");
+
+    callbacks.onReady?.("s6t.test.4");
+    expect(state.controller.livePending()).toBe(false);
+
+    callbacks.onReady?.("s6t.test.9");
+    expect(state.controller.busy()).toBe(true);
+    await until(() => applied.length === 2 && !state.controller.busy());
+    expect(applied.at(-1)).toBe("s6t.test.9");
+    expect(calls).toBe(2);
+  } finally {
+    state.dispose();
+  }
+});
+
+domTest("a resumed ready still retries a reconciliation that failed before the reconnect", async () => {
+  const state = await mount({ initialEventCursor: "s6t.test.3" });
+  let calls = 0;
+  fetchRecords = async () => {
+    calls++;
+    if (calls === 1) throw Error("offline");
+    return { items: [record("fresh")], nextCursor: null };
+  };
+  try {
+    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
+    await until(() => state.controller.needsManualRefresh());
+    callbacks.onReady?.("s6t.test.3");
+    expect(state.controller.needsManualRefresh()).toBe(false);
+    await until(() => state.controller.items()[0]!.id === "fresh" && !state.controller.busy());
+    expect(state.controller.needsManualRefresh()).toBe(false);
   } finally {
     state.dispose();
   }

@@ -21,7 +21,7 @@ Read the active search, filters, source view, deleted-record mode, and `limit`. 
 
 Use exact filters for calculated values, lookups, rollups, files, dates, and empty values. Add a meaningful sort before relying on page order or `offset`. Pages are live reads; changes made between page requests can move matching records.
 
-Record results refresh in place, including after reconnect. Filters, sorting, and totals are recalculated; records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If live updates stop, use the refresh action.
+Record results refresh in place, including after reconnect. While records load or refresh, the magnifier in the search field turns into a small spinner. Filters, sorting, and totals are recalculated; records can leave the result. Open edit dialogs keep their drafts and flag competing changes. If an automatic refresh fails, select **Updates available** next to the record count to try again. If live updates stop, reload the page.
 
 ## A record edit was rejected {icon="table"}
 
