@@ -704,11 +704,12 @@ cld grids records show "Operations:Requests/Rc01Ab" --json
 Creating a field in the app, through the API, or with `cld grids fields create`
 adds it to the end of a table's stored `columns` list unless the field has
 `hideInTable`; a table without a stored list keeps showing every such field.
-Deleting a field removes it from the list. A table update replaces the whole
-`columns` list, so send the `updatedAt` of the table you read as
-`expectedUpdatedAt`: when the table changed since then, the update answers `409`
-instead of dropping fields that were added in the meantime. The precondition is
-optional; integrations that omit it keep their unconditional writes.
+Deleting a field removes it from the list, and restoring it appends it again. A
+table update replaces the whole `columns` list, so send the `updatedAt` of the
+table you read as `expectedUpdatedAt`: when the table changed since then, the
+update answers `409` instead of dropping fields that were added in the meantime.
+The precondition is optional; integrations that omit it keep their
+unconditional writes.
 
 Record updates patch only the named fields. Integrations can pass the current positive Record version with `--if-version` so a stale projection conflicts instead of overwriting a newer edit. An update whose normalized scalar and Relation values are already current returns the Record without creating another version, history revision, audit entry, or live event.
 

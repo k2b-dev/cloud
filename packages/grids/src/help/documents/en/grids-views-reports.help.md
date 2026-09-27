@@ -28,7 +28,7 @@ Add a sort whenever order has business meaning. If several records share the sam
 
 **Table** is the default for dense comparison and editing. Choose visible columns and their order for the task.
 
-A new field appears as the last table column, also when it is created through the CLI or API, unless it is set to **Hide in table**. If someone changed the table's columns in the meantime, for example in another tab, Grids reloads them instead of overwriting that change; then repeat your change on the current columns.
+A new field appears as the last table column, also when it is created through the CLI or API, unless it is set to **Hide in table**. A field restored from the trash shows up in the table again, too. If someone changed the table's columns in the meantime, for example in another tab, Grids reloads them instead of overwriting that change; then repeat your change on the current columns.
 
 To show a hidden field in the table again, open the table in Edit mode and choose **Add column**. Showing a field that is set to **Hide in table** also clears that setting. If a new field's name is already used by a hidden field, Grids offers to show that column instead.
 

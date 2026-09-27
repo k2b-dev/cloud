@@ -31,6 +31,7 @@ import { numberSeriesFormatForField, provisionFieldNumberSeries, setNumberSeries
 import { validateObjectListSchemaChange } from "./object-list-schema";
 import { rewriteFieldNameReferences } from "./reference-renames";
 import { insertWithShortId } from "./short-id";
+import { NEXT_TABLE_VERSION } from "./tables";
 import type { CreateFieldInput, Field, UpdateFieldInput } from "./types";
 
 type DbRow = Record<string, unknown>;
@@ -260,19 +261,30 @@ type InsertedField = { field: Field; columnsChanged: boolean };
 
 type LockedTableColumns = { base_id: string; columns: unknown };
 
+/** Field deletion and table updates take the same lock, so the column list read here stays current until commit. */
+const lockTableColumns = async (tx: SqlClient, tableId: string): Promise<LockedTableColumns | undefined> => {
+  const [table] = await tx<LockedTableColumns[]>`
+    SELECT base_id::text AS base_id, columns
+    FROM grids.tables
+    WHERE id = ${tableId}::uuid AND deleted_at IS NULL
+    FOR UPDATE
+  `;
+  return table;
+};
+
 /**
- * A stored column list shows only the fields it names, so a new field joins its end unless it hides in the table. An
- * empty list derives the columns from the fields and stays empty. Either way the table version changes, so a column
- * write built from the table before this field existed fails instead of dropping it.
+ * A stored column list shows only the fields it names, so a new or restored field joins its end unless it hides in the
+ * table. An empty list derives the columns from the fields and stays empty. Either way the table version changes, so a
+ * column write built from the table before this field existed fails instead of dropping it.
  */
 const addFieldToTableColumns = async (tx: SqlClient, table: LockedTableColumns, field: Field, actorId: string | null) => {
   const parsed = FieldColumnSpecSchema.array().safeParse(table.columns ?? []);
   if (!parsed.success || parsed.data.length === 0 || field.hideInTable) {
-    await tx`UPDATE grids.tables SET updated_at = now() WHERE id = ${field.tableId}::uuid`;
+    await tx`UPDATE grids.tables SET updated_at = ${NEXT_TABLE_VERSION} WHERE id = ${field.tableId}::uuid`;
     return false;
   }
   const columns = [...parsed.data, { fieldId: field.id }];
-  await tx`UPDATE grids.tables SET columns = ${columns}::jsonb, updated_at = now() WHERE id = ${field.tableId}::uuid`;
+  await tx`UPDATE grids.tables SET columns = ${columns}::jsonb, updated_at = ${NEXT_TABLE_VERSION} WHERE id = ${field.tableId}::uuid`;
   await logAudit(
     {
       baseId: table.base_id,
@@ -289,13 +301,7 @@ const addFieldToTableColumns = async (tx: SqlClient, table: LockedTableColumns, 
 const insertPreparedField = async (state: FieldCreateState, actorId: string | null, locale?: string): Promise<Result<InsertedField>> =>
   sql.begin(async (tx): Promise<Result<InsertedField>> => {
     await lockFinalizedSchema(tx, state.candidate.tableId);
-    // Field deletion and table updates take the same lock, so the column list read here stays current until commit.
-    const [table] = await tx<LockedTableColumns[]>`
-      SELECT base_id::text AS base_id, columns
-      FROM grids.tables
-      WHERE id = ${state.candidate.tableId}::uuid AND deleted_at IS NULL
-      FOR UPDATE
-    `;
+    const table = await lockTableColumns(tx, state.candidate.tableId);
     if (!table) return fail(err.notFound(getGridsCrudMessages(locale).table));
     const bound = await bindAuthoredField(tx, state.candidate, locale);
     if (!bound.ok) return bound;
@@ -810,7 +816,8 @@ export const reorder = async (tableId: string, fieldIds: string[], actorId: stri
  * stripped form/view references are NOT auto-restored — those would
  * need manual re-add since their context could have moved on. Useful
  * when the user accidentally deletes a field they want back; rare
- * enough that the form/view re-add cost is acceptable.
+ * enough that the form/view re-add cost is acceptable. The table's own
+ * column list follows the field like on creation.
  */
 export const restore = async (id: string, actorId: string | null, locale?: string): Promise<Result<Field>> => {
   const messages = getGridsCrudMessages(locale);
@@ -840,9 +847,12 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
   }
   let restored: Result<Field>;
   let rejectedSchema: Result<Field> | undefined;
+  let columnsChanged = false;
   try {
     restored = await sql.begin(async (tx): Promise<Result<Field>> => {
       await lockFinalizedSchema(tx, existing.tableId);
+      const table = await lockTableColumns(tx, existing.tableId);
+      if (!table) return fail(err.notFound(messages.table));
       const listSchema = await validateObjectListSchemaChange(tx, existing, existing.config, existing.required, locale);
       if (!listSchema.ok) {
         rejectedSchema = listSchema;
@@ -879,6 +889,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
       }
       await refreshLocalCalculations(tx, existing.tableId);
       await logAudit({ tableId: existing.tableId, userId: actorId, action: "restored" }, tx);
+      columnsChanged = await addFieldToTableColumns(tx, table, result.data, actorId);
       return result;
     });
   } catch (error) {
@@ -895,6 +906,13 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     resource: { kind: "field", id, tableId: existing.tableId },
     actorId,
   });
+  if (columnsChanged) {
+    await emitTableMetadataEvent(existing.tableId, {
+      type: "table.updated",
+      resource: { kind: "table", id: existing.tableId, tableId: existing.tableId },
+      actorId,
+    });
+  }
   // Re-create the expression index if the field was indexed.
   if (existing.indexed) void ensureFieldIndex(id, existing.type, existing.tableId, existing.config);
   await refreshForTableSchemaChange(existing.tableId, actorId);
@@ -963,7 +981,7 @@ export const softDelete = async (id: string, actorId: string | null, locale?: st
         UPDATE grids.tables
         SET columns = ${columns.data.filter((column) => column.fieldId !== id)}::jsonb,
             display_config = ${withoutFieldDisplayReference(table.display_config, id)}::jsonb,
-            updated_at = now()
+            updated_at = ${NEXT_TABLE_VERSION}
         WHERE id = ${existing.tableId}::uuid
       `;
     }

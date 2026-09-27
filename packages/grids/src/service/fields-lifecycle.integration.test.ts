@@ -14,6 +14,7 @@ import {
 } from "./field-indexes";
 import * as fields from "./fields";
 import * as metadataEvents from "./metadata-events";
+import * as mutationPolicy from "./mutation-policy";
 import * as tables from "./tables";
 
 const postgresTest = testFor("database");
@@ -44,15 +45,15 @@ const deleteField = async (fieldId: string) => {
   if (!deleted.ok) throw new Error(deleted.error.message);
 };
 
+const restoreField = async (fieldId: string) => {
+  const restored = await fields.restore(fieldId, null);
+  if (!restored.ok) throw new Error(restored.error.message);
+};
+
 const setColumns = async (tableId: string, fieldIds: string[]) => {
   const updated = await tables.update(tableId, { columns: fieldIds.map((fieldId) => ({ fieldId })) }, null);
   if (!updated.ok) throw new Error(updated.error.message);
   return updated.data;
-};
-
-/** Moves the table version into the past so the next write's version differs even within the same millisecond. */
-const ageTableVersion = async (tableId: string) => {
-  await sql`UPDATE grids.tables SET updated_at = updated_at - interval '1 second' WHERE id = ${tableId}::uuid`;
 };
 
 const readTable = async (tableId: string) => {
@@ -61,7 +62,7 @@ const readTable = async (tableId: string) => {
   return { columns: table.columns.map((column) => column.fieldId), updatedAt: table.updatedAt };
 };
 
-describe("table columns follow field creation and deletion", () => {
+describe("table columns follow field creation, deletion, and restore", () => {
   postgresTest(
     "appends a new field to a stored column list and records the change",
     async () => {
@@ -72,7 +73,6 @@ describe("table columns follow field creation and deletion", () => {
         const first = await createTextField(fixture.tableId, "First");
         const second = await createTextField(fixture.tableId, "Second");
         await setColumns(fixture.tableId, [second, first]);
-        await ageTableVersion(fixture.tableId);
         const before = await readTable(fixture.tableId);
 
         events.mockClear();
@@ -106,7 +106,6 @@ describe("table columns follow field creation and deletion", () => {
       const events = spyOn(metadataEvents, "emitTableMetadataEvent");
       try {
         const first = await createTextField(fixture.tableId, "First");
-        await ageTableVersion(fixture.tableId);
         const derived = await readTable(fixture.tableId);
         expect(derived.columns).toEqual([]);
 
@@ -165,7 +164,6 @@ describe("table columns follow field creation and deletion", () => {
       try {
         const first = await createTextField(fixture.tableId, "First");
         await setColumns(fixture.tableId, [first]);
-        await ageTableVersion(fixture.tableId);
         const loaded = await readTable(fixture.tableId);
 
         // Another client adds a field; a list from the earlier version would drop it.
@@ -187,11 +185,92 @@ describe("table columns follow field creation and deletion", () => {
         expect((await readTable(fixture.tableId)).columns).toEqual([first]);
 
         // Deleting a field changes the version as well.
-        await ageTableVersion(fixture.tableId);
         const beforeDelete = await readTable(fixture.tableId);
         await deleteField(second);
         const afterDelete = await tables.update(fixture.tableId, { name: "Renamed", expectedUpdatedAt: beforeDelete.updatedAt }, null);
         expect(afterDelete.ok).toBe(false);
+      } finally {
+        await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
+      }
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "puts a restored field back at the end of a stored column list",
+    async () => {
+      await migrate();
+      const fixture = await createTableFixture(`Column restore ${Bun.randomUUIDv7()}`);
+      const events = spyOn(metadataEvents, "emitTableMetadataEvent");
+      try {
+        const [a, b, c] = [
+          await createTextField(fixture.tableId, "A"),
+          await createTextField(fixture.tableId, "B"),
+          await createTextField(fixture.tableId, "C"),
+        ];
+        await setColumns(fixture.tableId, [a, b, c]);
+        await deleteField(b);
+        const loaded = await readTable(fixture.tableId);
+        expect(loaded.columns).toEqual([a, c]);
+
+        events.mockClear();
+        await restoreField(b);
+        expect((await readTable(fixture.tableId)).columns).toEqual([a, c, b]);
+        expect(events.mock.calls.map(([, event]) => event.type)).toEqual(["field.restored", "table.updated"]);
+        // A list built before the restore conflicts instead of hiding the restored field again.
+        const stale = await tables.update(
+          fixture.tableId,
+          { columns: [{ fieldId: c }, { fieldId: a }], expectedUpdatedAt: loaded.updatedAt },
+          null,
+        );
+        expect(stale.ok).toBe(false);
+
+        // A derived list stays derived, but the restore still changes its version.
+        await setColumns(fixture.tableId, []);
+        await deleteField(c);
+        const derived = await readTable(fixture.tableId);
+        events.mockClear();
+        await restoreField(c);
+        const restored = await readTable(fixture.tableId);
+        expect(restored.columns).toEqual([]);
+        expect(restored.updatedAt).not.toBe(derived.updatedAt);
+        expect(events.mock.calls.map(([, event]) => event.type)).toEqual(["field.restored"]);
+      } finally {
+        events.mockRestore();
+        await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
+      }
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "moves the table version forward with every change, even past a version ahead of the clock",
+    async () => {
+      await migrate();
+      const fixture = await createTableFixture(`Column version ${Bun.randomUUIDv7()}`);
+      // A change whose transaction started before an already committed one, or within the same millisecond, would
+      // otherwise reuse its version, so a column list built on that version could still drop the new field.
+      const advances = async (change: () => Promise<unknown>) => {
+        await sql`UPDATE grids.tables SET updated_at = now() + interval '1 minute' WHERE id = ${fixture.tableId}::uuid`;
+        const before = await readTable(fixture.tableId);
+        await change();
+        expect(Date.parse((await readTable(fixture.tableId)).updatedAt)).toBeGreaterThan(Date.parse(before.updatedAt));
+      };
+      try {
+        const first = await createTextField(fixture.tableId, "First");
+        await advances(() => setColumns(fixture.tableId, [first]));
+        let second = "";
+        await advances(async () => {
+          second = await createTextField(fixture.tableId, "Second");
+        });
+        await advances(() => createTextField(fixture.tableId, "Internal", { hideInTable: true }));
+        await advances(() => deleteField(second));
+        await advances(() => restoreField(second));
+        await advances(() => mutationPolicy.update(fixture.tableId, { mode: "selected", sources: ["form"] }, null));
+        await advances(async () => {
+          expect((await tables.remove(fixture.tableId, null)).ok).toBe(true);
+          expect((await tables.restore(fixture.tableId, null)).ok).toBe(true);
+        });
       } finally {
         await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
       }

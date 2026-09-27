@@ -122,7 +122,8 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
         options.setTableColumns((columns) => columns.filter((column) => column.fieldId !== field.id));
         options.setTableDisplayConfig((config) => withoutDisplayField(config, field.id));
         syncFields(options.fields().filter((candidate) => candidate.id !== field.id));
-        void options.reloadTableColumns();
+        // The editor stays open until the new version is known, so a column change right after it does not conflict.
+        await options.reloadTableColumns();
         return true;
       },
     });

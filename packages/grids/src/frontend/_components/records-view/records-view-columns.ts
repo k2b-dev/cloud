@@ -176,17 +176,21 @@ export const createRecordsViewColumnController = ({
     }
   };
 
-  /** Writes the complete column list for the table version shown. A failed write shows the table's current columns again. */
-  const writeTableColumns = async (columns: FieldColumnSpec[]): Promise<boolean> => {
+  /**
+   * Writes a complete column list built on the table version `expectedUpdatedAt` and returns the version it produced.
+   * A failed write shows the table's current columns again and returns undefined.
+   */
+  const writeTableColumns = async (columns: FieldColumnSpec[], expectedUpdatedAt: string): Promise<string | undefined> => {
     let message = t().saveTableColumnsFailed;
     try {
       const res = await apiClient.tables[":tableId"].$patch({
         param: { tableId: props.tableId },
-        json: { columns, expectedUpdatedAt: tableUpdatedAt() },
+        json: { columns, expectedUpdatedAt },
       });
       if (res.ok) {
-        setTableUpdatedAt((await res.json()).updatedAt);
-        return true;
+        const { updatedAt } = await res.json();
+        setTableUpdatedAt(updatedAt);
+        return updatedAt;
       }
       message = await errorMessage(res, message);
       // 409: the table changed since this page read it, for example in another tab. Its reloaded columns are the new base.
@@ -195,19 +199,19 @@ export const createRecordsViewColumnController = ({
       await reloadTableColumns();
     }
     prompts.error(message);
-    return false;
+    return undefined;
   };
 
-  // One column write runs at a time, so a quick second change builds on the version the first one produced. A failed
-  // write reloads the table; changes queued before that reload are dropped because they build on the failed state.
-  let columnWrites: Promise<void> | undefined;
-  let columnWriteGeneration = 0;
+  // One column write runs at a time. A queued change names the version the write before it produced, because its list
+  // builds on that write, so a reload that lands in between cannot pair the queued list with a newer version. After a
+  // failed write the table is reloaded, and changes queued behind it are dropped because they build on the failed state.
+  let columnWrites: Promise<string | undefined> | undefined;
   const saveTableColumns = (columns: FieldColumnSpec[]) => {
-    const generation = columnWriteGeneration;
-    const run = async () => {
-      if (generation === columnWriteGeneration && !(await writeTableColumns(columns))) columnWriteGeneration += 1;
-    };
-    const write = columnWrites ? columnWrites.then(run) : run();
+    const write = columnWrites
+      ? columnWrites.then((expectedUpdatedAt) =>
+          expectedUpdatedAt === undefined ? undefined : writeTableColumns(columns, expectedUpdatedAt),
+        )
+      : writeTableColumns(columns, tableUpdatedAt());
     columnWrites = write;
     void write.finally(() => {
       if (columnWrites === write) columnWrites = undefined;

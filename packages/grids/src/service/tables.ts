@@ -198,6 +198,13 @@ const ensureUniqueTableName = async (
 export const isStaleTableVersion = (table: Pick<Table, "updatedAt">, expectedUpdatedAt: string | undefined): boolean =>
   expectedUpdatedAt !== undefined && Date.parse(expectedUpdatedAt) !== Date.parse(table.updatedAt);
 
+/**
+ * The next table version, for `SET updated_at = ...` on a locked table row. `now()` is the transaction start, so two
+ * changes starting within one millisecond, or one that waited for the lock of a later one, would share a version at
+ * the millisecond precision clients see. Staying a millisecond past the previous version keeps every change distinct.
+ */
+export const NEXT_TABLE_VERSION = sql`GREATEST(now(), updated_at + interval '1 millisecond')`;
+
 export const create = async (input: CreateTableInput, actorId: string | null, locale?: string): Promise<Result<Table>> => {
   const messages = getGridsCrudMessages(locale);
   const name = input.name.trim();
@@ -324,7 +331,7 @@ export const update = async (id: string, input: UpdateTableInput, actorId: strin
                 display_config = ${displayConfigParsed.data}::jsonb,
                 audit_policy = ${auditPolicyParsed.data}::jsonb,
                 disable_direct_insert = ${next.disableDirectInsert},
-                updated_at = now()
+                updated_at = ${NEXT_TABLE_VERSION}
             WHERE id = ${id}::uuid AND deleted_at IS NULL
             RETURNING ${COLS}
           `;
@@ -409,7 +416,7 @@ export const restore = async (id: string, actorId: string | null, locale?: strin
     const result = await writeNamedResource(
       async () => {
         const [row] = await tx<DbRow[]>`
-          UPDATE grids.tables SET deleted_at = NULL, updated_at = now()
+          UPDATE grids.tables SET deleted_at = NULL, updated_at = ${NEXT_TABLE_VERSION}
           WHERE id = ${id}::uuid
           RETURNING ${COLS}
         `;

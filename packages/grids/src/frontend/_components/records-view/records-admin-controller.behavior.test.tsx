@@ -44,7 +44,10 @@ type ApiRequest = { method: string; path: string; body: Record<string, unknown> 
  * table's column list current and change its version, a column write naming an older version conflicts, and one
  * naming an unknown field is rejected.
  */
-const installGridsApi = (initialFields: PublicField[], options: { columns?: FieldColumnSpec[]; failFieldWrites?: boolean } = {}) => {
+const installGridsApi = (
+  initialFields: PublicField[],
+  options: { columns?: FieldColumnSpec[]; failFieldWrites?: boolean; tableReadDelayMs?: number } = {},
+) => {
   const originalFetch = globalThis.fetch;
   const requests: ApiRequest[] = [];
   const fields = [...initialFields];
@@ -92,7 +95,11 @@ const installGridsApi = (initialFields: PublicField[], options: { columns?: Fiel
         return new Response(null, { status: 204 });
       }
       if (path === `/api/grids/tables/${TABLE_ID}`) {
-        if (method === "GET") return Response.json(tableJson());
+        if (method === "GET") {
+          const read = tableJson();
+          if (options.tableReadDelayMs) await Bun.sleep(options.tableReadDelayMs);
+          return Response.json(read);
+        }
         if (body?.expectedUpdatedAt !== undefined && body.expectedUpdatedAt !== table.updatedAt) {
           return Response.json({ message: "This Table changed since you loaded it." }, { status: 409 });
         }
@@ -577,6 +584,30 @@ domTest("fields added after deleting listed fields stay visible without a reload
     // The server keeps the column list current; the browser writes no column list of its own.
     expect(api.tableWrites()).toEqual([]);
     expect(view.tableUpdatedAt()).toBe(api.table.updatedAt);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    api.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a column change right after deleting a field builds on the version the deletion produced", async () => {
+  const dom = createHarness();
+  const initial = {
+    fields: [makeField("FIELD1", "Name", 0), makeField("FIELD2", "Status", 1), makeField("FIELD3", "Owner", 2)],
+    columns: [{ fieldId: "FIELD1" }, { fieldId: "FIELD2" }, { fieldId: "FIELD3" }],
+  };
+  const api = installGridsApi(initial.fields, { columns: initial.columns, tableReadDelayMs: 50 });
+  const { dialogCore } = await import("@k2b/ui");
+  try {
+    const view = await createDefaultTableView(initial);
+    await deleteFieldThroughEditor(dom.document, view, view.fields()[2]!);
+    expect(view.tableUpdatedAt()).toBe(api.table.updatedAt);
+
+    view.columns.moveViewColumnInline({ fieldId: "FIELD2" }, -1);
+    await until(() => api.tableWrites().length === 1 && view.tableUpdatedAt() === api.table.updatedAt);
+    expect(api.table.columns).toEqual([{ fieldId: "FIELD2" }, { fieldId: "FIELD1" }]);
+    expect(dialogCore.isOpen()).toBe(false);
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     api.restore();
