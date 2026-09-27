@@ -273,7 +273,8 @@ export function ArtifactPanel(props: {
   }
   return (
     <div class="artifact-panel">
-      <div ref={container} />
+      {/* Hosts only the invisible sandbox frame; hiding it keeps it out of the flex gap above the preview. */}
+      <div ref={container} hidden />
       <ScrollArea class="artifact-panel__preview" scrollFade={!!props.runner}>
         <Show
           when={state()?.nodes.length}

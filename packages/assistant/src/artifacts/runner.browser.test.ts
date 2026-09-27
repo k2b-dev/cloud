@@ -214,6 +214,8 @@ test("standalone runner fades scroll edges and keeps footer controls stable duri
       const manage = page.getByRole("button", { name: "Manage", exact: true });
       const before = await manage.boundingBox();
       const preview = page.locator(".artifact-panel__preview");
+      // The hidden sandbox host adds no gap above the preview.
+      expect((await preview.boundingBox())?.y).toBe((await page.locator(".artifact-panel").boundingBox())?.y);
       const dimensions = await preview.evaluate((el) => ({
         height: el.clientHeight,
         scrollHeight: el.scrollHeight,
