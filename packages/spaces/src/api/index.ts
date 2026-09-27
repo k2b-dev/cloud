@@ -2282,20 +2282,22 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Move item",
-      description: "Move item to a different column/rank (Kanban drag & drop).",
+      description:
+        "Move an item to a column (Kanban drag and drop). Pass afterItemId or beforeItemId to place it directly next to that item of the target column; the server reads the column, including items a paged client has not loaded, and renumbers ranks when no gap is left. An explicit rank is stored as given and is ignored when an anchor is set. Without an anchor or rank, the item goes to the top of the column.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Moved item"),
-        400: jsonResponse(ErrorResponseSchema, "Invalid column"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid column or position"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        404: jsonResponse(ErrorResponseSchema, "Item not found"),
+        404: jsonResponse(ErrorResponseSchema, "Item, column, or neighboring item not found"),
+        409: jsonResponse(ErrorResponseSchema, "Neighboring item left the target column, or the task is claimed or blocked"),
       },
     }),
     v("json", MoveItemSchema),
     async (c) => {
       const spaceShortId = c.req.param("id") ?? "";
       const itemId = c.req.param("itemId") ?? "";
-      const { columnId, rank, completed, claimId } = c.req.valid("json");
+      const { columnId, afterItemId, beforeItemId, rank, completed, claimId } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
@@ -2303,12 +2305,18 @@ const app = new Hono<AuthContext>()
       if (!itemCheck.ok) return respond(c, itemCheck);
       const column = await requireColumnInSpace(spaceId!, columnId);
       if (!column.ok) return respond(c, column);
+      const anchorShortId = afterItemId ?? beforeItemId;
+      const anchor = anchorShortId ? await resolveSpacePublicIds("items", spaceId!, [anchorShortId]) : [];
+      if (!anchor) return respond(c, fail(err.notFound("Neighboring item")));
+      const [anchorId] = anchor;
       return respond(
         c,
         projectMutation(
           spacesService.item.move({
             id: itemCheck.data.id,
             columnId: column.data.id,
+            afterItemId: afterItemId ? anchorId : undefined,
+            beforeItemId: beforeItemId ? anchorId : undefined,
             rank,
             completed,
             claimId,
