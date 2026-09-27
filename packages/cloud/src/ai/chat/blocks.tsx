@@ -24,6 +24,7 @@ import {
   jsonPreview,
   memoryToolPresentation,
 } from "./message-utils";
+import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { groupToolBlocks, isFailedTool, summarizeToolGroup } from "./tool-groups";
@@ -57,16 +58,18 @@ function ReviewDetailValue(props: { detail: ReviewDetail }) {
 // turn streams, so every branch must re-evaluate when the store updates.
 
 function ThinkingBlockView(props: { text: string; streaming?: boolean }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   return (
     <Show
       when={props.text.trim()}
       fallback={
         <Show when={props.streaming}>
-          <Chat.Activity label="Thinking" icon="ti ti-sparkles" tone="ai" busy />
+          <Chat.Activity label={t().thinking} icon="ti ti-sparkles" tone="ai" busy />
         </Show>
       }
     >
-      <Chat.Activity label="Show reasoning" icon="ti ti-sparkles" tone="ai" bodyInset={false}>
+      <Chat.Activity label={t().showReasoning} icon="ti ti-sparkles" tone="ai" bodyInset={false}>
         <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           {props.text}
         </pre>

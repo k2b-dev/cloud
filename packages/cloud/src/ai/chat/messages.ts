@@ -18,6 +18,8 @@ const messages = i18n.define({
       toolIssues: "Tool issues",
       none: "None",
       read: "Read",
+      thinking: "Thinking",
+      showReasoning: "Show reasoning",
       byteRange: ({ start, end }: { start: string; end: string }) => `Bytes ${start}–${end}`,
     },
     de: {
@@ -36,6 +38,8 @@ const messages = i18n.define({
       toolIssues: "Werkzeugprobleme",
       none: "Keine",
       read: "Gelesen",
+      thinking: "Denkt nach",
+      showReasoning: "Denkprozess anzeigen",
       byteRange: ({ start, end }) => `Bytes ${start}–${end}`,
     },
   },

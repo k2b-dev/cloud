@@ -20,6 +20,7 @@ const { AiChatActionsProvider } = await import("./message-actions");
 const { AiAssistantContent, createAiChatTimeline } = await import("./presentation");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
+const { Chat, LocaleProvider } = await import("@k2b/ui");
 
 const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
 const hasOpenDetailsContaining = (html: string, text: string): boolean => {
@@ -1140,5 +1141,74 @@ describe("scheduled result presentation", () => {
     expect(html).toContain("Background run");
     expect(html).toContain("ti-calendar-time");
     expect(html).not.toContain("Scheduled task task");
+  });
+});
+
+describe("assistant activity width", () => {
+  const reasoning: AiTurnBlock = { id: "thinking-1", kind: "thinking", text: "Convert the Markdown first." };
+  const pdfTool: AiTurnBlock = { id: "tool-call-1", kind: "tool", callId: "call-1", name: "markdown_to_pdf", status: "running" };
+  const answer: AiTurnBlock = { id: "text-1", kind: "text", text: "Here is the PDF." };
+  const compaction: AiTurnBlock = { id: "compaction", kind: "compaction", status: "completed" };
+  const persistedReasoning: AiStoredMessage = {
+    id: "stored-1",
+    shortId: "stored1",
+    conversationId: "chat",
+    seq: 1,
+    kind: "message",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Convert the Markdown first." },
+        { type: "text", text: "Here is the PDF." },
+      ],
+    },
+    loopId: "turn-1",
+    modelProfileId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: "stop",
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    meta: null,
+    createdAt: "2026-09-27T12:00:00Z",
+  };
+  const renderChat = (locale: string, messages: AiStoredMessage[], blocks?: AiTurnBlock[]) =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          const items = createAiChatTimeline({
+            messages: () => messages,
+            activeTurn: () => (blocks ? { turnId: "turn-1", attempt: 1, seq: 2, status: "running", blocks, modelProfileId: null } : null),
+          })();
+          return createComponent(Chat.Timeline, { items, scrollFade: false });
+        },
+      }),
+    );
+  const renderTurn = (blocks: AiTurnBlock[], locale = "en") => renderChat(locale, [], blocks);
+  const messageClass = (html: string) => html.match(/<article class="(k2b-chat-message[^"]*)"/)?.[1]?.trim();
+
+  test("gives a lone reasoning row the same full width as several activity rows", () => {
+    const oneRow = renderTurn([reasoning]);
+    const twoRows = renderTurn([reasoning, pdfTool]);
+
+    expect(oneRow).toContain("Show reasoning");
+    expect(twoRows).toContain("Markdown to pdf");
+    expect(messageClass(oneRow)).toBe("k2b-chat-message ai-chat-message-wide");
+    expect(messageClass(oneRow)).toBe(messageClass(twoRows));
+    expect(messageClass(renderChat("en", [persistedReasoning]))).toBe(messageClass(twoRows));
+    const compactionRow = renderTurn([compaction]);
+    expect(compactionRow).toContain("Show compaction");
+    expect(messageClass(compactionRow)).toBe(messageClass(twoRows));
+    // Prose alone and reasoning that renders no row keep the default reading width.
+    expect(messageClass(renderTurn([answer]))).toBe("k2b-chat-message");
+    expect(messageClass(renderTurn([{ ...reasoning, text: " " }, answer]))).toBe("k2b-chat-message");
+  });
+
+  test("labels reasoning rows in the request locale", () => {
+    expect(renderTurn([reasoning], "de")).toContain("Denkprozess anzeigen");
+    expect(renderTurn([{ ...reasoning, text: "" }], "de")).toContain("Denkt nach");
+    expect(renderTurn([{ ...reasoning, text: "" }], "en")).toContain("Thinking");
   });
 });

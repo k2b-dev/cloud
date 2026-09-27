@@ -27,9 +27,14 @@ export type AiChatTimelineSession = {
 
 export { type AiChatActions, AiChatActionsProvider };
 
-const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";
-
 type AssistantBlock = AiAssistantTimelineItem["blocks"][number];
+
+// Activity blocks span the full message column so disclosure chevrons share one
+// right edge. Tool and compaction blocks count even while busy; reasoning counts
+// only once it has text, because empty reasoning renders at most a busy row and
+// must not widen a prose-only reply.
+const isWideBlock = (block: AssistantBlock) =>
+  block.kind === "tool" || block.kind === "compaction" || (block.kind === "thinking" && block.text.trim().length > 0);
 
 type SurveyResultBlock = Extract<AssistantBlock, { kind: "tool" }>;
 type SurveySegment = { type: "assistant"; blocks: AssistantBlock[] } | { type: "survey"; block: SurveyResultBlock };
