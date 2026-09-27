@@ -73,6 +73,7 @@ export type {
   DetailPanelActionButtonProps,
   DetailPanelActionLinkProps,
   DetailPanelActionProps,
+  DetailPanelActionSecondary,
   DetailPanelBodyProps,
   DetailPanelGroupProps,
   DetailPanelHeaderProps,

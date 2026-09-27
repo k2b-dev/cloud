@@ -76,6 +76,37 @@ describe("DetailPanel section disclosure", () => {
   });
 });
 
+test("a secondary action runs its own command without activating the row", async () => {
+  const dom = createDomTestHarness();
+  const { DetailPanel } = await import("../src");
+  const calls: string[] = [];
+  const dispose = render(
+    () => (
+      <DetailPanel.Action
+        title="report.pdf"
+        onClick={() => calls.push("open")}
+        secondaryAction={{ icon: "ti ti-trash", label: "Delete file", variant: "danger", onClick: () => calls.push("delete") }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const buttons = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__action-row > button"));
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([null, "Delete file"]);
+    const secondary = buttons[1]!;
+    expect(secondary.tabIndex).toBe(0);
+    secondary.focus();
+    expect(document.activeElement).toBe(secondary);
+    secondary.click();
+    expect(calls).toEqual(["delete"]);
+    buttons[0]!.click();
+    expect(calls).toEqual(["delete", "open"]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test("a section instantiates its body once even though it renders the body conditionally", async () => {
   const dom = createDomTestHarness();
   const { DetailPanel } = await import("../src");
