@@ -1906,11 +1906,22 @@ export const remove = async (params: { id: string; actor?: SpaceActivityIdentity
 
 type ColumnNeighbor = { id: string; rank: string };
 
+const neighborLeftColumn = {
+  ok: false,
+  error: "The neighboring item is no longer in the target column; reload and try again",
+  status: 409,
+} as const;
+
 /**
  * Picks the rank that places `itemId` next to its anchor in `columnId`, or at the top without one.
  * It reads the real neighbors in list order (`rank, id`), including items a paged client has not
  * loaded. When no integer fits between them (a tie or an exhausted gap), it renumbers the column
  * one step apart and leaves the slot after the previous neighbor free.
+ *
+ * Column changes outside `move` (item update, wormhole transfer) do not take the per-Space lock.
+ * The renumbering therefore locks the previous neighbor first and rewrites only rows that are still
+ * in the column: under READ COMMITTED, Postgres re-checks the WHERE clause on the row version such
+ * a writer commits, so an item that just left the column keeps the rank its new column gave it.
  */
 const placeInColumn = async (
   tx: SqlExecutor,
@@ -1923,8 +1934,7 @@ const placeInColumn = async (
     const [row] = await tx<(ColumnNeighbor & { column_id: string })[]>`
       SELECT id, rank::text AS rank, column_id FROM spaces.items WHERE id = ${anchorId}::uuid
     `;
-    if (!row || row.column_id !== columnId)
-      return { ok: false, error: "The neighboring item is no longer in the target column; reload and try again", status: 409 };
+    if (!row || row.column_id !== columnId) return neighborLeftColumn;
     anchor = { id: row.id, rank: row.rank };
   }
 
@@ -1962,8 +1972,14 @@ const placeInColumn = async (
 
   const between = rank.between(prev?.rank, next?.rank);
   if (between !== null) return { ok: true, data: between };
-  // `between` only fails with neighbors on both sides.
-  const previous = prev!;
+  // `between` only fails with neighbors on both sides. The lock keeps the previous neighbor in the
+  // column until commit, so the renumbering below always rewrites it.
+  const [previous] = await tx<ColumnNeighbor[]>`
+    SELECT id, rank::text AS rank FROM spaces.items
+    WHERE id = ${prev!.id}::uuid AND column_id = ${columnId}::uuid
+    FOR UPDATE
+  `;
+  if (!previous) return neighborLeftColumn;
   await tx`
     UPDATE spaces.items AS item
     SET rank = (ordered.position + CASE WHEN (ordered.rank, ordered.id) > (${previous.rank}::bigint, ${previous.id}::uuid) THEN 1 ELSE 0 END)
@@ -1973,7 +1989,7 @@ const placeInColumn = async (
       FROM spaces.items
       WHERE column_id = ${columnId}::uuid AND id <> ${itemId}::uuid
     ) AS ordered
-    WHERE item.id = ordered.id
+    WHERE item.id = ordered.id AND item.column_id = ${columnId}::uuid
   `;
   const [renumbered] = await tx<{ rank: string }[]>`SELECT rank::text AS rank FROM spaces.items WHERE id = ${previous.id}::uuid`;
   return { ok: true, data: rank.parse(renumbered!.rank) + rank.step() };

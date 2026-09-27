@@ -53,6 +53,39 @@ suite("Spaces item moves", () => {
 
   const strictlyIncreasing = (ranks: bigint[]) => ranks.every((value, index) => index === 0 || value > ranks[index - 1]!);
 
+  /**
+   * Moves an item to another column in an open transaction on its own connection, the way a column
+   * change outside `move` does (item PATCH, wormhole transfer), and holds the row lock until `commit`.
+   */
+  const holdColumnChange = async (itemId: string, columnId: string, targetRank: number) => {
+    const writer = await sql.reserve();
+    await writer`BEGIN`;
+    const [backend] = await writer<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+    await writer`UPDATE spaces.items SET column_id = ${columnId}::uuid, rank = ${targetRank} WHERE id = ${itemId}::uuid`;
+    const waitForWaiter = async () => {
+      const deadline = Date.now() + 2_000;
+      while (Date.now() < deadline) {
+        const [row] = await sql<{ waiting: boolean }[]>`
+          SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ${backend!.pid}::int = ANY(pg_blocking_pids(pid))) AS waiting
+        `;
+        if (row?.waiting) return true;
+        await Bun.sleep(10);
+      }
+      return false;
+    };
+    let open = true;
+    const finish = async (statement: "COMMIT" | "ROLLBACK") => {
+      if (!open) return;
+      open = false;
+      try {
+        await (statement === "COMMIT" ? writer`COMMIT` : writer`ROLLBACK`);
+      } finally {
+        writer.release();
+      }
+    };
+    return { waitForWaiter, commit: () => finish("COMMIT"), rollback: () => finish("ROLLBACK") };
+  };
+
   test("keeps a card dropped below the last loaded card of a paged column ahead of the unloaded cards", async () => {
     const titles = Array.from({ length: 40 }, (_, index) => `T${String(index + 1).padStart(2, "0")}`);
     const { spaceId, column, item } = await createBoard({
@@ -174,6 +207,55 @@ suite("Spaces item moves", () => {
     });
     expect((await columnState(column.Open!)).titles).toEqual(["A", "B"]);
     expect((await columnState(column.Review!)).titles).toEqual(["X"]);
+  });
+
+  test("leaves an item that a concurrent writer moves out of the column alone while renumbering", async () => {
+    const { column, item } = await createBoard({
+      Open: [
+        ["P", 1024],
+        ["Q", 1025],
+        ["Z", 5000],
+      ],
+      Review: [["B1", 1024]],
+      Source: [["X", 1024]],
+    });
+    // Z goes to the top of Review; the renumbering move below still read Z in Open and waits for its row lock.
+    const writer = await holdColumnChange(item.Z!, column.Review!, 0);
+    try {
+      const moved = move({ id: item.X!, columnId: column.Open!, afterItemId: item.P! });
+      expect(await writer.waitForWaiter()).toBe(true);
+      await writer.commit();
+      expect(await moved).toMatchObject({ ok: true });
+    } finally {
+      await writer.rollback();
+    }
+    expect(await columnState(column.Review!)).toEqual({ titles: ["Z", "B1"], ranks: [0n, 1024n] });
+    const open = await columnState(column.Open!);
+    expect(open.titles).toEqual(["P", "X", "Q"]);
+    expect(strictlyIncreasing(open.ranks)).toBe(true);
+  });
+
+  test("rejects a renumbering move whose previous neighbor leaves the column meanwhile and changes nothing", async () => {
+    const { column, item } = await createBoard({
+      Open: [
+        ["P", 1024],
+        ["Q", 1025],
+      ],
+      Review: [["B1", 1024]],
+      Source: [["X", 1024]],
+    });
+    const writer = await holdColumnChange(item.P!, column.Review!, 0);
+    try {
+      const moved = move({ id: item.X!, columnId: column.Open!, afterItemId: item.P! });
+      expect(await writer.waitForWaiter()).toBe(true);
+      await writer.commit();
+      expect(await moved).toMatchObject({ ok: false, status: 409 });
+    } finally {
+      await writer.rollback();
+    }
+    expect(await columnState(column.Open!)).toEqual({ titles: ["Q"], ranks: [1025n] });
+    expect(await columnState(column.Review!)).toEqual({ titles: ["P", "B1"], ranks: [0n, 1024n] });
+    expect((await columnState(column.Source!)).titles).toEqual(["X"]);
   });
 
   test("serializes concurrent moves into one exhausted gap without ties", async () => {
