@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # Testing
@@ -146,6 +146,16 @@ The pull request `gate` runs `bun run check`, `bun run test`, the integration
 suites against PostgreSQL 17, NATS JetStream, and Valkey, Grids certification,
 and an image boot smoke when `packages/cloud` or the `Dockerfile` changed.
 Run the same commands locally before opening a pull request.
+
+The gate also builds the production bundle of every application whose package
+changed, and of every application when `packages/cloud`, `packages/ui`, or
+another shared input changed. The production build rejects code that
+development and the tests accept, such as a Bun builtin imported into browser
+code. Build one application the same way with:
+
+```bash
+NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
+```
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too
