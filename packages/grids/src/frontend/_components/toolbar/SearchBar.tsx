@@ -27,7 +27,8 @@ type Props = {
  * Free-text search input. Pure controlled component — owns its own
  * debounced typing buffer and emits committed values via
  * `onSearchChange`. Column-scope (which fields to search in) lives
- * inline as a compact multi-select on the right.
+ * inline as a compact multi-select on the right. Search and scope form
+ * one unit that never wraps; the parent row decides where it breaks.
  */
 export default function SearchBar(props: Props) {
   const locale = useLocale();
@@ -66,8 +67,8 @@ export default function SearchBar(props: Props) {
   };
 
   return (
-    <div class="flex w-full min-w-0 flex-wrap gap-2">
-      <div class="min-w-64 flex-[1_1_24rem]">
+    <div class="flex w-full min-w-0 flex-nowrap items-center gap-2">
+      <div class="min-w-0 flex-1">
         <TextInput
           name="grids-record-search"
           type="search"
@@ -86,7 +87,7 @@ export default function SearchBar(props: Props) {
         />
       </div>
       <Show when={props.fields.length > 0}>
-        <div class="min-w-40 flex-[0_1_16rem]">
+        <div class="w-40 shrink-0">
           <MultiSelectInput
             aria-label={t().searchColumns}
             icon="ti ti-columns"
