@@ -34,7 +34,7 @@ test("accepts connectTestNats() and connections with their own credentials", asy
   ).toEqual([]);
 });
 
-test("reports test code that connects to NATS without credentials", async () => {
+test("reports test code that connects to NATS without credentials or with optional ones", async () => {
   expect(
     (
       await findings({
@@ -43,12 +43,15 @@ test("reports test code that connects to NATS without credentials", async () => 
         "packages/example/src/dynamic.test.ts":
           'const { connect } = await import("@nats-io/transport-node");\nconst connection = await connect({\n  servers: natsServers(),\n});\n',
         "packages/example/src/helper.ts": `${fixtureImport}import { connect, type NatsConnection } from "@nats-io/transport-node";\nexport const open = () => connect({ servers: natsServers() });\n`,
+        "packages/example/src/optional.integration.test.ts":
+          'import { connect, credsAuthenticator } from "@nats-io/transport-node";\nawait connect({\n  servers,\n  ...(process.env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(creds) } : {}),\n});\n',
         "tests/integration/root.integration.test.ts": 'import { connect } from "@nats-io/transport-node";\nawait connect({ servers });\n',
       })
     ).sort(),
   ).toEqual([
     "packages/example/src/dynamic.test.ts:2",
     "packages/example/src/helper.ts:3",
+    "packages/example/src/optional.integration.test.ts:2",
     "packages/example/src/static.integration.test.ts:3",
     "tests/integration/root.integration.test.ts:2",
   ]);

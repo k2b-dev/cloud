@@ -20,11 +20,26 @@ const callArguments = (source: string, open: number): string => {
   return source.slice(open + 1);
 };
 
-/** 1-based lines of the NATS `connect(` calls in `source` that carry no credentials of their own. */
+/**
+ * `text` without the contents of its parenthesized groups, so credentials in a
+ * conditional spread, `...(file ? { authenticator } : {})`, do not count.
+ */
+const outsideParentheses = (text: string): string => {
+  let depth = 0;
+  let outside = "";
+  for (const char of text) {
+    if (char === "(") depth += 1;
+    else if (char === ")") depth -= 1;
+    else if (depth === 0) outside += char;
+  }
+  return outside;
+};
+
+/** 1-based lines of the NATS `connect(` calls in `source` that do not always carry credentials of their own. */
 export const unauthenticatedNatsConnections = (source: string): number[] =>
   natsImport.test(source)
     ? [...source.matchAll(connectCall)]
-        .filter((call) => !credentials.test(callArguments(source, call.index + call[0].length - 1)))
+        .filter((call) => !credentials.test(outsideParentheses(callArguments(source, call.index + call[0].length - 1))))
         .map((call) => source.slice(0, call.index).split("\n").length)
     : [];
 
@@ -35,7 +50,8 @@ export const unauthenticatedNatsConnections = (source: string): number[] =>
  * account, so a test's streams stay in the bounded TEST account where the
  * fixture deletes them. Test code is every test file plus every helper that
  * imports the fixture. A connection to a broker the test starts itself passes
- * its own credentials.
+ * its own credentials unconditionally; optional credentials would fall back
+ * to the development account.
  */
 export const rule: Rule = {
   name: "test-nats-connections",
