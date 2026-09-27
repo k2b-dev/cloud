@@ -215,6 +215,12 @@ const connect = async (options: {
         throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
+    /** Reads the account this device signs in and the device's own record. Older Clouds answer HTTP 400. */
+    account: async (device: AppApprovalDevice, signal?: AbortSignal) => {
+      const result = await command(device, { operation: "account" }, signal);
+      if (!("account" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
+      return result;
+    },
     /** Hands this device's push token to the Cloud. Older Clouds answer HTTP 400. */
     push: async (device: AppApprovalDevice, token: string, signal?: AbortSignal) => {
       const result = await command(device, { operation: "push", token }, signal);

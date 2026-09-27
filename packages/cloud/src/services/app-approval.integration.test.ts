@@ -6,6 +6,7 @@ import "../../../../scripts/fixtures/authorization-preload";
 import { createAppApprovalRoutes } from "../api/app-approval";
 import {
   APP_APPROVAL_PATH,
+  AppDeviceAccountSchema,
   type AppDeviceProof,
   AppDevicePublicKeySchema,
   type AppDeviceRequest,
@@ -341,6 +342,46 @@ suite("isolated app approval protocol", () => {
     const invalid = await proof(device, { operation: "push", token });
     const body = { ...invalid, proof: { ...invalid.proof, command: { operation: "push", token: "short" } } };
     expect((await post("/device", body, undefined, cfg.appOrigin)).status).toBe(400);
+  });
+
+  test("a device reads only its own account and device record", async () => {
+    const owner = await account(),
+      other = await account();
+    await sql`UPDATE auth.users SET display_name='Ada Lovelace' WHERE id=${owner.id}::uuid`;
+    await sql`UPDATE auth.users SET mail=NULL WHERE id=${other.id}::uuid`;
+    const device = await enroll(owner),
+      stranger = await enroll(other),
+      elsewhere = await enroll(owner, cloudB);
+    const [row] = await sql<{ created_at: Date }[]>`SELECT created_at FROM auth.app_devices WHERE id=${device.id}::uuid`;
+    const response = await post("/device", await proof(device, { operation: "account" }), undefined, cfg.appOrigin);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBe(cfg.appOrigin);
+    const body = AppDeviceAccountSchema.parse(await response.json());
+    // Exactly these fields: no user or device id, key, push token, or another user's data.
+    expect(body).toEqual({
+      account: { uid: owner.uid, displayName: "Ada Lovelace", mail: owner.mail },
+      device: { name: "Test device", createdAt: row!.created_at.toISOString() },
+    });
+    expect(await service.deviceCommand(await proof(stranger, { operation: "account" }))).toEqual({
+      account: { uid: other.uid, displayName: "", mail: null },
+      device: { name: "Test device", createdAt: expect.any(String) },
+    });
+    expect(await cloudB.deviceCommand(await proof(elsewhere, { operation: "account" }))).toMatchObject({ account: { uid: owner.uid } });
+    // Another device's key, another Cloud, a replayed or tampered proof, and a revoked device learn nothing.
+    await expect(service.deviceCommand(await proof(stranger, { operation: "account" }, { deviceId: device.id }))).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    await expect(cloudB.deviceCommand(await proof(device, { operation: "account" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const replay = await proof(device, { operation: "account" });
+    await service.deviceCommand(replay);
+    await expect(service.deviceCommand(replay)).rejects.toMatchObject({ code: "CONFLICT" });
+    const tampered = await proof(device, { operation: "pending" });
+    await expect(
+      service.deviceCommand({ ...tampered, proof: { ...tampered.proof, command: { operation: "account" } } }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await post("/device", await proof(device, { operation: "account" }), undefined, "https://evil.example.test")).status).toBe(403);
+    await service.mutateDevice(owner.actor, device.id);
+    await expect(service.deviceCommand(await proof(device, { operation: "account" }))).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   test("two Clouds and two accounts cannot reuse keys, requests, or signatures", async () => {

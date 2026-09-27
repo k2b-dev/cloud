@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-09-25
+updated: 2026-09-27
 ---
 
 # Integrate an authenticator website
@@ -78,8 +78,8 @@ const result = await client.pairingResult(pairing, key);
 
 After confirmation, persist `{issuer: pairing.issuer, deviceId: result.deviceId,
 key}` as a device binding, then discard the pairing secret. Call
-`client.pending(device)`, `client.decide(device, request, "approve" | "deny")`
-or `client.revoke(device)`. Never call `decide` without explicit user approval
+`client.pending(device)`, `client.decide(device, request, "approve" | "deny")`,
+`client.account(device)` or `client.revoke(device)`. Never call `decide` without explicit user approval
 and comparison with the browser. Each client rejects bindings for another Cloud.
 
 The namespace owns key generation, signing bytes, nonce/timestamp creation,
@@ -260,11 +260,18 @@ The authenticator sends signed commands to `POST /device`:
 | `{operation:"decide", requestId, challenge, comparison, decision:"approve"}` | `{state:"approved"}`. With `decision:"deny"`, returns `{state:"denied"}`. |
 | `{operation:"revoke"}` | `{state:"revoked"}` for the signing device only. |
 | `{operation:"push", token}` | `{state:"updated"}`. Stores the authenticator's opaque push token (43 URL-safe characters) for this device; a new token replaces the old one. Clouds without this command answer 400. |
+| `{operation:"account"}` | `{account:{uid, displayName, mail}, device:{name, createdAt}}` for the signing device only. `uid` is the username, `displayName` may be empty, and `mail` is `null` when no email is set. Clouds without this command answer 400. |
 
 Fetching pending requests must **never** approve them automatically. Require
 explicit confirmation and comparison with the initiating browser's code. The
 authenticator receives no browser secret, session cookie, user API token,
 FreeIPA password or Kerberos ticket.
+
+`account` lets the authenticator show which account a pairing signs in. It
+returns only the username, display name and email of the device's own
+account, plus the device name and enrollment time. A device of another account,
+another Cloud, or a revoked device gets 403. Like every command, it updates
+the device's last use.
 
 The Cloud browser calls `POST /login/status` with `{requestId, browserSecret}`.
 States are `pending`, `approved`, `denied`, `consumed`, or `expired`; after cleanup

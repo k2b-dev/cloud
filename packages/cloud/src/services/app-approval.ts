@@ -488,6 +488,17 @@ export const createAppApprovalService = (
           await tx`UPDATE auth.app_devices SET push_token=${command.token} WHERE id=${device.id}::uuid`;
           return { state: "updated" as const };
         }
+        if (command.operation === "account") {
+          // Only the account this device signs in; activeDevice already checked it exists and may use app approval.
+          const [user] = await tx<
+            { uid: string; display_name: string; mail: string | null }[]
+          >`SELECT uid, display_name, mail FROM auth.users WHERE id=${device.user_id}::uuid`;
+          if (!user) return reject("FORBIDDEN", 403);
+          return {
+            account: { uid: user.uid, displayName: user.display_name, mail: user.mail || null },
+            device: { name: device.name, createdAt: iso(device.created_at) },
+          };
+        }
         if (command.operation === "revoke") {
           await tx`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${device.id}::uuid`;
           await record(tx, "device.revoke", device.user_id, device.id);
