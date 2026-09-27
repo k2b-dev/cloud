@@ -44,7 +44,9 @@ the person can and cannot use.
 
 The setting only affects new accounts and email changes. Turning it off keeps
 existing accounts without email working. The emergency `admin` account never
-needs an email address. The stored setting is `user.local_email_optional`.
+needs an email address. Administrators cannot create login tokens or send login
+links for it; it signs in with `ADMIN_LOGIN_TOKEN`. The stored setting is
+`user.local_email_optional`.
 
 ## Allow FreeIPA account requests
 

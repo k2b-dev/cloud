@@ -21,7 +21,7 @@ export type LocalUserCreateData = {
 };
 
 /** Created and repaired by the emergency admin login; it never needs an email address. */
-const EMERGENCY_ADMIN_UID = "admin";
+export const EMERGENCY_ADMIN_UID = "admin";
 
 /**
  * A local account may lack an email only as a full account while

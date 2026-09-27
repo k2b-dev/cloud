@@ -157,7 +157,7 @@ suite("local accounts without email", () => {
     expect(await magicLink.verify({ token: expired.data.token })).toMatchObject({ ok: false, status: 403 });
   });
 
-  test("the emergency admin account stays without email regardless of the setting", async () => {
+  test("the emergency admin account stays without email and gets no administrator-issued sign-in", async () => {
     const previousToken = process.env.ADMIN_LOGIN_TOKEN;
     process.env.ADMIN_LOGIN_TOKEN = `${prefix}-${crypto.randomUUID()}`;
     const app = new Hono().route("/auth", createAuthRoutes(authSender));
@@ -175,12 +175,19 @@ suite("local accounts without email", () => {
       await sql`UPDATE auth.users SET mail = NULL WHERE id = ${id}::uuid`;
       expect(await accountsAppService.user.update({ actor: admin, id, data: { displayName: "Admin" } })).toMatchObject({ ok: true });
       expect(await update(id, address("admin"))).toMatchObject({ ok: true });
+      // No administrator-issued link or token reaches the shared break-glass identity, with or without an address.
+      expect(await accountsAppService.user.sendLoginLink({ actor: admin, id, notificationSender: sender })).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN" },
+      });
+      expect(loginLinks).toHaveLength(0);
       expect(await update(id, null)).toMatchObject({ ok: true });
       expect((await login()).status).toBe(200);
       expect((await stored(id)).mail).toBeNull();
-      const token = await accountsAppService.user.createLoginToken({ actor: admin, id });
-      if (!token.ok) throw new Error(token.error.message);
-      expect(await magicLink.verify({ token: token.data.token })).toMatchObject({ ok: true, userId: id });
+      expect(await accountsAppService.user.createLoginToken({ actor: admin, id })).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN", message: expect.stringContaining("admin login token") },
+      });
     } finally {
       await sql`UPDATE auth.users SET mail = ${before?.mail ?? null} WHERE uid = 'admin'`;
       if (previousToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;

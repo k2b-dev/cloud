@@ -584,6 +584,16 @@ export const setExpiry = async (params: {
   });
 };
 
+/**
+ * Administrators never receive sign-in tokens for the shared emergency
+ * `admin` identity. Break-glass access uses `ADMIN_LOGIN_TOKEN`, so everyday
+ * actions stay attributed to the administrator who performs them.
+ */
+const emergencyAdminSignInError = (user: { uid: string }): MutationResult<never> | null =>
+  user.uid === providers.local.users.EMERGENCY_ADMIN_UID
+    ? { ok: false, error: "The emergency admin account has no login tokens or links. Use the admin login token instead.", status: 403 }
+    : null;
+
 export const sendLoginLink = async (params: {
   id: string;
   notificationSender: AccountsNotificationSender;
@@ -594,6 +604,8 @@ export const sendLoginLink = async (params: {
   if (user.provider !== "local") {
     return { ok: false, error: "Login links are only available for local accounts", status: 400 };
   }
+  const emergencyError = emergencyAdminSignInError(user);
+  if (emergencyError) return emergencyError;
   if (!user.mail) return { ok: false, error: "A local account requires an email address to receive a login link", status: 400 };
 
   const token = await providers.local.auth.createAccountLoginToken({ userId: user.id, ttlSeconds: 300 });
@@ -621,6 +633,8 @@ export const createLoginToken = async (params: {
   if (user.provider !== "local") {
     return { ok: false, error: "Login tokens are only available for local accounts", status: 400 };
   }
+  const emergencyError = emergencyAdminSignInError(user);
+  if (emergencyError) return emergencyError;
 
   const expiresInSeconds = 300;
   const token = await providers.local.auth.createAccountLoginToken({ userId: user.id, ttlSeconds: expiresInSeconds });

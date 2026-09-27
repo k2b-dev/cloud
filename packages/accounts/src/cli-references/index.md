@@ -19,7 +19,8 @@ cld accounts users update ada.lovelace --display-name "Ada Lovelace"
 omit it, and `users update --remove-email` may remove it, only while the
 installation allows local accounts without email; otherwise the server rejects
 the request. `users login-token` works for every local account, with or without
-email. `users send-login-link` needs a stored email address.
+email, except the emergency `admin` account, which uses `ADMIN_LOGIN_TOKEN`.
+`users send-login-link` needs a stored email address.
 
 Local and FreeIPA accounts follow different rules. Stored admin access can only be changed for local full accounts:
 

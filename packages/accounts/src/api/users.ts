@@ -424,13 +424,13 @@ const app = new Hono<AuthContext>()
       tags: ["Users"],
       summary: "Create login token",
       description:
-        "Create a one-time local login token for the target local account without sending an email. The token is bound to the account, so it also works for accounts without an email address.",
+        "Create a one-time local login token for the target local account without sending an email. The token is bound to the account, so it also works for accounts without an email address. The emergency `admin` account is refused; use `ADMIN_LOGIN_TOKEN` for it.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(CreateLoginTokenResponseSchema, "Login token created"),
         400: jsonResponse(ErrorResponseSchema, "Failed to create login token"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required, or the target is the emergency admin account"),
         404: jsonResponse(ErrorResponseSchema, "User not found"),
       },
     }),
@@ -713,13 +713,14 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Users"],
       summary: "Send login link",
-      description: "Send a local magic login link to the target user's email address.",
+      description:
+        "Send a local magic login link to the target user's email address. The emergency `admin` account is refused; use `ADMIN_LOGIN_TOKEN` for it.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Login link sent"),
         400: jsonResponse(ErrorResponseSchema, "Failed to send login link"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required, or the target is the emergency admin account"),
       },
     }),
     v("param", UserIdParamSchema),
