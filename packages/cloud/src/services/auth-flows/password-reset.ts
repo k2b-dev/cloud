@@ -8,6 +8,7 @@ import { logger } from "../logging";
 import { providers } from "../providers";
 import { session } from "../session";
 import * as settings from "../settings";
+import * as deferred from "./deferred";
 import * as ipaFlow from "./ipa";
 import type { AuthNotificationDeliveryResult, AuthNotificationSender } from "./notification-sender";
 
@@ -168,17 +169,17 @@ type ResetRequest = { email: string; redirectTo?: string; locale?: string };
  * Accepts a reset request without revealing whether an eligible account
  * exists. The lookup and delivery run after this returns, so every address
  * gets the same message in the same time. `settled` resolves when that
- * background work has finished; it never rejects.
+ * bounded background work has finished or was dropped under overload; it
+ * never rejects.
  */
 export const request = (
   params: ResetRequest,
   notificationSender: AuthNotificationSender,
-): { ok: true; message: string; settled: Promise<void> } => {
-  const settled = deliverResetLink(params, notificationSender).catch((error) => {
-    log.error("Password reset request failed", { error: error instanceof Error ? error.message : String(error) });
-  });
-  return { ok: true, message: GENERIC_MESSAGE, settled };
-};
+): { ok: true; message: string; settled: Promise<void> } => ({
+  ok: true,
+  message: GENERIC_MESSAGE,
+  settled: deferred.run("Password reset request", () => deliverResetLink(params, notificationSender)),
+});
 
 const deliverResetLink = async (params: ResetRequest, notificationSender: AuthNotificationSender): Promise<void> => {
   if (!(await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }))) return;

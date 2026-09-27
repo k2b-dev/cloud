@@ -15,6 +15,7 @@ import {
   startNotificationRuntime,
   stopNotificationRuntime,
 } from "@k2b/cloud/services";
+import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
 import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
@@ -120,6 +121,8 @@ export const startCoreServices = async (
 /** Stop core background services. */
 export const stopCoreServices = async (aiNotifications?: ReturnType<typeof createAiNotificationService>): Promise<void> => {
   try {
+    // Sign-in and reset requests already answered must reach the notification store before it stops.
+    await drainDeferredAuthRequests();
     await stopHelpMaintenance?.();
     stopHelpMaintenance = undefined;
     stopIdentityMaintenance?.();

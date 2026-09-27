@@ -7,6 +7,7 @@ import { accounts } from "../accounts";
 import { logger } from "../logging";
 import { providers } from "../providers";
 import * as settings from "../settings";
+import * as deferred from "./deferred";
 import type { AuthNotificationSender } from "./notification-sender";
 
 const log = logger("auth:magic-link");
@@ -66,14 +67,13 @@ type SignInLinkRequest = { email: string; redirectTo?: string; locale?: string; 
  * Accepts a sign-in link request without revealing whether an account exists.
  * The lookup and delivery run after this returns, so existing, unknown and
  * mail-less accounts get the same response in the same time. `settled`
- * resolves when that background work has finished; it never rejects.
+ * resolves when that bounded background work has finished or was dropped
+ * under overload; it never rejects.
  */
-export const request = (params: SignInLinkRequest, notificationSender: AuthNotificationSender): { ok: true; settled: Promise<void> } => {
-  const settled = deliverSignInLink(params, notificationSender).catch((error) => {
-    log.error("Sign-in link request failed", { error: error instanceof Error ? error.message : String(error) });
-  });
-  return { ok: true, settled };
-};
+export const request = (params: SignInLinkRequest, notificationSender: AuthNotificationSender): { ok: true; settled: Promise<void> } => ({
+  ok: true,
+  settled: deferred.run("Sign-in link request", () => deliverSignInLink(params, notificationSender)),
+});
 
 const deliverSignInLink = async (params: SignInLinkRequest, notificationSender: AuthNotificationSender): Promise<void> => {
   const identifier = params.email.trim();

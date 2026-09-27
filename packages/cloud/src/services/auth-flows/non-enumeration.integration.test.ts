@@ -66,7 +66,7 @@ suite("sign-in and reset requests never reveal accounts", () => {
   });
   afterAll(async () => {
     release.resolve();
-    for (const key of Object.keys(freeIpa)) await settings.remove(key);
+    for (const key of [...Object.keys(freeIpa), "user.allow_self_registration"]) await settings.remove(key);
     await sql`DELETE FROM auth.users WHERE sn = ${prefix}`;
   });
 

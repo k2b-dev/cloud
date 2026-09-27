@@ -16,7 +16,9 @@ a passkey or approval in a paired app. An email link can be requested with the
 account's email address or its username; it is always sent to the stored email
 address. The login page shows the same confirmation whether or not the account
 exists or has an email address. If no message arrives, contact an administrator.
-The password reset for FreeIPA accounts answers the same way.
+The password reset for FreeIPA accounts answers the same way. While the database
+or notification store is overloaded, Cloud drops such requests with a warning in
+the logs instead of queueing them without limit; the confirmation stays the same.
 
 Configure installation-wide policy in **Administration → Accounts & sign-in**.
 Create and manage individual users, groups and requests in **Accounts**.
