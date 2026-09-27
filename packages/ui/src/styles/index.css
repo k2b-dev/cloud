@@ -3483,7 +3483,19 @@
   }
 
   .k2b-ui
-    :is(.k2b-app-workspace__sidebar-item, .k2b-app-workspace__nav-tree-node):is(:hover, :focus-within)
+    .k2b-app-workspace__sidebar-item:is(:hover, :focus-within)
+    :is(.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"], .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]) {
+    display: inline-flex;
+  }
+
+  /* Roving focus rests on the tree node, which also contains its children's
+     rows: the node reveals only its own row, and not while focus is in a
+     child. Focus within, rather than on, the node keeps the actions rendered
+     while Tab moves from the node into them; the browser drops focus aimed at
+     a trigger hidden at that moment. */
+  .k2b-ui
+    .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+    > .k2b-app-workspace__nav-tree-row
     :is(.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"], .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]) {
     display: inline-flex;
   }

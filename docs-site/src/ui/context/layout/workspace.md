@@ -146,8 +146,9 @@ the controls remain siblings of the row link or button instead of invalid
 nested interactive content.
 
 Set `visibility="hover"` on metadata or actions only when the information is
-optional. On fine pointers it consumes no space until the row is hovered or
-keyboard-focused. It remains visible on touch devices. Actions also stay
+optional. On fine pointers it consumes no space until its own row is hovered
+or keyboard-focused; in a `NavTree`, parent and child rows reveal theirs
+independently. It remains visible on touch devices. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
 state visible with the default `"always"` value.
