@@ -84,9 +84,10 @@ For the first sign-in, create a login token, or pair the first device from the
 account's page with **Pair sign-in app** when administrator-assisted pairing is
 allowed. The person cannot request email sign-in links and receives no welcome
 email, expiry reminder, email notification or device-pairing email. Pairings
-remain in the audit log. Only the person can revoke a paired device, under
-**My account → Security**. If they lose their only device, create a login token
-so they can sign in, revoke the lost device and pair a new one.
+remain in the audit log. The person revokes a paired device under
+**My account → Security**, and an administrator can revoke it under
+**Sign-in devices** on the account's page. If they lose their only device,
+revoke it there and create a login token so they can sign in and pair a new one.
 
 Connected apps get no `email` claim for these accounts; see
 [OAuth](/en/docs/identity/oauth). [Proxy Auth](/en/apps/proxy-auth) sends an
