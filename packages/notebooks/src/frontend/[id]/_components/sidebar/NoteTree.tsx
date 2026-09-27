@@ -449,27 +449,31 @@ export default function NoteTree(props: Props) {
         </div>
       </Show>
 
-      <div class="min-h-0 flex-1">
-        <AppWorkspace.NavTree
-          ariaLabel={t().notes}
-          selectedId={selectedNoteId()}
-          defaultExpandedIds={flattenTree(props.tree)
-            .filter((node) => node.children.length > 0)
-            .map((node) => node.id)}
-        >
-          <NoteTreeItems
-            nodes={props.tree}
-            notebookId={props.notebookId}
-            presentationMode={props.presentationMode}
-            canWrite={props.canWrite ?? false}
-            actions={actions}
-            favoriteNoteIds={favoriteNoteIds}
-            onToggleFavorite={toggleFavorite}
-          />
-        </AppWorkspace.NavTree>
-      </div>
-
-      {props.tree.length === 0 && <Placeholder icon="ti ti-file-text" class="py-4" description={t().noNotes} />}
+      {/* An empty notebook shows one line where the first note would be, not a stretched empty tree. */}
+      <Show
+        when={props.tree.length > 0}
+        fallback={<Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().noNotes} />}
+      >
+        <div class="min-h-0 flex-1">
+          <AppWorkspace.NavTree
+            ariaLabel={t().notes}
+            selectedId={selectedNoteId()}
+            defaultExpandedIds={flattenTree(props.tree)
+              .filter((node) => node.children.length > 0)
+              .map((node) => node.id)}
+          >
+            <NoteTreeItems
+              nodes={props.tree}
+              notebookId={props.notebookId}
+              presentationMode={props.presentationMode}
+              canWrite={props.canWrite ?? false}
+              actions={actions}
+              favoriteNoteIds={favoriteNoteIds}
+              onToggleFavorite={toggleFavorite}
+            />
+          </AppWorkspace.NavTree>
+        </div>
+      </Show>
     </div>
   );
 }

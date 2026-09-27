@@ -1,6 +1,6 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace, createNavigation, type NavigationItem, Placeholder, useLocale } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata } from "./book-state";
@@ -70,15 +70,19 @@ export default function BookNavigator(props: BookNavigatorProps) {
         </AppWorkspace.SidebarItem>
       )}
       <AppWorkspace.SidebarSection title={t().notes}>
-        <AppWorkspace.NavTree
-          ariaLabel={t().notes}
-          selectedId={state().selectedNoteId}
-          expandedIds={expanded()}
-          onExpandedIdsChange={setExpanded}
+        <Show
+          when={state().tree.length > 0}
+          fallback={<Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().empty} />}
         >
-          {items(state().tree)}
-        </AppWorkspace.NavTree>
-        {state().tree.length === 0 && <Placeholder description={t().empty} />}
+          <AppWorkspace.NavTree
+            ariaLabel={t().notes}
+            selectedId={state().selectedNoteId}
+            expandedIds={expanded()}
+            onExpandedIdsChange={setExpanded}
+          >
+            {items(state().tree)}
+          </AppWorkspace.NavTree>
+        </Show>
       </AppWorkspace.SidebarSection>
       {state().tags.length > 0 && (
         <AppWorkspace.SidebarSection title={t().tags}>

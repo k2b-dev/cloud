@@ -264,6 +264,29 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     }
   });
 
+  test("lays an inline placeholder out as one row that starts where a sidebar row starts", () => {
+    const inline = renderToString(() =>
+      createComponent(Placeholder, { description: "No notes yet", icon: "ti ti-file-text", variant: "inline", align: "left" }),
+    );
+    const rule = (css: string, selector: string) =>
+      css.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))?.[1] ?? "";
+    const value = (declarations: string, property: string) =>
+      declarations.match(new RegExp(`(?:^|[;\\s])${property}:\\s*([^;]+);`))?.[1]?.trim();
+    const row = rule(parityCss, '.k2b-ui .k2b-placeholder[data-variant="inline"]');
+    const icon = rule(parityCss, '.k2b-ui .k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon');
+    const sidebarItem = rule(baseCss, ".k2b-ui .k2b-app-workspace__sidebar-item");
+    const sidebarIcon = rule(baseCss, ".k2b-ui .k2b-app-workspace__sidebar-item-icon");
+
+    expect(inline).toContain('data-variant="inline"');
+    expect(inline).toContain('data-align="left"');
+    expect(value(row, "flex-direction")).toBe("row");
+    // An empty sidebar section's line puts its icon and text where the first row's would be.
+    expect(value(row, "padding")).toBeDefined();
+    expect(value(row, "padding")).toBe(value(sidebarItem, "padding"));
+    expect(value(row, "gap")).toBe(value(sidebarItem, "gap"));
+    expect(value(icon, "width")).toBe(value(sidebarIcon, "width"));
+  });
+
   test("rounds and clamps determinate progress", () => {
     const progress = renderToString(() =>
       createComponent(ProgressBar, { value: 41.6, label: "Upload", size: "xs", tone: "success", showValue: true }),

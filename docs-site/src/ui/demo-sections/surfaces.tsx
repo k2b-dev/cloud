@@ -109,7 +109,7 @@ const EmptyDemo = () => (
       { kind: "component", name: "Placeholder", from: "@k2b/ui" },
       { kind: "component", name: "NotFoundState", from: "@k2b/ui" },
     ]}
-    description="The examples intentionally combine compact, panel, centered, and left-aligned placeholders; the code below names each non-default layout choice. NotFoundState handles a route-level dead end."
+    description="The examples intentionally combine compact, inline, panel, centered, and left-aligned placeholders; the code below names each non-default layout choice. NotFoundState handles a route-level dead end."
     code={`import { Button, NotFoundState, Placeholder } from "@k2b/ui";
 
 <Placeholder
@@ -121,7 +121,8 @@ const EmptyDemo = () => (
 />
 <Placeholder surface="paper" state="loading" variant="panel" title="Loading projects" description="Fetching the latest projects." />
 <Placeholder surface="paper" state="error" align="left" title="Projects unavailable" description="Reload the page to try again." />
-<NotFoundState code="404" title="Project not found" description="It may have been moved." action={{ label: "All projects", href: "/projects" }} />`}
+<NotFoundState code="404" title="Project not found" description="It may have been moved." action={{ label: "All projects", href: "/projects" }} />
+<Placeholder surface="paper" variant="inline" align="left" icon="ti ti-file-text" description="No notes yet" />`}
   >
     <div class="ui-demo-form-grid">
       <Placeholder
@@ -139,6 +140,7 @@ const EmptyDemo = () => (
         description="It may have been moved."
         action={{ label: "All projects", href: "#empty-states" }}
       />
+      <Placeholder surface="paper" variant="inline" align="left" icon="ti ti-file-text" description="No notes yet" />
     </div>
   </DemoCard>
 );
