@@ -44,15 +44,16 @@ enabled. The result contains PDF bytes and the returned content type.
 Cloud renders every HTML document, header, and footer offline, including
 Markdown, Liquid templates, and Factur-X invoices. Before the HTML reaches
 Gotenberg, Cloud removes scripts, `noscript` content, frames, embedded
-objects, `base` and `meta` elements, and links other than stylesheets. It
+objects, `base` and `meta` elements, links other than stylesheets, and the
+MathML (`math`) and SVG (`foreignObject`, `desc`) elements that hold HTML. It
 then adds a Content Security Policy that allows inline styles, plus named
 assets and `data:` URLs for stylesheets, images, and fonts.
 
 As a result, JavaScript does not run and remote URLs are not loaded. Pass
 images, fonts, and CSS as named `assets` or embed them as `data:` URLs.
-Hyperlinks stay clickable in the PDF. The rendering mode stays the
-caller's: a leading doctype still applies, and HTML without one renders in
-quirks mode.
+Hyperlinks stay clickable in the PDF, and inline SVG shapes and images still
+render. The rendering mode stays the caller's: a leading doctype still
+applies, and HTML without one renders in quirks mode.
 
 ## Render untrusted Markdown
 

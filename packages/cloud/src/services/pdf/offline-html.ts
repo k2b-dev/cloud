@@ -9,6 +9,10 @@
  * embed documents, or open connections is a second layer that does not rely
  * on the policy, which matters for header and footer templates that Chromium
  * renders apart from the document.
+ *
+ * MathML (`math`) and the SVG elements that hold HTML (`foreignObject`,
+ * `desc`) go as well; they have no print use in Cloud documents. SVG shapes,
+ * images, `title`, and links stay, so graphics still render.
  */
 const POLICY =
   "default-src 'none'; style-src 'unsafe-inline' file: data:; img-src file: data:; font-src file: data:; base-uri 'none'; form-action 'none'";
@@ -37,7 +41,8 @@ export const offlineHtml = (html: string): string =>
   OFFLINE_META +
   new HTMLRewriter()
     // Chromium parses noscript content as markup when JavaScript is disabled.
-    .on("script, noscript, meta, base, iframe, frame, frameset, object, embed", {
+    // math, foreignObject, and desc: see the module comment.
+    .on("script, noscript, meta, base, iframe, frame, frameset, object, embed, math, foreignObject, desc", {
       element(element) {
         element.replace(REMOVED, { html: true });
       },

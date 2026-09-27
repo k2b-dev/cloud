@@ -53,6 +53,28 @@ describe("offline HTML", () => {
     expect(html).toEndWith("<<!---->b>Bold</b> <<!---->i>Italic</i>");
   });
 
+  test("removes MathML and the SVG elements that hold HTML", () => {
+    const html = offlineHtml(
+      [
+        "<math><mi>x</mi></math>",
+        "<svg><foreignObject><p>Note</p></foreignObject></svg>",
+        "<svg><foreignobject>Note</foreignobject></svg>",
+        "<svg><desc>Note</desc></svg>",
+        "<p>Invoice</p>",
+      ].join(""),
+    );
+    expect(html).not.toContain("<math");
+    expect(html).not.toContain("<mi>");
+    expect(html).not.toContain("Note");
+    expect(html).toContain("<p>Invoice</p>");
+  });
+
+  test("keeps inline SVG shapes, images, links, and the document title", () => {
+    const content =
+      '<title>Invoice</title><svg width="8" height="8"><title>Chart</title><a href="https://example.com"><circle r="4"/></a><path d="M0 0"/><rect/><image href="data:image/png;base64,AA=="/><use href="#shape"/></svg>';
+    expect(offlineHtml(content)).toBe(`${OFFLINE_META}${content}`);
+  });
+
   test("keeps styles, images, links, and stylesheets that the policy confines", () => {
     const content =
       '<link rel="Stylesheet" href="styles.css"><style>h1 { color: red; }</style><img src="logo.png"><img src="data:image/png;base64,AA=="><a href="https://example.com">Terms</a>';
