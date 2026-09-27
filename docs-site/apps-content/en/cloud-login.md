@@ -5,7 +5,7 @@ section: Companion apps
 order: 500
 description: Approve sign-ins to multiple Clouds from one installable app.
 tags: [authentication, pwa, devices]
-updated: 2026-09-25
+updated: 2026-09-27
 ---
 
 # Cloud Login
@@ -30,6 +30,11 @@ and choose the authenticator address. Use the app configured by your Cloud.
 
 Pair each account separately. You can add another Cloud, edit account labels,
 or disconnect an account through **Manage accounts**.
+
+Forgot which account you paired? Tap the info button on a Cloud card. It shows
+your username for that Cloud, your name and email, the device name, when you
+paired it and when you last approved a sign-in. Copy the username from there
+to sign in. Without a connection, the app shows the details it saved last time.
 
 ## Protect and recover
 

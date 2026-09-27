@@ -39,6 +39,10 @@ test("login requests use the shared sheet and dismiss without approving", async 
     client: async () => {
       throw new Error("No network in this test");
     },
+    stored: async () => undefined,
+    account: async () => {
+      throw new Error("No network in this test");
+    },
     decide: async (_binding, _request, decision) => {
       decisions.push(decision);
       setRequests([]);

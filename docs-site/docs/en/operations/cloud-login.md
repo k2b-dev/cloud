@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-09-25
+updated: 2026-09-27
 ---
 
 # Run Cloud Login
@@ -235,6 +235,17 @@ account. Language and appearance are grouped under **Settings**. Use the pencil 
 label, or the delete button to open the disconnect confirmation. Nothing is
 removed until you confirm. By default, disconnecting revokes the device in Cloud;
 the explicit local-only option removes it from this app without revocation.
+
+The info button at the top right of each Cloud card shows which account the
+pairing signs in: the username, with a copy button, the name if one is set, and
+the email or **Not set**. It also shows the device name, the pairing date and
+the last approval from this device. The app asks the Cloud through the signed
+device channel each time the details open, so the request never passes through
+the Cloud Login server. It keeps a copy with the other encrypted connection
+data. When the Cloud cannot be reached or no longer accepts this device, the app
+shows that copy with the date it was saved. A Cloud without this feature shows
+only the device facts. The last approval is recorded on this device and appears
+after the next approval.
 
 ## Approve and recover
 

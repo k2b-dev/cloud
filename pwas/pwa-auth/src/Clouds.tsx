@@ -12,6 +12,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Authenticator, Login } from "./authenticator";
+import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
 import { authMessages } from "./i18n";
 import type { Preferences } from "./preferences";
@@ -219,6 +220,15 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences; f
                   <h2>{binding.label}</h2>
                   <p class="auth-issuer">{new URL(binding.issuer).host}</p>
                 </div>
+                <IconButton
+                  class="auth-cloud-info"
+                  label={t().cloudDetails({ cloud: binding.label })}
+                  variant="ghost"
+                  tooltip={false}
+                  onClick={() => void openDetails(props.auth, binding, props.preferences)}
+                >
+                  <i class="ti ti-info-circle" aria-hidden="true" />
+                </IconButton>
               </header>
               <Show when={state()?.error}>{(error) => <p role="status">{t()[error()]}</p>}</Show>
               <Show when={state() && !state()?.error && requests().length === 0}>

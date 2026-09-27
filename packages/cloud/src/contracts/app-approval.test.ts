@@ -79,6 +79,9 @@ describe("app approval wire encoding", () => {
     expect(appDeviceProofMessage({ ...proof, command })).toBe(
       `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"decide","${id}","${coordinate}","000123","approve"]`,
     );
+    expect(appDeviceProofMessage({ ...proof, command: { operation: "account" } })).toBe(
+      `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"account"]`,
+    );
     expect(appDeviceProofMessage({ ...proof, command: { ...command, decision: "deny" } })).not.toBe(
       appDeviceProofMessage({ ...proof, command }),
     );

@@ -1,6 +1,6 @@
 import { AppApprovalClientError, appApproval } from "@k2b/cloud/browser/app-approval";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { type Binding, storage } from "./storage";
+import { type Binding, type CloudDetails, storage } from "./storage";
 
 export type Client = Awaited<ReturnType<typeof appApproval.connect>>;
 export type Login = Awaited<ReturnType<Client["pending"]>>["requests"][number];
@@ -140,6 +140,28 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       clients.clear();
     } else void reload().then(tick);
   });
+  /** The latest saved record, including facts kept for Cloud details. */
+  const stored = async (binding: Binding) => (await storage.bindings()).find((b) => b.id === binding.id);
+  // Facts kept for Cloud details. Skipped when another tab renamed or disconnected the Cloud meanwhile;
+  // a failed or skipped write only loses this display copy.
+  const remember = (binding: Binding, change: Pick<Binding, "details" | "approvedAt">) =>
+    storage.updateBinding(binding.id, change).catch(() => false);
+  /** Asks the Cloud which account this device signs in and keeps a copy for offline viewing. */
+  const account = async (binding: Binding, signal?: AbortSignal): Promise<CloudDetails> => {
+    const owner = vault.session();
+    const result = await (await client(binding.issuer, signal)).account(binding, signal);
+    owner.check();
+    const details = {
+      uid: result.account.uid,
+      displayName: result.account.displayName,
+      mail: result.account.mail,
+      deviceName: result.device.name,
+      pairedAt: result.device.createdAt,
+      checkedAt: new Date().toISOString(),
+    };
+    await remember(binding, { details });
+    return details;
+  };
   const decide = async (binding: Binding, request: Login, decision: "approve" | "deny") => {
     vault.session().check();
     if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(request.expiresAt) <= Date.now())
@@ -166,6 +188,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       [binding.id]: { requests: (s[binding.id]?.requests ?? []).filter((r) => r.requestId !== request.requestId) },
     }));
     channel.postMessage("changed");
+    if (decision === "approve") await remember(binding, { approvedAt: new Date().toISOString() });
   };
   // One attempt per Cloud and token per app session; older Clouds reject the command.
   const pushAttempts = new Set<string>();
@@ -226,6 +249,8 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     online,
     changed,
     client,
+    stored,
+    account,
     decide,
     revoke,
     syncPush,

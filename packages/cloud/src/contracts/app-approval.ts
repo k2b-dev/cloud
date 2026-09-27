@@ -53,6 +53,8 @@ export const AppDeviceMutationSchema = z.discriminatedUnion("operation", [
 export const AppDeviceCommandSchema = z.discriminatedUnion("operation", [
   z.object({ operation: z.literal("pending") }).strict(),
   z.object({ operation: z.literal("revoke") }).strict(),
+  /** Reads the signing device's own account and device record, e.g. to show which account it signs in. */
+  z.object({ operation: z.literal("account") }).strict(),
   /** Stores the authenticator's opaque push token for sign-in wake-ups on this device. */
   z.object({ operation: z.literal("push"), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict(),
   z
@@ -178,6 +180,14 @@ export const AppPairingResultSchema = z
   .strict();
 /** Initiating Cloud session only; never returned to an unpaired device. */
 export const AppPairingInspectionSchema = AppPairingResultSchema.extend({ name: z.string().nullable(), userId: Id });
+/** Answer to the `account` command: only the signing device's own account, never secrets or other users. */
+export const AppDeviceAccountSchema = z
+  .object({
+    account: z.object({ uid: z.string(), displayName: z.string(), mail: z.string().nullable() }).strict(),
+    device: z.object({ name: z.string(), createdAt: DateTime }).strict(),
+  })
+  .strict();
+export type AppDeviceAccount = z.infer<typeof AppDeviceAccountSchema>;
 export const AppDeviceResponseSchema = z.union([
   z
     .object({
@@ -186,6 +196,7 @@ export const AppDeviceResponseSchema = z.union([
     })
     .strict(),
   z.object({ state: z.enum(["approved", "denied", "revoked", "updated"]) }).strict(),
+  AppDeviceAccountSchema,
 ]);
 export const AppLoginStartResultSchema = z
   .object({ requestId: Id, browserSecret: Secret, comparison: Comparison, expiresAt: DateTime, pollAfterSeconds: z.number().positive() })

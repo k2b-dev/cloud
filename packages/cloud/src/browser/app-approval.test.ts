@@ -79,6 +79,11 @@ describe("public authenticator browser SDK", () => {
         nonces.add(request.proof.jti);
         const command = request.proof.command;
         if (command.operation === "push") expect(command.token).toBe("T".repeat(43));
+        if (command.operation === "account")
+          return Response.json({
+            account: { uid: "ada", displayName: "Ada Lovelace", mail: null },
+            device: { name: "Phone", createdAt: expiresAt() },
+          });
         return Response.json(
           command.operation === "pending"
             ? { requests: [], pollAfterSeconds: 5 }
@@ -105,8 +110,9 @@ describe("public authenticator browser SDK", () => {
     await client.decide(device, login, "approve");
     await client.decide(device, login, "deny");
     await client.push(device, "T".repeat(43));
+    expect((await client.account(device)).account).toEqual({ uid: "ada", displayName: "Ada Lovelace", mail: null });
     await client.revoke(device);
-    expect(nonces.size).toBe(6);
+    expect(nonces.size).toBe(7);
     const count = calls.length;
     await expect(client.pending({ ...device, issuer: "https://other.example" })).rejects.toThrow();
     await expect(client.claim({ ...payload(), issuer: "https://other.example" }, key, "Phone")).rejects.toThrow();
