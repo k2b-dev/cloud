@@ -127,4 +127,6 @@ test("an empty book shows its sidebar placeholder as one line below the pages he
   expect(placeholder?.attributes["data-variant"]).toBe("inline");
   expect(placeholder?.attributes["data-align"]).toBe("left");
   expect(placeholder?.text).toBe("Noch keine Seiten");
+  // Screen readers get the empty line, not an empty tree next to it.
+  expect(await select(html, '[role="tree"]')).toEqual([]);
 });
