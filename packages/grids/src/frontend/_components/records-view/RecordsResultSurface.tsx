@@ -81,6 +81,7 @@ export default function RecordsResultSurface(props: Props) {
             result={{ items: props.items, fields: props.fields, nextCursor: null }}
             baseId={props.baseId}
             fieldsByTable={fieldsByTable()}
+            relationLabels={props.relationLabels}
             selectedId={props.selectedRecordId}
             highlightedIds={props.highlightedRecordIds}
             onRecordClick={props.onRecordClick}
@@ -149,6 +150,7 @@ export default function RecordsResultSurface(props: Props) {
             baseId={props.baseId}
             tableId={props.tableId}
             fieldsByTable={fieldsByTable()}
+            relationLabels={props.relationLabels}
             selectedId={props.selectedRecordId}
             highlightedIds={props.highlightedRecordIds}
             onRecordClick={props.onRecordClick}

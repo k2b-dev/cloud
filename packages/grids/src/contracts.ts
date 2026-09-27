@@ -830,10 +830,9 @@ export const TableQueryResponseSchema = z.object({
   /** Group-mode flag (only set when groupBy is non-empty). */
   explode: z.boolean().optional(),
   /** UUID → presentable label for relation-typed bucket keys (group
-   *  mode) or relation-cell values (list mode). The UI reads this map
-   *  before falling back to UUID-prefix or "—" so a grouped relation
-   *  column doesn't show raw ids the way it would without a label
-   *  resolver step on the response side. */
+   *  mode), relation-cell values (list mode), and the related records a
+   *  relation filter names. Unreadable or deleted targets have no entry,
+   *  so the UI shows them as unavailable. */
   relationLabels: z.record(z.string(), z.string()).optional(),
   /** recordId → fieldId → first image file metadata for card covers. */
   filePreviews: z

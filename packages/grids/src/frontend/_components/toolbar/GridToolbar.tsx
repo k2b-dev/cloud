@@ -35,6 +35,8 @@ type Props = {
   onAddComputedColumn?: () => void;
   onClearColumns?: () => void;
   currentSearch: { q: string; fieldIds: string[] };
+  /** Record id -> label for relation filter values, from the query response. */
+  relationLabels?: Record<string, string>;
   forms?: Form[];
   canWrite: boolean;
   canDirectWrite: boolean;
@@ -350,7 +352,13 @@ export default function GridToolbar(props: Props) {
       {/* Filter panel — render iff there's at least one filter row */}
       <Show when={hasFilter()}>
         <div class="paper p-2.5">
-          <FilterPanel fields={props.fields} rows={filterRows} onRowsChange={setFilterRows} dateConfig={props.dateConfig} />
+          <FilterPanel
+            fields={props.fields}
+            rows={filterRows}
+            onRowsChange={setFilterRows}
+            relationLabels={props.relationLabels}
+            dateConfig={props.dateConfig}
+          />
         </div>
       </Show>
 

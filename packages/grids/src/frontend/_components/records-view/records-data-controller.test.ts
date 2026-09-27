@@ -22,24 +22,34 @@ const record = (id: string): GridRecord => ({
 });
 
 describe("reconcileFlatRecordsPage", () => {
-  test("replaces stale rows and previews with a new first page", () => {
+  test("replaces stale rows, previews, and relation labels with a new first page", () => {
     expect(
       reconcileFlatRecordsPage(
-        { items: [record("old")], nextCursor: "old-cursor", filePreviews: { old: {} } },
-        { items: [record("new")], nextCursor: "next", filePreviews: { new: {} } } as TableQueryResult,
+        { items: [record("old")], nextCursor: "old-cursor", filePreviews: { old: {} }, relationLabels: { OLD001: "Old" } },
+        { items: [record("new")], nextCursor: "next", filePreviews: { new: {} }, relationLabels: { NEW001: "New" } } as TableQueryResult,
         false,
       ),
-    ).toEqual({ items: [record("new")], nextCursor: "next", filePreviews: { new: {} } });
+    ).toEqual({ items: [record("new")], nextCursor: "next", filePreviews: { new: {} }, relationLabels: { NEW001: "New" } });
   });
 
-  test("appends unique rows and merges previews for pagination", () => {
+  test("appends unique rows and keeps previews and relation labels of earlier pages", () => {
     expect(
       reconcileFlatRecordsPage(
-        { items: [record("a")], nextCursor: "page-2", filePreviews: { a: {} } },
-        { items: [record("a"), record("b")], nextCursor: null, filePreviews: { b: {} } } as TableQueryResult,
+        { items: [record("a")], nextCursor: "page-2", filePreviews: { a: {} }, relationLabels: { REL00A: "Alpha" } },
+        {
+          items: [record("a"), record("b")],
+          nextCursor: null,
+          filePreviews: { b: {} },
+          relationLabels: { REL00B: "Beta" },
+        } as TableQueryResult,
         true,
       ),
-    ).toEqual({ items: [record("a"), record("b")], nextCursor: null, filePreviews: { a: {}, b: {} } });
+    ).toEqual({
+      items: [record("a"), record("b")],
+      nextCursor: null,
+      filePreviews: { a: {}, b: {} },
+      relationLabels: { REL00A: "Alpha", REL00B: "Beta" },
+    });
   });
 });
 

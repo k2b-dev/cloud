@@ -118,6 +118,38 @@ export const buildRelationLabelCacheForIds = async (
   return resolveLabelsByTargetTable(visible.ids, visible.authorizedTableIds, labelFieldIdsByTableId, client, viewer);
 };
 
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Labels for the related records a filter names, so relation filter chips can show them. */
+export const buildRelationFilterLabelCache = async (
+  filter: FilterTree | null | undefined,
+  fields: Field[],
+  viewer?: ExpansionViewer,
+): Promise<Record<string, string>> => {
+  const targetTableIds = new Map<string, string>();
+  for (const field of fields) {
+    const targetTableId = (field.config as { targetTableId?: string }).targetTableId;
+    if (field.type === "relation" && !field.deletedAt && targetTableId) targetTableIds.set(field.id, targetTableId);
+  }
+  const idsByTargetTable = new Map<string, Set<string>>();
+  const visit = (node: FilterTree | null | undefined): void => {
+    if (!node) return;
+    if ("filters" in node) {
+      for (const child of node.filters) visit(child);
+      return;
+    }
+    const targetTableId = targetTableIds.get(node.fieldId);
+    if (!targetTableId) return;
+    const ids = idsByTargetTable.get(targetTableId) ?? new Set<string>();
+    for (const id of Array.isArray(node.value) ? node.value : [node.value]) {
+      if (typeof id === "string" && RECORD_ID.test(id)) ids.add(id);
+    }
+    idsByTargetTable.set(targetTableId, ids);
+  };
+  visit(filter);
+  return buildRelationLabelCacheForIds(idsByTargetTable, viewer);
+};
+
 export const lookupRecords = async (params: {
   targetTableId: string;
   q?: string | null;

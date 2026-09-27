@@ -1152,4 +1152,62 @@ describe("classic resource route contracts", () => {
     },
     20_000,
   );
+
+  postgresTest(
+    "labels linked records and relation filter values in a stored table query",
+    async () => {
+      const fixture = newFixture();
+      let primaryError: unknown;
+      let primaryFailed = false;
+      try {
+        await setupFixture(fixture);
+        const relationFieldId = testUuid();
+        const relationFieldPublicId = testShortId("L");
+        const record = (label: string) => ({ id: testUuid(), publicId: testShortId("R"), label });
+        const source = record("SOURCE");
+        const target = record("TARGET");
+        const other = record("OTHER");
+        await sql`
+          INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${relationFieldId}::uuid, ${relationFieldPublicId}, ${fixture.tableId}::uuid, 'Related', 'relation', ${{ targetTableId: fixture.tableId }}::jsonb, 1)
+        `;
+        for (const item of [source, target, other]) {
+          await sql`
+            INSERT INTO grids.records (id, short_id, table_id, data)
+            VALUES (${item.id}::uuid, ${item.publicId}, ${fixture.tableId}::uuid, ${{ [fixture.uniqueFieldId]: item.label }}::jsonb)
+          `;
+        }
+        await sql`
+          INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
+          VALUES (${source.id}::uuid, ${relationFieldId}::uuid, ${target.id}::uuid, 0)
+        `;
+
+        // No row links OTHER, so only the filter names it.
+        const response = await app.request(
+          `/tables/${fixture.tablePublicId}/query`,
+          jsonRequest(fixture.tokens.read, {
+            query: { filter: { fieldId: relationFieldPublicId, op: "notContainsAny", value: [other.publicId] } },
+          }),
+        );
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as { items: Array<{ id: string; data: Record<string, unknown> }>; relationLabels?: unknown };
+        expect(body.items.find((item) => item.id === source.publicId)?.data[relationFieldPublicId]).toEqual([target.publicId]);
+        expect(body.relationLabels).toEqual({ [target.publicId]: "TARGET", [other.publicId]: "OTHER" });
+        const serialized = JSON.stringify(body);
+        for (const internalId of [relationFieldId, source.id, target.id, other.id]) expect(serialized).not.toContain(internalId);
+      } catch (error) {
+        primaryError = error;
+        primaryFailed = true;
+        throw error;
+      } finally {
+        try {
+          await cleanupFixture(fixture);
+        } catch (cleanupError) {
+          if (primaryFailed) throw new AggregateError([primaryError, cleanupError], "Relation label query test and cleanup failed");
+          throw cleanupError;
+        }
+      }
+    },
+    20_000,
+  );
 });
