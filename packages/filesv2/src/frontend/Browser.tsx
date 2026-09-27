@@ -1137,9 +1137,15 @@ export default function Browser(props: {
     select: (id: string, modifiers?: Parameters<typeof selection.select>[1]) =>
       selecting() ? (modifiers?.shiftKey ? selection.select(id, modifiers) : selection.toggle(id)) : selection.select(id),
     keyDown: (event: KeyboardEvent, id: string, columns?: number) => {
+      if (selecting()) return selection.keyDown(event, id, columns);
       const multi = event.key === " " || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a");
-      if (multi && !selecting()) return false;
-      return selection.keyDown(event, id, columns);
+      if (multi) return false;
+      if (!event.shiftKey) return selection.keyDown(event, id, columns);
+      // Shift would extend a range from the anchor; without checkboxes it moves the highlight like the plain key.
+      const plain = new KeyboardEvent(event.type, { key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey });
+      const handled = selection.keyDown(plain, id, columns);
+      if (handled) event.preventDefault();
+      return handled;
     },
   };
   const sortLabel = (key: SortKey) => (key === "modified" ? b().sortModified : key === "size" ? b().sortSize : b().sortName);
