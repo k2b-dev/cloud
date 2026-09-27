@@ -23,15 +23,31 @@ const OFFLINE_META = `<meta charset="utf-8"><meta http-equiv="Content-Security-P
  * and an XML declaration. Repeating it ahead of the policy keeps the caller's
  * rendering mode: HTML without a doctype still renders in quirks mode. Comments
  * end where HTML ends them, including `<!-->` and `<!--->`; `<?…>` ends at the
- * first `>`.
+ * first `>`. A single forward scan keeps the time linear in the input size.
  */
 const leadingDoctype = (html: string): string => {
-  const skip = /\s*(?:<!--(?:>|->|[\s\S]*?--!?>)|<\?[^>]*>)/y;
-  let start = 0;
-  while (skip.test(html)) start = skip.lastIndex;
-  const doctype = /\s*(<!doctype[^>]*>)/iy;
-  doctype.lastIndex = start;
-  return doctype.exec(html)?.[1] ?? "";
+  let at = 0;
+  for (;;) {
+    while (/\s/.test(html.charAt(at))) at += 1;
+    if (html.startsWith("<!--", at)) {
+      if (html.startsWith(">", at + 4)) at += 5;
+      else if (html.startsWith("->", at + 4)) at += 6;
+      else {
+        const dashes = html.indexOf("-->", at + 4);
+        const bang = html.indexOf("--!>", at + 4);
+        if (dashes < 0 && bang < 0) return "";
+        at = dashes >= 0 && (bang < 0 || dashes < bang) ? dashes + 3 : bang + 4;
+      }
+    } else if (html.startsWith("<?", at)) {
+      const end = html.indexOf(">", at + 2);
+      if (end < 0) return "";
+      at = end + 1;
+    } else {
+      if (html.slice(at, at + 9).toLowerCase() !== "<!doctype") return "";
+      const end = html.indexOf(">", at + 9);
+      return end < 0 ? "" : html.slice(at, end + 1);
+    }
+  }
 };
 
 /** An empty comment stands in for a removed element, so the text on either side stays separate. */
