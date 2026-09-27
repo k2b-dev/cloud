@@ -1,34 +1,10 @@
 import { expect, test } from "bun:test";
-import { einvoice, type Invoice } from "@k2b/stdlib/finance";
 import { PDFDocument } from "pdf-lib";
 import { chromium } from "playwright";
-import { requireInfraUrl, testFor } from "../../../../../scripts/fixtures/test-infra";
 import { decodePdfRequest } from "../pdf-contracts";
-import { executePdf } from "../pdf-service";
+import { invoice } from "../test-invoice";
 import { compileArtifact } from "./compile";
 import type {} from "./pdf-browser-harness";
-
-const invoice = {
-  kind: "invoice",
-  number: "TEST-42",
-  invoiceDate: "2026-09-15",
-  serviceDate: "2026-09-15",
-  dueDate: "2026-09-30",
-  currency: "EUR",
-  seller: {
-    name: "Example Seller",
-    vatId: "DE123456789",
-    address: { line1: "Street 1", city: "Ulm", postalCode: "89073", countryCode: "DE" },
-  },
-  buyer: {
-    name: "Example Buyer",
-    vatId: "DE987654321",
-    address: { line1: "Street 2", city: "Berlin", postalCode: "10115", countryCode: "DE" },
-  },
-  buyerReference: "TEST",
-  payment: { iban: "DE89370400440532013000", accountName: "Example Seller" },
-  lines: [{ id: "1", name: "Service", quantity: "2.0000", unitPrice: "50.0000", unitCode: "HUR", taxRate: "19.00" }],
-} satisfies Invoice;
 
 test("opaque Studio worker offers pure JS finance, PDF transport and cancellation", async () => {
   const build = Bun.spawn(
@@ -120,55 +96,3 @@ test("opaque Studio worker offers pure JS finance, PDF transport and cancellatio
     await server.stop(true);
   }
 }, 60000);
-
-testFor("gotenberg")(
-  "real Gotenberg renders offline HTML and roundtrips Factur-X and XML attachments",
-  async () => {
-    const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
-    let networkRequests = 0;
-    const trap = Bun.serve({
-      hostname: "0.0.0.0",
-      port: 0,
-      fetch() {
-        networkRequests++;
-        return new Response("unwanted outbound request");
-      },
-    });
-    const url = `http://host.docker.internal:${trap.port}`;
-    try {
-      const output = await executePdf(
-        {
-          operation: "render",
-          html: `<meta http-equiv="refresh" content="0;url=${url}/redirect"><style>@import url('${url}/css'); h1{color:red}</style><img src="${url}/image"><script>fetch('${url}/js')</script><h1>Invoice</h1>`,
-          page: { format: "A5" },
-        },
-        config,
-      );
-      const parsed = await PDFDocument.load(output.pdf);
-      expect(parsed.getPages()).toHaveLength(1);
-      expect(parsed.getPages()[0]!.getWidth()).toBeCloseTo((148 / 25.4) * 72, 0);
-      expect(networkRequests).toBe(0);
-      const xml = einvoice.serialize(invoice, { format: "zugferd-2.5-en16931" });
-      if (!xml.ok) throw new Error(JSON.stringify(xml));
-      const invoicePdf = await executePdf(
-        { operation: "facturX", html: "<h1>Invoice TEST-42</h1>", xml: xml.data.xml, profile: "EN 16931" },
-        config,
-      );
-      const result = await einvoice.parsePdf(invoicePdf.pdf);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.data.invoice.number).toBe("TEST-42");
-      const attached = await executePdf(
-        {
-          operation: "attach",
-          document: new Blob([new Uint8Array(output.pdf)]),
-          attachments: [{ name: "factur-x.xml", data: new Blob([xml.data.xml], { type: "application/xml" }), relationship: "Alternative" }],
-        },
-        config,
-      );
-      expect((await einvoice.parsePdf(attached.pdf)).ok).toBe(true);
-    } finally {
-      await trap.stop(true);
-    }
-  },
-  60000,
-);

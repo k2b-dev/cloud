@@ -158,7 +158,10 @@ jobs:
       - run: bun run --cwd packages/ui build
       - run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
       # Only the Playwright suites; the DOM suites of this directory run in the unit job with browser conditions.
-      - run: bun test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts packages/assistant/src/artifacts/*.browser.test.ts
+      # globstar includes the suites in subdirectories such as runtime/.
+      - run: |
+          shopt -s globstar
+          bun test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts packages/assistant/src/artifacts/**/*.browser.test.ts
 
   browser-smoke:
     # The Grids and Mail smokes drive a running Cloud, so this job boots one from this commit's images.
