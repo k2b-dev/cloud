@@ -62,14 +62,14 @@ Tasks use deadlines; events use a schedule and may recur. Views, filters, and
 grouping change how items are presented, not which resource owns them.
 
 The item details read top to bottom. A task starts with **Planning**: due date,
-estimate, priority, and tags, plus a hint that jumps to the blockers while
-active blockers remain. **Content** follows with the description, checklist,
-and attachments; then **Work** with the assigned people, the latest status, and
-the last result; then **Context** with blockers, dependent tasks, related tasks,
-and links; then comments and the collapsed details. An event shows its schedule
-under **Planning**, then the event's place and invitations, its content, the
-assigned people, links, comments, and details. Parts without content stay
-hidden unless you can edit them.
+estimate, priority, and tags, plus a hint that jumps to the first active blocker
+while any remain. The description, checklist, and attachments follow; then
+**Assigned**, **Latest status**, and **Last result**; then **Blocked by**,
+**Blocks**, **Related tasks**, and **Links & resources**; then comments and the
+collapsed **Details**. An event shows its schedule under **Planning**, then its
+location, link, and invitations, its content, the assigned people, links,
+comments, and details. Parts without content stay hidden unless you can edit
+them.
 
 In list and table views, search updates results without reloading the page or
 moving focus out of the search field. The URL follows the displayed results,
@@ -204,8 +204,8 @@ of up to 100. Follow the returned cursor to retrieve every destination.
 Spaces supports flat implementation tasks with blockers, shared progress notes,
 completion results and explicit worker claims. The task details show the
 latest progress note as **Latest status** and the latest result as **Last
-result** in the **Work** group; reopening preserves the result. Earlier notes
-are recorded in task activity.
+result**, below the **Assigned** list; reopening preserves the result. Earlier
+notes are recorded in task activity.
 
 A claim says who is working on a task right now; assignment says who is
 responsible, and the Kanban column stays the only status. People claim from the

@@ -46,9 +46,9 @@ Press **Cmd/Ctrl+Alt+N** to create a task, or an event in calendar view, and pre
 
 ## Implementation work and handoffs {icon="notes"}
 
-Tasks can carry a progress note and a completion result. The **Work** group in
-the task details shows them as **Latest status** and **Last result**, below the
-**Assigned** people. Reopening keeps the last result.
+Tasks can carry a progress note and a completion result. The task details show
+them as **Latest status** and **Last result**, below the **Assigned** list.
+Reopening keeps the last result.
 
 Press **I'm on it** on a board card or in the task details to claim a task; a
 second click releases it, and in the details you can leave a short handoff note

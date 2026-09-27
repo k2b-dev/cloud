@@ -404,7 +404,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
           popover="manual"
           class="k2b-choice-popover"
           role="group"
-          aria-label={typeof props.label === "string" ? props.label : messages().options}
+          aria-label={typeof props.label === "string" ? props.label : (props["aria-label"] ?? messages().options)}
           onFocusOut={(event) => {
             if (event.relatedTarget instanceof Node && (popoverRef?.contains(event.relatedTarget) || inputRef === event.relatedTarget))
               return;

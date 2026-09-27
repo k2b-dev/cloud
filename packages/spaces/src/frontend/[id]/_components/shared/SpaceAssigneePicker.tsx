@@ -121,10 +121,16 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
                   <ClaimAvatar claim={holder()} currentUserId={props.currentUserId ?? ""} />
                   <div class="min-w-0 flex-1">
                     <span class="block truncate text-sm">{holder().displayName}</span>
-                    <span class="block truncate text-xs text-dimmed">
+                    {/* Wraps instead of truncating so the "not assigned" marker stays readable in a narrow panel. */}
+                    <span class="block text-xs text-dimmed">
                       {t.workingSince}{" "}
-                      <time datetime={holder().claimedAt}>{dates.formatDateTime(holder().claimedAt, props.dateConfig)}</time>
-                      <Show when={!assignedHolder()}> · {t.claimNotAssigned}</Show>
+                      <time class="whitespace-nowrap" datetime={holder().claimedAt}>
+                        {dates.formatDateTime(holder().claimedAt, props.dateConfig)}
+                      </time>
+                      <Show when={!assignedHolder()}>
+                        {" "}
+                        <span class="whitespace-nowrap">· {t.claimNotAssigned}</span>
+                      </Show>
                     </span>
                   </div>
                   <Show when={assignedHolder()}>{(assignee) => rowRemoveButton(assignee())}</Show>

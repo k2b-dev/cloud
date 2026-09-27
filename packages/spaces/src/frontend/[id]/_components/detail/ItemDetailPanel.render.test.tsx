@@ -113,7 +113,7 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain(">Planning</h3>");
     // Events read top to bottom: planning, the event itself, content, people, links, comments, and collapsed details.
     expect(html).toMatch(
-      /k2b-detail-panel__summary[\s\S]*aria-label="Event"[\s\S]*aria-label="Content"[\s\S]*aria-label="People"[\s\S]*aria-label="Links &amp; resources"[\s\S]*k2b-discussion[\s\S]*aria-label="Details"/,
+      /k2b-detail-panel__summary[\s\S]*aria-label="Event"[\s\S]*aria-label="Content"[\s\S]*aria-label="People"[\s\S]*aria-label="Context"[\s\S]*>Links &amp; resources<\/h3>[\s\S]*k2b-discussion[\s\S]*aria-label="Item metadata"[\s\S]*>Details<\/span>/,
     );
     // Priority and tags stay editable in the planning block; the people list has no claim holder.
     expect(html).toMatch(
@@ -122,7 +122,8 @@ describe("Spaces item detail panel", () => {
     expect(html).not.toContain(">Priority</label>");
     expect(html).not.toContain("data-spaces-claim-holder");
     expect(html).not.toContain('aria-label="Work"');
-    expect(html).not.toContain('aria-label="Context"');
+    expect(html).not.toContain(">Blocked by</h3>");
+    expect(html).toContain('aria-label="Edit planning"');
     expect(html).toContain("Prepare invitation");
     expect(html).not.toContain("Invite attendees through Mail.");
     expect(html).toContain('class="k2b-detail-panel__action');
@@ -150,7 +151,7 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain('aria-label="Content"');
     expect(html).toContain("view-transition-name: space-item-detail-comments");
     expect(html).toContain(">Details</span>");
-    expect(html).toContain('aria-label="Details"');
+    expect(html).toContain('aria-label="Item metadata"');
     expect(html).not.toContain('<details class="k2b-detail-panel__section" open');
     expect(html).not.toContain("overflow-y-auto");
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
@@ -175,7 +176,7 @@ describe("Spaces item detail panel", () => {
     expect(html).not.toContain('class="k2b-detail-panel__summary"');
     // Only the collapsed details remain; empty groups without edit rights stay hidden.
     expect(html.match(/role="group"/g)).toHaveLength(1);
-    expect(html).toContain('role="group" aria-label="Details"');
+    expect(html).toContain('role="group" aria-label="Item metadata"');
     expect(html).not.toContain('class="k2b-discussion');
     expect(html).not.toContain("Invitations");
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
@@ -205,17 +206,20 @@ describe("Spaces item detail panel", () => {
     expect(own).toContain('aria-label="Work"');
     expect(own).toContain('data-own-claim="true"');
     expect(own).not.toContain('data-spaces-claim-action="claim"');
+    // An own claim reads like any assignee row with the person's name; "You're on it" stays the avatar's name.
+    expect(own).toContain('<span class="block truncate text-sm">Valentin Kolb</span>');
+    expect(own).toContain(`title="You're on it"`);
 
     // The holder leads the people list in the assignee row layout: extra-small avatar with the success ring inside it,
-    // the plain name, and a secondary line with the claim time.
+    // the plain name, and a secondary line with the claim time that wraps instead of hiding the "not assigned" marker.
     const foreign = renderPanel({ item: { ...task, claim } });
     expect(foreign).toContain('title="Mira Beck is on it"');
     expect(foreign).toContain(
-      '<span class="k2b-avatar border-2 border-[var(--k2b-success-text)]" data-size="xs" style="" role="img" aria-label="Mira Beck is on it">MB</span></span><div class="min-w-0 flex-1"><span class="block truncate text-sm">Mira Beck</span><span class="block truncate text-xs text-dimmed">Working since <time datetime="' +
+      '<span class="k2b-avatar border-2 border-[var(--k2b-success-text)]" data-size="xs" style="" role="img" aria-label="Mira Beck is on it">MB</span></span><div class="min-w-0 flex-1"><span class="block truncate text-sm">Mira Beck</span><span class="block text-xs text-dimmed">Working since <time class="whitespace-nowrap" datetime="' +
         now +
         '">',
     );
-    expect(foreign).toMatch(/ · (<!--!\$-->)?Not assigned<\/span>/);
+    expect(foreign).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· not assigned<\/span>/);
     expect(foreign).not.toContain("data-spaces-claim-action");
     expect(foreign).not.toContain("Task claimed");
 
@@ -287,7 +291,7 @@ describe("Spaces item detail panel", () => {
     );
     // Tasks read top to bottom: planning, content, work, context, comments, and collapsed details.
     expect(html).toMatch(
-      /k2b-detail-panel__summary[\s\S]*aria-label="Content"[\s\S]*aria-label="Work"[\s\S]*aria-label="Context"[\s\S]*k2b-discussion[\s\S]*aria-label="Details"/,
+      /k2b-detail-panel__summary[\s\S]*aria-label="Content"[\s\S]*aria-label="Work"[\s\S]*aria-label="Context"[\s\S]*k2b-discussion[\s\S]*aria-label="Item metadata"/,
     );
     expect(html.match(/>Related tasks<\/h3>/g)).toHaveLength(1);
   });
@@ -443,7 +447,7 @@ describe("Spaces item detail panel", () => {
     const html = renderPanel({ references: [] });
 
     expect(html).toContain(">Links &amp; resources</h3>");
-    expect(html).toContain('aria-label="Links &amp; resources"');
+    expect(html).toContain('aria-label="Context"');
     expect(html).toContain("k2b-detail-panel__action");
     expect(html).toContain("ti ti-link-plus text-[var(--k2b-action)]");
     expect(html).toContain(">Add link</span>");
@@ -503,7 +507,7 @@ describe("Spaces item detail panel", () => {
     });
 
     expect(html).toContain(">Links &amp; resources</h3>");
-    expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Links &amp; resources"');
+    expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Context"');
     expect(html).toContain('href="/app/mail/Box001?conversation=Conv01"');
     expect(html.match(/ti ti-mail/g)).toHaveLength(2);
     expect(html).toContain("Archived discussion");
@@ -565,7 +569,7 @@ test("renders work progress and preserved completion evidence in German", () => 
   expect(html).toContain(">Zuständig</h3>");
   expect(html).toContain('aria-label="Du arbeitest daran"');
   expect(html).toContain("Arbeitet seit <time");
-  expect(html).toMatch(/ · (<!--!\$-->)?Nicht zugewiesen<\/span>/);
+  expect(html).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· nicht zugewiesen<\/span>/);
   expect(html).not.toContain("data-spaces-claim-action");
   expect(html).toContain(">Letzter Stand</h3>");
   expect(html).toContain("Nächster Schritt");
@@ -597,8 +601,8 @@ describe("Spaces item detail groups", () => {
 
     expect(people.match(/>Mira Beck<\/span>/g)).toHaveLength(1);
     expect(people.indexOf("data-spaces-claim-holder")).toBeLessThan(people.indexOf(">Valentin Kolb</span>"));
-    expect(people).toContain(`Working since <time datetime="${now}">`);
-    expect(people).not.toContain("Not assigned");
+    expect(people).toContain(`Working since <time class="whitespace-nowrap" datetime="${now}">`);
+    expect(people).not.toContain("not assigned");
     expect(people).toContain('aria-label="Remove Mira Beck"');
     expect(people).toContain('aria-label="Remove Valentin Kolb"');
     // The claim is only shown in the people list; there is no separate claim section anymore.
@@ -618,7 +622,7 @@ describe("Spaces item detail groups", () => {
     expect(people.indexOf("data-spaces-claim-holder")).toBeLessThan(people.indexOf(">Valentin Kolb</span>"));
     expect(people).toContain('class="ti ti-api"');
     expect(people).toContain(">Release agent</span>");
-    expect(people).toMatch(/ · (<!--!\$-->)?Not assigned<\/span>/);
+    expect(people).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· not assigned<\/span>/);
     expect(people).not.toContain('aria-label="Remove Release agent"');
     expect(people).toContain('aria-label="Remove Valentin Kolb"');
   });
@@ -645,8 +649,10 @@ describe("Spaces item detail groups", () => {
 
     expect(hint?.[0]).toContain("Blocked by 2 tasks");
     expect(hint?.[0]).toContain("ti ti-arrow-down");
-    // The hint targets the focusable blockers list inside the Context group, below the planning block.
-    expect(blocked).toContain(`<div id="${hint?.[1]}" tabindex="-1" class="flex flex-col gap-1">`);
+    // The hint targets the blockers list inside the Context group, below the planning block; active blockers are marked
+    // so the jump can focus the first one.
+    expect(blocked).toContain(`<div id="${hint?.[1]}" class="flex flex-col gap-1">`);
+    expect(blocked.match(/data-spaces-active-blocker=""/g)).toHaveLength(2);
     expect(blocked.indexOf("Blocked by 2 tasks")).toBeLessThan(blocked.indexOf('aria-label="Content"'));
 
     const single = renderPanel({ item: task, blockedBy: [blocker(null)] }, "de");
@@ -679,9 +685,11 @@ describe("Spaces item detail groups", () => {
     expect(summary).toContain("12 Aug 2026, 12:00");
     expect(summary).toContain('<span class="text-dimmed"> · ');
     expect(summary).toContain("45 min");
-    expect(summary).toContain('aria-label="Priority"');
-    expect(summary).toContain('aria-label="Tags"');
-    expect(summary).toContain('aria-label="Edit deadline"');
+    // The description list term names each control; the options popovers carry the same name.
+    expect(summary).toContain('class="k2b-choice-popover" role="group" aria-label="Priority"');
+    expect(summary).toContain('class="k2b-choice-popover" role="group" aria-label="Tags"');
+    expect(summary).not.toContain('aria-label="Options"');
+    expect(summary).toContain('aria-label="Edit planning"');
     expect(editor).not.toContain(">Deadline</dt>");
 
     // Readers see the values without controls; empty rows are omitted instead of saying "No priority".
@@ -692,7 +700,7 @@ describe("Spaces item detail groups", () => {
     expect(readerSummary).not.toContain(">Priority</dt>");
     expect(readerSummary).not.toContain("No priority");
     expect(readerSummary).not.toContain('role="combobox"');
-    expect(readerSummary).not.toContain('aria-label="Edit deadline"');
+    expect(readerSummary).not.toContain('aria-label="Edit planning"');
   });
 
   test("keeps the checklist with the content and hides empty sections from readers", () => {
@@ -738,7 +746,8 @@ describe("Spaces item detail groups", () => {
     expect(html).toContain(">Zuständig</h3>");
     expect(html).toContain('aria-label="Zusammenhang"');
     expect(html).toContain(">Links &amp; Ressourcen</h3>");
-    expect(html).toContain('aria-label="Details"');
+    expect(html).toContain('aria-label="Eintragsmetadaten"');
+    expect(html).toContain('aria-label="Planung bearbeiten"');
     expect(html).not.toContain("Einordnung");
     expect(html).not.toContain("Fortschritt");
   });

@@ -47,9 +47,9 @@ Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Te
 ## Umsetzung und Übergabe {icon="notes"}
 
 Aufgaben können eine Fortschrittsnotiz und ein Abschlussergebnis enthalten. Die
-Gruppe **Arbeit** in den Aufgabendetails zeigt beides als **Letzter Stand** und
-**Letztes Ergebnis**, unter den Personen bei **Zuständig**. Beim Wiederöffnen
-bleibt das letzte Ergebnis erhalten.
+Aufgabendetails zeigen beides als **Letzter Stand** und **Letztes Ergebnis**
+unter der Liste **Zuständig**. Beim Wiederöffnen bleibt das letzte Ergebnis
+erhalten.
 
 Mit **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails
 übernimmst du eine Aufgabe; ein zweiter Klick gibt sie frei, und in den Details

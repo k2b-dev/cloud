@@ -57,6 +57,7 @@ test("renders fallback metadata without invoking the async matcher during SSR", 
   expect(calls).toBe(0);
   expect(html).toContain('value="551"');
   expect(html).toContain('aria-label="Category"');
+  expect(html).toContain('class="k2b-choice-popover" role="group" aria-label="Category"');
 });
 
 test("renders the shared group filters around the suggestion listbox", () => {

@@ -273,7 +273,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
           class="k2b-choice-popover"
           role="group"
           onKeyDown={handleKeyDown}
-          aria-label={typeof props.label === "string" ? props.label : messages().options}
+          aria-label={typeof props.label === "string" ? props.label : (props["aria-label"] ?? messages().options)}
         >
           <Show when={searchable()}>
             <div class="k2b-choice-search">

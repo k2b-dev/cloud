@@ -819,15 +819,16 @@ export default function ItemDetailPanel(props: Props) {
     return [...schedule, ...(showPriorityRow() ? [priorityRow] : []), ...(showTagsRow() ? [tagsRow] : [])];
   };
 
-  // The blocker hint jumps inside the panel without touching the URL, and leaves focus at the blockers list.
+  // The blocker hint jumps inside the panel without touching the URL and focuses the first active blocker.
   const blockersListId = `spaces-blockers-${createUniqueId()}`;
   const jumpToBlockers = (event: MouseEvent & { currentTarget: HTMLAnchorElement }) => {
     if (!shouldHandleDetailClick(event, event.currentTarget)) return;
     const list = event.currentTarget.ownerDocument.getElementById(blockersListId);
-    if (!list) return;
+    const blocker = list?.querySelector<HTMLElement>("[data-spaces-active-blocker]");
+    if (!list || !blocker) return;
     event.preventDefault();
     list.closest("section")?.scrollIntoView({ block: "start" });
-    list.focus({ preventScroll: true });
+    blocker.focus({ preventScroll: true });
   };
 
   const relatedTasksSection = () => (
@@ -1004,12 +1005,7 @@ export default function ItemDetailPanel(props: Props) {
               title={t.planning}
               actions={
                 canEditItem() ? (
-                  <IconActionButton
-                    icon="ti ti-pencil"
-                    title={isEvent() ? t.editEventTime : t.editDeadline}
-                    onClick={() => void handleEdit()}
-                    disabled={isLoading()}
-                  />
+                  <IconActionButton icon="ti ti-pencil" title={t.editPlanning} onClick={() => void handleEdit()} disabled={isLoading()} />
                 ) : undefined
               }
             >
@@ -1188,7 +1184,7 @@ export default function ItemDetailPanel(props: Props) {
                   icon="ti ti-lock"
                   tone={activeBlockerCount() > 0 ? "warning" : "neutral"}
                 >
-                  <div id={blockersListId} tabindex="-1" class="flex flex-col gap-1">
+                  <div id={blockersListId} class="flex flex-col gap-1">
                     <For each={props.blockedBy ?? []}>
                       {(dependency) => {
                         const leading = (
@@ -1197,9 +1193,11 @@ export default function ItemDetailPanel(props: Props) {
                             aria-hidden="true"
                           />
                         );
+                        const active = dependency.blocker.completedAt ? undefined : "";
                         return canEditItem() ? (
                           <DetailPanel.Action
                             href={itemHref(dependency.blocker.id)}
+                            data-spaces-active-blocker={active}
                             leading={leading}
                             title={dependency.blocker.title}
                             description={dependency.blocker.completedAt ? t.completed : t.activeBlocker}
@@ -1216,6 +1214,7 @@ export default function ItemDetailPanel(props: Props) {
                         ) : (
                           <DetailPanel.Action
                             href={itemHref(dependency.blocker.id)}
+                            data-spaces-active-blocker={active}
                             leading={leading}
                             title={dependency.blocker.title}
                             description={dependency.blocker.completedAt ? t.completed : t.activeBlocker}
@@ -1279,7 +1278,7 @@ export default function ItemDetailPanel(props: Props) {
           </Show>
 
           <Show when={isEvent() && (canEditItem() || hasLinks() || relatedTasks().length > 0)}>
-            <DetailPanel.Group label={t.links}>
+            <DetailPanel.Group label={t.context}>
               {relatedTasksSection()}
               {linksSection()}
             </DetailPanel.Group>
@@ -1305,7 +1304,7 @@ export default function ItemDetailPanel(props: Props) {
             />
           </Show>
 
-          <DetailPanel.Group label={t.details}>
+          <DetailPanel.Group label={t.itemMetadata}>
             <DetailPanel.Section title={t.details} icon="ti ti-info-circle" tone="neutral" collapsible>
               <DescriptionList
                 layout="rows"

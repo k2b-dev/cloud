@@ -42,7 +42,7 @@ describe("Spaces detail blocker hint", () => {
     return;
   }
 
-  test("jumps to the blockers list inside the panel without changing the URL", async () => {
+  test("jumps to the first active blocker inside the panel without changing the URL", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const href = "http://localhost/app/spaces/Space1?view=list&item=Item01";
@@ -65,7 +65,10 @@ describe("Spaces detail blocker hint", () => {
           initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
           commentTarget: { itemId: item.id, recurrenceId: null },
           recurringContext: null,
-          blockedBy: [{ blocker: { id: "Block1", spaceId: item.spaceId, title: "Approve scope", completedAt: null }, createdAt: now }],
+          blockedBy: [
+            { blocker: { id: "Done01", spaceId: item.spaceId, title: "Draft scope", completedAt: now }, createdAt: now },
+            { blocker: { id: "Block1", spaceId: item.spaceId, title: "Approve scope", completedAt: null }, createdAt: now },
+          ],
           canWrite: false,
           mailIntegrationAvailable: false,
           scrollPreserveKey: "test-detail",
@@ -86,7 +89,12 @@ describe("Spaces detail blocker hint", () => {
     expect(scrolled).toHaveLength(1);
     expect(scrolled[0]!.tagName).toBe("SECTION");
     expect(scrolled[0]!.querySelector("h3")?.textContent).toBe("Blocked by");
-    expect(dom.document.activeElement).toBe(list);
+    // Focus lands on the first active blocker's link, skipping the completed one, so Enter opens it right away.
+    const focused = dom.document.activeElement;
+    expect(focused?.tagName).toBe("A");
+    expect(list.contains(focused)).toBe(true);
+    expect(focused?.getAttribute("href")).toBe("/app/spaces/Space1?view=list&item=Block1");
+    expect(focused?.textContent).toContain("Approve scope");
 
     dispose();
     dom.cleanup();
