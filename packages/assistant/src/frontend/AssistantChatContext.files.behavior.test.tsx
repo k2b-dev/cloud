@@ -63,13 +63,19 @@ describe("Assistant chat files", () => {
   let cleanup = () => {};
   afterEach(() => cleanup());
 
-  const mount = async (options: { confirm: boolean; deleteResponse?: () => Response }) => {
+  const mount = async (options: {
+    confirm: boolean;
+    deleteResponse?: () => Response;
+    deletedElsewhere?: boolean;
+    files?: AiFileStat[];
+    project?: AiProject | null;
+  }) => {
     const dom = createDomTestHarness();
     const { prompts, toast } = await import("@k2b/ui");
     const { AssistantChatContextContent } = await import("./AssistantChatContext");
     const { AssistantLiveProvider, createAssistantLiveInvalidationHub } = await import("./assistant-live");
     const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined, delayMs: 1 });
-    let files = [chatFile("/report.pdf", "assistant"), chatFile("/upload.pdf", "user")];
+    let files = options.files ?? [chatFile("/report.pdf", "assistant"), chatFile("/upload.pdf", "user")];
     const requests: { method: string; url: string }[] = [];
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -78,8 +84,14 @@ describe("Assistant chat files", () => {
           const method = init?.method ?? (input instanceof Request ? input.method : "GET");
           requests.push({ method, url });
           if (method === "DELETE") {
+            const path = new URL(url, "http://cloud.test").searchParams.get("path");
+            // Another tab or the CLI removed the file just before this request arrived.
+            if (options.deletedElsewhere) {
+              files = files.filter((file) => file.path !== path);
+              return Response.json({ message: "File not found" }, { status: 404 });
+            }
             const response = options.deleteResponse?.() ?? Response.json({ deleted: true });
-            if (response.ok) files = files.filter((file) => file.path !== new URL(url, "http://cloud.test").searchParams.get("path"));
+            if (response.ok) files = files.filter((file) => file.path !== path);
             return response;
           }
           if (url.includes("/workspace/projects/Proj01/context")) return Response.json(projectSnapshot);
@@ -97,7 +109,7 @@ describe("Assistant chat files", () => {
         <AssistantLiveProvider value={live}>
           <AssistantChatContextContent
             chatId="Chat01"
-            project={project}
+            project={options.project === undefined ? project : options.project}
             category="files"
             initial={chatSnapshot(files)}
             onOpenView={() => undefined}
@@ -120,14 +132,16 @@ describe("Assistant chat files", () => {
       Array.from(dom.root.querySelectorAll<HTMLElement>(".k2b-detail-panel__action-row, .k2b-detail-panel__action")).find((element) =>
         element.textContent?.includes(name),
       );
-    const deleteButton = (name: string) => row(name)?.querySelector<HTMLButtonElement>('button[aria-label="Delete file"]') ?? null;
+    const deleteButton = (name: string) => row(name)?.querySelector<HTMLButtonElement>(`button[aria-label="Delete ${name}"]`) ?? null;
+    const rowAction = (name: string) => row(name)?.querySelector<HTMLElement>(".k2b-detail-panel__action") ?? null;
     const deletes = () => requests.filter((request) => request.method === "DELETE");
-    return { confirm, toastError, deleted, row, deleteButton, deletes };
+    return { confirm, toastError, deleted, row, rowAction, deleteButton, deletes };
   };
 
   test("a confirmed trash action deletes the chat file, closes its tab and removes the row", async () => {
     const view = await mount({ confirm: true });
     // Both assistant output and uploads are chat files; the shared Project file stays read-only here.
+    // Each trash button names its file, so a screen reader can tell them apart.
     expect(view.deleteButton("report.pdf")).not.toBeNull();
     expect(view.deleteButton("upload.pdf")).not.toBeNull();
     expect(view.row("brief.pdf")).toBeDefined();
@@ -150,6 +164,31 @@ describe("Assistant chat files", () => {
     expect(view.row("report.pdf")).toBeUndefined();
     expect(view.row("upload.pdf")).toBeDefined();
     expect(view.toastError).not.toHaveBeenCalled();
+    // Keyboard focus moves to the row that took the deleted row's place instead of falling back to the page.
+    expect(document.activeElement).toBe(view.rowAction("upload.pdf"));
+  });
+
+  test("a file already deleted elsewhere counts as deleted and closes its tab", async () => {
+    const view = await mount({ confirm: true, deletedElsewhere: true });
+    view.deleteButton("report.pdf")!.click();
+    await tick();
+    await tick();
+
+    expect(view.deletes()).toHaveLength(1);
+    expect(view.toastError).not.toHaveBeenCalled();
+    expect(view.deleted).toEqual([{ conversationId: "Chat01", path: "/report.pdf" }]);
+    expect(view.row("report.pdf")).toBeUndefined();
+  });
+
+  test("deleting the last file hands focus to the search field", async () => {
+    const view = await mount({ confirm: true, files: [chatFile("/report.pdf", "assistant")], project: null });
+    view.deleteButton("report.pdf")!.focus();
+    view.deleteButton("report.pdf")!.click();
+    await tick();
+    await tick();
+
+    expect(view.row("report.pdf")).toBeUndefined();
+    expect(document.activeElement).toBe(document.querySelector('input[aria-label="Search"]'));
   });
 
   test("cancelling the confirmation keeps the file", async () => {
@@ -211,7 +250,7 @@ describe("Assistant chat files", () => {
     await tick();
     await tick();
 
-    dom.root.querySelector<HTMLButtonElement>('[role="tabpanel"]:not([hidden]) button[aria-label="Delete file"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>('[role="tabpanel"]:not([hidden]) button[aria-label="Delete report.pdf"]')!.click();
     await tick();
     await tick();
 
@@ -221,6 +260,7 @@ describe("Assistant chat files", () => {
 
   test("a failed deletion reports the server message in a toast and keeps the tab open", async () => {
     const view = await mount({ confirm: true, deleteResponse: () => Response.json({ message: "File not found" }, { status: 404 }) });
+    view.deleteButton("report.pdf")!.focus();
     view.deleteButton("report.pdf")!.click();
     await tick();
     await tick();
@@ -229,5 +269,7 @@ describe("Assistant chat files", () => {
     expect(view.toastError).toHaveBeenCalledWith("File not found", { title: "Could not delete file" });
     expect(view.deleted).toEqual([]);
     expect(view.row("report.pdf")).toBeDefined();
+    // The reloaded list renders the row anew; focus returns to it.
+    expect(document.activeElement).toBe(view.rowAction("report.pdf"));
   });
 });

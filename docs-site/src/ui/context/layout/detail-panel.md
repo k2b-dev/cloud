@@ -96,13 +96,15 @@ data, comments, history, or form fields.
 
 When one secondary command is frequent enough to deserve a direct control, such
 as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible
-`label`, and `onClick`. It renders as a sibling icon button at the end of the
-row, before an optional Dots trigger, and follows the same reveal: hover or
-keyboard focus on fine pointers, always visible on touch devices. Set
-`variant: "danger"` for a destructive command; hover and focus then use the
-danger text color. The button only reports the click. The application confirms
-destructive work, performs it, and refreshes the list. Keep further commands in
-`menuItems`.
+`label`, and `onClick`. Name the label after the row, such as
+`Delete budget.xlsx`, so repeated buttons stay distinguishable. It renders as a
+sibling icon button at the end of the row, before an optional Dots trigger, and
+follows the same reveal: hover or keyboard focus on fine pointers, always
+visible on touch devices. Set `variant: "danger"` for a destructive command;
+hover and focus then use the danger text color. The button only reports the
+click. The application confirms destructive work, performs it, and refreshes
+the list. When that removes the focused row, the application moves focus to
+the row that takes its place. Keep further commands in `menuItems`.
 
 ## API reference
 

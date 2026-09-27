@@ -59,6 +59,8 @@ import { assistantBrowserCopy, assistantBrowserText, useAssistantCopy, useAssist
 export { splitAssistantConversationSources } from "./assistant-context";
 
 const CONTEXT_PREVIEW_LIMIT = 3;
+/** The primary control of a focusable context row. */
+const CONTEXT_ROW_ACTION = ":is(a, button).k2b-detail-panel__action";
 export type ContextCategory = "apps" | "files" | "sources" | "knowledge" | "tasks";
 export type ContextView = {
   task?: { id: string };
@@ -209,31 +211,58 @@ function AssistantChatContextView(
       ),
     });
   };
+  let root: HTMLDivElement | undefined;
+  const rowActions = () => Array.from(root?.querySelectorAll<HTMLElement>(CONTEXT_ROW_ACTION) ?? []);
+  const fileName = (file: AssistantContextFile) => file.displayName ?? file.path.replace(/^.*\//u, "");
   const deleting = new Set<string>();
   const deleteChatFile = async (file: AssistantContextFile) => {
     const chatId = props.state.context()?.chat.chatId;
     if (!chatId || !file.source.remove || deleting.has(file.id)) return;
-    const confirmed = await prompts.confirm(copy().deleteChatFile({ name: file.displayName ?? file.path.replace(/^.*\//u, "") }), {
+    // The refresh renders every row anew, so remember where keyboard focus was to hand it on afterwards.
+    const focusedRow = root?.ownerDocument.activeElement
+      ?.closest(".k2b-detail-panel__action-row")
+      ?.querySelector<HTMLElement>(CONTEXT_ROW_ACTION);
+    const focusIndex = focusedRow ? rowActions().indexOf(focusedRow) : -1;
+    const confirmed = await prompts.confirm(copy().deleteChatFile({ name: fileName(file) }), {
       title: text("Delete file"),
       confirmText: text("Delete"),
       variant: "danger",
     });
     if (!confirmed) return;
+    const deleted = { conversationId: chatId, path: file.path };
+    let failure: string | null = null;
     deleting.add(file.id);
     try {
       await file.source.remove(file.path);
-      props.onFileDeleted?.({ conversationId: chatId, path: file.path });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : text("File could not be deleted."), { title: text("Could not delete file") });
+      failure = error instanceof Error ? error.message : text("File could not be deleted.");
     } finally {
       deleting.delete(file.id);
     }
+    if (failure === null) props.onFileDeleted?.(deleted);
     // Reload the canonical list either way; a file deleted elsewhere disappears too.
     await props.state.refresh();
+    if (failure !== null) {
+      // A file that is already gone, for example deleted from the CLI, ends up where the user wanted it.
+      const chat = props.state.context()?.chat;
+      if (chat && !chat.files.some((entry) => entry.path === file.path)) props.onFileDeleted?.(deleted);
+      else toast.error(failure, { title: text("Could not delete file") });
+    }
+    // Hand lost focus to the row that took this row's place, the new last row, or the search field of an emptied list.
+    const active = root?.ownerDocument.activeElement;
+    if (focusIndex >= 0 && (!active || active === root?.ownerDocument.body || !active.isConnected)) {
+      const actions = rowActions();
+      (actions[focusIndex] ?? actions.at(-1) ?? root?.querySelector<HTMLElement>("input"))?.focus();
+    }
   };
   const deleteAction = (file: AssistantContextFile): DetailPanelActionSecondary | undefined =>
     file.scope === "chat" && file.source.remove
-      ? { icon: "ti ti-trash", label: text("Delete file"), variant: "danger", onClick: () => void deleteChatFile(file) }
+      ? {
+          icon: "ti ti-trash",
+          label: copy().deleteFileNamed({ name: fileName(file) }),
+          variant: "danger",
+          onClick: () => void deleteChatFile(file),
+        }
       : undefined;
   const openTask = (task: AssistantChatTask) =>
     props.onOpenView?.({ task: { id: task.id }, key: `task:${task.id}`, title: assistantTaskTitle(task), render: () => null });
@@ -382,7 +411,7 @@ function AssistantChatContextView(
           }
         };
         return (
-          <div class={props.category ? "flex flex-col gap-4" : "flex flex-col gap-3"}>
+          <div ref={root} class={props.category ? "flex flex-col gap-4" : "flex flex-col gap-3"}>
             <Show when={props.category && props.category !== "tasks"}>
               <TextInput value={search()} onValueChange={setSearch} aria-label={text("Search")} placeholder={text("Search")} />
             </Show>
