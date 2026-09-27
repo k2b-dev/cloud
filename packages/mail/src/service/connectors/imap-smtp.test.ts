@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import type { Socket } from "bun";
 import type { ListResponse } from "imapflow";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
@@ -8,6 +9,7 @@ import {
   assertUidValidity,
   connectSmtpConnection,
   disposeImapClient,
+  downloadSelectedSources,
   normalizeImapQuotaEvidence,
   parseEnvelopeHeaders,
   parseReferences,
@@ -130,6 +132,24 @@ describe("IMAP envelope UID batching", () => {
     });
     expect(result.uids).toEqual(Array.from({ length: 200 }, (_, index) => index + 801));
     expect(result.nextHighUid).toBe(800);
+  });
+});
+
+describe("IMAP source downloads", () => {
+  test("skip a UID the provider no longer has and keep streaming the rest of the batch", async () => {
+    const consumed: string[] = [];
+    await downloadSelectedSources(
+      {
+        // FETCH for an expunged UID returns no message; imapflow then resolves an empty object.
+        download: async (uid) =>
+          uid === 2 ? {} : { meta: { expectedSize: 1, contentType: "message/rfc822" }, content: Readable.from([String(uid)]) },
+      },
+      [1, 2, 3].map((uid) => ({ key: `message-${uid}`, uidValidity: "10", uid })),
+      async (source) => {
+        consumed.push(source.key);
+      },
+    );
+    expect(consumed).toEqual(["message-1", "message-3"]);
   });
 });
 

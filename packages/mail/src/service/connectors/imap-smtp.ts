@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import type { Readable } from "node:stream";
 import {
+  type DownloadObject,
   type FetchMessageObject,
   ImapFlow,
   type ImapFlowOptions,
@@ -919,6 +920,36 @@ const fetchUidWindow = async (
     signal,
   );
 
+type SourceDownloadClient = {
+  // imapflow resolves an empty object when FETCH returns no message, although its types promise one.
+  download(uid: number, part: undefined, options: { uid: true }): Promise<Partial<DownloadObject>>;
+};
+
+/**
+ * Streams the requested sources of the selected folder in order. A UID the provider no longer
+ * has yields no source, so the caller decides what the missing message means instead of losing
+ * the rest of the batch.
+ */
+export const downloadSelectedSources = async (
+  client: SourceDownloadClient,
+  requests: SourceDownloadRequest[],
+  consume: (source: SourceDownload) => Promise<void>,
+): Promise<void> => {
+  for (const request of requests) {
+    const download = await client.download(request.uid, undefined, { uid: true });
+    if (!download.content || !download.meta) continue;
+    try {
+      await consume({
+        ...request,
+        expectedSize: download.meta.expectedSize,
+        stream: download.content,
+      });
+    } finally {
+      if (!download.content.destroyed) download.content.destroy();
+    }
+  }
+};
+
 const downloadSourceBatch = async (
   config: ProviderConnectionInput,
   folderPath: string,
@@ -937,18 +968,7 @@ const downloadSourceBatch = async (
       const lock = await client.getMailboxLock(folderPath, { readOnly: true });
       try {
         assertSelectedUidValidity(client, requests[0]!.uidValidity);
-        for (const request of requests) {
-          const download = await client.download(request.uid, undefined, { uid: true });
-          try {
-            await consume({
-              ...request,
-              expectedSize: download.meta.expectedSize,
-              stream: download.content,
-            });
-          } finally {
-            if (!download.content.destroyed) download.content.destroy();
-          }
-        }
+        await downloadSelectedSources(client, requests, consume);
       } finally {
         lock.release();
       }

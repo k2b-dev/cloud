@@ -10,7 +10,7 @@ import { commandStillAuthorized, type StoredCommandAuthorization } from "./comma
 import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
-import { enqueueFolderSync, enqueueMailboxSync, enqueueMessageHydration, executeBindingRediscovery } from "./sync-runtime";
+import { enqueueFolderSync, enqueueMailboxHydration, enqueueMailboxSync, executeBindingRediscovery } from "./sync-runtime";
 
 const MAINTENANCE_JOB_LEASE_MS = 6 * 60_000;
 const STALE_EXECUTION_MINUTES = 10;
@@ -193,9 +193,7 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
     ORDER BY internal_date DESC, id DESC
     LIMIT 500
   `;
-  if (enqueueWork) {
-    for (const message of queued) await enqueueMessageHydration(message.id);
-  }
+  if (enqueueWork && queued.length > 0) await enqueueMailboxHydration(mailboxId);
   return { reset: reset.length, queued: enqueueWork ? queued.length : 0 };
 };
 
