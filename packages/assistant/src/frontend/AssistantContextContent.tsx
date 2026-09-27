@@ -9,6 +9,7 @@ import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResource
 import { downloadFileFromContent } from "@k2b/stdlib/browser";
 import {
   DetailPanel,
+  type DetailPanelActionSecondary,
   type DropdownItem,
   FileBrowserPanel,
   type FileSource,
@@ -70,6 +71,7 @@ export function AssistantContextRow(props: {
   onClick?: () => void;
   menuItems?: readonly DropdownItem[];
   menuLabel?: string;
+  secondaryAction?: DetailPanelActionSecondary;
   trailing?: JSX.Element;
 }) {
   const text = useAssistantText();
@@ -97,6 +99,7 @@ export function AssistantContextRow(props: {
       leading={leading()}
       trailing={trailing()}
       onClick={props.onClick}
+      secondaryAction={props.secondaryAction}
       menuItems={props.menuItems}
       menuLabel={props.menuLabel ?? `${text("Actions for")} ${props.title}`}
     />
@@ -108,6 +111,7 @@ export function AssistantContextRow(props: {
       leading={leading()}
       trailing={trailing()}
       onClick={props.onClick}
+      secondaryAction={props.secondaryAction}
     />
   ) : (
     <div class="k2b-detail-panel__action assistant-context-action min-w-0">

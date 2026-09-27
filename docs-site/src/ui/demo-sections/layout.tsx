@@ -1360,7 +1360,7 @@ const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
     chip={{ kind: "component", name: "DetailPanel.Action", from: "@k2b/ui" }}
-    description="Full-width destinations keep navigation primary while a sibling overflow menu holds secondary commands. Disabled rows preserve unavailable resource context."
+    description="Full-width destinations keep navigation primary while a sibling overflow menu or one direct secondary action holds further commands. Disabled rows preserve unavailable resource context."
     code={`<DetailPanel.Section title="Related resources" icon="ti ti-link">
   <DetailPanel.Action
     href="/app/mail/inbox?conversation=Conv01"
@@ -1369,6 +1369,13 @@ const DetailPanelActionDemo = () => (
     description="Mail conversation"
     menuLabel="More actions for Release planning"
     menuItems={[{ label: "Unlink", icon: "ti ti-unlink", action: unlink }]}
+  />
+  <DetailPanel.Action
+    onClick={openBudget}
+    leading={<i class="ti ti-file-spreadsheet" aria-hidden="true" />}
+    title="budget.xlsx"
+    description="Spreadsheet · Uploaded today"
+    secondaryAction={{ icon: "ti ti-trash", label: "Delete budget.xlsx", variant: "danger", onClick: confirmDelete }}
   />
   <DetailPanel.Action
     type="button"
@@ -1383,7 +1390,7 @@ const DetailPanelActionDemo = () => (
       <article class="ui-detail-panel-pattern">
         <header>
           <strong>Related resources</strong>
-          <span>Open the resource from the row; use the dots menu for secondary actions.</span>
+          <span>Open the resource from the row; use the dots menu or the trash action for secondary commands.</span>
         </header>
         <div class="ui-detail-panel-pattern__frame" style="height: 16rem">
           <DetailPanel class="ui-detail-panel-grouped">
@@ -1404,6 +1411,13 @@ const DetailPanelActionDemo = () => (
                     title="Launch brief"
                     description="Document · Updated today"
                     trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                  />
+                  <DetailPanel.Action
+                    onClick={() => {}}
+                    leading={<i class="ti ti-file-spreadsheet" aria-hidden="true" />}
+                    title="budget.xlsx"
+                    description="Spreadsheet · Uploaded today"
+                    secondaryAction={{ icon: "ti ti-trash", label: "Delete budget.xlsx", variant: "danger", onClick: () => {} }}
                   />
                   <DetailPanel.Action
                     type="button"

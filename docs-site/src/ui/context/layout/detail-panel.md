@@ -94,6 +94,18 @@ devices the Dots trigger appears on row hover, keyboard focus, or while its menu
 is open; it remains visible on touch devices. Do not use it for static key-value
 data, comments, history, or form fields.
 
+When one secondary command is frequent enough to deserve a direct control, such
+as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible
+`label`, and `onClick`. Name the label after the row, such as
+`Delete budget.xlsx`, so repeated buttons stay distinguishable. It renders as a
+sibling icon button at the end of the row, before an optional Dots trigger, and
+follows the same reveal: hover or keyboard focus on fine pointers, always
+visible on touch devices. Set `variant: "danger"` for a destructive command;
+hover and focus then use the danger text color. The button only reports the
+click. The application confirms destructive work, performs it, and refreshes
+the list. When that removes the focused row, the application moves focus to
+the row that takes its place. Keep further commands in `menuItems`.
+
 ## API reference
 
 ```ts
@@ -159,9 +171,13 @@ type DetailPanelSectionProps = DetailPanelSectionBaseProps &
       }
   );
 
+type DetailPanelActionSecondary = {
+  icon: string; label: string; onClick: () => void; variant?: "danger";
+};
+
 type DetailPanelActionBaseProps = {
   title: JSX.Element; description?: JSX.Element; leading?: JSX.Element; trailing?: JSX.Element;
-  class?: string;
+  secondaryAction?: DetailPanelActionSecondary; class?: string;
 };
 
 type DetailPanelActionMenuProps =
@@ -200,7 +216,8 @@ Collapsible sections use native buttons with expanded state and a relationship
 to their content. Focus follows the toggle when its counterpart becomes visible.
 Every icon-only action and every control embedded in a description value still
 needs its own accessible name. `DetailPanel.Action` keeps its visible title as
-the accessible name and renders a real link or button.
+the accessible name and renders a real link or button. Its secondary action is a
+separate button in the tab order, named by `label`.
 
 ## Runtime
 

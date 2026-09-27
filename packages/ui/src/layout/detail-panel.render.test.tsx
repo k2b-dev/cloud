@@ -205,6 +205,27 @@ describe("DetailPanel", () => {
     expect(html).toContain('class="k2b-detail-panel__action-trailing"');
   });
 
+  test("renders a secondary action as a named sibling button before the menu", () => {
+    const html = renderToString(() =>
+      createComponent(DetailPanel.Action, {
+        onClick: () => undefined,
+        title: "report.pdf",
+        secondaryAction: { icon: "ti ti-trash", label: "Delete report.pdf", variant: "danger", onClick: () => undefined },
+        menuLabel: "More actions for report.pdf",
+        menuItems: [{ label: "Download", action: () => undefined }],
+      }),
+    );
+
+    const row = html.match(/<div class="k2b-detail-panel__action-row">([\s\S]*)<\/div>/)?.[1] ?? "";
+    const secondary = row.match(/<button[^>]*k2b-detail-panel__action-secondary[^>]*>/)?.[0] ?? "";
+    expect(secondary).toContain('aria-label="Delete report.pdf"');
+    expect(secondary).toContain('data-tone="danger"');
+    expect(row).toContain('<i class="ti ti-trash" aria-hidden="true"');
+    expect(row.indexOf("k2b-detail-panel__action-secondary")).toBeLessThan(row.indexOf("k2b-detail-panel__action-menu-trigger"));
+    // The main row button closes before the secondary button starts: no nested controls.
+    expect(row.indexOf("k2b-detail-panel__action-secondary")).toBeGreaterThan(row.indexOf("</button>"));
+  });
+
   test("owns action interaction states and compact description typography", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
@@ -222,6 +243,19 @@ describe("DetailPanel", () => {
     expect(css).toMatch(/@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.k2b-detail-panel__action-menu-trigger \{[^}]*opacity: 0/);
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger");
     expect(css).toContain('.k2b-detail-panel__action-menu-trigger[aria-expanded="true"]');
+    // The secondary action shares the progressive reveal; touch devices without hover always see it.
+    const fineHidden =
+      css.match(/@media \(hover: hover\) and \(pointer: fine\) \{\s*\.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/)?.[1] ??
+      "";
+    expect(fineHidden).toContain("opacity: 0;");
+    expect(css).toContain(".k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary");
+    expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary");
+    expect(css).not.toMatch(/\.k2b-detail-panel__action-secondary[^{]*\{[^}]*transform/);
+    const dangerRule =
+      css.match(
+        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-secondary\[data-tone="danger"\]:not\(:disabled\):hover,[^{]+\{([^}]*)\}/,
+      )?.[1] ?? "";
+    expect(dangerRule).toContain("color: var(--k2b-danger-text);");
     const leadingRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-leading \{([^}]*)\}/)?.[1] ?? "";
     expect(leadingRule).toContain("width: 1rem;");
     expect(leadingRule).toContain("justify-content: flex-start;");

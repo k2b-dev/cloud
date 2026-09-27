@@ -2712,6 +2712,7 @@
   flex: 0 0 auto;
 }
 
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary,
 .k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger {
   min-width: 2.25rem;
   padding-inline: 0;
@@ -2720,17 +2721,27 @@
 }
 
 .k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger:not(:disabled):hover,
-.k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger:focus-visible {
+.k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger:focus-visible,
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary:not(:disabled):hover,
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary:focus-visible {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: transparent;
 }
 
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary[data-tone="danger"]:not(:disabled):hover,
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary[data-tone="danger"]:focus-visible {
+  color: var(--k2b-danger-text);
+}
+
 @media (hover: hover) and (pointer: fine) {
+  .k2b-ui .k2b-detail-panel__action-secondary,
   .k2b-ui .k2b-detail-panel__action-menu-trigger {
     opacity: 0;
     transition: opacity 120ms ease-out;
   }
 
+  .k2b-ui .k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary,
+  .k2b-ui .k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary,
   .k2b-ui .k2b-detail-panel__action-row:hover .k2b-detail-panel__action-menu-trigger,
   .k2b-ui .k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger,
   .k2b-ui .k2b-detail-panel__action-menu-trigger[aria-expanded="true"] {

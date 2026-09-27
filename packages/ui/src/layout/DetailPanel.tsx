@@ -1,5 +1,5 @@
 import { children, createEffect, createSignal, createUniqueId, type JSX, Show, splitProps } from "solid-js";
-import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps } from "../actions/Button";
+import { Button, ButtonLink, type ButtonLinkProps, type ButtonProps, IconButton } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { createScrollFade } from "./scroll-fade";
 
@@ -60,11 +60,22 @@ type DetailPanelSectionBaseProps = {
   class?: string;
 };
 
+/** One direct secondary command, rendered as a sibling icon button at the end of the row. */
+export type DetailPanelActionSecondary = {
+  /** Icon class, for example `ti ti-trash`. */
+  icon: string;
+  /** Accessible name and tooltip of the icon button. */
+  label: string;
+  onClick: () => void;
+  variant?: "danger";
+};
+
 type DetailPanelActionBaseProps = {
   title: JSX.Element;
   description?: JSX.Element;
   leading?: JSX.Element;
   trailing?: JSX.Element;
+  secondaryAction?: DetailPanelActionSecondary;
   class?: string;
 };
 
@@ -229,7 +240,17 @@ const DetailPanelActionContent = (props: DetailPanelActionBaseProps): JSX.Elemen
 );
 
 const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
-  const [local, rest] = splitProps(props, ["class", "description", "href", "leading", "menuItems", "menuLabel", "title", "trailing"]);
+  const [local, rest] = splitProps(props, [
+    "class",
+    "description",
+    "href",
+    "leading",
+    "menuItems",
+    "menuLabel",
+    "secondaryAction",
+    "title",
+    "trailing",
+  ]);
   const className = classNames("k2b-detail-panel__action", local.class);
   const content = () => (
     <DetailPanelActionContent title={local.title} description={local.description} leading={local.leading} trailing={local.trailing} />
@@ -262,14 +283,30 @@ const DetailPanelAction = (props: DetailPanelActionProps): JSX.Element => {
   );
 
   return (
-    <Show when={local.menuItems?.length} fallback={action()}>
+    <Show when={local.secondaryAction || local.menuItems?.length} fallback={action()}>
       <div class="k2b-detail-panel__action-row">
         {action()}
-        <Dropdown.Root items={local.menuItems ?? []} align="end" label={local.menuLabel} class="k2b-detail-panel__action-menu">
-          <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={local.menuLabel} class="k2b-detail-panel__action-menu-trigger">
-            <i class="ti ti-dots" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
+        <Show when={local.secondaryAction}>
+          {(secondary) => (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              label={secondary().label}
+              class="k2b-detail-panel__action-secondary"
+              data-tone={secondary().variant}
+              onClick={() => secondary().onClick()}
+            >
+              <i class={secondary().icon} aria-hidden="true" />
+            </IconButton>
+          )}
+        </Show>
+        <Show when={local.menuItems?.length}>
+          <Dropdown.Root items={local.menuItems ?? []} align="end" label={local.menuLabel} class="k2b-detail-panel__action-menu">
+            <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={local.menuLabel} class="k2b-detail-panel__action-menu-trigger">
+              <i class="ti ti-dots" aria-hidden="true" />
+            </Dropdown.Trigger>
+          </Dropdown.Root>
+        </Show>
       </div>
     </Show>
   );
