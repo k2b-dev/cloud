@@ -36,6 +36,25 @@ export const nextEnabledChoiceIndex = <T extends string>(
   return -1;
 };
 
+/**
+ * Counts the leading pills that fit into `available` pixels. When not all of
+ * them fit, the rest collapse into a summary pill of width `more`; the first
+ * pill always stays and truncates when even it does not fit. Without a
+ * measured width (no layout yet) every pill stays.
+ */
+export const fitChoicePills = (available: number, widths: readonly number[], gap: number, more: number): number => {
+  const total = widths.reduce((sum, width) => sum + width, 0) + gap * (widths.length - 1);
+  if (available <= 0 || total <= available) return widths.length;
+  let used = more;
+  let count = 0;
+  for (const width of widths) {
+    used += gap + width;
+    if (used > available) break;
+    count += 1;
+  }
+  return Math.max(1, count);
+};
+
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Failed to load options");
 
 export function createChoiceLoader<T extends string>(
