@@ -5,7 +5,7 @@ section: Contributing
 order: 1306
 description: Where dependencies are declared, which root overrides and patches exist, why, and when each one can go.
 tags: [contributing, dependencies, security]
-updated: 2026-09-21
+updated: 2026-09-27
 ---
 
 # Dependency policy
@@ -57,6 +57,7 @@ cannot be upstreamed.
 | --- | --- | --- |
 | `hucre@1.1.0` | The ODS reader skipped rows nested in `table-row-group`, `table-header-rows`, and `table-rows`; Assistant code mode read incomplete workbooks. Added in `feat(assistant): read ODS workbooks in code mode`. | An upstream `hucre` release walks nested row containers. |
 | `@valentinkolb/filegate@2.4.0` | Bun rejects a `Uint8Array` view over a shared buffer as a fetch body; the patch copies upload bodies. Added in `fix(files): patch Filegate upload bodies and enforce full typechecking`. | The `files` application moves to the Filegate v6 client used by Files (`filesv2`), or the v2 client copies bodies upstream. |
+| `bun-plugin-tailwind@0.1.2` | Bun 1.4.2 keeps only the first of adjacent `@supports` rules with the same condition ([oven-sh/bun#24770](https://github.com/oven-sh/bun/issues/24770)). Tailwind's `color-mix()` polyfill nests one such rule per declaration, so compiled stylesheets kept only the first mixed color of each rule; dark-mode selection turned solid blue. The patch compiles with only the `@property` polyfill, since Tailwind v4's supported browsers implement `color-mix()`. `packages/cloud/src/styles/tokens.test.ts` checks that the tokens keep their mixed values and that the polyfill stays off. Like every root patch, it applies only inside this repository: a standalone application compiles its `app.css` with the unpatched plugin, so a rule there with several `color-mix()` declarations that reference variables still keeps only the first mixed value. Added in `fix(cloud): keep mixed token colors in compiled stylesheets`. | A Bun release merges same-condition `@supports` rules ([oven-sh/bun#38589](https://github.com/oven-sh/bun/pull/38589)) and the mixed-value test passes without the patch; remove the polyfill test with it. |
 
 To change a patch, edit the installed package under `node_modules`, run
 `bun patch --commit <package>`, and describe the reason in the pull request.
