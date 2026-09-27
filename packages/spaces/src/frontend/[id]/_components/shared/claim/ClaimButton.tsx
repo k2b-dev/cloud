@@ -37,11 +37,12 @@ export default function ClaimButton(props: Props) {
     const current = action();
     return current === "claim" ? t.imOnIt : current === "release" ? t.releaseClaim : t.takeOverClaim;
   };
-  const run = () => {
-    const current = action();
+  // Click handlers run outside any owner, so they act on the memoized `<Show>` value instead of reading props:
+  // Solid compiles a caller's `isAdmin={a && b}` into a getter that creates a memo, which would leak on every click.
+  const run = (current: Action) => {
     if (current === "claim") props.onClaim();
     else if (current === "release") props.onRelease();
-    else if (current === "take-over") props.onTakeOver();
+    else props.onTakeOver();
   };
   const icon = () => (props.loading ? "ti ti-loader-2 animate-spin" : ICONS[action() ?? "claim"]);
 
@@ -57,7 +58,7 @@ export default function ClaimButton(props: Props) {
               variant="secondary"
               size="sm"
               class={props.class}
-              onClick={run}
+              onClick={() => run(current())}
               disabled={props.disabled || props.loading}
               aria-busy={props.loading ? "true" : undefined}
             >
@@ -72,7 +73,7 @@ export default function ClaimButton(props: Props) {
             tooltip={label()}
             size="sm"
             class={props.class}
-            onClick={run}
+            onClick={() => run(current())}
             disabled={props.disabled || props.loading}
             aria-busy={props.loading ? "true" : undefined}
           >

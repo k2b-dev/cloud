@@ -431,23 +431,18 @@ export default function ItemDetailPanel(props: Props) {
     onError: (err) => prompts.error(err.message),
   });
   /** Header: claim or release your own claim. Work section: admin take-over of somebody else's claim. */
-  const claimButton = (options: { takeOver?: boolean } = {}) => {
-    // ClaimButton reads `isAdmin` in its click handler, outside any owner. A `&&` written in the prop
-    // compiles to a memo that would be created on every click there; a plain accessor call does not.
-    const canTakeOver = () => options.takeOver === true && props.isAdmin === true;
-    return (
-      <ClaimButton
-        claim={props.item.claim}
-        currentUserId={props.currentUserId}
-        isAdmin={canTakeOver()}
-        loading={claimMutation.loading()}
-        disabled={isLoading() || isCompleted() || (!props.item.claim && completionBlocked())}
-        onClaim={() => void claimMutation.mutate("claim")}
-        onRelease={() => void claimMutation.mutate("release")}
-        onTakeOver={() => void claimMutation.mutate("take-over")}
-      />
-    );
-  };
+  const claimButton = (options: { takeOver?: boolean } = {}) => (
+    <ClaimButton
+      claim={props.item.claim}
+      currentUserId={props.currentUserId}
+      isAdmin={options.takeOver === true && props.isAdmin === true}
+      loading={claimMutation.loading()}
+      disabled={isLoading() || isCompleted() || (!props.item.claim && completionBlocked())}
+      onClaim={() => void claimMutation.mutate("claim")}
+      onRelease={() => void claimMutation.mutate("release")}
+      onTakeOver={() => void claimMutation.mutate("take-over")}
+    />
+  );
 
   const duplicateIntent = () => ({
     columnId: props.item.columnId,

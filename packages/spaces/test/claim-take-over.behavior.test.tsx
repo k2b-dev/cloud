@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createComponent, createRoot, getOwner } from "solid-js";
+import { createComponent, createMemo, createRoot, getOwner } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem, SpaceItemClaim } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -126,6 +126,43 @@ describe("Spaces claim take-over", () => {
     expect(calls).toEqual(["release", "claim"]);
     expect(release.mock.calls[0]![0].json).toEqual({ claimId: claim.id, force: true });
     await waitFor(() => dom.document.body.textContent?.includes("Took over from Mira Beck") === true);
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("runs the shown claim action on click without reading the caller's prop expressions", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { default: ClaimButton } = await import("../src/frontend/[id]/_components/shared/claim/ClaimButton");
+    const handled: string[] = [];
+    // Shaped like the getters Solid compiles for `isAdmin={a && b}` or `claim={x ? y : null}`: every read creates a memo.
+    const dispose = render(
+      () =>
+        [false, true].map((compact) =>
+          createComponent(ClaimButton, {
+            get claim() {
+              return createMemo(() => true)() ? claim : null;
+            },
+            get currentUserId() {
+              return createMemo(() => adminId)();
+            },
+            get isAdmin() {
+              return createMemo(() => true)() && true;
+            },
+            compact,
+            onClaim: () => handled.push("claim"),
+            onRelease: () => handled.push("release"),
+            onTakeOver: () => handled.push(compact ? "compact take-over" : "take-over"),
+          }),
+        ),
+      dom.root,
+    );
+
+    const buttons = [...dom.root.querySelectorAll<HTMLButtonElement>('[data-spaces-claim-action="take-over"]')];
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map(clickCreatedComputations)).toEqual([0, 0]);
+    expect(handled).toEqual(["take-over", "compact take-over"]);
 
     dispose();
     dom.cleanup();
