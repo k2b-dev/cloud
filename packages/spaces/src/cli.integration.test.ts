@@ -46,7 +46,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
   const cld = async (args: string[]) => {
     const proc = Bun.spawn({
       cmd: [process.execPath, "run", cliEntry, "--server", serverUrl, "--token", "cli-test", ...args],
-      env: { ...process.env, XDG_CONFIG_HOME: cliHome },
+      env: { ...process.env, XDG_CONFIG_HOME: cliHome, TZ: "Europe/Berlin" },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -156,7 +156,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       );
       const german = await cld(["--locale", "de", "spaces", "show", `${name}:Duplicate`]);
       expect(german.stderr).toContain("„Duplicate“ passt zu mehreren Einträgen");
-      expect(await cldJson<Item>(["due", second.id, "2026-11-01"])).toMatchObject({ deadline: "2026-11-01T23:59:59.999Z" });
+      expect(await cldJson<Item>(["due", second.id, "2026-11-01"])).toMatchObject({ deadline: "2026-11-01T16:00:00.000Z" });
       expect((await cld(["spaces", "show", `${name}:Missing`])).stderr).toContain('exact title "Missing"');
 
       // Space names are resolved the same way.

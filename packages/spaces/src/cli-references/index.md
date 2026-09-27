@@ -61,7 +61,7 @@ cld spaces show Item01 --context --json
 | `--mine`, `--unassigned`, `--assignee <user-id>` | Assignment; `--mine` needs a user-backed actor |
 | `--ready`, `--blocked` | Open tasks without, or with, active blockers |
 | `--due overdue\|today\|week\|none` | Deadline window in the application timezone |
-| `--due-before <iso\|YYYY-MM-DD>` | Deadline strictly before this instant; a date means its start (UTC) |
+| `--due-before <iso\|YYYY-MM-DD>` | Deadline strictly before this instant; a date means the start of that local day |
 | `--inactive` | Open tasks without activity for 30 days |
 | `--priority`, `--column`, `--tag` | Repeatable; columns and tags by ID or exact name |
 | `--q <text>` | Search in title, description, location, and URL |
@@ -91,7 +91,7 @@ cld spaces create "Hiring" --description "Open roles"
 - `add` creates a task; `--starts-at` and `--ends-at` make it an event. Without `--column` it lands in the space's first column.
 - `set` changes only the fields you pass. `--description <text>` or `--from <file|->` replaces the description (5,000 characters at most). Repeat `--tag` and `--assignee` to set several; they replace the current selection. `--clear-*` cannot be combined with new values.
 - Users are `me`, a user ID, or a username with access to the space. `assign` replaces all assignees with one person, or none.
-- Dates accept ISO datetimes or `YYYY-MM-DD`. A date-only deadline or end means the end of that day (UTC); a start means its beginning.
+- Dates accept ISO datetimes, used as given, or `YYYY-MM-DD`. A date is a day in your system timezone (`TZ` overrides it), stored as the web interface stores it: a deadline at 17:00, like the form's *Today* and *Tomorrow* presets, a start at the beginning of the day, and an end that includes the whole day. Dates for both `--starts-at` and `--ends-at` make an all-day event.
 - `mv` moves an item to another column of its own space and puts it at the top of that column; it does not reorder items within a column. Moving between spaces is done with wormholes in the web interface.
 - `done` fails while the task has an active blocker. `rm` needs `--yes`.
 
@@ -170,7 +170,7 @@ cld --json spaces invitation draft Item01 --mailbox <mailbox-id> --identity <ide
   --to alex@example.org --cancel --idempotency-key b534fe9e-60db-4b23-a35c-5844ab984ec4
 ```
 
-`calendar` and `overlap` take a start and an end; a date-only end includes that whole day. `overlap` checks a proposed time range; `--exclude <item>` ignores the item being moved.
+`calendar` and `overlap` take a start and an end; dates are local days, and a date-only end includes that whole day. `overlap` checks a proposed time range; `--exclude <item>` ignores the item being moved.
 
 Spaces generates iCalendar REQUEST, update, and CANCEL payloads from the canonical event. Mail only supplies an authorized verified sender and an editable delivery draft; Mail mailbox, identity, and idempotency IDs stay UUIDs. `invitation context` includes the latest draft failure. Reuse an idempotency key only to retry the same request.
 
