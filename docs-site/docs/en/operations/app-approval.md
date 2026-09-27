@@ -271,7 +271,10 @@ FreeIPA password or Kerberos ticket.
 returns only the username, display name and email of the device's own
 account, plus the device name and enrollment time. A device of another account,
 another Cloud, or a revoked device gets 403. Like every command, it updates
-the device's last use.
+the device's last use. Because the answer names the account, anyone who can
+sign with a device key, including compromised JavaScript on the authenticator
+origin, can start a sign-in for that account and approve it without knowing the
+username beforehand. Treat a device key as a complete sign-in credential.
 
 The Cloud browser calls `POST /login/status` with `{requestId, browserSecret}`.
 States are `pending`, `approved`, `denied`, `consumed`, or `expired`; after cleanup
