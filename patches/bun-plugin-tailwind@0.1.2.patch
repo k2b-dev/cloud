@@ -1,0 +1,18 @@
+diff --git a/index.mjs b/index.mjs
+index 8d3b23647a1154fb7fe4b598ec89e29643837c38..1434b240aa5fb62b8c698fdcd60c7d8fd37e4acc 100644
+--- a/index.mjs
++++ b/index.mjs
+@@ -41030,6 +41030,13 @@ var Root = class {
+       this.compiler = await _a(content, {
+         base: inputBase,
+         shouldRewriteUrls: true,
++        // Cloud: keep the @property fallbacks but skip the color-mix() polyfill.
++        // It nests one `@supports (color: color-mix(in lab, red, red))` block
++        // per declaration; Bun 1.4.2 keeps only the first of adjacent
++        // same-condition @supports rules (oven-sh/bun#24770), so every further
++        // mixed value in a rule fell back to its unmixed first color. Tailwind
++        // v4's supported browsers all implement color-mix().
++        polyfills: 1 /* AtProperty */,
+         onDependency: (path2) => {
+           addBuildDependenciesPromises.push(this.addBuildDependency(path2));
+         }

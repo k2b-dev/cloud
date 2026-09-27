@@ -705,6 +705,7 @@
   "patchedDependencies": {
     "hucre@1.1.0": "patches/hucre@1.1.0.patch",
     "@valentinkolb/filegate@2.4.0": "patches/@valentinkolb%2Ffilegate@2.4.0.patch",
+    "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch",
   },
   "overrides": {
     "@k2b/sync": "6.5.0",
