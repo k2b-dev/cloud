@@ -12,7 +12,13 @@ import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
 import { createMailbox } from "./mailboxes";
 import { createProviderConnection } from "./provider-connections";
 import { mailProviderOperationMutex } from "./provider-operation-lock";
-import { enqueueMessageHydration, startHydrationRuntime, stopHydrationRuntime, syncFolderBatch } from "./sync-runtime";
+import {
+  enqueueMessageHydration,
+  startHydrationRuntime,
+  stopHydrationRuntime,
+  submitDueHydrationWork,
+  syncFolderBatch,
+} from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -39,6 +45,10 @@ const fixtureVerification = (account: string): ConnectorVerification => ({
   accounts: [{ id: account, name: account, locator: {}, namespaces: [{ kind: "personal", prefix: "", delimiter: "/" }] }],
 });
 
+// A hydration job that fails retries after 10 s at the earliest. Waiting less proves that new mail
+// did not wait for such a retry.
+const BEFORE_FIRST_RETRY_MS = 8_000;
+
 const waitFor = async (ready: () => Promise<boolean>, timeoutMs = 20_000): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
   while (!(await ready())) {
@@ -58,7 +68,9 @@ const sourceFor = (messageId: string): string =>
     `Body of ${messageId}`,
   ].join("\r\n");
 
-type SyncFixture = { label: string; account: string; mailboxId: string; resourceId: string; folderId: string };
+type SyncFixture = { label: string; account: string; mailboxId: string; resourceId: string; bindingId: string; folderId: string };
+
+type HydrationState = { hydration_status: string; hydration_attempt: number; hydration_error_code: string | null };
 
 suite("mail body hydration scheduling", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
@@ -70,7 +82,13 @@ suite("mail body hydration scheduling", () => {
   const labels = new Map<string, string>();
   // Messages the provider expunged after their envelope was imported: FETCH returns no source.
   const expunged = new Set<string>();
+  // Messages whose source stream breaks off mid-transfer.
+  const broken = new Set<string>();
+  // Accounts whose next source download fails before the first message.
+  const unreachable = new Set<string>();
   const downloads: string[] = [];
+  // Every message requested from the provider, in request order.
+  const fetched: string[] = [];
   let downloadGate: Promise<void> = Promise.resolve();
   const spies: Array<{ mockRestore(): void }> = [];
 
@@ -129,7 +147,7 @@ suite("mail body hydration scheduling", () => {
     `;
     inboxes.set(account, []);
     labels.set(account, label);
-    const fixture = { label, account, mailboxId: mailbox.data.id, resourceId: resource!.id, folderId: folder!.id };
+    const fixture = { label, account, mailboxId: mailbox.data.id, resourceId: resource!.id, bindingId: binding!.id, folderId: folder!.id };
     // The first sync of the empty INBOX records its cursor, so later messages arrive as new mail.
     await syncFolderBatch(fixture.folderId, noHeartbeat);
     return fixture;
@@ -164,6 +182,33 @@ suite("mail body hydration scheduling", () => {
       });
     }
     await expect(syncFolderBatch(fixture.folderId, noHeartbeat)).resolves.toMatchObject({ imported: count, hasMore: false });
+  };
+
+  // Holds every source download until `work` has finished, so the test can shape the provider first.
+  const withDownloadsHeld = async (work: () => Promise<void>): Promise<void> => {
+    let release = (): void => undefined;
+    downloadGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await work();
+    } finally {
+      release();
+    }
+  };
+
+  const newestMessageId = async (fixture: SyncFixture): Promise<string> => {
+    const [newest] = await sql<{ id: string }[]>`
+      SELECT id FROM mail.message_contents WHERE mailbox_id = ${fixture.mailboxId}::uuid ORDER BY internal_date DESC LIMIT 1
+    `;
+    return newest!.id;
+  };
+
+  const hydrationState = async (messageId: string): Promise<HydrationState | undefined> => {
+    const [state] = await sql<HydrationState[]>`
+      SELECT hydration_status, hydration_attempt, hydration_error_code FROM mail.message_contents WHERE id = ${messageId}::uuid
+    `;
+    return state;
   };
 
   const unhydrated = async (fixtures: SyncFixture[]): Promise<number> => {
@@ -223,10 +268,21 @@ suite("mail body hydration scheduling", () => {
       spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, _folderPath, requests, consume) => {
         downloads.push(labels.get(config.username) ?? config.username);
         await downloadGate;
+        if (unreachable.delete(config.username)) {
+          throw Object.assign(new Error("Connection not available"), { code: "NoConnection" });
+        }
         for (const request of requests) {
+          fetched.push(request.key);
           if (expunged.has(request.key)) continue;
           const source = sourceFor(request.key);
-          await consume({ ...request, expectedSize: Buffer.byteLength(source), stream: Readable.from([source]) });
+          const stream = broken.has(request.key)
+            ? new Readable({
+                read() {
+                  this.destroy(Object.assign(new Error("Connection reset while streaming the source"), { code: "ECONNRESET" }));
+                },
+              })
+            : Readable.from([source]);
+          await consume({ ...request, expectedSize: Buffer.byteLength(source), stream });
         }
       }),
     );
@@ -263,20 +319,14 @@ suite("mail body hydration scheduling", () => {
       INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
       VALUES (${blocker.folderId}::uuid, ${blockerMessage!.id}::uuid, 10, 1)
     `;
-    let openGate = (): void => undefined;
-    downloadGate = new Promise<void>((resolve) => {
-      openGate = resolve;
-    });
     downloads.length = 0;
-    try {
-      // The single hydration worker slot stays busy with the blocker until every mailbox has queued its work.
+    // The single hydration worker slot stays busy with the blocker until every mailbox has queued its work.
+    await withDownloadsHeld(async () => {
       await enqueueMessageHydration(blockerMessage!.id);
       // 60 bodies are three source batches of 20.
       await deliver(big, 60);
       await deliver(small, 1);
-    } finally {
-      openGate();
-    }
+    });
     await waitFor(async () => (await unhydrated([blocker, big, small])) === 0);
     // Mailboxes take turns one batch at a time: the small mailbox's new message follows the big mailbox's first batch.
     expect(downloads).toEqual(["blocker", "big", "small", "big", "big"]);
@@ -305,20 +355,11 @@ suite("mail body hydration scheduling", () => {
 
   test("a message the provider no longer has neither fails nor holds back the rest of its mailbox", async () => {
     const fixture = await createSyncedMailbox("expunged");
-    let openGate = (): void => undefined;
-    downloadGate = new Promise<void>((resolve) => {
-      openGate = resolve;
-    });
-    try {
+    await withDownloadsHeld(async () => {
       await deliver(fixture, 3);
       // Another client expunges the newest message before its body is fetched.
-      const [newest] = await sql<{ id: string }[]>`
-        SELECT id FROM mail.message_contents WHERE mailbox_id = ${fixture.mailboxId}::uuid ORDER BY internal_date DESC LIMIT 1
-      `;
-      expunged.add(newest!.id);
-    } finally {
-      openGate();
-    }
+      expunged.add(await newestMessageId(fixture));
+    });
     // Folder reconciliation, which owns retiring the vanished reference, is asked to cover its UID.
     const reconcileRequested = async (): Promise<boolean> => {
       const [folder] = await sql<{ reconcile_next_low: string | null }[]>`
@@ -333,10 +374,100 @@ suite("mail body hydration scheduling", () => {
       WHERE mailbox_id = ${fixture.mailboxId}::uuid
       ORDER BY internal_date DESC
     `;
+    // The fetch without a source used one attempt, but the message did not fail.
     expect(states).toEqual([
-      { hydration_status: "envelope", hydration_attempt: 0 },
+      { hydration_status: "envelope", hydration_attempt: 1 },
       { hydration_status: "complete", hydration_attempt: 1 },
       { hydration_status: "complete", hydration_attempt: 1 },
     ]);
+  });
+
+  test("a body that fails neither holds back the mailbox's next new mail nor is retried back to back", async () => {
+    const fixture = await createSyncedMailbox("failing-body");
+    const sentinel = await createSyncedMailbox("sentinel-body");
+    let failing = "";
+    await withDownloadsHeld(async () => {
+      await deliver(fixture, 1);
+      failing = await newestMessageId(fixture);
+      broken.add(failing);
+    });
+    // The single worker takes jobs in order: once the sentinel's body is in, the failing batch has finished.
+    await deliver(sentinel, 1);
+    await waitFor(async () => (await unhydrated([sentinel])) === 0);
+    await deliver(fixture, 1);
+    const fresh = await newestMessageId(fixture);
+    await waitFor(async () => (await hydrationState(fresh))?.hydration_status === "complete", BEFORE_FIRST_RETRY_MS);
+    // Another sentinel round: a job that queued itself again for the failed body would have run first.
+    await deliver(sentinel, 1);
+    await waitFor(async () => (await unhydrated([sentinel])) === 0);
+    expect(await hydrationState(failing)).toEqual({ hydration_status: "failed", hydration_attempt: 1, hydration_error_code: "ECONNRESET" });
+    expect(fetched.filter((messageId) => messageId === failing || messageId === fresh)).toEqual([failing, fresh]);
+  });
+
+  test("a batch that fails at the provider does not hold back the next sync's new mail", async () => {
+    const fixture = await createSyncedMailbox("provider-failure");
+    const sentinel = await createSyncedMailbox("sentinel-provider");
+    unreachable.add(fixture.account);
+    await deliver(fixture, 1);
+    // The single worker takes jobs in order: once the sentinel's body is in, the failed batch has finished.
+    await deliver(sentinel, 1);
+    await waitFor(async () => (await unhydrated([sentinel])) === 0);
+    await deliver(fixture, 1);
+    await waitFor(async () => (await unhydrated([fixture])) === 0, BEFORE_FIRST_RETRY_MS);
+  });
+
+  test("a message the provider lists but never delivers does not hold back the mailbox's other folders", async () => {
+    const fixture = await createSyncedMailbox("phantom");
+    // An older missing body in a second folder of the same mailbox.
+    const [archive] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role)
+      VALUES (${newShortId()}, ${fixture.resourceId}::uuid, 'Archive:10', 'Archive', 'archive')
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.binding_folder_refs (
+        binding_id, folder_id, remote_path, uid_validity, uid_next, highest_modseq, effective_rights, rights_source, last_verified_at
+      ) VALUES (
+        ${fixture.bindingId}::uuid, ${archive!.id}::uuid, 'Archive', 10, 2, 1, ARRAY['read']::text[], 'acl', now()
+      )
+    `;
+    const [archived] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status)
+      VALUES (
+        ${newShortId()}, ${fixture.mailboxId}::uuid, ${`<archived-${suffix}@example.test>`}, 'Archived', '2025-06-01T00:00:00Z', 256,
+        ${sha256Json({ fixture: "hydration-archived", suffix })}, 'envelope'
+      )
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${archive!.id}::uuid, ${archived!.id}::uuid, 10, 1)
+    `;
+    let phantom = "";
+    await withDownloadsHeld(async () => {
+      await deliver(fixture, 1);
+      // The provider keeps listing the new message but answers its FETCH without a source, and no
+      // folder reconciliation runs here that could retire it.
+      phantom = await newestMessageId(fixture);
+      expunged.add(phantom);
+    });
+    await waitFor(async () => (await hydrationState(archived!.id))?.hydration_status === "complete");
+    expect(await hydrationState(phantom)).toEqual({
+      hydration_status: "envelope",
+      hydration_attempt: 1,
+      hydration_error_code: "MESSAGE_SOURCE_MISSING",
+    });
+    // Only the `mail:sync-due` tick retries it; the fifth fetch without a source fails it for good.
+    await waitFor(async () => {
+      if ((await hydrationState(phantom))?.hydration_status === "failed") return true;
+      await submitDueHydrationWork();
+      return false;
+    });
+    expect(fetched.filter((messageId) => messageId === phantom)).toHaveLength(5);
+    expect(await hydrationState(phantom)).toEqual({
+      hydration_status: "failed",
+      hydration_attempt: 5,
+      hydration_error_code: "MESSAGE_SOURCE_MISSING",
+    });
   });
 });

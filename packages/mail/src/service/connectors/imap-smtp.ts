@@ -920,15 +920,15 @@ const fetchUidWindow = async (
     signal,
   );
 
-type SourceDownloadClient = {
+type SourceDownloadClient = SelectedMailboxClient & {
   // imapflow resolves an empty object when FETCH returns no message, although its types promise one.
   download(uid: number, part: undefined, options: { uid: true }): Promise<Partial<DownloadObject>>;
 };
 
 /**
- * Streams the requested sources of the selected folder in order. A UID the provider no longer
- * has yields no source, so the caller decides what the missing message means instead of losing
- * the rest of the batch.
+ * Streams the requested sources of the selected folder in order. A UID the provider answers
+ * without a source yields nothing, so the caller decides what the missing message means instead
+ * of losing the rest of the batch.
  */
 export const downloadSelectedSources = async (
   client: SourceDownloadClient,
@@ -937,7 +937,11 @@ export const downloadSelectedSources = async (
 ): Promise<void> => {
   for (const request of requests) {
     const download = await client.download(request.uid, undefined, { uid: true });
-    if (!download.content || !download.meta) continue;
+    if (!download.content || !download.meta) {
+      // imapflow also answers every download with an empty object once the connection has closed.
+      assertSelectedMailbox(client, request.uidValidity);
+      continue;
+    }
     try {
       await consume({
         ...request,
