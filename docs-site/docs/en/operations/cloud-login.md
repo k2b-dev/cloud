@@ -295,4 +295,5 @@ development shows `dev`.
 Cloud Login disables page pinch zoom, including in dialogs. Touch scrolling
 remains available. The page itself never scrolls or bounces: the header and the
 note about saved connections stay in place, and only the list of Clouds scrolls
-when it does not fit.
+when it does not fit. On a phone in landscape, the note is hidden so the list
+has more room.

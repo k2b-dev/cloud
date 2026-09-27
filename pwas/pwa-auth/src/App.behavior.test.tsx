@@ -128,13 +128,37 @@ test("the welcome screen has no recovery footer", async () => {
   dispose();
 });
 
+// happy-dom cascades the app's own stylesheet, media queries included; the imported @k2b/ui rules are not loaded.
+async function style(viewport: { width: number; height: number }) {
+  dom.window.happyDOM.setViewport(viewport);
+  const sheet = dom.document.createElement("style");
+  sheet.textContent = await Bun.file(new URL("./styles.css", import.meta.url)).text();
+  dom.document.head.append(sheet);
+  return (selector: string) => getComputedStyle(dom.document.querySelector(selector)!);
+}
+
 test("the document itself can never scroll or rubber-band", async () => {
-  const css = await Bun.file(new URL("./styles.css", import.meta.url)).text();
-  const rule = (selector: string) =>
-    css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
-  expect(rule("html,\nbody")).toMatch(/overflow:\s*hidden;/);
-  expect(rule("html,\nbody")).toMatch(/overscroll-behavior:\s*none;/);
-  expect(rule(".auth-app")).toMatch(/position:\s*fixed;/);
-  expect(rule(".auth-app")).toMatch(/inset:\s*0;/);
-  expect(rule(".auth-app")).not.toMatch(/height:\s*100[sd]?vh/);
+  const computed = await style({ width: 390, height: 844 });
+  const dispose = await renderApp(6);
+  for (const root of ["html", "body"]) {
+    expect(computed(root).overflow).toBe("hidden");
+    expect(computed(root).overscrollBehavior).toBe("none");
+  }
+  // Pinned to the viewport, so the shell adds no document height whatever the dynamic toolbars do.
+  expect(computed(".auth-app").position).toBe("fixed");
+  expect(computed(".auth-app").getPropertyValue("inset")).toBe("0");
+  dispose();
+});
+
+// Portrait phones keep the note pinned; a phone in landscape gives its height to the list.
+test.each([
+  { width: 390, height: 844, pinned: true },
+  { width: 320, height: 568, pinned: true },
+  { width: 844, height: 390, pinned: false },
+  { width: 750, height: 342, pinned: false },
+])("at $width x $height the recovery note is pinned: $pinned", async ({ width, height, pinned }) => {
+  const computed = await style({ width, height });
+  const dispose = await renderApp(2);
+  expect(computed(".auth-footer").display).toBe(pinned ? "block" : "none");
+  dispose();
 });

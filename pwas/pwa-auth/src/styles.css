@@ -141,13 +141,24 @@ body {
   display: grid;
   padding: 2rem max(1.5rem, env(safe-area-inset-right)) calc(2rem + env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
 }
-.auth-main:has(+ .auth-footer) > .auth-scroll {
-  padding-bottom: 1rem;
+/* ScrollArea reserves the classic-scrollbar gutter at the end only; both edges keep the list centered under the header and the note. */
+.k2b-ui .auth-scroll {
+  scrollbar-gutter: stable both-edges;
 }
 
+/* The note stays pinned only where the height can spare it. On a phone in landscape it would cover a quarter of the screen, so the list gets that room. */
 .auth-footer {
+  display: none;
   flex: none;
   padding: 1rem max(1.5rem, env(safe-area-inset-right)) calc(1.25rem + env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+}
+@media (min-height: 30rem) {
+  .auth-footer {
+    display: block;
+  }
+  .auth-main:has(+ .auth-footer) > .auth-scroll {
+    padding-bottom: 1rem;
+  }
 }
 .auth-footer > p {
   max-width: 33rem;
