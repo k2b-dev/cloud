@@ -4,6 +4,17 @@
 `Blob`. They use the instance's configured PDF service. `pdf.open` is
 the local text reader described in [Documents](documents.md).
 
+## Choose the path
+
+A document written in the chat needs no code. Use the chat tool
+`markdown_to_pdf` for text-first documents; it applies A4 presets and custom CSS
+and turns images into links. Use `html_to_pdf` for a chat `.html` file whose
+layout needs HTML and CSS, images, or fonts. It takes optional CSS (file or
+inline), header and footer files, chat files as named assets, and the `page`
+options below, then writes a sibling `.pdf` for `present`. Use `pdf.render` when
+code builds the document from data, for Factur-X or attachments, and in Studio
+Apps.
+
 ## HTML and CSS
 
 ```js
@@ -25,8 +36,9 @@ values for local images, fonts and CSS. Use plain filenames, no directories;
 reference the exact filename from HTML or CSS. Duplicate names and the reserved
 names `index.html`, `header.html`, `footer.html`, `factur-x.xml` fail.
 `headerHtml` and `footerHtml` are optional independent HTML strings with their own
-CSS. Page markers such as `<span class="pageNumber"></span>` work in
-those templates. Background colors are printed.
+CSS. They load no assets; use `data:` URLs for images there. Page markers such as
+`<span class="pageNumber"></span>` work in those templates, and the page margin
+must leave room for them. Background colors are printed.
 
 `page.format` defaults to `A4`; alternatives are `A3`, `A5`, `Letter`, and `Legal`.
 `landscape` defaults to false. Each margin is a nonnegative millimeter number,
@@ -83,6 +95,31 @@ with the bundled `einvoice.serialize` output; that serializer does not support
 the other profiles. The service embeds `factur-x.xml`, sets Factur-X 1.0 invoice
 metadata and requests PDF/A-3b. The app must supply matching HTML and XML.
 Neither rendering nor parsing certifies XSD, Schematron, tax or invoice validity.
+
+## Save a PDF in Files
+
+A chat PDF stays in the chat until code writes it elsewhere. To save it in the
+user's Files, pass its chat path in `code_run.inputPaths` and write it through
+the discovered `filesv2.content.create` action:
+
+```js
+export default async () => {
+  const document = await files.read("/offer.pdf");
+  const target = await capabilities.run("filesv2.content.create", {
+    baseId: "<exact ID from filesv2.bases.list>",
+    path: "Offers/offer.pdf",
+    size: document.size,
+    mediaType: "application/pdf",
+  });
+  return capabilities.streams.write(target.stream, document);
+};
+```
+
+Ask for the storage base and folder when the request does not name them. The user
+reviews the write. It creates a new file and fails when the path exists;
+replacing requires the current `expectedRevision`. A `pdf.render` result can be
+written the same way without saving it to the chat first. See
+[Capability calls](capabilities.md) for stream limits and interrupted writes.
 
 ## Cancellation, access and limits
 

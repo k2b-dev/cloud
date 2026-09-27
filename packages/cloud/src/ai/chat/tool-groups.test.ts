@@ -35,6 +35,12 @@ test("summary deduplicates categories without claiming success for a failed test
   expect(summary).toBe("Read files, Worked with code · 1 failed");
 });
 
+test("PDF conversions have their own localized summary", () => {
+  const tools = [tool("write", "write_file"), tool("markdown", "markdown_to_pdf"), tool("html", "html_to_pdf")];
+  expect(summarizeToolGroup(tools, "en")).toBe("Wrote files, Created PDFs");
+  expect(summarizeToolGroup(tools, "de")).toBe("Dateien geschrieben, PDFs erstellt");
+});
+
 test("a completed code tool reporting a runtime error counts as failed work", () => {
   expect(
     summarizeToolGroup(

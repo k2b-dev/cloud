@@ -114,6 +114,7 @@ describe("AI tool icons", () => {
     ["write_file", "ti ti-file-spark"],
     ["fetch_file", "ti ti-world-download"],
     ["markdown_to_pdf", "ti ti-file-type-pdf"],
+    ["html_to_pdf", "ti ti-file-type-pdf"],
     ["present", "ti ti-file-spark"],
     ["view_image", "ti ti-photo-spark"],
     ["memory", "ti ti-brain"],

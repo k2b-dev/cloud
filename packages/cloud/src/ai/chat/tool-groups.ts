@@ -48,6 +48,7 @@ export function summarizeToolGroup(tools: readonly Tool[], locale: string): stri
       return de ? "Cloud-Integration verwendet" : "Used Cloud integration";
     if (["read_file", "list_files", "view_image"].includes(tool.name)) return de ? "Dateien gelesen" : "Read files";
     if (tool.name === "write_file") return de ? "Dateien geschrieben" : "Wrote files";
+    if (["markdown_to_pdf", "html_to_pdf"].includes(tool.name)) return de ? "PDFs erstellt" : "Created PDFs";
     if (["load_skill", "load_tools", "search_tools"].includes(tool.name))
       return de ? "Werkzeuge und Wissen geladen" : "Loaded tools and guidance";
     if (tool.name.startsWith("web_") || tool.name === "fetch_file") return de ? "Im Web recherchiert" : "Searched the web";

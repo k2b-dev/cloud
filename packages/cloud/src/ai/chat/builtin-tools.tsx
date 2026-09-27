@@ -24,6 +24,7 @@ const SPECIALIZED_TOOL_NAMES = new Set([
   "calculate",
   "view_image",
   "markdown_to_pdf",
+  "html_to_pdf",
   "local_bash",
   "read_cloud_resource",
 ]);
@@ -317,6 +318,12 @@ function FileOperationView(props: { block: ToolBlock; verb: string; resultPath?:
   );
 }
 
+function CreatedPdfView(props: { block: ToolBlock }) {
+  const locale = useLocale();
+  const result = () => (isRecord(props.block.result) ? props.block.result : {});
+  return <FileOperationView block={props.block} verb={aiChatMessages(locale()).createdPdf} resultPath={text(result().path)} />;
+}
+
 function ReadFileView(props: { block: ToolBlock }) {
   const locale = useLocale();
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
@@ -412,10 +419,9 @@ export function SpecializedBuiltinToolBlock(props: { block: ToolBlock }) {
       return <CalculateView block={props.block} />;
     case "view_image":
       return <ViewImageView block={props.block} />;
-    case "markdown_to_pdf": {
-      const result = isRecord(props.block.result) ? props.block.result : {};
-      return <FileOperationView block={props.block} verb="Created PDF" resultPath={text(result.path)} />;
-    }
+    case "markdown_to_pdf":
+    case "html_to_pdf":
+      return <CreatedPdfView block={props.block} />;
     case "local_bash":
       return <LocalBashView block={props.block} />;
     case "read_cloud_resource":

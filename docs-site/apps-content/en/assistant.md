@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-09-11
+updated: 2026-09-27
 ---
 
 # Assistant
@@ -193,9 +193,16 @@ available when the work continues later.
   or raw repository file into the chat before inspecting it. Assistant cannot
   authenticate to private downloads or clone and browse a repository through
   that link.
-- Ask for a PDF when the result should be downloadable. Assistant first writes
-  or edits a Markdown file in the chat, converts it with an optional A4 print
-  preset and custom CSS, then presents the generated PDF.
+- Ask for a PDF when the result should be downloadable. For a text-first
+  document, Assistant writes or edits a Markdown file in the chat and converts
+  it with an optional A4 print preset and custom CSS. For a designed layout such
+  as a letter, invoice, or certificate, it writes an HTML file with its own CSS.
+  That file can have a header and footer with page numbers, a chosen paper
+  size, orientation, and margins, and images and fonts from the chat's files.
+  Both paths render offline, so remote images, fonts, stylesheets, and scripts
+  are not loaded. Assistant then presents the generated PDF.
+- Ask Assistant to save a PDF in Files when it should outlast the chat. You
+  review that upload like any other Action.
 - Find saved chats in the sidebar, Projects, search, or **See all**.
 - Fork a useful point when another direction should not replace the existing
   conversation.
@@ -740,7 +747,9 @@ executable examples, formatting rules, limits, and structured interaction events
 
 ### Generate PDFs and read financial formats
 
-Studio Apps and one-off scripts can generate PDFs with `pdf.render({ html, ... })`,
+A PDF from a chat file needs no code: Assistant converts Markdown with
+`markdown_to_pdf`, and HTML with its CSS, header, footer, images, and fonts
+with `html_to_pdf`. Studio Apps and one-off scripts can generate PDFs with `pdf.render({ html, ... })`,
 embed files with `pdf.attach({ document, attachments })`, and combine invoice
 HTML and XML with `pdf.facturX({ html, xml, profile, ... })`. Each returns a Blob
 for download or explicit storage. HTML contains its own CSS; local images,

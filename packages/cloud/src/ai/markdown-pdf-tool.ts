@@ -4,10 +4,12 @@ import {
   MARKDOWN_PDF_MAX_MARKDOWN_BYTES,
   MARKDOWN_PDF_TEMPLATE_IDS,
   type RenderMarkdownToPdfInput,
+  type RenderMarkdownToPdfOptions,
   renderMarkdownToPdf,
 } from "../services/pdf";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { type AiFileContent, aiFileStore, normalizeAiFilePath } from "./files-store";
+import { withAiPdfConversionSlot } from "./pdf-conversions";
 import { defineAiTool } from "./tools";
 
 export const CloudAiMarkdownToPdfInputSchema = z
@@ -28,7 +30,7 @@ export const CloudAiMarkdownToPdfOutputSchema = z.object({
 type MarkdownPdfToolDependencies = {
   read?: (input: { conversationId: string; path: string }) => Promise<AiFileContent | null>;
   write?: (input: { conversationId: string; path: string; bytes: Uint8Array; mediaType: string; origin: "assistant" }) => Promise<void>;
-  render?: (input: RenderMarkdownToPdfInput) => Promise<{ pdf: Uint8Array; contentType: string }>;
+  render?: (input: RenderMarkdownToPdfInput, options: RenderMarkdownToPdfOptions) => Promise<{ pdf: Uint8Array; contentType: string }>;
 };
 
 const conversationPath = (value: string): string => {
@@ -52,13 +54,13 @@ export const createCloudAiMarkdownToPdfTool = (dependencies: MarkdownPdfToolDepe
   return defineAiTool({
     name: "markdown_to_pdf",
     description:
-      "Convert one assistant-created conversation Markdown file to a sibling PDF. Write or edit the .md source with write_file first. A named A4 template may be combined with custom CSS; custom CSS without a template is used as the complete stylesheet. The output path replaces .md with .pdf.",
+      "Convert one assistant-created conversation Markdown file to a sibling PDF. Use it for text-first documents; use html_to_pdf when the layout needs HTML, images, or fonts. Write or edit the .md source with write_file first. A named A4 template may be combined with custom CSS; custom CSS without a template is used as the complete stylesheet. Images become links and are not embedded. The output path replaces .md with .pdf.",
     inputSchema: CloudAiMarkdownToPdfInputSchema,
     outputSchema: CloudAiMarkdownToPdfOutputSchema,
     approval: "never",
     timeoutMs: 125_000,
     promptHint:
-      "write or edit an assistant-owned .md file with write_file before converting it with markdown_to_pdf; call present with the returned PDF path afterwards.",
+      "for text-first PDFs: write or edit an assistant-owned .md file with write_file, convert it with markdown_to_pdf, then call present with the returned PDF path.",
   }).server(async (input, ctx) => {
     if (!ctx.conversationId) throw new Error("The markdown_to_pdf tool needs a conversation context.");
     const sourcePath = conversationPath(input.path);
@@ -78,10 +80,16 @@ export const createCloudAiMarkdownToPdfTool = (dependencies: MarkdownPdfToolDepe
       throw new Error(`File ${sourcePath} is not valid UTF-8 Markdown.`);
     }
 
-    const rendered = await render({ markdown, templateId: input.template, customCss: input.customCss });
-    if (ctx.signal.aborted) {
-      throw ctx.signal.reason instanceof Error ? ctx.signal.reason : new Error("PDF conversion was cancelled.");
+    const cancelled = () => (ctx.signal.reason instanceof Error ? ctx.signal.reason : new Error("PDF conversion was cancelled."));
+    let rendered: { pdf: Uint8Array; contentType: string };
+    try {
+      rendered = await withAiPdfConversionSlot(() =>
+        render({ markdown, templateId: input.template, customCss: input.customCss }, { signal: ctx.signal }),
+      );
+    } catch (error) {
+      throw ctx.signal.aborted ? cancelled() : error;
     }
+    if (ctx.signal.aborted) throw cancelled();
     const path = pdfPath(sourcePath);
     await write({
       conversationId: ctx.conversationId,
