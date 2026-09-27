@@ -3488,6 +3488,13 @@
     display: inline-flex;
   }
 
+  /* A menu opened from hover actions renders in the top layer, outside the
+     row's hover and focus. Its trigger stays until the menu closes; hiding it
+     would stop rendering the menu while the pointer travels into it. */
+  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:has([aria-haspopup][aria-expanded="true"]) {
+    display: inline-flex;
+  }
+
   .k2b-ui .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
     width: 0;
     overflow: hidden;
@@ -3527,6 +3534,14 @@
     .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]
     ):is(:hover, :focus-within)
+    .k2b-app-workspace__sidebar-item-meta {
+    opacity: 0;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] [aria-haspopup][aria-expanded="true"]
+    )
     .k2b-app-workspace__sidebar-item-meta {
     opacity: 0;
   }
