@@ -48,20 +48,18 @@ export function RecordsAdminToolbar(props: {
           </>
         }
       >
-        <>
-          <Tooltip.Anchor content={viewDisabledReason()} disabled={!viewDisabledReason()}>
-            <span class="inline-flex">
-              <Button variant="success" size="sm" onClick={props.onOpenViewSettings} disabled={Boolean(viewDisabledReason())}>
-                <i class="ti ti-table-spark" /> {t().view}
-              </Button>
-            </span>
-          </Tooltip.Anchor>
-          <Show when={props.hiddenViewColumnCount > 0}>
-            <Button variant="success" size="sm" onClick={props.onAddViewColumn}>
-              <i class="ti ti-plus" /> {t().addColumn}
+        <Tooltip.Anchor content={viewDisabledReason()} disabled={!viewDisabledReason()}>
+          <span class="inline-flex">
+            <Button variant="success" size="sm" onClick={props.onOpenViewSettings} disabled={Boolean(viewDisabledReason())}>
+              <i class="ti ti-table-spark" /> {t().view}
             </Button>
-          </Show>
-        </>
+          </span>
+        </Tooltip.Anchor>
+      </Show>
+      <Show when={props.hiddenViewColumnCount > 0}>
+        <Button variant="success" size="sm" onClick={props.onAddViewColumn}>
+          <i class="ti ti-plus" /> {t().addColumn}
+        </Button>
       </Show>
       <Button variant="ghost" size="sm" type="button" class="ml-auto" onClick={props.onDone}>
         {t().done}

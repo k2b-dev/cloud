@@ -28,6 +28,8 @@ Füge eine Sortierung hinzu, wenn die Reihenfolge fachliche Bedeutung hat. Haben
 
 **Tabelle** ist die Vorgabe für dichte Vergleiche und Bearbeitungen. Wähle nur die Spalten und ihre Reihenfolge aus, die für die Aufgabe benötigt werden.
 
+Um ein ausgeblendetes Feld wieder in der Tabelle anzuzeigen, öffne die Tabelle im Bearbeitungsmodus und wähle **Spalte hinzufügen**. Blendest du ein Feld mit der Einstellung **In Tabelle ausblenden** ein, hebt Grids diese Einstellung auf. Ist der Name eines neuen Felds schon an ein ausgeblendetes Feld vergeben, bietet Grids an, stattdessen dessen Spalte einzublenden.
+
 **Karten** eignen sich, wenn jeder Datensatz als einzelner Eintrag mit kurzem Titel, ausgewählten Feldern und einem optionalen Bild erscheinen soll.
 
 **Kalender** ordnet Datensätze anhand eines Felds vom Typ Datum oder Datum und Uhrzeit an. Nutze ihn für Buchungen, Fälligkeiten, Schichten und geplante Arbeit.

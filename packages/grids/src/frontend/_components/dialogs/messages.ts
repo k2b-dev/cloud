@@ -213,6 +213,9 @@ export const gridsDialogMessages = i18n.define({
       fieldNameExample: "Example: Status",
       create: "Create",
       createFieldFailed: "Failed to create field",
+      fieldNameHidden: ({ name }: { name: string }) =>
+        `A field named “${name}” already exists but is hidden from this table. Show its column instead?`,
+      showColumn: "Show column",
       chooseFieldType: "Choose field type",
       chooseFieldStorage: "Choose what this field stores",
       chooseFieldStorageDetail:
@@ -664,6 +667,9 @@ export const gridsDialogMessages = i18n.define({
       fieldNameExample: "Beispiel: Status",
       create: "Erstellen",
       createFieldFailed: "Feld konnte nicht erstellt werden",
+      fieldNameHidden: ({ name }) =>
+        `Das Feld „${name}“ gibt es bereits, es ist in dieser Tabelle aber ausgeblendet. Stattdessen seine Spalte einblenden?`,
+      showColumn: "Spalte einblenden",
       chooseFieldType: "Feldtyp auswählen",
       chooseFieldStorage: "Gespeicherte Werte festlegen",
       chooseFieldStorageDetail:

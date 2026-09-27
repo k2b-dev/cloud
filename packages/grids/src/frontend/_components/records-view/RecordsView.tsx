@@ -617,6 +617,42 @@ export default function RecordsView(props: Props) {
     syncUrl({ replace: true });
   };
 
+  const {
+    effectiveViewColumns,
+    visibleGroupedColumnOrder,
+    hiddenViewColumnCount,
+    hiddenFlatFields,
+    showFlatViewColumns,
+    moveViewColumnInline,
+    openViewColumnSettings,
+    moveGroupedViewColumnInline,
+    openGroupedViewColumnSettings,
+    openAddViewColumnDialog,
+    openAddComputedColumn,
+    clearComputedColumns,
+  } = createRecordsViewColumnController({
+    props: {
+      activeView: props.activeView,
+      tableId: props.tableId,
+      baseId: props.baseId,
+    },
+    fields,
+    setFields,
+    tableColumns,
+    setTableColumns,
+    query,
+    setQuery,
+    viewColumns,
+    setViewColumns,
+    groupBy,
+    aggregations,
+    isGrouped,
+    isSavedView,
+    renderMode,
+    syncUrl,
+    locale,
+  });
+
   const { openFieldSettings, openTableSettings, openAddField, openForms, openTemplates, openViewSettings } = createRecordsAdminController({
     baseId: props.baseId,
     tableId: props.tableId,
@@ -639,6 +675,8 @@ export default function RecordsView(props: Props) {
     setDisableDirectInsert,
     fields,
     setFields,
+    hiddenFields: hiddenFlatFields,
+    showColumns: showFlatViewColumns,
     forms,
     setForms,
     otherTables: props.otherTables,
@@ -651,38 +689,6 @@ export default function RecordsView(props: Props) {
     fieldCreatedDisplayFailed: t().fieldCreatedDisplayFailed,
     refetch: () => void refetch(),
     setViewDisplayConfig,
-  });
-
-  const {
-    effectiveViewColumns,
-    visibleGroupedColumnOrder,
-    hiddenViewColumnCount,
-    moveViewColumnInline,
-    openViewColumnSettings,
-    moveGroupedViewColumnInline,
-    openGroupedViewColumnSettings,
-    openAddViewColumnDialog,
-    openAddComputedColumn,
-    clearComputedColumns,
-  } = createRecordsViewColumnController({
-    props: {
-      activeView: props.activeView,
-      tableId: props.tableId,
-      baseId: props.baseId,
-    },
-    fields,
-    tableColumns,
-    setTableColumns,
-    query,
-    setQuery,
-    viewColumns,
-    setViewColumns,
-    groupBy,
-    aggregations,
-    isGrouped,
-    isSavedView,
-    syncUrl,
-    locale,
   });
 
   const hasOpenDetail = () => Boolean(selectedRecordId() || selectedGroup());

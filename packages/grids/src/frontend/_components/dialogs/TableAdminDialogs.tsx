@@ -21,6 +21,7 @@ import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicFederatedSourcePublication, PublicField, PublicForm, PublicTable } from "../../../api/public-dto";
 import type { TableMutationPolicy } from "../../../contracts";
+import { normalizeRefKey } from "../../../ref-syntax";
 import { createDraft } from "../editor-draft";
 import { defaultConfigForType, TYPE_OPTIONS } from "../fields/field-config-editor";
 import { FIELD_TYPE_ICONS } from "../fields/field-type-meta";
@@ -99,7 +100,13 @@ function TableSettingsDialog(props: {
   );
 }
 
-export const createFieldFromPrompt = async (args: { table: TableHeader; locale?: string }): Promise<PublicField | null> => {
+export const createFieldFromPrompt = async (args: {
+  table: TableHeader;
+  locale?: string;
+  /** Live fields the table view hides. A name conflict with one of them offers to show its column instead. */
+  hiddenFields: PublicField[];
+  onShowHiddenField: (field: PublicField) => void;
+}): Promise<PublicField | null> => {
   const locale = args.locale ?? browserLocale();
   const { t } = gridsDialogMessages.resolve([locale]);
   const fieldT = gridsFieldMessages.resolve([locale]).t;
@@ -122,6 +129,17 @@ export const createFieldFromPrompt = async (args: { table: TableHeader; locale?:
     json: { name, type, config: defaultConfigForType(type) },
   });
   if (!res.ok) {
+    const hidden =
+      res.status === 409 ? args.hiddenFields.find((field) => normalizeRefKey(field.name) === normalizeRefKey(name)) : undefined;
+    if (hidden) {
+      const show = await prompts.confirm(t.fieldNameHidden({ name: hidden.name }), {
+        title: t.createFieldFailed,
+        icon: "ti ti-eye-off",
+        confirmText: t.showColumn,
+      });
+      if (show) args.onShowHiddenField(hidden);
+      return null;
+    }
     prompts.error(await errorMessage(res, t.createFieldFailed));
     return null;
   }
