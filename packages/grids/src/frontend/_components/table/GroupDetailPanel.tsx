@@ -42,6 +42,9 @@ export default function GroupDetailPanel(props: Props) {
   const [q, setQ] = createSignal("");
   const [items, setItems] = createSignal<GridRecord[]>([]);
   const [nextCursor, setNextCursor] = createSignal<string | null>(null);
+  // Member pages label their own relation values; the grouped result only labels bucket keys.
+  const [memberLabels, setMemberLabels] = createSignal<Record<string, string>>({});
+  const relationLabels = createMemo(() => ({ ...props.relationLabels, ...memberLabels() }));
   let sentinel: HTMLDivElement | undefined;
 
   const fieldsById = () => new Map(props.fields.map((f) => [f.id, f]));
@@ -71,7 +74,9 @@ export default function GroupDetailPanel(props: Props) {
     },
     onSuccess: (data, ctx) => {
       const nextItems = data.items ?? [];
+      const nextLabels = data.relationLabels ?? {};
       setItems((prev) => (ctx?.reset ? nextItems : [...prev, ...nextItems]));
+      setMemberLabels((prev) => (ctx?.reset ? nextLabels : { ...prev, ...nextLabels }));
       setNextCursor(data.nextCursor ?? null);
     },
   });
@@ -279,7 +284,7 @@ export default function GroupDetailPanel(props: Props) {
       field,
       value,
       record,
-      relationLabels: props.relationLabels,
+      relationLabels: relationLabels(),
       dateConfig: props.dateConfig,
       locale: locale(),
     });
