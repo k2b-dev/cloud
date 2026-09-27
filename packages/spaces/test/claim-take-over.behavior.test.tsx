@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createRoot, getOwner } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem, SpaceItemClaim } from "@/contracts";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -62,13 +62,26 @@ const waitFor = async (condition: () => boolean) => {
   expect(condition()).toBe(true);
 };
 
+/**
+ * Clicks under a probe root and counts the computations the click handler created. In the browser the handler
+ * runs without an owner, so each of them would leak and log Solid's development warning "computations created
+ * outside a `createRoot` or `render` will never be disposed"; the tests run Solid's production build, which stays silent.
+ */
+const clickCreatedComputations = (target: HTMLElement) =>
+  createRoot((dispose) => {
+    target.click();
+    const created = getOwner()?.owned?.length ?? 0;
+    dispose();
+    return created;
+  });
+
 describe("Spaces claim take-over", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
 
-  test("asks for confirmation with the take-over explanation before releasing somebody else's claim", async () => {
+  test("asks for confirmation with the take-over explanation before releasing somebody else's claim, without leaking computations", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { default: ItemDetailPanel } = await import("../src/frontend/[id]/_components/detail/ItemDetailPanel");
@@ -99,14 +112,14 @@ describe("Spaces claim take-over", () => {
 
     expect(dom.root.textContent).not.toContain("Take over releases the claim");
 
-    takeOver().click();
+    expect(clickCreatedComputations(takeOver())).toBe(0);
     await waitFor(() => dialog() !== null);
     expect(dialog()!.textContent).toContain("Take over releases the claim of Mira Beck and marks you as working on it.");
     dialogButton("Cancel")!.click();
     await waitFor(() => takeOver().getAttribute("aria-busy") !== "true");
     expect(calls).toEqual([]);
 
-    takeOver().click();
+    expect(clickCreatedComputations(takeOver())).toBe(0);
     await waitFor(() => dialogButton("Take over") !== undefined);
     dialogButton("Take over")!.click();
     await waitFor(() => calls.length === 2);

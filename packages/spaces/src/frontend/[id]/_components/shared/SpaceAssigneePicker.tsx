@@ -65,7 +65,6 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
                   <span class="inline-flex items-center gap-1.5 rounded-full bg-[var(--ui-surface-muted)] px-2 py-1 text-xs">
                     <Avatar
                       name={assignee.displayName}
-                      fallback={(assignee.displayName.trim() || "?").slice(0, 2).toUpperCase()}
                       src={
                         assignee.avatarHash
                           ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
@@ -96,7 +95,6 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
                 <div class="group flex items-center gap-2">
                   <Avatar
                     name={assignee.displayName}
-                    fallback={(assignee.displayName.trim() || "?").slice(0, 2).toUpperCase()}
                     src={
                       assignee.avatarHash
                         ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
