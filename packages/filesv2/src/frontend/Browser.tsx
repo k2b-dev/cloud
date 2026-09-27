@@ -393,8 +393,9 @@ export default function Browser(props: {
       lastSource = source;
     }
   });
+  // A settled navigation leaves no row opening, also when it failed or ended on the folder already shown.
   createEffect(() => {
-    if (!props.pending && props.error) setOpening(null);
+    if (!props.pending) setOpening(null);
   });
   const canCreate = () => props.directory.actions?.create !== false;
   const movable = (items: readonly FileEntry[]) => items.every((item) => item.actions?.move !== false);

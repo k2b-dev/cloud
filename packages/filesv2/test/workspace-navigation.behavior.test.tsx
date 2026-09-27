@@ -356,6 +356,52 @@ describe("Filesv2 progressive navigation", () => {
     await openTrash(group.id);
     expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash"]);
   });
+  test("a listing row stops spinning when a navigation back to the same folder replaces its pending open", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", initial.source);
+    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const base = {
+      id: "home",
+      area: "cloud" as const,
+      kind: "users" as const,
+      name: "Alice",
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const bases = { items: [base], issues: [], editor: null };
+    const directory = {
+      base,
+      path: "",
+      items: [{ name: "Documents", path: "Documents", directory: true, size: 0, modified: "2026-09-17T00:00:00Z" }],
+      next: null,
+    };
+    const dispose = render(
+      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    const trash = () => dom.root.querySelector<HTMLElement>(".filesv2-list__row--trash")!;
+    trash().click();
+    await flush();
+    expect(trash().querySelector(".ti-loader-2")).not.toBeNull();
+    // Before the trash loads, the sidebar root reloads the folder that is already shown.
+    dom.root.querySelector<HTMLAnchorElement>('[role="tree"] a[href="/app/filesv2?base=home"]')!.click();
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json(bases));
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json(directory));
+    await flush();
+    expect(dom.window.location.search).toBe("?base=home");
+    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "bases", "entries"]);
+    expect(trash().querySelector(".ti-loader-2")).toBeNull();
+    expect(trash().querySelector(".ti-trash")).not.toBeNull();
+  });
   test("failures of enabled areas show a notice next to working storage; no issues and no storage stay quiet", async () => {
     const dom = createDomTestHarness();
     const { default: Workspace } = await import("../src/frontend/Workspace.island");
