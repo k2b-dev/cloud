@@ -421,9 +421,9 @@ required, and revocation works while app sign-in is disabled or the account
 has expired. Repeating a revocation succeeds without changing anything. The
 first revocation writes an `auth.app.device.revoke` audit entry naming the
 administrator as actor, the device as target and the account as
-`targetUserId`. It also notifies the person, by email by default and through
-browser notifications when they have no email address. Delivery is best
-effort: the revocation stands when no channel reaches them.
+`targetUserId`. It also notifies the person, by default by email and browser
+notification; the person can change these channels. Delivery is best effort:
+the revocation stands when no channel reaches them.
 
 Revoking a device does not end the sessions it already approved. They stay
 valid until they expire after **Session Expiry Hours** (8 by default) or until
@@ -454,7 +454,9 @@ This happens after a FreeIPA password reset from the sign-in page,
 when an administrator changes the account's provider (including creating a
 FreeIPA account for an existing local account) or demotes it to a guest, and
 when FreeIPA synchronization or the account lifecycle job demotes or deletes a
-FreeIPA account, for example an expired one.
+FreeIPA account, for example an expired one. A temporary password that an
+administrator sets with **Reset password** in Accounts or
+`cld accounts users reset-password` does not sign the account out.
 
 Outstanding login requests from before that point stay unusable, and so do
 pairings started before it, including administrator-assisted ones. The person

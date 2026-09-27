@@ -32,7 +32,7 @@ cld accounts users devices list ada.lovelace --json
 cld accounts users devices revoke ada.lovelace <device-id> --yes
 ```
 
-The list shows active devices only. Revocation stops the device from approving sign-ins, leaves existing sessions signed in, and succeeds again for an already revoked device. The user is notified once, when Cloud can reach them. Any account-wide sign-out also revokes all of the user's devices, for example a provider change, demotion to a guest, FreeIPA synchronization, or a FreeIPA password reset. See [What revocation ends](/en/docs/operations/app-approval#what-revocation-ends).
+The list shows active devices only. Revocation stops the device from approving sign-ins, leaves existing sessions signed in, and succeeds again for an already revoked device. The user is notified once, when Cloud can reach them. Any account-wide sign-out also revokes all of the user's devices, for example a provider change, demotion to a guest, FreeIPA synchronization, or a FreeIPA password reset from the sign-in page. `users reset-password` does not sign the user out and leaves their devices active; revoke a lost device explicitly. See [What revocation ends](/en/docs/operations/app-approval#what-revocation-ends).
 
 ## Linux identities
 

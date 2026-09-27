@@ -49,8 +49,9 @@ and whether an administrator helped with pairing. Rename devices or revoke
 ones you no longer control. Revocation prevents new sign-ins but does not end
 existing sessions. These controls remain available when app sign-in is disabled.
 If you lost your device and cannot sign in, ask an administrator to revoke it.
-A password reset or another account-wide sign-out also revokes your paired
-devices; pair again afterwards.
+Resetting your password with **Reset password** on the sign-in page, or
+another account-wide sign-out, also revokes your paired devices; pair again
+afterwards.
 
 Pairing, rename, and revoke may ask you to confirm your identity. Sign in with
 the same account without signing out first. Pairing reopens automatically afterward.

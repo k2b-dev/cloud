@@ -67,7 +67,9 @@ another allowed Cloud method, revoke the old credential and pair again.
 If you cannot sign in at all, ask an administrator to revoke the device.
 
 Cloud also revokes all your paired devices when it signs your account out
-everywhere, for example after a FreeIPA password reset or a provider change.
+everywhere, for example after you reset your FreeIPA password with
+**Reset password** on the sign-in page or an administrator changes your
+account's provider.
 Pair again after signing in.
 
 ## Revoke a device for someone
