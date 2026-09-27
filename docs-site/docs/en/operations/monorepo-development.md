@@ -374,16 +374,16 @@ loudly when a target is unreachable:
 ```bash
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
-CLOUD_TEST_NATS_CREDS_FILE="$PWD/.local/nats/test.creds" \
+CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
 bun run test --integration
 ```
 
 `CLOUD_TEST_NATS_CREDS_FILE` puts the tests into the `TEST` account
-([Configure local NATS accounts](#configure-local-nats-accounts)) and must be
-an absolute path; from a worktree, point it at the file of the checkout that
-runs the development stack. Without it, a test connection lands in `DEV`, and
-the fixture refuses to run.
+([Configure local NATS accounts](#configure-local-nats-accounts)). It must be
+the absolute path of `.local/nats/test.creds` in the checkout that runs the
+development stack, also when the tests run from a worktree. Without it, a test
+connection lands in `DEV`, and the fixture refuses to run.
 
 If you [changed the host ports](#change-host-ports), use them in these URLs.
 The database name must end in `_test`; the fixture refuses anything else so a

@@ -83,7 +83,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | --- | --- |
 | `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_test` |
 | `CLOUD_TEST_NATS_SERVERS` | `nats://127.0.0.1:4222` |
-| `CLOUD_TEST_NATS_CREDS_FILE` | `/home/me/cloud/.local/nats/test.creds` (absolute path) |
+| `CLOUD_TEST_NATS_CREDS_FILE` | `/path/to/cloud/.local/nats/test.creds` (absolute path) |
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6379` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
@@ -120,8 +120,9 @@ streams in the `DEV` account, which accepts connections without credentials,
 and bounds tests in the `TEST` account
 ([Configure local NATS accounts](/en/docs/operations/monorepo-development#configure-local-nats-accounts)).
 `CLOUD_TEST_NATS_CREDS_FILE` names the `.creds` file of the test identity,
-`.local/nats/test.creds` in the checkout that runs the stack, and becomes the
-runtime `NATS_CREDS_FILE`; tests never use one from the environment or `.env`.
+`.local/nats/test.creds` in the checkout that runs the stack, also when the
+tests run from a worktree. It becomes the runtime `NATS_CREDS_FILE`; tests
+never use one from the environment or `.env`.
 Tests that open their own connection use `connectTestNats()` from
 `scripts/fixtures/test-infra`; `bun run check` fails when test code connects
 without credentials. Both `connectTestNats()` and the fixture's NATS check
@@ -131,7 +132,7 @@ one in CI, needs no credentials file.
 ```bash
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
-CLOUD_TEST_NATS_CREDS_FILE="$PWD/.local/nats/test.creds" \
+CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
 bun run test --integration
 ```
