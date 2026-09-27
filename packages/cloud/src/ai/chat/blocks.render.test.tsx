@@ -1148,6 +1148,7 @@ describe("assistant activity width", () => {
   const reasoning: AiTurnBlock = { id: "thinking-1", kind: "thinking", text: "Convert the Markdown first." };
   const pdfTool: AiTurnBlock = { id: "tool-call-1", kind: "tool", callId: "call-1", name: "markdown_to_pdf", status: "running" };
   const answer: AiTurnBlock = { id: "text-1", kind: "text", text: "Here is the PDF." };
+  const compaction: AiTurnBlock = { id: "compaction", kind: "compaction", status: "completed" };
   const persistedReasoning: AiStoredMessage = {
     id: "stored-1",
     shortId: "stored1",
@@ -1197,6 +1198,9 @@ describe("assistant activity width", () => {
     expect(messageClass(oneRow)).toBe("k2b-chat-message ai-chat-message-wide");
     expect(messageClass(oneRow)).toBe(messageClass(twoRows));
     expect(messageClass(renderChat("en", [persistedReasoning]))).toBe(messageClass(twoRows));
+    const compactionRow = renderTurn([compaction]);
+    expect(compactionRow).toContain("Show compaction");
+    expect(messageClass(compactionRow)).toBe(messageClass(twoRows));
     // Prose alone and reasoning that renders no row keep the default reading width.
     expect(messageClass(renderTurn([answer]))).toBe("k2b-chat-message");
     expect(messageClass(renderTurn([{ ...reasoning, text: " " }, answer]))).toBe("k2b-chat-message");
