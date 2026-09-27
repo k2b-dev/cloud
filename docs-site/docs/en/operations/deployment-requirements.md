@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-25
+updated: 2026-09-27
 ---
 
 # Deployment requirements
@@ -58,6 +58,17 @@ leaves behind on its pooled backends and which then reject writes as
 `operation_busy`. When upgrading such an installation, release them once by
 running `SELECT pg_advisory_unlock_all()` on each affected backend, or restart
 the pooler so that its server connections are recreated.
+
+JetStream reserves each stream's byte limit on every node that holds one of its
+replicas as soon as the stream exists, even while it stores almost nothing.
+Across Cloud's applications, these reservations add up to tens of GiB per node;
+at three replicas on three nodes, every node reserves every stream once. Unless
+`max_file_store` is set, a NATS server allows 75% of the disk space that is free
+when it starts. NATS refuses a stream that does not fit with
+`insufficient storage resources available`; when that happens during startup,
+the application does not start. Set `max_file_store` on every node to a size
+that its disk actually provides, and compare it with the reservation: the
+monitoring endpoint `/jsz` reports `reserved_storage` and `config.max_storage`.
 
 There is no universal CPU, memory, disk or database-connection sizing guarantee.
 Size for your app set, data volume, replicas and workload, and verify headroom
