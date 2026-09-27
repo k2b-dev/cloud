@@ -159,11 +159,101 @@ jobs:
       - run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
       # Only the Playwright suites; the DOM suites of this directory run in the unit job with browser conditions.
       - run: bun test --timeout 30000 --preload ./scripts/fixtures/test-infra.ts packages/assistant/src/artifacts/*.browser.test.ts
-      - run: |
+
+  browser-smoke:
+    # The Grids and Mail smokes drive a running Cloud, so this job boots one from this commit's images.
+    # It is separate from the browser job so that an Assistant failure cannot hide whether the stack boots.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun ci
+      - run: bun run --cwd packages/ui build
+      - run: ./packages/grids/node_modules/.bin/playwright install --with-deps chromium
+      - name: Build the Core, gateway, Grids and Mail images
+        run: |
           set -euo pipefail
-          for script in packages/grids/scripts/browser-smoke.ts packages/mail/scripts/browser-smoke.ts; do
-            if [[ -f "$script" ]]; then bun "$script"; fi
+          for app in core gateway grids mail; do
+            docker build --build-arg APP_ID="$app" --build-arg CLOUD_VERSION=0.0.0-nightly \
+              --build-arg CLOUD_RELEASE="sha-$GITHUB_SHA" --tag "cloud-$app:nightly" .
           done
+      - name: Boot Core, gateway, Grids and Mail against fresh infrastructure
+        env:
+          # Production refuses to issue sessions for a non-HTTPS public origin.
+          APP_URL: https://cloud.nightly-smoke.test
+          APP_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
+          docker network create cloud-smoke
+          # The Mail smoke seeds its mailbox through the published Postgres port.
+          docker run --detach --name postgres --network cloud-smoke --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_USER=ipa --env POSTGRES_PASSWORD=ipa --env POSTGRES_DB=ipa postgres:17-alpine
+          docker run --detach --name nats --network cloud-smoke --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
+          docker run --detach --name valkey --network cloud-smoke valkey/valkey:8-alpine
+          timeout 60s bash -c 'until docker exec postgres pg_isready -U ipa -d ipa; do sleep 1; done'
+          # Apps restart until Core has migrated the shared schemas, as in compose.prod.yml.
+          common=(--network cloud-smoke --restart unless-stopped
+            --env NODE_ENV=production
+            --env APP_URL="$APP_URL"
+            --env DATABASE_URL=postgresql://ipa:ipa@postgres:5432/ipa
+            --env REDIS_URL=redis://valkey:6379
+            --env NATS_SERVERS=nats://nats:4222
+            --env SYNC_REPLICAS=1
+            --env SYNC_NAMESPACE=nightly
+            --env APP_SECRET="$APP_SECRET"
+            --env CLOUD_IDENTITY_JWKS_ORIGIN=http://app-core:3000
+            --env CLOUD_OAUTH_JWKS_ORIGIN=http://app-oauth:3000
+            --env CLOUD_CORE_INTERNAL_ORIGIN=http://app-core:3000)
+          docker run --detach --name app-core "${common[@]}" \
+            --env CLOUD_IDENTITY_KEY_ENCRYPTION_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f \
+            --env CLOUD_OAUTH_BROKER_SECRET=abababababababababababababababababababababababababababababababab \
+            --env ADMIN_LOGIN_TOKEN=nightly-admin \
+            cloud-core:nightly
+          docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 cloud-gateway:nightly
+          docker run --detach --name app-grids "${common[@]}" cloud-grids:nightly
+          docker run --detach --name app-mail "${common[@]}" cloud-mail:nightly
+          # Each app serves its OpenAPI document without a session once the gateway routes to it.
+          for _attempt in {1..90}; do
+            routed=0
+            for spec in /api/openapi.json /api/grids/openapi.json /api/mail/openapi.json; do
+              curl --silent --fail --output /dev/null "http://127.0.0.1:3000$spec" && routed=$((routed + 1))
+            done
+            if [[ "$routed" -eq 3 ]]; then exit 0; fi
+            sleep 2
+          done
+          echo "Core, Grids and Mail did not become routable through the gateway." >&2
+          exit 1
+      - name: Run the Grids and Mail browser smokes
+        env:
+          APP_URL: https://cloud.nightly-smoke.test
+          # The Mail smoke seeds its fixture through the Mail persistence boundary.
+          DATABASE_URL: postgresql://ipa:ipa@127.0.0.1:5432/ipa
+        run: |
+          set -euo pipefail
+          printf 'nightly-admin\n' > "$RUNNER_TEMP/admin-token"
+          # A first sign-in stays pending until the account accepts the legal documents, as in the release smoke.
+          token=$(curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/admin-login \
+            -H 'content-type: application/json' --data '{"token":"nightly-admin"}' | jq -r .session_token)
+          version=$(curl --silent --fail-with-body -H "cookie: session_token=$token" http://127.0.0.1:3000/auth/continue \
+            | grep -oE 'version:&quot;[a-f0-9]{64}' | grep -oE '[a-f0-9]{64}')
+          curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
+            -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
+            --data "{\"accepted\":true,\"version\":\"$version\"}"
+          failed=()
+          for app in grids mail; do
+            echo "::group::$app"
+            bun "packages/$app/scripts/browser-smoke.ts" --base-url http://127.0.0.1:3000 --admin-token-file "$RUNNER_TEMP/admin-token" || failed+=("$app")
+            echo "::endgroup::"
+          done
+          [[ ${#failed[@]} -eq 0 ]] || { echo "::error::Browser smoke failed for: ${failed[*]}"; exit 1; }
+      - if: failure()
+        run: for container in app-core gateway app-grids app-mail; do docker logs --tail 200 "$container" || true; done
+      - if: always()
+        run: docker rm --force app-core gateway app-grids app-mail postgres nats valkey || true
 
   runtime-recovery:
     runs-on: ubuntu-24.04
