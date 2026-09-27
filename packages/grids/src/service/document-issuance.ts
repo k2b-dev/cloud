@@ -36,7 +36,7 @@ import { allocateNumberInTransaction } from "./number-series";
 import { insertWithShortIdForDb } from "./short-id";
 import { loadWorkflowQueryData, WorkflowDocumentDataReferenceSchema } from "./workflow-query-store";
 
-const DOCUMENT_HTML_RENDERER_VERSION = "grids-liquid-gotenberg-v1";
+const DOCUMENT_HTML_RENDERER_VERSION = "grids-liquid-gotenberg-v2";
 
 export type DocumentIssuanceActor =
   | { kind: "user"; userId: string }

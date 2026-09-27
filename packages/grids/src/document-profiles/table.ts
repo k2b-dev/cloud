@@ -60,7 +60,7 @@ export const pdfTableDocumentProfile: DocumentProfile<z.infer<typeof pdfInput>> 
   version: 1,
   title: "PDF report",
   description: "A single PDF from captured rows and an HTML/Liquid template.",
-  rendererVersion: "grids-liquid-gotenberg-v1",
+  rendererVersion: "grids-liquid-gotenberg-v2",
   validatorVersion: "grids-html-v1",
   primaryArtifact: { key: "pdf", mediaType: "application/pdf" },
   input: pdfInput,
