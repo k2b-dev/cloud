@@ -40,9 +40,11 @@ surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
 
-Without either option, the layout scrolls the page content and reserves a
-stable scrollbar gutter, so switching between short and long pages or tabs
-does not shift the content sideways where scrollbars take layout space.
+The layout reserves a stable scrollbar gutter on every page scroller it owns:
+the content area of regular pages from `lg` and, below `lg`, the document of
+every page except full-page and focus-mode surfaces. Switching between short
+and long pages or tabs therefore does not shift the content sideways where
+scrollbars take layout space.
 
 Do not reproduce Cloud chrome inside application content.
 

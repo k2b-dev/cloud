@@ -86,19 +86,28 @@ describe("Cloud layouts SSR", () => {
     expect(css).toContain('html:has(.cloud-app-canvas[data-layout-full-page="true"])');
     expect(css).toContain("overscroll-behavior: none;");
   });
-  test("regular pages reserve the scrollbar gutter on the shell's page scroller", async () => {
-    const mainClass = async (mode: string) => {
+  test("the shell reserves a stable scrollbar gutter on the page scroller it owns", async () => {
+    const render = async (mode: string) => {
       const html = await (await server.request(`/layout?mode=${mode}`)).text();
-      return html.match(/<main[^>]*class="([^"]*layout-content-main[^"]*)"/)?.[1];
+      return {
+        main: html.match(/<main[^>]*class="([^"]*layout-content-main[^"]*)"/)?.[1],
+        canvas: html.match(/<div[^>]*class="cloud-app-canvas[^>]*>/)?.[0],
+      };
     };
-    expect(await mainClass("page")).toContain("lg:overflow-auto lg:[scrollbar-gutter:stable]");
-    for (const mode of ["fullPage", "fullWidth"]) {
-      const delegated = await mainClass(mode);
-      expect(delegated).toContain("flex flex-col");
-      expect(delegated).not.toContain("scrollbar-gutter");
+    const [page, fullWidth, fullPage] = await Promise.all([render("page"), render("fullWidth"), render("fullPage")]);
+    // From lg, `main` scrolls regular pages; fullWidth and fullPage work surfaces own their scrolling.
+    expect(page.main).toContain("lg:overflow-auto lg:[scrollbar-gutter:stable]");
+    for (const { main } of [fullWidth, fullPage]) {
+      expect(main).toContain("flex flex-col");
+      expect(main).not.toContain("scrollbar-gutter");
     }
+    // Below lg the document scrolls every page except fullPage surfaces, which the canvas marks.
+    expect(page.canvas).not.toContain("data-layout-full-page");
+    expect(fullWidth.canvas).not.toContain("data-layout-full-page");
+    expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    const mobileShell = css.slice(css.indexOf("@media (max-width: 1023px)"));
+    const mobileStart = css.indexOf("@media (max-width: 1023px) {");
+    const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
   });
   test("admin children inherit the request locale during SSR", async () => {
