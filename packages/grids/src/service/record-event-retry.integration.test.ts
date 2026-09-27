@@ -4,7 +4,7 @@ import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { requireInfra, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { requireInfra, testFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { connectGridsTestSync } from "../sync-test-utils";
 import type { RecordEventDeliveryFailureInput } from "./record-event-delivery-failures";
 import { type GridsRecordEvent, RECORD_EVENT_WORK_PARTITIONS, recordEventWorkQueue, requeueRecordEventWork } from "./record-events";
@@ -130,7 +130,7 @@ natsTest(
   async () => {
     await requireInfra("nats");
     const connection = await connect({ servers: testInfra.nats, ignoreClusterUpdates: true });
-    const namespace = `grids-cutover-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("grids-cutover");
     const previous = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
     const current = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
     try {

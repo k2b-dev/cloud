@@ -7,7 +7,7 @@ import { jetstreamManager } from "@nats-io/jetstream";
 import { connect, type NatsConnection } from "@nats-io/transport-node";
 import { SQL } from "bun";
 import webpush from "web-push";
-import { createDisposableDatabase, natsServers, suiteFor } from "../../../scripts/fixtures/test-infra";
+import { createDisposableDatabase, natsServers, suiteFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { createPushService, migrate, type PushMessage, type PushService } from "./push";
 import { createPushRoutes } from "./routes";
 
@@ -43,7 +43,7 @@ suite("Cloud Login push service", () => {
   const received: Received[] = [];
   const statuses = new Map<string, number[]>();
   const abort = new AbortController();
-  const namespace = `cloud-login-test-${crypto.randomUUID()}`;
+  const namespace = testSyncNamespace("cloud-login");
   const vapid = { subject: "mailto:ops@example.test", ...webpush.generateVAPIDKeys() };
 
   beforeAll(async () => {

@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import * as syncModule from "@k2b/sync";
-import { natsSuite } from "../../../../scripts/fixtures/test-infra";
+import { natsSuite, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { env } from "../config/env";
 import * as nats from "./nats-connection";
 import { getProcessSync, lazySync, startProcessSync } from "./process-sync";
@@ -12,7 +12,7 @@ afterEach(() => {
   else process.env.SYNC_NAMESPACE = originalNamespace;
 });
 const isolate = () => {
-  process.env.SYNC_NAMESPACE = `test-process-${crypto.randomUUID()}`;
+  process.env.SYNC_NAMESPACE = testSyncNamespace("process");
 };
 
 suite("process Sync lifecycle", () => {

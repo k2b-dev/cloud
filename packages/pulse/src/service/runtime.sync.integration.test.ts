@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
-import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const syncTest = testFor("database", "nats");
 syncTest(
@@ -22,7 +22,7 @@ syncTest(
       servers: process.env.NATS_SERVERS ?? "nats://localhost:4222",
       ignoreClusterUpdates: true,
     });
-    const namespace = `pulse-runtime-test-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("pulse-runtime");
     const sync = createSync({
       connection,
       namespace,

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { natsServers, testFor } from "../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 import { newShortId } from "./lib/short-id";
 
@@ -74,7 +74,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
 
     // Item changes publish live events, so the API needs a bound Sync.
     const connection = await connect({ servers: natsServers(), name: "spaces-cli-test" });
-    const sync = createSync({ connection, namespace: `test-${crypto.randomUUID()}`, application: "spaces", defaults: { replicas: 1 } });
+    const sync = createSync({ connection, namespace: testSyncNamespace("spaces-cli"), application: "spaces", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const user: User = {
       id: crypto.randomUUID(),

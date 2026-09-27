@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { connect } from "@nats-io/transport-node";
-import { natsServers, testFor } from "../../../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 import { natsMetricSamples } from "./metrics";
 import { nodeReplicaStatus } from "./replica-status";
 import { getNatsClusterDiagnostics, getNatsDiagnostics, getNatsInventorySummary, natsDiagnosticsConfig } from "./service";
@@ -28,7 +28,7 @@ integration(
   "real account inventory exposes only metadata and consumer counters, preserving existing streams",
   async () => {
     const servers = natsServers();
-    const namespace = `nats-diagnostics-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("nats-diagnostics");
     const name = `S6_QD_${crypto.randomUUID().replaceAll("-", "")}`;
     const subject = `${namespace}.work`;
     const connection = await connect({ servers, timeout: 1500, reconnect: false });

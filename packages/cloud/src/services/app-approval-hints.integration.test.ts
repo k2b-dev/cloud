@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
-import { natsServers, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { syncLoginDecisionHints } from "./app-approval";
 
@@ -10,7 +10,7 @@ suiteFor("nats")("app login decision hints", () => {
     const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
     const sync = createSync({
       connection,
-      namespace: `test-app-login-${crypto.randomUUID()}`,
+      namespace: testSyncNamespace("app-login"),
       application: "core-test",
       defaults: { replicas: 1 },
     });

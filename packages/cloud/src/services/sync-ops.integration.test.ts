@@ -2,7 +2,7 @@ import { expect } from "bun:test";
 import { createSync } from "@k2b/sync";
 import { connect } from "@nats-io/transport-node";
 import { Hono } from "hono";
-import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import type { AuthContext } from "../server/middleware/auth";
 import { createSyncOpsRoutes } from "./sync-ops";
 
@@ -13,7 +13,7 @@ integration(
     const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
     const sync = createSync({
       connection,
-      namespace: `cloud-topic-ops-${crypto.randomUUID()}`,
+      namespace: testSyncNamespace("topic-ops"),
       application: "test",
       defaults: { replicas: 1 },
     });
@@ -93,7 +93,7 @@ integration(
     const connection = await connect({ servers: natsServers(), ignoreClusterUpdates: true });
     const sync = createSync({
       connection,
-      namespace: `cloud-dlq-pages-${crypto.randomUUID()}`,
+      namespace: testSyncNamespace("dlq-pages"),
       application: "test",
       defaults: { replicas: 1 },
     });

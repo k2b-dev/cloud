@@ -12,6 +12,11 @@
  * Import this module first in every integration test file. It is also loaded
  * as a `bun test` preload from `bunfig.toml` and by `scripts/run-tests.ts`.
  *
+ * With a NATS target, each test process gets its own `test-` Sync namespace.
+ * Its streams, and those of the namespaces derived from it with
+ * `testSyncNamespace()`, are deleted once the process's tests are done
+ * (`test-sync.ts`).
+ *
  * Bun's default `redis` handle resolves `REDIS_URL` when the process starts,
  * before any preload runs. `bun run test` therefore exports the aliases into
  * the child environment first; under a direct `bun test`, the default handle
@@ -26,7 +31,7 @@
  *   CLOUD_TEST_GOTENBERG_URL  http://host:3001
  *   CLOUD_TEST_RSQL_URL       http://host:8080
  */
-import { beforeAll, describe, test } from "bun:test";
+import { afterAll, beforeAll, describe, test } from "bun:test";
 import { SQL, sql } from "bun";
 import { applyTestRuntimeEnv, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
 
@@ -41,6 +46,14 @@ const testOnlyDefaults: Record<string, string> = {
 };
 
 const read = (key: string): string | undefined => process.env[key]?.trim() || undefined;
+
+/**
+ * The @k2b/sync namespace of this test process. It replaces any
+ * `SYNC_NAMESPACE` from the environment or `.env`, so tests never share a
+ * namespace with a running installation, and it is deleted with every
+ * namespace derived from it once the process's tests are done.
+ */
+const processNamespace = `test-${crypto.randomUUID().slice(0, 8)}`;
 
 const assertTestDatabaseName = (url: string): void => {
   const name = new URL(url).pathname.replace(/^\//, "");
@@ -74,7 +87,7 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
     for (const [key, value] of Object.entries(testOnlyDefaults)) {
       if (!read(key)) process.env[key] = value;
     }
-    if (!read("SYNC_NAMESPACE")) process.env.SYNC_NAMESPACE = `test-${crypto.randomUUID().slice(0, 8)}`;
+    process.env.SYNC_NAMESPACE = processNamespace;
   }
   return resolved;
 };
@@ -205,6 +218,30 @@ export const natsServers = (): string[] => {
   if (!servers) throw new Error("CLOUD_TEST_NATS_SERVERS is not set");
   return servers.split(",").map((server) => server.trim());
 };
+
+/**
+ * A private Sync namespace for a test that creates its own Sync instance. It
+ * is derived from the process namespace, so the fixture deletes its streams
+ * after the test file's own hooks, whether the tests passed or failed.
+ */
+export const testSyncNamespace = (label: string): string => `${processNamespace}-${label}-${crypto.randomUUID().slice(0, 8)}`;
+
+// Preload hooks run after every hook of the test files, in preload order. A later
+// preload that keeps a Sync running until its own `afterAll` (Mail) therefore uses
+// a namespace of its own and deletes it after draining. Imported by a test file
+// instead, this hook belongs to that file: it runs before the file's own hooks and
+// misses later files. `bun run test` sweeps what remains and the namespaces of
+// killed processes (`test-sync.ts`).
+if (testInfra.nats) {
+  try {
+    afterAll(async () => {
+      const { deleteTestNamespace } = await import("./test-sync");
+      await deleteTestNamespace(natsServers(), processNamespace);
+    });
+  } catch {
+    // Loaded by a script outside `bun test` (integration bootstrap, Grids verification), which runs no tests.
+  }
+}
 
 /** The configured target for one infrastructure kind; throws when it is not set. */
 export const requireInfraUrl = (kind: InfraKind): string => {

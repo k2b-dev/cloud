@@ -7,7 +7,7 @@ COPY patches/ patches/
 COPY --parents packages/*/package.json pwas/*/package.json fixtures/*/package.json docs-site/package.json ./
 COPY tsconfig.base.json ./
 COPY packages/ui/tsconfig.json packages/ui/tsconfig.build.json packages/ui/
-RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/pwa-auth
+RUN bun install --frozen-lockfile --ignore-scripts --filter @k2b/pwa-auth --filter ./
 
 COPY packages/cloud/tsconfig.json packages/cloud/
 COPY packages/cloud/src packages/cloud/src
@@ -15,7 +15,7 @@ COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
 COPY packages/ui/test packages/ui/test
 COPY pwas/pwa-auth pwas/pwa-auth
-COPY scripts/fixtures/test-infra.ts scripts/fixtures/test-infra-env.ts scripts/fixtures/
+COPY scripts/fixtures/test-infra.ts scripts/fixtures/test-infra-env.ts scripts/fixtures/test-sync.ts scripts/fixtures/
 ARG CLOUD_VERSION=0.0.0-local
 ARG CLOUD_RELEASE=local
 ENV CLOUD_VERSION=$CLOUD_VERSION CLOUD_RELEASE=$CLOUD_RELEASE

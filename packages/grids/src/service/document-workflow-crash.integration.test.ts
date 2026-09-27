@@ -9,7 +9,7 @@ import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
 import { type SQL, sql } from "bun";
-import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testFor, testInfra, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { localVerificationUrl } from "../../scripts/verification";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
@@ -128,7 +128,7 @@ async function runAcceptance() {
   await migrate();
   const reports = await mkdtemp(join(process.env.GRIDS_VERIFY_REPORTS_DIR ?? tmpdir(), "grids-crash-"));
   console.info(`Crash acceptance evidence: ${reports}`);
-  const namespace = `grids-crash-${testUuid()}`;
+  const namespace = testSyncNamespace("grids-crash");
   const connection = await connect({
     servers: nats.toString(),
     ignoreClusterUpdates: true,
