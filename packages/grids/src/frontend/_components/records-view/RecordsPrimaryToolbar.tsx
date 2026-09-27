@@ -69,10 +69,12 @@ export default function RecordsPrimaryToolbar(props: Props) {
             size="sm"
             type="button"
             class="app-accent-text"
-            disabled={props.liveRefreshing}
+            loading={props.liveRefreshing}
             onClick={props.onRefresh}
           >
-            <i class={`ti ${props.liveRefreshing ? "ti-loader-2 animate-spin" : "ti-refresh"}`} />
+            <Show when={!props.liveRefreshing}>
+              <i class="ti ti-refresh" />
+            </Show>
             {t().updatesAvailable}
           </Button>
         </Tooltip.Anchor>

@@ -29,6 +29,7 @@ const mount = async (searchableFields: PublicField[]) => {
   const { default: RecordsPrimaryToolbar } = await import("./RecordsPrimaryToolbar");
   const [busy, setBusy] = createSignal(false);
   const [needsManualRefresh, setNeedsManualRefresh] = createSignal(false);
+  const [liveRefreshing, setLiveRefreshing] = createSignal(false);
   const dispose = render(
     () =>
       createComponent(RecordsPrimaryToolbar, {
@@ -46,7 +47,9 @@ const mount = async (searchableFields: PublicField[]) => {
         get needsManualRefresh() {
           return needsManualRefresh();
         },
-        liveRefreshing: false,
+        get liveRefreshing() {
+          return liveRefreshing();
+        },
         cardsMode: false,
         viewMode: false,
         cardSize: "medium",
@@ -75,6 +78,7 @@ const mount = async (searchableFields: PublicField[]) => {
     searchInput: () => row.querySelector<HTMLInputElement>('input[name="grids-record-search"]'),
     setBusy,
     setNeedsManualRefresh,
+    setLiveRefreshing,
     dispose: () => {
       dispose();
       dom.cleanup();
@@ -128,6 +132,15 @@ domTest("the manual refresh appears only when a live reconciliation needs a retr
     expect(toolbar.row.textContent).not.toContain("Updates available");
     toolbar.setNeedsManualRefresh(true);
     expect(toolbar.row.textContent).toContain("Updates available");
+    const refresh = () =>
+      Array.from(toolbar.row.querySelectorAll("button")).find((button) => button.textContent?.includes("Updates available"));
+    expect(refresh()?.querySelector("i")?.className).toBe("ti ti-refresh");
+
+    // The retry uses the @k2b/ui Button loading state, whose spinner honors reduced motion.
+    toolbar.setLiveRefreshing(true);
+    expect(refresh()?.disabled).toBe(true);
+    expect(refresh()?.getAttribute("aria-busy")).toBe("true");
+    expect(Array.from(refresh()?.querySelectorAll("i") ?? []).map((icon) => icon.className)).toEqual(["ti ti-loader-2 k2b-spin"]);
   } finally {
     toolbar.dispose();
   }

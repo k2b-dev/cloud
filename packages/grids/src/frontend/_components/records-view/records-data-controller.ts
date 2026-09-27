@@ -232,8 +232,10 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   let staleResourceEpochFloor = -1;
   let liveCommitId = 0;
   let revoked = false;
-  // The records are current as of this cursor: the SSR cursor, captured before the page read, or the last applied refresh.
-  let appliedLiveCursor = options.initialEventCursor;
+  // The first ready after mount resumes from the SSR cursor, so its read would repeat the SSR read. Replay covers only this
+  // table's records, not cross-table lookups, rollups, or time-relative values, so the skip holds only while the page has
+  // stayed visible since mount. Every later ready (reconnect, return to the tab) reconciles.
+  let firstReadyRepeatsSsrRead = false;
   const [refreshFailed, setRefreshFailed] = createSignal(false);
 
   const invalidate = () => {
@@ -393,7 +395,6 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
       await options.onRefreshed(next);
       if (requestId !== refreshRequestId || revoked) return;
       liveProvider?.markApplied(cursorToApply);
-      if (cursorToApply) appliedLiveCursor = cursorToApply;
       if (pendingLiveCursor === cursorToApply) pendingLiveCursor = null;
 
       if (!options.isGrouped()) {
@@ -455,13 +456,21 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   });
 
   onMount(() => {
+    firstReadyRepeatsSsrRead = document.visibilityState === "visible";
+    const forgetSsrReadWhenHidden = () => {
+      if (document.visibilityState !== "visible") firstReadyRepeatsSsrRead = false;
+    };
+    document.addEventListener("visibilitychange", forgetSsrReadWhenHidden);
+    onCleanup(() => document.removeEventListener("visibilitychange", forgetSsrReadWhenHidden));
+
     liveProvider = createGridsRecordEventsProvider({
       tableId: options.tableId,
       initialCursor: options.initialEventCursor,
       locale: options.locale,
       onReady: (cursor) => {
-        // Resuming from the applied cursor replays every later event; only a new baseline or an outstanding reconciliation needs a read.
-        if (cursor && cursor === appliedLiveCursor && !livePending()) return;
+        const repeatsSsrRead = firstReadyRepeatsSsrRead && cursor !== null && cursor === options.initialEventCursor && !livePending();
+        firstReadyRepeatsSsrRead = false;
+        if (repeatsSsrRead) return;
         pendingLiveCursor = cursor;
         scheduleLiveRefresh();
       },

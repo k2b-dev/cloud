@@ -48,8 +48,15 @@ const until = async (condition: () => boolean) => {
   expect(condition()).toBe(true);
 };
 
-const mount = async ({ initialEventCursor = null }: { initialEventCursor?: string | null } = {}) => {
+const mount = async ({
+  initialEventCursor = null,
+  visibility = "visible",
+}: {
+  initialEventCursor?: string | null;
+  visibility?: DocumentVisibilityState;
+} = {}) => {
   const dom = createDomTestHarness();
+  Object.defineProperty(document, "visibilityState", { value: visibility, configurable: true });
   const { createRecordsDataController } = await import("./records-data-controller");
   let controller!: ReturnType<typeof createRecordsDataController>;
   let revoked = 0;
@@ -200,7 +207,12 @@ domTest("failed reconciliation keeps the old result without a retry loop or curs
   }
 });
 
-domTest("a ready that resumes from the cursor the records are current as of needs no reconciling read", async () => {
+const setVisibility = (state: DocumentVisibilityState) => {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+};
+
+domTest("only the first ready after mount skips the read that would repeat the SSR read", async () => {
   const state = await mount({ initialEventCursor: "s6t.test.3" });
   let calls = 0;
   fetchRecords = async () => {
@@ -213,26 +225,45 @@ domTest("a ready that resumes from the cursor the records are current as of need
     expect(state.controller.livePending()).toBe(false);
     expect(state.controller.busy()).toBe(false);
 
-    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
+    // A reconnect resumes from the same cursor but can have missed cross-table and time-relative changes.
+    callbacks.onReady?.("s6t.test.3");
     expect(state.controller.busy()).toBe(true);
-    await until(() => applied.length === 1 && !state.controller.busy());
-    expect(applied).toEqual(["s6t.test.4"]);
+    await until(() => calls === 1 && !state.controller.busy());
     expect(state.controller.items()[0]!.id).toBe("fresh-1");
 
+    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
+    await until(() => applied.at(-1) === "s6t.test.4" && !state.controller.busy());
     callbacks.onReady?.("s6t.test.4");
-    expect(state.controller.livePending()).toBe(false);
-
-    callbacks.onReady?.("s6t.test.9");
     expect(state.controller.busy()).toBe(true);
-    await until(() => applied.length === 2 && !state.controller.busy());
-    expect(applied.at(-1)).toBe("s6t.test.9");
-    expect(calls).toBe(2);
+    await until(() => calls === 3 && !state.controller.busy());
+    expect(state.controller.items()[0]!.id).toBe("fresh-3");
   } finally {
     state.dispose();
   }
 });
 
-domTest("a resumed ready still retries a reconciliation that failed before the reconnect", async () => {
+domTest("a page that was hidden before its first ready reconciles when it returns", async () => {
+  for (const hide of ["at mount", "after mount"] as const) {
+    const state = await mount({ initialEventCursor: "s6t.test.3", visibility: hide === "at mount" ? "hidden" : "visible" });
+    let calls = 0;
+    fetchRecords = async () => {
+      calls++;
+      return { items: [record("fresh")], nextCursor: null };
+    };
+    try {
+      if (hide === "after mount") setVisibility("hidden");
+      setVisibility("visible");
+      callbacks.onReady?.("s6t.test.3");
+      expect(state.controller.busy()).toBe(true);
+      await until(() => calls === 1 && !state.controller.busy());
+      expect(state.controller.items()[0]!.id).toBe("fresh");
+    } finally {
+      state.dispose();
+    }
+  }
+});
+
+domTest("the first ready still retries a reconciliation that failed before it", async () => {
   const state = await mount({ initialEventCursor: "s6t.test.3" });
   let calls = 0;
   fetchRecords = async () => {
@@ -241,7 +272,7 @@ domTest("a resumed ready still retries a reconciliation that failed before the r
     return { items: [record("fresh")], nextCursor: null };
   };
   try {
-    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
+    callbacks.onError?.({ code: "stream_failed", message: "Live updates failed." });
     await until(() => state.controller.needsManualRefresh());
     callbacks.onReady?.("s6t.test.3");
     expect(state.controller.needsManualRefresh()).toBe(false);
