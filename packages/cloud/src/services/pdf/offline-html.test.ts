@@ -15,7 +15,11 @@ describe("offline HTML", () => {
     expect(offlineHtml("<p>No doctype</p>")).toBe(`${OFFLINE_META}<p>No doctype</p>`);
     const legacy = '\n<!-- Invoice -->\n<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"><p>Legacy</p>';
     expect(offlineHtml(legacy)).toBe(`<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">${OFFLINE_META}${legacy}`);
+    const xhtml = '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"><p>XHTML</p>';
+    expect(offlineHtml(xhtml)).toBe(`<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN">${OFFLINE_META}${xhtml}`);
+    expect(offlineHtml("<!--><!---><!-- a --!><!doctype html><p>Empty comments</p>")).toStartWith(`<!doctype html>${OFFLINE_META}`);
     expect(offlineHtml("<p>Text</p><!doctype html>")).toStartWith(OFFLINE_META);
+    expect(offlineHtml("<!--><p>Text</p>--><!doctype html>")).toStartWith(OFFLINE_META);
     expect(offlineHtml("<!-- open comment <!doctype html>")).toStartWith(OFFLINE_META);
   });
 

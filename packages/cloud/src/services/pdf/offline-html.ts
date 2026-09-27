@@ -19,18 +19,19 @@ const POLICY =
 const OFFLINE_META = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${POLICY}">`;
 
 /**
- * The caller's doctype when it leads the document after whitespace and
- * comments. Repeating it ahead of the policy keeps the caller's rendering
- * mode: HTML without a doctype still renders in quirks mode.
+ * The caller's doctype when it leads the document after whitespace, comments,
+ * and an XML declaration. Repeating it ahead of the policy keeps the caller's
+ * rendering mode: HTML without a doctype still renders in quirks mode. Comments
+ * end where HTML ends them, including `<!-->` and `<!--->`; `<?…>` ends at the
+ * first `>`.
  */
 const leadingDoctype = (html: string): string => {
-  let rest = html.trimStart();
-  while (rest.startsWith("<!--")) {
-    const end = rest.indexOf("-->", 4);
-    if (end < 0) return "";
-    rest = rest.slice(end + 3).trimStart();
-  }
-  return /^<!doctype[^>]*>/i.exec(rest)?.[0] ?? "";
+  const skip = /\s*(?:<!--(?:>|->|[\s\S]*?--!?>)|<\?[^>]*>)/y;
+  let start = 0;
+  while (skip.test(html)) start = skip.lastIndex;
+  const doctype = /\s*(<!doctype[^>]*>)/iy;
+  doctype.lastIndex = start;
+  return doctype.exec(html)?.[1] ?? "";
 };
 
 /** An empty comment stands in for a removed element, so the text on either side stays separate. */
