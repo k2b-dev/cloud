@@ -73,6 +73,12 @@ describe("RecordCardsView sizing", () => {
     expect(readOnly).not.toContain("<button");
   });
 
+  test("shows the shared focus ring when a card is reached by keyboard", () => {
+    const button = renderCards("medium").match(/<button[^>]*aria-label="Open Camera"/)?.[0];
+
+    expect(button).toContain("focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)]");
+  });
+
   test("keeps widths monotonic and the selected outline stable on hover", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../../../styles/app.css")).text();
 

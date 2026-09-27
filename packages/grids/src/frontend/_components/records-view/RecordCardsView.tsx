@@ -112,7 +112,7 @@ export function RecordCardsView(props: {
                   <Show when={props.onRecordClick}>
                     <button
                       type="button"
-                      class="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-focus)]"
+                      class="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)]"
                       aria-label={t().openRecord({ name: title(record) })}
                       onClick={() => props.onRecordClick?.(record)}
                     />

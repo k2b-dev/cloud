@@ -69,3 +69,51 @@ test("CSS check rejects removed detail utilities in application JSX", async () =
     await rm(fixture, { recursive: true, force: true });
   }
 });
+
+test("CSS check accepts --ui-focus only as a box-shadow", async () => {
+  const fixture = await mkdtemp(join(tmpdir(), "cloud-css-check-"));
+  try {
+    for (const directory of ["packages/cloud/src/styles", "packages/cloud/scripts", "packages/ui/src", "packages/example/src"])
+      await mkdir(join(fixture, directory), { recursive: true });
+    for (const path of ["packages/cloud/src/styles", "packages/ui/src/styles", "packages/ui/src/fonts"])
+      await cp(join(root, path), join(fixture, path), { recursive: true });
+    await writeFile(
+      join(fixture, "package.json"),
+      JSON.stringify({ workspaces: { packages: ["packages/cloud", "packages/ui", "packages/example"] } }),
+    );
+    for (const name of ["build.ts", "preload.ts"])
+      await writeFile(join(fixture, "packages/cloud/scripts", name), "// src/styles/app.css plugins: [tailwind]\n");
+    await writeFile(
+      join(fixture, "packages/example/src/Page.tsx"),
+      `export const Page = (props: { color: string }) => (
+  <div class="focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)] focus-visible:shadow-[var(--ui-focus)]">
+    <div style={\`border-color:\${props.color};box-shadow:var(--ui-focus),inset 0 2px 5px black\`} />
+    <div style={{ boxShadow: "var(--ui-focus)", "--ring": "var(--ui-focus)" }} />
+    <div class="border border-[var(--ui-focus)] bg-[color-mix(in_srgb,var(--ui-focus)_12%,transparent)]" />
+    <button type="button" class="focus-visible:outline-2 focus-visible:outline-[var(--ui-focus)]" />
+    <div style={{ "outline-color": "var(--ui-focus)" }} />
+  </div>
+);
+`,
+    );
+    await writeFile(join(fixture, "packages/example/src/Page.test.tsx"), 'expect(style).toStartWith("var(--ui-focus),");\n');
+    await writeFile(
+      join(fixture, "packages/example/src/focus.css"),
+      ".row:focus-visible {\n  box-shadow:\n    var(--ui-shadow-surface),\n    var(--ui-focus);\n}\n.marquee { border: 1px solid var(--ui-focus); }\n",
+    );
+    const findings = await rule.run({ workspaceRoot: fixture, fix: false, flags: new Set() });
+    const misuses = findings
+      .filter((finding) => finding.message.includes("--ui-focus"))
+      .map((finding) => `${finding.file!.slice(fixture.length + 1)}:${finding.line} ${finding.message.split(" ")[0]}`)
+      .toSorted();
+    expect(misuses).toEqual([
+      "packages/example/src/Page.tsx:5 bg",
+      "packages/example/src/Page.tsx:5 border",
+      "packages/example/src/Page.tsx:6 outline",
+      "packages/example/src/Page.tsx:7 outline-color",
+      "packages/example/src/focus.css:6 border",
+    ]);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});

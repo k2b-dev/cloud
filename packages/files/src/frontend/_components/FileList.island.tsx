@@ -502,7 +502,7 @@ export default function FileList(props: FileListProps) {
         <Show when={marqueeRect()}>
           {(rect) => (
             <div
-              class="pointer-events-none absolute rounded-[var(--ui-radius-control)] border border-[var(--ui-focus)] bg-[color-mix(in_srgb,var(--ui-focus)_12%,transparent)]"
+              class="pointer-events-none absolute rounded-[var(--ui-radius-control)] border border-[var(--ui-app-accent-border)] bg-[color-mix(in_srgb,var(--ui-app-accent-border)_12%,transparent)]"
               style={{
                 left: `${rect().left}px`,
                 top: `${rect().top}px`,
