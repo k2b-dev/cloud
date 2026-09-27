@@ -17,7 +17,7 @@ import {
   printStructured,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
-import type { Paginated } from "@k2b/stdlib";
+import { dates, type Paginated } from "@k2b/stdlib";
 import type {
   CalendarItem,
   ItemListResult,
@@ -40,6 +40,8 @@ import type { TaskWork } from "./work-contracts";
 const SHORT_ID = /^[0-9A-Za-z]{6}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+/** The time the web form's Today, Tomorrow, and End of week deadline presets use. */
+const DATE_ONLY_DEADLINE_TIME = "17:00";
 const JSON_HEADERS = { "Content-Type": "application/json" };
 
 const api = (path = "") => `/api/spaces${path}`;
@@ -97,19 +99,37 @@ function spacesCommands(locale?: string) {
     if (!yes) throw new Error(t({ en: "Refusing without confirmation. Pass --yes.", de: "Abgebrochen ohne Bestätigung. Übergib --yes." }));
   };
 
-  const dateTime = (value: string | undefined, label: string, endOfDay = false): string | undefined => {
+  /**
+   * ISO datetimes pass through. A YYYY-MM-DD date is a day in the CLI user's
+   * timezone, stored like the web interface does: a deadline at the presets'
+   * 17:00, a start at the beginning of the day, and an end at the beginning of
+   * the next day, so the end date is included.
+   */
+  const dateTime = (value: string | undefined, label: string, dateOnly: "start" | "end" | "deadline" = "start"): string | undefined => {
     if (!value) return undefined;
-    if (DATE_ONLY.test(value)) return `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime()))
-      throw new Error(
+    const invalid = () =>
+      new Error(
         t({
           en: `${label} must be an ISO datetime or a YYYY-MM-DD date.`,
           de: `${label} muss ein ISO-Zeitpunkt oder ein Datum YYYY-MM-DD sein.`,
         }),
       );
+    if (DATE_ONLY.test(value)) {
+      const day = new Date(`${value}T00:00:00Z`);
+      // Rejects impossible dates such as 2026-02-30, and years before 100, which stdlib's wall-clock conversion reads as 19xx.
+      if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== value || day.getUTCFullYear() < 100) throw invalid();
+      if (dateOnly === "end") day.setUTCDate(day.getUTCDate() + 1);
+      const wallClock = `${day.toISOString().slice(0, 10)}T${dateOnly === "deadline" ? DATE_ONLY_DEADLINE_TIME : "00:00"}`;
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      return dates.zonedDateTimeToInstant(wallClock, timeZone, { disambiguation: "compatible" });
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) throw invalid();
     return date.toISOString();
   };
+
+  /** Two dates make an all-day event, as in the web form; other bounds leave the flag alone. */
+  const allDayRange = (startsAt?: string, endsAt?: string) => (DATE_ONLY.test(startsAt ?? "") && DATE_ONLY.test(endsAt ?? "")) || undefined;
 
   // ==========================
   // Addressing
@@ -265,7 +285,10 @@ function spacesCommands(locale?: string) {
     description: flag.string({ description: t({ en: "Description (Markdown)", de: "Beschreibung (Markdown)" }) }),
     from: fromFlag,
     deadline: flag.string({
-      description: t({ en: "Deadline as ISO datetime or YYYY-MM-DD", de: "Frist als ISO-Zeitpunkt oder YYYY-MM-DD" }),
+      description: t({
+        en: "Deadline as ISO datetime, or YYYY-MM-DD for 17:00 local time",
+        de: "Frist als ISO-Zeitpunkt oder YYYY-MM-DD für 17:00 Ortszeit",
+      }),
     }),
     estimateMinutes: flag.int({
       name: "estimate-minutes",
@@ -327,7 +350,7 @@ function spacesCommands(locale?: string) {
 
   const calendarRange = (start: string, end: string) => {
     const from = dateTime(start, "<start>");
-    const to = dateTime(end, "<end>", true);
+    const to = dateTime(end, "<end>", "end");
     return { from: from!, to: to! };
   };
 
@@ -572,8 +595,9 @@ function spacesCommands(locale?: string) {
             title: address.path,
             description: await readText(flags.description, flags.from, "description"),
             startsAt: dateTime(flags.startsAt, "--starts-at"),
-            endsAt: dateTime(flags.endsAt, "--ends-at", true),
-            deadline: dateTime(flags.deadline, "--deadline", true),
+            endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
+            allDay: allDayRange(flags.startsAt, flags.endsAt),
+            deadline: dateTime(flags.deadline, "--deadline", "deadline"),
             estimatedDurationMinutes: flags.estimateMinutes,
             priority: flags.priority,
             assigneeIds: await resolveUserIds(ctx, space.id, flags.assignee),
@@ -613,8 +637,9 @@ function spacesCommands(locale?: string) {
             title: flags.title,
             description: await readText(flags.description, flags.from, "description"),
             startsAt: dateTime(flags.startsAt, "--starts-at"),
-            endsAt: dateTime(flags.endsAt, "--ends-at", true),
-            deadline: dateTime(flags.deadline, "--deadline", true),
+            endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
+            allDay: allDayRange(flags.startsAt, flags.endsAt),
+            deadline: dateTime(flags.deadline, "--deadline", "deadline"),
             estimatedDurationMinutes: flags.clearEstimate ? null : flags.estimateMinutes,
             priority: flags.priority,
           };
@@ -706,13 +731,16 @@ function spacesCommands(locale?: string) {
           ...itemArg,
           date: arg.required({
             valueLabel: "date|none",
-            description: t({ en: "ISO datetime, YYYY-MM-DD (end of day), or none", de: "ISO-Zeitpunkt, YYYY-MM-DD (Tagesende) oder none" }),
+            description: t({
+              en: "ISO datetime, YYYY-MM-DD (17:00 local time), or none",
+              de: "ISO-Zeitpunkt, YYYY-MM-DD (17:00 Ortszeit) oder none",
+            }),
           }),
         },
         examples: ['cld spaces due "Roadmap":"Publish release notes" 2026-10-20', "cld spaces due Item01 none"],
         async run({ ctx, args }) {
           const item = await resolveItem(ctx, args.item);
-          const deadline = args.date === "none" ? null : dateTime(args.date, "<date>", true);
+          const deadline = args.date === "none" ? null : dateTime(args.date, "<date>", "deadline");
           printItem(ctx, { en: "Updated", de: "Aktualisiert" }, await send<SpaceItem>(ctx, "PATCH", itemApi(item), { deadline }));
         },
       }),

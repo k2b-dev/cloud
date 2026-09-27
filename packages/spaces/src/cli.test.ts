@@ -200,7 +200,8 @@ const cld = async (args: string[], stdin?: string) => {
   const proc = Bun.spawn({
     cmd: [process.execPath, "run", "../cloud-cli/src/index.ts", "--server", base, "--token", "test-token", ...args],
     cwd: new URL("..", import.meta.url).pathname,
-    env: { ...process.env, XDG_CONFIG_HOME: cliHome },
+    // Date-only input is read in the CLI user's timezone; pin one with a DST change.
+    env: { ...process.env, XDG_CONFIG_HOME: cliHome, TZ: "Europe/Berlin" },
     stdin: stdin === undefined ? "ignore" : new Blob([stdin]),
     stdout: "pipe",
     stderr: "pipe",
@@ -304,7 +305,7 @@ describe("browse", () => {
       columnIds: ["Col002"],
       tagIds: ["Tag001"],
       deadlineFilter: "week",
-      deadlineBefore: "2026-10-01T00:00:00.000Z",
+      deadlineBefore: "2026-09-30T22:00:00.000Z",
       activity: "inactive",
       sort: "priority",
       sortDesc: false,
@@ -360,7 +361,7 @@ describe("changes", () => {
       columnId: "Col001",
       title: "Write notes",
       description: "Long text",
-      deadline: "2026-10-20T23:59:59.999Z",
+      deadline: "2026-10-20T15:00:00.000Z",
       estimatedDurationMinutes: 90,
       assigneeIds: [USER_ID, OTHER_ID],
       tagIds: ["Tag001"],
@@ -396,7 +397,7 @@ describe("changes", () => {
     expect(writes((await run(["assign", "Item01", "none"])).requests)[0]?.body).toEqual({ assigneeIds: [] });
     expect((await failing(["assign", "Item01", "nobody"])).stderr).toContain('"nobody"');
 
-    expect(writes((await run(["due", "Item01", "2026-10-20"])).requests)[0]?.body).toEqual({ deadline: "2026-10-20T23:59:59.999Z" });
+    expect(writes((await run(["due", "Item01", "2026-10-20"])).requests)[0]?.body).toEqual({ deadline: "2026-10-20T15:00:00.000Z" });
     expect(writes((await run(["due", "Item01", "none"])).requests)[0]?.body).toEqual({ deadline: null });
   });
 
@@ -411,6 +412,31 @@ describe("changes", () => {
       { method: "POST", path: "/api/spaces/Space1/items/Item01/blockers", body: { blockerItemId: "Block1" } },
       { method: "DELETE", path: "/api/spaces/Space1/items/Item01/blockers", body: { blockerItemId: "Block1" } },
     ]);
+  });
+
+  test("dates are local days as in the web interface; ISO datetimes pass through", async () => {
+    // Both dates are included; the end is the start of the next local day, here after the DST change.
+    const event = await run(["add", "Roadmap:Offsite", "--starts-at", "2026-10-24", "--ends-at", "2026-10-25"]);
+    expect(writes(event.requests)[0]?.body).toMatchObject({
+      startsAt: "2026-10-23T22:00:00.000Z",
+      endsAt: "2026-10-25T23:00:00.000Z",
+      allDay: true,
+    });
+    const timed = await run(["add", "Roadmap:Launch review", "--starts-at", "2026-10-20T10:00:00Z", "--ends-at", "2026-10-20T11:00:00Z"]);
+    expect(writes(timed.requests)[0]?.body).toMatchObject({ startsAt: "2026-10-20T10:00:00.000Z", endsAt: "2026-10-20T11:00:00.000Z" });
+    expect(writes(timed.requests)[0]?.body).not.toHaveProperty("allDay");
+    // ISO bounds keep the stored all-day setting, so passing back an all-day event's instants cannot make it timed.
+    const moved = await run(["set", "Item01", "--starts-at", "2026-10-23T22:00:00Z", "--ends-at", "2026-10-25T23:00:00Z"]);
+    expect(writes(moved.requests)[0]?.body).toEqual({ startsAt: "2026-10-23T22:00:00.000Z", endsAt: "2026-10-25T23:00:00.000Z" });
+    const exact = await run(["set", "Item01", "--deadline", "2026-10-20T10:00:00+02:00"]);
+    expect(writes(exact.requests)[0]?.body).toEqual({ deadline: "2026-10-20T08:00:00.000Z" });
+
+    // Impossible dates fail instead of rolling over; years before 100 would turn into 19xx.
+    for (const date of ["2026-02-30", "0026-10-20"]) {
+      const invalid = await failing(["due", "Item01", date]);
+      expect(invalid.stderr).toContain("<date> must be an ISO datetime or a YYYY-MM-DD date.");
+      expect(writes(invalid.requests)).toEqual([]);
+    }
   });
 });
 
@@ -489,7 +515,7 @@ describe("secondary resources", () => {
     const calendar = await run(["calendar", "2026-10-01", "2026-10-31", "--space", "Roadmap"]);
     expect(calendar.json).toEqual([{ id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" }]);
     expect(calendar.requests.at(-1)?.path).toBe(
-      `/api/spaces/calendar?${new URLSearchParams({ from: "2026-10-01T00:00:00.000Z", to: "2026-10-31T23:59:59.999Z" })}`,
+      `/api/spaces/calendar?${new URLSearchParams({ from: "2026-09-30T22:00:00.000Z", to: "2026-10-31T23:00:00.000Z" })}`,
     );
     const overlap = await run(["overlap", "2026-10-20T10:00:00Z", "2026-10-20T11:00:00Z", "--exclude", "Item01"]);
     expect(overlap.requests.at(-1)?.path).toContain("excludeItemId=Item01");
