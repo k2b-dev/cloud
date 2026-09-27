@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { LocaleProvider } from "@k2b/ui";
+import { createCollectionSelection, LocaleProvider } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import type { InventoryEntry } from "../src/contracts";
 import AdminIssue from "../src/frontend/AdminIssue";
 import { parseAdminLocation } from "../src/frontend/admin-location";
+import FileList, { type FileRow } from "../src/frontend/FileList";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 import Inventory from "../src/frontend/Inventory";
 
@@ -87,5 +88,68 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(de).toContain("Quinn Doe");
     expect(de).toContain("Unbekanntes Konto");
     expect(de).toContain("Unbekannte Gruppe");
+  });
+  test("a deep-linked entry renders as the active row like the tree's current folder, a checked row does not", () => {
+    const entry = (path: string, directory: boolean, extra: Partial<FileRow> = {}): FileRow => ({
+      name: path.split("/").at(-1)!,
+      path,
+      directory,
+      size: directory ? 0 : 12,
+      modified: "2026-01-01T00:00:00Z",
+      ...extra,
+    });
+    const messages = {
+      name: "Name",
+      size: "Size",
+      modified: "Modified",
+      details: String,
+      toggle: String,
+      select: String,
+      more: "More",
+      up: "Up",
+    };
+    const render = (props: { rows: FileRow[]; selected: string[]; tree?: boolean; currentPath?: string; selecting?: boolean }) =>
+      renderToString(() => {
+        const selection = createCollectionSelection({ ids: () => props.rows.map((row) => row.path), initial: props.selected });
+        return (
+          <LocaleProvider locale="en">
+            <FileList
+              {...props}
+              baseId="demo"
+              selection={selection}
+              label="Files"
+              showModified={false}
+              messages={messages}
+              onOpen={() => {}}
+              onDetails={() => {}}
+            />
+          </LocaleProvider>
+        );
+      });
+    // Each row's markup up to the next row; its opening tag carries the state classes and ARIA attributes.
+    const row = (html: string, path: string) => html.split('<div role="row"').find((chunk) => chunk.includes(`title="${path}"`))!;
+    const tag = (chunk: string) => chunk.slice(0, chunk.indexOf(">"));
+    const flat = [entry("Drafts", true), entry("Notes.md", false)];
+
+    const list = render({ rows: flat, selected: ["Drafts"] });
+    expect(tag(row(list, "Drafts"))).toContain("filesv2-list__row--active");
+    expect(tag(row(list, "Drafts"))).toContain('aria-selected="true"');
+    expect(row(list, "Drafts")).toContain("ti-folder-open");
+    expect(tag(row(list, "Notes.md"))).not.toContain("filesv2-list__row--active");
+
+    const selecting = render({ rows: flat, selected: ["Drafts"], selecting: true });
+    expect(tag(row(selecting, "Drafts"))).toContain('aria-selected="true"');
+    expect(tag(row(selecting, "Drafts"))).not.toContain("filesv2-list__row--active");
+    expect(row(selecting, "Drafts")).not.toContain("ti-folder-open");
+
+    const tree = render({
+      rows: [entry("Projects", true, { depth: 0, expanded: true }), entry("Projects/Drafts", true, { depth: 1 })],
+      selected: [],
+      tree: true,
+      currentPath: "Projects",
+    });
+    expect(tag(row(tree, "Projects"))).toContain("filesv2-list__row--active");
+    expect(tag(row(tree, "Projects"))).toContain('aria-current="location"');
+    expect(tag(row(tree, "Projects/Drafts"))).not.toContain("filesv2-list__row--active");
   });
 });
