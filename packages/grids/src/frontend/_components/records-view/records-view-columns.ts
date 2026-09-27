@@ -53,6 +53,7 @@ type RecordsViewColumnControllerOptions = {
     baseId: string;
   };
   fields: Accessor<Field[]>;
+  setFields: Setter<Field[]>;
   tableColumns: Accessor<FieldColumnSpec[]>;
   setTableColumns: Setter<FieldColumnSpec[]>;
   query: Accessor<RecordQuery>;
@@ -70,6 +71,7 @@ type RecordsViewColumnControllerOptions = {
 export const createRecordsViewColumnController = ({
   props,
   fields,
+  setFields,
   tableColumns,
   setTableColumns,
   query,
@@ -176,12 +178,22 @@ export const createRecordsViewColumnController = ({
 
   const persistFlatViewColumns = (columns: ColumnSpec[]) => {
     const cleaned = columns.map(cleanViewColumn);
-    setViewColumns(cleaned);
-    setQuery((prev) => ({ ...prev, columns: cleaned.some(isComputedColumn) || isSavedView() ? cleaned : undefined }));
-    if (isSavedView()) patchRecordQueryMut.mutate({ columns: cleaned });
-    else {
-      syncUrl({ replace: true });
-      if (!cleaned.some(isComputedColumn)) patchTableColumnsMut.mutate(cleaned.filter(isFieldColumn));
+    if (isSavedView()) {
+      setViewColumns(cleaned);
+      setQuery((prev) => ({ ...prev, columns: cleaned }));
+      patchRecordQueryMut.mutate({ columns: cleaned });
+      return;
+    }
+    // The default view keeps its field columns on the table, so later field and column saves show up here.
+    // Only computed columns live in the unsaved query.
+    const computed = cleaned.some(isComputedColumn);
+    setViewColumns(computed ? cleaned : undefined);
+    setQuery((prev) => ({ ...prev, columns: computed ? cleaned : undefined }));
+    syncUrl({ replace: true });
+    if (!computed) {
+      const fieldColumns = cleaned.filter(isFieldColumn);
+      setTableColumns(fieldColumns);
+      patchTableColumnsMut.mutate(fieldColumns);
     }
   };
 
@@ -333,16 +345,40 @@ export const createRecordsViewColumnController = ({
     });
   };
 
-  const flatHiddenColumns = () => {
-    const visibleIds = new Set((effectiveViewColumns() ?? []).filter(isFieldColumn).map((column) => column.fieldId));
-    return fields()
-      .filter((field) => !field.deletedAt && !visibleIds.has(field.id))
-      .map((field) => ({
-        id: field.id,
-        label: field.name,
-        description: fieldTypeLabel(field.type, locale?.() ?? "en"),
-        icon: field.icon ?? "ti ti-columns",
-      }));
+  const flatHiddenFields = (): Field[] => {
+    const columns = effectiveViewColumns();
+    if (!columns) return [];
+    const visibleIds = new Set(columns.filter(isFieldColumn).map((column) => column.fieldId));
+    return fields().filter((field) => !field.deletedAt && !visibleIds.has(field.id));
+  };
+
+  const flatHiddenColumns = () =>
+    flatHiddenFields().map((field) => ({
+      id: field.id,
+      label: field.name,
+      description: fieldTypeLabel(field.type, locale?.() ?? "en"),
+      icon: field.icon ?? "ti ti-columns",
+    }));
+
+  const showFlatViewColumns = (fieldIds: string[]) => {
+    const existing = effectiveViewColumns();
+    if (!existing) return;
+    const existingIds = new Set(existing.map(columnId));
+    persistFlatViewColumns([...existing, ...fieldIds.filter((id) => !existingIds.has(id)).map((fieldId) => ({ fieldId }))]);
+    // Showing a field in the default table view undoes "Hide in table", so it clears that field setting as well.
+    if (!isSavedView()) void clearHideInTable(fieldIds);
+  };
+
+  const clearHideInTable = async (fieldIds: string[]) => {
+    for (const field of fields().filter((candidate) => candidate.hideInTable && fieldIds.includes(candidate.id))) {
+      const res = await apiClient.fields[":fieldId"].$patch({ param: { fieldId: field.id }, json: { hideInTable: false } });
+      if (!res.ok) {
+        prompts.error(await errorMessage(res, t().showInTableFailed));
+        return;
+      }
+      const updated = await res.json();
+      setFields((current) => current.map((candidate) => (candidate.id === updated.id ? updated : candidate)));
+    }
   };
 
   const groupedColumnLabel = (columnId: string): { label: string; description: string; icon: string } | null => {
@@ -382,7 +418,6 @@ export const createRecordsViewColumnController = ({
   const hiddenViewColumnCount = () => (isGrouped() ? groupedHiddenColumns().length : flatHiddenColumns().length);
 
   const openAddViewColumnDialog = async () => {
-    if (!isSavedView()) return;
     const columns = isGrouped() ? groupedHiddenColumns() : flatHiddenColumns();
     if (columns.length === 0) {
       await prompts.alert(t().allColumnsVisible, { title: t().noHiddenColumns, icon: "ti ti-check" });
@@ -396,9 +431,7 @@ export const createRecordsViewColumnController = ({
       });
       return;
     }
-    const existing = effectiveViewColumns() ?? [];
-    const existingIds = new Set(existing.map(columnId));
-    persistFlatViewColumns([...existing, ...selected.filter((id) => !existingIds.has(id)).map((fieldId) => ({ fieldId }))]);
+    showFlatViewColumns(selected);
   };
 
   const openAddComputedColumn = async () => {
@@ -421,6 +454,8 @@ export const createRecordsViewColumnController = ({
     effectiveViewColumns,
     visibleGroupedColumnOrder,
     hiddenViewColumnCount,
+    hiddenFlatFields: flatHiddenFields,
+    showFlatViewColumns,
     moveViewColumnInline,
     openViewColumnSettings,
     moveGroupedViewColumnInline,

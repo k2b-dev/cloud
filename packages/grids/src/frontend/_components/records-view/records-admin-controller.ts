@@ -14,6 +14,7 @@ import {
 import { openViewSettingsDialog } from "../dialogs/ViewSettingsDialogs";
 import { openFieldEditDialog } from "../fields/TableFieldDialogs";
 import { errorMessage } from "../utils/api-helpers";
+import { isFieldColumn, resolveDefaultViewColumns } from "./records-view-columns";
 
 export const normalizeFieldOrder = (ordered: Field[]) => ordered.map((field, position) => ({ ...field, position }));
 
@@ -39,6 +40,9 @@ type RecordsAdminControllerOptions = {
   setDisableDirectInsert: Setter<boolean>;
   fields: Accessor<Field[]>;
   setFields: Setter<Field[]>;
+  /** Fields the current table view hides and "Add column" can show again. */
+  hiddenFields: Accessor<Field[]>;
+  showColumns: (fieldIds: string[]) => void;
   forms: Accessor<Form[]>;
   setForms: Setter<Form[]>;
   otherTables: Array<{ id: string; name: string }>;
@@ -81,7 +85,8 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       tableId: options.tableId,
       otherTables: options.otherTables,
       fieldsByTable: { ...options.fieldsByTable, [options.tableId]: options.fields() },
-      tableColumns: options.tableColumns(),
+      // An empty table column list means "derive from the fields"; edit the list the table shows so a save keeps the other columns.
+      tableColumns: resolveDefaultViewColumns(options.tableColumns(), options.fields()).filter(isFieldColumn),
       dateConfig: options.dateConfig,
       onSaved: (updated) => syncFields(options.fields().map((candidate) => (candidate.id === updated.id ? updated : candidate))),
       onTableColumnsSaved: options.setTableColumns,
@@ -112,7 +117,11 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
   };
 
   const openAddField = async () => {
-    const created = await createFieldFromPrompt({ table: tableHeader() });
+    const created = await createFieldFromPrompt({
+      table: tableHeader(),
+      hiddenFields: options.hiddenFields(),
+      onShowHiddenField: (field) => options.showColumns([field.id]),
+    });
     if (!created) return;
     syncFields(normalizeFieldOrder([...options.fields(), created]));
     if (

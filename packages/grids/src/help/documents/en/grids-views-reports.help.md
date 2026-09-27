@@ -28,6 +28,8 @@ Add a sort whenever order has business meaning. If several records share the sam
 
 **Table** is the default for dense comparison and editing. Choose visible columns and their order for the task.
 
+To show a hidden field in the table again, open the table in Edit mode and choose **Add column**. Showing a field that is set to **Hide in table** also clears that setting. If a new field's name is already used by a hidden field, Grids offers to show that column instead.
+
 **Cards** are useful when each record should read as one item with a short title, selected fields, and an optional image.
 
 **Calendar** places records by one date or date-time field. Use it for bookings, due dates, shifts, and scheduled work.
