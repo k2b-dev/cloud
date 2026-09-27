@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createComponent } from "solid-js";
+import { createComponent, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
@@ -54,6 +54,78 @@ const setSolidInputValue = (input: HTMLInputElement, value: string) => {
   const handler = (input as HTMLInputElement & { $$input?: (event: { currentTarget: HTMLInputElement }) => void }).$$input;
   if (!handler) throw new Error("Solid input handler is not installed");
   handler({ currentTarget: input });
+};
+
+/**
+ * Deterministic layout for MultiSelectInput overflow: the pill strip is as wide
+ * as `available()`, a pill is 28px plus 8px per label character, the "+N"
+ * summary is 32px, and pills sit 4px apart. The test ResizeObserver reports a
+ * trigger resize on demand and tracks the elements it observes.
+ */
+const installPillLayout = (dom: DomTestHarness, available: () => number) => {
+  const prototype = dom.window.HTMLElement.prototype as unknown as HTMLElement;
+  const rect = Object.getOwnPropertyDescriptor(prototype, "getBoundingClientRect");
+  const measuredOutsideMeasuring: string[] = [];
+  Object.defineProperty(prototype, "getBoundingClientRect", {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement) {
+      const classes = this.classList;
+      if (classes.contains("k2b-choice-pill") && this.parentElement?.dataset.measuring !== "true")
+        measuredOutsideMeasuring.push(this.title);
+      const width = classes.contains("k2b-multi-select-trigger__values")
+        ? available()
+        : classes.contains("k2b-choice-pill")
+          ? 28 + 8 * this.title.length
+          : classes.contains("k2b-multi-select-trigger__more")
+            ? 32
+            : 0;
+      return new dom.window.DOMRect(0, 0, width, 22);
+    },
+  });
+  const style = dom.document.createElement("style");
+  style.textContent = ".k2b-multi-select-trigger__values { column-gap: 4px; }";
+  dom.document.head.append(style);
+
+  const observers: Array<{ callback: ResizeObserverCallback; observer: ResizeObserver }> = [];
+  const observed = new Set<Element>();
+  class TestResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      observers.push({ callback, observer: this as unknown as ResizeObserver });
+    }
+    observe(element: Element) {
+      observed.add(element);
+    }
+    unobserve(element: Element) {
+      observed.delete(element);
+    }
+    disconnect() {
+      observed.clear();
+    }
+  }
+  Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, writable: true, value: TestResizeObserver });
+
+  return {
+    measuredOutsideMeasuring,
+    observed,
+    resize: () => {
+      for (const { callback, observer } of observers) callback([], observer);
+    },
+    restore: () => {
+      if (rect) Object.defineProperty(prototype, "getBoundingClientRect", rect);
+      else Reflect.deleteProperty(prototype, "getBoundingClientRect");
+    },
+  };
+};
+
+const pillSummary = (root: HTMLElement) => {
+  const more = root.querySelector<HTMLElement>(".k2b-multi-select-trigger__more");
+  return {
+    visible: Array.from(root.querySelectorAll<HTMLElement>(".k2b-choice-pill:not([data-hidden])"), (pill) => pill.title),
+    more: more && more.dataset.hidden !== "true" ? more.querySelector('[aria-hidden="true"]')?.textContent : undefined,
+    announced: more && more.dataset.hidden !== "true" ? more.querySelector(".k2b-sr-only")?.textContent : undefined,
+    hiddenLabels: more?.title || undefined,
+  };
 };
 
 describe("@k2b/ui choice and date browser behavior", () => {
@@ -409,6 +481,126 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(dom.root.textContent).toContain("Ada");
 
     dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("collapses MultiSelectInput pills that do not fit into a counted summary", async () => {
+    const dom = createDomTestHarness();
+    let available = 400;
+    const layout = installPillLayout(dom, () => available);
+    const { MultiSelectInput } = await import("../src/inputs/MultiSelectInput");
+    const dispose = render(
+      () =>
+        createComponent(MultiSelectInput, {
+          "aria-label": "Columns",
+          value: ["alpha", "beta", "gamma", "delta", "epsilon"],
+          options: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"].map((label) => ({ id: label.toLowerCase(), label })),
+        }),
+      dom.root,
+    );
+    const values = dom.root.querySelector<HTMLElement>(".k2b-multi-select-trigger__values")!;
+
+    // 68 + 60 + 68 + 68 + 84 plus four gaps is 364px: everything fits.
+    expect(pillSummary(dom.root)).toEqual({
+      visible: ["Alpha", "Beta", "Gamma", "Delta", "Epsilon"],
+      more: undefined,
+      announced: undefined,
+      hiddenLabels: undefined,
+    });
+    expect(values.dataset.overflowing).toBeUndefined();
+    expect(values.style.width).toBe("");
+
+    available = 240;
+    layout.resize();
+    expect(pillSummary(dom.root)).toEqual({
+      visible: ["Alpha", "Beta", "Gamma"],
+      more: "+2",
+      announced: "2 more selected",
+      hiddenLabels: "Delta, Epsilon",
+    });
+    expect(values.dataset.overflowing).toBe("true");
+    // Hidden pills leave the flow, so the strip keeps the whole row as its
+    // preferred width: a container sized by its content can grow back.
+    expect(values.style.width).toBe("364px");
+
+    available = 160;
+    layout.resize();
+    expect(pillSummary(dom.root)).toMatchObject({ visible: ["Alpha"], more: "+4", announced: "4 more selected" });
+
+    // Narrower than the first pill and the summary: the first pill stays and truncates.
+    available = 60;
+    layout.resize();
+    expect(pillSummary(dom.root)).toMatchObject({ visible: ["Alpha"], more: "+4" });
+    expect(dom.root.querySelector<HTMLElement>(".k2b-choice-pill")?.title).toBe("Alpha");
+
+    available = 400;
+    layout.resize();
+    expect(pillSummary(dom.root).visible).toHaveLength(5);
+    expect(values.style.width).toBe("");
+    expect(layout.measuredOutsideMeasuring).toEqual([]);
+    expect(values.dataset.measuring).toBeUndefined();
+
+    dispose();
+    layout.restore();
+    dom.cleanup();
+  });
+
+  test("keeps the MultiSelectInput summary current while the keyboard removes values", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "de";
+    delegateEvents(["keydown"], dom.document);
+    const popover = installPopoverApi(dom);
+    const layout = installPillLayout(dom, () => 120);
+    const { MultiSelectInput } = await import("../src/inputs/MultiSelectInput");
+    const [value, setValue] = createSignal(["alpha", "beta", "gamma"]);
+    const dispose = render(
+      () =>
+        createComponent(MultiSelectInput, {
+          "aria-label": "Spalten",
+          value,
+          onValueChange: setValue,
+          options: ["Alpha", "Beta", "Gamma"].map((label) => ({ id: label.toLowerCase(), label })),
+        }),
+      dom.root,
+    );
+    const trigger = dom.root.querySelector<HTMLElement>(".k2b-multi-select-trigger")!;
+    const press = (key: string) => trigger.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+    expect(pillSummary(dom.root)).toMatchObject({ visible: ["Alpha"], more: "+2", announced: "2 weitere Optionen ausgewählt" });
+
+    press("ArrowDown");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    press("Backspace");
+    expect(value()).toEqual(["alpha", "beta"]);
+    expect(pillSummary(dom.root)).toEqual({
+      visible: ["Alpha"],
+      more: "+1",
+      announced: "1 weitere Option ausgewählt",
+      hiddenLabels: "Beta",
+    });
+
+    press("Backspace");
+    expect(value()).toEqual(["alpha"]);
+    expect(pillSummary(dom.root).visible).toEqual(["Alpha"]);
+    expect(dom.root.querySelector(".k2b-multi-select-trigger__more")).toBeNull();
+
+    // A removed summary stops being observed; toggling it does not pile up detached elements.
+    const observedSummaries = () =>
+      [...layout.observed]
+        .filter((element) => element.classList.contains("k2b-multi-select-trigger__more"))
+        .map((element) => (element.isConnected ? "connected" : "detached"));
+    expect(observedSummaries()).toEqual([]);
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      setValue(["alpha", "beta"]);
+      expect(pillSummary(dom.root).more).toBe("+1");
+      expect(observedSummaries()).toEqual(["connected"]);
+      setValue(["alpha"]);
+      expect(observedSummaries()).toEqual([]);
+    }
+
+    dispose();
+    layout.restore();
     popover.restore();
     dom.cleanup();
   });

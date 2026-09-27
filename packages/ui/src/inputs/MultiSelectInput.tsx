@@ -1,9 +1,16 @@
-import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { colorTintStyle, normalizeHexColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
-import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
+import {
+  type ChoiceOption,
+  createChoiceLoader,
+  createChoicePopover,
+  filterChoiceOptions,
+  fitChoicePills,
+  nextEnabledChoiceIndex,
+} from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import type { SelectGroup } from "./Select";
@@ -106,6 +113,49 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
   const popover = createChoicePopover(() => Boolean(props.disabled));
   const focusedOption = () => visibleOptions()[focusedIndex()];
 
+  // Pills that do not fit the trigger collapse into a "+N" summary. Until the
+  // browser measures them (server HTML, hidden containers) every pill stays.
+  let valuesRef: HTMLSpanElement | undefined;
+  let moreRef: HTMLSpanElement | undefined;
+  const [visibleCount, setVisibleCount] = createSignal(Number.POSITIVE_INFINITY);
+  const hiddenOptions = createMemo(() => selected().slice(visibleCount()));
+  // While every pill fits, the invisible summary carries the largest count it
+  // could show, so measuring it reserves enough room for the real one.
+  const moreCount = () => hiddenOptions().length || selected().length - 1;
+  const fitValues = () => {
+    const values = valuesRef;
+    if (!values?.isConnected) return;
+    // Measuring releases a truncated first pill to its natural width; the
+    // browser paints only the final state.
+    values.dataset.measuring = "true";
+    const pills = Array.from(
+      values.querySelectorAll<HTMLElement>(":scope > .k2b-choice-pill"),
+      (pill) => pill.getBoundingClientRect().width,
+    );
+    const fit = fitChoicePills(
+      values.getBoundingClientRect().width,
+      pills,
+      Number.parseFloat(getComputedStyle(values).columnGap) || 0,
+      moreRef?.isConnected ? moreRef.getBoundingClientRect().width : 0,
+    );
+    delete values.dataset.measuring;
+    // Hidden pills leave the flow. While any are hidden the strip keeps the
+    // whole row as its preferred width, so a container sized by its content
+    // does not shrink with the collapse and grows back once it has room. The
+    // strip still flexes to the trigger's width.
+    values.style.width = fit.visible < pills.length ? `${fit.rowWidth}px` : "";
+    setVisibleCount(fit.visible);
+  };
+  const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(() => fitValues());
+  onCleanup(() => resizeObserver?.disconnect());
+  createEffect(() => {
+    selected();
+    fitValues();
+  });
+  onMount(() => {
+    if ("fonts" in document) void document.fonts.ready.then(fitValues);
+  });
+
   const emit = (next: readonly string[]) => {
     const unique = [...new Set(next)];
     commitFieldValue(props, unique);
@@ -190,7 +240,10 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
     >
       <div class="k2b-choice-control" data-invalid={error() ? "true" : undefined}>
         <div
-          ref={popover.setTrigger}
+          ref={(element) => {
+            popover.setTrigger(element);
+            resizeObserver?.observe(element);
+          }}
           id={meta.controlId}
           class="k2b-multi-select-trigger"
           role="combobox"
@@ -213,10 +266,19 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
               </span>
             }
           >
-            <span class="k2b-multi-select-trigger__values">
+            <span
+              ref={valuesRef}
+              class="k2b-multi-select-trigger__values"
+              data-overflowing={hiddenOptions().length > 0 ? "true" : undefined}
+            >
               <For each={selected()}>
-                {(option) => (
-                  <span class="k2b-choice-pill" style={colorTintStyle(option.color)}>
+                {(option, index) => (
+                  <span
+                    class="k2b-choice-pill"
+                    style={colorTintStyle(option.color)}
+                    title={option.label}
+                    data-hidden={index() >= visibleCount() ? "true" : undefined}
+                  >
                     <Show
                       when={props.renderValue}
                       fallback={
@@ -243,6 +305,25 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                   </span>
                 )}
               </For>
+              <Show when={selected().length > 1}>
+                <span
+                  ref={(element) => {
+                    moreRef = element;
+                    resizeObserver?.observe(element);
+                    onCleanup(() => resizeObserver?.unobserve(element));
+                  }}
+                  class="k2b-multi-select-trigger__more"
+                  title={
+                    hiddenOptions()
+                      .map((option) => option.label)
+                      .join(", ") || undefined
+                  }
+                  data-hidden={hiddenOptions().length === 0 ? "true" : undefined}
+                >
+                  <span aria-hidden="true">+{moreCount()}</span>
+                  <span class="k2b-sr-only">{messages().moreSelected({ count: moreCount() })}</span>
+                </span>
+              </Show>
             </span>
           </Show>
           <Show when={!hasClearAction()}>

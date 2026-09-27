@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent, createRoot } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { createChoiceLoader, filterChoiceOptions, nextEnabledChoiceIndex, placeChoicePopover } from "./choice";
+import { createChoiceLoader, filterChoiceOptions, fitChoicePills, nextEnabledChoiceIndex, placeChoicePopover } from "./choice";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-choice-inputs-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -337,6 +337,15 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).not.toContain("k2b-multi-select-trigger__chevron");
     expect(html).toContain("<strong>Platform</strong><small>Runtime and infrastructure</small>");
     expect(html).not.toContain("<span><strong>Platform</strong><small>Runtime and infrastructure</small></span>");
+    // Server HTML shows every pill; the summary waits invisibly for a browser measurement.
+    expect(html).toContain('title="Platform"');
+    expect(html).not.toContain('data-hidden="true" title="Platform"');
+    expect(html).toMatch(
+      /class="k2b-multi-select-trigger__more" data-hidden="true"><span aria-hidden="true">\+1<\/span><span class="k2b-sr-only">1 more selected<\/span>/,
+    );
+
+    const single = renderToString(() => createComponent(MultiSelectInput, { label: "Teams", value: ["platform"], options: [...options] }));
+    expect(single).not.toContain("k2b-multi-select-trigger__more");
   });
 
   test("renders overlapping MultiSelectInput groups with an initial filter", () => {
@@ -702,6 +711,26 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(nextEnabledChoiceIndex(options, 0, 1)).toBe(2);
     expect(nextEnabledChoiceIndex(options, 2, 1)).toBe(0);
     expect(nextEnabledChoiceIndex([{ value: "x", label: "X", disabled: true }], -1, 1)).toBe(-1);
+  });
+
+  test("fits whole pills and reserves room for the summary of the rest", () => {
+    const widths = [60, 40, 50, 30];
+    const visible = (available: number) => fitChoicePills(available, widths, 4, 24).visible;
+    // 180px of pills plus three 4px gaps, whatever room the row gets.
+    expect(fitChoicePills(192, widths, 4, 24)).toEqual({ visible: 4, rowWidth: 192 });
+    expect(fitChoicePills(100, widths, 4, 24).rowWidth).toBe(192);
+    // Layout rounding below half a pixel does not collapse a row given its own width.
+    expect(visible(191.6)).toBe(4);
+    // The summary takes 24px, each kept pill its gap and width: 88, 132, 186.
+    expect(visible(191)).toBe(3);
+    expect(visible(185)).toBe(2);
+    expect(visible(132)).toBe(2);
+    expect(visible(131)).toBe(1);
+    // The first pill stays and truncates, however narrow the strip gets.
+    expect(visible(40)).toBe(1);
+    // No layout yet: nothing collapses.
+    expect(visible(0)).toBe(4);
+    expect(fitChoicePills(100, [], 4, 24)).toEqual({ visible: 0, rowWidth: 0 });
   });
 
   test("aborts stale async option requests and keeps the latest result", async () => {

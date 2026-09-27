@@ -539,6 +539,7 @@ const DateDemo = () => {
 const SelectDemo = () => {
   const [value, setValue] = createSignal("platform");
   const [many, setMany] = createSignal(["platform"]);
+  const [narrow, setNarrow] = createSignal(["platform", "design", "docs"]);
   const [chip, setChip] = createSignal("week");
   return (
     <DemoCard
@@ -548,11 +549,16 @@ const SelectDemo = () => {
         { kind: "component", name: "MultiSelectInput", from: "@k2b/ui" },
         { kind: "component", name: "SelectChip", from: "@k2b/ui" },
       ]}
-      description="Select filters its static options only when searchable is set; MultiSelectInput renders its search field by default. An option color replaces the icon with a dot in Select, and tints the icon and selected pill in MultiSelectInput. SelectChip is the compact form: a 10rem menu with a trailing check marker."
+      description="Select filters its static options only when searchable is set; MultiSelectInput renders its search field by default. An option color replaces the icon with a dot in Select, and tints the icon and selected pill in MultiSelectInput. In a narrow trigger, pills that do not fit collapse into a +N summary. SelectChip is the compact form: a 10rem menu with a trailing check marker."
       code={`<Select label="Team" description="Type to filter the static options." value={team} options={options} onValueChange={setTeam} searchable clearable />
 
 {/* MultiSelectInput always renders its search field */}
 <MultiSelectInput label="Teams" value={teams} onValueChange={setTeams} options={options} clearable />
+
+{/* Pills that do not fit collapse into a +N summary */}
+<div style="width:10rem">
+  <MultiSelectInput label="Teams (narrow)" value={teams} onValueChange={setTeams} options={options} clearable />
+</div>
 
 <Select label="Team (no search)" value={team} onValueChange={setTeam} options={options} />
 
@@ -569,6 +575,9 @@ const SelectDemo = () => {
           clearable
         />
         <MultiSelectInput label="Teams" value={many} onValueChange={setMany} options={options} clearable />
+        <div style="width:10rem">
+          <MultiSelectInput label="Teams (narrow)" value={narrow} onValueChange={setNarrow} options={options} clearable />
+        </div>
         <Select label="Team (no search)" value={value} onValueChange={setValue} options={options} />
         <SelectChip
           aria-label="Range"

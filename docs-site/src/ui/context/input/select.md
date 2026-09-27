@@ -145,6 +145,23 @@ It supports the same static or remote option sources. For remote data, `selected
 The dropdown always opens with a search field, which filters a static option
 list in the browser. Pass `searchable={false}` for a short fixed list.
 
+### Show selections in a narrow trigger
+
+The trigger keeps one row at field height. It shows as many whole pills as fit,
+in selection order, and collapses the rest into a `+N` summary pill. Screen
+readers announce the summary as "N more selected" in the inherited locale, and
+its tooltip lists the hidden labels. The first pill always stays; when even it
+does not fit beside the summary, its label truncates with an ellipsis. Every
+pill is at most `9rem` wide and shows its full label as a tooltip. The dropdown
+still lists every selected option, and Backspace in the open dropdown removes
+the last selection, including a hidden one.
+
+The trigger fills its container. A container sized by its content grows with
+the pills; the field collapses them only while a maximum width or flex
+shrinking holds that container narrower, and shows them again once it has
+room. A flex item that wraps the field needs `min-width: 0` to shrink below its
+pills.
+
 ## SelectChip
 
 `SelectChip` accepts its current `value` directly or through a Solid accessor.
@@ -295,7 +312,7 @@ instead of repeating a visible label.
 
 ## Runtime
 
-Triggers and selected values render in server HTML. Dropdown positioning, keyboard navigation, remote loading, selection, and clearing require hydrated Solid client code.
+Triggers and selected values render in server HTML. Dropdown positioning, keyboard navigation, remote loading, selection, and clearing require hydrated Solid client code. `MultiSelectInput` measures its pills in the browser, so server HTML shows every pill until hydration collapses those that do not fit.
 
 ## Example
 
