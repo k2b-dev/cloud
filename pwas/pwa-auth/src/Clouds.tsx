@@ -243,7 +243,6 @@ export function Clouds(props: { auth: Authenticator; preferences: Preferences; f
           );
         }}
       </For>
-      <p class="auth-recovery">{t().recoveryHelp}</p>
     </div>
   );
 }

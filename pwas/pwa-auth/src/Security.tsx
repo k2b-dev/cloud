@@ -119,12 +119,18 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
     });
   });
   return (
-    <div classList={{ "auth-security--success": success() }}>
+    <div class="auth-security" classList={{ "auth-security--success": success() }}>
       <PanelDialog>
         <PanelDialog.Header
           actions={
-            <Show when={props.mode === "unlock" && !success()}>
-              <IconButton label={t().close} variant="ghost" tooltip={false} onClick={() => props.close()}>
+            <Show when={!success()}>
+              <IconButton
+                label={t().close}
+                variant="ghost"
+                tooltip={false}
+                disabled={props.mode !== "unlock" && busy()}
+                onClick={() => props.close()}
+              >
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Show>
@@ -212,7 +218,7 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                     onValueChange={(v) => setRepeat(v.replace(/[^0-9]/g, "").slice(0, 6))}
                     disabled={busy()}
                   />
-                  <p>{t().pinWarning}</p>
+                  <p class="auth-flow-note">{t().pinWarning}</p>
                 </Show>
               </Show>
 
@@ -234,16 +240,18 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
             </div>
           </Show>
         </PanelDialog.Body>
-        <Show when={props.mode !== "unlock"}>
+        {/* Close lives in the header, so the footer never wraps a row of choices on a phone. */}
+        <Show when={!authenticate()}>
           <PanelDialog.Footer>
-            <div class="auth-dialog-actions">
-              <Button variant="ghost" disabled={busy()} onClick={() => props.close()}>
-                {t().close}
-              </Button>
-
+            <div class="auth-dialog-actions auth-dialog-actions--stack">
+              <Show when={pinEntry()}>
+                <Button disabled={busy() || !valid()} onClick={submitPin}>
+                  {t().saveSecurity}
+                </Button>
+              </Show>
               <Show when={props.mode === "setup"}>
                 <Button
-                  variant="secondary"
+                  variant="ghost"
                   disabled={busy()}
                   onClick={() =>
                     void run(async () => {
@@ -255,12 +263,6 @@ export function Security(props: { vault: Vault; mode: "setup" | "unlock" | "mana
                   {t().continueWithoutPin}
                 </Button>
               </Show>
-              <Show when={pinEntry() && !authenticate()}>
-                <Button disabled={busy() || !valid()} onClick={submitPin}>
-                  {t().saveSecurity}
-                </Button>
-              </Show>
-
               <Show when={props.mode === "reset"}>
                 <Button
                   disabled={busy() || !confirmed()}
