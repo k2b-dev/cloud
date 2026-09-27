@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { einvoice, type Invoice } from "@k2b/stdlib/finance";
 import { PDFDocument } from "pdf-lib";
 import { chromium } from "playwright";
+import { probeDocument, probeTemplate, startGotenbergTrap } from "../../../../../scripts/fixtures/gotenberg-trap";
 import { requireInfraUrl, testFor } from "../../../../../scripts/fixtures/test-infra";
 import { decodePdfRequest } from "../pdf-contracts";
 import { executePdf } from "../pdf-service";
@@ -125,29 +126,23 @@ testFor("gotenberg")(
   "real Gotenberg renders offline HTML and roundtrips Factur-X and XML attachments",
   async () => {
     const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
-    let networkRequests = 0;
-    const trap = Bun.serve({
-      hostname: "0.0.0.0",
-      port: 0,
-      fetch() {
-        networkRequests++;
-        return new Response("unwanted outbound request");
-      },
-    });
-    const url = `http://host.docker.internal:${trap.port}`;
+    const trap = await startGotenbergTrap(config.url);
     try {
-      const output = await executePdf(
-        {
-          operation: "render",
-          html: `<meta http-equiv="refresh" content="0;url=${url}/redirect"><style>@import url('${url}/css'); h1{color:red}</style><img src="${url}/image"><script>fetch('${url}/js')</script><h1>Invoice</h1>`,
-          page: { format: "A5" },
-        },
-        config,
-      );
+      const document = probeDocument(trap.origin, "code-mode");
+      const html = {
+        html: document.html,
+        headerHtml: probeTemplate(trap.origin, "header"),
+        footerHtml: probeTemplate(trap.origin, "footer"),
+      };
+      const unfiltered = await PDFDocument.load(await trap.renderUnfiltered(html));
+      expect(await trap.takeRequests()).toEqual(expect.arrayContaining(document.paths));
+      expect(unfiltered.getPageCount()).toBe(3);
+
+      const output = await executePdf({ operation: "render", ...html, page: { format: "A5" } }, config);
+      expect(await trap.takeRequests()).toEqual([]);
       const parsed = await PDFDocument.load(output.pdf);
       expect(parsed.getPages()).toHaveLength(1);
       expect(parsed.getPages()[0]!.getWidth()).toBeCloseTo((148 / 25.4) * 72, 0);
-      expect(networkRequests).toBe(0);
       const xml = einvoice.serialize(invoice, { format: "zugferd-2.5-en16931" });
       if (!xml.ok) throw new Error(JSON.stringify(xml));
       const invoicePdf = await executePdf(
@@ -167,7 +162,7 @@ testFor("gotenberg")(
       );
       expect((await einvoice.parsePdf(attached.pdf)).ok).toBe(true);
     } finally {
-      await trap.stop(true);
+      await trap.stop();
     }
   },
   60000,
