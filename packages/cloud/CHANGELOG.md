@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.16.1](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.16.0...npm-cloud-v0.16.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **cloud:** keep mixed token colors in compiled stylesheets ([#319](https://github.com/k2b-dev/cloud/issues/319)) ([9b9e937](https://github.com/k2b-dev/cloud/commit/9b9e937fcb10cc8cff9be794e42f851d1993ec28)), closes [#315](https://github.com/k2b-dev/cloud/issues/315)
+* **cloud:** keep the PDF decoder within its memory limit on many-core hosts ([#318](https://github.com/k2b-dev/cloud/issues/318)) ([94cb4ff](https://github.com/k2b-dev/cloud/commit/94cb4ffd73f1f12f2a8e9d06a3174fa12bf004f6)), closes [#314](https://github.com/k2b-dev/cloud/issues/314)
+* **cloud:** show agent and standalone service-account grants in access list tables ([#306](https://github.com/k2b-dev/cloud/issues/306)) ([4114ccf](https://github.com/k2b-dev/cloud/commit/4114ccf921215a56be2545c86a54b7ca3e4a1c36)), closes [#295](https://github.com/k2b-dev/cloud/issues/295)
+* **cloud:** stop page content from shifting when the scrollbar appears ([#309](https://github.com/k2b-dev/cloud/issues/309)) ([aef9539](https://github.com/k2b-dev/cloud/commit/aef9539bb169a87693f24d98a7783df116d4c80e)), closes [#287](https://github.com/k2b-dev/cloud/issues/287)
+
 ## [0.16.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.15.0...npm-cloud-v0.16.0) (2026-09-26)
 
 

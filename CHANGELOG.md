@@ -3,6 +3,31 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.20.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.3...cloud-v0.20.0) (2026-09-27)
+
+
+### Features
+
+* **cli:** remove a profile with cld profile rm ([#304](https://github.com/k2b-dev/cloud/issues/304)) ([961c12a](https://github.com/k2b-dev/cloud/commit/961c12affc66b0770fdef7b143a27a95dbfe0d75)), closes [#281](https://github.com/k2b-dev/cloud/issues/281)
+
+
+### Bug Fixes
+
+* **apps:** color the Files selection marquee and show the Grids card focus ring ([#317](https://github.com/k2b-dev/cloud/issues/317)) ([c0d1c95](https://github.com/k2b-dev/cloud/commit/c0d1c95a41eab70aa1283f39e9913c4d19fc8417)), closes [#313](https://github.com/k2b-dev/cloud/issues/313)
+* **cli:** print help for core cld commands instead of running them ([#299](https://github.com/k2b-dev/cloud/issues/299)) ([73641dd](https://github.com/k2b-dev/cloud/commit/73641ddac48f6fe0363f0e3261cff36c141d8bfe)), closes [#282](https://github.com/k2b-dev/cloud/issues/282)
+* **cloud:** keep mixed token colors in compiled stylesheets ([#319](https://github.com/k2b-dev/cloud/issues/319)) ([9b9e937](https://github.com/k2b-dev/cloud/commit/9b9e937fcb10cc8cff9be794e42f851d1993ec28)), closes [#315](https://github.com/k2b-dev/cloud/issues/315)
+* **cloud:** keep the PDF decoder within its memory limit on many-core hosts ([#318](https://github.com/k2b-dev/cloud/issues/318)) ([94cb4ff](https://github.com/k2b-dev/cloud/commit/94cb4ffd73f1f12f2a8e9d06a3174fa12bf004f6)), closes [#314](https://github.com/k2b-dev/cloud/issues/314)
+* **cloud:** show agent and standalone service-account grants in access list tables ([#306](https://github.com/k2b-dev/cloud/issues/306)) ([4114ccf](https://github.com/k2b-dev/cloud/commit/4114ccf921215a56be2545c86a54b7ca3e4a1c36)), closes [#295](https://github.com/k2b-dev/cloud/issues/295)
+* **cloud:** stop page content from shifting when the scrollbar appears ([#309](https://github.com/k2b-dev/cloud/issues/309)) ([aef9539](https://github.com/k2b-dev/cloud/commit/aef9539bb169a87693f24d98a7783df116d4c80e)), closes [#287](https://github.com/k2b-dev/cloud/issues/287)
+* **mail:** let mailboxes take turns hydrating message bodies ([#311](https://github.com/k2b-dev/cloud/issues/311)) ([718f335](https://github.com/k2b-dev/cloud/commit/718f3357eb6ff85cbe6282019f5cd5a23f820427)), closes [#294](https://github.com/k2b-dev/cloud/issues/294)
+* **mail:** recover a transiently degraded mailbox on its next sync ([#307](https://github.com/k2b-dev/cloud/issues/307)) ([8b0f9cb](https://github.com/k2b-dev/cloud/commit/8b0f9cb1a950e2bece7e91ee0cbcae985cf45378)), closes [#291](https://github.com/k2b-dev/cloud/issues/291)
+* **mail:** refresh the open reader when message body hydration completes ([#301](https://github.com/k2b-dev/cloud/issues/301)) ([d2a43d4](https://github.com/k2b-dev/cloud/commit/d2a43d4f864af45ceddd7d01e493ccd9cdcfc46f)), closes [#293](https://github.com/k2b-dev/cloud/issues/293)
+* **mail:** stop a hung provider rediscovery from starving other mailboxes ([#302](https://github.com/k2b-dev/cloud/issues/302)) ([2df030c](https://github.com/k2b-dev/cloud/commit/2df030cd49cccb81530a420038a9609cd3b66a61)), closes [#292](https://github.com/k2b-dev/cloud/issues/292)
+* **notebooks:** rewrite note links to mirror file paths in cld notebooks pull ([#308](https://github.com/k2b-dev/cloud/issues/308)) ([1fb425a](https://github.com/k2b-dev/cloud/commit/1fb425a658050a2e61c93a84a63b16e421f15791)), closes [#277](https://github.com/k2b-dev/cloud/issues/277)
+* **spaces:** show one avatar initials style, localize the detail Edit button, and stop claim clicks leaking computations ([#316](https://github.com/k2b-dev/cloud/issues/316)) ([970bc87](https://github.com/k2b-dev/cloud/commit/970bc87416f996dadfa8cfcd917656576e0cf322))
+* **spaces:** show the claim holder like an assignee, confirm take-overs, and add the card claim tooltip ([#298](https://github.com/k2b-dev/cloud/issues/298)) ([6524b8b](https://github.com/k2b-dev/cloud/commit/6524b8b13b58634f25b4ebdea81e8593a2bfb258)), closes [#296](https://github.com/k2b-dev/cloud/issues/296) [#285](https://github.com/k2b-dev/cloud/issues/285)
+* **spaces:** show where a dragged card will land on the Kanban board ([#303](https://github.com/k2b-dev/cloud/issues/303)) ([201e3e3](https://github.com/k2b-dev/cloud/commit/201e3e347a797627543ef426d829d61fb9571fbb)), closes [#288](https://github.com/k2b-dev/cloud/issues/288)
+
 ## [0.19.3](https://github.com/k2b-dev/cloud/compare/cloud-v0.19.2...cloud-v0.19.3) (2026-09-26)
 
 
