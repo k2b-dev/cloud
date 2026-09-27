@@ -80,7 +80,8 @@ the agent writes or edits a `.md` file with `write_file` and calls
 needs HTML, it writes an `.html` file and calls `html_to_pdf`. Its optional
 inputs are a CSS file or inline CSS of up to 32 KiB, both applied after the
 document's own styles; header and footer HTML files; up to 64 conversation
-files as named assets, referenced by file name only; and `page` with `format`
+files as named assets, referenced by file name only with `#`, `?`, `%`, and `:`
+percent-encoded; and `page` with `format`
 (`A4` by default, `A3`, `A5`, `Letter`, or `Legal`), `landscape`, and
 millimeter `margin` values (15 by default). The HTML source must be
 assistant-owned; CSS, header, footer, and assets can be uploads. All inputs share

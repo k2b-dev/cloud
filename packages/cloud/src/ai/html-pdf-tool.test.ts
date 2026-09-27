@@ -61,12 +61,12 @@ const serverTool = (dependencies: Parameters<typeof createCloudAiHtmlToPdfTool>[
 };
 
 describe("html_to_pdf", () => {
-  test("renders the HTML with its CSS, header, footer, assets, and page, then writes the sibling PDF", async () => {
+  test("renders the HTML with uploaded CSS, header, footer, and assets and the page, then writes the sibling PDF", async () => {
     const files = conversation({
       "/letters/offer.html": { content: '<html><body><img src="logo.png"><h1 class="title">Offer</h1></body></html>' },
-      "/letters/offer.css": { content: ".title { color: teal; }", mediaType: "text/css" },
-      "/letters/header.html": { content: "<p>Example Ltd.</p>" },
-      "/letters/footer.html": { content: '<p><span class="pageNumber"></span></p>' },
+      "/letters/offer.css": { content: ".title { color: teal; }", mediaType: "text/css", origin: "user" },
+      "/letters/header.html": { content: "<p>Example Ltd.</p>", origin: "user" },
+      "/letters/footer.html": { content: '<p><span class="pageNumber"></span></p>', origin: "user" },
       "/uploads/logo.png": { content: new Uint8Array([137, 80, 78, 71]), mediaType: "image/png", origin: "user" },
       "/uploads/brand.woff2": { content: new Uint8Array([119, 79, 70, 50, 1]), mediaType: "font/woff2", origin: "user" },
     });
@@ -125,6 +125,8 @@ describe("html_to_pdf", () => {
     expect(tool.def.promptHint).toContain("write_file");
     expect(tool.def.promptHint).toContain("present");
     expect(tool.def.description).toContain("offline");
+    expect(tool.def.description).toContain("MathML");
+    expect(tool.def.description).toContain("percent-encode");
   });
 
   test("defaults to an A4 portrait page and leaves a document without separate CSS unchanged", async () => {
@@ -163,7 +165,8 @@ describe("html_to_pdf", () => {
       },
     });
 
-    await expect(tool.run({ path: "/project/offer.html" }, context() as never)).rejects.toThrow("Project files are read-only");
+    await expect(tool.run({ path: "/project/offer.html" }, context() as never)).rejects.toThrow("converts only conversation files");
+    await expect(tool.run({ path: "/skills/brand/letter.html" }, context() as never)).rejects.toThrow("converts only conversation files");
     await expect(tool.run({ path: "/notes.md" }, context() as never)).rejects.toThrow("requires a .html file");
     await expect(tool.run({ path: "/upload.html" }, context() as never)).rejects.toThrow("assistant-owned HTML file");
     await expect(tool.run({ path: "/missing.html" }, context() as never)).rejects.toThrow("No such file: /missing.html");

@@ -18,7 +18,10 @@ const readPdf = async (pdf: Uint8Array) => {
     return {
       pages: document.numPages,
       size: [page.view[2]! - page.view[0]!, page.view[3]! - page.view[1]!],
-      images: operators.fnArray.filter((operator) => operator === OPS.paintImageXObject).length,
+      // Intrinsic image sizes: a missing file prints Chromium's broken-image icon instead of the 1x1 PNG.
+      images: operators.fnArray.flatMap((operator, index) =>
+        operator === OPS.paintImageXObject ? [operators.argsArray[index].slice(1, 3)] : [],
+      ),
       text: text.items.map((item) => ("str" in item ? item.str : "")).join(" "),
     };
   } finally {
@@ -79,12 +82,12 @@ suiteFor("gotenberg")("html_to_pdf in Gotenberg", () => {
     await trap?.stop();
   });
 
-  test("prints CSS, a named image, a data: image, a footer, and the page setup", async () => {
+  test("prints CSS, named images, a data: image, a footer, and the page setup", async () => {
     const { result, pdf } = await convert(
       config,
       {
         "/offer/offer.html": {
-          content: `<html><head><style>h1 { color: black; }</style></head><body><h1>Quarterly offer</h1><img src="logo.png" width="40" height="40"><img src="data:image/png;base64,${PNG}" width="40" height="40"></body></html>`,
+          content: `<html><head><style>h1 { color: black; }</style></head><body><h1>Quarterly offer</h1><img src="logo.png" width="40" height="40"><img src="seal%232.png" width="40" height="40"><img src="data:image/png;base64,${PNG}" width="40" height="40"></body></html>`,
           mediaType: "text/html",
         },
         "/offer/print.css": { content: 'h1::after { content: " styled by file"; }', mediaType: "text/css" },
@@ -93,13 +96,15 @@ suiteFor("gotenberg")("html_to_pdf in Gotenberg", () => {
           mediaType: "text/html",
         },
         "/logo.png": { content: new Uint8Array(Buffer.from(PNG, "base64")), mediaType: "image/png" },
+        // A name with a URL-significant character loads through its percent-encoded reference.
+        "/uploads/seal#2.png": { content: new Uint8Array(Buffer.from(PNG, "base64")), mediaType: "image/png" },
       },
       {
         path: "/offer/offer.html",
         cssPath: "/offer/print.css",
         customCss: 'body::after { content: "styled inline"; }',
         footerPath: "/offer/footer.html",
-        assets: ["/logo.png"],
+        assets: ["/logo.png", "/uploads/seal#2.png"],
         page: { format: "A5", landscape: true, margin: { bottom: 20 } },
       },
     );
@@ -116,7 +121,11 @@ suiteFor("gotenberg")("html_to_pdf in Gotenberg", () => {
     expect(printed.text).toContain("styled by file");
     expect(printed.text).toContain("styled inline");
     expect(printed.text).toContain("Footer page");
-    expect(printed.images).toBe(2);
+    expect(printed.images).toEqual([
+      [1, 1],
+      [1, 1],
+      [1, 1],
+    ]);
   }, 60_000);
 
   test("requests nothing and runs no script from the HTML, CSS, header, or footer", async () => {
