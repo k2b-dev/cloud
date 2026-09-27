@@ -103,6 +103,7 @@
   },
   "devDependencies": {
     "@k2b/stdlib": "0.26.0",
+    "@nats-io/transport-node": "3.4.0",
     "jose": "6.2.12",
     "zod": "4.6.5",
     "@biomejs/biome": "2.5.14",

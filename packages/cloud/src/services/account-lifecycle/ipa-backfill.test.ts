@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { testFor } from "../../../../../scripts/fixtures/test-infra";
+import { testFor, testSyncNamespace } from "../../../../../scripts/fixtures/test-infra";
 
 const fixture = async (scenario: string) => {
   // Isolate module mocks and replace this module's SQL import only.
@@ -214,7 +214,7 @@ testFor("nats")(
   const { connect } = await import("@nats-io/transport-node");
   const { jetstreamManager } = await import(Bun.resolveSync("@nats-io/jetstream", new URL(".", import.meta.resolve("@k2b/sync")).pathname));
   const connection = await connect({ servers: (process.env.CLOUD_TEST_NATS_SERVERS ?? "").split(","), timeout: 2000 });
-  const namespace = "ipa-backfill-test-" + crypto.randomUUID();
+  const namespace = ${JSON.stringify(testSyncNamespace("ipa-backfill"))};
   const attempted = [];
   let failAfterAcceptance = true;
   const makeRun = () => {

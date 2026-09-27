@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
-import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const syncTest = testFor("database", "nats");
 
@@ -22,7 +22,7 @@ syncTest(
       ignoreClusterUpdates: true,
       name: "pulse-deletion-test",
     });
-    const namespace = `pulse-test-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("pulse-lifecycle");
     const sync = createSync({ connection, namespace, application: "pulse", defaults: { replicas: 1 }, observe: observeSyncEvent });
     const baseId = crypto.randomUUID();
     const publicBaseId = newShortId();

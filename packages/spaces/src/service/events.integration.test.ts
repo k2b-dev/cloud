@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 const natsTest = testFor("nats");
 
@@ -14,7 +14,12 @@ natsTest(
       ignoreClusterUpdates: true,
       name: "spaces-topic-test",
     });
-    const sync = createSync({ connection, namespace: `test-${crypto.randomUUID()}`, application: "spaces", defaults: { replicas: 1 } });
+    const sync = createSync({
+      connection,
+      namespace: testSyncNamespace("spaces-events"),
+      application: "spaces",
+      defaults: { replicas: 1 },
+    });
     const abort = new AbortController();
     bindProcessSync(sync);
     try {

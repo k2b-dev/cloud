@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SQL, sql } from "bun";
-import { natsServers, requireDatabaseUrl, testFor } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 /**
  * The shared Yjs log (#166): one topic for every note keeps the JetStream
@@ -144,7 +144,7 @@ if (!databaseName) {
     auth: { user?: string; pass?: string } = {},
   ): Promise<void> => {
     const connection = await connect({ servers, ignoreClusterUpdates: true, ...auth });
-    const namespace = `shared-log-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("notebooks-shared-log");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const manager = await jetstreamManager(connection);

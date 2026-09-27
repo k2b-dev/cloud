@@ -14,7 +14,12 @@ import { runGridsWorkflowRun } from "./workflow-runtime";
 
 const [runId, checkpoint, namespace, receiverPort] = process.argv.slice(2);
 const database = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
-if (!/^\/grids_verify_[a-f0-9]{16}_test$/.test(database.pathname) || !runId || !namespace?.startsWith("grids-crash-")) {
+if (
+  !/^\/grids_verify_[a-f0-9]{16}_test$/.test(database.pathname) ||
+  !runId ||
+  !namespace ||
+  !/^test-[0-9a-f]{8}-grids-crash-/.test(namespace)
+) {
   throw new Error("Crash worker requires an isolated verification database and namespace");
 }
 const connection = await connect({

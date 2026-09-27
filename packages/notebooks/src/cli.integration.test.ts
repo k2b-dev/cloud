@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { natsServers, testFor } from "../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 
 /** The notebooks module as a package plugin in a private config home; cld loads it like any installed module. */
@@ -82,7 +82,7 @@ if (process.env.NOTEBOOKS_CLI_CHILD !== "1") {
     const { default: app } = await import("./api");
 
     const connection = await connect({ servers: natsServers() });
-    const namespace = `notebooks-cli-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("notebooks-cli");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const user: User = {

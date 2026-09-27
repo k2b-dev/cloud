@@ -18,10 +18,15 @@
  * runtime aliases for `CLOUD_TEST_*` are exported into every child before Bun
  * starts because Bun's default `redis` handle reads `REDIS_URL` at startup,
  * ahead of any preload.
+ *
+ * With `CLOUD_TEST_NATS_SERVERS` set, the runner first deletes the test Sync
+ * namespaces that killed test processes left on the broker
+ * (`scripts/fixtures/test-sync.ts`).
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { applyTestRuntimeEnv } from "./fixtures/test-infra-env";
+import { applyTestRuntimeEnv, readTestTarget } from "./fixtures/test-infra-env";
+import { sweepStaleTestNamespaces } from "./fixtures/test-sync";
 
 type PackageJson = {
   name?: string;
@@ -169,6 +174,14 @@ const run = async (): Promise<void> => {
   const env: Record<string, string | undefined> = { ...Bun.env };
   applyTestRuntimeEnv(env);
   const failed: string[] = [];
+
+  const natsTarget = readTestTarget(process.env, "nats");
+  if (natsTarget) {
+    const swept = await sweepStaleTestNamespaces(natsTarget.split(",").map((server) => server.trim()));
+    if (swept.namespaces > 0) {
+      console.log(`Removed ${swept.streams} stream(s) of ${swept.namespaces} abandoned test Sync namespace(s).`);
+    }
+  }
 
   if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {
     console.log("\n=== integration database bootstrap ===");

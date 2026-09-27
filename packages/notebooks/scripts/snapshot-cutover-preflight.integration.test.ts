@@ -3,7 +3,7 @@ import { createSync } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
 import { SQL } from "bun";
-import { natsServers, requireDatabaseUrl, testFor } from "../../../scripts/fixtures/test-infra";
+import { natsServers, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 
 testFor("database", "nats")(
   "cutover preflight reads coverage and old backlog without provisioning resources",
@@ -16,7 +16,7 @@ testFor("database", "nats")(
     const admin = new SQL(url);
     const database = new SQL(target);
     const connection = await connect({ servers: natsServers() });
-    const namespace = `snapshot-cutover-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("notebooks-snapshot-cutover");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     const manager = await jetstreamManager(connection);
     let created = false;

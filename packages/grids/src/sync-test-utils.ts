@@ -4,11 +4,15 @@ import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
 import { requireInfra, testInfra } from "../../../scripts/fixtures/test-infra";
 
-/** Isolated broker session on `CLOUD_TEST_NATS_SERVERS`; `stop` removes only this namespace's streams. */
+/**
+ * Isolated broker session on `CLOUD_TEST_NATS_SERVERS`; `stop` removes only this namespace's streams.
+ * The verification preload keeps it open past the fixture's cleanup, so its `test-` namespace is not
+ * derived from the process namespace.
+ */
 export const connectGridsTestSync = async () => {
   await requireInfra("nats");
   const connection = await connect({ servers: testInfra.nats, ignoreClusterUpdates: true });
-  const namespace = `grids-test-${Bun.randomUUIDv7()}`;
+  const namespace = `test-grids-${Bun.randomUUIDv7()}`;
   const sync = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
   bindProcessSync(sync);
   const stop = async () => {

@@ -4,7 +4,7 @@ import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import { createSync, type Worker } from "@k2b/sync";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { connect } from "@nats-io/transport-node";
-import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { SNAPSHOT_JOB_CONFIG, yjsSnapshotWorker } from "./yjs-snapshot-worker";
 import { createYjsTopic } from "./yjs-sync";
 
@@ -12,7 +12,7 @@ testFor("nats")(
   "snapshot ordering serializes the same note across competing workers while other notes proceed",
   async () => {
     const connection = await connect({ servers: natsServers() });
-    const namespace = `snapshot-ordering-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("notebooks-snapshot-ordering");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const workers: Worker[] = [];

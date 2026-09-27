@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { sql } from "bun";
-import { natsServers, testFor } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 
 /**
  * An agent reads and edits a note through the CLI's HTTP routes while the note
@@ -45,7 +45,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
     const { default: app } = await import("./index");
 
     const connection = await connect({ servers: natsServers() });
-    const namespace = `notebooks-live-edit-${crypto.randomUUID()}`;
+    const namespace = testSyncNamespace("notebooks-live-edit");
     const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
     bindProcessSync(sync);
     const user: User = {
