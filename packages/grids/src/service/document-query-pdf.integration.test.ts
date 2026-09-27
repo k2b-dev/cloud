@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { renderDocumentHtmlPdf } from "./document-rendering";
+import { PDFDocument } from "pdf-lib";
+import { probeCss, probeDocument, probeTemplate, startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
+import { requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { renderDocumentHtmlPdf, renderDocumentPdfPreview } from "./document-rendering";
 
 // Explicit infrastructure test: requires Gotenberg and Poppler's pdftotext.
 // Keep the optional review directory to inspect the actual paginated output.
@@ -67,4 +69,51 @@ renderTest(
     }
   },
   90_000,
+);
+
+testFor("gotenberg")(
+  "document templates render the body, page CSS, header, and footer offline",
+  async () => {
+    const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 1_000_000, maxPdfBytes: 10_000_000 };
+    const pages = async (pdf: Uint8Array) => (await PDFDocument.load(pdf)).getPageCount();
+    const trap = await startGotenbergTrap(config.url);
+    try {
+      const document = probeDocument(trap.origin, "body");
+      const css = probeCss(trap.origin, "page-css");
+      const content = {
+        body: document.html,
+        css: css.css,
+        header: probeTemplate(trap.origin, "header"),
+        footer: probeTemplate(trap.origin, "footer"),
+      };
+
+      const preview = await renderDocumentPdfPreview(
+        { renderer: { kind: "html", numberTemplate: "DOC-1", filenameTemplate: "offline.pdf", ...content } },
+        {},
+        "offline.pdf",
+        config,
+        "en",
+      );
+      if (!preview.ok) throw new Error(preview.error.message);
+      expect(await trap.takeRequests()).toEqual([]);
+      expect(await pages(preview.pdf.pdf)).toBe(1);
+
+      const generated = await renderDocumentHtmlPdf({ content, data: {}, filename: "offline.pdf" }, "en", { config });
+      if (!generated.ok) throw generated.error;
+      expect(await trap.takeRequests()).toEqual([]);
+      expect(await pages(generated.data.pdf)).toBe(1);
+
+      // The same composed HTML without the offline mode reaches the trap and runs its scripts.
+      const unfiltered = await trap.renderUnfiltered({
+        html: preview.html,
+        headerHtml: preview.headerHtml,
+        footerHtml: preview.footerHtml,
+      });
+      expect(await trap.takeRequests()).toEqual(expect.arrayContaining([...document.paths, ...css.paths]));
+      expect(await pages(unfiltered)).toBe(4);
+    } finally {
+      await trap.stop();
+    }
+  },
+  60_000,
 );

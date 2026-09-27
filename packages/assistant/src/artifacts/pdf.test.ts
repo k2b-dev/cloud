@@ -3,7 +3,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { createArtifactServiceRoutes } from "./api";
 import { decodePdfRequest, encodePdfRequest, PdfRequest } from "./pdf-contracts";
-import { authorizePdf, executePdf, offlinePdfHtml, studioPdf } from "./pdf-service";
+import { authorizePdf, executePdf, studioPdf } from "./pdf-service";
 import { ArtifactError, artifacts } from "./service";
 import { testIdentity } from "./test-identity";
 
@@ -32,6 +32,8 @@ test("HTML render forwards page options, assets, tagging and offline policy", as
     {
       operation: "render",
       html: "<style>h1{color:red}</style><h1>Hello</h1>",
+      headerHtml: "<p>Header</p><script>document.title = 'header'</script>",
+      footerHtml: "<p>Footer</p><script>document.title = 'footer'</script>",
       assets: [{ name: "logo.png", data: new Blob(["png"]) }],
       page: { format: "A5", landscape: true, margin: { top: 10 } },
     },
@@ -46,22 +48,17 @@ test("HTML render forwards page options, assets, tagging and offline policy", as
         expect(form.get("generateTaggedPdf")).toBe("true");
         expect(form.get("preferCssPageSize")).toBe("false");
         const files = form.getAll("files") as File[];
-        expect(files.map((file) => file.name)).toEqual(["index.html", "logo.png"]);
-        expect(await files[0]!.text()).toContain("default-src 'none'");
+        expect(files.map((file) => file.name)).toEqual(["index.html", "header.html", "footer.html", "logo.png"]);
+        for (const file of files.slice(0, 3)) {
+          expect(await file.text()).toContain("default-src 'none'");
+          expect(await file.text()).not.toContain("<script");
+        }
+        expect(await files[0]!.text()).toStartWith('<!doctype html><meta charset="utf-8">');
         expect(await files[0]!.text()).toContain("h1{color:red}");
         return new Response("%PDF-ok", { headers: { "Content-Type": "application/pdf" } });
       },
     },
   );
-});
-
-test("offline HTML removes redirect and executable document elements", async () => {
-  const html = await offlinePdfHtml(
-    '<META http-equiv="refresh" content="0;url=http://private"><base href="http://private/"><script>fetch("http://private")</script><iframe src="http://private"></iframe><p>Invoice</p>',
-  );
-  expect(html).not.toContain("http://private");
-  expect(html).toContain("<p>Invoice</p>");
-  expect(html).toContain("form-action 'none'");
 });
 
 test("PDF rejects unsupported options, asset collisions and configured byte overflows", async () => {

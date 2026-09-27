@@ -91,6 +91,7 @@ describe("Markdown PDF renderer", () => {
       },
     });
 
+    expect(uploaded).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
     expect(uploaded).toContain("#f7f7f8");
     expect(uploaded).toContain("<h1>Rendered</h1>");
     expect(new TextDecoder().decode(result.pdf)).toBe("%PDF-test");

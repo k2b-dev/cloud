@@ -35,8 +35,10 @@ CSS `@page` rules. `tagged` defaults to true, which requests a tagged PDF but do
 not certify accessibility.
 
 Studio styles are not inherited. Scripts, redirects, frames and outbound
-resources are blocked. Supply local assets or data URLs; this is not a URL-to-PDF
-browser or a JavaScript rendering environment.
+resources are blocked. MathML (`math`) and the SVG elements `foreignObject` and
+`desc` are removed; write formulas and labels as HTML and CSS or as SVG text.
+Supply local assets or data URLs; this is not a URL-to-PDF browser or a
+JavaScript rendering environment.
 
 ## Attach files
 

@@ -40,8 +40,8 @@ test("query PDFs render multiple rows and nested items through the shared bounde
   expect(rendered.ok).toBe(true);
   expect(files.get("index.html")).toContain("<h2>&lt;First&gt;</h2><p>12.30</p><h2>Second</h2><p>42.00</p>");
   expect(files.get("index.html")).toContain("break-before: page");
-  expect(files.get("header.html")).toBe("<span>PDF-1</span>");
-  expect(files.get("footer.html")).toBe("<span>Report</span>");
+  expect(files.get("header.html")).toEndWith("<span>PDF-1</span>");
+  expect(files.get("footer.html")).toEndWith("<span>Report</span>");
 });
 
 test("query PDF template contracts reject unavailable record roots and malformed Liquid", () => {

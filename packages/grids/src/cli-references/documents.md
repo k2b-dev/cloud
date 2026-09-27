@@ -174,7 +174,10 @@ optional output until its data is available. Test the template with records that
 leave optional fields empty using `preview-data`, not only a fully filled example.
 HTML output is escaped by
 default. Use `raw` only for trusted intentional HTML. Do not assume other template
-languages' functions or JavaScript execution.
+languages' functions or JavaScript execution. PDFs render offline: scripts do not
+run and remote images, stylesheets, and fonts do not load. Use `images[].url`,
+`barcode_data_url`, or other `data:` URLs for images. `app.logoDataUri` prints a
+logo uploaded in the Cloud administration, not one set as a web address.
 The Grids-specific filters are `json` (JSON serialization, null for nullish input)
 and `barcode_data_url`. Profile JSON rendering uses JSON serialization rather than
 HTML escaping; XML has its own stricter escaping rules below.
