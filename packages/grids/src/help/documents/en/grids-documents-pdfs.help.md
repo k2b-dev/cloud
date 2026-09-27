@@ -112,6 +112,8 @@ A template has one data part and up to four layout parts. The GQL source is rend
 | Footer | Liquid + HTML | Optional footer shown on each page. | Legal footer, bank data, and page placeholders such as `<span class="pageNumber"></span>` and `<span class="totalPages"></span>`. |
 | Page CSS | Liquid + CSS | Optional CSS injected into the PDF body document. | @page size/margins, table headers, page breaks, print typography. |
 
+PDFs render offline: scripts do not run, and remote images, stylesheets, and fonts do not load. For images, use record images, `app.logoDataUri`, `barcode_data_url`, or other `data:` URLs.
+
 ## Understand the available data {icon="layout-grid"}
 
 The Data tab is the source of truth for the current preview record. It shows the exact shape Liquid receives after the GQL source has run. Copy paths from this tree instead of guessing object shapes.

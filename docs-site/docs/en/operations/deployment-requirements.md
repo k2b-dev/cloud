@@ -193,7 +193,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | FreeIPA | `freeipa.enable`, connection, service credentials, trusted CA and group rules. Configure and explicitly enable the integration in Core administration; environment bootstrap is not supported. | Follow [FreeIPA setup](/en/docs/operations/freeipa), test TLS/login, and preview sync scope before directory changes. |
 | AI | `ai.enabled`, `ai.model_profiles_json`, selected model IDs, profile credentials/endpoint and applicable model access grants | Follow [Models and providers](/en/docs/ai/models-and-providers). An installed Assistant is not an enabled or authorized model. Private models need reachable inference endpoints; hosted models need provider credentials. |
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
-| HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). In Dev the service origin is `http://gotenberg:3000`; starting its container does not populate the Cloud setting. |
+| HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). In Dev the service origin is `http://gotenberg:3000`; starting its container does not populate the Cloud setting. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
 | City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but the setting must still be configured. Forecast access is a separate dependency. |
 
@@ -204,6 +204,27 @@ server-side `FILE_PROXY_TOKEN` must match Cloud's Files (legacy) token, and its
 Files (`filesv2`) uses the separate Filegate v6 root and lease API; see
 [Files](/en/apps/filesv2). The local development daemon is v6 and cannot serve
 Files (legacy).
+
+### Keep Gotenberg offline
+
+Cloud renders all HTML offline and loads assets only from request files and
+`data:` URLs, so it never needs Gotenberg to load a URL or run JavaScript. Run
+a Gotenberg instance dedicated to Cloud and let it enforce the same:
+
+- start it with `--chromium-disable-javascript=true`;
+- start it with `--chromium-allow-list='^file:///tmp/.*'`, which confines
+  Chromium to Gotenberg's request directory. `data:` URLs keep working. If you
+  use `--chromium-deny-list` instead, for example to block private address
+  ranges, keep its default `^file:(?!//\/tmp/).*` entry, because setting the
+  flag replaces the default;
+- give the container no outbound network access: attach it only to a private
+  network through which Cloud services reach it, with no route to other
+  internal services, cloud metadata endpoints, or the internet.
+
+Keep the Gotenberg API reachable only by Cloud services. Its other routes, such
+as URL conversion, load remote content by design. After changing the flags,
+render a PDF that contains an image, such as a Grids document with a record
+image, to confirm that assets still load.
 
 ## Bring up a fresh installation
 

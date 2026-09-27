@@ -780,7 +780,7 @@ steps:
         await reopenForReplay(runId);
         expect(await drive(runId)).toBe("succeeded");
         expect(await sql`SELECT id FROM grids.documents WHERE workflow_run_id = ${runId}::uuid`).toHaveLength(4);
-        expect(pdfBodies).toEqual(["<p>Draft task</p>"]);
+        expect(pdfBodies).toEqual([expect.stringMatching(/<p>Draft task<\/p>$/)]);
         const nextReport = await queueRun(fixture, { plan: compiled.plan, inputs: { approved: true } });
         await sql`UPDATE grids.workflow_run_profile SET channel = 'schedule' WHERE run_id = ${nextReport}::uuid`;
         expect(await drive(nextReport)).toBe("succeeded");
@@ -789,7 +789,7 @@ steps:
         expect(nextDocuments).toHaveLength(4);
         expect(new Set(nextDocuments.map((document) => document.query_data_id)).size).toBe(1);
         expect(nextDocuments[0]?.query_data_id).not.toBe(documents[0]?.query_data_id);
-        expect(pdfBodies).toEqual(["<p>Draft task</p>", "<p>Changed later</p>"]);
+        expect(pdfBodies).toEqual([expect.stringMatching(/<p>Draft task<\/p>$/), expect.stringMatching(/<p>Changed later<\/p>$/)]);
         await expect(
           (async () => {
             await sql`DELETE FROM grids.workflow_query_data WHERE run_id = ${runId}::uuid`;

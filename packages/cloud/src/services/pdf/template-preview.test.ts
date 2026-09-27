@@ -43,11 +43,41 @@ describe("template PDF preview renderer", () => {
       expect(result.headerHtml).toBe("<p>Header</p>");
       expect(result.footerHtml).toBe("<p>INV-1</p>");
       expect(files.get("index.html")).toContain("<p>&lt;Ada&gt;</p>");
-      expect(files.get("header.html")).toBe("<p>Header</p>");
-      expect(files.get("footer.html")).toBe("<p>INV-1</p>");
+      expect(files.get("header.html")).toEndWith("<p>Header</p>");
+      expect(files.get("footer.html")).toEndWith("<p>INV-1</p>");
       expect(result.pdf.contentType).toBe("application/pdf");
       expect(result.pdf.pdf.byteLength).toBeGreaterThan(0);
     }
+  });
+
+  test("sends the body, page CSS, header, and footer in offline mode", async () => {
+    const files = new Map<string, string>();
+    const result = await renderTemplatePdfPreview(
+      {
+        htmlTemplate: "<p>{{ name }}</p><script>document.title = 'body'</script>",
+        headerHtmlTemplate: "<p>Header</p><script>document.title = 'header'</script>",
+        footerHtmlTemplate: "<p>Footer</p><script>document.title = 'footer'</script>",
+        pageCssTemplate: "</style><script>document.title = 'page css'</script><style>",
+        data: { name: "Ada" },
+      },
+      {
+        config: baseConfig,
+        fetch: async (_url, init) => {
+          for (const file of (init?.body as FormData).getAll("files")) {
+            if (file instanceof File) files.set(file.name, await file.text());
+          }
+          return pdfResponse();
+        },
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    expect([...files.keys()]).toEqual(["index.html", "header.html", "footer.html"]);
+    for (const html of files.values()) {
+      expect(html).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
+      expect(html).not.toContain("<script");
+    }
+    expect(files.get("index.html")).toContain("<p>Ada</p>");
   });
 
   test("reports Liquid failures as template errors before PDF rendering", async () => {

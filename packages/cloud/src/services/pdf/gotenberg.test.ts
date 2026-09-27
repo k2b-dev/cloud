@@ -49,6 +49,48 @@ describe("Gotenberg PDF renderer", () => {
     expect((calls[0]?.init.body as FormData).get("printBackground")).toBe("true");
   });
 
+  test("sends the document, header, and footer in offline mode", async () => {
+    const files = new Map<string, string>();
+    await renderHtmlToPdfWithConfig(
+      {
+        html: "<h1>Hello</h1><script>document.title = 'x'</script>",
+        headerHtml: '<p>Head</p><iframe src="http://remote.test/"></iframe>',
+        footerHtml: '<p>Foot</p><meta http-equiv="refresh" content="0;url=http://remote.test/">',
+      },
+      baseConfig,
+      {
+        fetch: async (_url, init) => {
+          for (const file of (init?.body as FormData).getAll("files")) {
+            if (file instanceof File) files.set(file.name, await file.text());
+          }
+          return pdfResponse();
+        },
+      },
+    );
+
+    for (const [name, content] of Object.entries({
+      "index.html": "<h1>Hello</h1>",
+      "header.html": "<p>Head</p>",
+      "footer.html": "<p>Foot</p>",
+    })) {
+      expect(files.get(name)).toStartWith('<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy"');
+      expect(files.get(name)).toEndWith(content);
+    }
+  });
+
+  test("measures the input budget on the caller's HTML", async () => {
+    const html = "x".repeat(baseConfig.maxHtmlBytes);
+    let sent = 0;
+    await renderHtmlToPdfWithConfig({ html }, baseConfig, {
+      fetch: async (_url, init) => {
+        sent = ((init?.body as FormData).get("files") as File).size;
+        return pdfResponse();
+      },
+    });
+
+    expect(sent).toBeGreaterThan(baseConfig.maxHtmlBytes);
+  });
+
   test("adds basic auth only when credentials are configured", async () => {
     let authHeader = "";
     await renderHtmlToPdfWithConfig(

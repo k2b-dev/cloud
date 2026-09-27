@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-08-22
+updated: 2026-09-27
 ---
 
 # PDF and templates
@@ -39,6 +39,20 @@ return new Response(result.pdf, {
 Cloud sends the HTML to Gotenberg with background printing and CSS page sizes
 enabled. The result contains PDF bytes and the returned content type.
 
+## HTML renders offline
+
+Cloud renders every HTML document, header, and footer offline, including
+Markdown, Liquid templates, and Factur-X invoices. Before the HTML reaches
+Gotenberg, Cloud removes scripts, frames, embedded objects, `base` and `meta`
+elements, and links other than stylesheets. It then adds a Content Security
+Policy that allows inline styles, plus named assets and `data:` URLs for
+stylesheets, images, and fonts.
+
+As a result, JavaScript does not run and remote URLs are not loaded. Pass
+images, fonts, and CSS as named `assets` or embed them as `data:` URLs.
+Hyperlinks stay clickable in the PDF. Cloud adds `<!doctype html>`, so HTML
+without its own doctype renders in standards mode.
+
 ## Render untrusted Markdown
 
 Use `renderMarkdownToPdf()` for a deterministic Markdown document with a
@@ -59,9 +73,8 @@ The available A4 presets are `document`, `report`, and `compact`. Optional
 `templateId` to use custom CSS as the complete stylesheet; omit both fields to
 use `document`. CSS is limited to 32 KiB. Raw HTML stays inert. Markdown image
 references become safe links, so the renderer never fetches them. CSS imports,
-URLs, and other external resources are rejected. The generated HTML also
-carries a restrictive Content Security Policy before it is sent through the
-same bounded Gotenberg HTML renderer.
+URLs, and other external resources are rejected. The generated HTML then
+goes through the same bounded, offline HTML renderer.
 
 The service owns conversion only. Callers still own authentication,
 authorization, request limits, filenames, response headers, and persistence.
@@ -93,7 +106,8 @@ return new Response(preview.pdf.pdf, {
 ```
 
 The input may include header, footer, and page CSS templates. It also accepts
-custom Liquid filters.
+custom Liquid filters. The rendered body, header, footer, and page CSS render
+offline like any other HTML.
 
 The result separates the `template` phase from the `pdf` phase. Do not expose
 template stack traces to end users.
@@ -123,8 +137,7 @@ Treat configuration and availability failures as operational errors. See
 [Runtime configuration](/en/docs/operations/runtime-configuration) and
 [Troubleshooting](/en/docs/operations/troubleshooting).
 
-Authorize access to the document data before rendering. Avoid remote assets
-whose availability or credentials are outside the document request.
+Authorize access to the document data before rendering.
 
 
 ## Assets, paper options and file attachments
@@ -169,9 +182,9 @@ reading the response. `...WithConfig` variants accept an explicit Gotenberg
 configuration and optional test transport. They never choose an app's storage
 location or grant access to a source file.
 
-The server helpers accept application-owned HTML. Applications exposing them to
-untrusted code must enforce authentication, input budgets and an offline content
-policy before calling them. Assistant Studio removes active document elements
-and applies CSP to restrict resources to local files/data. Its worker API does
-not expose arbitrary Gotenberg endpoints or connection settings. Operators must
-retain Gotenberg's request-directory file isolation.
+The server helpers accept application-owned HTML and render it offline.
+Applications exposing them to untrusted input must still enforce authentication
+and input budgets. Assistant Studio's worker API does not expose arbitrary
+Gotenberg endpoints or connection settings. Operators must retain Gotenberg's
+request-directory file isolation and should keep Gotenberg itself offline; see
+[Deployment requirements](/en/docs/operations/deployment-requirements#keep-gotenberg-offline).

@@ -113,6 +113,8 @@ Eine Vorlage besitzt einen Datenteil und bis zu vier Layoutteile. Die GQL-Quelle
 | Fußzeile | Liquid + HTML | Optionale Fußzeile auf jeder Seite. | Rechtliche Fußzeile, Bankdaten und Seitenplatzhalter wie `<span class="pageNumber"></span>` und `<span class="totalPages"></span>`. |
 | Seiten-CSS | Liquid + CSS | Optionales CSS, das in den PDF-Inhalt eingefügt wird. | @page-Größe/-Ränder, Tabellenköpfe, Seitenumbrüche, Drucktypografie. |
 
+PDFs werden offline erzeugt: Skripte laufen nicht, und entfernte Bilder, Stylesheets und Schriften werden nicht geladen. Nutze für Bilder Datensatzbilder, `app.logoDataUri`, `barcode_data_url` oder andere `data:`-URLs.
+
 ## Verfügbare Daten verstehen {icon="layout-grid"}
 
 Der Tab Daten ist die maßgebliche Quelle für den aktuellen Vorschaudatensatz. Er zeigt die exakte Struktur, die Liquid nach der Ausführung der GQL-Quelle erhält. Kopiere Pfade aus diesem Baum, statt Objektstrukturen zu erraten.

@@ -1,4 +1,5 @@
 import * as settings from "../settings";
+import { offlineHtml } from "./offline-html";
 
 export type GotenbergRenderErrorCode =
   | "bad_input"
@@ -131,9 +132,9 @@ function htmlForm(input: RenderHtmlToPdfInput, config: GotenbergConfig): FormDat
     (input.assets ?? []).reduce((sum, asset) => sum + asset.data.size, 0);
   if (total > config.maxHtmlBytes) throw new GotenbergRenderError("html_too_large", "HTML and assets exceed the configured input budget.");
   const form = new FormData();
-  form.append("files", new Blob([input.html], { type: "text/html" }), "index.html");
-  if (input.headerHtml?.trim()) form.append("files", new Blob([input.headerHtml], { type: "text/html" }), "header.html");
-  if (input.footerHtml?.trim()) form.append("files", new Blob([input.footerHtml], { type: "text/html" }), "footer.html");
+  form.append("files", new Blob([offlineHtml(input.html)], { type: "text/html" }), "index.html");
+  if (input.headerHtml?.trim()) form.append("files", new Blob([offlineHtml(input.headerHtml)], { type: "text/html" }), "header.html");
+  if (input.footerHtml?.trim()) form.append("files", new Blob([offlineHtml(input.footerHtml)], { type: "text/html" }), "footer.html");
   const names = new Set(["index.html", "header.html", "footer.html", "factur-x.xml"]);
   for (const asset of input.assets ?? []) {
     const name = fileName(asset.name);

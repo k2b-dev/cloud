@@ -16,20 +16,6 @@ export async function authorizePdf(input: unknown, identity: ArtifactIdentity): 
   await authorizeRuntimeScope(input, identity);
 }
 
-// Defense in depth alongside Gotenberg's request-directory file isolation.
-// No script, frame, redirect or outbound resource can run from supplied HTML.
-export async function offlinePdfHtml(html: string): Promise<string> {
-  const clean = await new HTMLRewriter()
-    .on("script, meta, base, iframe, frame, frameset, object, embed", {
-      element(element) {
-        element.remove();
-      },
-    })
-    .transform(new Response(html))
-    .text();
-  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' file: data:; img-src file: data:; font-src file: data:; base-uri 'none'; form-action 'none'">${clean}`;
-}
-
 export async function executePdf(input: unknown, config: GotenbergConfig, options: RenderHtmlToPdfOptions = {}) {
   const request = PdfRequest.parse(input);
   const bytes = checkPdfBytes(request);
@@ -41,15 +27,10 @@ export async function executePdf(input: unknown, config: GotenbergConfig, option
   if (request.operation !== "attach" && bytes > bounded.maxHtmlBytes)
     throw new GotenbergRenderError("html_too_large", "HTML and assets exceed the configured input budget.");
   if (request.operation === "attach") return attachPdfFilesWithConfig(request, bounded, options);
-  const html = {
-    ...request,
-    html: await offlinePdfHtml(request.html),
-    headerHtml: request.headerHtml ? await offlinePdfHtml(request.headerHtml) : undefined,
-    footerHtml: request.footerHtml ? await offlinePdfHtml(request.footerHtml) : undefined,
-  };
+  // The platform renderer applies its offline HTML mode to the document, header and footer.
   return request.operation === "facturX"
-    ? renderFacturXHtmlToPdfWithConfig({ ...html, xml: request.xml, conformanceLevel: request.profile }, bounded, options)
-    : renderHtmlToPdfWithConfig(html, bounded, options);
+    ? renderFacturXHtmlToPdfWithConfig({ ...request, conformanceLevel: request.profile }, bounded, options)
+    : renderHtmlToPdfWithConfig(request, bounded, options);
 }
 
 export const studioPdf = {
