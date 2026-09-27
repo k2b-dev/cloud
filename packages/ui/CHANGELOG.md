@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.3...npm-ui-v0.7.0) (2026-09-27)
+
+
+### Features
+
+* **assistant:** delete chat files from the Files list ([#347](https://github.com/k2b-dev/cloud/issues/347)) ([5246601](https://github.com/k2b-dev/cloud/commit/52466014b27cc5405041ecfe4a8c01fe9709483a))
+* **spaces:** group the item detail panel by planning, content, work, and context ([#325](https://github.com/k2b-dev/cloud/issues/325)) ([38436fa](https://github.com/k2b-dev/cloud/commit/38436fac87380971530c6b7b1471f299da6667ea)), closes [#322](https://github.com/k2b-dev/cloud/issues/322)
+
+
+### Bug Fixes
+
+* **ui:** keep sidebar row menus open while the pointer moves into them ([#338](https://github.com/k2b-dev/cloud/issues/338)) ([fdae52d](https://github.com/k2b-dev/cloud/commit/fdae52de7bbedbb5fbfed050d37cc7ffdd6398f7))
+* **ui:** preview PDFs from loaded bytes when no inline URL exists ([#341](https://github.com/k2b-dev/cloud/issues/341)) ([1f15850](https://github.com/k2b-dev/cloud/commit/1f158501cb1d84dacc81db58abf6a92d2a0590f7))
+* **ui:** reveal a nav tree row's actions only for that row ([#343](https://github.com/k2b-dev/cloud/issues/343)) ([f039ab2](https://github.com/k2b-dev/cloud/commit/f039ab2ba1e99226d2746c86582cc8c3b415c5e5))
+
 ## [0.6.3](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.2...npm-ui-v0.6.3) (2026-09-26)
 
 
