@@ -375,6 +375,12 @@ describe("capability tool presentation", () => {
       "Created PDF: report.pdf",
     ],
     [
+      "html_to_pdf",
+      { path: "/letter.html", assets: ["/logo.png"] },
+      { sourcePath: "/letter.html", path: "/letter.pdf", size: 8192, mediaType: "application/pdf" },
+      "Created PDF: letter.pdf",
+    ],
+    [
       "read_cloud_resource",
       { type: "contacts.contact", id: "abc123" },
       { data: { id: "abc123" }, summary: "Loaded contact Ada" },
@@ -399,6 +405,29 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("k2b-content-structured-data");
     expect(hasOpenDetails(html)).toBe(name === "view_image");
     if (name === "load_tools") expect(html).not.toContain("mail.conversation.activity.list");
+  });
+
+  test("labels a created PDF in the inherited locale", () => {
+    const completed: AiTurnBlock = {
+      id: "html-pdf-call",
+      kind: "tool",
+      callId: "html-pdf-1",
+      name: "html_to_pdf",
+      args: { path: "/letter.html" },
+      status: "completed",
+      result: { sourcePath: "/letter.html", path: "/letter.pdf", size: 2048, mediaType: "application/pdf" },
+    };
+
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" });
+        },
+      }),
+    );
+
+    expect(html).toContain("PDF erstellt: letter.pdf");
   });
 
   test("renders persisted local Bash calls without execution controls", () => {

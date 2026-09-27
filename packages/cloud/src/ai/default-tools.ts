@@ -34,6 +34,7 @@ import {
   createCloudAiWriteFileTool,
 } from "./file-tools";
 import { createCloudAiWebExtractTool, createCloudAiWebSearchTool, isCloudAiFirecrawlConfigured } from "./firecrawl-tools";
+import { createCloudAiHtmlToPdfTool } from "./html-pdf-tool";
 import { createCloudAiMarkdownToPdfTool } from "./markdown-pdf-tool";
 import { createAiTodoTool } from "./todo-tool";
 import { defineAiTool } from "./tools";
@@ -190,6 +191,7 @@ export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
   "list_files",
   "write_file",
   "markdown_to_pdf",
+  "html_to_pdf",
   "present",
   "calculate",
   "read_cloud_resource",
@@ -208,6 +210,7 @@ export const createConfiguredDefaultCloudAiTools = async (config?: {
     createCloudAiFetchFileTool(),
     createCloudAiWriteFileTool(),
     createCloudAiMarkdownToPdfTool(),
+    createCloudAiHtmlToPdfTool(),
     createCloudAiPresentTool(),
     createCloudAiCalculateTool(),
     createCloudAiViewImageTool(),

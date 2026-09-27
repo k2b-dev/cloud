@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-08-29
+updated: 2026-09-27
 ---
 
 # Files, Projects, Skills, and personalization
@@ -73,11 +73,23 @@ attachments.
 
 The default Assistant tools can list files, read bounded UTF-8 slices, write
 assistant-owned text files, inspect supported images when configured, and
-present downloads. They can also turn an assistant-written conversation `.md`
-file into a sibling `.pdf`: the agent writes or edits the Markdown with
-`write_file`, calls `markdown_to_pdf` with an optional A4 preset and custom CSS,
-then presents the returned PDF path. Project files remain read-only and cannot
-be converted directly. `read_file` returns text directly and automatically converts
+present downloads. They can also turn an assistant-written conversation file
+into a sibling `.pdf`, which the agent then presents. For a text-first document,
+the agent writes or edits a `.md` file with `write_file` and calls
+`markdown_to_pdf` with an optional A4 preset and custom CSS. For a layout that
+needs HTML, it writes an `.html` file and calls `html_to_pdf`. Its optional
+inputs are a CSS file or inline CSS of up to 32 KiB, both applied after the
+document's own styles; header and footer HTML files; up to 64 conversation
+files as named assets, referenced by file name only with `#`, `?`, `%`, and `:`
+percent-encoded; and `page` with `format`
+(`A4` by default, `A3`, `A5`, `Letter`, or `Legal`), `landscape`, and
+millimeter `margin` values (15 by default). The HTML source must be
+assistant-owned; CSS, header, footer, and assets can be uploads. All inputs share
+the configured Gotenberg input budget, and the document renders in standards
+mode through the [offline HTML mode](/en/docs/platform/pdf-and-templates). One
+application process renders at most two chat PDFs at a time and rejects further
+conversions until one finishes. Project files remain read-only and cannot be
+converted directly. `read_file` returns text directly and automatically converts
 PDF, Office, OpenDocument, RTF, EPUB, and CSV files to bounded Markdown. Its
 `mediaType` remains the original file type while `representation` is `text` or
 `markdown`. Offsets count bytes in that UTF-8 representation; continue with

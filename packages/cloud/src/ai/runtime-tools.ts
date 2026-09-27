@@ -33,6 +33,7 @@ export {
   evaluateAiDate,
   evaluateAiMath,
 } from "./file-tools";
+export { CloudAiHtmlToPdfInputSchema, CloudAiHtmlToPdfOutputSchema, createCloudAiHtmlToPdfTool } from "./html-pdf-tool";
 export {
   CloudAiMarkdownToPdfInputSchema,
   CloudAiMarkdownToPdfOutputSchema,

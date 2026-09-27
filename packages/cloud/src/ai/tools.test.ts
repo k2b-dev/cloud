@@ -235,6 +235,7 @@ describe("AI tools", () => {
       "fetch_file",
       "write_file",
       "markdown_to_pdf",
+      "html_to_pdf",
       "present",
       "calculate",
       "view_image",
