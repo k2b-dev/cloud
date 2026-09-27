@@ -18,6 +18,7 @@ export const gridsCrudMessages = i18n.define({
       invalidTableDisplayConfig: "The Table display configuration is invalid.",
       invalidTableAuditPolicy: "The Table audit policy is invalid.",
       tableUnknownField: "The Table configuration references an unknown field.",
+      tableChanged: "This Table changed since you loaded it. Another user or tab may have edited it in the meantime. Reload and try again.",
       restoreFailed: "The item could not be restored.",
       newTableFieldReference: "A new Table cannot reference fields before those fields exist.",
       unknownFieldType: ({ type }: { type: string }) => `Unknown field type “${type}”.`,
@@ -188,6 +189,8 @@ export const gridsCrudMessages = i18n.define({
       invalidTableDisplayConfig: "Die Anzeigekonfiguration der Tabelle ist ungültig.",
       invalidTableAuditPolicy: "Die Audit-Richtlinie der Tabelle ist ungültig.",
       tableUnknownField: "Die Tabellenkonfiguration referenziert ein unbekanntes Feld.",
+      tableChanged:
+        "Diese Tabelle wurde seit dem Laden geändert. Eine andere Person oder ein anderer Tab hat sie möglicherweise bearbeitet. Lade sie neu und versuche es erneut.",
       restoreFailed: "Das Element konnte nicht wiederhergestellt werden.",
       newTableFieldReference: "Eine neue Tabelle kann keine Felder referenzieren, bevor diese vorhanden sind.",
       unknownFieldType: ({ type }) => `Unbekannter Feldtyp „${type}“.`,

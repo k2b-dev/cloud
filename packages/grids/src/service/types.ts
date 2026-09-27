@@ -174,6 +174,7 @@ export type UpdateTableInput = {
   displayConfig?: RecordDisplayConfig;
   auditPolicy?: TableAuditPolicy;
   disableDirectInsert?: boolean;
+  expectedUpdatedAt?: string;
 };
 
 export type CreateFieldInput = {

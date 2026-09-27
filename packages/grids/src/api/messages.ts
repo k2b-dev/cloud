@@ -40,6 +40,7 @@ export const gridsApiMessages = i18n.define({
       scannerNotFound: "Scanner not found",
       sourceTableNotFound: "Source table not found",
       tableNotFound: "Table not found",
+      tableChanged: "This Table changed since you loaded it. Another user or tab may have edited it in the meantime. Reload and try again.",
       tableNeedsBase: "Table not found. Name its base as <base>:<table>, or use the table ID.",
       addressIncomplete: "Pass a base, table, or record.",
       viewNotFound: "View not found",
@@ -155,6 +156,8 @@ export const gridsApiMessages = i18n.define({
       scannerNotFound: "Scanner nicht gefunden",
       sourceTableNotFound: "Quelltabelle nicht gefunden",
       tableNotFound: "Tabelle nicht gefunden",
+      tableChanged:
+        "Diese Tabelle wurde seit dem Laden geändert. Eine andere Person oder ein anderer Tab hat sie möglicherweise bearbeitet. Lade sie neu und versuche es erneut.",
       tableNeedsBase: "Tabelle nicht gefunden. Nenne ihre Basis als <basis>:<tabelle> oder verwende die Tabellen-ID.",
       addressIncomplete: "Gib eine Basis, Tabelle oder einen Datensatz an.",
       viewNotFound: "Ansicht nicht gefunden",

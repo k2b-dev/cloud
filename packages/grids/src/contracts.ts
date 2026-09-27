@@ -306,6 +306,8 @@ export const UpdateTableSchema = z.object({
   displayConfig: RecordDisplayConfigSchema.optional(),
   auditPolicy: TableAuditPolicySchema.optional(),
   disableDirectInsert: z.boolean().optional(),
+  /** The table's `updatedAt` the change builds on; a table changed since then rejects the update. Omitted means no check. */
+  expectedUpdatedAt: z.string().datetime().optional(),
 });
 
 // ── Federated table configuration ─────────────────────────────────────────

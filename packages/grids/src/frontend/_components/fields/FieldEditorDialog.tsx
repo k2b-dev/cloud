@@ -16,7 +16,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { PublicField } from "../../../api/public-dto";
+import type { PublicField, PublicTable } from "../../../api/public-dto";
 import type { FieldColumnSpec, TableKind } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import { ColumnFormatControls, type ColumnFormatControlsHandle } from "../dialogs/ViewColumnSettingsDialog";
@@ -45,6 +45,14 @@ const UNIQUE_TYPES = new Set(["text", "longtext", "id", "number", "percent", "da
 // delete close the dialog after the parent's state-update callbacks
 // fire, so the page list reflects the change immediately.
 
+/** The column list a table shows and the table version it belongs to. */
+export type FieldEditorTableColumns = {
+  columns: FieldColumnSpec[];
+  /** The table derives `columns` from its fields (`columns: []`), so "Hide in table" alone decides visibility. */
+  derived: boolean;
+  updatedAt: string;
+};
+
 type OpenFieldEditArgs = {
   field: PublicField;
   tableKind: TableKind;
@@ -52,12 +60,13 @@ type OpenFieldEditArgs = {
   tableId?: string;
   otherTables: Array<{ id: string; name: string }>;
   fieldsByTable: Record<string, PublicField[]>;
-  tableColumns?: FieldColumnSpec[];
-  /** The table derives `tableColumns` from its fields (`columns: []`), so "Hide in table" alone decides visibility. */
-  derivedTableColumns?: boolean;
+  /** Read when saving, so a save after `onTableColumnsConflict` builds on the reloaded columns. */
+  tableColumns?: () => FieldEditorTableColumns;
   dateConfig?: DateContext;
   onSaved: (next: PublicField) => void;
-  onTableColumnsSaved?: (columns: FieldColumnSpec[]) => void;
+  onTableColumnsSaved?: (table: PublicTable) => void;
+  /** Reloads the table after its columns changed since `tableColumns` was read; false when it could not be read. */
+  onTableColumnsConflict?: () => Promise<boolean>;
   onDeleted: () => Promise<boolean> | boolean;
 };
 
@@ -96,7 +105,6 @@ function FieldEditDialog(props: { args: OpenFieldEditArgs; close: () => void; se
         otherTables={props.args.otherTables}
         fieldsByTable={props.args.fieldsByTable}
         tableColumns={props.args.tableColumns}
-        derivedTableColumns={props.args.derivedTableColumns}
         dateConfig={props.args.dateConfig}
         onDirtyChange={setDirty}
         onPendingChange={setPending}
@@ -106,6 +114,7 @@ function FieldEditDialog(props: { args: OpenFieldEditArgs; close: () => void; se
           props.close();
         }}
         onTableColumnsSaved={props.args.onTableColumnsSaved}
+        onTableColumnsConflict={props.args.onTableColumnsConflict}
         onDeleted={async () => {
           if (pending()) return;
           setPending(true);
@@ -135,15 +144,15 @@ function FieldEditor(props: {
   tableId?: string;
   otherTables: Array<{ id: string; name: string }>;
   fieldsByTable: Record<string, PublicField[]>;
-  tableColumns?: FieldColumnSpec[];
-  derivedTableColumns?: boolean;
+  tableColumns?: () => FieldEditorTableColumns;
   dateConfig?: DateContext;
   onSaved: (next: PublicField) => void;
   onFieldSaved: (next: PublicField) => void;
   onPendingChange: (pending: boolean) => void;
   deleting: boolean;
   deleteError?: string;
-  onTableColumnsSaved?: (columns: FieldColumnSpec[]) => void;
+  onTableColumnsSaved?: (table: PublicTable) => void;
+  onTableColumnsConflict?: () => Promise<boolean>;
   onDeleted: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   /** Optional cancel handler — only set when the editor is rendered
@@ -173,8 +182,8 @@ function FieldEditor(props: {
   const [indexed, setIndexed] = createSignal(props.field.indexed);
   const [uniqueConstraint, setUniqueConstraint] = createSignal(props.field.uniqueConstraint);
   const [config, setConfig] = createSignal<FieldConfigState>((props.field.config as FieldConfigState) ?? {});
-  const initialColumn = () => props.tableColumns?.find((column) => column.fieldId === props.field.id);
-  const [columnLabel, setColumnLabel] = createSignal(initialColumn()?.label ?? "");
+  const initialColumn = props.tableColumns?.().columns.find((column) => column.fieldId === props.field.id);
+  const [columnLabel, setColumnLabel] = createSignal(initialColumn?.label ?? "");
   let formatControls: ColumnFormatControlsHandle | undefined;
   const [dirty, setDirty] = createSignal(false);
   const [displayFailed, setDisplayFailed] = createSignal(false);
@@ -204,25 +213,24 @@ function FieldEditor(props: {
     ...(column.format ? { format: column.format } : {}),
   });
 
-  const buildNextTableColumns = (): FieldColumnSpec[] | undefined => {
-    if (!props.tableColumns) return undefined;
+  const buildNextTableColumns = (table: FieldEditorTableColumns): FieldColumnSpec[] | undefined => {
     const nextColumn = cleanColumn({
       fieldId: props.field.id,
       label: columnLabel(),
       format: formatControls?.value(),
     });
     // A derived list stays derived unless this visible column needs a stored label or format.
-    if (props.derivedTableColumns && (hideInTable() || (!nextColumn.label && !nextColumn.format))) return undefined;
-    const next = props.tableColumns.filter((column) => column.fieldId !== props.field.id);
+    if (table.derived && (hideInTable() || (!nextColumn.label && !nextColumn.format))) return undefined;
+    const next = table.columns.filter((column) => column.fieldId !== props.field.id);
     if (!hideInTable()) {
-      const existingIndex = props.tableColumns.findIndex((column) => column.fieldId === props.field.id);
+      const existingIndex = table.columns.findIndex((column) => column.fieldId === props.field.id);
       if (existingIndex >= 0) next.splice(existingIndex, 0, nextColumn);
       else next.push(nextColumn);
     }
     return next.map(cleanColumn);
   };
 
-  const updateMut = mutations.create<{ field: PublicField; tableColumns?: FieldColumnSpec[] }, void>({
+  const updateMut = mutations.create<{ field: PublicField; table?: PublicTable }, void>({
     mutation: async () => {
       setDisplayFailed(false);
       const payload = {
@@ -246,22 +254,27 @@ function FieldEditor(props: {
         setSavedField({ payload: serialized, field });
         props.onFieldSaved(field);
       }
-      const nextTableColumns = buildNextTableColumns();
-      if (!nextTableColumns) return { field };
-      if (JSON.stringify(nextTableColumns) === JSON.stringify(props.tableColumns)) return { field };
+      const table = props.tableColumns?.();
+      const nextTableColumns = table && buildNextTableColumns(table);
+      if (!table || !nextTableColumns) return { field };
+      if (JSON.stringify(nextTableColumns) === JSON.stringify(table.columns)) return { field };
       setDisplayFailed(true);
       const tableRes = await apiClient.tables[":tableId"].$patch({
         param: { tableId: props.field.tableId },
-        json: { columns: nextTableColumns },
+        json: { columns: nextTableColumns, expectedUpdatedAt: table.updatedAt },
       });
-      if (!tableRes.ok) throw new Error(await errorMessage(tableRes, t().saveTableDisplayFailed));
-      const table = await tableRes.json();
-      return { field, tableColumns: table.columns };
+      if (!tableRes.ok) {
+        const message = await errorMessage(tableRes, t().saveTableDisplayFailed);
+        // 409: the table changed since it was read, for example in another tab. Saving again applies this column to the reloaded list.
+        const reloaded = tableRes.status === 409 && (await props.onTableColumnsConflict?.());
+        throw new Error(reloaded ? t().tableColumnsReloaded : message);
+      }
+      return { field, table: await tableRes.json() };
     },
     onSuccess: (next) => {
       setDirty(false);
       props.onDirtyChange?.(false);
-      if (next.tableColumns) props.onTableColumnsSaved?.(next.tableColumns);
+      if (next.table) props.onTableColumnsSaved?.(next.table);
       props.onSaved(next.field);
     },
   });
@@ -442,7 +455,7 @@ function FieldEditor(props: {
                   },
                   props.fieldsByTable,
                 )}
-                currentFormat={initialColumn()?.format}
+                currentFormat={initialColumn?.format}
                 expose={(handle) => {
                   formatControls = handle;
                 }}

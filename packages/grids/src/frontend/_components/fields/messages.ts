@@ -180,6 +180,7 @@ export const gridsFieldMessages = i18n.define({
       saveFieldFailed: "Failed to save field",
       saveTableDisplayFailed: "Failed to save table display",
       fieldSavedDisplayFailed: "Field saved. Table display could not be saved. Save again to retry the display settings.",
+      tableColumnsReloaded: "The table's columns changed in the meantime, for example in another tab, and were reloaded.",
       nameRequired: "Name is required",
       name: "Name",
       nameDescription: "Used as the column header and default form label.",
@@ -445,6 +446,7 @@ export const gridsFieldMessages = i18n.define({
       saveTableDisplayFailed: "Tabellenanzeige konnte nicht gespeichert werden",
       fieldSavedDisplayFailed:
         "Feld gespeichert. Die Tabellenanzeige konnte nicht gespeichert werden. Speichere erneut, um die Anzeigeeinstellungen zu wiederholen.",
+      tableColumnsReloaded: "Die Tabellenspalten wurden inzwischen geändert, zum Beispiel in einem anderen Tab, und neu geladen.",
       nameRequired: "Ein Name ist erforderlich",
       name: "Name",
       nameDescription: "Wird als Spaltenüberschrift und als Standardbeschriftung in Formularen verwendet.",

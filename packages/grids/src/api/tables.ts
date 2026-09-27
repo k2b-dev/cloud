@@ -14,6 +14,7 @@ import {
 import { gridsService } from "../service";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
 import * as recordFinalizationService from "../service/record-finalization";
+import { isStaleTableVersion } from "../service/tables";
 import { PublicDurableHistoryStatusSchema, toPublicDurableHistoryStatus } from "./durable-history";
 import { apiMessages } from "./messages";
 import { currentAccessSubject, currentActorUserId, currentCredentialPermission, currentResourceBoundBaseId, gateAt } from "./permissions";
@@ -719,7 +720,7 @@ export const tablesRoutes = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Invalid input"),
         403: jsonResponse(ErrorResponseSchema, "Forbidden"),
         404: jsonResponse(ErrorResponseSchema, "Not found"),
-        409: jsonResponse(ErrorResponseSchema, "Conflict"),
+        409: jsonResponse(ErrorResponseSchema, "Name already used, or the table changed since expectedUpdatedAt"),
       },
     }),
     v("json", PublicUpdateTableSchema),
@@ -729,9 +730,13 @@ export const tablesRoutes = new Hono<AuthContext>()
       if (!table) return c.json({ message: apiMessages(c).tableNotFound }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const converted = await fromPublicUpdateTable(tableId, c.req.valid("json"));
+      const body = c.req.valid("json");
+      // A list from an older version often names fields deleted since; report the stale version rather than those fields.
+      // The service repeats the check under the table lock.
+      if (isStaleTableVersion(table, body.expectedUpdatedAt)) return c.json({ message: apiMessages(c).tableChanged }, 409);
+      const converted = await fromPublicUpdateTable(tableId, body);
       if (!converted.ok) return c.json({ message: converted.error.message }, converted.error.status);
-      const result = await gridsService.table.update(tableId, converted.data, currentActorUserId(c));
+      const result = await gridsService.table.update(tableId, converted.data, currentActorUserId(c), getLocale(c));
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
       await acknowledgeWorkspaceWrite(c, table.baseId, `table:${table.shortId}`);
       return c.json(await toPublicTable(result.data));

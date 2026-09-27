@@ -6,6 +6,7 @@ import { MutationSourceSchema, TableMutationPolicySchema } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { serviceMessagesFor } from "./messages";
 import { emitMetadataEvent } from "./metadata-events";
+import { NEXT_TABLE_VERSION } from "./tables";
 
 export type MutationOrigin = MutationSource;
 
@@ -302,7 +303,7 @@ export const update = async (
     }
     await tx`
         UPDATE grids.tables
-        SET mutation_policy = ${parsed.data}::jsonb, updated_at = now()
+        SET mutation_policy = ${parsed.data}::jsonb, updated_at = ${NEXT_TABLE_VERSION}
         WHERE id = ${tableId}::uuid
       `;
     await logAudit(

@@ -1,8 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
-import { prompts } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
-import { apiClient } from "../../../api/client";
-import type { PublicField as Field, PublicForm as Form, PublicView as View } from "../../../api/public-dto";
+import type { PublicField as Field, PublicForm as Form, PublicTable as Table, PublicView as View } from "../../../api/public-dto";
 import type { FieldColumnSpec, RecordDisplayConfig, TableAuditPolicy, TableMutationPolicy } from "../../../contracts";
 import {
   createFieldFromPrompt,
@@ -13,10 +11,24 @@ import {
 } from "../dialogs/TableAdminDialogs";
 import { openViewSettingsDialog } from "../dialogs/ViewSettingsDialogs";
 import { openFieldEditDialog } from "../fields/TableFieldDialogs";
-import { errorMessage } from "../utils/api-helpers";
 import { isFieldColumn, resolveDefaultViewColumns } from "./records-view-columns";
 
 export const normalizeFieldOrder = (ordered: Field[]) => ordered.map((field, position) => ({ ...field, position }));
+
+/** Mirrors the server: deleting a field clears it from the table's card and calendar settings. */
+const withoutDisplayField = (config: RecordDisplayConfig, fieldId: string): RecordDisplayConfig => ({
+  ...config,
+  ...(config.cards
+    ? {
+        cards: {
+          ...config.cards,
+          ...(config.cards.imageFieldId === fieldId ? { imageFieldId: null } : {}),
+          ...(config.cards.fieldIds ? { fieldIds: config.cards.fieldIds.filter((id) => id !== fieldId) } : {}),
+        },
+      }
+    : {}),
+  ...(config.calendar?.dateFieldId === fieldId ? { calendar: { ...config.calendar, dateFieldId: null } } : {}),
+});
 
 type RecordsAdminControllerOptions = {
   baseId: string;
@@ -30,6 +42,10 @@ type RecordsAdminControllerOptions = {
   setTableIcon: Setter<string | null>;
   tableColumns: Accessor<FieldColumnSpec[]>;
   setTableColumns: Setter<FieldColumnSpec[]>;
+  tableUpdatedAt: Accessor<string>;
+  setTableUpdatedAt: Setter<string>;
+  /** Re-reads the table's columns, version, and fields; see the column controller. */
+  reloadTableColumns: () => Promise<boolean>;
   tableDisplayConfig: Accessor<RecordDisplayConfig>;
   setTableDisplayConfig: Setter<RecordDisplayConfig>;
   tableAuditPolicy: Accessor<TableAuditPolicy>;
@@ -52,7 +68,6 @@ type RecordsAdminControllerOptions = {
   canManageTable: boolean;
   canManageBase: boolean;
   dateConfig?: DateContext;
-  fieldCreatedDisplayFailed: string;
   refetch: () => void;
   setViewDisplayConfig: Setter<RecordDisplayConfig | null>;
 };
@@ -77,6 +92,11 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
     disableDirectInsert: options.disableDirectInsert(),
   });
 
+  const applyTableColumns = (table: Pick<Table, "columns" | "updatedAt">) => {
+    options.setTableColumns(table.columns);
+    options.setTableUpdatedAt(table.updatedAt);
+  };
+
   const openFieldSettings = (field: Field) => {
     openFieldEditDialog({
       field,
@@ -85,16 +105,26 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       tableId: options.tableId,
       otherTables: options.otherTables,
       fieldsByTable: { ...options.fieldsByTable, [options.tableId]: options.fields() },
-      // An empty table column list means "derive from the fields"; edit the list the table shows so a save keeps the other columns.
-      tableColumns: resolveDefaultViewColumns(options.tableColumns(), options.fields()).filter(isFieldColumn),
-      derivedTableColumns: options.tableColumns().length === 0,
+      tableColumns: () => ({
+        // An empty table column list means "derive from the fields"; edit the list the table shows so a save keeps the other columns.
+        columns: resolveDefaultViewColumns(options.tableColumns(), options.fields()).filter(isFieldColumn),
+        derived: options.tableColumns().length === 0,
+        updatedAt: options.tableUpdatedAt(),
+      }),
       dateConfig: options.dateConfig,
       onSaved: (updated) => syncFields(options.fields().map((candidate) => (candidate.id === updated.id ? updated : candidate))),
-      onTableColumnsSaved: options.setTableColumns,
+      onTableColumnsSaved: applyTableColumns,
+      onTableColumnsConflict: options.reloadTableColumns,
       onDeleted: async () => {
         const deleted = await deleteFieldWithChecks(field);
-        if (deleted) syncFields(options.fields().filter((candidate) => candidate.id !== field.id));
-        return deleted;
+        if (!deleted) return false;
+        // The server removes the field from the table's columns and display settings and changes the table version.
+        options.setTableColumns((columns) => columns.filter((column) => column.fieldId !== field.id));
+        options.setTableDisplayConfig((config) => withoutDisplayField(config, field.id));
+        syncFields(options.fields().filter((candidate) => candidate.id !== field.id));
+        // The editor stays open until the new version is known, so a column change right after it does not conflict.
+        await options.reloadTableColumns();
+        return true;
       },
     });
   };
@@ -108,12 +138,16 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
         options.setTableName(table.name);
         options.setTableDescription(table.description ?? null);
         options.setTableIcon(table.icon ?? null);
-        options.setTableColumns(table.columns);
+        applyTableColumns(table);
         options.setTableDisplayConfig(table.displayConfig);
         options.setTableAuditPolicy(table.auditPolicy);
         options.setDisableDirectInsert(table.disableDirectInsert);
       },
-      onMutationPolicySaved: options.setTableMutationPolicy,
+      onMutationPolicySaved: (policy) => {
+        options.setTableMutationPolicy(policy);
+        // Saving the policy changes the table version that later column writes name.
+        void options.reloadTableColumns();
+      },
     });
   };
 
@@ -124,23 +158,12 @@ export const createRecordsAdminController = (options: RecordsAdminControllerOpti
       onShowHiddenField: (field) => options.showColumns([field.id]),
     });
     if (!created) return;
+    // The server appends a new field to a stored column list and changes the table version; a derived list stays empty.
+    if (!created.hideInTable && options.tableColumns().length > 0) {
+      options.setTableColumns((columns) => [...columns, { fieldId: created.id }]);
+    }
     syncFields(normalizeFieldOrder([...options.fields(), created]));
-    if (
-      created.hideInTable ||
-      options.tableColumns().length === 0 ||
-      options.tableColumns().some((column) => column.fieldId === created.id)
-    ) {
-      return;
-    }
-    const res = await apiClient.tables[":tableId"].$patch({
-      param: { tableId: options.tableId },
-      json: { columns: [...options.tableColumns(), { fieldId: created.id }] },
-    });
-    if (!res.ok) {
-      prompts.error(await errorMessage(res, options.fieldCreatedDisplayFailed));
-      return;
-    }
-    options.setTableColumns((await res.json()).columns);
+    await options.reloadTableColumns();
   };
 
   const openForms = () => {

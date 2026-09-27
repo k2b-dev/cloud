@@ -28,6 +28,8 @@ Füge eine Sortierung hinzu, wenn die Reihenfolge fachliche Bedeutung hat. Haben
 
 **Tabelle** ist die Vorgabe für dichte Vergleiche und Bearbeitungen. Wähle nur die Spalten und ihre Reihenfolge aus, die für die Aufgabe benötigt werden.
 
+Ein neues Feld erscheint als letzte Tabellenspalte, auch wenn es über die CLI oder API erstellt wird, außer es ist auf **In Tabelle ausblenden** gesetzt. Auch ein aus dem Papierkorb wiederhergestelltes Feld erscheint wieder in der Tabelle. Hat jemand die Tabellenspalten inzwischen geändert, zum Beispiel in einem anderen Tab, lädt Grids sie neu, statt diese Änderung zu überschreiben; wiederhole deine Änderung dann an den aktuellen Spalten.
+
 Um ein ausgeblendetes Feld wieder in der Tabelle anzuzeigen, öffne die Tabelle im Bearbeitungsmodus und wähle **Spalte hinzufügen**. Blendest du ein Feld mit der Einstellung **In Tabelle ausblenden** ein, hebt Grids diese Einstellung auf. Ist der Name eines neuen Felds schon an ein ausgeblendetes Feld vergeben, bietet Grids an, stattdessen dessen Spalte einzublenden.
 
 **Karten** eignen sich, wenn jeder Datensatz als einzelner Eintrag mit kurzem Titel, ausgewählten Feldern und einem optionalen Bild erscheinen soll.
