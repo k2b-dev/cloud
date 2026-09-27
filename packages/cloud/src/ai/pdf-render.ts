@@ -40,7 +40,16 @@ export async function renderPdfPages(bytes: Uint8Array, pages: number[] = [1], s
         stdout: "pipe",
         stderr: "ignore",
         // The decoder needs no application credentials or runtime configuration.
-        env: { PATH: process.env.PATH, LANG: "C.UTF-8" },
+        // RLIMIT_DATA also counts each thread's stack and allocator memory, so the
+        // pools that otherwise grow with the host's cores (Bun work pool, canvas
+        // tokio runtime, JSC GC markers) get a fixed size on any core count.
+        env: {
+          PATH: process.env.PATH,
+          LANG: "C.UTF-8",
+          UV_THREADPOOL_SIZE: "2",
+          TOKIO_WORKER_THREADS: "2",
+          BUN_JSC_numberOfGCMarkers: "2",
+        },
       },
     );
     const stop = () => child.kill("SIGKILL");

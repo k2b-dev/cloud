@@ -413,7 +413,9 @@ PDF page inspection requires the Linux Cloud runtime; other hosts reject PDF
 rendering rather than run it without the memory boundary. Image inspection is
 unchanged. Rendering runs in an isolated, credential-free subprocess, terminated on
 cancellation or a 30-second deadline. On Linux, a 512 MiB kernel data-memory limit also bounds the decoder's heap and
-native writable allocations. Each service permits two concurrent
+native writable allocations. The decoder runs a fixed set of runtime threads, so
+this limit holds regardless of how many CPU cores the host or container exposes.
+Each service permits two concurrent
 decoders and rejects overload without queuing. Input and aggregate PNG output
 are each limited to 10 MiB; page canvases have a 2,000-pixel longest edge and
 maximum 2× scale, while embedded images are limited to 16 megapixels. Damaged,

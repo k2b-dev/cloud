@@ -1,6 +1,19 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
 import { PDF_MAX_BYTES, PdfPages, renderPdfPages } from "./pdf-render";
 import { visionPdfFixture } from "./pdf-render.fixture";
+
+/** Thread counts of a running process by name, with pool indexes ("Bun Pool 3") removed. */
+function threadCounts(pid: number) {
+  const counts = new Map<string, number>();
+  try {
+    for (const tid of readdirSync(`/proc/${pid}/task`)) {
+      const name = readFileSync(`/proc/${pid}/task/${tid}/comm`, "utf8").trim().replace(/ \d+$/, "");
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  } catch {} // The process or one of its threads exited while it was read.
+  return counts;
+}
 
 test.skipIf(process.platform !== "linux")("PDF renderer selects one-based pages in requested order and emits bounded PNGs", async () => {
   const result = await renderPdfPages(visionPdfFixture(), [2, 1]);
@@ -30,4 +43,29 @@ test.skipIf(process.platform !== "linux")("PDF rendering cancellation terminates
   controller.abort();
   await expect(pending).rejects.toBeInstanceOf(Error);
   expect((await renderPdfPages(visionPdfFixture())).pages.map((page) => page.page)).toEqual([1]);
+});
+
+test.skipIf(process.platform !== "linux")("PDF decoder keeps a fixed thread set so its memory limit holds on any core count", async () => {
+  // The data limit also counts per-thread memory: pools sized by core count exhausted it on 16-core hosts.
+  const spawn = spyOn(Bun, "spawn");
+  try {
+    let rendering = true;
+    const render = renderPdfPages(visionPdfFixture()).finally(() => {
+      rendering = false;
+    });
+    const spawned = spawn.mock.results[0];
+    if (spawned?.type !== "return") throw new Error("The PDF decoder did not start.");
+    const peak = new Map<string, number>();
+    while (rendering) {
+      for (const [name, count] of threadCounts(spawned.value.pid)) peak.set(name, Math.max(peak.get(name) ?? 0, count));
+      await Bun.sleep(1);
+    }
+    expect((await render).pages).toHaveLength(1);
+    expect(peak.get("tokio-rt-worker")).toBeGreaterThan(0);
+    expect(peak.get("tokio-rt-worker")).toBeLessThanOrEqual(2);
+    expect(peak.get("Bun Pool") ?? 0).toBeLessThanOrEqual(2);
+    expect(peak.get("HeapHelper") ?? 0).toBeLessThanOrEqual(1);
+  } finally {
+    spawn.mockRestore();
+  }
 });
