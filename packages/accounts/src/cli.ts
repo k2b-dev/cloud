@@ -196,6 +196,10 @@ type ServiceAccountsResponse = {
   pagination: Pagination;
 };
 
+type UserDevicesResponse = {
+  devices: Array<{ id: string; name: string; createdAt: string; lastUsedAt: string | null; assisted: boolean }>;
+};
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROVIDERS = ["local", "ipa"] as const;
 const PROFILES = ["user", "guest"] as const;
@@ -557,6 +561,7 @@ export default defineCliCommands({
     "groups managers": "Manage group managers",
     "groups members": "Manage group membership",
     "users avatar": "Download, replace, or remove account avatars",
+    "users devices": "List and revoke paired sign-in devices",
     "users linux": "Inspect Linux identities and assign missing attributes",
   },
   commands: [
@@ -867,6 +872,48 @@ export default defineCliCommands({
         const user = await resolveUserRef(ctx, args.user);
         const result = await apiJson<MessageResponse>(ctx, "POST", `/users/${encode(user.id)}/login-link`);
         printMessage(ctx, result, "Login link sent.");
+      },
+    }),
+    command("users devices list", {
+      summary: "List the devices that can approve a user's sign-ins",
+      args: { user: arg.required({ valueLabel: "user" }) },
+      async run({ ctx, args }) {
+        const user = await resolveUserRef(ctx, args.user);
+        const response = await apiGet<UserDevicesResponse>(ctx, `/users/${encode(user.id)}/devices`);
+        printJsonOrTable(
+          ctx,
+          response,
+          response.devices.map((device) => ({
+            name: device.name,
+            pairedAt: device.createdAt,
+            lastUsedAt: device.lastUsedAt ?? "",
+            assisted: device.assisted ? "yes" : "no",
+            id: device.id,
+          })),
+          [{ key: "name" }, { key: "pairedAt" }, { key: "lastUsedAt" }, { key: "assisted" }, { key: "id" }],
+        );
+      },
+    }),
+    command("users devices revoke", {
+      summary: "Revoke a paired sign-in device so it can no longer approve sign-ins",
+      description: "Existing sessions stay signed in. Revoking an already revoked device succeeds again.",
+      args: {
+        user: arg.required({ valueLabel: "user" }),
+        device: arg.required({ valueLabel: "device-id" }),
+      },
+      flags: { yes: confirmFlag("Confirm revoking this sign-in device") },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes)
+          throw new Error(
+            cliText(ctx, { en: "Refusing to revoke a device without --yes.", de: "Gerät wird ohne --yes nicht widerrufen." }),
+          );
+        if (!isUuid(args.device))
+          throw new Error(
+            cliText(ctx, { en: "Pass the device ID shown by users devices list.", de: "Gib die Geräte-ID aus users devices list an." }),
+          );
+        const user = await resolveUserRef(ctx, args.user);
+        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/users/${encode(user.id)}/devices/${encode(args.device)}`);
+        printMessage(ctx, result, "Device revoked.");
       },
     }),
     command("users delete", {

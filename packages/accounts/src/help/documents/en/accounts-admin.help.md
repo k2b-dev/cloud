@@ -41,6 +41,7 @@ disappear from the list; you cannot delete your own account.
 
 :::reference
 - **Service accounts:** List active or revoked API keys, filter by user-bound or resource-bound owner, and revoke active keys when access should end.
+- **Sign-in devices:** A user's page lists the devices that approve their app sign-ins, with pairing date and last use. Revoke a lost device there; existing sessions stay signed in and the user is notified.
 - **Notifications:** Create admin notification drafts, preview recipients, finalize the batch, and review delivery counters or failed recipients.
 - **Requests:** Create accounts from pending requests or deny requests. A denial reason sends an email when provided. Existing requests remain available when new requests are disabled in Administration.
 :::

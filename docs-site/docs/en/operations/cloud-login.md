@@ -266,7 +266,9 @@ Cloud Login stores device credentials encrypted in this browser. The app lock
 does not protect against malicious code running on the authenticator website
 or a compromised device. Deleted
 browser data has no automatic recovery: sign in with another supported method,
-revoke the old device and pair again. Do not assume that browser tabs, installed
+revoke the old device and pair again. Without another method, an administrator
+[revokes the device](./app-approval.md#revoke-a-device-for-someone-else) and
+can help pair a new one. Do not assume that browser tabs, installed
 apps and embedded browsers share storage; pair in the app you will actually use.
 
 The dots menu also offers notifications, language, appearance, and installation guidance.

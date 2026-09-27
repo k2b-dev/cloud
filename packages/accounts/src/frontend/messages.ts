@@ -521,6 +521,23 @@ export const accountsMessages = i18n.define({
       revokeApiKeyConfirm: ({ name }: { name: string }) =>
         `Revoke API key “${name}”? Existing clients using this key will stop working immediately.`,
       revokeApiKeyLabel: ({ name }: { name: string }) => `Revoke API key ${name}`,
+      signInDevices: "Sign-in devices",
+      signInDevicesSummary: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", {
+          one: "1 paired device can approve sign-ins for this account",
+          other: `${count} paired devices can approve sign-ins for this account`,
+        }),
+      device: "Device",
+      pairedSince: "Paired since",
+      notUsedYet: "Not used yet",
+      pairedWithAdmin: "Paired with administrator assistance",
+      noPairedDevices: "This user has no paired sign-in devices.",
+      devicesUnavailable: "Paired devices could not be loaded. Refresh the page.",
+      revokeDevice: "Revoke device",
+      revokeDeviceConfirm: ({ name }: { name: string }) =>
+        `Revoke “${name}”? This device can no longer approve sign-ins for this account. Existing sessions stay signed in.`,
+      revokeDeviceLabel: ({ name }: { name: string }) => `Revoke device ${name}`,
+      revokeDeviceFailed: "The device could not be revoked.",
       denyConfirm: ({ name, email }: { name: string; email: string }) => `Deny the request from ${name} (${email})?`,
       deny: "Deny",
       denyAccountRequest: "Deny account request",
@@ -1306,6 +1323,23 @@ export const accountsMessages = i18n.define({
       revokeApiKeyConfirm: ({ name }) =>
         `API-Schlüssel „${name}“ widerrufen? Bestehende Clients mit diesem Schlüssel funktionieren danach sofort nicht mehr.`,
       revokeApiKeyLabel: ({ name }) => `API-Schlüssel ${name} widerrufen`,
+      signInDevices: "Anmeldegeräte",
+      signInDevicesSummary: ({ count }) =>
+        i18n.plural(count, "de", {
+          one: "1 gekoppeltes Gerät kann Anmeldungen für dieses Konto bestätigen",
+          other: `${count} gekoppelte Geräte können Anmeldungen für dieses Konto bestätigen`,
+        }),
+      device: "Gerät",
+      pairedSince: "Gekoppelt seit",
+      notUsedYet: "Noch nicht verwendet",
+      pairedWithAdmin: "Mit Unterstützung der Administration gekoppelt",
+      noPairedDevices: "Dieser Benutzer hat keine gekoppelten Anmeldegeräte.",
+      devicesUnavailable: "Gekoppelte Geräte konnten nicht geladen werden. Lade die Seite neu.",
+      revokeDevice: "Gerät widerrufen",
+      revokeDeviceConfirm: ({ name }) =>
+        `„${name}“ widerrufen? Dieses Gerät kann dann keine Anmeldungen für dieses Konto mehr bestätigen. Bestehende Sitzungen bleiben angemeldet.`,
+      revokeDeviceLabel: ({ name }) => `Gerät ${name} widerrufen`,
+      revokeDeviceFailed: "Das Gerät konnte nicht widerrufen werden.",
       denyConfirm: ({ name, email }) => `Die Anfrage von ${name} (${email}) ablehnen?`,
       deny: "Ablehnen",
       denyAccountRequest: "Kontoanfrage ablehnen",

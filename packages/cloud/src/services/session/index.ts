@@ -224,12 +224,17 @@ export const session = {
     deleteCookie(c, "session_token", { path: "/" });
   },
 
+  /** Signs the account out everywhere: every session and every paired sign-in device. */
   revokeAllForUser: async (userId: string): Promise<void> => {
-    const [updated] = await sql<Array<{ id: string }>>`
-      UPDATE auth.users SET auth_epoch = auth_epoch + 1
-      WHERE id = ${userId}::uuid RETURNING id
-    `;
-    if (!updated) throw new Error("Cannot revoke sessions for an unknown user");
+    await sql.begin(async (tx) => {
+      const [updated] = await tx<Array<{ id: string }>>`
+        UPDATE auth.users SET auth_epoch = auth_epoch + 1
+        WHERE id = ${userId}::uuid RETURNING id
+      `;
+      if (!updated) throw new Error("Cannot revoke sessions for an unknown user");
+      // A paired device approves new sign-ins on its own, so a lost one would outlive the epoch change.
+      await tx`UPDATE auth.app_devices SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL`;
+    });
   },
 
   authenticate: authenticateToken,

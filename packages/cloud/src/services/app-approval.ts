@@ -137,6 +137,8 @@ type LoginRow = {
   expires_at: Date;
 };
 export type AppApprovalActor = { userId: string; sid: string; admin: boolean };
+/** Administration of another account's devices needs current admin authority, not a recent session. */
+export type AppDeviceAdministrator = Pick<AppApprovalActor, "userId" | "admin">;
 export type AppDeviceEnrollmentNotice = { deviceId: string; userId: string; name: string; assisted: boolean };
 /** Best-effort wake-ups for browsers waiting on a login decision. Postgres stays authoritative. */
 export type AppLoginDecisionHints = {
@@ -373,8 +375,10 @@ export const createAppApprovalService = (
           !p.name
         )
           return reject("CONFLICT", 409);
-        await authorizePairing(tx, actor, p, cfg);
+        // Lock the account before checking the session: a concurrent sign-out
+        // everywhere either revokes this device after it exists, or fails this check.
         await tx`SELECT id FROM auth.users WHERE id = ${p.user_id}::uuid FOR UPDATE`;
+        await authorizePairing(tx, actor, p, cfg);
         const [count] = await tx<
           { count: number }[]
         >`SELECT count(*)::int AS count FROM auth.app_devices WHERE issuer = ${cfg.issuer} AND user_id = ${p.user_id}::uuid AND revoked_at IS NULL`;
@@ -421,6 +425,31 @@ export const createAppApprovalService = (
         if (name !== undefined) await tx`UPDATE auth.app_devices SET name=${name} WHERE id=${id}::uuid`;
         else await tx`UPDATE auth.app_devices SET revoked_at=COALESCE(revoked_at,now()) WHERE id=${id}::uuid`;
         await record(tx, name === undefined ? "device.revoke" : "device.rename", actor.userId, id);
+      });
+    },
+    /** Active devices of any account, for administrators. Bounded by the active-device limit. */
+    listUserDevices: async (actor: AppDeviceAdministrator, userId: string): Promise<AppDeviceView[]> => {
+      if (!actor.admin) return reject("FORBIDDEN", 403);
+      const cfg = await config(false);
+      const rows = await db<
+        DeviceRow[]
+      >`SELECT * FROM auth.app_devices WHERE issuer=${cfg.issuer} AND user_id=${userId}::uuid AND revoked_at IS NULL ORDER BY created_at, id LIMIT ${limits.devicesPerAccount}`;
+      return rows.map(view);
+    },
+    /** Idempotent: `revoked` is true only for the call that revoked the device. Works while the account is
+     * expired or app sign-in is disabled, because revocation only removes access. */
+    revokeUserDevice: async (actor: AppDeviceAdministrator, userId: string, id: string) => {
+      if (!actor.admin) return reject("FORBIDDEN", 403);
+      const cfg = await config(false);
+      return db.begin(async (tx) => {
+        const [device] = await tx<
+          DeviceRow[]
+        >`SELECT * FROM auth.app_devices WHERE id=${id}::uuid AND issuer=${cfg.issuer} AND user_id=${userId}::uuid FOR UPDATE`;
+        if (!device) return reject("UNAVAILABLE", 404);
+        if (device.revoked_at) return { device: view(device), revoked: false };
+        const [row] = await tx<DeviceRow[]>`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${id}::uuid RETURNING *`;
+        await record(tx, "device.revoke", actor.userId, id, { targetUserId: userId });
+        return { device: view(row!), revoked: true };
       });
     },
     startLogin: async (identifier: string, category: AccountCategory) => {

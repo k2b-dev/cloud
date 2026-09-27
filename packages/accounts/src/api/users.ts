@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { IpaProfileFieldsSchema, UpdateAvatarResponseSchema, UpdateAvatarSchema, UserSchema } from "@k2b/cloud/contracts";
+import {
+  AppDeviceViewSchema,
+  IpaProfileFieldsSchema,
+  UpdateAvatarResponseSchema,
+  UpdateAvatarSchema,
+  UserSchema,
+} from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, logger } from "@k2b/cloud/services";
+import { AppApprovalError, accountsAppService as accountsService, appApproval, logger } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -26,6 +32,8 @@ import { accountsApiMessages } from "./messages";
 const log = logger("accounts:admin:users");
 const notificationSender = createAccountsNotificationSender(accountsApp.notifications);
 const UserIdParamSchema = z.object({ id: z.uuid() });
+const UserDeviceParamSchema = z.object({ id: z.uuid(), deviceId: z.uuid() });
+const UserDevicesResponseSchema = z.object({ devices: z.array(AppDeviceViewSchema) });
 
 // Admin PATCH accepts the same profile fields plus `mail`. Defined standalone
 // rather than `UpdateProfileSchema.extend(...)` so its refinement can treat
@@ -81,6 +89,22 @@ const NotifyUserSchema = z.object({
   subject: z.string().min(1).max(200).describe("Notification subject"),
   rawHtml: z.string().min(1).max(100_000).describe("HTML content of the notification"),
 });
+
+type UserBackedActor = ReturnType<typeof expectUserBackedActor>;
+const deviceAdministrator = (actor: UserBackedActor) => ({ userId: actor.id, admin: actor.roles.includes("admin") });
+
+/** Runs a device operation for an existing account and maps app-approval refusals to the Accounts error contract. */
+const userDeviceResult = async <T>(id: string, run: () => Promise<T>): Promise<Result<T>> => {
+  if (!(await accountsService.user.getMinimal({ id }))) return fail(err.notFound("User"));
+  try {
+    return ok(await run());
+  } catch (error) {
+    if (!(error instanceof AppApprovalError)) throw error;
+    if (error.status === 403) return fail(err.forbidden("Admin access required"));
+    if (error.status === 404) return fail(err.notFound("Device"));
+    return fail(err.internal("App sign-in is unavailable"));
+  }
+};
 
 const avatarHeaders = (avatarHash: string, contentType: string, byteLength: number) => ({
   "Cache-Control": "private, max-age=31536000, immutable",
@@ -612,6 +636,63 @@ const app = new Hono<AuthContext>()
         }
         return ok({ message: accountsApiMessages(getLocale(c)).notificationSent });
       });
+    },
+  )
+  .get(
+    "/:id/devices",
+    describeRoute({
+      tags: ["Users"],
+      summary: "List paired sign-in devices",
+      description: "List the active devices that can approve sign-ins for this account through app sign-in (admin only).",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(UserDevicesResponseSchema, "Active paired devices"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "User not found"),
+      },
+    }),
+    v("param", UserIdParamSchema),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const actor = deviceAdministrator(expectUserBackedActor(c));
+      return respond(
+        c,
+        userDeviceResult(id, async () => ({ devices: await appApproval.listUserDevices(actor, id) })),
+      );
+    },
+  )
+  .delete(
+    "/:id/devices/:deviceId",
+    describeRoute({
+      tags: ["Users"],
+      summary: "Revoke a paired sign-in device",
+      description:
+        "Revoke one of the account's paired devices so it can no longer approve sign-ins (admin only). Existing sessions stay valid. Repeating the call succeeds; the user is notified once.",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(MessageResponseSchema, "Device revoked"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "User or device not found"),
+      },
+    }),
+    v("param", UserDeviceParamSchema),
+    async (c) => {
+      const { id, deviceId } = c.req.valid("param");
+      const actor = expectUserBackedActor(c);
+      return respond(
+        c,
+        userDeviceResult(id, async () => {
+          const result = await appApproval.revokeUserDevice(deviceAdministrator(actor), id, deviceId);
+          // The revocation is committed; a failed notice must not turn it into an error.
+          if (result.revoked)
+            await notificationSender
+              .sendDeviceRevoked({ deviceId, userId: id, name: result.device.name, sentBy: actor.id, locale: getLocale(c) })
+              .catch((error) => log.error("Device revocation notice failed", { targetUserId: id, deviceId, error: String(error) }));
+          return { message: accountsApiMessages(getLocale(c)).deviceRevoked };
+        }),
+      );
     },
   )
   .post(

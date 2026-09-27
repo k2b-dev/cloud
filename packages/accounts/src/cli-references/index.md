@@ -23,6 +23,17 @@ cld accounts users set-admin ada.lovelace --enabled --yes
 
 The command rejects FreeIPA and guest accounts. Manage FreeIPA administrator membership through its groups instead. Read the specific command help before changing provider, profile, expiry, passwords, or deleting an account.
 
+## Sign-in devices
+
+Administrators can list the devices that approve a user's app sign-ins and revoke a lost one:
+
+```bash
+cld accounts users devices list ada.lovelace --json
+cld accounts users devices revoke ada.lovelace <device-id> --yes
+```
+
+The list shows active devices only. Revocation stops the device from approving sign-ins, leaves existing sessions signed in, and succeeds again for an already revoked device. The user is notified once, when Cloud can reach them. Changing a user's provider, demoting them to a guest, or a FreeIPA password reset also revokes all of their devices.
+
 ## Linux identities
 
 These commands require an administrator. Global configuration and paginated
@@ -74,6 +85,7 @@ Run `cld accounts <command> --help` for flags and argument order.
 | --- | --- |
 | Users | `users list`, `users get`, `users create`, `users update`, `users set-admin`, `users set-profile`, `users set-provider`, `users demote-to-guest`, `users set-expiry`, `users reset-password`, `users login-token`, `users send-login-link`, `users delete` |
 | User avatars | `users avatar get`, `users avatar set`, `users avatar remove` |
+| Sign-in devices | `users devices list`, `users devices revoke` |
 | Linux identities | `users linux get`, `users linux prepare`, `users linux update` |
 | Groups | `groups list`, `groups get`, `groups create`, `groups update`, `groups make-posix`, `groups delete` |
 | Group members | `groups members list`, `groups members add`, `groups members remove` |

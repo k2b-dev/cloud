@@ -16,7 +16,8 @@ for every Cloud/account pairing. There is no central credential server or
 Cloud-cookie sharing.
 
 Cloud includes app sign-in, device management under **My account → Security**,
-and administrator-assisted pairing from a user's Accounts detail page.
+and administrator-assisted pairing and device revocation from a user's
+Accounts detail page.
 The [Cloud Login authenticator](./cloud-login.md) is deployed separately. Existing email, FreeIPA
 password and passkey sign-ins remain available; enabling app approval does not
 remove them or grant Linux access.
@@ -400,12 +401,48 @@ including revoked ones, as `{items,nextCursor}`. Items contain
 Both require recent authentication and ownership. Management remains available
 when app approval is disabled.
 
+### Revoke a device for someone else
+
+A person who lost their only paired device cannot sign in to revoke it.
+Administrators open **Accounts → Users → the user**. **Sign-in devices** lists
+the account's active devices with their name, pairing date and last use.
+**Revoke device** asks for confirmation, then stops that device from approving
+sign-ins. Administrators can do the same through the Accounts API and the
+CLI:
+
+| Surface | List | Revoke |
+| --- | --- | --- |
+| HTTP | `GET /api/accounts/users/{id}/devices` returns `{devices}` with the item fields above | `DELETE /api/accounts/users/{id}/devices/{deviceId}` |
+| CLI | `cld accounts users devices list <user>` | `cld accounts users devices revoke <user> <device-id> --yes` |
+
+Only administrators can list or revoke another account's devices; everyone
+else gets 403. The list contains active devices only. No recent sign-in is
+required, and revocation works while app sign-in is disabled or the account
+has expired. Repeating a revocation succeeds without changing anything. The
+first revocation writes an `auth.app.device.revoke` audit entry naming the
+administrator as actor, the device as target and the account as
+`targetUserId`. It also notifies the person, by email by default and through
+browser notifications when they have no email address. Delivery is best
+effort: the revocation stands when no channel reaches them.
+
+To replace a lost device, revoke it and then pair a new one with
+[administrator-assisted pairing](#pair-a-device).
+
+### What revocation ends
+
 Revocation before completion prevents even an approved request from being used.
 Completion's database commit is the authorization boundary: later revocation
 does not cancel issuance already authorized or existing sessions. Revoke
-sessions separately during incident recovery. Conversely, session revocation
-does not delete device credentials; changes to the account authentication epoch
-invalidate outstanding login requests.
+sessions separately during incident recovery.
+
+When Cloud signs an account out everywhere, it also revokes every paired
+device of that account, including devices paired while the Cloud used another
+address. This happens after a FreeIPA password reset, when an administrator
+switches the account's provider or demotes it to a guest, when FreeIPA
+synchronization removes or demotes it, and when Cloud ends the sessions of an
+expired account. Outstanding login requests from before that point stay unusable.
+A pairing started in a session that was signed out cannot be confirmed. The
+person pairs again after signing in; assisted pairing works as usual.
 
 Account expiry and current category policy are checked on device operations and
 completion. FreeIPA users use the synchronized **Cloud account**: there is no
@@ -415,8 +452,9 @@ synchronized into Cloud cannot be observed here. Keep synchronization healthy
 or disable app approval when immediate upstream revocation is required.
 
 Recovery uses an existing supported login method followed by recent-session
-device revocation. This API introduces no email override for FreeIPA, grants
-no Linux access, and removes no passkeys.
+device revocation, or an administrator who revokes the device. This API
+introduces no email override for FreeIPA, grants no Linux access, and removes
+no passkeys.
 
 ## Verify the integration
 
