@@ -16,6 +16,13 @@ const ruleBlocks = (css: string) =>
     })),
   }));
 
+let compiledGlobal: Promise<string> | undefined;
+const compileGlobal = () =>
+  (compiledGlobal ??= Bun.build({ entrypoints: [resolve(workspaceRoot, "styles.css")], plugins: [tailwind] }).then((build) => {
+    if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
+    return build.outputs[0]!.text();
+  }));
+
 describe("Cloud tokens", () => {
   // Bun 1.4.2 keeps only the first of adjacent same-condition @supports rules
   // (oven-sh/bun#24770). With Tailwind's color-mix() polyfill that left one
@@ -31,9 +38,7 @@ describe("Cloud tokens", () => {
       expect.arrayContaining([".dark --ui-selected", ".dark --ui-app-accent-border", ":root --ui-app-accent-text"]),
     );
 
-    const build = await Bun.build({ entrypoints: [resolve(workspaceRoot, "styles.css")], plugins: [tailwind] });
-    expect(build.success).toBe(true);
-    const compiled = ruleBlocks(await build.outputs[0]!.text());
+    const compiled = ruleBlocks(await compileGlobal());
 
     const lost = mixed.filter(
       ({ selector, property, value }) =>
@@ -44,5 +49,12 @@ describe("Cloud tokens", () => {
         ),
     );
     expect(lost).toEqual([]);
+  });
+
+  // Pins the bun-plugin-tailwind patch, which every stylesheet build shares
+  // (global.css, @k2b/ui, app.css, docs), so component rules outside tokens.css
+  // are covered too. Remove this test together with the patch.
+  test("compile without Tailwind's color-mix() polyfill", async () => {
+    expect(await compileGlobal()).not.toMatch(/@supports\s*\(\s*color:\s*color-mix\(/);
   });
 });
