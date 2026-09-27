@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -6,6 +6,7 @@ import { env } from "../../config/env";
 import type { User } from "../../contracts/shared";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
+import { audit } from "../audit";
 import { IDENTITY_CLOCK_TOLERANCE_SECONDS, IDENTITY_ROLLOUT_MARGIN_MS } from "../identity/constants";
 import { invalidateIdentitySignerCache, prepareIdentitySigner } from "../identity/key-ring";
 import { getIdentityRuntimeConfig } from "../identity/runtime-config";
@@ -59,6 +60,17 @@ const requestCached = <T>(
 const verifyForRequest = (c: Context, token: string): Promise<CloudSessionClaims | null> =>
   requestCached(verificationByRequest, c, token, () => verifyCredential(token));
 
+/** Moves the account's authentication epoch, which ends every session issued before it.
+ * Request-time expiry uses only this: device operations check expiry themselves and an
+ * administrator can lift it, so revoking devices would depend on which request came first. */
+const endSessions = async (db: SQL, userId: string): Promise<void> => {
+  const [updated] = await db<Array<{ id: string }>>`
+    UPDATE auth.users SET auth_epoch = auth_epoch + 1
+    WHERE id = ${userId}::uuid RETURNING id
+  `;
+  if (!updated) throw new Error("Cannot revoke sessions for an unknown user");
+};
+
 const authenticateVerified = async (credential: CloudSessionClaims): Promise<AuthenticatedSession | null> => {
   const { groupsAdmin } = await getIdentityRuntimeConfig();
   const user = await loadJwtSessionUser({
@@ -69,7 +81,7 @@ const authenticateVerified = async (credential: CloudSessionClaims): Promise<Aut
   });
   if (!user) return null;
   if (isAccountExpired(user.accountExpires)) {
-    await session.revokeAllForUser(user.id);
+    await endSessions(sql, user.id);
     return null;
   }
   return {
@@ -94,7 +106,7 @@ const authenticateUserId = async (token: string): Promise<string | null> => {
   const identity = await loadJwtSessionIdentity({ userId: credential.sub, sid: credential.sid, authEpoch: credential.auth_epoch });
   if (!identity) return null;
   if (isAccountExpired(identity.accountExpires)) {
-    await session.revokeAllForUser(identity.userId);
+    await endSessions(sql, identity.userId);
     return null;
   }
   return identity.userId;
@@ -224,16 +236,24 @@ export const session = {
     deleteCookie(c, "session_token", { path: "/" });
   },
 
-  /** Signs the account out everywhere: every session and every paired sign-in device. */
+  /** Signs the account out everywhere: every session and every paired sign-in device, audited per device. */
   revokeAllForUser: async (userId: string): Promise<void> => {
     await sql.begin(async (tx) => {
-      const [updated] = await tx<Array<{ id: string }>>`
-        UPDATE auth.users SET auth_epoch = auth_epoch + 1
-        WHERE id = ${userId}::uuid RETURNING id
-      `;
-      if (!updated) throw new Error("Cannot revoke sessions for an unknown user");
+      await endSessions(tx, userId);
       // A paired device approves new sign-ins on its own, so a lost one would outlive the epoch change.
-      await tx`UPDATE auth.app_devices SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL`;
+      const devices = await tx<Array<{ id: string }>>`
+        UPDATE auth.app_devices SET revoked_at = now() WHERE user_id = ${userId}::uuid AND revoked_at IS NULL RETURNING id
+      `;
+      for (const device of devices)
+        await audit.record(
+          {
+            action: "auth.app.device.revoke",
+            outcome: "allowed",
+            target: { type: "app_device", id: device.id },
+            metadata: { targetUserId: userId, provenance: "system", reason: "sign_out_everywhere" },
+          },
+          tx,
+        );
     });
   },
 
