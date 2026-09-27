@@ -190,6 +190,7 @@ export const buildMarkdownPdfHtml = (input: RenderMarkdownToPdfInput): string =>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src 'none'; font-src 'none'; form-action 'none'; frame-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'">
 <style>${stylesheet}</style>
 </head>
 <body><main class="markdown-document">${content}</main></body>

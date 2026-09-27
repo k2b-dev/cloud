@@ -75,8 +75,9 @@ The available A4 presets are `document`, `report`, and `compact`. Optional
 `templateId` to use custom CSS as the complete stylesheet; omit both fields to
 use `document`. CSS is limited to 32 KiB. Raw HTML stays inert. Markdown image
 references become safe links, so the renderer never fetches them. CSS imports,
-URLs, and other external resources are rejected. The generated HTML then
-goes through the same bounded, offline HTML renderer.
+URLs, and other external resources are rejected. The generated HTML also
+carries a restrictive Content Security Policy before it goes through the
+same bounded, offline HTML renderer.
 
 The service owns conversion only. Callers still own authentication,
 authorization, request limits, filenames, response headers, and persistence.
