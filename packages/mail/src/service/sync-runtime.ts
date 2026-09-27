@@ -32,7 +32,7 @@ import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
-import { hydrateMessageFromSource } from "./message-hydration";
+import { hydrateMessageFromSource, recordMissingMessageSources } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { normalizeMailSubject } from "./message-threading";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
@@ -1328,8 +1328,9 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
   let activeFence: FenceClaim | null = null;
+  let batch: SyncBatchResult;
   try {
-    return await withLeaseHeartbeat({
+    batch = await withLeaseHeartbeat<SyncBatchResult>({
       intervalMs: 30_000,
       heartbeat: async () => {
         await extendSyncLease(lock, "during background work");
@@ -1430,9 +1431,6 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
           reconcileWindow,
         });
 
-        for (const messageId of result.hydratedIds) {
-          await submitHydrationJob(messageId);
-        }
         await enqueueDraftImports(result.draftImportSnapshotIds);
         await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
         const hasMore =
@@ -1465,6 +1463,10 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
       .release(lock)
       .catch(() => false);
   }
+  // Queued only after the provider lease is released: a hydration job that starts while this
+  // sync still holds it finds the resource busy and waits 5-30 seconds before its next try.
+  if (batch.imported > 0) await submitHydrationJob({ mailboxId: folder.mailbox_id });
+  return batch;
 };
 
 const normalizeSyncErrorCode = (error: unknown): string => {
@@ -1545,7 +1547,101 @@ const invalidateSettledConversations = async (mailboxId: string, messageIds: Rea
   }
 };
 
-export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>): Promise<{ hydrated: boolean }> => {
+/**
+ * A hydration job either works through one mailbox (`mailboxId`) or fetches one requested
+ * message (`messageId`). A mailbox job hydrates one source batch per run and then queues again
+ * behind every other mailbox's job, so the single worker slot takes turns between mailboxes
+ * instead of draining one mailbox's backlog first.
+ */
+type HydrationInput = { mailboxId: string } | { messageId: string };
+
+type HydrationTarget = {
+  id: string;
+  hydration_attempt: number;
+  mailbox_id: string;
+  folder_id: string;
+  remote_resource_id: string;
+};
+
+type HydrationBatch = { hydrated: boolean; settled: number; missingFromUid: number | null; targetError: unknown };
+
+const requestedHydrationTarget = async (messageId: string): Promise<HydrationTarget | null> => {
+  const [target] = await sql<HydrationTarget[]>`
+    SELECT mc.id, mc.hydration_attempt, mc.mailbox_id, rmr.folder_id, f.remote_resource_id
+    FROM mail.message_contents mc
+    JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
+    JOIN mail.folders f
+      ON f.id = rmr.folder_id
+     AND f.selected_for_sync = true
+     AND f.discovery_state = 'active'
+     AND f.sync_status <> 'excluded'
+    JOIN mail.mailboxes mailbox
+      ON mailbox.id = mc.mailbox_id
+     AND mailbox.sync_enabled = true
+     AND mailbox.deleted_at IS NULL
+    WHERE mc.id = ${messageId}::uuid
+      AND mc.hydration_status <> 'complete'
+      AND mc.hydration_attempt < 5
+    ORDER BY f.role = 'inbox' DESC, rmr.last_seen_at DESC
+    LIMIT 1
+  `;
+  return target ?? null;
+};
+
+/**
+ * The newest body of the mailbox that a batch can fetch: a fresh one, or with `retry` one that
+ * was already tried and failed or came back without a source. The folder must be readable
+ * through the mailbox's binding at the reference's UIDVALIDITY, as the batch requires, so a
+ * body no batch can fetch never becomes the mailbox's target.
+ *
+ * One index probe per hydration status keeps this cheap for any backlog; the status condition
+ * repeats the predicate of `message_contents_hydration_queue_idx` so Postgres can use it.
+ */
+const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<HydrationTarget | null> => {
+  const [target] = await sql<HydrationTarget[]>`
+    SELECT newest.id, newest.hydration_attempt, newest.mailbox_id, newest.folder_id, newest.remote_resource_id
+    FROM mail.mailboxes mailbox
+    CROSS JOIN unnest(ARRAY['envelope', 'headers', 'body', 'failed']::text[]) AS status(value)
+    CROSS JOIN LATERAL (
+      SELECT mc.id, mc.hydration_attempt, mc.internal_date, mc.mailbox_id, rmr.folder_id, f.remote_resource_id
+      FROM mail.message_contents mc
+      JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
+      JOIN mail.folders f
+        ON f.id = rmr.folder_id
+       AND f.selected_for_sync = true
+       AND f.discovery_state = 'active'
+       AND f.sync_status <> 'excluded'
+      WHERE mc.mailbox_id = mailbox.id
+        AND mc.hydration_status = status.value
+        AND (mc.hydration_status IN ('envelope', 'headers', 'body') OR (mc.hydration_status = 'failed' AND mc.hydration_attempt < 5))
+        AND mc.hydration_attempt < 5
+        AND (mc.hydration_attempt > 0) = ${retry}
+        AND EXISTS (
+          SELECT 1
+          FROM mail.binding_folder_refs bfr
+          JOIN mail.provider_bindings binding ON binding.id = bfr.binding_id AND binding.state IN ('active', 'degraded')
+          WHERE bfr.folder_id = rmr.folder_id
+            AND bfr.uid_validity = rmr.uid_validity
+            AND 'read' = ANY(bfr.effective_rights)
+        )
+      ORDER BY mc.internal_date DESC, mc.id, f.role = 'inbox' DESC, rmr.last_seen_at DESC
+      LIMIT 1
+    ) newest
+    WHERE mailbox.id = ${mailboxId}::uuid
+      AND mailbox.sync_enabled = true
+      AND mailbox.deleted_at IS NULL
+    ORDER BY newest.internal_date DESC, newest.id
+    LIMIT 1
+  `;
+  return target ?? null;
+};
+
+// Fresh bodies first, newest first. A body that was already tried comes only after every fresh
+// one, so a failing or vanished message cannot take the mailbox's turn again and again.
+const nextMailboxHydrationTarget = async (mailboxId: string): Promise<HydrationTarget | null> =>
+  (await newestPendingBody(mailboxId, false)) ?? (await newestPendingBody(mailboxId, true));
+
+export const hydrateMessageBatch = async (ctx: JobContext<HydrationInput>): Promise<{ hydrated: boolean }> => {
   let activeClaim: { messageId: string; claimId: string } | null = null;
   return withLeaseHeartbeat({
     intervalMs: 60_000,
@@ -1561,36 +1657,16 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
       `;
     },
     work: async () => {
-      const [message] = await sql<
-        {
-          mailbox_id: string;
-          folder_id: string;
-          remote_resource_id: string;
-        }[]
-      >`
-        SELECT mc.mailbox_id, rmr.folder_id, f.remote_resource_id
-        FROM mail.message_contents mc
-        JOIN mail.remote_message_refs rmr ON rmr.message_id = mc.id AND rmr.stale_at IS NULL
-        JOIN mail.folders f
-          ON f.id = rmr.folder_id
-         AND f.selected_for_sync = true
-         AND f.discovery_state = 'active'
-         AND f.sync_status <> 'excluded'
-        JOIN mail.mailboxes mailbox
-          ON mailbox.id = mc.mailbox_id
-         AND mailbox.sync_enabled = true
-         AND mailbox.deleted_at IS NULL
-        WHERE mc.id = ${ctx.input.messageId}::uuid
-          AND mc.hydration_status <> 'complete'
-          AND mc.hydration_attempt < 5
-        ORDER BY f.role = 'inbox' DESC, rmr.last_seen_at DESC
-        LIMIT 1
-      `;
+      const message =
+        "mailboxId" in ctx.input
+          ? await nextMailboxHydrationTarget(ctx.input.mailboxId)
+          : await requestedHydrationTarget(ctx.input.messageId);
       if (!message) return { hydrated: false };
       const lock = await mailProviderOperationMutex().acquire({ resource: message.remote_resource_id, ttlMs: SYNC_LEASE_MS });
       if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY" });
+      let batch: HydrationBatch;
       try {
-        return await withLeaseHeartbeat({
+        batch = await withLeaseHeartbeat<HydrationBatch>({
           intervalMs: 30_000,
           heartbeat: () => extendSyncLease(lock, "during message hydration"),
           work: async (assertProviderLeaseActive, signal) => {
@@ -1610,6 +1686,9 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
               throw Object.assign(new Error("Mailbox transport changed before hydration"), { code: "MAILBOX_TRANSPORT_CHANGED" });
             }
             await waitForMailProviderSlot(message.remote_resource_id, signal);
+            // A mailbox job's batch led by a fresh body takes only fresh ones, so a body that was
+            // already tried is retried only by a batch that starts from it, after every fresh one.
+            const takesRetries = "messageId" in ctx.input || message.hydration_attempt > 0;
             const candidates = await sql<{ id: string; uid: string | number; uid_validity: string | number }[]>`
         SELECT mc.id, rmr.uid, rmr.uid_validity
         FROM mail.message_contents mc
@@ -1628,14 +1707,19 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
             mc.hydration_status <> 'hydrating'
             OR mc.hydration_claimed_at < now() - interval '15 minutes'
           )
-        ORDER BY (mc.id = ${ctx.input.messageId}::uuid) DESC, mc.internal_date DESC, mc.id DESC
+          AND (mc.hydration_attempt = 0 OR ${takesRetries})
+        ORDER BY (mc.id = ${message.id}::uuid) DESC, mc.hydration_attempt > 0, mc.internal_date DESC, mc.id DESC
         LIMIT ${HYDRATION_BATCH_SIZE}
       `;
-            if (candidates.length === 0) return { hydrated: false };
+            if (candidates.length === 0) return { hydrated: false, settled: 0, missingFromUid: null, targetError: null };
 
             let hydrated = false;
-            let requestedMessageError: unknown = null;
+            // Only a job for one requested message fails with its message and retries; a mailbox job
+            // has recorded the failure on the message and moves on to the next fresh body.
+            let targetError: unknown = null;
             const settled = new Set<string>();
+            const delivered = new Set<string>();
+            let missing: typeof candidates = [];
             await assertProviderLeaseActive();
             await assertMailboxTransportFence(transportFence);
             try {
@@ -1648,6 +1732,7 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
                   uid: Number(candidate.uid),
                 })),
                 async (source) => {
+                  delivered.add(source.key);
                   await assertProviderLeaseActive();
                   await assertMailboxTransportFence(transportFence);
                   const claimId = randomUUID();
@@ -1674,7 +1759,7 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
                     if (code !== "HYDRATION_NOT_CLAIMED") {
                       settled.add(source.key);
                       log.warn("Mail message hydration failed within a source batch", { messageId: source.key, code });
-                      if (source.key === ctx.input.messageId) requestedMessageError = error;
+                      if (source.key === message.id && "messageId" in ctx.input) targetError = error;
                     }
                   } finally {
                     activeClaim = null;
@@ -1682,13 +1767,29 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
                 },
                 signal,
               );
+              // The live connection returned no source for these UIDs. Each such fetch uses one
+              // attempt, so a message the provider keeps listing without a source ends as failed.
+              missing = candidates.filter((candidate) => !delivered.has(candidate.id));
+              if (missing.length > 0) {
+                await assertProviderLeaseActive();
+                const recorded = await recordMissingMessageSources(
+                  missing.map((candidate) => candidate.id),
+                  transportFence,
+                );
+                for (const messageId of recorded) settled.add(messageId);
+              }
             } finally {
               await invalidateSettledConversations(message.mailbox_id, settled);
             }
             await assertProviderLeaseActive();
             await assertMailboxTransportFence(transportFence);
-            if (requestedMessageError) throw requestedMessageError;
-            return { hydrated };
+            const missingUids = missing.map((candidate) => Number(candidate.uid));
+            return {
+              hydrated,
+              settled: settled.size,
+              missingFromUid: missingUids.length > 0 ? Math.min(...missingUids) : null,
+              targetError,
+            };
           },
         });
       } finally {
@@ -1696,13 +1797,22 @@ export const hydrateMessageBatch = async (ctx: JobContext<{ messageId: string }>
           .release(lock)
           .catch(() => false);
       }
+      // Folder reconciliation retires the references of messages the provider deleted.
+      if (batch.missingFromUid !== null) await enqueueFolderReconciliation(message.folder_id, batch.missingFromUid);
+      if (batch.targetError) throw batch.targetError;
+      // A batch that settled nothing must not requeue itself, and bodies that were already tried
+      // wait for the next `mail:sync-due` tick instead of being retried back to back.
+      if ("mailboxId" in ctx.input && batch.settled > 0 && (await newestPendingBody(ctx.input.mailboxId, false))) {
+        ctx.resubmit({ delayMs: 0 });
+      }
+      return { hydrated: batch.hydrated };
     },
   });
 };
 
 const HYDRATION_MAX_ATTEMPTS = 5;
 const hydrationJob = lazySync((sync) =>
-  sync.job<{ messageId: string }>({
+  sync.job<HydrationInput>({
     id: "mail:hydrate-message",
     delivery: { ackWaitMs: 5 * 60_000, maxAttempts: HYDRATION_MAX_ATTEMPTS, backoffMs: [10_000, 20_000, 40_000, 80_000] },
   }),
@@ -1723,6 +1833,13 @@ const startHydrationJob = async (): Promise<void> => {
         ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
         return;
       }
+      // A mailbox job does not wait out a retry backoff: its coalesced key would absorb the job
+      // that the next sync queues for new mail. That sync or the `mail:sync-due` tick queues the
+      // mailbox again.
+      if ("mailboxId" in ctx.input) {
+        log.warn("Mail mailbox hydration failed", { mailboxId: ctx.input.mailboxId, code });
+        return;
+      }
       if (ctx.attempt >= HYDRATION_MAX_ATTEMPTS) {
         log.error("Mail message hydration exhausted retries", { messageId: ctx.input.messageId, failureCount: ctx.failureCount, code });
       }
@@ -1731,8 +1848,25 @@ const startHydrationJob = async (): Promise<void> => {
   });
 };
 
+/** Queues one message's body on its own, for a caller that waits for exactly that message. */
 export const enqueueMessageHydration = async (messageId: string): Promise<void> => {
-  await submitHydrationJob(messageId);
+  await submitHydrationJob({ messageId });
+};
+
+/** Hydrates every pending body of the mailbox, one batch per turn of the shared worker. */
+export const enqueueMailboxHydration = async (mailboxId: string): Promise<void> => {
+  await submitHydrationJob({ mailboxId });
+};
+
+/** Starts only the hydration worker and its submissions, without the Mail schedulers, for integration tests. */
+export const startHydrationRuntime = async (): Promise<void> => {
+  syncTasks.open();
+  await startHydrationJob();
+};
+
+export const stopHydrationRuntime = async (): Promise<void> => {
+  await stopRuntimeJobs(syncTasks, hydrationJobWorker ? [hydrationJobWorker] : []);
+  hydrationJobWorker = undefined;
 };
 
 // One rediscovery attempt must fit the job's delivery window, which is also the
@@ -1823,9 +1957,9 @@ const submitSyncFolderJob = async (folderId: string): Promise<void> => {
     Promise.resolve());
 };
 
-const submitHydrationJob = async (messageId: string): Promise<void> => {
-  await (syncTasks.run(() => hydrationJob().submit({ coalesce: true, key: `message:${messageId}`, input: { messageId } })) ??
-    Promise.resolve());
+const submitHydrationJob = async (input: HydrationInput): Promise<void> => {
+  const key = "mailboxId" in input ? `mailbox:${input.mailboxId}` : `message:${input.messageId}`;
+  await (syncTasks.run(() => hydrationJob().submit({ coalesce: true, key, input })) ?? Promise.resolve());
 };
 
 const submitRediscoveryJob = async (bindingId: string, allowCredentialRevision: boolean): Promise<void> => {
@@ -1836,10 +1970,44 @@ const submitRediscoveryJob = async (bindingId: string, allowCredentialRevision: 
 
 let mailSchedulerWorker: Worker | undefined;
 
+/**
+ * Queues the coalesced hydration job of every mailbox with a body left to fetch, including
+ * retries of bodies that were already tried. Returns how many mailboxes it queued.
+ */
+export const submitDueHydrationWork = async (): Promise<number> => {
+  // The status condition repeats the predicate of `message_contents_hydration_queue_idx`, so each
+  // mailbox costs one index probe instead of a scan of every pending body in the installation.
+  const mailboxes = await sql<{ id: string }[]>`
+    SELECT mailbox.id
+    FROM mail.mailboxes mailbox
+    WHERE mailbox.sync_enabled = true
+      AND mailbox.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM mail.message_contents mc
+        WHERE mc.mailbox_id = mailbox.id
+          AND (mc.hydration_status IN ('envelope', 'headers', 'body') OR (mc.hydration_status = 'failed' AND mc.hydration_attempt < 5))
+          AND mc.hydration_attempt < 5
+          AND EXISTS (
+            SELECT 1
+            FROM mail.remote_message_refs remote_ref
+            WHERE remote_ref.message_id = mc.id
+              AND remote_ref.stale_at IS NULL
+          )
+      )
+    ORDER BY mailbox.id
+    LIMIT 500
+  `;
+  for (const mailbox of mailboxes) {
+    await submitHydrationJob({ mailboxId: mailbox.id });
+  }
+  return mailboxes.length;
+};
+
 const submitDueWork = async (): Promise<{
   bindings: number;
   folders: number;
-  messages: number;
+  hydrationMailboxes: number;
   draftExports: number;
   draftImports: number;
 }> => {
@@ -1900,31 +2068,12 @@ const submitDueWork = async (): Promise<{
     await submitSyncFolderJob(folder.id);
   }
 
-  const messages = await sql<{ id: string }[]>`
-    SELECT mc.id
-      FROM mail.message_contents mc
-      JOIN mail.mailboxes m ON m.id = mc.mailbox_id
-      WHERE mc.hydration_status IN ('envelope', 'headers', 'body', 'failed')
-        AND mc.hydration_attempt < 5
-        AND m.sync_enabled = true
-        AND m.deleted_at IS NULL
-        AND EXISTS (
-          SELECT 1
-          FROM mail.remote_message_refs remote_ref
-          WHERE remote_ref.message_id = mc.id
-            AND remote_ref.stale_at IS NULL
-        )
-    ORDER BY mc.internal_date DESC, mc.id DESC
-    LIMIT 500
-  `;
-  for (const message of messages) {
-    await submitHydrationJob(message.id);
-  }
+  const hydrationMailboxes = await submitDueHydrationWork();
   const draftProjection = await submitDueDraftProjectionWork();
   return {
     bindings: bindings.length,
     folders: folders.length,
-    messages: messages.length,
+    hydrationMailboxes,
     draftExports: draftProjection.exports,
     draftImports: draftProjection.imports,
   };

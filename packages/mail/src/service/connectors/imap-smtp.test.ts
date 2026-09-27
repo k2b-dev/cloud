@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import type { Socket } from "bun";
 import type { ListResponse } from "imapflow";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
@@ -8,6 +9,7 @@ import {
   assertUidValidity,
   connectSmtpConnection,
   disposeImapClient,
+  downloadSelectedSources,
   normalizeImapQuotaEvidence,
   parseEnvelopeHeaders,
   parseReferences,
@@ -130,6 +132,40 @@ describe("IMAP envelope UID batching", () => {
     });
     expect(result.uids).toEqual(Array.from({ length: 200 }, (_, index) => index + 801));
     expect(result.nextHighUid).toBe(800);
+  });
+});
+
+describe("IMAP source downloads", () => {
+  const requests = [1, 2, 3].map((uid) => ({ key: `message-${uid}`, uidValidity: "10", uid }));
+  const source = (uid: number) => ({ meta: { expectedSize: 1, contentType: "message/rfc822" }, content: Readable.from([String(uid)]) });
+
+  test("skip a UID the provider no longer has and keep streaming the rest of the batch", async () => {
+    const consumed: string[] = [];
+    await downloadSelectedSources(
+      {
+        usable: true,
+        mailbox: { uidValidity: 10n } as never,
+        // FETCH for an expunged UID returns no message; imapflow then resolves an empty object.
+        download: async (uid) => (uid === 2 ? {} : source(uid)),
+      },
+      requests,
+      async (download) => {
+        consumed.push(download.key);
+      },
+    );
+    expect(consumed).toEqual(["message-1", "message-3"]);
+  });
+
+  test("fail the batch instead of skipping the rest when the connection closed between downloads", async () => {
+    const client = { usable: true, mailbox: { uidValidity: 10n } as never, download: async (uid: number) => source(uid) };
+    const consumed: string[] = [];
+    const batch = downloadSelectedSources(client, requests, async (download) => {
+      consumed.push(download.key);
+      // The server drops the connection after the first message; imapflow then answers every download with {}.
+      Object.assign(client, { usable: false, mailbox: false, download: async () => ({}) });
+    });
+    await expect(batch).rejects.toMatchObject({ code: "IMAP_CONNECTION_LOST" });
+    expect(consumed).toEqual(["message-1"]);
   });
 });
 

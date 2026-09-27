@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { logger } from "@k2b/cloud/services";
+import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { Headers } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
@@ -646,6 +647,34 @@ const applyVerifiedConversationTransition = async (params: {
     targetId: params.messageId,
     activityId: String(activity.id),
   };
+};
+
+/**
+ * Counts a fetch that the provider answered without the message source as one hydration
+ * attempt. Folder reconciliation usually retires the reference of a deleted message first; a
+ * message the provider keeps listing without a source uses up its attempts and ends as failed.
+ * Returns the messages whose attempt was counted.
+ */
+export const recordMissingMessageSources = async (messageIds: string[], transportFence: MailboxTransportFence): Promise<string[]> => {
+  const recorded = await sql.begin(async (tx) => {
+    await assertMailboxTransportFence(transportFence, tx);
+    return tx<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
+      UPDATE mail.message_contents
+      SET
+        hydration_attempt = hydration_attempt + 1,
+        hydration_error_code = 'MESSAGE_SOURCE_MISSING',
+        hydration_status = CASE WHEN hydration_attempt + 1 >= ${MAX_HYDRATION_ATTEMPTS} THEN 'failed' ELSE hydration_status END
+      WHERE id = ANY(${toPgUuidArray(messageIds)}::uuid[])
+        AND hydration_status IN ('envelope', 'headers', 'body', 'failed')
+        AND hydration_attempt < ${MAX_HYDRATION_ATTEMPTS}
+      RETURNING id, mailbox_id, hydration_attempt
+    `;
+  });
+  for (const message of recorded) {
+    if (message.hydration_attempt < MAX_HYDRATION_ATTEMPTS) continue;
+    await publishMailWorkflowDependency({ mailboxId: message.mailbox_id, dependency: { kind: "mail.hydration", key: message.id } });
+  }
+  return recorded.map((message) => message.id);
 };
 
 export const hydrateMessageFromSource = async (params: {
