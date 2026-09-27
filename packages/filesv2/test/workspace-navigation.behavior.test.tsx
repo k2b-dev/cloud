@@ -15,7 +15,7 @@ if (!isServer) {
       shares: { $get: request("shares") },
       recent: { $get: request("recent") },
       favorites: { $get: request("favorites") },
-      bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") } } },
+      bases: { $get: request("bases"), ":baseId": { entries: { $get: request("entries") }, trash: { $get: request("trash") } } },
     },
   }));
 }
@@ -275,6 +275,86 @@ describe("Filesv2 progressive navigation", () => {
     expect(dom.window.location.search).toBe("?base=home&path=Documents");
     expect(dom.root.querySelector(".k2b-app-workspace__main")!.textContent).toContain("This folder is empty");
     expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "bases", "entries", "bases", "entries"]);
+  });
+  test("the sidebar tree holds only storage and folders; each storage root's listing opens its trash", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", initial.source);
+    const { default: Workspace } = await import("../src/frontend/Workspace.island");
+    const home = {
+      id: "home",
+      area: "cloud" as const,
+      kind: "users" as const,
+      name: "Alice",
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const group = { ...home, id: "accounting", kind: "groups" as const, name: "Accounting" };
+    const bases = { items: [home, group], issues: [], editor: null };
+    const directory = {
+      base: home,
+      path: "",
+      items: [{ name: "Documents", path: "Documents", directory: true, size: 0, modified: "2026-09-17T00:00:00Z" }],
+      next: null,
+    };
+    const dispose = render(
+      () =>
+        createComponent(Workspace, {
+          initial: { ...initial, bases, selectedId: home.id, directory },
+          cloudUrl: "https://cloud.test",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    const tree = () => dom.root.querySelector<HTMLElement>('[role="tree"]')!;
+    const selectedNode = () => tree().querySelector('[role="treeitem"][aria-selected="true"]')?.getAttribute("data-k2b-nav-tree-id");
+    const expectNoTrashInTree = () => {
+      expect(tree().textContent).not.toContain("Trash");
+      expect(tree().querySelector(".ti-trash")).toBeNull();
+      expect(tree().querySelector('a[href*="view=trash"]')).toBeNull();
+    };
+    const openTrash = async (baseId: string) => {
+      const entry = dom.root.querySelector<HTMLElement>(".filesv2-list__row--trash")!;
+      expect(entry.textContent).toBe("Trash");
+      entry.click();
+      await flush();
+      // The entry itself shows the pending navigation.
+      expect(entry.querySelector(".ti-loader-2")).not.toBeNull();
+      apiRequests.at(-1)!.resolve(Response.json(bases));
+      await flush();
+      expect(dom.window.location.search).toBe(`?base=${baseId}&view=trash`);
+      expect(apiRequests.at(-1)!.kind).toBe("trash");
+      expect(apiRequests.at(-1)!.input).toEqual({ param: { baseId }, query: { after: undefined } });
+      apiRequests.at(-1)!.resolve(Response.json({ entries: [], next: null }));
+      await flush();
+      expect(dom.root.querySelector("h1")?.textContent).toBe("Trash");
+      expect(dom.root.textContent).toContain("The trash is empty.");
+      // The trash belongs to its storage root, which stays the highlighted tree node.
+      expect(selectedNode()).toBe(JSON.stringify([baseId, null, ""]));
+      expectNoTrashInTree();
+    };
+
+    expect(tree().textContent).toContain("Documents");
+    expectNoTrashInTree();
+    await openTrash(home.id);
+
+    tree().querySelector<HTMLAnchorElement>('a[href="/app/filesv2?base=accounting"]')!.click();
+    await flush();
+    apiRequests.at(-1)!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests.at(-1)!.kind).toBe("entries");
+    apiRequests.at(-1)!.resolve(Response.json({ base: group, path: "", items: [], next: null }));
+    await flush();
+    expect(dom.window.location.search).toBe("?base=accounting");
+    expect(selectedNode()).toBe(JSON.stringify([group.id, null, ""]));
+    expectNoTrashInTree();
+    await openTrash(group.id);
+    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "trash", "bases", "entries", "bases", "trash"]);
   });
   test("failures of enabled areas show a notice next to working storage; no issues and no storage stay quiet", async () => {
     const dom = createDomTestHarness();

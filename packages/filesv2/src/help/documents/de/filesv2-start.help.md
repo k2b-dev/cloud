@@ -52,7 +52,7 @@ Das Detailpanel eines Eintrags bietet **In neuem Tab öffnen**, **Umbenennen**, 
 
 ## Papierkorb {icon="trash"}
 
-Löschen entfernt nie etwas endgültig: Einträge wandern in den Papierkorb ihrer Ablage, der als **Papierkorb** am Ende des Wurzelordners und in der Seitenleiste erscheint. Öffne ihn, um Gelöschtes zu sehen; **Wiederherstellen** legt einen Eintrag an seinen ursprünglichen Ort zurück. Fehlt der ursprüngliche Speicherort, gib einen Zielpfad einschließlich des Namens an. Vorhandene Dateien werden niemals ersetzt. Noch nicht bestätigte Verschiebungen bleiben sichtbar. Weitere Einträge erreichst du über die nächste Seite. Nur die Administration kann den Papierkorb leeren.
+Löschen entfernt nie etwas endgültig: Einträge wandern in den Papierkorb ihrer Ablage, der als **Papierkorb** am Ende ihres Wurzelordners erscheint. Öffne ihn, um Gelöschtes zu sehen; **Wiederherstellen** legt einen Eintrag an seinen ursprünglichen Ort zurück. Fehlt der ursprüngliche Speicherort, gib einen Zielpfad einschließlich des Namens an. Vorhandene Dateien werden niemals ersetzt. Noch nicht bestätigte Verschiebungen bleiben sichtbar. Weitere Einträge erreichst du über die nächste Seite. Nur die Administration kann den Papierkorb leeren.
 
 ## Versionen {icon="history"}
 

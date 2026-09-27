@@ -52,7 +52,7 @@ The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicat
 
 ## Trash {icon="trash"}
 
-Deleting never removes anything permanently: entries move into the trash of their storage location, which appears as **Trash** at the end of the root folder and in the sidebar. Open it to see what you deleted; **Restore** puts an entry back to its original place. An item without a recorded original location asks for a destination path including its name. Existing files are never overwritten. Pending moves remain visible until their outcome is confirmed. Use pagination for further entries. Only an administrator can empty the trash.
+Deleting never removes anything permanently: entries move into the trash of their storage location, which appears as **Trash** at the end of the storage location's root folder. Open it to see what you deleted; **Restore** puts an entry back to its original place. An item without a recorded original location asks for a destination path including its name. Existing files are never overwritten. Pending moves remain visible until their outcome is confirmed. Use pagination for further entries. Only an administrator can empty the trash.
 
 ## Versions {icon="history"}
 
