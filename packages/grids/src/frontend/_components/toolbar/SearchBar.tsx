@@ -12,6 +12,8 @@ type Props = {
   initialQ: string;
   /** Field ids the search is currently scoped to (`?qFields=csv`). Empty = all. */
   initialQFields: string[];
+  /** Records are loading; only the search icon changes, so the toolbar keeps its layout. */
+  busy?: boolean;
   /**
    * Emit the current free-text search shape to the parent (RecordsView)
    * which owns the canonical query state + URL sync. The bar keeps its
@@ -70,7 +72,8 @@ export default function SearchBar(props: Props) {
           name="grids-record-search"
           type="search"
           aria-label={t().searchRecords}
-          icon="ti ti-search"
+          aria-busy={props.busy ? "true" : undefined}
+          icon={props.busy ? "ti ti-loader-2 k2b-spin" : "ti ti-search"}
           placeholder={t().searchRecordsPlaceholder}
           value={q}
           onValueChange={onInput}

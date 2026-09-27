@@ -232,6 +232,10 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   let staleResourceEpochFloor = -1;
   let liveCommitId = 0;
   let revoked = false;
+  // The first ready after mount resumes from the SSR cursor, so its read would repeat the SSR read. Replay covers only this
+  // table's records, not cross-table lookups, rollups, or time-relative values, so the skip holds only while the page has
+  // stayed visible since mount. Every later ready (reconnect, return to the tab) reconciles.
+  let firstReadyRepeatsSsrRead = false;
   const [refreshFailed, setRefreshFailed] = createSignal(false);
 
   const invalidate = () => {
@@ -426,6 +430,11 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     }
   }
 
+  /** Records are loading, or a live reconciliation is pending or running. */
+  const busy = () => recordsQuery.data.loading || liveRefreshing() || (livePending() && !refreshFailed());
+  /** A failed live reconciliation waits for the manual refresh action instead of retrying on its own. */
+  const needsManualRefresh = () => refreshFailed() && (livePending() || liveRefreshing());
+
   createEffect(() => {
     if (revoked || refreshFailed() || !livePending()) return;
     if (liveRefreshing() || recordsQuery.data.loading || options.hasBlockingDialog() || liveRefreshTimer) return;
@@ -447,11 +456,21 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   });
 
   onMount(() => {
+    firstReadyRepeatsSsrRead = document.visibilityState === "visible";
+    const forgetSsrReadWhenHidden = () => {
+      if (document.visibilityState !== "visible") firstReadyRepeatsSsrRead = false;
+    };
+    document.addEventListener("visibilitychange", forgetSsrReadWhenHidden);
+    onCleanup(() => document.removeEventListener("visibilitychange", forgetSsrReadWhenHidden));
+
     liveProvider = createGridsRecordEventsProvider({
       tableId: options.tableId,
       initialCursor: options.initialEventCursor,
       locale: options.locale,
       onReady: (cursor) => {
+        const repeatsSsrRead = firstReadyRepeatsSsrRead && cursor !== null && cursor === options.initialEventCursor && !livePending();
+        firstReadyRepeatsSsrRead = false;
+        if (repeatsSsrRead) return;
         pendingLiveCursor = cursor;
         scheduleLiveRefresh();
       },
@@ -502,6 +521,8 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
     nextCursor: () => (options.isGrouped() ? groupedPage().nextCursor : flatPage().nextCursor),
     livePending,
     liveRefreshing,
+    busy,
+    needsManualRefresh,
     highlightedRecordIds,
     invalidate,
     loadNextPage,

@@ -30,8 +30,33 @@ const record = (id: string): PublicGridRecord => ({
   updatedBy: null,
 });
 
-const mount = async (onRefreshed: () => Promise<void> = async () => {}) => {
+const liveEvent = (recordId: string) => ({
+  v: 1 as const,
+  baseId: "BASE01",
+  tableId: "TABLE1",
+  recordId,
+  type: "record.updated" as const,
+  version: 2,
+  changedFieldIds: [],
+  actorId: null,
+  occurredAt: "2026-09-01T00:00:00Z",
+});
+
+const until = async (condition: () => boolean) => {
+  const deadline = Date.now() + 2000;
+  while (!condition() && Date.now() < deadline) await Bun.sleep(5);
+  expect(condition()).toBe(true);
+};
+
+const mount = async ({
+  initialEventCursor = null,
+  visibility = "visible",
+}: {
+  initialEventCursor?: string | null;
+  visibility?: DocumentVisibilityState;
+} = {}) => {
   const dom = createDomTestHarness();
+  Object.defineProperty(document, "visibilityState", { value: visibility, configurable: true });
   const { createRecordsDataController } = await import("./records-data-controller");
   let controller!: ReturnType<typeof createRecordsDataController>;
   let revoked = 0;
@@ -46,14 +71,14 @@ const mount = async (onRefreshed: () => Promise<void> = async () => {}) => {
           trashMode: false,
           source: () => ({ tableId: "TABLE1", query, cursor: cursor(), calendar: { view: "month", date: "2026-09-01" } }),
           initialData: { items: [record("old")], nextCursor: null },
-          initialEventCursor: null,
+          initialEventCursor,
           locale: "en",
           cursor,
           setCursor,
           isGrouped: () => false,
           hasBlockingDialog: () => false,
           onOptimisticDelete: () => {},
-          onRefreshed,
+          onRefreshed: async () => {},
           onRevoked: () => {
             revoked++;
           },
@@ -166,6 +191,93 @@ domTest("failed reconciliation keeps the old result without a retry loop or curs
     expect(applied).toEqual([]);
     expect(state.controller.items()[0]!.id).toBe("old");
     expect(state.controller.livePending()).toBe(true);
+    expect(state.controller.needsManualRefresh()).toBe(true);
+    expect(state.controller.busy()).toBe(false);
+
+    fetchRecords = async () => ({ items: [record("fresh")], nextCursor: null });
+    const retry = state.controller.refreshVisibleRecords();
+    expect(state.controller.needsManualRefresh()).toBe(true);
+    expect(state.controller.busy()).toBe(true);
+    await retry;
+    expect(state.controller.needsManualRefresh()).toBe(false);
+    expect(state.controller.busy()).toBe(false);
+    expect(state.controller.items()[0]!.id).toBe("fresh");
+  } finally {
+    state.dispose();
+  }
+});
+
+const setVisibility = (state: DocumentVisibilityState) => {
+  Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+};
+
+domTest("only the first ready after mount skips the read that would repeat the SSR read", async () => {
+  const state = await mount({ initialEventCursor: "s6t.test.3" });
+  let calls = 0;
+  fetchRecords = async () => {
+    calls++;
+    return { items: [record(`fresh-${calls}`)], nextCursor: null };
+  };
+  try {
+    // Scheduling a reconciliation marks it pending synchronously, so nothing pending means no read.
+    callbacks.onReady?.("s6t.test.3");
+    expect(state.controller.livePending()).toBe(false);
+    expect(state.controller.busy()).toBe(false);
+
+    // A reconnect resumes from the same cursor but can have missed cross-table and time-relative changes.
+    callbacks.onReady?.("s6t.test.3");
+    expect(state.controller.busy()).toBe(true);
+    await until(() => calls === 1 && !state.controller.busy());
+    expect(state.controller.items()[0]!.id).toBe("fresh-1");
+
+    callbacks.onEvent?.(liveEvent("other"), "s6t.test.4");
+    await until(() => applied.at(-1) === "s6t.test.4" && !state.controller.busy());
+    callbacks.onReady?.("s6t.test.4");
+    expect(state.controller.busy()).toBe(true);
+    await until(() => calls === 3 && !state.controller.busy());
+    expect(state.controller.items()[0]!.id).toBe("fresh-3");
+  } finally {
+    state.dispose();
+  }
+});
+
+domTest("a page that was hidden before its first ready reconciles when it returns", async () => {
+  for (const hide of ["at mount", "after mount"] as const) {
+    const state = await mount({ initialEventCursor: "s6t.test.3", visibility: hide === "at mount" ? "hidden" : "visible" });
+    let calls = 0;
+    fetchRecords = async () => {
+      calls++;
+      return { items: [record("fresh")], nextCursor: null };
+    };
+    try {
+      if (hide === "after mount") setVisibility("hidden");
+      setVisibility("visible");
+      callbacks.onReady?.("s6t.test.3");
+      expect(state.controller.busy()).toBe(true);
+      await until(() => calls === 1 && !state.controller.busy());
+      expect(state.controller.items()[0]!.id).toBe("fresh");
+    } finally {
+      state.dispose();
+    }
+  }
+});
+
+domTest("the first ready still retries a reconciliation that failed before it", async () => {
+  const state = await mount({ initialEventCursor: "s6t.test.3" });
+  let calls = 0;
+  fetchRecords = async () => {
+    calls++;
+    if (calls === 1) throw Error("offline");
+    return { items: [record("fresh")], nextCursor: null };
+  };
+  try {
+    callbacks.onError?.({ code: "stream_failed", message: "Live updates failed." });
+    await until(() => state.controller.needsManualRefresh());
+    callbacks.onReady?.("s6t.test.3");
+    expect(state.controller.needsManualRefresh()).toBe(false);
+    await until(() => state.controller.items()[0]!.id === "fresh" && !state.controller.busy());
+    expect(state.controller.needsManualRefresh()).toBe(false);
   } finally {
     state.dispose();
   }

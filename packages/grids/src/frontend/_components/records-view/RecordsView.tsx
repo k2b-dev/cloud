@@ -321,8 +321,9 @@ export default function RecordsView(props: Props) {
     relationLabels: liveRelationLabels,
     filePreviews,
     nextCursor,
-    livePending,
     liveRefreshing,
+    busy: recordsBusy,
+    needsManualRefresh,
     highlightedRecordIds,
     invalidate: invalidateLiveRefreshes,
     loadNextPage: loadNextFlatPage,
@@ -714,7 +715,8 @@ export default function RecordsView(props: Props) {
               baseId={props.baseId}
               tableId={props.tableId}
               recordCountText={recordCountText()}
-              livePending={livePending()}
+              busy={recordsBusy()}
+              needsManualRefresh={needsManualRefresh()}
               liveRefreshing={liveRefreshing()}
               cardsMode={renderMode() === "cards"}
               viewMode={props.viewMode}

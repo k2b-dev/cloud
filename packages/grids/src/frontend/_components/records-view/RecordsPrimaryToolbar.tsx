@@ -17,7 +17,10 @@ type Props = {
   baseId: string;
   tableId: string;
   recordCountText: string;
-  livePending: boolean;
+  /** Records are loading or reconciling; the search icon turns into a spinner without changing the row. */
+  busy: boolean;
+  /** An automatic live reconciliation failed and waits for the refresh action. */
+  needsManualRefresh: boolean;
   liveRefreshing: boolean;
   cardsMode: boolean;
   viewMode: boolean;
@@ -49,6 +52,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
             fields={props.searchableFields}
             initialQ={props.search.q}
             initialQFields={props.search.fieldIds}
+            busy={props.busy}
             onSearchChange={props.onSearchChange}
           />
         </div>
@@ -58,17 +62,19 @@ export default function RecordsPrimaryToolbar(props: Props) {
         {props.trashMode && `${t().deleted} `}
         {props.recordCountText}
       </span>
-      <Show when={props.livePending || props.liveRefreshing}>
+      <Show when={props.needsManualRefresh}>
         <Tooltip.Anchor content={t().refreshRecords}>
           <Button
             variant="secondary"
             size="sm"
             type="button"
             class="app-accent-text"
-            disabled={props.liveRefreshing}
+            loading={props.liveRefreshing}
             onClick={props.onRefresh}
           >
-            <i class={`ti ${props.liveRefreshing ? "ti-loader-2 animate-spin" : "ti-refresh"}`} />
+            <Show when={!props.liveRefreshing}>
+              <i class="ti ti-refresh" />
+            </Show>
             {t().updatesAvailable}
           </Button>
         </Tooltip.Anchor>
