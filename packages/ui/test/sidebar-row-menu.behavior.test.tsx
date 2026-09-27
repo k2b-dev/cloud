@@ -207,9 +207,11 @@ const renderNestedTree = async () => {
   );
   const dispose = render(
     () => (
-      <AppWorkspace.NavTree ariaLabel="Notes" defaultExpandedIds={["recipes"]}>
+      <AppWorkspace.NavTree ariaLabel="Notes" defaultExpandedIds={["recipes", "soups"]}>
         <AppWorkspace.NavTree.Item id="recipes" label="Recipes" href="/notes/recipes" actions={rowActions("Recipes")}>
-          <AppWorkspace.NavTree.Item id="soups" label="Soups" href="/notes/soups" actions={rowActions("Soups")} />
+          <AppWorkspace.NavTree.Item id="soups" label="Soups" href="/notes/soups" actions={rowActions("Soups")}>
+            <AppWorkspace.NavTree.Item id="stock" label="Stock" href="/notes/stock" actions={rowActions("Stock")} />
+          </AppWorkspace.NavTree.Item>
         </AppWorkspace.NavTree.Item>
       </AppWorkspace.NavTree>
     ),
@@ -227,7 +229,7 @@ const renderNestedTree = async () => {
   };
   // The transient child clears Happy DOM's cached :has() match, as in renderNoteTree.
   const shownRows = () =>
-    ["recipes", "soups"].filter((id) => {
+    ["recipes", "soups", "stock"].filter((id) => {
       const actions = row(id).querySelector<HTMLElement>(":scope > .k2b-app-workspace__sidebar-item-actions")!;
       actions.appendChild(dom.document.createComment("")).remove();
       return getComputedStyle(actions).display !== "none";
@@ -262,11 +264,15 @@ test("a nested nav tree row reveals only its own hover actions", async () => {
     expect(view.shownRows()).toEqual(["recipes"]);
     view.hover(view.row("soups"));
     expect(view.shownRows()).toEqual(["soups"]);
+    view.hover(view.row("stock"));
+    expect(view.shownRows()).toEqual(["stock"]);
     view.hover(null);
 
-    // Roving focus rests on a tree node, which also contains its children's rows.
+    // Roving focus rests on a tree node, which also contains its descendants' rows.
     view.focus(view.node("recipes"));
     expect(view.shownRows()).toEqual(["recipes"]);
+    view.focus(view.node("stock"));
+    expect(view.shownRows()).toEqual(["stock"]);
     view.focus(view.node("soups"));
     expect(view.shownRows()).toEqual(["soups"]);
     // Tab from a node into its own trigger: Chromium blurs the node, leaves :focus-within on it as
