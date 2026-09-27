@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { CloudCliContext } from "@k2b/cloud/cli";
@@ -450,6 +450,41 @@ describe("pull", () => {
     });
     expect(await mirror.read("ordner/start.md")).toEndWith("[B](../b.md)\nlocal\n");
     expect(await exists(join(mirror.root, "start.md"))).toBe(false);
+  });
+
+  test("a pull whose file writes fail changes no note file, so moving local edits are never lost", async () => {
+    const mirror = await mirrorOf([
+      serverNote("aaaaaa", "A"),
+      serverNote("plans1", "Plans"),
+      serverNote("zzzzzz", "Z", "\n[A](note://aaaaaa)\n"),
+      ...folder,
+    ]);
+    await mirror.pull();
+    const manifest = await mirror.manifest();
+    const a = `${await mirror.read("a.md")}local\n`;
+    const z = `${await mirror.read("z.md")}local\n`;
+    await mirror.put("a.md", a);
+    await mirror.put("z.md", z);
+    // A moves, Plans becomes a folder where a local file is in the way, and Z moves after that write.
+    mirror.save("aaaaaa", { parentId: "dir001" });
+    mirror.notes.push(serverNote("plans2", "Neu", "", "plans1"));
+    mirror.save("zzzzzz", { parentId: "dir001" });
+    await mirror.put("plans", "unrelated\n");
+
+    await expect(mirror.pull()).rejects.toThrow();
+    expect(await mirror.read("a.md")).toBe(a);
+    expect(await mirror.read("z.md")).toBe(z);
+    expect(await mirror.read("plans.md")).toContain("# Plans\n");
+    expect((await readdir(join(mirror.root, "ordner"))).sort()).toEqual(["index.md", "kind.md"]);
+    expect(await mirror.manifest()).toEqual(manifest);
+
+    await rm(join(mirror.root, "plans"));
+    expect((await mirror.pull()).kept).toEqual([
+      { path: "ordner/a.md", reason: "local-changes" },
+      { path: "ordner/z.md", reason: "local-changes" },
+    ]);
+    expect(stripFrontMatter(await mirror.read("ordner/a.md"))).toBe(stripFrontMatter(a));
+    expect(stripFrontMatter(await mirror.read("ordner/z.md"))).toBe(stripFrontMatter(z));
   });
 
   test("a manifest without file hashes keeps working and gains them as files are rendered again", async () => {

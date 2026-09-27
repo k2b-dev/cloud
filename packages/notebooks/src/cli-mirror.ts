@@ -507,17 +507,31 @@ export const syncMirror = async (
   }
 
   const report: SyncReport = { written: [], removed: [], kept: [...kept.values()], attachments: { downloaded: 0, removed: 0 } };
-  for (const path of removes) {
-    await unlink(join(root, path)).catch(() => undefined);
-    report.removed.push(path);
+  report.attachments = await syncAttachments(ctx, root, notebookId, attachmentList);
+  // Stage every file next to its target first, so a failing write (a full disk, a file where a folder must go) changes
+  // no note file. Old paths are removed last, so moving local edits always exist in some file.
+  const staged: string[] = [];
+  try {
+    for (const write of writes) {
+      const target = join(root, write.path);
+      await mkdir(dirname(target), { recursive: true });
+      staged.push(`${target}.tmp`);
+      await writeFile(`${target}.tmp`, write.text);
+    }
+  } catch (error) {
+    await Promise.all(staged.map((file) => unlink(file).catch(() => undefined)));
+    throw error;
   }
   for (const write of writes) {
-    await mkdir(dirname(join(root, write.path)), { recursive: true });
-    await writeFile(join(root, write.path), write.text);
+    await rename(`${join(root, write.path)}.tmp`, join(root, write.path));
     report.written.push(write.path);
   }
+  const written = new Set(report.written);
+  for (const path of removes) {
+    if (!written.has(path)) await unlink(join(root, path)).catch(() => undefined);
+    report.removed.push(path);
+  }
   await removeEmptyDirs(root, removes);
-  report.attachments = await syncAttachments(ctx, root, notebookId, attachmentList);
 
   const updated: Manifest = { ...manifest, notes: next };
   await writeManifest(root, updated);
