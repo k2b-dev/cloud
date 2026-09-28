@@ -32,8 +32,14 @@ describe("Venue time formatting", () => {
     }
   });
 
-  test("names the time zone in the reader's language", () => {
-    expect(timeZoneName("Europe/Berlin", "en", new Date(startsAt))).toBe("Central European Time");
-    expect(timeZoneName("Europe/Berlin", "de", new Date(startsAt))).toBe("Mitteleuropäische Zeit");
+  test("names the time zone as it applies to the times shown, in the reader's language", () => {
+    expect(timeZoneName("Europe/Berlin", "en", [startsAt, endsAt])).toBe("Central European Summer Time");
+    expect(timeZoneName("Europe/Berlin", "de", [startsAt, endsAt])).toBe("Mitteleuropäische Sommerzeit");
+    expect(timeZoneName("Europe/Berlin", "de", ["2026-12-07T09:00:00.000Z"])).toBe("Mitteleuropäische Normalzeit");
+    // Berlin leaves summer time on 2026-10-25, so a week around it shows times in both.
+    expect(timeZoneName("Europe/Berlin", "de", ["2026-10-22T09:00:00.000Z", "2026-10-28T10:00:00.000Z"])).toBe(
+      "Mitteleuropäische Sommerzeit und Mitteleuropäische Normalzeit",
+    );
+    expect(timeZoneName("Asia/Tokyo", "en", [startsAt])).toBe("Japan Standard Time");
   });
 });

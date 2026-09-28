@@ -3,12 +3,13 @@ import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
-import type { PublicSection, PublicStatus, ShiftTemplate, VenueDashboard } from "./contracts";
+import type { PublicSection, PublicStatus, ShiftAssignment, ShiftTemplate, VenueDashboard } from "./contracts";
 import { venueService } from "./service";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -41,6 +42,12 @@ const json = async <T>(response: Response, status: number, label: string): Promi
   });
   return JSON.parse(text) as T;
 };
+
+/** The date key `days` calendar days after `date`. */
+const shiftDate = (date: string, days: number): string =>
+  new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)) + days, 12))
+    .toISOString()
+    .slice(0, 10);
 
 const insertUser = async (): Promise<User> => {
   const suffix = crypto.randomUUID();
@@ -146,6 +153,40 @@ suite("Venue sections and feedback say what they do", () => {
       assignedCount: 1,
       full: true,
     });
+  });
+
+  test("a sign-up answers with the name of the person who signed up", async () => {
+    const created = await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
+      weekday: 3,
+      title: "Morning counter",
+      startTime: "08:00",
+      endTime: "11:00",
+      minPeople: 1,
+      maxPeople: 4,
+    });
+    const template = await json<ShiftTemplate>(created, 201, "create template");
+    // A Wednesday at least a week ahead in the Venue's time zone.
+    let date = shiftDate(dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" }), 7);
+    while (new Date(`${date}T12:00:00Z`).getUTCDay() !== 3) date = shiftDate(date, 1);
+    const signup = (path: string, body: unknown) => send("POST", `/api/venue/venues/${venueId}/${path}`, cookie, body);
+
+    const single = await json<ShiftAssignment>(await signup(`templates/${template.id}/signup`, { date }), 201, "sign up");
+    expect(single.userDisplayName).toBe("Venue clarity admin");
+
+    const weeks = await json<ShiftAssignment[]>(
+      await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 }),
+      201,
+      "sign up for two weeks",
+    );
+    expect(weeks.map((entry) => entry.userDisplayName)).toEqual(["Venue clarity admin", "Venue clarity admin"]);
+    // Weeks the person already has are skipped; the dialog reads the empty answer as "nothing added".
+    const again = await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 });
+    expect(await json<ShiftAssignment[]>(again, 201, "sign up for the same weeks again")).toEqual([]);
+
+    const startsAt = new Date(`${shiftDate(date, 1)}T15:00:00Z`).toISOString();
+    const endsAt = new Date(`${shiftDate(date, 1)}T17:00:00Z`).toISOString();
+    const free = await json<ShiftAssignment>(await signup("free-signup", { startsAt, endsAt, note: null }), 201, "free sign-up");
+    expect(free.userDisplayName).toBe("Venue clarity admin");
   });
 
   test("feedback counts, pages, and list totals cover the same window", async () => {

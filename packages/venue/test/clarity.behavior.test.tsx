@@ -2,13 +2,28 @@ import { describe, expect, test } from "bun:test";
 import { dates } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import type { PublicSection, PublicSectionInput, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard } from "../src/contracts";
+import type {
+  PublicSection,
+  PublicSectionInput,
+  ShiftAssignment,
+  ShiftTemplate,
+  UpcomingSlot,
+  Venue,
+  VenueDashboard,
+} from "../src/contracts";
 
 const flush = async () => {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
 };
+
+/** What assistive technology reads as the control's description. */
+const descriptionOf = (control: Element) =>
+  (control.getAttribute("aria-describedby") ?? "")
+    .split(" ")
+    .map((id) => control.ownerDocument.getElementById(id)?.textContent ?? "")
+    .join(" ");
 
 const buttonNamed = (root: HTMLElement, name: string) => {
   const button = [...root.querySelectorAll<HTMLButtonElement>("button")].find((entry) => entry.textContent?.trim() === name);
@@ -79,6 +94,26 @@ const dashboard: VenueDashboard = {
   feedbackEntriesPage: { page: 1, pageSize: 50, total: 0 },
 };
 
+const assignment = (entry: UpcomingSlot, userId: string, userDisplayName: string): ShiftAssignment => ({
+  id: `Asg-${userId}`,
+  venueId: "Cafe01",
+  templateId: entry.template.id,
+  userId,
+  userDisplayName,
+  startsAt: entry.startsAt,
+  endsAt: entry.endsAt,
+  note: null,
+  createdAt: "2026-09-01T00:00:00.000Z",
+  updatedAt: "2026-09-01T00:00:00.000Z",
+});
+
+const withAssignments = (entry: UpcomingSlot, assignments: ShiftAssignment[]): UpcomingSlot => ({
+  ...entry,
+  assignments,
+  assignedCount: assignments.length,
+  missingPeople: Math.max(0, entry.minPeople - assignments.length),
+});
+
 const addDays = (date: string, days: number) => {
   const [year = 1970, month = 1, day = 1] = date.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + days, 12)).toISOString().slice(0, 10);
@@ -106,7 +141,7 @@ describe("Venue clarity behavior", () => {
     }) as typeof fetch;
 
     const { SignupDialog, SIGNUP_PAGE_DAYS } = await import("../src/frontend/_components/venue-workspace/signup");
-    const dispose = render(() => <SignupDialog dashboard={dashboard} close={() => {}} />, dom.root);
+    const dispose = render(() => <SignupDialog dashboard={dashboard} userId="user-1" close={() => {}} />, dom.root);
     try {
       await flush();
       expect(requested.map((query) => [query.get("slotStartDate"), query.get("slotDays")])).toEqual([[today, String(SIGNUP_PAGE_DAYS)]]);
@@ -120,6 +155,84 @@ describe("Venue clarity behavior", () => {
       expect(requested.at(-1)?.get("slotStartDate")).toBe(addDays(today, SIGNUP_PAGE_DAYS));
       expect(dom.root.querySelectorAll(".paper").length).toBe(21);
       expect(dom.root.textContent).toContain("21 shifts up to");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("the sign-up dialog marks shifts the viewer already joined instead of offering them again", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const mine = slot(addDays(today, 1), "Lunch counter");
+    const theirs = slot(addDays(today, 2), "Evening bar");
+    globalThis.fetch = (async () =>
+      Response.json({
+        ...dashboard,
+        slots: [
+          withAssignments(mine, [assignment(mine, "user-1", "Alex Example")]),
+          withAssignments(theirs, [assignment(theirs, "user-2", "Sam Sample")]),
+        ],
+      })) as typeof fetch;
+
+    const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
+    const dispose = render(() => <SignupDialog dashboard={dashboard} userId="user-1" close={() => {}} />, dom.root);
+    try {
+      await flush();
+      const [joinedCard, openCard] = [...dom.root.querySelectorAll<HTMLElement>(".paper")];
+      expect(joinedCard?.querySelector(".tag")?.textContent?.trim()).toBe("Joined");
+      expect(buttonNamed(joinedCard!, "Join").disabled).toBe(true);
+      // Joining the following weeks still adds shifts the viewer does not have yet.
+      expect(buttonNamed(joinedCard!, "Join next 4 weeks").disabled).toBe(false);
+
+      expect(openCard?.querySelector(".tag")?.textContent?.trim()).toBe("Open spots");
+      expect(buttonNamed(openCard!, "Join").disabled).toBe(false);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("joining the next weeks says how many shifts it added, and that nothing changed when it added none", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const mine = slot(addDays(today, 1), "Lunch counter");
+    // The server skips weeks the viewer already has or that are full and answers with the sign-ups it made.
+    let created: ShiftAssignment[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      if (method === "POST" && url.includes("/signup-weeks")) return Response.json(created, { status: 201 });
+      return Response.json({ ...dashboard, slots: [withAssignments(mine, [assignment(mine, "user-1", "Alex Example")])] });
+    }) as typeof fetch;
+    const toasts = () => [...dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] > [data-tone]")];
+
+    const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
+    const closes: boolean[] = [];
+    const dispose = render(
+      () => <SignupDialog dashboard={dashboard} userId="user-1" close={(changed) => closes.push(changed)} />,
+      dom.root,
+    );
+    try {
+      await flush();
+      buttonNamed(dom.root, "Join next 4 weeks").click();
+      await flush();
+      // Nothing was added, so the dialog stays open and says so instead of reporting a new shift.
+      expect(closes).toEqual([]);
+      expect(toasts().map((entry) => [entry.dataset.tone, entry.textContent])).toEqual([
+        ["info", expect.stringContaining("No shifts added. You are already signed up for these weeks, or they are full.")],
+      ]);
+
+      created = [8, 15].map((days) => assignment(slot(addDays(today, days), "Lunch counter"), "user-1", "Alex Example"));
+      buttonNamed(dom.root, "Join next 4 weeks").click();
+      await flush();
+      expect(closes).toEqual([true]);
+      expect(toasts().at(-1)?.dataset.tone).toBe("success");
+      expect(toasts().at(-1)?.textContent).toContain("2 shifts added");
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -185,6 +298,7 @@ describe("Venue clarity behavior", () => {
           close={(value) => saved.push(value)}
           initial={draft}
           nextPosition={draft.position}
+          publicPageEnabled
           submitLabel="Save section"
         />
       ),
@@ -195,14 +309,33 @@ describe("Venue clarity behavior", () => {
         input.closest("label")?.textContent?.includes("Show on the public page"),
       );
       expect(visibility?.checked).toBe(false);
+      // The note under the switch says what its current state means.
+      const note = () => descriptionOf(visibility!);
+      expect(note()).toContain("Draft: only staff and admins see this section.");
 
       buttonNamed(dom.root, "Save section").click();
       expect(saved.at(-1)).toMatchObject({ title: "Winter hours", enabled: false, position: 4 });
 
       visibility!.click();
       await flush();
+      expect(note()).toContain("Visitors see this section on the public page.");
+      expect(note()).not.toContain("Draft");
       buttonNamed(dom.root, "Save section").click();
       expect(saved.at(-1)).toMatchObject({ enabled: true, position: 4 });
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("the public-page switch does not promise visitors while the Venue's public page is off", async () => {
+    const dom = createDomTestHarness();
+    const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
+    const dispose = render(() => <PublicSectionDialog close={() => {}} nextPosition={1} publicPageEnabled={false} />, dom.root);
+    try {
+      const visibility = dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+      expect(visibility.checked).toBe(true);
+      expect(descriptionOf(visibility)).toBe("Visitors see this section once the venue's public page is switched on.");
     } finally {
       dispose();
       dom.cleanup();

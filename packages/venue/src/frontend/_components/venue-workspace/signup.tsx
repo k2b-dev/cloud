@@ -31,7 +31,8 @@ export const SIGNUP_PAGE_DAYS = 14;
 
 type SlotPage = { startDate: string; slots: UpcomingSlot[] };
 
-export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed: boolean) => void }) {
+/** `userId` is the viewer, so shifts they already joined read as joined instead of offering a second sign-up. */
+export function SignupDialog(props: { dashboard: VenueDashboard; userId: string; close: (changed: boolean) => void }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
   const dashboard = () => props.dashboard;
@@ -60,25 +61,39 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
     getNextCursor: (page) => shiftDate(page.startDate, SIGNUP_PAGE_DAYS),
   });
   const availableSlots = () => slotPages.pages().flatMap((page) => page.slots);
+  const joined = (slot: UpcomingSlot) => slot.assignments.some((assignment) => assignment.userId === props.userId);
+  const shownTimes = () =>
+    mode() === "shifts"
+      ? availableSlots().flatMap((slot) => [slot.startsAt, slot.endsAt])
+      : [freeRange().start, freeRange().end].filter((time): time is string => Boolean(time));
   const loadedThrough = () => {
     const last = slotPages.pages().at(-1);
     if (!last) return "";
     return formatDateKey(shiftDate(last.startDate, SIGNUP_PAGE_DAYS - 1), locale(), { weekday: "short", day: "numeric", month: "short" });
   };
 
-  const signup = mutation.create<void, { venueId: string; templateId: string; date: string; weeks?: number }>({
+  /** Resolves to the number of new sign-ups: the weeks sign-up skips weeks the viewer already has or that are full. */
+  const signup = mutation.create<number, { venueId: string; templateId: string; date: string; weeks?: number }>({
     mutation: async ({ venueId, templateId, date, weeks }, { abortSignal }) => {
       const target = apiClient.venues[":id"].templates[":templateId"];
-      const res = weeks
-        ? await target["signup-weeks"].$post(
-            { param: { id: venueId, templateId }, json: { date, weeks } },
-            { init: { signal: abortSignal } },
-          )
-        : await target.signup.$post({ param: { id: venueId, templateId }, json: { date } }, { init: { signal: abortSignal } });
+      if (weeks) {
+        const res = await target["signup-weeks"].$post(
+          { param: { id: venueId, templateId }, json: { date, weeks } },
+          { init: { signal: abortSignal } },
+        );
+        if (!res.ok) throw new Error(await readError(res, t().signupFailed));
+        return (await res.json()).length;
+      }
+      const res = await target.signup.$post({ param: { id: venueId, templateId }, json: { date } }, { init: { signal: abortSignal } });
       if (!res.ok) throw new Error(await readError(res, t().signupFailed));
+      return 1;
     },
-    onSuccess: () => {
-      toast.success(t().shiftAdded);
+    onSuccess: (added) => {
+      if (added === 0) {
+        toast(t().noShiftsAdded);
+        return;
+      }
+      toast.success(added === 1 ? t().shiftAdded : t().shiftsAdded({ count: added }));
       props.close(true);
     },
     onError: (err) => prompts.error(err.message),
@@ -139,7 +154,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
               ]}
             />
           </Show>
-          <VenueTimeZoneNote timeZone={dashboard().venue.timezone} />
+          <VenueTimeZoneNote timeZone={dashboard().venue.timezone} times={shownTimes()} />
           <Show
             when={mode() === "shifts"}
             fallback={
@@ -219,11 +234,20 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                                 {formatVenueSpan(slot.startsAt, slot.endsAt, dashboard().venue.timezone, locale())}
                               </p>
                             </div>
-                            <span
-                              class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
+                            <Show
+                              when={joined(slot)}
+                              fallback={
+                                <span
+                                  class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
+                                >
+                                  {slot.full ? t().full : t().openSpots}
+                                </span>
+                              }
                             >
-                              {slot.full ? t().full : t().openSpots}
-                            </span>
+                              <span class="tag bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                                <i class="ti ti-check" aria-hidden="true" /> {t().joined}
+                              </span>
+                            </Show>
                           </div>
                           <div class="mt-3">
                             <ProgressBar slot={slot} />
@@ -232,7 +256,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                             <Button
                               type="button"
                               size="sm"
-                              disabled={slot.full || !isSlotActive(slot) || signup.loading()}
+                              disabled={joined(slot) || slot.full || !isSlotActive(slot) || signup.loading()}
                               onClick={() =>
                                 signup.mutate({
                                   venueId: dashboard().venue.id,
@@ -314,7 +338,7 @@ export function ConfirmShiftSignupDialog(props: { slot: UpcomingSlot; timezone: 
           <ProgressBar slot={props.slot} />
         </div>
       </div>
-      <VenueTimeZoneNote timeZone={props.timezone} />
+      <VenueTimeZoneNote timeZone={props.timezone} times={[props.slot.startsAt, props.slot.endsAt]} />
       <CheckboxCard
         label={t().skipConfirmation}
         description={t().skipConfirmationDescription}

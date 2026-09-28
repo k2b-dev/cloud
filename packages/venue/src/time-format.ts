@@ -28,7 +28,17 @@ export const formatDateKey = (
   options: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" },
 ): string => venueFormat("UTC", locale, options).format(new Date(`${dateKey}T12:00:00Z`));
 
-/** The time zone's name in the reader's language, such as `Central European Time`; the IANA ID when there is none. */
-export const timeZoneName = (timeZone: string, locale?: string, at = new Date()): string =>
-  new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "longGeneric" }).formatToParts(at).find((part) => part.type === "timeZoneName")
-    ?.value ?? timeZone;
+/**
+ * The time zone's name for the given times, in the reader's language: `Central European Summer Time` for
+ * summer dates, `Central European Standard Time` for winter ones, and both when the times span a clock
+ * change. Without times, the name that applies now. A zone without a localized name reads as its offset.
+ */
+export const timeZoneName = (timeZone: string, locale: string | undefined, times: readonly string[]): string => {
+  const format = new Intl.DateTimeFormat(locale, { timeZone, timeZoneName: "long" });
+  const names = new Set(
+    (times.length > 0 ? times : [new Date().toISOString()]).map(
+      (time) => format.formatToParts(new Date(time)).find((part) => part.type === "timeZoneName")?.value ?? timeZone,
+    ),
+  );
+  return new Intl.ListFormat(locale, { type: "conjunction" }).format([...names]);
+};
