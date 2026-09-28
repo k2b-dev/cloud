@@ -28,6 +28,8 @@ If the available space is too narrow, click an entry summary to open its editor.
 
 Each table has a virtual default form. Custom forms control its inputs, labels, hints, defaults and public access.
 
+**Create** saves a new custom form right away and opens its editor. Adjust it and choose **Save**, or choose **Done** to keep it as created.
+
 A date input's `{"kind":"now"}` default is shown when a creation form opens, using your date timezone. Review it before saving. Editing preserves stored dates.
 
 In a custom form you can:

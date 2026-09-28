@@ -31,6 +31,8 @@ import { gridsFormMessages } from "./messages";
 type OpenFormEditorDialogArgs = {
   form: PublicForm;
   tableFields: Field[];
+  /** The caller just created this form, so it is already saved: the editor says so and offers Done until something changes. */
+  justCreated?: boolean;
   onSaved?: (next: PublicForm) => void;
   onDelete?: () => Promise<void> | void;
 };
@@ -68,6 +70,7 @@ function FormEditorDialog(props: {
       <FormEditor
         form={props.args.form}
         tableFields={props.args.tableFields}
+        justCreated={props.args.justCreated}
         deleting={deleting()}
         deleteError={deleteError()}
         onDirtyChange={setDirty}
@@ -102,7 +105,7 @@ function FormEditorDialog(props: {
             setDeleting(false);
           }
         }}
-        onCancel={closeIfClean}
+        onClose={closeIfClean}
       />
     </PanelDialog>
   );
@@ -124,13 +127,14 @@ type SaveFormRequest = {
 function FormEditor(props: {
   form: PublicForm;
   tableFields: Field[];
+  justCreated?: boolean;
   onSaved: (next: PublicForm) => void;
   onDelete: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
   deleting: boolean;
   deleteError?: string;
-  onCancel?: () => void;
+  onClose?: () => void;
 }) {
   const locale = useLocale();
   const t = () => gridsFormMessages.resolve([locale()]).t;
@@ -201,6 +205,7 @@ function FormEditor(props: {
     },
   });
   const pending = () => updateMut.loading() || confirming() || props.deleting;
+  const offerDone = () => props.justCreated && !dirty();
   createEffect(() => props.onPendingChange?.(updateMut.loading() || confirming()));
 
   const handleSave = async () => {
@@ -222,6 +227,9 @@ function FormEditor(props: {
   return (
     <>
       <PanelDialog.Body>
+        <Show when={props.justCreated}>
+          <NoticeCard tone="success" title={t().formCreated} detail={t().formCreatedDetail} />
+        </Show>
         <Show when={props.deleteError}>{(error) => <NoticeCard tone="danger" title={error()} />}</Show>
         <Show when={updateMut.error()}>
           {(error) => (
@@ -425,22 +433,33 @@ function FormEditor(props: {
           <i class="ti ti-trash" /> {t().deleteForm}
         </Button>
         <div class="flex items-center gap-2">
-          <Show when={props.onCancel}>
-            <Button variant="secondary" size="sm" type="button" onClick={() => props.onCancel?.()} disabled={pending()}>
-              {t().cancel}
+          <Show
+            when={offerDone()}
+            fallback={
+              <>
+                <Show when={props.onClose}>
+                  <Button variant="secondary" size="sm" type="button" onClick={() => props.onClose?.()} disabled={pending()}>
+                    {t().cancel}
+                  </Button>
+                </Show>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="button"
+                  onClick={handleSave}
+                  disabled={!dirty() || confirming()}
+                  loading={updateMut.loading()}
+                  loadingLabel={t().savingForm}
+                >
+                  {t().save}
+                </Button>
+              </>
+            }
+          >
+            <Button variant="primary" size="sm" type="button" onClick={() => props.onClose?.()} disabled={pending()}>
+              {t().done}
             </Button>
           </Show>
-          <Button
-            variant="primary"
-            size="sm"
-            type="button"
-            onClick={handleSave}
-            disabled={!dirty() || confirming()}
-            loading={updateMut.loading()}
-            loadingLabel={t().savingForm}
-          >
-            {t().save}
-          </Button>
         </div>
       </PanelDialog.Footer>
     </>

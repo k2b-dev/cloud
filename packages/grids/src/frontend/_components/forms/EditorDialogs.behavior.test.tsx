@@ -185,6 +185,57 @@ domTest("form editor keeps failed saves inline and canceling deletion keeps the 
   }
 });
 
+domTest("a new form says it is already saved and closes with Done until it is edited", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  const methods: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      methods.push(init?.method ?? "GET");
+      return Response.json(form);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: FormsManager } = await import("./FormsManager");
+  const { dialogCore } = await import("@k2b/ui");
+  const dispose = render(() => <FormsManager tableId="TABLE1" fields={[field]} initialForms={[]} canManage />, dom.root);
+  const buttons = (label: string) =>
+    Array.from(dom.document.querySelectorAll("button")).filter((node) => node.textContent?.trim() === label);
+  try {
+    button(dom.document, "New form").click();
+    change(inputFor(dom.document, "Name"), "Request");
+    button(dom.document, "Create").click();
+    await Bun.sleep(30);
+    expect(methods).toEqual(["POST"]);
+    expect(dom.document.body.textContent).toContain("Form created");
+    expect(buttons("Save")).toHaveLength(0);
+    expect(buttons("Cancel")).toHaveLength(0);
+    button(dom.document, "Done").click();
+    await Bun.sleep(10);
+    expect(dom.document.querySelector("dialog")).toBeNull();
+    expect(methods).toEqual(["POST"]);
+
+    dom.document.querySelector<HTMLButtonElement>('button[aria-label="Edit form Request"]')!.click();
+    await Bun.sleep(10);
+    expect(dom.document.body.textContent).not.toContain("Form created");
+    expect(buttons("Done")).toHaveLength(0);
+    expect(button(dom.document, "Save").disabled).toBe(true);
+    dialogCore.close();
+
+    const { openFormEditorDialog } = await import("./FormEditorDialog");
+    void openFormEditorDialog({ form, tableFields: [field], justCreated: true });
+    change(inputFor(dom.document, "Name"), "Updated request");
+    expect(buttons("Done")).toHaveLength(0);
+    expect(button(dom.document, "Save").disabled).toBe(false);
+    expect(buttons("Cancel")).toHaveLength(1);
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
 domTest("new form keeps its name when creation fails and blocks dismissal while creating", async () => {
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;

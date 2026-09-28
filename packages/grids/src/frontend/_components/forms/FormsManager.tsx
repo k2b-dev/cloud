@@ -141,9 +141,10 @@ export default function FormsManager(props: Props) {
    * multiple screens. The modal keeps the row list compact and gives
    * the editor a fixed viewport — same UX as the field editor.
    */
-  const openFormEditor = (form: PublicForm) =>
+  const openFormEditor = (form: PublicForm, justCreated = false) =>
     openFormEditorDialog({
       form,
+      justCreated,
       tableFields: props.fields,
       onSaved: (next) => updateForms(forms().map((f) => (f.id === next.id ? next : f))),
       onDelete: () => updateForms(forms().filter((f) => f.id !== form.id)),
@@ -154,7 +155,7 @@ export default function FormsManager(props: Props) {
     const created = await createForm(props, locale());
     if (!created) return;
     updateForms([...forms(), created]);
-    openFormEditor(created);
+    openFormEditor(created, true);
   };
 
   return (
