@@ -166,6 +166,9 @@ The shared `markdown.render()` and `markdown.renderSync()` helpers from
 `@k2b/cloud/shared` render the same callouts. Pass `{ notices: "minimal" }` to
 show only the tone color: the icon and the automatic type label disappear, an
 explicit title stays visible, and screen readers still hear the type name.
+Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
+email. Each link then renders as an ordinary anchor around its text instead of
+the bracketed Cloud link label.
 
 The Help renderer also:
 

@@ -21,8 +21,9 @@ import { taskListExtension } from "./extensions/task-list";
 
 // Create a configured marked instance
 type MarkdownProfile = "content" | "help";
+type LinkStyle = "widget" | "plain";
 
-const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle = "card") => {
+const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle = "card", links: LinkStyle = "widget") => {
   const marked = new Marked();
 
   marked.use({
@@ -35,7 +36,8 @@ const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle
   marked.use(infoBlocksExtension(notices));
   marked.use(taskListExtension());
   marked.use(tablesExtension());
-  marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank" }));
+  // Plain links keep marked's own renderer: an anchor around the link text.
+  if (links === "widget") marked.use(linksExtension({ internalTarget: profile === "help" ? "_self" : "_blank" }));
   marked.use(imagesExtension());
   marked.use(katexExtension());
   marked.use(codeExtension());
@@ -48,15 +50,24 @@ const createMarked = (profile: MarkdownProfile = "content", notices: NoticeStyle
 };
 
 const marked = createMarked();
-const minimalNoticeMarked = createMarked("content", "minimal");
 const helpMarked = createMarked("help");
+const contentMarked = new Map<`${NoticeStyle}:${LinkStyle}`, Marked>([["card:widget", marked]]);
 
 export type MarkdownRenderOptions = {
   /** `"minimal"` shows notices as tone colour only; the type name stays for screen readers. */
   notices?: NoticeStyle;
+  /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. */
+  links?: LinkStyle;
 };
 
-const markedFor = (options: MarkdownRenderOptions): Marked => (options.notices === "minimal" ? minimalNoticeMarked : marked);
+const markedFor = ({ notices = "card", links = "widget" }: MarkdownRenderOptions): Marked => {
+  const key = `${notices}:${links}` as const;
+  const cached = contentMarked.get(key);
+  if (cached) return cached;
+  const created = createMarked("content", notices, links);
+  contentMarked.set(key, created);
+  return created;
+};
 
 const sanitizeRenderedHtml = (html: string): string =>
   sanitizeHtml(html, {

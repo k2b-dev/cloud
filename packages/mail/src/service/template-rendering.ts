@@ -11,17 +11,66 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 const MAX_MAIL_TEMPLATE_BYTES = 200_000;
 const MAX_MAIL_TEMPLATE_OUTPUT_BYTES = 3 * 1024 * 1024;
 
-type MailTemplateOutput = "identifier" | "markdown" | "text";
+/**
+ * `markdown` is rendered straight to email HTML, so values never form Markdown, HTML, or links.
+ * `editable_markdown` lands in a draft body that a person reads and edits, so values stay as typed.
+ */
+type MailTemplateOutput = "identifier" | "editable_markdown" | "markdown" | "text";
 type MailTemplateData = Record<string, unknown>;
 
 const bytes = (value: string): number => new TextEncoder().encode(value).byteLength;
 
+// Four columns of indentation open a code block, which would show escapes verbatim. Rendered Markdown collapses the rest.
+const capLineIndent = (indent: string): string => (indent.length > 3 || indent.includes("\t") ? "   " : indent);
+
 export const escapeMailMarkdownValue = (value: unknown): string =>
   String(value)
+    .replace(/^[ \t]+/gm, capLineIndent)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/[\\`*_[\]{}()#+!|>~:/@.-]/g, (character) => `&#${character.codePointAt(0)};`);
+    .replace(/[\\`*_[\]{}()#+!|>~^=$:/@.-]/g, (character) => `&#${character.codePointAt(0)};`);
+
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+const escapeEditableMarkdownLine = (line: string): string =>
+  line
+    .replace(/[\\`*_[\]<~^=:$|{}&%]/g, (character, offset: number) => {
+      const previous = line[offset - 1] ?? "";
+      const next = line[offset + 1] ?? "";
+      if (character === "_") return WORD_CHARACTER.test(previous) && WORD_CHARACTER.test(next) ? "_" : "\\_";
+      // Runs such as `==` (highlight) and `:::` (notice blocks) are syntax; single characters are not.
+      if (character === "=" || character === ":") return previous === character || next === character ? `\\${character}` : character;
+      if (character === "&") return /^&#?[a-z0-9]+;/i.test(line.slice(offset)) ? "\\&" : "&";
+      if (character === "%") return previous === "{" ? "\\%" : "%";
+      return `\\${character}`;
+    })
+    .replace(/^[ \t]+/, capLineIndent)
+    .replace(/^( *)(?:([#>+=:-])|(\d{1,9})([.)]))/, (_match, indent: string, marker?: string, digits?: string, delimiter?: string) =>
+      marker ? `${indent}\\${marker}` : `${indent}${digits}\\${delimiter}`,
+    )
+    // A trailing ` #` run would close a heading instead of staying text.
+    .replace(/([ \t])(#+[ \t]*)$/, "$1\\$2");
+
+/**
+ * Escapes a value for Markdown that a person still reads and edits.
+ *
+ * Only characters that would start Markdown, HTML, or Liquid syntax get a backslash, so names,
+ * addresses, and subjects read as typed. Plain addresses and URLs may become links, as when typed.
+ */
+export const escapeMailEditableMarkdownValue = (value: unknown): string =>
+  // Markdown also starts a new line after a lone carriage return.
+  String(value)
+    .split(/\r\n?|\n/)
+    .map(escapeEditableMarkdownLine)
+    .join("\n");
+
+const OUTPUT_ESCAPES: Record<MailTemplateOutput, ((value: unknown) => string) | false> = {
+  identifier: false,
+  editable_markdown: escapeMailEditableMarkdownValue,
+  markdown: escapeMailMarkdownValue,
+  text: false,
+};
 
 const padStart: LiquidTemplateFilter = (value: unknown, width: unknown, fill: unknown = "0") => {
   const parsedWidth = typeof width === "number" ? width : Number(width);
@@ -37,7 +86,7 @@ const MAIL_LIQUID_FILTERS = { pad_start: padStart } satisfies Record<string, Liq
 
 const renderOptions = (output: MailTemplateOutput) => ({
   filters: MAIL_LIQUID_FILTERS,
-  escapeOutput: output === "markdown" ? escapeMailMarkdownValue : false,
+  escapeOutput: OUTPUT_ESCAPES[output],
   templateMaxBytes: MAX_MAIL_TEMPLATE_BYTES,
   renderMaxBytes: MAX_MAIL_TEMPLATE_OUTPUT_BYTES,
   memoryLimit: 8 * 1024 * 1024,

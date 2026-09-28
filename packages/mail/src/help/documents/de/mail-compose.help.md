@@ -61,7 +61,7 @@ Wenn eine andere Sitzung den Entwurf plant, sendet oder verwirft, lädt jeder ge
 
 Gib im Nachrichtentext `/` ein, um verfügbare Signaturen und Textbausteine zu durchsuchen. Die ausgewählte Vorlage wird in den Entwurf eingefügt und kann dort bearbeitet oder entfernt werden.
 
-- **Textbausteine** fügen aufgelösten wiederverwendbaren Text ein.
+- **Textbausteine** fügen aufgelösten wiederverwendbaren Text ein. Werte wie `{{ actor.email }}` erscheinen als normaler Text. In Markdown-Nachrichten setzt Mail nur vor Zeichen, die sonst die Formatierung ändern würden, einen Backslash, etwa `\*`.
 - **Signaturen** behalten ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden. Werte wie `{{ sender.display_name }}` oder `{{ mailbox.name }}` werden dadurch erst bei der Zustellung aufgelöst.
 - **Privat** bedeutet, dass eine Vorlage nur für die Person sichtbar ist, der sie gehört.
 - **Postfach** bedeutet, dass eine Vorlage gemeinsam mit anderen Personen im Postfach verwendet wird.

@@ -5,6 +5,7 @@ import {
   hasUnrenderedTemplateSyntax,
   markComposeTemplateSegment,
   renderComposeContent,
+  renderComposeTemplateSource,
   validateComposeCss,
   validateComposeTemplateSource,
 } from "./compose-renderer";
@@ -14,6 +15,31 @@ const context: ComposeRenderContext = {
   mailbox: { name: "Support", description: "Customer support" },
   sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
   message: { subject: "Hello", to: ["reader@example.test"], cc: [] },
+};
+
+const MARKDOWN_SYNTAX_VALUES = [
+  "**Admin** _team_ `code` ~sub~ ^sup^ ==mark== $x$ a|b",
+  "<b>Bold</b> <img src=x onerror=alert(1)>",
+  "[Reset](/reset) ![Logo](/logo.png)",
+  "# Heading",
+  "- Item",
+  "1. First",
+  "> Quote",
+  ":::warning",
+  "{{ actor.email }} {% if x %}",
+  "&amp; &#64; a\\*b",
+  "Line one\n- Line two\n## Line three",
+  "Column\n:---",
+  "    Indented $x$ &amp;",
+  "Intro\r# Heading\r- Item\r\n> Quote",
+];
+
+const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, value: string) => {
+  expect(rendered.ok).toBe(true);
+  if (!rendered.ok) return;
+  expect(rendered.data.text).toBe(value.trimStart().replace(/\r\n?/g, "\n"));
+  const elements = new Set(rendered.data.html?.match(/<[a-z][a-z0-9]*/gi));
+  expect(elements).toEqual(new Set(/[\r\n]/.test(value) ? ["<div", "<p", "<br"] : ["<div", "<p"]));
 };
 
 describe("compose renderer", () => {
@@ -61,6 +87,76 @@ describe("compose renderer", () => {
     if (!rendered.ok) return;
     expect(rendered.data.text).toBe("Contact writer-123@example.test");
     expect(rendered.data.html).not.toContain("href=");
+  });
+
+  test("inserts snippet addresses and URLs as plain text and sends them as ordinary links", () => {
+    const inserted = renderComposeTemplateSource(
+      "Reach me at {{ actor.email }} or {{ sender.reply_to }}. Help: {{ mailbox.description }}.",
+      {
+        ...context,
+        mailbox: { ...context.mailbox, description: "https://example.test/help" },
+        sender: { ...context.sender, reply_to: "grace_hopper@example.test" },
+      },
+      "markdown",
+    );
+    const draft = "Reach me at ada@example.test or grace_hopper@example.test. Help: https://example.test/help.";
+    expect(inserted).toEqual({ ok: true, data: draft });
+
+    const sent = renderComposeContent({ body: draft, format: "markdown", customCss: "", context, renderLiquid: true });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    const link = (href: string, text: string) => `<a href="${href}" style="color:#0f766e;text-decoration:underline">${text}</a>`;
+    expect(sent.data.html).toContain(
+      `Reach me at ${link("mailto:ada@example.test", "ada@example.test")} or ${link("mailto:grace_hopper@example.test", "grace_hopper@example.test")}. Help: ${link("https://example.test/help", "https://example.test/help")}.`,
+    );
+    expect(sent.data.text).toBe(draft);
+  });
+
+  test("sends typed Markdown links as their label followed by the address in plain text", () => {
+    const sent = renderComposeContent({
+      body: "Read [the **offer**](https://example.test/offer).",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: true,
+    });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    expect(sent.data.html).not.toContain("[");
+    expect(sent.data.text).toBe("Read the offer [https://example.test/offer].");
+    expect(renderComposeTemplateSource("Read [the offer](https://example.test/offer).", context, "plain")).toEqual({
+      ok: true,
+      data: "Read the offer [https://example.test/offer].",
+    });
+  });
+
+  test("keeps inserted snippet values literal when the draft is sent", () => {
+    for (const display_name of MARKDOWN_SYNTAX_VALUES) {
+      const inserted = renderComposeTemplateSource(
+        "{{ actor.display_name }}",
+        { ...context, actor: { ...context.actor, display_name } },
+        "markdown",
+      );
+      expect(inserted.ok).toBe(true);
+      if (!inserted.ok) continue;
+      expect(hasUnrenderedTemplateSyntax(inserted.data)).toBe(false);
+
+      const sent = renderComposeContent({ body: inserted.data, format: "markdown", customCss: "", context, renderLiquid: true });
+      expectLiteralText(sent, display_name);
+    }
+  });
+
+  test("keeps signature values literal at delivery", () => {
+    for (const display_name of MARKDOWN_SYNTAX_VALUES) {
+      const sent = renderComposeContent({
+        body: markComposeTemplateSegment("{{ actor.display_name }}"),
+        format: "markdown",
+        customCss: "",
+        context: { ...context, actor: { ...context.actor, display_name } },
+        renderLiquid: true,
+      });
+      expectLiteralText(sent, display_name);
+    }
   });
 
   test("detects template syntax that sits outside a marked segment", () => {

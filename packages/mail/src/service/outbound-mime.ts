@@ -85,7 +85,7 @@ export const buildMimeStream = (params: {
     params.snapshot.format === "plain"
       ? undefined
       : params.snapshot.renderedHtml === undefined
-        ? sanitizeEmailHtml(markdown.renderSync(params.snapshot.body))
+        ? sanitizeEmailHtml(markdown.renderSync(params.snapshot.body, { links: "plain" }))
         : (params.snapshot.renderedHtml ?? undefined);
   const headers: Record<string, string> = {};
   if (params.snapshot.automaticReply) {

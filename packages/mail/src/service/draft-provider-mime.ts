@@ -93,7 +93,8 @@ export const buildDraftProviderMimeStream = (params: {
   date: Date;
   openAttachment: (blobId: string) => Readable;
 }): Readable => {
-  const html = params.content.format === "markdown" ? sanitizeEmailHtml(markdown.renderSync(params.content.body)) : undefined;
+  const html =
+    params.content.format === "markdown" ? sanitizeEmailHtml(markdown.renderSync(params.content.body, { links: "plain" })) : undefined;
   const composer = new MailComposer({
     from: formatAddress(params.content.from),
     replyTo: params.content.replyTo ?? undefined,
