@@ -58,9 +58,10 @@ Tab rückt im Notizeditor ein. So verschachtelst du Listen und richtest Code aus
 
 :::reference
 - **Text und Code:** Tab fügt an der Cursorposition zwei Leerzeichen ein oder rückt die markierten Zeilen ein. Umschalt+Tab entfernt bis zu zwei Leerzeichen Einzug.
-- **Listen:** Tab ordnet den aktuellen Eintrag dem Eintrag darüber unter. Umschalt+Tab holt ihn eine Ebene zurück.
+- **Listen:** Tab ordnet den aktuellen Eintrag dem Eintrag darüber unter, seine Untereinträge wandern mit. Umschalt+Tab holt ihn eine Ebene zurück.
 - **Tabellen:** Tab markiert die nächste Zelle, Umschalt+Tab die vorherige.
-- **Editor verlassen:** Drücke Esc und dann Tab, um zum nächsten Bedienelement zu wechseln, oder Esc und dann Umschalt+Tab für das vorherige. Ist eine Vorschlagsliste geöffnet, drücke Esc zweimal.
+- **Vorschläge:** Ist eine Vorschlagsliste geöffnet, übernimmt Tab den markierten Vorschlag.
+- **Editor verlassen:** Drücke Esc und dann Tab, um zum nächsten Bedienelement zu wechseln, oder Esc und dann Umschalt+Tab für das vorherige.
 - **Tab für den Fokus behalten:** Öffne in den **Einstellungen** den Bereich **Notizbuch – Ansicht und Verhalten** und aktiviere **Tab-Taste bewegt den Fokus statt einzurücken**. Die Auswahl wird in diesem Browser gespeichert und gilt sofort.
 :::
 

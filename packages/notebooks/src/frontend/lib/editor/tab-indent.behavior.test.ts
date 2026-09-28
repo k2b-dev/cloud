@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { autocompletion, type CompletionContext, completionStatus, startCompletion } from "@codemirror/autocomplete";
 import { forceParsing } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { basicExtensions } from "./basic";
 import { markdownExtension } from "./markdown";
 import { tabIndentExtension } from "./tab-indent";
 
@@ -16,8 +18,9 @@ const mount = (doc: string, { selection, tabIndents = true, extensions = [] }: M
     state: EditorState.create({
       doc,
       selection: typeof selection === "number" ? { anchor: selection } : selection,
-      // The note editor leaves the Tab keymap out when the person prefers Tab for focus movement.
-      extensions: [markdownExtension(), tabIndents ? tabIndentExtension() : [], ...extensions],
+      // Extensions come first, like the note editor's base setup; it leaves the Tab keymap out
+      // when the person prefers Tab for focus movement.
+      extensions: [...extensions, markdownExtension(), tabIndents ? tabIndentExtension() : []],
     }),
   });
   forceParsing(view, doc.length, 5000);
@@ -100,6 +103,21 @@ describe("note editor Tab key", () => {
     expect(orderedEditor.text()).toBe(steps);
   });
 
+  test("a list item moves with the items and text nested under it", () => {
+    const doc = "- Gear\n- Tent\n  - Poles\n\n  Bring the big one.\n- Food";
+    using editor = mount(doc, { selection: doc.indexOf("Tent") });
+    expect(editor.press("Tab")).toBe(true);
+    expect(editor.text()).toBe("- Gear\n  - Tent\n    - Poles\n\n    Bring the big one.\n- Food");
+    expect(editor.press("Tab", true)).toBe(true);
+    expect(editor.text()).toBe(doc);
+
+    // Nested items move too when only the parent is lifted.
+    const nested = "- Gear\n  - Tent\n    - Poles";
+    using liftEditor = mount(nested, { selection: nested.indexOf("Tent") });
+    expect(liftEditor.press("Tab", true)).toBe(true);
+    expect(liftEditor.text()).toBe("- Gear\n- Tent\n  - Poles");
+  });
+
   test("tables move between cells, including empty ones, without changing the note", () => {
     const doc = "| Item | Owner |\n| --- | --- |\n| Tent |  |";
     using editor = mount(doc, { selection: doc.indexOf("Item") + 1 });
@@ -145,6 +163,54 @@ describe("note editor Tab key", () => {
     editor.press("ArrowLeft");
     expect(editor.press("Tab")).toBe(true);
     expect(editor.text()).toBe("- Passport\n  - Charger");
+  });
+
+  test("Esc, then Tab leaves the editor when Esc first collapses a selection", () => {
+    // The base keymap binds Esc to collapse a selection, which kept CodeMirror's own escape from arming.
+    const table = "| Item | Owner |\n| --- | --- |\n| Tent |  |";
+    using tableEditor = mount(table, { selection: table.indexOf("Item") + 1, extensions: [basicExtensions()] });
+    expect(tableEditor.press("Tab")).toBe(true);
+    expect(tableEditor.selected()).toBe("Owner");
+    tableEditor.press("Escape");
+    expect(tableEditor.selected()).toBe("");
+    expect(tableEditor.press("Tab")).toBe(false);
+
+    using textEditor = mount("Plan the trip", { selection: { anchor: 0, head: 4 }, extensions: [basicExtensions()] });
+    textEditor.press("Escape");
+    expect(textEditor.press("Tab")).toBe(false);
+    expect(textEditor.text()).toBe("Plan the trip");
+  });
+
+  test("with a suggestion list open, Tab accepts the highlighted suggestion", async () => {
+    const gear = (context: CompletionContext) => {
+      const word = context.matchBefore(/\w+/);
+      return word ? { from: word.from, options: [{ label: "tarp" }, { label: "tent" }] } : null;
+    };
+    const doc = "- tent\n- ta";
+    using editor = mount(doc, {
+      selection: doc.length,
+      extensions: [basicExtensions(), autocompletion({ override: [gear], interactionDelay: 0 })],
+    });
+    const openSuggestions = async () => {
+      startCompletion(editor.view);
+      for (let tries = 0; completionStatus(editor.view.state) !== "active" && tries < 50; tries++) await Bun.sleep(10);
+      expect(completionStatus(editor.view.state)).toBe("active");
+    };
+
+    await openSuggestions();
+    expect(editor.press("Tab")).toBe(true);
+    expect(editor.text()).toBe("- tent\n- tarp");
+    expect(completionStatus(editor.view.state)).toBeNull();
+    // With the list closed, Tab nests the item again.
+    expect(editor.press("Tab")).toBe(true);
+    expect(editor.text()).toBe("- tent\n  - tarp");
+
+    // Esc closes the list, and the next Tab leaves the editor.
+    await openSuggestions();
+    editor.press("Escape");
+    expect(completionStatus(editor.view.state)).toBeNull();
+    expect(editor.press("Tab")).toBe(false);
+    expect(editor.text()).toBe("- tent\n  - tarp");
   });
 
   test("with the focus preference, Tab and Shift+Tab stay with the browser", () => {

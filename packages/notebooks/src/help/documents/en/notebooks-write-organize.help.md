@@ -58,9 +58,10 @@ Tab indents in the note editor, so you can nest lists and line up code without r
 
 :::reference
 - **Text and code:** Tab inserts two spaces at the cursor or indents the selected lines. Shift+Tab removes up to two spaces of indentation.
-- **Lists:** Tab nests the current item under the item above it. Shift+Tab moves it back out one level.
+- **Lists:** Tab nests the current item under the item above it, and its sub-items move with it. Shift+Tab moves it back out one level.
 - **Tables:** Tab selects the next cell, Shift+Tab the previous one.
-- **Leave the editor:** Press Esc, then Tab to move to the next control, or Esc, then Shift+Tab to move back. If a suggestion list is open, press Esc twice.
+- **Suggestions:** If a suggestion list is open, Tab accepts the highlighted suggestion.
+- **Leave the editor:** Press Esc, then Tab to move to the next control, or Esc, then Shift+Tab to move back.
 - **Keep Tab for focus:** In **Settings**, open **Notebook — View & behavior** and turn on **Tab moves focus instead of indenting**. The choice is stored in this browser and applies immediately.
 :::
 

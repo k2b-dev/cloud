@@ -1,22 +1,25 @@
 /**
  * Tab and Shift+Tab in the note editor.
  *
+ * - With a suggestion list open, Tab accepts the highlighted suggestion.
  * - In a table, Tab selects the next cell and Shift+Tab the previous one.
  * - On a list item, Tab nests the selected items one level and Shift+Tab
- *   lifts them one level. A level is the content column of the item above,
- *   so ordered and bullet lists nest the way Markdown renders them.
+ *   lifts them one level; the items and text nested under them move along.
+ *   A level is the content column of the item above, so ordered and bullet
+ *   lists nest the way Markdown renders them.
  * - Everywhere else, including code blocks, Tab inserts two spaces at the
  *   cursor or indents the selected lines, and Shift+Tab removes up to two
  *   spaces of indentation.
  *
  * The note keeps plain spaces. Keyboard users leave the editor with
- * CodeMirror's built-in escape: Esc, then Tab. People who prefer Tab for
- * focus movement leave this extension out through their Notebooks preference.
+ * CodeMirror's escape: Esc, then Tab. People who prefer Tab for focus
+ * movement leave this extension out through their Notebooks preference.
  */
+import { acceptCompletion } from "@codemirror/autocomplete";
 import { indentLess, indentMore } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
 import { EditorSelection, type EditorState, type Extension, type Line } from "@codemirror/state";
-import { type Command, type EditorView, keymap } from "@codemirror/view";
+import { type Command, EditorView, keymap } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { splitTableLineCells } from "./_lib/table-cell";
 
@@ -93,6 +96,31 @@ const selectedLines = (state: EditorState): Line[] => {
   return lines;
 };
 
+/**
+ * The selected lines plus everything nested under a selected list item: following lines, blank or
+ * indented past its marker. An item then moves with its sub-items and continuation text.
+ */
+const linesWithNestedContent = (state: EditorState): Line[] => {
+  const lines: Line[] = [];
+  let last = 0;
+  for (const line of selectedLines(state)) {
+    if (line.number > last) {
+      lines.push(line);
+      last = line.number;
+    }
+    const item = listItemLine(state, line);
+    if (!item) continue;
+    // Lines up to `last` are already included; a line nested under this item is never the one that ended them.
+    for (let number = last + 1; number <= state.doc.lines; number++) {
+      const next = state.doc.line(number);
+      if (next.text.trim() && leadingWhitespace(next.text) <= item.indent) break;
+      lines.push(next);
+      last = number;
+    }
+  }
+  return lines;
+};
+
 const shiftListItems = (view: EditorView, direction: Direction): boolean => {
   const { state } = view;
   const headLine = state.doc.lineAt(state.selection.main.head);
@@ -100,7 +128,7 @@ const shiftListItems = (view: EditorView, direction: Direction): boolean => {
   if (!item) return false;
   const width = direction > 0 ? nestWidth(state, headLine.number, item.indent) : liftWidth(state, headLine.number, item.indent);
   const changes = state.changes(
-    selectedLines(state)
+    linesWithNestedContent(state)
       .filter((line) => line.text.trim())
       .map((line) =>
         direction > 0
@@ -173,11 +201,22 @@ const insertIndent: Command = (view) => {
   return true;
 };
 
-/** Tab: next table cell, nested list item, or two spaces of indentation. */
-const indentOnTab: Command = (view) => !view.state.readOnly && (moveTableCell(view, 1) || shiftListItems(view, 1) || insertIndent(view));
+/** Tab: accepted suggestion, next table cell, nested list item, or two spaces of indentation. */
+const indentOnTab: Command = (view) =>
+  !view.state.readOnly && (acceptCompletion(view) || moveTableCell(view, 1) || shiftListItems(view, 1) || insertIndent(view));
 
 /** Shift+Tab: previous table cell, lifted list item, or up to two spaces less indentation. */
 const outdentOnShiftTab: Command = (view) =>
   !view.state.readOnly && (moveTableCell(view, -1) || shiftListItems(view, -1) || indentLess(view));
 
-export const tabIndentExtension = (): Extension => keymap.of([{ key: "Tab", run: indentOnTab, shift: outdentOnShiftTab }]);
+/**
+ * CodeMirror arms its Esc-then-Tab escape only when no key binding handles Esc, but Esc also collapses
+ * a selection and closes suggestions. Arming it on every Esc keeps "Esc, then Tab" leaving the editor.
+ */
+const armTabEscape = EditorView.domEventObservers({
+  keydown: (event, view) => {
+    if (event.key === "Escape") view.setTabFocusMode(2000);
+  },
+});
+
+export const tabIndentExtension = (): Extension => [keymap.of([{ key: "Tab", run: indentOnTab, shift: outdentOnShiftTab }]), armTabEscape];
