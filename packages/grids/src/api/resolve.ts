@@ -118,7 +118,6 @@ const resolveRecord = async (c: Context<AuthContext>, ref: string): Promise<Step
   const visible = await gridsService.record.get(table.id, recordId, {
     viewer: currentActorViewer(c),
     deleted: "include",
-    includeRelations: false,
   });
   const base = visible ? await gridsService.base.get(table.baseId) : null;
   return base ? found({ base, table }) : notFound;

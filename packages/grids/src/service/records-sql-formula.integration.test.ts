@@ -154,19 +154,15 @@ describe("records SQL formula projection integration", () => {
     async () => {
       const fixture = await insertSqlFormulaFixture();
       try {
-        const results = await Promise.all(
-          Array.from({ length: 16 }, () => list({ tableId: fixture.tableId, limit: 10, includeRelations: true })),
-        );
+        const results = await Promise.all(Array.from({ length: 16 }, () => list({ tableId: fixture.tableId, limit: 10 })));
 
         expect(results).toHaveLength(16);
         expect(results.every((result) => result.ok && result.data.items.length === 2)).toBe(true);
-        expect(
-          results.every((result) => {
-            if (!result.ok) return false;
-            const record = result.data.items.find((item) => item.id === fixture.recordId);
-            return record?.expanded?.[fixture.targetRecordId]?.[fixture.targetNameId] === "Product A";
-          }),
-        ).toBe(true);
+        for (const result of results) {
+          if (!result.ok) throw result.error;
+          const record = result.data.items.find((item) => item.id === fixture.recordId);
+          expect(record?.data[fixture.relationId]).toEqual([fixture.targetRecordId]);
+        }
 
         const followUp = await list({ tableId: fixture.tableId, limit: 10 });
         expect(followUp.ok).toBe(true);

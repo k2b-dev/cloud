@@ -8,6 +8,7 @@ import { previewDslQuery } from "../query-dsl/preview";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import { listByTable } from "./fields";
 import { list } from "./records";
+import { buildRelationLabelCache } from "./relation-labels";
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -194,26 +195,28 @@ describe("stored record list and textual GQL parity", () => {
     }
   });
 
-  postgresTest("keeps relation UUIDs separate from expansions and redacts forbidden targets after querying", async () => {
+  postgresTest("keeps relation UUIDs separate from labels and redacts forbidden targets after querying", async () => {
     const f = await insertFixture();
     try {
-      const allowed = await list({ tableId: f.table.id, includeRelations: true });
+      const fields = await listByTable(f.table.id);
+      const allowed = await list({ tableId: f.table.id });
       if (!allowed.ok) throw new Error(allowed.error.message);
       const textual = await gqlRows(f, "select Customer");
       expect(allowed.data.items[0]!.data[f.relationId]).toEqual([f.targetRecordId]);
       expect(textual[0]!.values[f.relationId]).toEqual([f.targetRecordId]);
-      expect(allowed.data.items[0]!.expanded?.[f.targetRecordId]?.[f.targetNameId]).toBe("Private customer");
-      const denied = await list({
-        tableId: f.table.id,
-        includeRelations: true,
-        viewer: { userId: null, userGroups: [], readableTableIds: new Set([f.table.id]), tableReadAccess: new Map([[f.table.id, true]]) },
-      });
+      expect(await buildRelationLabelCache(allowed.data.items, fields)).toEqual({ [f.targetRecordId]: "Private customer" });
+      // One request-scoped viewer, shared by the list and its label map as in the routes.
+      const viewer = {
+        userId: null,
+        userGroups: [],
+        readableTableIds: new Set([f.table.id]),
+        tableReadAccess: new Map([[f.table.id, true]]),
+      };
+      const denied = await list({ tableId: f.table.id, viewer });
       if (!denied.ok) throw new Error(denied.error.message);
       expect(denied.data.items.map((row) => row.id)).toEqual(allowed.data.items.map((row) => row.id));
-      for (const row of denied.data.items) {
-        expect(row.data[f.relationId]).toEqual([]);
-        expect(row.expanded).toBeUndefined();
-      }
+      for (const row of denied.data.items) expect(row.data[f.relationId]).toEqual([]);
+      expect(await buildRelationLabelCache(denied.data.items, fields, viewer)).toEqual({});
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${f.baseId}::uuid`;
     }

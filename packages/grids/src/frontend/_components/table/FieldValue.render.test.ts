@@ -23,11 +23,10 @@ const field = (overrides: Partial<Field> & Pick<Field, "id" | "name" | "type">):
   ...overrides,
 });
 
-const record = (data: Record<string, unknown>, expanded?: GridRecord["expanded"]): GridRecord => ({
+const record = (data: Record<string, unknown>): GridRecord => ({
   id: "record",
   tableId: "table",
   data,
-  expanded,
   version: 1,
   createdBy: null,
   updatedBy: null,

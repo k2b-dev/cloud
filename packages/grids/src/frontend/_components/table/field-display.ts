@@ -1,6 +1,6 @@
 import { groupDisplayName } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
-import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
+import type { PublicField as Field } from "../../../api/public-dto";
 import { type FormatSpec, FormatSpecSchema } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import { barcodeValueText, canRenderBarcode } from "./BarcodeRendering";
@@ -23,7 +23,6 @@ export type FieldDisplayIntent =
 export type ResolveFieldDisplayOptions = {
   field: Field;
   value: unknown;
-  record?: GridRecord;
   fieldsByTable?: Record<string, Field[]>;
   relationLabels?: Record<string, string>;
   dateConfig?: DateContext;
@@ -45,13 +44,6 @@ const valueToLabelPart = (value: unknown): string => {
   return "";
 };
 
-const expandedRecordLabel = (expanded: Record<string, unknown> | undefined, locale: string): string => {
-  const { t } = tableMessages.resolve([locale]);
-  if (!expanded) return t.unavailableRecord;
-  const parts = Object.values(expanded).map(valueToLabelPart).filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : t.untitledRecord;
-};
-
 export const relationIds = (value: unknown): string[] => {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.length > 0);
   return typeof value === "string" && value.length > 0 ? [value] : [];
@@ -66,9 +58,6 @@ export const fieldDisplayFormat = (field: Field, override?: FormatSpec): FormatS
 const isMarkdownLongtext = (field: Field): boolean =>
   field.type === "longtext" && Boolean((field.config as { markdown?: boolean }).markdown);
 
-const relationLabel = (id: string, options: ResolveFieldDisplayOptions): string =>
-  options.relationLabels?.[id] ?? expandedRecordLabel(options.record?.expanded?.[id], options.locale ?? options.dateConfig?.locale ?? "en");
-
 export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldDisplayIntent => {
   const { field, value } = options;
   const locale = options.locale ?? options.dateConfig?.locale ?? "en";
@@ -82,7 +71,7 @@ export const resolveFieldDisplay = (options: ResolveFieldDisplayOptions): FieldD
     }
     return {
       kind: "relation",
-      items: relationIds(value).map((id) => ({ id, label: relationLabel(id, options), linkable: true })),
+      items: relationIds(value).map((id) => ({ id, label: options.relationLabels?.[id] ?? t.unavailableRecord, linkable: true })),
       targetTableId: (field.config as { targetTableId?: string }).targetTableId,
     };
   }

@@ -375,7 +375,6 @@ export const create = async (
   actorId: string | null,
   origin: MutationOrigin,
   opts: {
-    includeRelations?: boolean;
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     locale?: string;
@@ -407,7 +406,6 @@ export const createMany = async (
   actorId: string | null,
   origin: MutationOrigin,
   opts: {
-    includeRelations?: boolean;
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     locale?: string;
@@ -577,7 +575,6 @@ export const update = async (
   origin: MutationOrigin,
   ifMatchVersion?: number,
   opts: {
-    includeRelations?: boolean;
     viewer?: ExpansionViewer;
     dateConfig?: DateContext;
     audit?: RecordMutationAudit;

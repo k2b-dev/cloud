@@ -94,7 +94,6 @@ export default function RecordDetails(props: {
         formatFieldValueText({
           field: headingField,
           value: record().data[headingField.id],
-          record: record(),
           relationLabels: relationLabels(),
           dateConfig: props.dateConfig,
           format:

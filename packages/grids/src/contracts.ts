@@ -466,7 +466,6 @@ export const GridRecordSchema = z.object({
   tableId: z.string().uuid(),
   data: z.record(z.string(), z.unknown()),
   fieldErrors: z.record(z.string(), z.string()).optional(),
-  expanded: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
   version: z.number().int(),
   finalizedAt: z.string().datetime().nullable().optional(),
   finalizedBy: z.string().uuid().nullable().optional(),

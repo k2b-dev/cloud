@@ -61,7 +61,6 @@ const createStoredPageReader = (params: {
       search: (params.query.search as SearchSpec | undefined) ?? null,
       recordMeta: params.query.recordMeta ?? null,
       sort: params.query.sort ?? [],
-      includeRelations: false,
       viewer: params.viewer,
       dateConfig: params.dateConfig,
       htmlTemplateFieldIds: params.htmlTemplateFieldIds,

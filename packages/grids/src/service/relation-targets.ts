@@ -68,23 +68,6 @@ export const collectRelationTargetIds = async (records: GridRecord[], fields: Fi
   return idsByTargetTable;
 };
 
-export const collectHydratedRelationTargetIds = (records: GridRecord[], fields: Field[]): Map<string, Set<string>> => {
-  const idsByTargetTable = new Map<string, Set<string>>();
-  for (const field of fields) {
-    if (field.type !== "relation" || field.deletedAt) continue;
-    const targetTableId = (field.config as { targetTableId?: string }).targetTableId;
-    if (!targetTableId) continue;
-    const ids = idsByTargetTable.get(targetTableId) ?? new Set<string>();
-    for (const record of records) {
-      const value = record.data[field.id];
-      const recordIds = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
-      for (const id of recordIds) if (typeof id === "string") ids.add(id);
-    }
-    idsByTargetTable.set(targetTableId, ids);
-  }
-  return idsByTargetTable;
-};
-
 export const loadRelationTargetsBatch = async (
   idsByTargetTable: ReadonlyMap<string, Set<string>>,
   authorizedTableIds?: ReadonlySet<string>,

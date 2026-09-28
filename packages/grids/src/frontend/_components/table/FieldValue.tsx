@@ -149,7 +149,6 @@ export function FieldValue(props: FieldValueProps) {
     resolveFieldDisplay({
       field: props.field,
       value: props.value,
-      record: props.record,
       fieldsByTable: props.fieldsByTable,
       relationLabels: props.relationLabels,
       dateConfig: props.dateConfig,

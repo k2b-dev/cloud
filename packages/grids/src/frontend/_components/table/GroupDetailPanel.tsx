@@ -283,7 +283,6 @@ export default function GroupDetailPanel(props: Props) {
     return formatFieldValueText({
       field,
       value,
-      record,
       relationLabels: relationLabels(),
       dateConfig: props.dateConfig,
       locale: locale(),

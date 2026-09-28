@@ -1111,16 +1111,9 @@ export const toPublicRecords = async (records: readonly GridRecord[], fields: re
   );
   const recordIds = await projectPublicIds("record", relationRecordIds);
   return records.map((record) => {
-    const {
-      expanded: _,
-      finalRevisionId: _finalRevisionId,
-      finalizedAt,
-      finalizedBy,
-      fieldErrors,
-      ...withoutExpanded
-    } = omitShortId(record);
+    const { finalRevisionId: _finalRevisionId, finalizedAt, finalizedBy, fieldErrors, ...rest } = omitShortId(record);
     return {
-      ...withoutExpanded,
+      ...rest,
       ...(finalizedAt ? { finalizedAt, finalizedBy: finalizedBy ?? null } : {}),
       id: record.shortId,
       tableId: publicId(tableIds, record.tableId, "table"),

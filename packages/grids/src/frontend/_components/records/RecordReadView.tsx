@@ -103,7 +103,6 @@ export default function RecordReadView(props: RecordReadViewProps) {
     const intent = resolveFieldDisplay({
       field,
       value: props.record.data[field.id],
-      record: props.record,
       relationLabels: props.relationLabels,
       locale: locale(),
     });
