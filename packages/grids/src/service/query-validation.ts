@@ -3,11 +3,11 @@ import { sql } from "bun";
 import type { AggregationSpec, ComputedColumnSpec, FilterTree, GroupBySpec, GroupSortSpec, RecordQuery, SearchSpec } from "../contracts";
 import { collectFieldRefs, parseFormula } from "../formula/parser";
 import { normalizeRefKey } from "../ref-syntax";
+import { filterSearchableFields } from "../searchable-fields";
 import { compileAggregates } from "./aggregate-compiler";
 import { listByTable } from "./fields";
 import { compileFilter } from "./filter-compiler";
 import { compileGroupQuery, type GroupAggregationSpec } from "./group-compiler";
-import { filterSearchableFields } from "./search";
 import { compileSort } from "./sort-compiler";
 import type { Field } from "./types";
 

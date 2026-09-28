@@ -10,7 +10,7 @@ import {
   prompts,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, Show } from "solid-js";
 import type {
   PublicField as Field,
   PublicForm as Form,
@@ -30,6 +30,7 @@ import type {
   TableMutationPolicy,
 } from "../../../contracts";
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
+import { filterSearchableFields } from "../../../searchable-fields";
 import { defaultTableAggregations } from "../../../table-defaults";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import QueryWorkspace from "../query/QueryWorkspace";
@@ -128,7 +129,6 @@ type Props = {
   documentTemplates: PublicDocumentTemplateSummary[];
   relationLabels: Record<string, string>;
   viewColumns: ColumnSpec[] | undefined;
-  searchableFields: Field[];
   groupedExplode: boolean;
   /** Stored query of the active path-based view, used as the base for URL overrides. */
   activeRecordQuery: RecordQuery | null;
@@ -193,6 +193,8 @@ export default function RecordsView(props: Props) {
     };
   };
   const [search, setSearch] = createSignal<RecordsState["search"]>(resolvedSearchState(props.initialState.search));
+  // The search follows the fields the page shows, so adding, editing, or deleting a field applies without a reload.
+  const searchableFields = createMemo(() => filterSearchableFields(fields()));
   const [calendarState, setCalendarState] = createSignal<RecordsState["calendar"]>(props.initialState.calendar);
   const [cardSize, setCardSize] = createSignal<CardSize>(props.initialState.cardSize);
   const groupBy = () => (query().groupBy ?? []) as GroupBySpec[];
@@ -466,14 +468,31 @@ export default function RecordsView(props: Props) {
     syncUrl({ replace: true });
   };
 
-  /** SearchBar's onSearchChange. Mirror semantics to onToolbarCommit. */
-  const onSearchChange = (next: { q: string; fieldIds: string[] }) => {
+  const commitSearch = (next: RecordsState["search"]) => {
     invalidateLiveRefreshes();
-    setSearch({ ...next, override: true });
+    setSearch(next);
     setSelectedGroup(null);
     setCursor(null);
     syncUrl({ replace: true });
   };
+
+  /** SearchBar's onSearchChange. Mirror semantics to onToolbarCommit. */
+  const onSearchChange = (next: { q: string; fieldIds: string[] }) => commitSearch({ ...next, override: true });
+
+  // A scope field that was deleted or stopped being searchable makes every records read fail; drop it and keep the
+  // rest of the search. Saved views never change their fields here, so they keep the scope they were saved with.
+  createEffect(
+    on(
+      searchableFields,
+      (available) => {
+        const current = search();
+        const availableIds = new Set(available.map((field) => field.id));
+        const fieldIds = current.fieldIds.filter((id) => availableIds.has(id));
+        if (fieldIds.length < current.fieldIds.length) commitSearch({ ...current, fieldIds });
+      },
+      { defer: true },
+    ),
+  );
 
   const resultNarrowed = () => Boolean(search().q.trim()) || (!props.viewMode && Boolean(query().filter || query().recordMeta));
 
@@ -727,7 +746,7 @@ export default function RecordsView(props: Props) {
             }
           >
             <RecordsPrimaryToolbar
-              searchableFields={props.searchableFields}
+              searchableFields={searchableFields()}
               search={search()}
               trashMode={props.trashMode}
               canReadTable={props.canReadTable}

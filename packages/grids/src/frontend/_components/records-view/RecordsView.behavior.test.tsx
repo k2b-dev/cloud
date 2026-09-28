@@ -3,7 +3,7 @@ import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicField, PublicGridRecord, PublicTableQueryResult, PublicView } from "../../../api/public-dto";
-import type { GroupBySpec } from "../../../contracts";
+import type { GroupBySpec, RecordQuery } from "../../../contracts";
 
 const domTest = isServer ? test.skip : test;
 const timestamp = "2026-01-01T00:00:00.000Z";
@@ -113,7 +113,6 @@ const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProp
   documentTemplates: [],
   relationLabels: memberPage.relationLabels ?? {},
   viewColumns: undefined,
-  searchableFields: [],
   groupedExplode: false,
   activeRecordQuery: null,
   displayConfig: { mode: "table" },
@@ -240,7 +239,7 @@ domTest(
       });
     };
     const { default: RecordsView } = await import("./RecordsView");
-    const dispose = render(() => createComponent(RecordsView, recordsViewProps({ searchableFields: [titleField] })), dom.root);
+    const dispose = render(() => createComponent(RecordsView, recordsViewProps({})), dom.root);
     const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[name="grids-record-search"]')!;
     const searchIcons = () => Array.from(dom.root.querySelectorAll(".k2b-text-input__icon > i")).map((icon) => icon.className);
     const recordsDimmed = () => dom.root.querySelector(".transition-opacity")!.classList.contains("opacity-60");
@@ -330,5 +329,211 @@ domTest("a failed server read shows its error without repeating the read, and th
     dom.cleanup();
     Object.assign(globalThis, { IntersectionObserver: previousObserver });
     fetchRecords = async () => memberPage;
+  }
+});
+
+const notesField = field("FIELD4", "Notes", 1);
+
+/**
+ * Serves the field calls of a records page like the Grids API. A deleted field moves to the Base trash, and
+ * `restoreElsewhere` brings it back the way Base settings or the CLI do, without telling the page.
+ */
+const installFieldApi = (initialFields: PublicField[]) => {
+  const originalFetch = globalThis.fetch;
+  const live = [...initialFields];
+  const trash: PublicField[] = [];
+  let created = 0;
+  let version = 0;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      const method = init?.method ?? "GET";
+      const body = typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      if (path === "/api/grids/fields/by-table/TABLE1") {
+        if (method === "GET") return Response.json(live);
+        created += 1;
+        const next = field(`NEW00${created}`, String(body.name), live.length + trash.length, { type: String(body.type ?? "text") });
+        live.push(next);
+        version += 1;
+        return Response.json(next);
+      }
+      if (path === "/api/grids/tables/TABLE1") {
+        const updatedAt = new Date(Date.parse(timestamp) + version * 1000).toISOString();
+        return Response.json({ id: "TABLE1", columns: [], displayConfig: { mode: "table" }, updatedAt });
+      }
+      if (path.endsWith("/dependents")) return Response.json({ hasBlocking: false, dependents: [] });
+      const target = live.find((candidate) => path === `/api/grids/fields/${candidate.id}`);
+      if (method === "DELETE" && target) {
+        live.splice(live.indexOf(target), 1);
+        trash.push(target);
+        version += 1;
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ message: `Unexpected ${method} ${path}` }, { status: 500 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  return {
+    restoreElsewhere: (fieldId: string) => {
+      const [restored] = trash.splice(
+        trash.findIndex((candidate) => candidate.id === fieldId),
+        1,
+      );
+      live.splice(restored!.position, 0, restored!);
+      version += 1;
+    },
+    uninstall: () => {
+      globalThis.fetch = originalFetch;
+    },
+  };
+};
+
+/** Opens a table page in edit mode for someone who manages the table, with the field calls served by `installFieldApi`. */
+const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click", "input"], dom.document);
+  const previousObserver = globalThis.IntersectionObserver;
+  Object.assign(globalThis, {
+    IntersectionObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+  });
+  const initialFields = overrides.fields ?? [];
+  const api = installFieldApi(initialFields);
+  const reads: Array<{ query: RecordQuery; signal?: AbortSignal }> = [];
+  fetchRecords = async (args, options) => {
+    reads.push({ query: args.query, signal: options?.signal });
+    return memberPage;
+  };
+  const { default: RecordsView } = await import("./RecordsView");
+  const { dialogCore } = await import("@k2b/ui");
+  const dispose = render(
+    () =>
+      createComponent(
+        RecordsView,
+        recordsViewProps({
+          canWrite: true,
+          canManageTable: true,
+          initialAdminMode: true,
+          fieldsByTable: { TABLE1: initialFields },
+          ...overrides,
+        }),
+      ),
+    dom.root,
+  );
+  const document = dom.document;
+  const buttonNamed = (label: string) =>
+    Array.from(document.querySelectorAll("button")).findLast((node) => node.textContent?.trim() === label);
+  const scope = () => document.querySelector<HTMLElement>('[role="combobox"][aria-label="Search record columns"]');
+  /** Lists the fields the search scope offers and the ones it has selected. */
+  const readScope = () => {
+    const listbox = document.getElementById(scope()?.getAttribute("aria-controls") ?? "");
+    if (!listbox) return null;
+    const options = Array.from(listbox.querySelectorAll('[role="option"]'));
+    return {
+      offered: options.map((option) => option.getAttribute("aria-label")),
+      selected: options
+        .filter((option) => option.getAttribute("aria-selected") === "true")
+        .map((option) => option.getAttribute("aria-label")),
+    };
+  };
+  const addTextField = async (name: string) => {
+    buttonNamed("Add field")!.click();
+    const textType = () =>
+      Array.from(document.querySelectorAll("button")).find((node) => node.querySelector(".min-w-0 > div")?.textContent === "Text");
+    await waitFor(() => Boolean(textType()));
+    textType()!.click();
+    const nameInput = () => {
+      const label = Array.from(document.querySelectorAll("label")).findLast(
+        (node) => node.textContent?.trim().replace(/\s*\*$/, "") === "Name",
+      );
+      return label ? (document.getElementById(label.htmlFor) as HTMLInputElement | null) : null;
+    };
+    await waitFor(() => Boolean(nameInput()));
+    nameInput()!.value = name;
+    nameInput()!.dispatchEvent(new Event("input", { bubbles: true }));
+    buttonNamed("Create")!.click();
+    await waitFor(() => !dialogCore.isOpen());
+  };
+  const deleteField = async (name: string) => {
+    document.querySelector<HTMLButtonElement>(`button[aria-label="Field settings settings for ${name}"]`)!.click();
+    await waitFor(() => Boolean(buttonNamed("Delete field")));
+    buttonNamed("Delete field")!.click();
+    await waitFor(() => Boolean(buttonNamed("Delete")));
+    buttonNamed("Delete")!.click();
+    await waitFor(() => !dialogCore.isOpen());
+  };
+  return {
+    api,
+    reads,
+    searchInput: () => document.querySelector<HTMLInputElement>('input[name="grids-record-search"]'),
+    readScope,
+    addTextField,
+    deleteField,
+    cleanup: () => {
+      while (dialogCore.isOpen()) dialogCore.close();
+      dispose();
+      api.uninstall();
+      dom.cleanup();
+      Object.assign(globalThis, { IntersectionObserver: previousObserver });
+      fetchRecords = async () => memberPage;
+    },
+  };
+};
+
+domTest("a new table shows the search as soon as it has a searchable field", async () => {
+  const page = await mountTableEditor({ fields: [], initialData: { items: [], nextCursor: null }, relationLabels: {} });
+  try {
+    expect(page.searchInput()).toBeNull();
+    await page.addTextField("Keyword");
+    await waitFor(() => page.searchInput() !== null);
+    expect(page.readScope()).toEqual({ offered: ["Keyword"], selected: [] });
+  } finally {
+    page.cleanup();
+  }
+});
+
+/** A page whose URL searches "venue" in the Notes field only. */
+const searchingNotes = (): Partial<RecordsViewProps> => ({
+  fields: [titleField, notesField],
+  initialState: { ...recordsViewProps({}).initialState, search: { q: "venue", fieldIds: [notesField.id], override: true } },
+});
+
+domTest("deleting a field removes it from the search scope and from a search that was limited to it", async () => {
+  const page = await mountTableEditor(searchingNotes());
+  try {
+    expect(page.readScope()).toEqual({ offered: ["Title", "Notes"], selected: ["Notes"] });
+
+    await page.deleteField("Notes");
+    expect(page.readScope()).toEqual({ offered: ["Title"], selected: [] });
+    // Reads started while the field was being deleted are cancelled, since naming it fails; the search keeps its text.
+    await waitFor(() => page.reads.length > 0);
+    const namesDeletedField = (read: { query: RecordQuery }) => read.query.search?.fieldIds?.includes(notesField.id) === true;
+    expect(page.reads.filter(namesDeletedField).every((read) => read.signal?.aborted)).toBe(true);
+    expect(page.reads.at(-1)?.query.search).toEqual({ q: "venue", fieldIds: [] });
+    expect(page.searchInput()?.value).toBe("venue");
+    expect(new URL(window.location.href).searchParams.get("qFields")).toBeNull();
+    expect(new URL(window.location.href).searchParams.get("q")).toBe("venue");
+  } finally {
+    page.cleanup();
+  }
+});
+
+domTest("a field restored elsewhere returns to the search scope with the table's next field read", async () => {
+  const page = await mountTableEditor(searchingNotes());
+  try {
+    await page.deleteField("Notes");
+    expect(page.readScope()).toEqual({ offered: ["Title"], selected: [] });
+
+    // Base settings restores the field from the trash; adding a field makes the page read the table's fields again.
+    page.api.restoreElsewhere(notesField.id);
+    await page.addTextField("Due");
+    await waitFor(() => page.readScope()?.offered.length === 3);
+    // The restored field is offered again, but the search that dropped it stays as the person left it.
+    expect(page.readScope()).toEqual({ offered: ["Title", "Notes", "Due"], selected: [] });
+    expect(page.searchInput()?.value).toBe("venue");
+  } finally {
+    page.cleanup();
   }
 });

@@ -1,8 +1,8 @@
 import type { DslQueryCompletionItem, DslQueryTextRange } from "../contracts";
 import { formatIdentifierRef, normalizeRefKey, parseIdentifierRef, parseQualifiedIdentifierRef } from "../ref-syntax";
+import { filterSearchableFields } from "../searchable-fields";
 import { type AggregateKind, isFieldAggregatable } from "../service/aggregate-capabilities";
 import { isGroupable } from "../service/group-compiler";
-import { filterSearchableFields } from "../service/search";
 import type { Field } from "../service/types";
 import { type CompletionPurpose, type CompletionRequest, completionItem, isDiagnostic, rankItems, uniqueItems } from "./intelligence-core";
 import { QUALIFIED_REF_RE, SOURCE_REF_RE } from "./intelligence-grammar";

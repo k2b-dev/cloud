@@ -107,7 +107,6 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
         documentTemplates={records.documentTemplates}
         relationLabels={records.relationLabels}
         viewColumns={records.activeViewColumns}
-        searchableFields={records.searchableFields}
         groupedExplode={records.groupedExplode}
         activeRecordQuery={records.activeRecordQuery}
         displayConfig={records.displayConfig}

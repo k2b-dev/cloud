@@ -1,5 +1,5 @@
 import type { RecordQuery } from "../contracts";
-import { filterSearchableFields } from "../service/search";
+import { filterSearchableFields } from "../searchable-fields";
 import type { Field } from "../service/types";
 import { type DslDerivedViewColumn, derivedColumnByRef } from "./resolver-derived-columns";
 import { type DslResolverDiagnostic, diagnostic, isResolverDiagnostic as isDiagnostic } from "./resolver-diagnostics";
