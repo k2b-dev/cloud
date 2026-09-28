@@ -7,7 +7,6 @@ import {
   bucketsToLineSeries,
   bucketsToSlices,
   buildChartRenderData,
-  chartXAxisFormat,
   formatCategoryKey,
   toNumber,
 } from "./chart-data";
@@ -205,32 +204,6 @@ describe("bucketsToLineSeries", () => {
 });
 
 // =============================================================================
-// chartXAxisFormat — index → category label round-trip for line charts
-// =============================================================================
-
-describe("chartXAxisFormat", () => {
-  test("maps round tick value to bucket key", () => {
-    const fmt = chartXAxisFormat(lineBuckets, categoryGroupBy);
-    expect(fmt(0)).toBe("Q1");
-    expect(fmt(1)).toBe("Q2");
-    expect(fmt(2)).toBe("Q3");
-  });
-
-  test("rounds floating-point ticks before lookup (stdlib emits e.g. 0.5)", () => {
-    const fmt = chartXAxisFormat(lineBuckets, categoryGroupBy);
-    // 0.5 rounds to 1 → "Q2". Avoids blank ticks when the axis
-    // generator places ticks between integer bucket indices.
-    expect(fmt(0.5)).toBe("Q2");
-  });
-
-  test("out-of-range ticks → empty string (clean axis, no NaN)", () => {
-    const fmt = chartXAxisFormat(lineBuckets, categoryGroupBy);
-    expect(fmt(-1)).toBe("");
-    expect(fmt(99)).toBe("");
-  });
-});
-
-// =============================================================================
 // buildChartRenderData — top-level dispatcher used by the renderer
 // =============================================================================
 
@@ -261,11 +234,11 @@ describe("buildChartRenderData", () => {
     expect(out.kind).toBe("bar");
   });
 
-  test("line → series + xAxisFormat callback wired up", () => {
+  test("line → series + one category per bucket", () => {
     const out = buildChartRenderData(renderInput(widget("line"), [countStar, sumAmount], lineBuckets));
     expect(out.kind).toBe("line");
     if (out.kind !== "line") throw new Error("unreachable");
     expect(out.series).toHaveLength(2);
-    expect(out.xAxisFormat(0)).toBe("Q1");
+    expect(out.categories).toEqual(["Q1", "Q2", "Q3"]);
   });
 });

@@ -174,6 +174,8 @@ function SourcePreview(props: {
               data={chartDataFromPreview(resolved, sourceFields())}
               valueFormat={props.block.valueFormat}
               dateConfig={props.dateConfig}
+              xAxisLabel={props.block.xAxisLabel}
+              yAxisLabel={props.block.yAxisLabel}
             />
           ) : (
             <Placeholder
