@@ -73,6 +73,7 @@ const mount = async ({
           trashMode: false,
           source: () => ({ tableId: "TABLE1", query, cursor: cursor(), calendar: { view: "month", date: "2026-09-01" } }),
           initialData,
+          initialError: null,
           initialEventCursor,
           locale: "en",
           cursor,

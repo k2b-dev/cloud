@@ -365,6 +365,7 @@ const buildRecordsRoute = async (params: {
       explode: initial.groupedExplode,
       filePreviews: initial.records.filePreviews,
     },
+    initialError: initial.error,
     initialSelectedRecord: selectedRecord,
     initialSelectedRecordDetail,
     documentTemplates: writableDocumentTemplates(common, activeTable.id),

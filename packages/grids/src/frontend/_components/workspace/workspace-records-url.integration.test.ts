@@ -100,6 +100,7 @@ const loadTablePage = async (fixture: Fixture, search: Record<string, unknown>) 
   return {
     titles: (state.route.initialData.items ?? []).map((record) => record.data[fixture.titleId]),
     initialState: publicState.route.initialState,
+    initialError: publicState.route.initialError,
   };
 };
 
@@ -124,6 +125,7 @@ describe("shared records page URLs", () => {
     const page = await loadTablePage(f, { filter, sort, q: "a", qFields: f.titlePublicId });
 
     expect(page.titles).toEqual(["Gamma", "Alpha"]);
+    expect(page.initialError).toBeNull();
     expect(page.initialState.query.filter).toEqual(filter);
     expect(page.initialState.query.sort).toEqual(sort);
     expect(page.initialState.search).toMatchObject({ q: "a", fieldIds: [f.titlePublicId] });
@@ -154,5 +156,12 @@ describe("shared records page URLs", () => {
 
     expect(page.titles).toEqual(["Beta"]);
     expect(page.initialState.search).toMatchObject({ q: "e", fieldIds: [f.titlePublicId] });
+  });
+
+  postgresTest("carry a failed read to the page instead of rendering an empty table", async () => {
+    const page = await loadTablePage(fixture!, { cursor: "stale" });
+
+    expect(page.titles).toEqual([]);
+    expect(page.initialError).toBe("The cursor is invalid.");
   });
 });

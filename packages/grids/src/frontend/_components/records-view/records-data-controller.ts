@@ -183,6 +183,7 @@ type RecordsDataControllerOptions = {
   trashMode: boolean;
   source: Accessor<RecordsQuerySource>;
   initialData: TableQueryResult;
+  initialError: string | null;
   initialEventCursor: string | null;
   locale: string;
   cursor: Accessor<string | null>;
@@ -212,6 +213,7 @@ export const createRecordsDataController = (options: RecordsDataControllerOption
   const recordsQuery = createRecordsQueryController({
     source: options.source,
     initialValue: options.initialData,
+    initialError: options.initialError,
     prepareSource: (source) => ({
       ...source,
       query: queryForRecordsPage(source.query, source.cursor && requestedPage?.cursor === source.cursor ? requestedPage.loadedCount : 0),

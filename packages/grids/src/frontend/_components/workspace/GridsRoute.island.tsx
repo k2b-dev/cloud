@@ -100,6 +100,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
         viewMode={records.activeView !== null}
         initialState={records.initialState}
         initialData={records.initialData}
+        initialError={records.initialError}
         initialEventCursor={state.recordEventCursor}
         initialSelectedRecord={records.initialSelectedRecord}
         initialSelectedRecordDetail={records.initialSelectedRecordDetail}

@@ -99,6 +99,8 @@ export type WorkspaceRecordsRoute = {
       Record<string, { fileId: string; fieldId: string; recordId: string; filename: string; mimeType: string; sizeBytes: number }>
     >;
   };
+  /** Message of the server's failed records read; `initialData` is then empty. */
+  initialError: string | null;
   initialSelectedRecord: GridRecord | null;
   initialSelectedRecordDetail: WorkspaceRecordDetail | null;
   documentTemplates: DocumentTemplateSummary[];

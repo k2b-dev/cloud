@@ -197,6 +197,8 @@ const emptyInitialRecords = () => ({
   groupedBuckets: [] as WorkspaceGroupBucket[],
   groupedExplode: false,
   relationLabels: {} as Record<string, string>,
+  /** Message of a failed read; the page then has no records instead of failing. */
+  error: null as string | null,
 });
 
 const loadGroupedInitialRecords = async (
@@ -218,7 +220,10 @@ const loadGroupedInitialRecords = async (
     viewer,
     dateConfig: args.dateConfig,
   });
-  if (!groupResult.ok) return data;
+  if (!groupResult.ok) {
+    data.error = groupResult.error.message;
+    return data;
+  }
 
   data.groupedBuckets = groupResult.data.buckets as WorkspaceGroupBucket[];
   data.groupedExplode = groupResult.data.explode;
@@ -259,6 +264,8 @@ const loadListedInitialRecords = async (
       nextCursor: nextCursorWithinLimit(listResult.data.nextCursor, listResult.data.items.length, query.viewLimit),
     };
     data.aggregates = data.records.aggregates ?? {};
+  } else {
+    data.error = listResult.error.message;
   }
   data.relationLabels = {
     ...(await gridsService.relations.buildLabelCache(data.records.items, args.fields, viewer)),

@@ -106,6 +106,7 @@ const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProp
     cardSize: "medium",
   },
   initialData: memberPage,
+  initialError: null,
   initialEventCursor: null,
   initialSelectedRecord: null,
   initialSelectedRecordDetail: null,
@@ -273,3 +274,61 @@ domTest(
     }
   },
 );
+
+domTest("a failed server read shows its error without repeating the read, and the error stays until a retry loads records", async () => {
+  const dom = createDomTestHarness();
+  const previousObserver = globalThis.IntersectionObserver;
+  Object.assign(globalThis, {
+    IntersectionObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+  });
+  let reads = 0;
+  let settleRead!: { resolve: (page: PublicTableQueryResult) => void; reject: (error: Error) => void };
+  fetchRecords = () => {
+    reads++;
+    return new Promise((resolve, reject) => {
+      settleRead = { resolve, reject };
+    });
+  };
+  const { default: RecordsView } = await import("./RecordsView");
+  const dispose = render(
+    () =>
+      createComponent(
+        RecordsView,
+        recordsViewProps({
+          initialData: { items: [], nextCursor: null },
+          initialError: "This value could not be calculated. Check the formula and its input values.",
+          relationLabels: {},
+        }),
+      ),
+    dom.root,
+  );
+  const retryButton = () =>
+    Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Retry") ?? null;
+  try {
+    await Bun.sleep(0);
+    expect(reads).toBe(0);
+    expect(dom.root.textContent).toContain("Could not refresh records");
+    expect(dom.root.textContent).toContain("This value could not be calculated.");
+
+    retryButton()!.click();
+    await waitFor(() => reads === 1);
+    settleRead.reject(new Error("The filter is invalid: unknown field."));
+    await waitFor(() => dom.root.textContent?.includes("The filter is invalid: unknown field.") === true);
+    expect(dom.root.textContent).not.toContain("This value could not be calculated.");
+
+    retryButton()!.click();
+    await waitFor(() => reads === 2);
+    settleRead.resolve(memberPage);
+    await waitFor(() => dom.root.textContent?.includes("Draft the brochure") === true);
+    expect(dom.root.textContent).not.toContain("Could not refresh records");
+    expect(retryButton()).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+    Object.assign(globalThis, { IntersectionObserver: previousObserver });
+    fetchRecords = async () => memberPage;
+  }
+});

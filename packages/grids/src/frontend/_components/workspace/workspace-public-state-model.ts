@@ -103,6 +103,8 @@ export type PublicWorkspaceRecordsRoute = {
       Record<string, { fileId: string; fieldId: string; recordId: string; filename: string; mimeType: string; sizeBytes: number }>
     >;
   };
+  /** Message of the server's failed records read; `initialData` is then empty. */
+  initialError: string | null;
   initialSelectedRecord: PublicGridRecord | null;
   initialSelectedRecordDetail: PublicWorkspaceRecordDetail | null;
   documentTemplates: PublicDocumentTemplateSummary[];

@@ -117,6 +117,8 @@ type Props = {
   viewMode: boolean;
   initialState: RecordsState;
   initialData: TableQueryResult;
+  /** Message of the server's failed records read; `initialData` is then empty. */
+  initialError: string | null;
   initialEventCursor: string | null;
   /** Selected-record payload from SSR — non-null when the URL had
    *  ?record=<id> at initial render. Lets the panel show immediately
@@ -299,6 +301,7 @@ export default function RecordsView(props: Props) {
       calendar: calendarState(),
     }),
     initialData: props.initialData,
+    initialError: props.initialError,
     initialEventCursor: props.initialEventCursor,
     locale: locale(),
     cursor,
