@@ -27,7 +27,7 @@ const empty: RecordsState = {
   cardSize: "medium",
 };
 
-const fieldId = "11111111-1111-4111-8111-111111111111";
+const fieldId = "FIELD1";
 const computedColumns: ColumnSpec[] = [
   { fieldId },
   {

@@ -28,11 +28,15 @@
  *   ?cv=<day|week|month|year>&cd=<YYYY-MM-DD> — calendar state
  *   ?cardSize=<small|medium|large>          — card view density
  *
+ * The JSON params name fields and related records by public ID, as the
+ * browser holds them; SSR resolves them to internal IDs.
+ *
  * Note: `table` / `view` are not query params — they live
  * in the path.
  */
 
-import { ColumnSpecSchema, type RecordQuery } from "../../../contracts";
+import { z } from "zod";
+import { ComputedColumnSpecSchema, FieldColumnSpecSchema, type RecordQuery, ShortIdSchema } from "../../../contracts";
 
 /**
  * URL-owned subset of RecordQuery. The full RecordQuery additionally
@@ -144,11 +148,13 @@ const parseAggregationsParam = (params: URLSearchParams): RecordsUrlQuery["aggre
     | RecordsUrlQuery["aggregations"]
     | undefined;
 
+const UrlColumnSpecSchema = z.union([FieldColumnSpecSchema.extend({ fieldId: ShortIdSchema }), ComputedColumnSpecSchema]);
+
 const parseColumnsParam = (params: URLSearchParams): RecordsUrlQuery["columns"] | undefined => {
   const parsed = tryParseJson<unknown>(params.get("columns"));
   if (!Array.isArray(parsed)) return undefined;
   const columns = parsed.flatMap((item) => {
-    const result = ColumnSpecSchema.safeParse(item);
+    const result = UrlColumnSpecSchema.safeParse(item);
     return result.success ? [result.data] : [];
   });
   return nonEmptyArray(columns);

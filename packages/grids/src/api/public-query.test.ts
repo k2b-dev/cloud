@@ -55,6 +55,13 @@ describe("structured query public ID boundary", () => {
     });
   });
 
+  test("rejects related record values that are not public record IDs", async () => {
+    for (const value of [[relatedRecordId], "RECD1"]) {
+      const converted = await fromPublicRecordQuery(tableId, { filter: { fieldId: "REL001", op: "containsAny", value } }, { listFields });
+      expect(converted).toMatchObject({ ok: false, error: { message: "Unknown related record ID" } });
+    }
+  });
+
   test("round-trips grouped presentation keys without exposing UUIDs", async () => {
     const internal = {
       groupBy: [{ fieldId, granularity: "year" as const }],
