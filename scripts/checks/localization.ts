@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import ts from "typescript";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
@@ -25,10 +25,52 @@ const directKeys = (object: ts.ObjectLiteralExpression): Set<string> =>
     }),
   );
 
-/** Every shipped `i18n.define()` catalog declares inline, key-complete EN and DE messages. */
+/**
+ * Application frontends whose visible text comes only from message catalogs. Hard-coded prose there
+ * fails the check; single words such as product names or protocol labels ("Mail", "Cc", "UID") stay allowed.
+ */
+const CATALOG_ONLY_FRONTENDS = ["packages/mail/src/frontend"];
+const HUMAN_TEXT_ATTRIBUTES = new Set(["alt", "aria-label", "description", "label", "placeholder", "title"]);
+const FEEDBACK_CALLEES = new Set(["prompts", "toast"]);
+const PROSE = /\p{L}{2,}\s+\p{L}{2,}/u;
+
+const isCatalogDefinition = (node: ts.Node): node is ts.CallExpression =>
+  ts.isCallExpression(node) &&
+  ts.isPropertyAccessExpression(node.expression) &&
+  ts.isIdentifier(node.expression.expression) &&
+  node.expression.expression.text === "i18n" &&
+  node.expression.name.text === "define";
+
+const literalText = (node: ts.Node | undefined): string | null => {
+  if (!node) return null;
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isJsxExpression(node)) return literalText(node.expression);
+  return null;
+};
+
+const isFeedbackCall = (node: ts.CallExpression): boolean => {
+  const callee = ts.isPropertyAccessExpression(node.expression) ? node.expression.expression : node.expression;
+  return ts.isIdentifier(callee) && FEEDBACK_CALLEES.has(callee.text);
+};
+
+/** The hard-coded prose a node shows to people: JSX text, a human-text attribute or option field, or a toast or prompt message. */
+const hardCodedProse = (node: ts.Node): string | null => {
+  let text: string | null = null;
+  if (ts.isJsxText(node)) text = node.text;
+  else if (ts.isJsxAttribute(node) && HUMAN_TEXT_ATTRIBUTES.has(node.name.getText())) text = literalText(node.initializer);
+  else if (ts.isPropertyAssignment(node) && HUMAN_TEXT_ATTRIBUTES.has(propertyName(node.name) ?? "")) text = literalText(node.initializer);
+  else if (ts.isCallExpression(node) && isFeedbackCall(node)) text = literalText(node.arguments[0]);
+  const normalized = text?.replace(/\s+/g, " ").trim();
+  return normalized && PROSE.test(normalized) ? normalized : null;
+};
+
+/**
+ * Every shipped `i18n.define()` catalog declares inline, key-complete EN and DE messages, and catalog-only
+ * frontends show no hard-coded prose.
+ */
 export const rule: Rule = {
   name: "localization",
-  description: "Shipped i18n catalogs declare complete inline EN/DE messages",
+  description: "Shipped i18n catalogs declare complete inline EN/DE messages; catalog-only frontends hard-code no prose",
   run: async ({ workspaceRoot }) => {
     const sourceRoots = [join(workspaceRoot, "packages"), join(workspaceRoot, "pwas"), join(workspaceRoot, "docs-site", "src")];
     const findings: Finding[] = [];
@@ -46,15 +88,23 @@ export const rule: Rule = {
       const report = (node: ts.Node, message: string) => {
         findings.push({ file, line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1, message });
       };
+      const path = relative(workspaceRoot, file).split(sep).join("/");
+
+      const findProse = (node: ts.Node): void => {
+        if (isCatalogDefinition(node)) return;
+        const prose = hardCodedProse(node);
+        if (prose) {
+          report(
+            node,
+            `Hard-coded UI text "${prose.length > 60 ? `${prose.slice(0, 57)}...` : prose}"; move it into the app's message catalog.`,
+          );
+        }
+        ts.forEachChild(node, findProse);
+      };
+      if (CATALOG_ONLY_FRONTENDS.some((root) => path.startsWith(`${root}/`))) findProse(sourceFile);
 
       const visit = (node: ts.Node): void => {
-        if (
-          ts.isCallExpression(node) &&
-          ts.isPropertyAccessExpression(node.expression) &&
-          ts.isIdentifier(node.expression.expression) &&
-          node.expression.expression.text === "i18n" &&
-          node.expression.name.text === "define"
-        ) {
+        if (isCatalogDefinition(node)) {
           const definition = node.arguments[0];
           if (!definition || !ts.isObjectLiteralExpression(definition)) {
             report(node, "i18n.define() must use an inline object so locale completeness stays auditable.");
