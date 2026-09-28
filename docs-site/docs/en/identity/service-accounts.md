@@ -138,6 +138,10 @@ Actions that belong to a person stay user-only: creating a Space, Notebook, or
 contact book, managing access and API keys, personal views such as favorites
 and the Spaces work overview, editing or deleting comments (and, in Notebooks,
 writing comments), and writing contact notes.
+Managing the resource itself follows the grant: deleting a Space, Notebook, or
+contact book, and renaming, importing, or exporting a contact book, need an
+`admin` grant and a token with the `admin` scope. The client from
+`cld admin agents create` has only `read` and `write`.
 Resource-bound API keys keep their binding and behave as before.
 
 ## Use an agent from the CLI

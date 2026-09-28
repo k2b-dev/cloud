@@ -19,7 +19,7 @@ const insertAccount = async (name: string, bookId?: string) => {
   return { id: row!.id, name };
 };
 
-const grant = async (bookId: string, serviceAccountId: string, permission: "read" | "write") => {
+const grant = async (bookId: string, serviceAccountId: string, permission: "read" | "write" | "admin") => {
   const [access] = await sql<{ id: string }[]>`
     INSERT INTO auth.access (service_account_id, permission) VALUES (${serviceAccountId}::uuid, ${permission}) RETURNING id`;
   await sql`INSERT INTO contacts.book_access (book_id, access_id) VALUES (${bookId}::uuid, ${access!.id}::uuid)`;
@@ -66,10 +66,12 @@ suite("Contacts REST access for standalone agents", () => {
       if (!hidden.ok) throw new Error(hidden.error.message);
 
       const agent = await insertAccount(`Agent ${suffix}`);
+      const manager = await insertAccount(`Manager ${suffix}`);
       const stranger = await insertAccount(`Stranger ${suffix}`);
       const bound = await insertAccount(`Bound ${suffix}`, granted.id);
-      accountIds.push(agent.id, stranger.id, bound.id);
+      accountIds.push(agent.id, manager.id, stranger.id, bound.id);
       await grant(granted.id, agent.id, "write");
+      await grant(granted.id, manager.id, "admin");
       await grant(granted.id, bound.id, "read");
       await grant(other.id, bound.id, "read");
 
@@ -118,6 +120,18 @@ suite("Contacts REST access for standalone agents", () => {
       expect((await boundCall(`/books/${other.shortId}`)).status).toBe(403);
       const boundSearch = (await (await boundCall(`/search?q=${encodeURIComponent(suffix)}`)).json()) as { data: { bookId: string }[] };
       expect(new Set(boundSearch.data.map((contact) => contact.bookId))).toEqual(new Set([granted.shortId]));
+
+      // Managing the book follows the grant too, but only a token with the `admin` scope reaches it.
+      const managerWithoutAdminScope = await apiAs(manager, ["read", "write"]);
+      expect(
+        (await managerWithoutAdminScope(`/books/${granted.shortId}`, { method: "PATCH", body: { name: `Renamed ${suffix}` } })).status,
+      ).toBe(403);
+      expect((await managerWithoutAdminScope(`/books/${granted.shortId}/export.vcf`)).status).toBe(403);
+      const managerWithAdminScope = await apiAs(manager, ["read", "write", "admin"]);
+      const renamed = await managerWithAdminScope(`/books/${granted.shortId}`, { method: "PATCH", body: { name: `Renamed ${suffix}` } });
+      expect(renamed.status).toBe(200);
+      expect(await renamed.json()).toMatchObject({ id: granted.shortId, name: `Renamed ${suffix}` });
+      expect((await managerWithAdminScope(`/books/${granted.shortId}/export.vcf`)).status).toBe(200);
     } finally {
       await sql`DELETE FROM contacts.books WHERE id IN (${granted.id}::uuid, ${other.id}::uuid)`;
       for (const id of accountIds) {

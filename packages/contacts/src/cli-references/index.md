@@ -78,7 +78,7 @@ cld contacts access set Customers --user ada.lovelace --permission admin
 
 `access set` is idempotent. Read `cld contacts access revoke --help` before revoking access. `--service-account` takes a service account ID or exact name; `search-principals --kind service_account` finds standalone and agent accounts by name. `access list` shows agent grants; `--include-service-accounts` also shows the grants behind resource-bound API keys.
 
-An agent account works like a person with the same grant: it lists, searches, and shows the books and contacts it was granted, and adds, changes, or removes contacts with a `write` grant. Its token's scopes cap the grant, so a `read`-only token cannot write even with a `write` grant. Creating books, managing access and API keys, favorites, and writing notes stay limited to people.
+An agent account works like a person with the same grant: it lists, searches, and shows the books and contacts it was granted, and adds, changes, or removes contacts with a `write` grant. Its token's scopes cap the grant, so a `read`-only token cannot write even with a `write` grant. With an `admin` grant and a token with the `admin` scope it also renames, deletes, imports, or exports the book. Creating books, managing access and API keys, favorites, and writing notes stay limited to people.
 
 ## Destructive operations
 
