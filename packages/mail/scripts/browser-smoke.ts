@@ -587,8 +587,8 @@ const runSmoke = async (fixture: Fixture) => {
     }
     await healthNotice.getByRole("button", { name: "View status", exact: true }).click();
     const healthDialog = page.getByRole("dialog").filter({ hasText: "Mailbox health" });
-    // Diagnostics show a localized status, not the provider's raw reason.
-    await healthDialog.getByText("Needs review", { exact: true }).waitFor();
+    // Diagnostics explain the timeout in the reader's language instead of showing the provider's raw reason.
+    await healthDialog.getByText("The saved account is valid, but the latest synchronization timed out.", { exact: false }).waitFor();
     await healthDialog.getByRole("button", { name: "close dialog", exact: true }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const settings = page.getByRole("region", { name: "Mailbox settings" });

@@ -9,7 +9,8 @@ type MailboxHealthPresentation = {
   actionLabel: string | null;
 };
 
-const timedOut = (reason: string | null): boolean =>
+/** A degraded mailbox whose latest synchronization timed out; the saved account is still valid and Mail retries on its own. */
+export const mailboxSyncTimedOut = (reason: string | null): boolean =>
   reason?.toLowerCase().includes("failed to establish connection in required time") === true;
 
 const healthMessages = i18n.define({
@@ -113,7 +114,7 @@ export const mailboxHealthPresentation = (
       action: "health",
       actionLabel: t.resumeSync,
     },
-    degraded: timedOut(mailbox.healthReason)
+    degraded: mailboxSyncTimedOut(mailbox.healthReason)
       ? {
           title: t.timeoutTitle,
           message: t.timeoutMessage,
