@@ -171,3 +171,48 @@ test("an invalid app sign-in configuration answers 503 on both device routes", a
     revoke.mockRestore();
   }
 });
+
+const create = spyOn(accountsAppService.user, "create");
+const update = spyOn(accountsAppService.user, "update");
+afterEach(() => {
+  create.mockReset();
+  update.mockReset();
+});
+afterAll(() => {
+  create.mockRestore();
+  update.mockRestore();
+});
+const post = (body: Record<string, unknown>) =>
+  users.request("/", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const person = { givenname: "Ada", sn: "Lovelace" };
+
+test("local full accounts may omit the email; the service applies the installation policy", async () => {
+  create.mockResolvedValue({ ok: true, data: { id: targetId, uid: "ada", accountExpires: null, notificationSent: false } });
+  const res = await post({ provider: "local", profile: "user", ...person });
+  expect(res.status).toBe(201);
+  expect(create.mock.calls[0]![0].data).toMatchObject({ provider: "local", profile: "user" });
+  expect(create.mock.calls[0]![0].data.email).toBeUndefined();
+});
+
+test("FreeIPA, guest and request-backed creations still require an email", async () => {
+  for (const body of [
+    { provider: "ipa", ...person },
+    { provider: "local", profile: "guest", ...person },
+    { provider: "local", profile: "user", requestId: crypto.randomUUID(), ...person },
+    { provider: "local", profile: "user", email: "", ...person },
+  ]) {
+    expect((await post(body)).status).toBe(400);
+  }
+  expect(create).not.toHaveBeenCalled();
+});
+
+test("admin updates pass an explicit null to remove an email", async () => {
+  update.mockResolvedValue({ ok: true, data: undefined });
+  const res = await users.request(`/${targetId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mail: null }),
+  });
+  expect(res.status).toBe(200);
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ id: targetId, data: { mail: null } }));
+});

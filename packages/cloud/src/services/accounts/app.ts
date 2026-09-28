@@ -55,7 +55,8 @@ type CreateUserInput =
       provider: "local";
       profile: UserProfile;
       admin?: boolean;
-      email: string;
+      /** Optional only for full accounts while `user.local_email_optional` is on. */
+      email?: string | null;
       givenname: string;
       sn: string;
       displayName?: string;
@@ -433,12 +434,24 @@ export const accountsAppService = {
       notificationSender: AccountsNotificationSender;
       locale?: string;
     }): Promise<Result<CreateUserResult>> => {
+      const email = config.data.email?.trim() || null;
+      // The account does not exist yet, so a mail-less target is named by the person.
+      const label = email ?? (config.data.displayName?.trim() || `${config.data.givenname} ${config.data.sn}`.trim());
       const adminError = await requireAdminActor<{ id: string; uid: string; accountExpires: string | null; notificationSent: boolean }>({
         actor: config.actor,
         action: "accounts.user.create",
-        target: { type: "user", label: config.data.email, provider: config.data.provider },
+        target: { type: "user", label, provider: config.data.provider },
       });
       if (adminError) return adminError;
+      if (config.data.requestId && !email) {
+        return audit.recordResult({
+          action: "accounts.user.create",
+          actor: auditActor(config.actor),
+          target: { type: "user", label, provider: config.data.provider },
+          metadata: { provider: config.data.provider, requestId: config.data.requestId },
+          result: fail(err.badInput("Completing an account request needs the email address from the request.")),
+        });
+      }
       let requestCompletionFailed = false;
       const createFromRequest = async () => {
         const txResult = await sql.begin(async (tx) => {
@@ -448,7 +461,7 @@ export const accountsAppService = {
             JOIN auth.users u ON u.id = r.user_id
             WHERE r.id = ${config.data.requestId}
               AND r.status = 'pending'
-              AND lower(u.mail) = lower(${config.data.email})
+              AND lower(u.mail) = lower(${email})
             LIMIT 1
             FOR UPDATE OF r
           `;
@@ -518,7 +531,7 @@ export const accountsAppService = {
         return audit.recordResult({
           action: "accounts.user.create",
           actor: auditActor(config.actor),
-          target: { type: "user", label: config.data.email, provider: config.data.provider },
+          target: { type: "user", label, provider: config.data.provider },
           metadata: { provider: config.data.provider, requestId: config.data.requestId ?? null },
           result: createResult,
         });

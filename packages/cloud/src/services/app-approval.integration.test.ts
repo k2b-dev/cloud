@@ -739,6 +739,21 @@ suite("isolated app approval protocol", () => {
     expect(await sql`SELECT id FROM auth.app_logins WHERE id=${started.requestId}::uuid`).toHaveLength(0);
   });
 
+  test("accounts without email skip the email-only enrollment notice but keep its audit entry", async () => {
+    await sql`UPDATE auth.app_devices SET notified_at=now()`;
+    const owner = await account();
+    await sql`UPDATE auth.users SET mail=NULL WHERE id=${owner.id}::uuid`;
+    const device = await enroll(owner);
+    const delivered: string[] = [];
+    await service.maintain(async (notice) => {
+      delivered.push(notice.deviceId);
+    });
+    expect(delivered).toEqual([]);
+    const [row] = await sql<{ notified_at: Date | null }[]>`SELECT notified_at FROM auth.app_devices WHERE id=${device.id}::uuid`;
+    expect(row?.notified_at).not.toBeNull();
+    expect(await sql`SELECT id FROM audit.events WHERE action='auth.app.device.enroll' AND target_id=${device.id}`).toHaveLength(1);
+  });
+
   test("expired and cancelled pairings cannot be claimed; outstanding pairing work is capped", async () => {
     const owner = await account(),
       key = await keys();

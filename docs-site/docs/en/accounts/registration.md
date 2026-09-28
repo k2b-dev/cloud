@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1082
 description: Choose whether people can create Guest accounts or request FreeIPA access.
 tags: [accounts, administration, authentication]
-updated: 2026-09-09
+updated: 2026-09-27
 ---
 
 # Configure registration and account requests
@@ -27,6 +27,26 @@ disable allowed accounts; see [account types](/en/docs/operations/account-catego
 **Username Abbreviation Length** controls generated usernames for new accounts.
 It does not rename existing accounts. Expiry and reminders are covered in
 [Account lifecycle](/en/docs/accounts/lifecycle).
+
+## Allow local accounts without email
+
+Turn on **Allow local accounts without email** when administrators should be
+able to create local full accounts without an email address, or remove the
+address from one later. It is off by default. Guests, account requests and
+FreeIPA accounts always need an email address.
+
+Such an account signs in with a paired app, using its username, or with a
+passkey. Before you create one, enable app sign-in and **Administrator-assisted
+pairing** so you can pair its first device. You can also give the person a
+one-time login token from the account's actions. See
+[Accounts without email](/en/docs/accounts#accounts-without-email) for what
+the person can and cannot use.
+
+The setting only affects new accounts and email changes. Turning it off keeps
+existing accounts without email working. The emergency `admin` account never
+needs an email address. Administrators cannot create login tokens or send login
+links for it; it signs in with `ADMIN_LOGIN_TOKEN`. The stored setting is
+`user.local_email_optional`.
 
 ## Allow FreeIPA account requests
 

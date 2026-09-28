@@ -11,7 +11,7 @@ Die Accounts-CLI verwendet dieselben APIs wie die App. Agenten können Kontodate
 ## Befehlsgruppen {icon="code"}
 
 :::reference
-- **users:** Personen auflisten, prüfen, erstellen, ändern und löschen; Anbieter, Profil und Administrationsstatus ändern; Avatare verwalten; IPA-Passwörter zurücksetzen und Anmeldelinks senden.
+- **users:** Personen auflisten, prüfen, erstellen, ändern und löschen; Anbieter, Profil und Administrationsstatus ändern; Avatare verwalten; IPA-Passwörter zurücksetzen, Anmeldetokens erstellen und Anmeldelinks senden. Wenn die Installation lokale Konten ohne E-Mail-Adresse erlaubt, erstellt `users create` ein lokales Vollkonto auch ohne `--email`, und `users update --remove-email` entfernt eine Adresse.
 - **groups:** Gruppen auflisten, prüfen, erstellen, ändern, in POSIX-Gruppen umwandeln und löschen sowie Mitglieder und verwaltende Personen pflegen.
 - **requests:** Kontoanfragen auflisten, prüfen und ablehnen.
 - **audit:** Audit-Ereignisse nach handelnder Person, Ziel, Aktion, Aktionsgruppe, Dienstkonto, Ergebnis, Anbieter und Zeitraum auflisten.

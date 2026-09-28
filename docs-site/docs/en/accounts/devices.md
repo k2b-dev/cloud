@@ -51,7 +51,8 @@ When administrator-assisted pairing is enabled, an authorized administrator
 opens **Accounts → Users → the user → Pair sign-in app**.
 Check the named target account and compare the codes together.
 This issues a sign-in credential for that person, not for the administrator.
-The action is audited and the user is notified.
+The action is audited. The user is notified by email when their account has an
+email address.
 
 ## Review or remove a device
 

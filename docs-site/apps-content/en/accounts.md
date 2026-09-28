@@ -5,7 +5,7 @@ section: Platform
 order: 310
 description: Account access, groups, requests, service credentials, notifications, and audit history.
 tags: [accounts, groups, access]
-updated: 2026-09-08
+updated: 2026-09-27
 ---
 
 # Accounts
@@ -72,6 +72,12 @@ prove that access is gone.
 Creating an account or changing its email checks the address across local and
 FreeIPA accounts, ignoring case and surrounding whitespace. A conflict returns
 HTTP 409. New addresses are stored in lowercase without surrounding whitespace.
+
+A local full account may have no email address when the operator
+[allows it](/en/docs/accounts/registration#allow-local-accounts-without-email).
+Such accounts sign in with a paired app or a passkey. One-time login tokens
+from the account's actions are bound to the account, so they work without an
+email address. **Notify** and switching to FreeIPA are hidden for them.
 
 Existing duplicate addresses remain attached to their account IDs. Updating
 other profile fields, or submitting the same normalized address, keeps the

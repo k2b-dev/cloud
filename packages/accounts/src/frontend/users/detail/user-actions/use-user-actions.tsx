@@ -15,7 +15,12 @@ type UserActionsProps = {
   user: User;
   listHref: string;
   freeIpaEnabled: boolean;
+  /** Mirrors `user.local_email_optional`; the server enforces it. */
+  localEmailOptional: boolean;
 };
+
+/** The break-glass account created by `ADMIN_LOGIN_TOKEN`; it needs no email and gets no login tokens. */
+const EMERGENCY_ADMIN_UID = "admin";
 
 const escapeHtml = (value: string): string =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -78,7 +83,7 @@ export function createUserActions(props: UserActionsProps) {
       givenname: string;
       sn: string;
       displayName: string;
-      mail?: string;
+      mail?: string | null;
       ipa?: {
         phone?: string;
       };
@@ -93,7 +98,8 @@ export function createUserActions(props: UserActionsProps) {
         const data = await res.json();
         throw new Error(data.message ?? messages().updateUserFailed);
       }
-      await notice("user.update", { email: vars.mail ?? props.user.mail ?? "", firstName: vars.givenname, lastName: vars.sn });
+      const email = vars.mail === undefined ? props.user.mail : vars.mail;
+      await notice("user.update", { email: email ?? "", firstName: vars.givenname, lastName: vars.sn });
     },
     onSuccess: () => refreshCurrentPath(),
     onError: (err) => prompts.error(err.message),
@@ -307,6 +313,10 @@ export function createUserActions(props: UserActionsProps) {
   };
 
   const handleEdit = async () => {
+    // Mirrors the server rule so the form, not a server error, explains when an address must stay.
+    const isEmergencyAdmin = props.user.provider === "local" && props.user.uid === EMERGENCY_ADMIN_UID;
+    const emailRemovable =
+      isEmergencyAdmin || (props.user.provider === "local" && props.user.profile === "user" && props.localEmailOptional);
     const result = await prompts.form({
       title: messages().editUser,
       icon: "ti ti-pencil",
@@ -353,6 +363,8 @@ export function createUserActions(props: UserActionsProps) {
           label: messages().email,
           placeholder: messages().email,
           icon: "ti ti-mail",
+          required: Boolean(props.user.mail) && !emailRemovable,
+          ...(emailRemovable ? { description: messages().emailOptionalHelp } : {}),
           default: props.user.mail ?? "",
         },
         ...(props.user.provider === "ipa"
@@ -369,15 +381,27 @@ export function createUserActions(props: UserActionsProps) {
           : {}),
       },
     });
-    if (result) {
-      await editMutation.mutate({
-        givenname: result.givenname,
-        sn: result.sn,
-        displayName: result.displayName,
-        mail: result.mail || undefined,
-        ...(props.user.provider === "ipa" ? { ipa: { phone: result.phone || undefined } } : {}),
+    if (!result) return;
+    const mail = (result.mail ?? "").trim();
+    // Removing an address ends email sign-in and email notifications for this person.
+    if (!mail && props.user.mail) {
+      const confirmed = await prompts.confirm(messages().removeEmailDescription({ name: props.user.displayName || props.user.uid }), {
+        title: messages().removeEmailQuestion({ email: props.user.mail }),
+        icon: "ti ti-mail-off",
+        confirmText: messages().removeEmail,
+        cancelText: messages().cancel,
+        variant: "danger",
       });
+      if (!confirmed) return;
     }
+    await editMutation.mutate({
+      givenname: result.givenname,
+      sn: result.sn,
+      displayName: result.displayName,
+      // An emptied field removes the address; the server still decides whether this account may lack one.
+      mail: mail || (props.user.mail ? null : undefined),
+      ...(props.user.provider === "ipa" ? { ipa: { phone: result.phone || undefined } } : {}),
+    });
   };
 
   const handleChangeAvatar = async () => {
@@ -560,7 +584,10 @@ export function createUserActions(props: UserActionsProps) {
   const isGuestProfile = props.user.profile === "guest";
   const isLocalAdmin = isLocalUser && props.user.roles.includes("admin");
   const canCreateIpa = props.freeIpaEnabled && isLocalUser && Boolean(props.user.mail);
-  const canCreateLoginToken = isLocalUser && Boolean(props.user.mail);
+  // Login tokens are bound to the account, so they also work without an email address.
+  // Administrators get none for the emergency account; it uses ADMIN_LOGIN_TOKEN.
+  const canCreateLoginToken = isLocalUser && props.user.uid !== EMERGENCY_ADMIN_UID;
+  const canNotify = Boolean(props.user.mail);
   const canSetExpiry = canMutateUser;
   const auditByUserHref = `/app/accounts/audit?actor=${encodeURIComponent(props.user.id)}`;
   const auditOnUserHref = `/app/accounts/audit?target=${encodeURIComponent(props.user.id)}`;
@@ -571,6 +598,7 @@ export function createUserActions(props: UserActionsProps) {
     canCreateIpa,
     canCreateLoginToken,
     canMutateUser,
+    canNotify,
     canSetExpiry,
     handleCreateIpa,
     handleCreateLoginToken,

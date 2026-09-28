@@ -43,7 +43,6 @@ export const CreateUserResponseSchema = z.object({
 export type CreateUserResponse = z.infer<typeof CreateUserResponseSchema>;
 
 const CreateUserSharedSchema = {
-  email: z.email(),
   givenname: z.string().min(1).max(120),
   sn: z.string().min(1).max(120),
   displayName: z.string().max(160).optional(),
@@ -54,6 +53,7 @@ const CreateUserSharedSchema = {
 export const CreateUserSchema = z.discriminatedUnion("provider", [
   z.object({
     provider: z.literal("ipa"),
+    email: z.email(),
     ...CreateUserSharedSchema,
   }),
   z
@@ -61,11 +61,21 @@ export const CreateUserSchema = z.discriminatedUnion("provider", [
       provider: z.literal("local"),
       profile: UserProfileSchema,
       admin: z.boolean().optional().default(false),
+      email: z
+        .email()
+        .optional()
+        .describe(
+          "Required for guests and account requests. Full accounts may omit it while the installation allows local accounts without email.",
+        ),
       ...CreateUserSharedSchema,
     })
     .refine((value) => value.profile === "user" || !value.admin, {
       message: "Only local full accounts can be created as admins",
       path: ["admin"],
+    })
+    .refine((value) => value.email || (value.profile === "user" && !value.requestId), {
+      message: "Guest accounts and account requests need an email address.",
+      path: ["email"],
     }),
 ]);
 export type CreateUser = z.infer<typeof CreateUserSchema>;

@@ -55,9 +55,9 @@ describe("duplicate account deletion", () => {
     refreshed.mockClear();
     notice.mockClear();
   });
-  const mount = async (disabled = false, provider: "local" | "ipa" = "local") => {
+  const mount = async (disabled = false, provider: "local" | "ipa" = "local", mail: string | null = user.mail) => {
     const { default: DeleteDuplicateUser } = await import("../src/frontend/duplicate-emails/DeleteDuplicateUser.island");
-    const dispose = render(() => createComponent(DeleteDuplicateUser, { user: { ...user, provider }, disabled }), dom.root);
+    const dispose = render(() => createComponent(DeleteDuplicateUser, { user: { ...user, provider, mail }, disabled }), dom.root);
     const previousCleanup = cleanup;
     cleanup = () => {
       dispose();
@@ -78,6 +78,15 @@ describe("duplicate account deletion", () => {
     disabled.click();
     await flush();
     expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("an account without email is named without a dangling separator", async () => {
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(false);
+    const button = await mount(false, "local", null);
+    button.click();
+    await flush();
+    const content = confirm.mock.calls[0]![0];
+    expect(content instanceof HTMLElement && content.querySelector("p")?.textContent).toBe("Ada Lovelace");
   });
 
   test("FreeIPA confirmation states that both FreeIPA and Cloud are deleted", async () => {
@@ -108,7 +117,7 @@ describe("duplicate account deletion", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm.mock.calls[0]![1]?.title).toContain("guest-ada");
     const content = confirm.mock.calls[0]![0];
-    expect(content instanceof HTMLElement && content.textContent).toContain("ada@example.com");
+    expect(content instanceof HTMLElement && content.querySelector("p")?.textContent).toBe("Ada Lovelace · ada@example.com");
     expect(content instanceof HTMLElement && content.textContent).toContain("not transferred");
     confirmDelete(true);
     await flush();

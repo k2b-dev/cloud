@@ -42,7 +42,8 @@ export const authMessages = i18n.define({
       acceptLegal: "Please accept the Terms of Service and Privacy Policy.",
       requestFailed: "The request failed.",
       invalidToken: "The code is invalid or has expired.",
-      checkEmail: "Check your email for the sign-in code. It expires after a few minutes.",
+      checkEmail:
+        "If this account can sign in by email, we sent you a sign-in code. It expires after a few minutes. If no message arrives, contact an administrator.",
       loginCode: "Sign-in code",
       loginCodeDescription: "Enter the one-time code from your email.",
       termsPrefix: "I accept the",
@@ -94,7 +95,8 @@ export const authMessages = i18n.define({
       resetFailed: "Could not reset the password.",
       resettingPassword: "Resetting password",
       resetRequestFailed: "Could not request a password reset.",
-      resetSent: "If this account can reset its password, a reset link has been sent. It expires after 15 minutes.",
+      resetSent:
+        "If this account can reset its password, a reset link has been sent. It expires after 15 minutes. If no message arrives, contact an administrator.",
       organizationEmailDescription: "Use the email address attached to your organization account.",
       sendingResetLink: "Sending reset link",
       sendResetLink: "Send reset link",
@@ -142,7 +144,8 @@ export const authMessages = i18n.define({
       acceptLegal: "Bitte akzeptiere die Nutzungsbedingungen und die Datenschutzerklärung.",
       requestFailed: "Die Anfrage ist fehlgeschlagen.",
       invalidToken: "Der Code ist ungültig oder abgelaufen.",
-      checkEmail: "Prüfe deine E-Mails. Der Anmeldecode ist nur wenige Minuten gültig.",
+      checkEmail:
+        "Wenn sich dieses Konto per E-Mail anmelden kann, haben wir dir einen Anmeldecode gesendet. Er ist nur wenige Minuten gültig. Wenn keine Nachricht ankommt, wende dich an einen Administrator.",
       loginCode: "Anmeldecode",
       loginCodeDescription: "Gib den einmaligen Code aus deiner E-Mail ein.",
       termsPrefix: "Ich akzeptiere die",
@@ -196,7 +199,8 @@ export const authMessages = i18n.define({
       resetFailed: "Das Passwort konnte nicht zurückgesetzt werden.",
       resettingPassword: "Passwort wird zurückgesetzt",
       resetRequestFailed: "Das Zurücksetzen des Passworts konnte nicht angefordert werden.",
-      resetSent: "Wenn das Passwort für dieses Konto zurückgesetzt werden kann, wurde ein Link gesendet. Er ist 15 Minuten gültig.",
+      resetSent:
+        "Wenn das Passwort für dieses Konto zurückgesetzt werden kann, wurde ein Link gesendet. Er ist 15 Minuten gültig. Wenn keine Nachricht ankommt, wende dich an einen Administrator.",
       organizationEmailDescription: "Verwende die E-Mail-Adresse deines Organisationskontos.",
       sendingResetLink: "Link wird gesendet",
       sendResetLink: "Link zum Zurücksetzen senden",

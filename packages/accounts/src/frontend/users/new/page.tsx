@@ -23,6 +23,7 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = accountsMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
+  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
   const categoryPolicy = await readAccountCategoryPolicy();
   const requestId = c.req.query("request");
   let accountRequest: AccountRequest | null = null;
@@ -113,6 +114,7 @@ export default ssr<AuthContext>(async (c) => {
               categoryPolicy={categoryPolicy}
               autoOpen
               freeIpaEnabled={freeIpaEnabled}
+              localEmailOptional={localEmailOptional}
               prefill={
                 accountRequest
                   ? {

@@ -87,7 +87,9 @@ suite("isolated account category policy", () => {
         ok: false,
         status: 403,
       });
-      expect(await passwordReset.request({ email: "nobody@example.test" }, sender)).toMatchObject({ ok: true });
+      const reset = passwordReset.request({ email: "nobody@example.test" }, sender);
+      expect(reset).toMatchObject({ ok: true });
+      await reset.settled;
       expect(await passwordReset.complete({ token: "unused", newPassword: "unused" })).toMatchObject({ ok: false, status: 403 });
       expect(login).not.toHaveBeenCalled();
       expect(change).not.toHaveBeenCalled();
@@ -156,9 +158,9 @@ suite("isolated account category policy", () => {
 
   test("category-bound magic links prevent crossover; legacy links remain valid", async () => {
     const existing = await user();
-    expect(await magicLink.request({ email: existing.mail, category: "guest" }, sender)).toEqual({ ok: true });
+    await magicLink.request({ email: existing.mail, category: "guest" }, sender).settled;
     expect(deliveries).toHaveLength(0);
-    await magicLink.request({ email: existing.mail, category: "login" }, sender);
+    await magicLink.request({ email: existing.mail, category: "login" }, sender).settled;
     expect(deliveries).toHaveLength(1);
     expect(await magicLink.verify({ token: deliveries[0]! })).toMatchObject({ ok: true, userId: existing.id });
     const legacy = await providers.local.auth.createMagicLinkToken({ email: existing.mail });
@@ -171,24 +173,21 @@ suite("isolated account category policy", () => {
   test("usernames request links for local accounts, hint FreeIPA accounts, and never register", async () => {
     await settings.set("user.allow_self_registration", true);
     const full = await user();
-    expect(await magicLink.request({ email: ` ${full.uid.toUpperCase()} `, category: "login" }, sender)).toEqual({ ok: true });
+    await magicLink.request({ email: ` ${full.uid.toUpperCase()} `, category: "login" }, sender).settled;
     expect(deliveries).toHaveLength(1);
     expect(await magicLink.verify({ token: deliveries[0]! })).toMatchObject({ ok: true, userId: full.id, email: full.mail });
     const guest = await user("local", "guest");
-    await magicLink.request({ email: guest.uid, category: "guest" }, sender);
+    await magicLink.request({ email: guest.uid, category: "guest" }, sender).settled;
     expect(deliveries).toHaveLength(2);
     expect(await magicLink.verify({ token: deliveries[1]! })).toMatchObject({ ok: true, userId: guest.id });
-    await magicLink.request({ email: guest.uid, category: "login" }, sender);
+    await magicLink.request({ email: guest.uid, category: "login" }, sender).settled;
     expect(deliveries).toHaveLength(2);
     const directory = await user("ipa");
-    await magicLink.request({ email: directory.uid }, sender);
-    // The FreeIPA hint is sent fire-and-forget after the app URL lookup; wait for it by time.
-    const hintDeadline = Date.now() + 5_000;
-    while (ipaHints.length === 0 && Date.now() < hintDeadline) await Bun.sleep(10);
+    await magicLink.request({ email: directory.uid }, sender).settled;
     expect(ipaHints).toEqual([directory.mail]);
     expect(deliveries).toHaveLength(2);
     const unknown = `category-missing-${crypto.randomUUID()}`;
-    expect(await magicLink.request({ email: unknown, category: "guest" }, sender)).toEqual({ ok: true });
+    await magicLink.request({ email: unknown, category: "guest" }, sender).settled;
     expect(deliveries).toHaveLength(2);
     expect(ipaHints).toHaveLength(1);
     expect(await sql`SELECT id FROM auth.users WHERE lower(uid) = lower(${unknown})`).toHaveLength(0);
@@ -196,7 +195,7 @@ suite("isolated account category policy", () => {
 
   test("guest registration cannot create full accounts or disabled guests", async () => {
     await settings.set("user.allow_self_registration", true);
-    await magicLink.request({ email: "never-full@example.test", category: "login" }, sender);
+    await magicLink.request({ email: "never-full@example.test", category: "login" }, sender).settled;
     expect(deliveries).toHaveLength(0);
     const pending = await providers.local.auth.createMagicLinkToken({ email: "never-guest@example.test", category: "guest" });
     await settings.set("user.category.guest.enabled", false);

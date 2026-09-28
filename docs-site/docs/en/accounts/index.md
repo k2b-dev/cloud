@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1080
 description: Choose account types, configure sign-in and manage account lifecycle.
 tags: [accounts, administration, authentication]
-updated: 2026-09-21
+updated: 2026-09-27
 ---
 
 # Accounts and sign-in
@@ -14,7 +14,11 @@ An account determines who someone is and what they can access. A sign-in method
 determines how they prove it is their account: an email link, FreeIPA credentials,
 a passkey or approval in a paired app. An email link can be requested with the
 account's email address or its username; it is always sent to the stored email
-address.
+address. The login page shows the same confirmation whether or not the account
+exists or has an email address. If no message arrives, contact an administrator.
+The password reset for FreeIPA accounts answers the same way. While the database
+or notification store is overloaded, Cloud drops such requests with a warning in
+the logs instead of queueing them without limit; the confirmation stays the same.
 
 Configure installation-wide policy in **Administration → Accounts & sign-in**.
 Create and manage individual users, groups and requests in **Accounts**.
@@ -65,6 +69,30 @@ accounts without a recorded acceptance are asked at their next sign-in.
 
 Linux identities add UID/GID, home and shell attributes to accounts. Assigning
 them does not enable computer login, sudo or shared storage.
+
+## Accounts without email
+
+When [allowed](/en/docs/accounts/registration#allow-local-accounts-without-email),
+a local full account can exist without an email address. The person signs in with:
+
+- a paired app, entering the account's username;
+- a passkey added after a first sign-in;
+- a one-time login token that an administrator creates in **Accounts**. It
+  works once and expires after five minutes.
+
+For the first sign-in, create a login token, or pair the first device from the
+account's page with **Pair sign-in app** when administrator-assisted pairing is
+allowed. The person cannot request email sign-in links and receives no welcome
+email, expiry reminder, email notification or device-pairing email. Pairings
+remain in the audit log. The person revokes a paired device under
+**My account → Security**, and an administrator can revoke it under
+**Sign-in devices** on the account's page. If they lose their only device,
+revoke it there and create a login token so they can sign in and pair a new one.
+
+Connected apps get no `email` claim for these accounts; see
+[OAuth](/en/docs/identity/oauth). [Proxy Auth](/en/apps/proxy-auth) sends an
+empty `X-Forwarded-Email` header. Services that identify people by email need
+another identifier, such as the OAuth `sub` or the `X-Forwarded-User` username.
 
 Application authors should use [Identity and access](/en/docs/identity).
 Authenticator authors should use the [App approval API](/en/docs/operations/app-approval).
