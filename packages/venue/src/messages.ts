@@ -207,7 +207,8 @@ export const venueMessages = i18n.define({
       accessDescription: "Permission changes save immediately.",
       refreshBeforeAccess: "Refresh venue settings before changing access or API keys.",
       peopleAndGroups: "People and groups",
-      peopleAndGroupsDescription: "Grant read, staff, or admin access to this venue.",
+      peopleAndGroupsDescription:
+        "Read: sees the schedule and what the public page shows. Staff: also signs up for shifts and sees visitor feedback and hidden sections. Admin: also changes the schedule, public content, settings, and access.",
       grantAccessFailed: "Failed to grant access.",
       updateAccessFailed: "Failed to update access.",
       revokeAccessFailed: "Failed to revoke access.",
@@ -371,6 +372,7 @@ export const venueMessages = i18n.define({
       capabilityReadVenue: ({ name }: { name: string }) => `Read Venue “${name}”.`,
       capabilityVenueStatus: ({ name, status }: { name: string; status: string }) => `“${name}” is ${status}.`,
       capabilityReadAssignment: ({ name }: { name: string }) => `Read your shift assignment at “${name}”.`,
+      capabilityFeedbackForbidden: "Only people with staff or admin access can see feedback for this venue.",
       capabilityFeedbackEmpty: ({ name }: { name: string }) => `Read feedback for “${name}”: no ratings in the last 30 days.`,
       capabilityFeedback: ({ name, average, count }: { name: string; average: number | null; count: number }) =>
         `Read feedback for “${name}”: ${average} from ${count} ${count === 1 ? "rating" : "ratings"}.`,
@@ -615,7 +617,8 @@ export const venueMessages = i18n.define({
       accessDescription: "Änderungen an Berechtigungen werden sofort gespeichert.",
       refreshBeforeAccess: "Aktualisiere die Standorteinstellungen, bevor du Zugriffe oder API-Schlüssel änderst.",
       peopleAndGroups: "Personen und Gruppen",
-      peopleAndGroupsDescription: "Erteile Lese-, Mitarbeiter- oder Administratorzugriff auf diesen Standort.",
+      peopleAndGroupsDescription:
+        "Lesen: sieht den Schichtplan und was die öffentliche Seite zeigt. Mitarbeit: meldet sich zusätzlich für Schichten an und sieht Feedback von Besuchern und ausgeblendete Abschnitte. Admin: ändert zusätzlich Zeitplan, öffentliche Inhalte, Einstellungen und Zugriff.",
       grantAccessFailed: "Der Zugriff konnte nicht erteilt werden.",
       updateAccessFailed: "Der Zugriff konnte nicht aktualisiert werden.",
       revokeAccessFailed: "Der Zugriff konnte nicht entzogen werden.",
@@ -778,6 +781,7 @@ export const venueMessages = i18n.define({
       capabilityReadVenue: ({ name }) => `Standort „${name}“ gelesen.`,
       capabilityVenueStatus: ({ name, status }) => `„${name}“ ist ${status}.`,
       capabilityReadAssignment: ({ name }) => `Deinen Schichteinsatz bei „${name}“ gelesen.`,
+      capabilityFeedbackForbidden: "Feedback zu diesem Standort sehen nur Personen mit Zugriff „Mitarbeit“ oder „Admin“.",
       capabilityFeedbackEmpty: ({ name }) => `Feedback für „${name}“ gelesen: keine Bewertungen in den letzten 30 Tagen.`,
       capabilityFeedback: ({ name, average, count }) =>
         `Feedback für „${name}“ gelesen: ${average} aus ${count} ${count === 1 ? "Bewertung" : "Bewertungen"}.`,

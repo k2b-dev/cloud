@@ -74,7 +74,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const views = () => [
     { id: "shifts" as const, label: t().schedule, icon: "ti ti-calendar-event" },
     { id: "my-shifts" as const, label: t().myShifts, icon: "ti ti-user-check" },
-    { id: "feedback" as const, label: t().feedback, icon: "ti ti-message-star" },
+    // Visitor feedback is for staff and admins; the server leaves it out for read access.
+    ...(canWrite(venue()) ? [{ id: "feedback" as const, label: t().feedback, icon: "ti ti-message-star" }] : []),
   ];
   const feedbackRangeOptions = () => [
     {
@@ -128,7 +129,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     const next = Number(value[0] ?? 30);
     navigateTo(feedbackFilterUrl(next === 7 || next === 14 ? next : 30));
   };
-  const feedbackBucketsForDays = (days: number) => dashboard().feedback.buckets.filter((bucket) => withinLastDays(bucket.date, days));
+  const feedbackBucketsForDays = (days: number) =>
+    (dashboard().feedback?.buckets ?? []).filter((bucket) => withinLastDays(bucket.date, days));
   const feedbackBuckets = createMemo(() => feedbackBucketsForDays(feedbackRangeDays()));
   const feedbackRangeCount = createMemo(() => feedbackBucketCount(feedbackBuckets()));
   const feedbackRangeAverage = createMemo(() => feedbackBucketAverage(feedbackBuckets()));
@@ -165,6 +167,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     })),
   );
   const sectionHref = (section: PublicSection) => `/app/venue/${venue().id}/public-sections/${section.id}`;
+  // Only admins manage sections; others see the group only when their view contains a section.
+  const showPublicContent = () => canAdmin(venue()) || dashboard().sections.length > 0;
   const collapsedPublicContentMenu = () => [
     {
       sectionLabel: t().publicContent,
@@ -573,7 +577,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                 />
               )}
             </For>
-            <Show when={canAdmin(venue()) || dashboard().sections.length > 0}>
+            <Show when={showPublicContent()}>
               <Dropdown.Root items={collapsedPublicContentMenu()} position="right-start" width="16rem">
                 <Dropdown.Trigger
                   appearance="plain"
@@ -588,33 +592,35 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
           </AppWorkspace.SidebarIconGrid>
 
           <AppWorkspace.SidebarBody scrollPreserveKey={`venue-sidebar-${venue().id}`} sidebarMode="expanded">
-            <AppWorkspace.SidebarSection title={t().publicContent}>
-              <Show when={canAdmin(venue())}>
-                <AppWorkspace.SidebarItem
-                  icon="ti ti-plus"
-                  tone="success"
-                  disabled={workspaceActionBlocked()}
-                  onClick={() => void openAddSection()}
-                >
-                  Add public section
-                </AppWorkspace.SidebarItem>
-              </Show>
-              <For
-                each={dashboard().sections}
-                fallback={<Placeholder align="left" class="px-2 py-2" description={<>{t().noSections}</>} />}
-              >
-                {(section) => (
+            <Show when={showPublicContent()}>
+              <AppWorkspace.SidebarSection title={t().publicContent}>
+                <Show when={canAdmin(venue())}>
                   <AppWorkspace.SidebarItem
-                    href={sectionHref(section)}
-                    navigation="document"
-                    icon={sectionKindIcon(section.kind)}
-                    active={selectedSectionId() === section.id}
+                    icon="ti ti-plus"
+                    tone="success"
+                    disabled={workspaceActionBlocked()}
+                    onClick={() => void openAddSection()}
                   >
-                    {section.title}
+                    Add public section
                   </AppWorkspace.SidebarItem>
-                )}
-              </For>
-            </AppWorkspace.SidebarSection>
+                </Show>
+                <For
+                  each={dashboard().sections}
+                  fallback={<Placeholder align="left" class="px-2 py-2" description={<>{t().noSections}</>} />}
+                >
+                  {(section) => (
+                    <AppWorkspace.SidebarItem
+                      href={sectionHref(section)}
+                      navigation="document"
+                      icon={sectionKindIcon(section.kind)}
+                      active={selectedSectionId() === section.id}
+                    >
+                      {section.title}
+                    </AppWorkspace.SidebarItem>
+                  )}
+                </For>
+              </AppWorkspace.SidebarSection>
+            </Show>
           </AppWorkspace.SidebarBody>
 
           <AppWorkspace.SidebarFooter sidebarMode="expanded">

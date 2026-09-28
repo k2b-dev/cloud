@@ -324,6 +324,7 @@ const runFeedbackSummary = async (input: z.infer<typeof VenueTargetInputSchema>,
   if (!scope.ok) return scope;
   const venue = await requireVenue(input.venueId, scope.data, "read");
   if (!venue.ok) return venue;
+  if (!venueService.canSeeInternal(venue.data)) return fail(err.forbidden(t.capabilityFeedbackForbidden));
   const feedback = await venueService.feedback.summary(venue.data.id, { summaryDays: 30 });
   return ok({
     data: {
@@ -484,7 +485,7 @@ export const venueCapabilities = defineCapabilities({
     "venue.search": {
       title: "Search Venues",
       description:
-        "Find a public or accessible Venue by name, slug, or description when its ID is unknown. Use returned venue.venue refs with venue.read, venue.status, shift.list, or feedback.summary.",
+        "Find a public or accessible Venue by name, slug, or description when its ID is unknown. Use returned venue.venue refs with venue.read, venue.status, shift.list, or, for Venues with write or admin permission, feedback.summary.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -494,7 +495,7 @@ export const venueCapabilities = defineCapabilities({
     "venue.list": {
       title: "List accessible Venues",
       description:
-        "Normal entry for permission-scoped Venue work. List accessible Venues and use returned venue.venue refs or IDs with venue.read, venue.status, shift.list, assignment.mine, or feedback.summary.",
+        "Normal entry for permission-scoped Venue work. List accessible Venues and use returned venue.venue refs or IDs with venue.read, venue.status, shift.list, assignment.mine, or, for Venues with write or admin permission, feedback.summary.",
       input: VenueListInputSchema,
       data: VenueListDataSchema,
       openWorld: false,
@@ -555,7 +556,7 @@ export const venueCapabilities = defineCapabilities({
     "feedback.summary": {
       title: "Get Venue feedback summary",
       description:
-        "Read 30-day rating aggregates for a known Venue without loading anonymous comments. Get venueId from venue.list or venue.search.",
+        "Read 30-day rating aggregates for a known Venue without loading anonymous comments. Requires write or admin permission, as returned by venue.list; get venueId from venue.list or venue.search.",
       input: VenueTargetInputSchema,
       data: FeedbackSummaryDataSchema,
       openWorld: false,

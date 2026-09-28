@@ -1374,6 +1374,16 @@ const feedbackSummary = async (
   };
 };
 
+/**
+ * Whether the Venue's `permission` shows internal content: visitor feedback and
+ * hidden sections are for write and admin; readers see what the public page shows.
+ */
+const canSeeInternal = (venue: Venue): boolean => hasPermission(venue.permission ?? "none", "write");
+
+/** The sections the public page shows on the Venue-local date of `now`: enabled ones, with menus cut to available items. */
+const publicSections = async (venue: Venue, now: Date): Promise<PublicSection[]> =>
+  filterPublicMenuSections(await listSections(venue.id, true), localDateKey(now, venue.timezone));
+
 const statusForVenue = async (venue: Venue, now = new Date(), includeSections = true, locale?: string): Promise<PublicStatus> => {
   const { t } = venueMessages.resolve(locale ? [locale] : []);
   const days = 14;
@@ -1385,7 +1395,7 @@ const statusForVenue = async (venue: Venue, now = new Date(), includeSections = 
     listOverridesForDateRange(venue.id, startDate, endDate),
     listTemplates(venue.id),
     assignmentSummariesForRange(venue.id, new Date(now.getTime() - 1), rangeEnd),
-    includeSections ? listSections(venue.id, true) : Promise.resolve([]),
+    includeSections ? publicSections(venue, now) : Promise.resolve([]),
   ]);
   const availability = buildPublicAvailability({ venue, openingRules, overrides, templates, assignments, now, days, locale });
 
@@ -1394,7 +1404,7 @@ const statusForVenue = async (venue: Venue, now = new Date(), includeSections = 
     ...availability,
     statusLabel: availability.open ? t.openNow : t.closedNow,
     openingRules,
-    sections: filterPublicMenuSections(sections, startDate),
+    sections,
   };
 };
 
@@ -1411,21 +1421,28 @@ export type VenueDashboardOptions = {
   feedbackSearch?: string;
 };
 
+/**
+ * Loads the workspace view of a Venue resolved for its caller. The Venue's
+ * `permission` decides what the view contains; see {@link canSeeInternal}.
+ */
 const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDashboardOptions = {}): Promise<InternalVenueDashboard> => {
   const start = new Date();
   const end = new Date(start.getTime() + 30 * 86_400_000);
   const slotDays = Math.max(0, options.slotDays ?? 14);
+  const internal = canSeeInternal(venue);
   const [openingRules, overrides, templates, assignments, sections, feedback, myShiftCount] = await Promise.all([
     listOpeningRules(venue.id),
     listOverrides(venue.id),
     listTemplates(venue.id),
     assignmentsForRange(venue.id, start, end),
-    listSections(venue.id),
-    feedbackSummary(venue.id, {
-      includeEntries: options.includeFeedbackEntries ?? false,
-      entryDays: options.feedbackDays,
-      entrySearch: options.feedbackSearch,
-    }),
+    internal ? listSections(venue.id) : venue.publicEnabled ? publicSections(venue, start) : Promise.resolve([]),
+    internal
+      ? feedbackSummary(venue.id, {
+          includeEntries: options.includeFeedbackEntries ?? false,
+          entryDays: options.feedbackDays,
+          entrySearch: options.feedbackSearch,
+        })
+      : Promise.resolve(null),
     user
       ? sql<{ count: number }[]>`
       SELECT COUNT(*)::int AS count
@@ -1449,8 +1466,8 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
     myUpcomingShifts: user ? assignments.filter((assignment) => assignment.userId === user.id) : [],
     myShiftCount,
     sections,
-    feedback: feedback.summary,
-    feedbackEntries: feedback.entries,
+    feedback: feedback?.summary ?? null,
+    feedbackEntries: feedback?.entries ?? [],
   };
 };
 
@@ -1530,6 +1547,7 @@ export const venueService = {
   },
   sections: { list: listSections, create: createSection, update: updateSection, delete: deleteSection },
   feedback: { create: createFeedback, summary: feedbackSummary },
+  canSeeInternal,
   status: statusForVenue,
   publicStatus,
   dashboard,
