@@ -32,7 +32,11 @@ const directKeys = (object: ts.ObjectLiteralExpression): Set<string> =>
 const CATALOG_ONLY_FRONTENDS = ["packages/mail/src/frontend"];
 const HUMAN_TEXT_ATTRIBUTES = new Set(["alt", "aria-label", "description", "label", "placeholder", "title"]);
 const FEEDBACK_CALLEES = new Set(["prompts", "toast"]);
-const PROSE = /\p{L}{2,}\s+\p{L}{2,}/u;
+const LOGICAL_OPERATORS = new Set([ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.AmpersandAmpersandToken]);
+/** Stands in for a template substitution so `Open ${name}` still reads as a word followed by another word. */
+const SUBSTITUTION = "\uFFFC";
+/** Two words, or a word next to a substitution: "Save changes", "Download .eml", `Open ${name}`; `${a} ${b}` alone is not prose. */
+const PROSE = /\p{L}{2,}\s+\S*(?:\p{L}{2,}|\uFFFC)|\uFFFC\s+\S*\p{L}{2,}/u;
 
 const isCatalogDefinition = (node: ts.Node): node is ts.CallExpression =>
   ts.isCallExpression(node) &&
@@ -41,11 +45,16 @@ const isCatalogDefinition = (node: ts.Node): node is ts.CallExpression =>
   node.expression.expression.text === "i18n" &&
   node.expression.name.text === "define";
 
-const literalText = (node: ts.Node | undefined): string | null => {
-  if (!node) return null;
-  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
-  if (ts.isJsxExpression(node)) return literalText(node.expression);
-  return null;
+/** The fixed text an expression can show: string and template literals, including every branch of `?:`, `??`, `||`, and `&&`. */
+const literalTexts = (node: ts.Node | undefined): string[] => {
+  if (!node) return [];
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isTemplateExpression(node)) return [[node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(SUBSTITUTION)];
+  if (ts.isJsxExpression(node) || ts.isParenthesizedExpression(node)) return literalTexts(node.expression);
+  if (ts.isConditionalExpression(node)) return [...literalTexts(node.whenTrue), ...literalTexts(node.whenFalse)];
+  if (ts.isBinaryExpression(node) && LOGICAL_OPERATORS.has(node.operatorToken.kind))
+    return [...literalTexts(node.left), ...literalTexts(node.right)];
+  return [];
 };
 
 const isFeedbackCall = (node: ts.CallExpression): boolean => {
@@ -53,15 +62,20 @@ const isFeedbackCall = (node: ts.CallExpression): boolean => {
   return ts.isIdentifier(callee) && FEEDBACK_CALLEES.has(callee.text);
 };
 
-/** The hard-coded prose a node shows to people: JSX text, a human-text attribute or option field, or a toast or prompt message. */
+/**
+ * The hard-coded prose a node shows to people: JSX text or a JSX expression child, a human-text attribute or option
+ * field, or a toast or prompt message.
+ */
 const hardCodedProse = (node: ts.Node): string | null => {
-  let text: string | null = null;
-  if (ts.isJsxText(node)) text = node.text;
-  else if (ts.isJsxAttribute(node) && HUMAN_TEXT_ATTRIBUTES.has(node.name.getText())) text = literalText(node.initializer);
-  else if (ts.isPropertyAssignment(node) && HUMAN_TEXT_ATTRIBUTES.has(propertyName(node.name) ?? "")) text = literalText(node.initializer);
-  else if (ts.isCallExpression(node) && isFeedbackCall(node)) text = literalText(node.arguments[0]);
-  const normalized = text?.replace(/\s+/g, " ").trim();
-  return normalized && PROSE.test(normalized) ? normalized : null;
+  let texts: string[] = [];
+  if (ts.isJsxText(node)) texts = [node.text];
+  else if (ts.isJsxExpression(node) && (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent))) texts = literalTexts(node);
+  else if (ts.isJsxAttribute(node) && HUMAN_TEXT_ATTRIBUTES.has(node.name.getText())) texts = literalTexts(node.initializer);
+  else if (ts.isPropertyAssignment(node) && HUMAN_TEXT_ATTRIBUTES.has(propertyName(node.name) ?? ""))
+    texts = literalTexts(node.initializer);
+  else if (ts.isCallExpression(node) && isFeedbackCall(node)) texts = literalTexts(node.arguments[0]);
+  const prose = texts.map((text) => text.replace(/\s+/g, " ").trim()).find((text) => PROSE.test(text));
+  return prose ? prose.replaceAll(SUBSTITUTION, "…") : null;
 };
 
 /**
