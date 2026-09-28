@@ -38,7 +38,7 @@ cld venue sections update "Cafe Counter" <section-id> --title "Winter hours"
 cld venue sections update "Cafe Counter" <section-id> --enabled
 ```
 
-Inspect shift assignments before cancelling one; `cld venue shifts cancel <venue> <assignment-id> --yes` is destructive.
+Inspect shift assignments before cancelling one; `cld venue shifts cancel <venue> <assignment-id> --yes` is destructive. Read and staff users cancel only their own assignments; admins can also remove other people from a shift, as in the workspace.
 
 ## Venue access and API keys
 

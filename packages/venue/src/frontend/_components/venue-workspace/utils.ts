@@ -5,10 +5,25 @@ import type { DateOverride, OpeningRule, ShiftTemplate, UpcomingSlot, Venue } fr
 const MAX_BANNER_LONGEST_SIDE = 1600;
 
 export const timeZoneDateConfig = (timeZone: string, locale?: string) => ({ timeZone, locale, weekStartsOn: 1 as const });
-export const defaultShiftRange = (): DateRangeValue => ({
-  start: new Date(Date.now() + 60 * 60_000).toISOString(),
-  end: new Date(Date.now() + 3 * 60 * 60_000).toISOString(),
-});
+const QUARTER_HOUR_MS = 15 * 60_000;
+/** `now` rounded up to the next quarter hour; every real time zone offset is a whole number of quarter hours. */
+export const nextQuarterHour = (now: Date): Date => new Date(Math.ceil(now.getTime() / QUARTER_HOUR_MS) * QUARTER_HOUR_MS);
+/** Free time starts at the next quarter hour and lasts two hours until someone changes it. */
+export const defaultShiftRange = (now = new Date()): DateRangeValue => {
+  const start = nextQuarterHour(now);
+  return { start: start.toISOString(), end: new Date(start.getTime() + 2 * 60 * 60_000).toISOString() };
+};
+/** Slots in their given order, grouped by the local day (`date`) they take place. */
+export const groupSlotsByDay = (slots: readonly UpcomingSlot[]): { date: string; slots: UpcomingSlot[] }[] => {
+  const days: { date: string; slots: UpcomingSlot[] }[] = [];
+  for (const slot of slots) {
+    const last = days.at(-1);
+    if (last?.date === slot.date) last.slots.push(slot);
+    else days.push({ date: slot.date, slots: [slot] });
+  }
+  return days;
+};
+export const joinedSlot = (slot: UpcomingSlot, userId: string): boolean => slot.assignments.some((entry) => entry.userId === userId);
 export const todayDateKey = (): string => new Date().toISOString().slice(0, 10);
 
 export const readError = async (res: Pick<Response, "json">, fallback: string): Promise<string> => {

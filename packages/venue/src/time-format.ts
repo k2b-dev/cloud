@@ -42,3 +42,7 @@ export const timeZoneName = (timeZone: string, locale: string | undefined, times
   );
   return new Intl.ListFormat(locale, { type: "conjunction" }).format([...names]);
 };
+
+/** `Wed 08:00` / `Mi. 08:00`: a start within the coming week. */
+export const formatVenueWeekdayTime = (iso: string, timeZone: string, locale?: string): string =>
+  venueFormat(timeZone, locale, { weekday: "short", ...HOUR_MINUTE }).format(new Date(iso));

@@ -149,17 +149,32 @@ export const projectPublicStatus = async (value: PublicStatus): Promise<PublicSt
 };
 
 export const projectDashboard = async (value: InternalVenueDashboard): Promise<VenueDashboard> => {
-  const [venues, openingRules, overrides, templates, slots, assignments, myUpcomingShifts, sections, feedbackEntries] = await Promise.all([
+  const [
+    venues,
+    openingRules,
+    overrides,
+    templates,
+    slots,
+    otherAssignments,
+    outlookTemplates,
+    assignments,
+    myUpcomingShifts,
+    sections,
+    feedbackEntries,
+  ] = await Promise.all([
     projectVenues([value.venue]),
     projectOpeningRules(value.openingRules),
     projectOverrides(value.overrides),
     projectTemplates(value.templates),
     projectSlots(value.slots),
+    projectAssignments(value.otherAssignments),
+    publicIds("templates", [value.outlook.nextGap?.templateId]),
     projectAssignments(value.assignments),
     projectAssignments(value.myUpcomingShifts),
     projectSections(value.sections),
     projectFeedbackEntries(value.feedbackEntries),
   ]);
+  const nextGap = value.outlook.nextGap;
   return {
     ...value,
     venue: venues[0]!,
@@ -167,6 +182,11 @@ export const projectDashboard = async (value: InternalVenueDashboard): Promise<V
     overrides,
     templates,
     slots,
+    otherAssignments,
+    outlook: {
+      ...value.outlook,
+      nextGap: nextGap ? { ...nextGap, templateId: requirePublicId(outlookTemplates, nextGap.templateId) } : null,
+    },
     assignments,
     myUpcomingShifts,
     sections,

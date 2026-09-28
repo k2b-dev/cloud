@@ -117,7 +117,7 @@ export function ScheduleActionButton(props: {
         loading={props.loading}
         onClick={props.onClick}
       >
-        <i class={props.loading ? "ti ti-loader-2 animate-spin" : props.icon} />
+        <i class={props.icon} aria-hidden="true" />
       </IconButton>
     </Tooltip.Anchor>
   );

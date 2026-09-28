@@ -1,6 +1,6 @@
-import type { CalendarView } from "@k2b/ui";
 import { apiClient } from "../api/client";
 import type { VenueDashboard } from "../contracts";
+import type { VenueCalendarView } from "./schedule-url";
 
 export type VenueDashboardSource = {
   venueId: string;
@@ -35,13 +35,20 @@ export const shiftDate = (date: string, days: number): string => {
   return next.toISOString().slice(0, 10);
 };
 
-const slotWindow = (view: CalendarView, date: string): { startDate: string; days: number } =>
-  view === "month" ? { startDate: shiftDate(date, -7), days: 45 } : { startDate: shiftDate(date, -7), days: 14 };
+/** The Monday on or before `date`; Venue calendars start their weeks on Monday. */
+const weekStart = (date: string): string => shiftDate(date, -((new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7));
+
+/** Exactly the days the calendar view shows: one day, one week, or the six weeks of a month grid. */
+export const slotWindow = (view: VenueCalendarView, date: string): { startDate: string; days: number } => {
+  if (view === "day") return { startDate: date, days: 1 };
+  if (view === "week") return { startDate: weekStart(date), days: 7 };
+  return { startDate: weekStart(`${date.slice(0, 7)}-01`), days: 42 };
+};
 
 export const venueDashboardRouteScope = (input: {
   venueId: string;
   view: "shifts" | "my-shifts" | "feedback";
-  calendarView: CalendarView;
+  calendarView: VenueCalendarView;
   calendarDate: string;
   feedbackDays: number;
   feedbackSearch: string;
