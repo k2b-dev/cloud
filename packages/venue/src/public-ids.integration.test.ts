@@ -1,4 +1,5 @@
 import { beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
@@ -15,9 +16,9 @@ const suite = suiteFor("database", "nats", "valkey");
 setDefaultTimeout(30_000);
 
 /** The Venue request surface as `src/index.ts` mounts it; pages get an empty app registry instead of the live watcher. */
-const venueApp = new Hono<AuthContext>()
+const venueApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
   .use("*", async (c, next) => {
-    (c as unknown as { set: (key: string, value: unknown) => void }).set("runtime", { apps: [] });
+    c.set("runtime", { apps: [] });
     await next();
   })
   .route("/api/venue", apiRoutes)
@@ -26,7 +27,7 @@ const venueApp = new Hono<AuthContext>()
 type Method = "GET" | "POST" | "PATCH" | "DELETE";
 type Caller = { cookie?: string; authorization?: string };
 
-/** One request against a declared route pattern; `params` names the saved ID that fills each path parameter. */
+/** One request against a declared route pattern; `params` names the saved ID that fills each path parameter, `onBody` saves or checks the response. */
 type Step = {
   method: Method;
   route: string;
@@ -35,7 +36,7 @@ type Step = {
   body?: unknown;
   as?: "anonymous" | "apiKey";
   status: number;
-  save?: (body: unknown) => void;
+  onBody?: (body: unknown) => void;
 };
 
 /** Path parameters the server resolves as Venue resource IDs; built-in template keys, calendar tokens, platform UUIDs, and page selection state are not. */
@@ -138,7 +139,7 @@ suite("Venue routes with public IDs", () => {
           params: { templateId: "builtInTemplate" },
           body: { name: "Harbor Kiosk" },
           status: 201,
-          save: saveId("templateVenue"),
+          onBody: saveId("templateVenue"),
         },
         {
           method: "GET",
@@ -147,7 +148,6 @@ suite("Venue routes with public IDs", () => {
           query: "?slotDays=14&includeFeedbackEntries=true",
           status: 200,
         },
-        { method: "GET", route: "/api/venue/venues/:id/settings-context", params: venue, status: 200 },
         {
           method: "PATCH",
           route: "/api/venue/venues/:id",
@@ -161,7 +161,7 @@ suite("Venue routes with public IDs", () => {
           params: venue,
           body: { weekday: 1, startTime: "09:00", endTime: "17:00" },
           status: 201,
-          save: saveId("rule"),
+          onBody: saveId("rule"),
         },
         {
           method: "PATCH",
@@ -182,7 +182,7 @@ suite("Venue routes with public IDs", () => {
           params: venue,
           body: { date: dateInDays(20), kind: "closed" },
           status: 201,
-          save: saveId("override"),
+          onBody: saveId("override"),
         },
         {
           method: "PATCH",
@@ -203,7 +203,7 @@ suite("Venue routes with public IDs", () => {
           params: venue,
           body: { weekday: weekdayOf(shiftDate), title: "Morning bar", startTime: "10:00", endTime: "12:00", maxPeople: 3 },
           status: 201,
-          save: saveId("shift"),
+          onBody: saveId("shift"),
         },
         {
           method: "PATCH",
@@ -218,7 +218,7 @@ suite("Venue routes with public IDs", () => {
           params: { id: "venue", templateId: "shift" },
           body: { date: shiftDate },
           status: 201,
-          save: saveId("assignment"),
+          onBody: saveId("assignment"),
         },
         {
           method: "POST",
@@ -240,7 +240,7 @@ suite("Venue routes with public IDs", () => {
           params: venue,
           body: { kind: "notice", title: "Opening week", content: { text: "Free refills all week." } },
           status: 201,
-          save: saveId("section"),
+          onBody: saveId("section"),
         },
         {
           method: "PATCH",
@@ -257,7 +257,36 @@ suite("Venue routes with public IDs", () => {
           as: "anonymous",
           status: 201,
         },
-        // Pages render while the Venue has hours, shifts, assignments, sections, and feedback.
+        // The key is bound to the internal Venue ID, so the key list, settings context, and pages below must not repeat it.
+        {
+          method: "POST",
+          route: "/api/venue/venues/:id/api-keys",
+          params: venue,
+          body: { name: "Lobby display", permission: "read" },
+          status: 201,
+          onBody: (body) => {
+            const key = body as { credential: { id: string }; token: string };
+            ids.credential = key.credential.id;
+            ids.apiKey = key.token;
+          },
+        },
+        {
+          method: "GET",
+          route: "/api/venue/venues/:id/api-keys",
+          params: venue,
+          status: 200,
+          onBody: (body) => expect((body as { items: unknown[] }).items).toHaveLength(1),
+        },
+        {
+          method: "GET",
+          route: "/api/venue/venues/:id/settings-context",
+          params: venue,
+          status: 200,
+          onBody: (body) => expect((body as { apiKeys: unknown[] }).apiKeys).toHaveLength(1),
+        },
+        // A resource-bound Venue API key reaches the same resolver as a browser session.
+        { method: "GET", route: "/api/venue/venues/:id/settings-context", params: venue, as: "apiKey", status: 200 },
+        // Pages render while the Venue has hours, shifts, assignments, sections, feedback, and an API key.
         { method: "GET", route: "/app/venue/:id", params: venue, status: 302 },
         { method: "GET", route: "/app/venue/:id/:view", params: { id: "venue", view: "feedbackView" }, status: 200 },
         { method: "GET", route: "/app/venue/:id/public-sections/:sectionId", params: { id: "venue", sectionId: "section" }, status: 200 },
@@ -290,7 +319,7 @@ suite("Venue routes with public IDs", () => {
           params: venue,
           body: { principal: { type: "user", userId: staffId }, permission: "read" },
           status: 201,
-          save: saveId("access"),
+          onBody: saveId("access"),
         },
         {
           method: "PATCH",
@@ -300,21 +329,6 @@ suite("Venue routes with public IDs", () => {
           status: 200,
         },
         { method: "DELETE", route: "/api/venue/venues/:id/access/:accessId", params: { id: "venue", accessId: "access" }, status: 200 },
-        { method: "GET", route: "/api/venue/venues/:id/api-keys", params: venue, status: 200 },
-        {
-          method: "POST",
-          route: "/api/venue/venues/:id/api-keys",
-          params: venue,
-          body: { name: "Lobby display", permission: "read" },
-          status: 201,
-          save: (body) => {
-            const key = body as { credential: { id: string }; token: string };
-            ids.credential = key.credential.id;
-            ids.apiKey = key.token;
-          },
-        },
-        // A resource-bound Venue API key reaches the same resolver as a browser session.
-        { method: "GET", route: "/api/venue/venues/:id/settings-context", params: venue, as: "apiKey", status: 200 },
         {
           method: "DELETE",
           route: "/api/venue/venues/:id/api-keys/:credentialId",
@@ -331,7 +345,8 @@ suite("Venue routes with public IDs", () => {
         const publicValue = (param: string) => ids[step.params[param] ?? ""];
         for (const [publicId, internalId] of await internalIdsOwnedBy(ownerId)) internal.set(publicId, internalId);
 
-        // Internal UUIDs are not a second way in: the API rejects them as input, pages do not find them.
+        // Internal UUIDs are not a second way in. API ID parameters use the public ID schema, so a UUID fails
+        // validation (400); pages resolve the ID and do not find a UUID (404).
         for (const param of Object.keys(step.params).filter((name) => takesVenueResourceId(step.route, name))) {
           const path = fill(step.route, (name) => (name === param ? internal.get(publicValue(name) ?? "") : publicValue(name)));
           const rejected = await send(step.method, `${path}${step.query ?? ""}`, caller, step.body);
@@ -346,7 +361,7 @@ suite("Venue routes with public IDs", () => {
           body: "",
         });
         bodies.push(text);
-        if (step.save) step.save(JSON.parse(text));
+        step.onBody?.(JSON.parse(text));
       }
 
       expect([...new Set(steps.map((step) => `${step.method} ${step.route}`))].sort()).toEqual(idRoutes());
