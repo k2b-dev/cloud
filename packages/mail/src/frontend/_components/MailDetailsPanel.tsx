@@ -238,7 +238,7 @@ export default function MailDetailsPanel(props: {
           scope: "selection",
           id: `mail.${conversationId}.assign`,
           title: copy.assignTitle,
-          description: copy.assignDescription({ subject: props.subject }),
+          description: copy.assignDescription({ subject: props.subject || t().noSubject }),
           icon: "ti ti-user-check",
           action: async () => {
             const selected = await prompts.form({
@@ -263,7 +263,7 @@ export default function MailDetailsPanel(props: {
           scope: "selection",
           id: `mail.${conversationId}.reminder`,
           title: copy.reminderTitle,
-          description: copy.reminderDescription({ subject: props.subject }),
+          description: copy.reminderDescription({ subject: props.subject || t().noSubject }),
           icon: "ti ti-bell",
           action: async () => {
             const selected = await prompts.form({

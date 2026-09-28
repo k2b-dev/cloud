@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { MessageDetail } from "../../service/messages";
+import type MailConversationReaderComponent from "./MailConversationReader";
 
 const now = "2026-08-16T12:00:00.000Z";
 const envelopeOnly: MessageDetail = {
@@ -43,6 +44,49 @@ const waitFor = async (condition: () => boolean) => {
   throw new Error("Timed out waiting for the Mail reader test condition");
 };
 
+const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
+  mailboxId: "Box001",
+  requestUrl: "/app/mail/Box001?conversation=Conv01",
+  canWrite: true,
+  canAdmin: false,
+  identities: [],
+  selectionKey: "Conv01",
+  selectedConversationId: "Conv01",
+  selectedMessageId: null,
+  unread: false,
+  flagged: false,
+  inJunk: false,
+  reference: null,
+  subject: envelopeOnly.subject,
+  messages: [envelopeOnly],
+  activity: [],
+  conversationSummary: null,
+  conversationDrafts: [],
+  totalMessageCount: 1,
+  error: null,
+  dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
+  readingFormat: "automatic",
+  theme: "light",
+  calendarIntegrationAvailable: false,
+  listCollapsed: false,
+  detailsOpen: false,
+  toolbarActions: ["reply"],
+  onRestoreList: () => undefined,
+  onToggleDetails: () => undefined,
+  onToolbarActionsChange: () => undefined,
+  actionPending: false,
+  onAction: () => undefined,
+  onOpenHref: () => undefined,
+  onManageTags: () => undefined,
+  onMergeConversation: () => undefined,
+  onReassignMessage: () => undefined,
+  onSplitMessage: () => undefined,
+  onSummarySaved: async () => undefined,
+  onReconcile: async () => undefined,
+  onReconcileAfterWrite: async () => undefined,
+  onClose: () => undefined,
+};
+
 test.skipIf(isServer)(
   "the open reader replaces the pending body once hydration completes and offers a local refresh meanwhile",
   async () => {
@@ -54,53 +98,16 @@ test.skipIf(isServer)(
     const dispose = render(
       () =>
         createComponent(MailConversationReader, {
-          mailboxId: "Box001",
-          requestUrl: "/app/mail/Box001?conversation=Conv01",
-          canWrite: true,
-          canAdmin: false,
-          identities: [],
-          selectionKey: "Conv01",
-          selectedConversationId: "Conv01",
-          selectedMessageId: null,
-          unread: false,
-          flagged: false,
-          inJunk: false,
-          reference: null,
-          subject: envelopeOnly.subject,
+          ...readerProps,
           get messages() {
             return messages();
           },
-          activity: [],
-          conversationSummary: null,
-          conversationDrafts: [],
-          totalMessageCount: 1,
-          error: null,
-          dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
-          readingFormat: "automatic",
-          theme: "light",
-          calendarIntegrationAvailable: false,
-          listCollapsed: false,
-          detailsOpen: false,
-          toolbarActions: ["reply"],
-          onRestoreList: () => undefined,
-          onToggleDetails: () => undefined,
-          onToolbarActionsChange: () => undefined,
-          actionPending: false,
-          onAction: () => undefined,
-          onOpenHref: () => undefined,
-          onManageTags: () => undefined,
-          onMergeConversation: () => undefined,
-          onReassignMessage: () => undefined,
-          onSplitMessage: () => undefined,
-          onSummarySaved: async () => undefined,
           onReconcile: () => {
             refreshes += 1;
             return new Promise<void>((resolve) => {
               finishRefresh = resolve;
             });
           },
-          onReconcileAfterWrite: async () => undefined,
-          onClose: () => undefined,
         }),
       dom.root,
     );
@@ -137,3 +144,24 @@ test.skipIf(isServer)(
     }
   },
 );
+
+test.skipIf(isServer)("reply and forward Commands name an untitled conversation instead of quoting an empty subject", async () => {
+  const dom = createDomTestHarness();
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const dispose = render(
+    () => createComponent(MailConversationReader, { ...readerProps, subject: "", messages: [{ ...envelopeOnly, subject: "" }] }),
+    dom.root,
+  );
+  try {
+    const commands = () => collectContextAwareCommands().filter((command) => /\.(reply|forward)$/.test(command.id));
+    await waitFor(() => commands().length === 2);
+    expect(commands().map((command) => command.description)).toEqual([
+      "Reply to the sender of “(No subject)”.",
+      "Forward “(No subject)” to another recipient.",
+    ]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
