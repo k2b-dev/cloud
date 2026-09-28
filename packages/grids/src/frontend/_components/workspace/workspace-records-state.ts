@@ -5,7 +5,6 @@ import type { DslResolverDiagnostic } from "../../../query-dsl/resolver";
 import type { Field, GridRecord, Table, View } from "../../../service";
 import { gridsService } from "../../../service";
 import * as publicResources from "../../../service/public-resources";
-import { filterSearchableFields } from "../../../service/search";
 import { activeDisplayConfig } from "../records-view/display-mode";
 import { parseRecordsState, type RecordsState } from "../records-view/query-url";
 import { resolveWorkspaceMessages } from "./messages";
@@ -371,7 +370,6 @@ const buildRecordsRoute = async (params: {
     documentTemplates: writableDocumentTemplates(common, activeTable.id),
     relationLabels: initial.relationLabels,
     activeViewColumns: initial.effective.columns,
-    searchableFields: filterSearchableFields(view.fields),
     groupedExplode: initial.groupedExplode,
     activeRecordQuery: view.activeViewForQuery?.query ?? null,
     displayConfig,

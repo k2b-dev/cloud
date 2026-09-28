@@ -82,7 +82,6 @@ const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProp
   documentTemplates: [],
   relationLabels: {},
   viewColumns: undefined,
-  searchableFields: [titleField],
   groupedExplode: false,
   activeRecordQuery: null,
   displayConfig: { mode: "table" },

@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { SearchSpec } from "../contracts";
+import { filterSearchableFields, SCALAR_SEARCH_TYPES, SELECT_SEARCH_TYPES } from "../searchable-fields";
 import type { SqlClient } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { resolveReadableTableIds } from "./relation-access";
@@ -9,20 +10,8 @@ import type { Field } from "./types";
 type SearchClause = { clause: any };
 type RecordSource = { relation: unknown };
 
-const SCALAR_SEARCH_TYPES = new Set(["text", "longtext", "id", "number", "percent", "duration", "date", "boolean"]);
-
-const SELECT_SEARCH_TYPES = new Set(["select"]);
-
 export const escapeSearchLikePattern = (s: string): string => s.replace(/([\\%_])/g, "\\$1");
 const dataFor = (alias: string) => sql.unsafe(`${alias}.data`);
-
-/**
- * Searchable fields = fields with a stable SQL-side text or label
- * projection. This drives only the UI scope picker; compileSearchClause
- * remains the authoritative backend implementation.
- */
-export const filterSearchableFields = (fields: Field[]): Field[] =>
-  fields.filter((f) => !f.deletedAt && (SCALAR_SEARCH_TYPES.has(f.type) || SELECT_SEARCH_TYPES.has(f.type) || f.type === "relation"));
 
 export const optionIdsMatchingSearch = (field: Field, q: string): string[] => {
   const options = (field.config as { options?: Array<{ id: string; label: string }> }).options ?? [];

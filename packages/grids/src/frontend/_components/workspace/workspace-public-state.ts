@@ -221,9 +221,6 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       documentTemplates: templates,
       relationLabels: initialData.relationLabels ?? {},
       activeViewColumns: publicQuery.columns,
-      searchableFields: fields.filter((_field, index) =>
-        route.searchableFields.some((candidate) => candidate.id === route.fields[index]?.id),
-      ),
       activeRecordQuery: publicActiveQuery,
       displayConfig: activeView?.ui.displayConfig ?? publicActiveTable.displayConfig,
       bulkSelectionLaunchers: bulkLaunchers.map((launcher, index) => ({

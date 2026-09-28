@@ -110,7 +110,6 @@ export type PublicWorkspaceRecordsRoute = {
   documentTemplates: PublicDocumentTemplateSummary[];
   relationLabels: Record<string, string>;
   activeViewColumns: RecordQuery["columns"] | undefined;
-  searchableFields: PublicField[];
   groupedExplode: boolean;
   activeRecordQuery: RecordQuery | null;
   displayConfig: RecordDisplayConfig;

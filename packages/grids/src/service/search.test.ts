@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { filterSearchableFields, optionIdsMatchingSearch } from "./search";
+import { filterSearchableFields } from "../searchable-fields";
+import { optionIdsMatchingSearch } from "./search";
 import type { Field } from "./types";
 
 const mkField = (id: string, type: string, patch: Partial<Field> = {}): Field => ({
