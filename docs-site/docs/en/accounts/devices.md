@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1085
 description: Pair a sign-in app with QR or a copy link, and remove a lost device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-09-27
+updated: 2026-09-28
 ---
 
 # Pair and manage sign-in devices
@@ -49,7 +49,16 @@ account. You do not need to sign out first.
 
 When administrator-assisted pairing is enabled, an authorized administrator
 opens **Accounts → Users → the user → Pair sign-in app**.
-Check the named target account and compare the codes together.
+
+1. The dialog first shows a QR code for the configured sign-in app. The person
+   scans it with their phone and installs the app from the page that opens.
+2. Choose **Next**, or **App is already installed** if the app is already on
+   the phone. The pairing starts only then, so installing does not use up the
+   five-minute pairing link.
+3. Check the named target account, pair as described above and compare the
+   codes together. If you have to confirm your identity first, the dialog
+   reopens at this step.
+
 This issues a sign-in credential for that person, not for the administrator.
 The action is audited. The user is notified by email when their account has an
 email address.

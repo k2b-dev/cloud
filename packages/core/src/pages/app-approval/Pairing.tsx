@@ -6,6 +6,7 @@ import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
 import ApprovalFeedback from "./Feedback";
+import { InstallLink } from "./InstallApp";
 import { appApprovalMessages } from "./messages";
 
 const ResumeSchema = z.object({
@@ -18,6 +19,8 @@ export default function Pairing(props: {
   name: string;
   appOrigin: string;
   returnTo: string;
+  /** Show how to install the sign-in app before a new pairing starts. */
+  install?: boolean;
   onClose: () => void;
 }) {
   const locale = useLocale();
@@ -28,6 +31,9 @@ export default function Pairing(props: {
   const [state, setState] = createSignal<"idle" | "waiting" | "done" | "expired" | "cancelled">("idle");
   const [busy, setBusy] = createSignal(false);
   const [checkingIdentity, setCheckingIdentity] = createSignal(true);
+  // Unset when the dialog has no install step. A new pairing starts only after it,
+  // so installing the app does not use up the pairing link's five minutes.
+  const [step, setStep] = createSignal<"install" | "pair">();
   const [error, setError] = createSignal<unknown>();
   const needsAuthentication = () => {
     const cause = error();
@@ -126,13 +132,23 @@ export default function Pairing(props: {
         wait(saved.data);
       } else {
         forget();
-        void start();
+        begin();
       }
     } catch {
       forget();
-      void start();
+      begin();
     }
   });
+  const begin = () => {
+    if (props.install) setStep("install");
+    else void start();
+  };
+  let pairHeading: HTMLHeadingElement | undefined;
+  const next = () => {
+    setStep("pair");
+    pairHeading?.focus();
+    void start();
+  };
   onCleanup(() => {
     disposed = true;
     stop();
@@ -230,15 +246,37 @@ export default function Pairing(props: {
     target.searchParams.set("reauthenticate", "1");
     window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search, credential: "legacy" })}`);
   };
-  const content = (close: () => void) => (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={t().pair}
-        subtitle={props.actorId !== props.userId ? props.name : undefined}
-        icon="ti ti-device-mobile"
-        close={close}
-      />
+  const installStep = () => (
+    <>
       <PanelDialog.Body>
+        <div class="flex flex-col gap-4">
+          <h3 class="flex flex-col gap-0.5 text-sm font-semibold">
+            <span class="text-xs font-normal text-dimmed">{t().step({ number: 1 })}</span>
+            {t().installStep}
+          </h3>
+          <p class="text-sm text-dimmed">{t().installStepHint}</p>
+          <InstallLink origin={props.appOrigin} />
+        </div>
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <div class="flex w-full flex-wrap justify-end gap-2">
+          <Button variant="secondary" onClick={next}>
+            {t().alreadyInstalled}
+          </Button>
+          <Button onClick={next}>{t().next}</Button>
+        </div>
+      </PanelDialog.Footer>
+    </>
+  );
+  const pairingStep = (close: () => void) => (
+    <>
+      <PanelDialog.Body>
+        <Show when={step() === "pair"}>
+          <h3 ref={pairHeading} tabIndex={-1} class="mb-4 flex flex-col gap-0.5 text-sm font-semibold focus:outline-none">
+            <span class="text-xs font-normal text-dimmed">{t().step({ number: 2 })}</span>
+            {t().pairStep}
+          </h3>
+        </Show>
         <Show when={!checkingIdentity()} fallback={<Placeholder state="loading" title={t().checkingIdentity} />}>
           <div class="flex flex-col gap-4">
             <Show when={props.actorId !== props.userId && !needsAuthentication()}>
@@ -321,6 +359,19 @@ export default function Pairing(props: {
             </Show>
           </div>
         </PanelDialog.Footer>
+      </Show>
+    </>
+  );
+  const content = (close: () => void) => (
+    <PanelDialog>
+      <PanelDialog.Header
+        title={t().pair}
+        subtitle={props.actorId !== props.userId ? props.name : undefined}
+        icon="ti ti-device-mobile"
+        close={close}
+      />
+      <Show when={step() !== "install"} fallback={installStep()}>
+        {pairingStep(close)}
       </Show>
     </PanelDialog>
   );

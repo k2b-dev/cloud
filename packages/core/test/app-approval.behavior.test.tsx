@@ -293,6 +293,7 @@ describe("Cloud app approval UI", () => {
           name: "Another user",
           appOrigin: "https://app.example",
           returnTo: "/me/security",
+          install: false,
         }),
       dom.root,
     );
@@ -349,13 +350,115 @@ describe("Cloud app approval UI", () => {
     expect(dom.document.querySelector("dialog[open]")).toBeNull();
     expect(dom.window.sessionStorage.getItem(key)).toBeNull();
   });
+  test("assisted pairing starts with the app installation and creates the pairing only after Next", async () => {
+    const dom = createDomTestHarness();
+    const { toast } = await import("@k2b/ui");
+    const success = spyOn(toast, "success").mockImplementation(() => "test");
+    const copied = spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const dispose = render(
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: deviceId,
+          name: "Another user",
+          appOrigin: "https://app.example",
+          returnTo: `/app/accounts/users/${deviceId}`,
+          install: true,
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await Bun.sleep(20); // the dialog's initial focus runs on the next frame
+    await flush();
+    const body = dom.document.body;
+    const heading = body.querySelector<HTMLElement>(".k2b-panel-dialog__body h3")!;
+    expect(heading.textContent).toContain("Step 1 of 2");
+    expect(heading.textContent).toContain("Install the sign-in app");
+    expect(body.querySelector('img[alt="Sign-in app installation QR code"]')).not.toBeNull();
+    expect(body.querySelector('img[alt="Device pairing QR code"]')).toBeNull();
+    expect(body.querySelector('[data-tone="warning"]')).toBeNull();
+    expect(pairStart).not.toHaveBeenCalled();
+    button(body, "Copy link").click();
+    await flush();
+    expect(copied).toHaveBeenCalledWith("https://app.example");
+    expect(success).toHaveBeenCalledWith("App link copied");
+    const footer = body.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    expect(button(footer, "App is already installed").dataset.variant).toBe("secondary");
+    button(footer, "Next").click();
+    await flush();
+    expect(pairStart).toHaveBeenCalledTimes(1);
+    const focused = dom.document.activeElement as HTMLElement;
+    expect(focused.tagName).toBe("H3");
+    expect(focused.textContent).toContain("Step 2 of 2");
+    expect(focused.textContent).toContain("Connect the app");
+    expect(body.querySelector('[data-state="loading"]')).not.toBeNull();
+    await Bun.sleep(170);
+    await flush();
+    expect(body.querySelector('img[alt="Sign-in app installation QR code"]')).toBeNull();
+    expect(body.querySelector('img[alt="Device pairing QR code"]')).not.toBeNull();
+    expect(body.querySelector('[data-tone="warning"]')?.textContent).toContain("Pair only together with the user");
+    expect(dom.document.activeElement).toBe(focused);
+  });
+  test("the install step can be closed or skipped and never delays a pairing that is already running", async () => {
+    const dom = createDomTestHarness();
+    const { dialogCore } = await import("@k2b/ui");
+    const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
+    const closed = mock(() => {});
+    const props = {
+      actorId: id,
+      userId: id,
+      name: "Ada",
+      appOrigin: "https://app.example",
+      returnTo: "/me/security",
+      install: true,
+      onClose: closed,
+    };
+    let dispose = render(() => createComponent(Pairing, props), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    dialogCore.close();
+    await flush();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(pairStart).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    dispose();
+    dispose = render(() => createComponent(Pairing, props), dom.root);
+    await flush();
+    button(dom.document.body, "App is already installed").click();
+    await flush();
+    expect(pairStart).toHaveBeenCalledTimes(1);
+    expect(dom.document.activeElement?.textContent).toContain("Connect the app");
+    dispose();
+    dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
+    dispose = render(() => createComponent(Pairing, props), dom.root);
+    await flush();
+    expect(dom.document.body.textContent).toContain("Pairing resumed");
+    expect(dom.document.body.textContent).not.toContain("Step 1 of 2");
+    expect(dom.document.body.textContent).not.toContain("Step 2 of 2");
+    expect(pairStart).toHaveBeenCalledTimes(1);
+  });
   test("pairing transfers no secrets into storage and never confirms before explicit comparison", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");
     spyOn(toast, "success").mockImplementation(() => "test");
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
     let dispose = render(
-      () => createComponent(Pairing, { actorId: id, userId: id, name: "Ada", appOrigin: "https://app.example", returnTo: "/me/security" }),
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: id,
+          name: "Ada",
+          appOrigin: "https://app.example",
+          returnTo: "/me/security",
+          install: false,
+        }),
       dom.root,
     );
     cleanup = () => {
@@ -385,7 +488,15 @@ describe("Cloud app approval UI", () => {
     expect(confirm).not.toHaveBeenCalled();
     dispose();
     dispose = render(
-      () => createComponent(Pairing, { actorId: id, userId: id, name: "Ada", appOrigin: "https://app.example", returnTo: "/me/security" }),
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: id,
+          name: "Ada",
+          appOrigin: "https://app.example",
+          returnTo: "/me/security",
+          install: false,
+        }),
       dom.root,
     );
     await flush();
@@ -504,7 +615,15 @@ describe("Cloud app approval UI", () => {
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
     const dispose = render(
-      () => createComponent(Pairing, { actorId: id, userId: id, name: "Ada", appOrigin: "https://app.example", returnTo: "/me/security" }),
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: id,
+          name: "Ada",
+          appOrigin: "https://app.example",
+          returnTo: "/me/security",
+          install: false,
+        }),
       dom.root,
     );
     cleanup = () => {

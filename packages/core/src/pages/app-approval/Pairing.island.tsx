@@ -1,6 +1,13 @@
 import PairingDialog from "./Pairing";
 
-export default function Pairing(props: { userId: string; actorId: string; name: string; appOrigin: string; returnTo: string }) {
+export default function Pairing(props: {
+  userId: string;
+  actorId: string;
+  name: string;
+  appOrigin: string;
+  returnTo: string;
+  install: boolean;
+}) {
   return (
     <PairingDialog
       {...props}
