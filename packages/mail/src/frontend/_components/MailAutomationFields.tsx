@@ -5,9 +5,9 @@ import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
 import {
   type AutomationActionKind,
   createMailAutomationAction,
+  MAIL_AUTOMATION_STATUSES,
   mailAutomationActionKindsFor,
   mailAutomationDestinationFolders,
-  mailAutomationStatusLabels,
 } from "./mail-automation-actions";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -37,7 +37,7 @@ export const mailAutomationConditionLabel = (condition: MailAutomationCondition,
   if (condition.field === "attachment_presence") return condition.value ? messages.hasAttachments : messages.hasNoAttachments;
   if (condition.field === "sender_address") return condition.value;
   if (condition.field === "sender_domain") return `*@${condition.value}`;
-  return `${conditionFieldMessage(condition.field, locale)} ${messages.textOperator({ operator: condition.operator })} “${condition.value}”`;
+  return `${conditionFieldMessage(condition.field, locale)} ${messages.textOperator({ operator: condition.operator })} ${messages.quoted({ text: condition.value })}`;
 };
 
 export function MailAutomationConditionsEditor(props: {
@@ -296,7 +296,7 @@ export function MailAutomationActionEditor(props: {
           onValueChange={(status) =>
             props.onChange({ kind: "set_status", status: status as Extract<MailAutomationAction, { kind: "set_status" }>["status"] })
           }
-          options={Object.keys(mailAutomationStatusLabels).map((id) => ({ id, label: messages().automationStatus({ status: id }) }))}
+          options={MAIL_AUTOMATION_STATUSES.map((id) => ({ id, label: messages().automationStatus({ status: id }) }))}
         />
       </Show>
     </div>

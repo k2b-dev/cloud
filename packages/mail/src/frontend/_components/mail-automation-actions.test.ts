@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { MailAutomationAction } from "../../contracts";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
-import {
-  createMailAutomationAction,
-  mailAutomationActionKindLabels,
-  mailAutomationActionKindsFor,
-  mailAutomationActionLabel,
-  mailAutomationDestinationFolders,
-} from "./mail-automation-actions";
+import { createMailAutomationAction, mailAutomationActionKindsFor, mailAutomationDestinationFolders } from "./mail-automation-actions";
 
 const catalog: MailWorkflowCatalogSnapshot = {
   folders: [
@@ -29,7 +23,6 @@ describe("mail automation action editor model", () => {
   test("preserves an existing provider keyword action without offering a new one", () => {
     const actions: MailAutomationAction[] = [{ kind: "add_keyword", keyword: "Legacy" }];
     expect(mailAutomationActionKindsFor({ actions, catalog, index: 0 })).toContain("add_keyword");
-    expect(mailAutomationActionLabel(actions[0]!, catalog)).toBe("Add keyword Legacy");
   });
 
   test("uses only general destinations and consumes unique catalog values", () => {
@@ -39,11 +32,8 @@ describe("mail automation action editor model", () => {
     expect(createMailAutomationAction({ kind: "add_local_tag", actions, catalog })).toBeNull();
   });
 
-  test("creates and labels catalog-backed actions", () => {
-    expect(mailAutomationActionKindLabels.add_local_tag).toBe("Add tag");
+  test("creates catalog-backed actions", () => {
     const action = createMailAutomationAction({ kind: "move_to_folder", actions: [], catalog });
     expect(action).toEqual({ kind: "move_to_folder", folderId: catalog.folders[0]!.id });
-    expect(action && mailAutomationActionLabel(action, catalog)).toBe("Move to Inbox");
-    expect(mailAutomationActionLabel({ kind: "add_local_tag", tagId: catalog.localTags![0]!.id }, catalog)).toBe("Add tag Customer");
   });
 });

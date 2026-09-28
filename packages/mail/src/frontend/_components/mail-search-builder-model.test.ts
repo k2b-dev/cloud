@@ -31,13 +31,13 @@ const root: MailSearchExpression = {
 
 describe("Mail search builder model", () => {
   test("groups fields into the complete overlapping search taxonomy", () => {
-    expect(MAIL_SEARCH_FIELD_GROUPS.map((group) => group.label)).toEqual([
-      "Recommended",
-      "Content",
-      "People",
-      "Mailbox",
-      "Date & size",
-      "Technical",
+    expect(MAIL_SEARCH_FIELD_GROUPS.map((group) => group.value)).toEqual([
+      "recommended",
+      "content",
+      "people",
+      "mailbox",
+      "date-size",
+      "technical",
     ]);
     expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "assignee")?.groups).toEqual(["recommended", "people", "mailbox"]);
     expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "text:reference")?.groups).toEqual(["content", "technical"]);
@@ -147,7 +147,7 @@ describe("Mail search builder model", () => {
       "(Subject contains all words “invoice”) and ((Work status: Needs action) or (Work status: Waiting for reply))",
     );
     expect(summarizeMailSearchExpression(root, "de-CH")).toBe(
-      "(Betreff enthält alle Wörter “invoice”) und ((Bearbeitungsstatus: Handlungsbedarf) oder (Bearbeitungsstatus: Wartet auf Antwort))",
+      "(Betreff enthält alle Wörter „invoice“) und ((Bearbeitungsstatus: Handlungsbedarf) oder (Bearbeitungsstatus: Wartet auf Antwort))",
     );
   });
 

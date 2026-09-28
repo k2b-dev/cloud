@@ -19,7 +19,7 @@ import { createMemo, createSignal, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailSearchExpression, SavedConversationViewScope } from "../../contracts";
 import { mailFolderPaths } from "../../folder-tree";
-import { type MailSearchState, serializeMailSearchState } from "../../search-state";
+import { type MailSearchState, type MailSearchStateError, serializeMailSearchState } from "../../search-state";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
 import { mailRemainingMessages } from "./mail-remaining-messages";
@@ -590,6 +590,8 @@ function MailSearchBuilderDialog(props: {
   const [savedViewName, setSavedViewName] = createSignal(props.initialSavedView?.name ?? "");
   const [savedViewScope, setSavedViewScope] = createSignal<SavedConversationViewScope>(props.initialSavedView?.scope ?? "private");
   const [error, setError] = createSignal<string | null>(null);
+  const searchStateErrorMessage = (code: MailSearchStateError) =>
+    code === "too_large" ? messages().searchTooLarge : messages().searchInvalid;
   let disposed = false;
   const nodeCount = createMemo(() => countMailSearchNodes(expression()));
   const canUpdateInitialView = () => props.initialSavedView?.scope === "private" || props.canWrite;
@@ -602,7 +604,7 @@ function MailSearchBuilderDialog(props: {
   const apply = () => {
     const state = { expression: normalizeMailSearchExpression(expression()), sort: sort() } satisfies MailSearchState;
     const serialized = serializeMailSearchState(state);
-    if (!serialized.ok) return setError(serialized.error);
+    if (!serialized.ok) return setError(searchStateErrorMessage(serialized.error));
     props.close({ action: "apply", state, serialized: serialized.value });
   };
 
@@ -640,7 +642,7 @@ function MailSearchBuilderDialog(props: {
   const saveView = async (existing: SavedConversationView | null, details?: { name: string; scope: SavedConversationViewScope }) => {
     const state = { expression: normalizeMailSearchExpression(expression()), sort: sort() } satisfies MailSearchState;
     const serialized = serializeMailSearchState(state);
-    if (!serialized.ok) return setError(serialized.error);
+    if (!serialized.ok) return setError(searchStateErrorMessage(serialized.error));
     const name = (details?.name ?? savedViewName()).trim();
     if (!name) return setError(messages().enterSavedViewName);
     setError(null);

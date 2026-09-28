@@ -13,14 +13,20 @@ export const MAX_MAIL_SEARCH_PARAMETER_LENGTH = 3_000;
 
 export { type MailSearchState, mailSearchStateSchema };
 
-export type ParsedMailSearchState = { state: MailSearchState; error: null } | { state: null; error: string } | { state: null; error: null };
+/** Why a search cannot be kept in or read from the mailbox URL; the interface owns the human message. */
+export type MailSearchStateError = "invalid" | "too_large";
 
-export type SerializedMailSearchState = { ok: true; value: string } | { ok: false; error: string };
+export type ParsedMailSearchState =
+  | { state: MailSearchState; error: null }
+  | { state: null; error: MailSearchStateError }
+  | { state: null; error: null };
+
+export type SerializedMailSearchState = { ok: true; value: string } | { ok: false; error: MailSearchStateError };
 export type ResolvedMailSearchRoute = {
   query: string;
   expression: MailSearchExpression | null;
   sort: MailSearchState["sort"];
-  error: string | null;
+  error: MailSearchStateError | null;
 };
 
 const encodedParameterLength = (value: string): number => {
@@ -30,11 +36,11 @@ const encodedParameterLength = (value: string): number => {
 
 export const serializeMailSearchState = (state: MailSearchState): SerializedMailSearchState => {
   const parsed = mailSearchStateSchema.safeParse(state);
-  if (!parsed.success) return { ok: false, error: "The search contains an invalid condition." };
+  if (!parsed.success) return { ok: false, error: "invalid" };
 
   const value = JSON.stringify(parsed.data);
   if (encodedParameterLength(value) > MAX_MAIL_SEARCH_PARAMETER_LENGTH) {
-    return { ok: false, error: "The search is too large to keep in the mailbox URL. Remove or shorten a condition." };
+    return { ok: false, error: "too_large" };
   }
   return { ok: true, value };
 };
@@ -42,15 +48,14 @@ export const serializeMailSearchState = (state: MailSearchState): SerializedMail
 export const parseMailSearchState = (url: URL): ParsedMailSearchState => {
   const value = url.searchParams.get(MAIL_SEARCH_PARAMETER);
   if (value === null) return { state: null, error: null };
-  if (!value || encodedParameterLength(value) > MAX_MAIL_SEARCH_PARAMETER_LENGTH) {
-    return { state: null, error: "The search link is invalid or too large." };
-  }
+  if (!value) return { state: null, error: "invalid" };
+  if (encodedParameterLength(value) > MAX_MAIL_SEARCH_PARAMETER_LENGTH) return { state: null, error: "too_large" };
 
   try {
     const parsed = mailSearchStateSchema.safeParse(JSON.parse(value));
-    return parsed.success ? { state: parsed.data, error: null } : { state: null, error: "The search link contains an invalid condition." };
+    return parsed.success ? { state: parsed.data, error: null } : { state: null, error: "invalid" };
   } catch {
-    return { state: null, error: "The search link is malformed." };
+    return { state: null, error: "invalid" };
   }
 };
 
@@ -96,7 +101,7 @@ export const resolveMailSearchRoute = (url: URL): ResolvedMailSearchRoute => {
   const parsed = mailSearchExpressionSchema.safeParse(expression);
   return parsed.success
     ? { query, expression: parsed.data, sort: "relevance", error: null }
-    : { query, expression: null, sort: "relevance", error: "The search query is invalid or too long." };
+    : { query, expression: null, sort: "relevance", error: "invalid" };
 };
 
 export type MailSearchReference = Extract<MailSearchExpression, { type: "folder_id" | "local_tag_id" }>;

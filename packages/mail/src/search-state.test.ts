@@ -44,14 +44,11 @@ describe("Mail search URL state", () => {
 
   test("rejects malformed and schema-invalid values without throwing", () => {
     const malformed = new URL("https://cloud.example/app/mail/id?search=%7B");
-    expect(parseMailSearchState(malformed)).toEqual({ state: null, error: "The search link is malformed." });
+    expect(parseMailSearchState(malformed)).toEqual({ state: null, error: "invalid" });
 
     const invalid = new URL("https://cloud.example/app/mail/id");
     invalid.searchParams.set(MAIL_SEARCH_PARAMETER, JSON.stringify({ expression: { type: "unknown" }, sort: "newest" }));
-    expect(parseMailSearchState(invalid)).toEqual({
-      state: null,
-      error: "The search link contains an invalid condition.",
-    });
+    expect(parseMailSearchState(invalid)).toEqual({ state: null, error: "invalid" });
   });
 
   test("rejects search state that exceeds the workspace URL budget", () => {
@@ -65,14 +62,11 @@ describe("Mail search URL state", () => {
       })),
     };
     const serialized = serializeMailSearchState({ expression, sort: "relevance" });
-    expect(serialized).toEqual({
-      ok: false,
-      error: "The search is too large to keep in the mailbox URL. Remove or shorten a condition.",
-    });
+    expect(serialized).toEqual({ ok: false, error: "too_large" });
 
     const url = new URL("https://cloud.example/app/mail/id");
     url.searchParams.set(MAIL_SEARCH_PARAMETER, "x".repeat(MAX_MAIL_SEARCH_PARAMETER_LENGTH + 1));
-    expect(parseMailSearchState(url)).toEqual({ state: null, error: "The search link is invalid or too large." });
+    expect(parseMailSearchState(url)).toEqual({ state: null, error: "too_large" });
   });
 
   test("keeps simple query search as a canonical text expression", () => {
@@ -159,7 +153,7 @@ describe("Mail search URL state", () => {
       query: "x".repeat(501),
       expression: null,
       sort: "relevance",
-      error: "The search query is invalid or too long.",
+      error: "invalid",
     });
   });
 

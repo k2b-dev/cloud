@@ -19,48 +19,47 @@ export type MailSearchFieldKey =
   | "assigned_to_me";
 
 export const MAIL_SEARCH_FIELD_GROUPS = [
-  { value: "recommended", label: "Recommended" },
-  { value: "content", label: "Content" },
-  { value: "people", label: "People" },
-  { value: "mailbox", label: "Mailbox" },
-  { value: "date-size", label: "Date & size" },
-  { value: "technical", label: "Technical" },
+  { value: "recommended" },
+  { value: "content" },
+  { value: "people" },
+  { value: "mailbox" },
+  { value: "date-size" },
+  { value: "technical" },
 ] as const;
 
-type MailSearchFieldOption = { id: MailSearchFieldKey; label: string; icon: string; groups: readonly string[] };
+type MailSearchFieldOption = { id: MailSearchFieldKey; icon: string; groups: readonly string[] };
 
 export const MAIL_SEARCH_FIELD_OPTIONS: MailSearchFieldOption[] = [
-  { id: "text:any", label: "Anywhere, including attachments", icon: "ti ti-search", groups: ["recommended", "content"] },
-  { id: "text:subject", label: "Subject", icon: "ti ti-letter-case", groups: ["recommended", "content"] },
-  { id: "text:body", label: "Message body", icon: "ti ti-align-left", groups: ["content"] },
-  { id: "text:from", label: "From", icon: "ti ti-user-up", groups: ["recommended", "people"] },
-  { id: "text:to", label: "To", icon: "ti ti-user-down", groups: ["recommended", "people"] },
-  { id: "text:cc", label: "Cc", icon: "ti ti-users", groups: ["people"] },
-  { id: "text:bcc", label: "Bcc", icon: "ti ti-users-minus", groups: ["people"] },
-  { id: "text:recipients", label: "Any recipient", icon: "ti ti-address-book", groups: ["people"] },
-  { id: "text:participants", label: "Any participant", icon: "ti ti-users-group", groups: ["people"] },
-  { id: "text:message_id", label: "Message ID", icon: "ti ti-id", groups: ["technical"] },
-  { id: "text:attachment_name", label: "Attachment name", icon: "ti ti-paperclip", groups: ["content"] },
-  { id: "text:comment", label: "Internal comment", icon: "ti ti-message", groups: ["content"] },
-  { id: "text:reference", label: "Reference number", icon: "ti ti-hash", groups: ["content", "technical"] },
-  { id: "text:folder", label: "Folder name", icon: "ti ti-folder", groups: ["mailbox"] },
-  { id: "text:tag", label: "Tag", icon: "ti ti-tag", groups: ["mailbox"] },
-  { id: "date:internal_date", label: "Received date", icon: "ti ti-calendar-down", groups: ["recommended", "date-size"] },
-  { id: "date:sent_at", label: "Sent date", icon: "ti ti-calendar-up", groups: ["date-size"] },
-  { id: "size:message", label: "Message size", icon: "ti ti-file", groups: ["date-size"] },
-  { id: "size:attachment", label: "Attachment size", icon: "ti ti-file-download", groups: ["date-size"] },
-  { id: "work_status", label: "Work status", icon: "ti ti-progress-check", groups: ["recommended", "mailbox"] },
-  { id: "assignee", label: "Assignee", icon: "ti ti-user-check", groups: ["recommended", "people", "mailbox"] },
-  { id: "snoozed", label: "Later", icon: "ti ti-alarm-snooze", groups: ["mailbox"] },
-  { id: "folder_id", label: "Specific folder", icon: "ti ti-folder-check", groups: ["recommended", "mailbox"] },
-  { id: "local_tag_id", label: "Specific tag", icon: "ti ti-tag", groups: ["recommended", "mailbox"] },
-  { id: "assigned_to_me", label: "Assigned to me", icon: "ti ti-user-pin", groups: ["people", "mailbox"] },
-  { id: "all", label: "All conversations", icon: "ti ti-mail", groups: ["mailbox"] },
+  { id: "text:any", icon: "ti ti-search", groups: ["recommended", "content"] },
+  { id: "text:subject", icon: "ti ti-letter-case", groups: ["recommended", "content"] },
+  { id: "text:body", icon: "ti ti-align-left", groups: ["content"] },
+  { id: "text:from", icon: "ti ti-user-up", groups: ["recommended", "people"] },
+  { id: "text:to", icon: "ti ti-user-down", groups: ["recommended", "people"] },
+  { id: "text:cc", icon: "ti ti-users", groups: ["people"] },
+  { id: "text:bcc", icon: "ti ti-users-minus", groups: ["people"] },
+  { id: "text:recipients", icon: "ti ti-address-book", groups: ["people"] },
+  { id: "text:participants", icon: "ti ti-users-group", groups: ["people"] },
+  { id: "text:message_id", icon: "ti ti-id", groups: ["technical"] },
+  { id: "text:attachment_name", icon: "ti ti-paperclip", groups: ["content"] },
+  { id: "text:comment", icon: "ti ti-message", groups: ["content"] },
+  { id: "text:reference", icon: "ti ti-hash", groups: ["content", "technical"] },
+  { id: "text:folder", icon: "ti ti-folder", groups: ["mailbox"] },
+  { id: "text:tag", icon: "ti ti-tag", groups: ["mailbox"] },
+  { id: "date:internal_date", icon: "ti ti-calendar-down", groups: ["recommended", "date-size"] },
+  { id: "date:sent_at", icon: "ti ti-calendar-up", groups: ["date-size"] },
+  { id: "size:message", icon: "ti ti-file", groups: ["date-size"] },
+  { id: "size:attachment", icon: "ti ti-file-download", groups: ["date-size"] },
+  { id: "work_status", icon: "ti ti-progress-check", groups: ["recommended", "mailbox"] },
+  { id: "assignee", icon: "ti ti-user-check", groups: ["recommended", "people", "mailbox"] },
+  { id: "snoozed", icon: "ti ti-alarm-snooze", groups: ["mailbox"] },
+  { id: "folder_id", icon: "ti ti-folder-check", groups: ["recommended", "mailbox"] },
+  { id: "local_tag_id", icon: "ti ti-tag", groups: ["recommended", "mailbox"] },
+  { id: "assigned_to_me", icon: "ti ti-user-pin", groups: ["people", "mailbox"] },
+  { id: "all", icon: "ti ti-mail", groups: ["mailbox"] },
 ];
 
 const LEGACY_PROVIDER_KEYWORD_OPTION = {
   id: "text:keyword",
-  label: "Provider keyword",
   icon: "ti ti-key",
   groups: ["technical"],
 } as const;
@@ -238,7 +237,7 @@ export const summarizeMailSearchExpression = (
     }
     if (node.type === "text") {
       const field = node.field === "keyword" ? "text:keyword" : `text:${node.field}`;
-      return `${messages.searchField({ field })} ${messages.textOperator({ operator: node.match })} “${node.query || "…"}”`;
+      return `${messages.searchField({ field })} ${messages.textOperator({ operator: node.match })} ${messages.quoted({ text: node.query || "…" })}`;
     }
     if (node.type === "date") {
       return `${node.field === "internal_date" ? messages.received : messages.sent} ${messages.textOperator({ operator: node.operator })} ${node.value}`;

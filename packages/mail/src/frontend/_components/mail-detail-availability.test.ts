@@ -60,13 +60,9 @@ describe("Mail detail availability", () => {
     expect(preserveUnavailableMailDetail(current, detail()).comments).toEqual([]);
   });
 
-  test("names unavailable sections instead of presenting them as empty", () => {
-    expect(
-      listUnavailableMailDetailSections({
-        ...detail().detailErrors,
-        comments: "Comments timed out",
-        reminder: "Reminder timed out",
-      }),
-    ).toEqual(["team notes", "personal reminder"]);
+  test("names unavailable sections in the reader's language instead of presenting them as empty", () => {
+    const errors = { ...detail().detailErrors, comments: "Comments timed out", reminder: "Reminder timed out" };
+    expect(listUnavailableMailDetailSections(errors, "en")).toEqual(["team notes", "personal reminder"]);
+    expect(listUnavailableMailDetailSections(errors, "de")).toEqual(["Interne Notizen", "Persönliche Erinnerung"]);
   });
 });

@@ -6,8 +6,6 @@ export const MAIL_ACTION_MISSING_DESTINATION = "mail_action_missing_destination"
 
 type MailActionDescriptor = {
   id: MailActionId;
-  label: string;
-  description: string;
   icon: string;
   destructive?: boolean;
 };
@@ -15,57 +13,39 @@ type MailActionDescriptor = {
 const ACTIONS = [
   {
     id: "archive",
-    label: "Archive",
-    description: "Move this conversation to the configured Archive folder.",
     icon: "ti ti-archive",
   },
   {
     id: "junk",
-    label: "Move to junk",
-    description: "Move this conversation to the configured Junk folder.",
     icon: "ti ti-alert-octagon",
   },
   {
     id: "not_spam",
-    label: "Not spam",
-    description: "Move this conversation to the configured Inbox folder.",
     icon: "ti ti-shield-check",
   },
   {
     id: "trash",
-    label: "Delete",
-    description: "Move this conversation to the configured Trash folder.",
     icon: "ti ti-trash",
     destructive: true,
   },
   {
     id: "mark_read",
-    label: "Mark as read",
-    description: "Mark this conversation as read in its provider folders.",
     icon: "ti ti-mail-opened",
   },
   {
     id: "mark_unread",
-    label: "Mark as unread",
-    description: "Mark this conversation as unread in its provider folders.",
     icon: "ti ti-mail",
   },
   {
     id: "flag",
-    label: "Flag",
-    description: "Flag this conversation in its provider folders.",
     icon: "ti ti-flag",
   },
   {
     id: "unflag",
-    label: "Remove flag",
-    description: "Remove flags from this conversation in its provider folders.",
     icon: "ti ti-flag-off",
   },
   {
     id: "move",
-    label: "Move to folder",
-    description: "Choose a provider folder for this conversation.",
     icon: "ti ti-folder-symlink",
   },
 ] as const satisfies readonly MailActionDescriptor[];

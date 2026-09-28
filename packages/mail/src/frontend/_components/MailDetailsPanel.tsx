@@ -113,7 +113,7 @@ export default function MailDetailsPanel(props: {
   const attachmentCount = () => attachments().length;
   const activityItems = createMemo(() => presentMailActivity(props.activity, locale()));
   const visibleComments = createMemo(() => comments().filter((comment) => !comment.deletedAt));
-  const unavailableSections = createMemo(() => listUnavailableMailDetailSections(props.detailErrors));
+  const unavailableSections = createMemo(() => listUnavailableMailDetailSections(props.detailErrors, locale()));
   const addressList = (addresses: Array<{ name: string | null; address: string }>) =>
     addresses.map((address) => address.name || address.address).join(", ");
 
@@ -978,7 +978,7 @@ export default function MailDetailsPanel(props: {
                         href={`/api/mail/mailboxes/${props.mailboxId}/messages/${message().id}/source`}
                         download={`${message().subject.trim() || "message"}.eml`}
                       >
-                        <i class="ti ti-download" aria-hidden="true" /> Download .eml
+                        <i class="ti ti-download" aria-hidden="true" /> {t().downloadEml}
                       </ButtonLink>
                     </Show>
                   </div>
