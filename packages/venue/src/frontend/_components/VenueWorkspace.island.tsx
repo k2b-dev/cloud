@@ -74,7 +74,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const views = () => [
     { id: "shifts" as const, label: t().schedule, icon: "ti ti-calendar-event" },
     { id: "my-shifts" as const, label: t().myShifts, icon: "ti ti-user-check" },
-    { id: "feedback" as const, label: t().feedback, icon: "ti ti-message-star" },
+    // Visitor feedback is for staff and admins; the server leaves it out for read access.
+    ...(canWrite(venue()) ? [{ id: "feedback" as const, label: t().feedback, icon: "ti ti-message-star" }] : []),
   ];
   const feedbackRangeOptions = () => [
     {
@@ -128,7 +129,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     const next = Number(value[0] ?? 30);
     navigateTo(feedbackFilterUrl(next === 7 || next === 14 ? next : 30));
   };
-  const feedbackBucketsForDays = (days: number) => dashboard().feedback.buckets.filter((bucket) => withinLastDays(bucket.date, days));
+  const feedbackBucketsForDays = (days: number) =>
+    (dashboard().feedback?.buckets ?? []).filter((bucket) => withinLastDays(bucket.date, days));
   const feedbackBuckets = createMemo(() => feedbackBucketsForDays(feedbackRangeDays()));
   const feedbackRangeCount = createMemo(() => feedbackBucketCount(feedbackBuckets()));
   const feedbackRangeAverage = createMemo(() => feedbackBucketAverage(feedbackBuckets()));

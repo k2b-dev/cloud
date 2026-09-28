@@ -38,7 +38,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "feedback.summary": {
           title: "Die Zusammenfassung des Venue-Feedbacks abrufen",
           description:
-            "Lesen Sie 30-Tage-Bewertungsaggregate für einen bekannten Venue, ohne anonyme Kommentare zu laden. Rufen Sie die Veranstaltungsort-ID von venue.list oder venue.search ab.",
+            "Lesen Sie 30-Tage-Bewertungsaggregate für einen bekannten Venue, ohne anonyme Kommentare zu laden. Erfordert die Berechtigung write oder admin, wie venue.list sie zurückgibt; die Veranstaltungsort-ID kommt von venue.list oder venue.search.",
           input: {
             venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
           },

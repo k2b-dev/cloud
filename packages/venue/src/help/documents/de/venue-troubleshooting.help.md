@@ -13,8 +13,8 @@ order: 120
 - **Eine Schicht fehlt:** Prüfe die ausgewählte Woche oder den Monat, die wiederkehrende Vorlage und aktive Zeitplanfilter.
 - **Eine Person kann sich nicht anmelden:** Die Person benötigt Mitarbeiter- oder Administratorzugriff. Außerdem muss die Schicht einen weiteren Platz haben und die Anmeldefrist noch laufen.
 - **Ein Mitarbeiter kann Einstellungen nicht ändern:** Mitarbeiterzugriff erlaubt die Arbeit mit Schichten, aber keine Standortverwaltung. Vergib Administratorzugriff nur an Personen, die die Konfiguration verwalten sollen.
-- **Ein öffentlicher Abschnitt fehlt:** Prüfe, ob der Abschnitt aktiviert ist und ob die öffentliche Seite des richtigen Standorts geöffnet ist.
-- **Feedback fehlt:** Prüfe, ob Feedback aktiviert ist, und entferne die aktuelle Suche oder den Zeitraumfilter.
+- **Ein öffentlicher Abschnitt fehlt:** Prüfe, ob der Abschnitt aktiviert ist und ob die öffentliche Seite des richtigen Standorts geöffnet ist. Mit Zugriff „Lesen“ erscheinen nur die Abschnitte, die die öffentliche Seite zeigt.
+- **Feedback fehlt:** Prüfe, ob Feedback aktiviert ist, und entferne die aktuelle Suche oder den Zeitraumfilter. Die Ansicht „Feedback“ erfordert Zugriff „Mitarbeit“ oder „Admin“.
 - **Ein Kalenderabonnement ist veraltet:** Kalenderprogramme legen ihr Aktualisierungsintervall selbst fest. Prüfe zunächst, ob die persönliche iCal-URL noch gültig ist.
 :::
 

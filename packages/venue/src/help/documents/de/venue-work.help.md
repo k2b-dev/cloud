@@ -13,8 +13,8 @@ Der Standort-Arbeitsbereich trennt die tägliche Personalplanung, persönliche Z
 :::reference
 - **Schichten:** Zeigt Zeiträume in einer Wochen- oder Monatsansicht. Personen mit Mitarbeiterzugriff melden sich über die Aktion oder per Doppelklick auf eine Schicht an.
 - **Meine Schichten:** Listet deine kommenden Zuweisungen und erlaubt, eigene Schichten zu stornieren.
-- **Feedback:** Zeigt Bewertungstrends, eine Kommentarsuche und Zeitraumfilter für 7, 14 oder 30 Tage.
-- **Öffentliche Abschnitte:** Administratoren können Abschnitte für Markdown, Speisekarte, Hinweise und Links erstellen, bearbeiten, duplizieren oder löschen.
+- **Feedback:** Zeigt Bewertungstrends, eine Kommentarsuche und Zeitraumfilter für 7, 14 oder 30 Tage. Diese Ansicht sehen nur Personen mit Zugriff „Mitarbeit“ oder „Admin“.
+- **Öffentliche Abschnitte:** Administratoren können Abschnitte für Markdown, Speisekarte, Hinweise und Links erstellen, bearbeiten, duplizieren oder löschen. „Mitarbeit“ und „Admin“ sehen auch ausgeblendete Abschnitte, „Lesen“ sieht nur, was die öffentliche Seite zeigt.
 :::
 
 ## Einstellungen und Zugriff {icon="shield-lock"}
@@ -27,9 +27,19 @@ Der Standort-Arbeitsbereich trennt die tägliche Personalplanung, persönliche Z
 - **API-Schlüssel:** Administratoren erstellen ressourcengebundene Schlüssel für Integrationen, die Zugriff auf diesen Standort benötigen.
 :::
 
-:::note Berechtigungen
-Personen mit Lesezugriff können den Standort sehen und eigene aufgeführte Schichten stornieren. Mitarbeiter können sich für Schichten anmelden. Administratoren können Einstellungen, Zugriff, Zeitplan und öffentliche Abschnitte ändern sowie beliebige Schichtzuweisungen stornieren.
-:::
+## Wer was sieht {icon="eye"}
+
+| Im Arbeitsbereich | Lesen | Mitarbeit | Admin |
+| --- | --- | --- | --- |
+| Schichtplan und eigene Schichten | Ja | Ja | Ja |
+| Für Schichten anmelden | Nein | Ja | Ja |
+| Eigene Schichten stornieren | Ja | Ja | Ja |
+| Öffentliche Abschnitte | So, wie die öffentliche Seite sie zeigt | Alle, auch ausgeblendete | Alle, auch ausgeblendete |
+| Feedback von Besuchern: Bewertungen, Kommentare und Zahlen | Nein | Ja | Ja |
+| Einstellungen, Zugriff, Zeitplan oder öffentliche Abschnitte ändern | Nein | Nein | Ja |
+| Schichten anderer Personen stornieren | Nein | Nein | Ja |
+
+Lesezugriff zeigt nicht mehr als die öffentliche Seite: Ist die öffentliche Seite ausgeschaltet, sehen Personen mit „Lesen“ keine öffentlichen Abschnitte. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
 
 :::note Stabile Links
 Standortlinks verwenden die unveränderliche Kurz-ID. Eine Änderung des sichtbaren Slugs betrifft die Auffindbarkeit, aber nicht die öffentlichen oder internen URLs.

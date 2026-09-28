@@ -31,11 +31,19 @@ type ResolvedView = {
   redirectTo?: string;
 };
 
-const resolveView = (venueId: string, pathView: string | undefined, sectionId: string | undefined, search: string): ResolvedView => {
+const resolveView = (
+  venueId: string,
+  pathView: string | undefined,
+  sectionId: string | undefined,
+  search: string,
+  canSeeFeedback: boolean,
+): ResolvedView => {
   const initialSectionId = sectionId ?? null;
   if (!pathView && !initialSectionId)
     return { initialView: "shifts", initialSectionId, redirectTo: `${viewPath(venueId, "shifts")}${search}` };
-  if (pathView === "my-shifts" || pathView === "feedback" || pathView === "shifts") return { initialView: pathView, initialSectionId };
+  if (pathView === "my-shifts" || pathView === "shifts" || (pathView === "feedback" && canSeeFeedback)) {
+    return { initialView: pathView, initialSectionId };
+  }
   if (pathView) return { initialView: "shifts", initialSectionId, redirectTo: viewPath(venueId, "shifts") };
   return { initialView: "shifts", initialSectionId };
 };
@@ -51,7 +59,7 @@ export default ssr<AuthContext>(async (c) => {
   const venue = venueResult.data;
 
   const pathView = c.req.param("view");
-  const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search);
+  const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search, venueService.canSeeInternal(venue));
   if (resolved.redirectTo) return c.redirect(resolved.redirectTo);
   const calendarViewParam = url.searchParams.get("cv") as CalendarView | null;
   const initialCalendarView = calendarViewParam && calendarViews.includes(calendarViewParam) ? calendarViewParam : "week";
@@ -84,6 +92,10 @@ export default ssr<AuthContext>(async (c) => {
       : Promise.resolve({ items: [] }),
   ]);
   const dashboard = await venueService.publicResources.projectDashboard(internalDashboard);
+  // A hidden, deleted, or unknown section is not part of this caller's view.
+  if (resolved.initialSectionId && !dashboard.sections.some((section) => section.id === resolved.initialSectionId)) {
+    return c.redirect(viewPath(id, "shifts"));
+  }
   const permissionByServiceAccountId = new Map(
     accessEntries
       .filter((entry) => entry.principal.type === "service_account")

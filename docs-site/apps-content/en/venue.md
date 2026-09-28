@@ -5,7 +5,7 @@ section: Everyday
 order: 200
 description: Opening hours, staffing shifts, public pages, calendars, and visitor feedback for staffed places.
 tags: [venues, shifts, schedules, public-pages, cli]
-updated: 2026-09-07
+updated: 2026-09-28
 ---
 
 # Venues
@@ -38,8 +38,16 @@ resource permissions.
 | Feedback entry | A visitor rating and optional comment for one venue |
 | Personal calendar link | A tokenized iCal view of the current user's assigned shifts |
 
-Read, staff, and admin permissions serve different jobs. Staff can join shifts;
-admins can change schedules, public content, feedback settings, and access.
+Read, staff, and admin permissions serve different jobs:
+
+| Permission | Sees and does |
+| --- | --- |
+| Read | The shift schedule, your own shifts, and exactly what the public page shows; no visitor feedback and no hidden sections |
+| Staff (`write`) | Also joins shifts and sees visitor feedback and hidden sections |
+| Admin | Also changes schedules, public content, feedback settings, and access |
+
+The same rules apply in the workspace, the API, `cld venue`, capabilities, and
+Venue API keys with the matching permission.
 
 ## How Venues fits Cloud
 

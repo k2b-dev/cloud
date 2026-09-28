@@ -303,8 +303,10 @@ export const VenueDashboardSchema = z.object({
   assignments: z.array(ShiftAssignmentSchema),
   myUpcomingShifts: z.array(ShiftAssignmentSchema),
   myShiftCount: z.number().int().min(0),
+  /** Every section for write and admin; for read, exactly the sections the public page shows. */
   sections: z.array(PublicSectionSchema),
-  feedback: FeedbackSummarySchema,
+  /** `null` below write permission: readers do not see visitor feedback. */
+  feedback: FeedbackSummarySchema.nullable(),
   feedbackEntries: z.array(FeedbackEntrySchema),
 });
 export type VenueDashboard = z.infer<typeof VenueDashboardSchema>;

@@ -371,6 +371,7 @@ export const venueMessages = i18n.define({
       capabilityReadVenue: ({ name }: { name: string }) => `Read Venue “${name}”.`,
       capabilityVenueStatus: ({ name, status }: { name: string; status: string }) => `“${name}” is ${status}.`,
       capabilityReadAssignment: ({ name }: { name: string }) => `Read your shift assignment at “${name}”.`,
+      capabilityFeedbackForbidden: "Only people with staff or admin access can see feedback for this venue.",
       capabilityFeedbackEmpty: ({ name }: { name: string }) => `Read feedback for “${name}”: no ratings in the last 30 days.`,
       capabilityFeedback: ({ name, average, count }: { name: string; average: number | null; count: number }) =>
         `Read feedback for “${name}”: ${average} from ${count} ${count === 1 ? "rating" : "ratings"}.`,
@@ -778,6 +779,7 @@ export const venueMessages = i18n.define({
       capabilityReadVenue: ({ name }) => `Standort „${name}“ gelesen.`,
       capabilityVenueStatus: ({ name, status }) => `„${name}“ ist ${status}.`,
       capabilityReadAssignment: ({ name }) => `Deinen Schichteinsatz bei „${name}“ gelesen.`,
+      capabilityFeedbackForbidden: "Feedback zu diesem Standort sehen nur Personen mit Zugriff „Mitarbeit“ oder „Admin“.",
       capabilityFeedbackEmpty: ({ name }) => `Feedback für „${name}“ gelesen: keine Bewertungen in den letzten 30 Tagen.`,
       capabilityFeedback: ({ name, average, count }) =>
         `Feedback für „${name}“ gelesen: ${average} aus ${count} ${count === 1 ? "Bewertung" : "Bewertungen"}.`,
