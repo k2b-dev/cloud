@@ -18,7 +18,10 @@ type Props = {
   baseId: string;
   tableId: string;
   tableName: string;
+  /** Fields of the active view's output. */
   fields: Field[];
+  /** Every field of the table, which group members need to show their own label. */
+  tableFields: Field[];
   auditPolicy: TableAuditPolicy;
   record: () => GridRecord | null;
   detail: () => WorkspaceRecordDetail | null;
@@ -110,7 +113,7 @@ export default function RecordsDetailSurface(props: Props) {
       {(bucket) => (
         <GroupDetailPanel
           tableId={props.tableId}
-          fields={props.fields}
+          fields={props.tableFields}
           query={props.query}
           groupBy={props.groupBy}
           aggregations={props.aggregations}

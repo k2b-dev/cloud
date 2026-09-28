@@ -161,6 +161,9 @@ export default function RecordsView(props: Props) {
   const displayConfig = () => activeDisplayConfig(tableDisplayConfig(), viewDisplayConfig());
   const [disableDirectInsert, setDisableDirectInsert] = createSignal(props.disableDirectInsert);
   const [fields, setFields] = createSignal<Field[]>([...props.fields].sort((a, b) => a.position - b.position));
+  // A saved view narrows `fields` to its output columns, which for a grouped view can be just the group field.
+  // Group members are whole table records, so the group panel reads the table's own fields.
+  const tableFields = () => (props.activeView ? (props.fieldsByTable[props.tableId] ?? fields()) : fields());
   const [forms, setForms] = createSignal<Form[]>(props.forms);
   const isSavedView = () => props.viewMode || !!props.activeView || !!props.viewId;
   const canUseEditMode = () => (isSavedView() ? !!props.canEditActiveView : props.canManageTable);
@@ -891,6 +894,7 @@ export default function RecordsView(props: Props) {
             tableId={props.tableId}
             tableName={tableName()}
             fields={fields()}
+            tableFields={tableFields()}
             auditPolicy={tableAuditPolicy()}
             record={selectedRecord}
             detail={selectedRecordDetail}
