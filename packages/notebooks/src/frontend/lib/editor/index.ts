@@ -15,7 +15,6 @@ import { mermaidExtension } from "./mermaid";
 import { namedBlocksExtension } from "./named-blocks";
 import { searchTheme } from "./search-theme";
 import { subSupExtension } from "./sub-sup";
-import { tabIndentExtension } from "./tab-indent";
 import { tablesExtension } from "./tables";
 import { tagPillExtension } from "./tag-pill";
 import { customDarkInit, customLightInit, rawDarkInit, rawLightInit } from "./theme";
@@ -43,7 +42,6 @@ export {
   rawLightInit,
   searchTheme,
   subSupExtension,
-  tabIndentExtension,
   tablesExtension,
   tagPillExtension,
 };
@@ -67,7 +65,6 @@ export const editor = {
   namedBlocksExtension,
   searchTheme,
   subSupExtension,
-  tabIndentExtension,
   tablesExtension,
   tagPillExtension,
   customDarkInit,
