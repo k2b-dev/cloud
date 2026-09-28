@@ -181,7 +181,7 @@ suite("mail compose templates", () => {
         scope: "mailbox",
         name: "Welcome",
         shortcut: "welcome",
-        body: "Hello from {{ mailbox.name }}, {{ actor.display_name }}",
+        body: "Hello from {{ mailbox.name }}, {{ actor.display_name }} ({{ actor.email }})",
       },
     });
     expect(mailboxSnippet.ok).toBe(true);
@@ -355,7 +355,10 @@ suite("mail compose templates", () => {
       mailboxId,
       input: { templateId: snippet.id, draft, conversationId: null },
     });
-    expect(inserted).toEqual({ ok: true, data: { markdown: `Hello from Compose ${suffix}, Grace Writer` } });
+    expect(inserted).toEqual({
+      ok: true,
+      data: { markdown: `Hello from Compose ${suffix}, Grace Writer (writer-${suffix}@example.test)` },
+    });
 
     const suggestions = await renderComposeSuggestions({
       context: collaborator,
@@ -370,7 +373,7 @@ suite("mail compose templates", () => {
           name: "Welcome",
           shortcut: "welcome",
           kind: "snippet",
-          markdown: `Hello from Compose ${suffix}, Grace Writer`,
+          markdown: `Hello from Compose ${suffix}, Grace Writer (writer-${suffix}@example.test)`,
         },
       ],
     });

@@ -904,7 +904,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
           cc: addresses(values.cc, "cc"),
           bcc: addresses(values.bcc, "bcc"),
           subject: renderMailWorkflowTemplate(ctx, asText(values.subject, "subject"), "text"),
-          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "markdown"),
+          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "editable_markdown"),
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);
@@ -964,7 +964,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
           conversationId,
           sourceMessageId,
           senderIdentityId,
-          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "markdown"),
+          body: renderMailWorkflowTemplate(ctx, asText(values.body, "body"), values.format === "plain" ? "text" : "editable_markdown"),
           format: values.format === "plain" ? "plain" : "markdown",
         });
         if (!draft.ok) return resultFailure(draft.error);

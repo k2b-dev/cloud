@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  escapeMailEditableMarkdownValue,
   escapeMailMarkdownValue,
   migrateReferenceTemplateToLiquid,
   migrateWorkflowTextTemplateToLiquid,
@@ -22,6 +23,35 @@ describe("Mail Liquid templates", () => {
       ok: true,
       data: "Hello &#42;&#42;admin&#42;&#42;",
     });
+  });
+
+  test("keeps values readable in editable Markdown", () => {
+    expect(renderMailLiquidTemplate("Reach me at {{ email }}", { email: "ada@example.test" }, "editable_markdown")).toEqual({
+      ok: true,
+      data: "Reach me at ada@example.test",
+    });
+    for (const value of [
+      "grace_hopper@example.test",
+      "Smith & Sons",
+      "Re: Offer #42 2026-07 (v2) - 50% off!",
+      "a=b, c > d, 10:30",
+      "Zoë_Ünal",
+    ]) {
+      expect(escapeMailEditableMarkdownValue(value)).toBe(value);
+    }
+  });
+
+  test("escapes only Markdown, HTML, and Liquid syntax in editable Markdown", () => {
+    expect(escapeMailEditableMarkdownValue("**a** _b_ `c` ~d~ ^e^ ==f== $g$ h|i [j](k) <b> &amp; {{ l }} {% m %} n\\")).toBe(
+      "\\*\\*a\\*\\* \\_b\\_ \\`c\\` \\~d\\~ \\^e\\^ \\=\\=f\\=\\= \\$g\\$ h\\|i \\[j\\](k) \\<b> \\&amp; \\{\\{ l \\}\\} \\{\\% m %\\} n\\\\",
+    );
+    expect(escapeMailEditableMarkdownValue("# a\n- b\n+ c\n1. d\n2) e\n> f\n:::note\n:--\n=\n  - g")).toBe(
+      "\\# a\n\\- b\n\\+ c\n1\\. d\n2\\) e\n\\> f\n\\:\\:\\:note\n\\:--\n\\=\n  \\- g",
+    );
+    expect(escapeMailEditableMarkdownValue("    $a\n\t- b")).toBe("   \\$a\n   \\- b");
+    expect(escapeMailEditableMarkdownValue("Ticket # C# #42 #")).toBe("Ticket # C# #42 \\#");
+    expect(escapeMailEditableMarkdownValue("a\r# b\r- c\r\n> d\r    $e #\r")).toBe("a\n\\# b\n\\- c\n\\> d\n   \\$e \\#\n");
+    expect(escapeMailMarkdownValue("    $a\n\t- b")).toBe("   &#36;a\n   &#45; b");
   });
 
   test("rejects unknown roots and invalid filters", () => {

@@ -61,7 +61,7 @@ If another session schedules, sends, or discards the draft, every open composer 
 
 Type `/` in the body to search available signatures and snippets. The selected template is inserted into the draft, where you can edit or remove it.
 
-- **Snippets** insert resolved reusable text.
+- **Snippets** insert resolved reusable text. Values such as `{{ actor.email }}` appear as plain text. In Markdown messages, Mail adds a backslash only before characters that would otherwise change the formatting, for example `\*`.
 - **Signatures** keep their safe Liquid variables until preview and send, so values such as `{{ sender.display_name }}` or `{{ mailbox.name }}` resolve at delivery time.
 - **Private** templates are visible only to their owner.
 - **Mailbox** templates are shared with collaborators.

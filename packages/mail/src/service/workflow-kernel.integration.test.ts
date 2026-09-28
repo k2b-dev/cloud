@@ -836,8 +836,8 @@ steps:
           message: inputs.message
           conversation: inputs.conversation
           sender: ${senderIdentityShortId}
-          body: A reviewable response
-          format: plain
+          body: "A reviewable response for {{ inputs.message.fromAddress }}"
+          format: markdown
           saveAs: draft
 `,
         effectBudget: { ...noEffectBudget, maxDrafts: 1 },
@@ -889,7 +889,7 @@ steps:
       intent: "reply",
       source_message_id: snapshot.preconditions.message.id,
       subject: `Re: ${incoming.subject}`,
-      body_markdown: "A reviewable response",
+      body_markdown: "A reviewable response for customer@example.test",
       delivery_class: "normal",
       origin: "user",
     });

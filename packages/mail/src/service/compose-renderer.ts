@@ -266,20 +266,24 @@ const markdownToPlainText = (source: string): Result<string> => {
   }
 };
 
-export const renderComposeTemplateSource = (
+const renderComposeTemplate = (
   source: string,
   context: ComposeRenderContext,
-  format: "plain" | "markdown",
+  output: "plain" | "markdown" | "editable_markdown",
 ): Result<string> => {
   const valid = validateComposeTemplateSource(source);
   if (!valid.ok) return valid;
-  const rendered = renderMailLiquidTemplate(source, context, "markdown");
+  const rendered = renderMailLiquidTemplate(source, context, output === "editable_markdown" ? "editable_markdown" : "markdown");
   if (!rendered.ok && "reason" in rendered.error && rendered.error.reason === "render_too_large") {
     return fail(err.badInput("Rendered email content exceeds the safe size limit"));
   }
-  if (!rendered.ok || format === "markdown") return rendered;
+  if (!rendered.ok || output !== "plain") return rendered;
   return markdownToPlainText(rendered.data);
 };
+
+/** Resolves a snippet into draft source that the author reads and edits, so values appear as typed. */
+export const renderComposeTemplateSource = (source: string, context: ComposeRenderContext, format: "plain" | "markdown"): Result<string> =>
+  renderComposeTemplate(source, context, format === "markdown" ? "editable_markdown" : "plain");
 
 const renderComposeTemplateSegments = (source: string, context: ComposeRenderContext, format: "plain" | "markdown"): Result<string> => {
   let cursor = 0;
@@ -312,7 +316,7 @@ const renderComposeTemplateSegments = (source: string, context: ComposeRenderCon
     if (segmentCount > MAX_COMPOSE_TEMPLATE_SEGMENTS) {
       return fail(err.badInput(`Email may contain at most ${MAX_COMPOSE_TEMPLATE_SEGMENTS} signature segments`));
     }
-    const rendered = renderComposeTemplateSource(source.slice(start + COMPOSE_SEGMENT_START.length, end), context, format);
+    const rendered = renderComposeTemplate(source.slice(start + COMPOSE_SEGMENT_START.length, end), context, format);
     if (!rendered.ok) return rendered;
     const segment = append(rendered.data);
     if (!segment.ok) return segment;
