@@ -11,6 +11,13 @@
  * Compose or Docker setting is needed. The trap fails when no candidate is
  * reachable.
  *
+ * The trap records a request and answers it with 204 No Content, so nothing
+ * it serves reaches the printed pages. For a navigation, 204 means Chromium
+ * stays on the document: Gotenberg would otherwise print while Chromium
+ * replaces the page, and the render would fail or show either page depending
+ * on timing. Start one trap per test; a request that arrives after a test
+ * has ended then cannot land in the next test's record.
+ *
  * The probes name the trap through the common HTML and CSS resource kinds
  * and add a page whenever a script or event handler runs, so the page count
  * shows whether JavaScript ran: an unfiltered `probeDocument` prints three
@@ -51,7 +58,7 @@ export const startGotenbergTrap = async (gotenbergUrl: string): Promise<Gotenber
     port: 0,
     fetch(request) {
       requests.push(new URL(request.url).pathname);
-      return new Response("trap");
+      return new Response(null, { status: 204 });
     },
   });
   const hosts = [
@@ -134,7 +141,9 @@ export const probeDocument = (origin: string, label: string): { html: string; pa
 
 /**
  * A document that navigates to the trap once it loads, which a content
- * policy cannot prevent. An unfiltered render prints the trap's response.
+ * policy cannot prevent. The trap's 204 keeps Chromium on the document, so
+ * an unfiltered render prints `text` as well and only the request to `path`
+ * shows that the document navigated.
  */
 export const probeNavigation = (origin: string, label: string): { html: string; path: string; text: string } => ({
   html: `<!doctype html><html><head><meta http-equiv="refresh" content="0;url=${origin}/${label}/refresh"></head><body><p>${label} stayed local</p></body></html>`,
