@@ -25,6 +25,16 @@ describe("Mail conversation toolbar preferences", () => {
     }
   });
 
+  test("labels the sections as headings", () => {
+    expect(getMailConversationToolbarSections("en").map((section) => section.label)).toEqual([
+      "Respond",
+      "Organize",
+      "Mark",
+      "Conversation",
+      "Other",
+    ]);
+  });
+
   test("uses the stable display order while removing unknown, duplicate, and excess actions", () => {
     const value = ["tags", "reply", "tags", "unknown", "archive", "spam", "trash", "read", "flag", "move", "print"];
     expect(normalizeMailConversationToolbarActions(value)).toEqual(["reply", "archive", "spam", "trash", "move", "read", "flag", "tags"]);

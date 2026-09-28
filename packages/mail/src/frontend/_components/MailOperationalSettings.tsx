@@ -29,7 +29,7 @@ import type {
 import { PROVIDER_LIMIT_MAX_AGE_MS } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
-import { mailboxNeedsConnection } from "./mail-health-presentation";
+import { mailboxNeedsConnection, mailboxSyncTimedOut } from "./mail-health-presentation";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
@@ -305,6 +305,7 @@ export default function MailOperationalSettings(props: {
     if (health === "verifying") return messages().healthVerifyingMessage;
     if (health === "bootstrapping") return messages().healthBootstrappingMessage;
     if (health === "reconnecting") return messages().healthReconnectingMessage;
+    if (mailboxSyncTimedOut(props.health.healthReason)) return messages().healthSlowMessage;
     return messages().healthDegradedMessage;
   };
   const healthSummary = createMemo(() => {

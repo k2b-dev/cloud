@@ -155,4 +155,46 @@ describe("Mail folder maintenance", () => {
       dom.cleanup();
     }
   });
+
+  test("explains a timed-out synchronization instead of the generic degraded status", async () => {
+    globalThis.fetch = Object.assign(async () => Response.json(operations), { preconnect: originalFetch.preconnect });
+    const dom = createDomTestHarness();
+    const [{ default: MailOperationalSettings }, { LocaleProvider }] = await Promise.all([
+      import("./MailOperationalSettings"),
+      import("@k2b/ui"),
+    ]);
+    const [reason, setReason] = createSignal<string | null>("Failed to establish connection in required time");
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "en",
+          get children() {
+            return createComponent(MailOperationalSettings, {
+              mailbox,
+              get health() {
+                return { ...health, health: "degraded" as const, healthReason: reason() };
+              },
+              bindings: [],
+              connections: [],
+              dateConfig: { locale: "en", timeZone: "UTC" },
+              reloading: false,
+              onReload: async () => undefined,
+              onWorkspaceChange: () => undefined,
+            });
+          },
+        }),
+      dom.root,
+    );
+    const text = () => dom.document.body.textContent ?? "";
+    try {
+      expect(text()).toContain("The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.");
+      expect(text()).not.toContain("The saved account is still connected.");
+      setReason("IMAP folder listing failed");
+      expect(text()).toContain("The saved account is still connected. Review the connection status for details and recovery actions.");
+      expect(text()).not.toContain("the latest synchronization timed out");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
 });

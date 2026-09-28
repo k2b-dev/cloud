@@ -173,7 +173,7 @@ export default function MailSenderMessageActions(props: {
         ...(actionVisibility().conversationRepair
           ? [
               {
-                sectionLabel: t().conversation,
+                sectionLabel: t().conversationSection,
                 items: [
                   ...(actionVisibility().conversationRepair
                     ? [
