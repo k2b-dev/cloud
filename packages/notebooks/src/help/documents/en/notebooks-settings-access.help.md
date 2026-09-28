@@ -35,7 +35,7 @@ Locked notes open in **Read-only** instead of **Write**. Locking does not remove
 
 :::reference
 - **Notebook — General:** Name, icon, description, default start page, and the Liquid template used to initialize the H1 of empty new notes. Review the footer, then save or discard your changes.
-- **Notebook — View & behavior:** Admins choose the shared default view. Your sidebar layout is stored in this browser and applies immediately.
+- **Notebook — View & behavior:** Admins choose the shared default view. Your sidebar layout and Tab key preference are stored in this browser and apply immediately.
 - **Sharing — Access:** Admin-only permission editor. Permission changes save immediately.
 - **Sharing — API keys:** Admin-only resource credentials for integrations. Changes save immediately, and new tokens are shown once.
 - **Data — Export & snapshots:** Admin-only portable ZIP exports, S3 snapshot configuration, manual uploads, and recent snapshot runs. Snapshot configuration uses the persistent save footer.

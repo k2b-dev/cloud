@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { LocaleProvider } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import type { Notebook } from "../sidebar/types";
 import "../detail/ssr-test-plugin";
@@ -39,6 +40,23 @@ describe("Notebook settings", () => {
     expect(html).not.toContain("Enable script blocks");
     expect(html).not.toContain("Enable scripting");
   });
+  test("offers the personal Tab key preference, off by default, with the keyboard escape", () => {
+    const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />);
+    expect(html).toContain("Editor");
+    expect(html).toContain('role="switch"');
+    expect(html).toContain("Tab moves focus instead of indenting");
+    expect(html).toContain("Press Esc, then Tab to leave the editor.");
+    expect(html).not.toMatch(/role="switch"[^>]*checked/);
+
+    const german = renderToString(() => (
+      <LocaleProvider locale="de">
+        <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />
+      </LocaleProvider>
+    ));
+    expect(german).toContain("Tab-Taste bewegt den Fokus statt einzurücken");
+    expect(german).toContain("Mit Esc und dann Tab verlässt du den Editor.");
+  });
+
   test("uses the shared selector and explains the reader-only Book restriction", () => {
     const html = renderToString(() => <DefaultPresentationSection notebook={notebook} isAdmin onNotebookChange={() => undefined} />);
     expect(html).toContain('aria-label="Default view"');

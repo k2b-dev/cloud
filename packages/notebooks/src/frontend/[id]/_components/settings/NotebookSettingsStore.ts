@@ -23,6 +23,8 @@ type AllNotebookSettings = {
   pinnedNotebookIds: string[];
   sidebarMode: NotebookSettings["sidebarMode"];
   detailPanelOpen: boolean;
+  /** Personal editor preference: Tab moves focus instead of indenting. */
+  tabMovesFocus: boolean;
   notebooks: Record<string, Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "navigatorSort" | "treeSort">>>;
 };
 
@@ -39,6 +41,7 @@ const DEFAULT_ALL: AllNotebookSettings = {
   pinnedNotebookIds: [],
   sidebarMode: "simple",
   detailPanelOpen: false,
+  tabMovesFocus: false,
   notebooks: {},
 };
 
@@ -76,6 +79,7 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
     pinnedNotebookIds: normalizePinnedNotebookIds(parsed.pinnedNotebookIds),
     sidebarMode: isSidebarMode(parsed.sidebarMode) ? parsed.sidebarMode : DEFAULT_ALL.sidebarMode,
     detailPanelOpen: parsed.detailPanelOpen === true,
+    tabMovesFocus: parsed.tabMovesFocus === true,
     notebooks,
   };
 };
@@ -184,6 +188,16 @@ export const setDetailPanelOpen = (open: boolean) => {
   writeCookie({
     ...readCookie(),
     detailPanelOpen: open,
+  });
+};
+
+/** Reads and writes the personal Tab key preference for the note editor. */
+export const readTabMovesFocus = (): boolean => readCookie().tabMovesFocus;
+
+export const setTabMovesFocus = (tabMovesFocus: boolean) => {
+  writeCookie({
+    ...readCookie(),
+    tabMovesFocus,
   });
 };
 

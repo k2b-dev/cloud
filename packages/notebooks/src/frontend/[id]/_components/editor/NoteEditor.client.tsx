@@ -8,7 +8,7 @@ import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
 import { NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createCodeMirror } from "solid-codemirror";
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -37,6 +37,7 @@ import {
   NOTE_TITLE_CHANGED_EVENT,
   PRESENCE_EVENT,
   RICH_MODE_CHANGED_EVENT,
+  TAB_KEY_PREFERENCE_EVENT,
   TASKS_UPDATE_EVENT,
   TOC_SCROLL_EVENT,
   TOC_UPDATE_EVENT,
@@ -44,7 +45,7 @@ import {
 } from "../detail/events";
 import { extractTaskProgress } from "../detail/tasks";
 import { extractTocFromMarkdown } from "../detail/toc";
-import { writeSettings } from "../settings/NotebookSettingsStore";
+import { readTabMovesFocus, writeSettings } from "../settings/NotebookSettingsStore";
 import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
@@ -305,6 +306,8 @@ function EditorInstance(props: EditorInstanceProps) {
   });
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
+  const [tabIndents, setTabIndents] = createSignal(!readTabMovesFocus());
+  const tabHintId = createUniqueId();
 
   const doc = new Y.Doc({ gc: true });
   if (props.initialSnapshot) {
@@ -403,6 +406,12 @@ function EditorInstance(props: EditorInstanceProps) {
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
+  // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
+  addExtension(() =>
+    !props.readOnly && tabIndents()
+      ? [editor.tabIndentExtension(), EditorView.contentAttributes.of({ "aria-describedby": tabHintId })]
+      : [],
+  );
 
   addExtension(() => {
     if (richMode()) return isDark() ? editor.customDarkInit() : editor.customLightInit();
@@ -593,6 +602,8 @@ function EditorInstance(props: EditorInstanceProps) {
     files.downloadFileFromContent(exportContent(), filename, "text/markdown");
   };
 
+  const onTabKeyPreference = () => setTabIndents(!readTabMovesFocus());
+
   const onPdf = (event: Event) => {
     const detail = (event as CustomEvent<EditorPdfEventDetail>).detail;
     if (typeof detail?.open === "function") detail.open(exportContent());
@@ -752,6 +763,7 @@ function EditorInstance(props: EditorInstanceProps) {
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.addEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
+    window.addEventListener(TAB_KEY_PREFERENCE_EVENT, onTabKeyPreference);
     window.addEventListener(EDITOR_COPY_EVENT, onCopy);
     window.addEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.addEventListener(EDITOR_PDF_EVENT, onPdf);
@@ -781,6 +793,7 @@ function EditorInstance(props: EditorInstanceProps) {
     window.removeEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.removeEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.removeEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
+    window.removeEventListener(TAB_KEY_PREFERENCE_EVENT, onTabKeyPreference);
     window.removeEventListener(EDITOR_COPY_EVENT, onCopy);
     window.removeEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.removeEventListener(EDITOR_PDF_EVENT, onPdf);
@@ -836,6 +849,11 @@ function EditorInstance(props: EditorInstanceProps) {
       >
         <div ref={editorRef} />
       </ScrollArea>
+      <Show when={!props.readOnly && tabIndents()}>
+        <p id={tabHintId} class="sr-only">
+          {t().tabIndentHint}
+        </p>
+      </Show>
       <Show when={!props.readOnly}>
         <EditorToolbar
           connected={connected()}

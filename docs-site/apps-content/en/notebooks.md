@@ -72,6 +72,11 @@ a server-rendered preview; move the cursor into the block or choose **Show
 source** to edit it. Invalid settings are marked at their source lines. Previewing
 a draft does not save it or change the notes returned by the query.
 
+In the editor, Tab indents: it nests list items, moves between table cells, and
+otherwise inserts two spaces. Press Esc, then Tab to move focus out of the
+editor. Each person can keep Tab for focus movement under **Settings → Notebook
+→ View & behavior**; the choice is stored in that browser.
+
 Mermaid diagrams enhance their server-rendered source in the browser. Without
 JavaScript, or if a diagram cannot render, its source stays readable. On mobile,
 expand the compact navigation to browse pages and tags.

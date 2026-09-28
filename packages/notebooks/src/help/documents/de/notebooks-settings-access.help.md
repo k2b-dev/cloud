@@ -35,7 +35,7 @@ Gesperrte Notizen öffnen sich in der Ansicht **Schreibgeschützt** statt zum Be
 
 :::reference
 - **Notizbuch – Allgemein:** Name, Symbol, Beschreibung, Startseite und Liquid-Vorlage für die erste Überschrift neuer leerer Notizen. Änderungen werden gemeinsam gespeichert oder verworfen.
-- **Notizbuch – Ansicht und Verhalten:** Admins wählen die gemeinsame Standardansicht. Das Seitenleistenlayout gilt für diesen Browser.
+- **Notizbuch – Ansicht und Verhalten:** Admins wählen die gemeinsame Standardansicht. Das Seitenleistenlayout und deine Einstellung für die Tab-Taste werden in diesem Browser gespeichert und gelten sofort.
 - **Freigabe – Zugriff:** Admins verwalten Berechtigungen; Änderungen werden sofort gespeichert.
 - **Freigabe – API-Schlüssel:** Admins verwalten an das Notizbuch gebundene Zugangsdaten. Neue Tokens werden nur einmal angezeigt.
 - **Daten – Export und Snapshots:** Admins erstellen portable ZIP-Exporte, konfigurieren S3-Snapshots und prüfen die letzten Läufe.
