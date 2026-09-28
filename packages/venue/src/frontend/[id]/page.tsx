@@ -24,6 +24,11 @@ const parseFeedbackDays = (value: string | null): FeedbackDays => {
   const parsed = Number(value);
   return feedbackDaysOptions.includes(parsed as FeedbackDays) ? (parsed as FeedbackDays) : 30;
 };
+/** A positive page number; the service clamps it to the last page. */
+const parsePage = (value: string | null): number => {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 1 ? parsed : 1;
+};
 
 type ResolvedView = {
   initialView: "shifts" | "my-shifts" | "feedback";
@@ -73,6 +78,7 @@ export default ssr<AuthContext>(async (c) => {
     calendarDate: initialCalendarDate,
     feedbackDays: initialFeedbackDays,
     feedbackSearch: initialFeedbackSearch,
+    feedbackPage: parsePage(url.searchParams.get("page")),
   });
   const [internalDashboard, icalToken, accessEntries, apiKeyOverview] = await Promise.all([
     venueService.dashboard(venue, user, dashboardScope.options),

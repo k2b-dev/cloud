@@ -3,6 +3,7 @@ import { qr } from "@k2b/stdlib/qr";
 import { query } from "@k2b/stdlib/solid";
 import { MarkdownView, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { accentTokens } from "../../../accent";
 import { apiClient } from "../../../api/client";
 import { type PublicOpening, type PublicSection, type PublicStatus, PublicStatusSchema } from "../../../contracts";
 import { venueMessages } from "../../../messages";
@@ -147,21 +148,23 @@ function StatusCard(props: { status: PublicStatus; display?: boolean }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
   const status = () => props.status;
+  // On the accent, text keeps its full contrast color: dimming it would drop light accents below WCAG AA.
+  const secondary = () => (status().open ? "" : "opacity-75");
   return (
     <section
       class={`${props.display ? "flex min-h-0 flex-col justify-center rounded-2xl p-6 lg:p-8" : "rounded-3xl p-6 shadow-xl"} ${
-        status().open ? "text-white" : "bg-zinc-900/90 text-white ring-1 ring-white/10"
+        status().open ? "bg-[var(--venue-accent)] text-[var(--venue-on-accent)]" : "bg-zinc-900/90 text-white ring-1 ring-white/10"
       }`}
-      style={status().open ? { "background-color": status().venue.accentColor } : undefined}
+      style={accentTokens(status().venue.accentColor)}
     >
-      <p class="text-sm font-medium uppercase opacity-75">{t().currentStatus}</p>
+      <p class={`text-sm font-medium uppercase ${secondary()}`}>{t().currentStatus}</p>
       <p class={`${props.display ? "mt-3 text-6xl" : "mt-2 text-4xl"} font-semibold`}>{status().open ? t().open : t().closed}</p>
-      <p class="mt-3 text-sm opacity-85">
+      <p class={`mt-3 text-sm ${secondary()}`}>
         {status().activeWindowLabel
           ? t().openWindow({ window: status().activeWindowLabel! })
           : t().todaysHours({ hours: status().todayLabel })}
       </p>
-      {status().spontaneousOpen && <p class="mt-3 rounded-xl bg-white/15 px-3 py-2 text-sm text-white/90">{t().spontaneousOpen}</p>}
+      {status().spontaneousOpen && <p class="mt-3 rounded-xl px-3 py-2 text-sm ring-1 ring-current">{t().spontaneousOpen}</p>}
     </section>
   );
 }

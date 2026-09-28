@@ -16,6 +16,7 @@ import type {
   OpeningRule,
   PublicSection,
   PublicSectionInput,
+  PublicSectionPatch,
   PublicStatus,
   UpcomingSlot,
   Venue,
@@ -173,7 +174,7 @@ const sectionRows = (sections: PublicSection[]) =>
     id: section.id,
     kind: section.kind,
     title: section.title,
-    enabled: section.enabled ? "yes" : "no",
+    visibility: section.enabled ? "public" : "draft",
     position: section.position,
   }));
 
@@ -231,6 +232,29 @@ const buildVenueInput = (
     logoBase64: base?.logoBase64 ?? null,
     bannerBase64: base?.bannerBase64 ?? null,
   };
+};
+
+/** The fields `sections update` changes; everything else keeps its stored value on the server. */
+export const buildSectionPatch = (flags: {
+  kind?: PublicSection["kind"];
+  title?: string;
+  content?: Record<string, unknown>;
+  enabled: boolean;
+  disabled: boolean;
+  position?: number;
+}): PublicSectionPatch => {
+  if (flags.enabled && flags.disabled) throw new Error("Pass only one of --enabled or --disabled.");
+  const patch: PublicSectionPatch = {
+    ...(flags.kind === undefined ? {} : { kind: flags.kind }),
+    ...(flags.title === undefined ? {} : { title: flags.title }),
+    ...(flags.content === undefined ? {} : { content: flags.content }),
+    ...(flags.enabled || flags.disabled ? { enabled: flags.enabled } : {}),
+    ...(flags.position === undefined ? {} : { position: flags.position }),
+  };
+  if (Object.keys(patch).length === 0) {
+    throw new Error("Nothing to update. Pass at least one of --kind, --title, --content, --enabled, --disabled, or --position.");
+  }
+  return patch;
 };
 
 const printMutationResult = (ctx: CloudCliContext, result: unknown, fallback: string) => {
@@ -475,7 +499,7 @@ export default defineCliCommands({
         printJsonOrTable(ctx, { items: dashboard.sections }, sectionRows(dashboard.sections), [
           { key: "kind" },
           { key: "title" },
-          { key: "enabled" },
+          { key: "visibility" },
           { key: "position" },
           { key: "id" },
         ]);
@@ -508,29 +532,32 @@ export default defineCliCommands({
     }),
     command("sections update", {
       summary: "Update a public section",
+      description:
+        "Changes only the fields you pass. A draft stays a draft and every section keeps its position unless you pass --enabled, --disabled, or --position.",
+      examples: [
+        'cld venue sections update "Cafe Counter" <section-id> --title "Winter hours"',
+        'cld venue sections update "Cafe Counter" <section-id> --content-file notice.json',
+        'cld venue sections update "Cafe Counter" <section-id> --enabled',
+      ],
       args: {
         venue: arg.required({ valueLabel: "venue" }),
         section: arg.required({ valueLabel: "section-id" }),
       },
       flags: {
-        kind: flag.enum(["markdown", "menu", "notice", "links"] as const, { required: true }),
-        title: flag.string({ required: true }),
-        content: flag.input({ valueLabel: "json", description: "Section content JSON", required: true }),
-        disabled: flag.boolean(),
-        position: flag.int({ default: 0 }),
+        kind: flag.enum(["markdown", "menu", "notice", "links"] as const),
+        title: flag.string(),
+        content: flag.input({ valueLabel: "json", description: "Section content JSON" }),
+        enabled: flag.boolean({ description: "Show the section on the public page" }),
+        disabled: flag.boolean({ description: "Hide the section from the public page; staff and admins still see it" }),
+        position: flag.int(),
       },
       async run({ ctx, args, flags }) {
-        if (!flags.kind) throw new Error("Missing required flag --kind.");
-        if (!flags.title) throw new Error("Missing required flag --title.");
         const venue = await resolveVenueRef(ctx, args.venue);
-        const input: PublicSectionInput = {
-          kind: flags.kind,
-          title: flags.title,
-          content: await readJsonInput<Record<string, unknown>>(flags.content, "section content"),
-          enabled: !flags.disabled,
-          position: flags.position ?? 0,
-        };
-        const result = await apiJson<PublicSection>(ctx, "PATCH", `/venues/${encode(venue.id)}/sections/${encode(args.section)}`, input);
+        const patch = buildSectionPatch({
+          ...flags,
+          content: flags.content.provided ? await readJsonInput<Record<string, unknown>>(flags.content, "section content") : undefined,
+        });
+        const result = await apiJson<PublicSection>(ctx, "PATCH", `/venues/${encode(venue.id)}/sections/${encode(args.section)}`, patch);
         printMutationResult(ctx, result, `Updated section ${result.id}`);
       },
     }),

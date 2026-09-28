@@ -29,9 +29,14 @@ cld venue sections list "Cafe Counter" --json
 cld venue shifts list "Cafe Counter" --json
 ```
 
-With read permission, `cld venue get` returns `"feedback": null` and no feedback entries, and `cld venue sections list` lists only the sections the public page shows. Staff (`write`) and admin see visitor feedback and hidden sections.
+With read permission, `cld venue get` returns `"feedback": null` and no feedback entries, and `cld venue sections list` lists only the sections the public page shows. Staff (`write`) and admin see visitor feedback and drafts. The `visibility` column says `public` or `draft`; a draft (`"enabled": false` in JSON) is not on the public page.
 
-Public sections require a section kind, title, and JSON content. Read `cld venue sections create --help` before creating or updating one, then pass multiline JSON with `--content-file` or `--stdin`. Inspect shift assignments before cancelling one; `cld venue shifts cancel <venue> <assignment-id> --yes` is destructive.
+Creating a public section requires a section kind, title, and JSON content. Read `cld venue sections create --help` first, then pass multiline JSON with `--content-file` or `--stdin`. `cld venue sections update` changes only the flags you pass: a draft stays a draft and every section keeps its position unless you pass `--enabled`, `--disabled`, or `--position`.
+
+```bash
+cld venue sections update "Cafe Counter" <section-id> --title "Winter hours"
+cld venue sections update "Cafe Counter" <section-id> --enabled
+``` Inspect shift assignments before cancelling one; `cld venue shifts cancel <venue> <assignment-id> --yes` is destructive.
 
 ## Venue access and API keys
 

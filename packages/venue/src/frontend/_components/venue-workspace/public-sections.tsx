@@ -7,6 +7,7 @@ import {
   Placeholder,
   prompts,
   SegmentedControl,
+  Switch,
   TextInput,
   useLocale,
 } from "@k2b/ui";
@@ -38,6 +39,13 @@ export const sectionKindIcon = (kind: PublicSection["kind"]): string => {
   if (kind === "notice") return "ti ti-speakerphone";
   if (kind === "links") return "ti ti-link";
   return "ti ti-markdown";
+};
+
+export const sectionKindLabel = (kind: PublicSection["kind"], t: VenueMessages): string => {
+  if (kind === "menu") return t.menu;
+  if (kind === "notice") return t.notice;
+  if (kind === "links") return t.links;
+  return t.markdown;
 };
 
 const sectionText = (section: PublicSection, key: "markdown" | "text"): string => {
@@ -148,6 +156,8 @@ export function PublicSectionDialog(props: {
   nextLinkId = initialLinks.length + 1;
   const [kind, setKind] = createSignal<PublicSection["kind"]>(props.initial?.kind ?? "markdown");
   const [title, setTitle] = createSignal(props.initial?.title ?? "");
+  // Visibility is its own explicit choice: saving an edit keeps whatever this switch shows.
+  const [enabled, setEnabled] = createSignal(props.initial?.enabled ?? true);
   const [contentText, setContentText] = createSignal(
     props.initial ? sectionText(props.initial, props.initial.kind === "markdown" ? "markdown" : "text") : "",
   );
@@ -188,7 +198,7 @@ export function PublicSectionDialog(props: {
       kind: kind(),
       title: title().trim(),
       content: result.content,
-      enabled: true,
+      enabled: enabled(),
       position: props.nextPosition,
     });
   };
@@ -207,7 +217,7 @@ export function PublicSectionDialog(props: {
           fallback={
             <div class="flex items-center gap-2 rounded-lg bg-zinc-100 px-3 py-2 text-sm text-secondary dark:bg-zinc-900">
               <i class={sectionKindIcon(kind())} />
-              <span>{t().sectionKind({ kind: kind()[0]?.toUpperCase() + kind().slice(1) })}</span>
+              <span>{t().sectionKind({ kind: sectionKindLabel(kind(), t()) })}</span>
             </div>
           }
         >
@@ -223,6 +233,7 @@ export function PublicSectionDialog(props: {
           />
         </Show>
         <TextInput label={t().title} description={t().sectionTitleDescription} value={title} onValueChange={setTitle} required />
+        <Switch label={t().showOnPublicPage} description={t().showOnPublicPageDescription} value={enabled} onValueChange={setEnabled} />
         <Show
           when={kind() === "menu"}
           fallback={

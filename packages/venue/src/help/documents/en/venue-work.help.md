@@ -8,19 +8,21 @@ order: 110
 
 The venue workspace separates daily staffing, personal assignments, public content, feedback, and administrative settings.
 
+All times use the venue's time zone and a 24-hour clock, wherever you open the venue. When your device runs in another time zone, the workspace names the venue's time zone above the times.
+
 ## Workspace views {icon="layout-list"}
 
 :::reference
-- **Shifts:** Shows staffing slots in a week or month calendar. Staff users can sign up from the action button or by double-clicking a slot.
-- **My shifts:** Lists your upcoming assignments and lets you cancel your own shifts.
-- **Feedback:** Shows rating trends, comment search, and 7-, 14-, or 30-day filters for visitor ratings and comments from the public page. Only staff and admins see this view.
-- **Public sections:** Admins can add, edit, duplicate, or delete markdown, menu, notice, and links sections. Staff and admins also see hidden sections; read users see only what the public page shows.
+- **Shifts:** Shows staffing slots in a week or month calendar. Staff users can sign up from the action button or by double-clicking a slot. The sign-up dialog lists every shift of the next 14 days, starting today, and says how far the list reaches; **Load more shifts** adds the next 14 days.
+- **My shifts:** Lists your upcoming assignments with day and time range and lets you cancel your own shifts.
+- **Feedback:** Shows rating trends, comment search, and 7-, 14-, or 30-day filters for visitor ratings and comments from the public page. A period counts calendar days in the venue's time zone, today included. The figures and the list cover the same period; the list shows 50 ratings per page, and a search narrows the list but not the figures. Only staff and admins see this view.
+- **Public sections:** Admins can add, edit, duplicate, or delete markdown, menu, notice, and links sections. The switch **Show on the public page** decides whether visitors see a section; when it is off, the section is a draft. Saving an edit keeps whatever the switch shows. Drafts carry the label **Draft** in the sidebar, and every section states above its preview whether visitors see it. Staff and admins also see drafts; read users see only what the public page shows.
 :::
 
 ## Settings and access {icon="shield-lock"}
 
 :::reference
-- **General:** Edit name, slug, description, icon, theme color, logo, banner, and feedback activation.
+- **General:** Edit name, slug, description, icon, theme color, logo, banner, and feedback activation. Read and staff users see these settings read-only; only admins can change them.
 - **Schedule:** Choose the public opening logic and manage regular hours, closed days, and recurring shifts.
 - **Access:** Admins grant read, staff, or admin access to users, groups, public, or signed-in users.
 - **Links:** Open the public page or copy your personal iCal subscription for venue shifts.
@@ -34,8 +36,9 @@ The venue workspace separates daily staffing, personal assignments, public conte
 | Shift schedule and your own shifts | Yes | Yes | Yes |
 | Sign up for shifts | No | Yes | Yes |
 | Cancel your own shifts | Yes | Yes | Yes |
-| Public sections | As the public page shows them | All, including hidden ones | All, including hidden ones |
+| Public sections | As the public page shows them | All, including drafts | All, including drafts |
 | Visitor feedback: ratings, comments, and counts | No | Yes | Yes |
+| Open venue settings | Read-only | Read-only | Yes |
 | Change settings, access, schedule, or public sections | No | No | Yes |
 | Cancel another person's shift | No | No | Yes |
 
