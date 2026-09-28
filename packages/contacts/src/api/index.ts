@@ -25,6 +25,7 @@ import {
   respondMessage,
   v,
 } from "@k2b/cloud/server";
+import { isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { type Context, Hono, type MiddlewareHandler, type TypedResponse } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -502,6 +503,7 @@ const getBookAccessSubject = (c: Context<AuthContext>) => {
 
 /**
  * Restricts collection endpoints to the exact resource bound to an API key.
+ * A standalone or agent account reads through its own grants, capped by its credential scopes.
  * Detail endpoints enforce the same invariant in `requireBookAccess`.
  */
 const requireReadableCollectionBinding = async (c: Context<AuthContext>, subject: ReturnType<typeof getBookAccessSubject>) => {
@@ -510,6 +512,13 @@ const requireReadableCollectionBinding = async (c: Context<AuthContext>, subject
   }
 
   const account = subject.serviceAccount;
+  if (account && isStandaloneServiceAccountKind(account.kind)) {
+    if (account.id !== subject.serviceAccountId || !hasPermission(permissionFromScopes(subject.serviceAccountScopes), "read")) {
+      return { boundBookId: null, error: await respond(c, fail(err.forbidden("Access denied"))) };
+    }
+    return { boundBookId: null, error: null as ApiErrorResponse | null };
+  }
+
   if (
     account?.kind !== "resource_bound" ||
     account.appId !== CONTACTS_APP_ID ||
@@ -575,7 +584,8 @@ const requireInternalBookAccess = async (c: Context<AuthContext>, bookId: string
     subject: subject.subject,
   });
 
-  if (subject.serviceAccount?.kind === "resource_bound") {
+  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
+  if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
     permission = minPermission(permission, permissionFromScopes(subject.serviceAccountScopes));
   }
 

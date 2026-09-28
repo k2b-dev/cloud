@@ -396,11 +396,16 @@ function contactsCommands(locale?: string) {
       grant: [
         'cld contacts access grant "Customers" --user valentin.kolb --permission read',
         'cld contacts access grant "Customers" --group "Editors" --permission write',
+        'cld contacts access grant "Customers" --service-account "Release agent" --permission read',
       ],
       set: ['cld contacts access set "Customers" --user valentin.kolb --permission admin'],
       revoke: ['cld contacts access revoke "Customers" --user valentin.kolb --yes'],
-      searchPrincipals: ["cld contacts access search-principals val --kind user,group"],
+      searchPrincipals: [
+        "cld contacts access search-principals val --kind user,group",
+        'cld contacts access search-principals "Release agent" --kind service_account',
+      ],
     },
+    allowServiceAccounts: true,
   });
 
   return defineCliCommands({

@@ -649,6 +649,86 @@ describe("contacts capabilities", () => {
     expect(search).toHaveBeenCalledWith(expect.objectContaining({ subject: context.accessSubject, boundBookId: null }));
   });
 
+  test("agent service accounts read through their direct grant within their scopes; resource-bound keys stay bound", async () => {
+    const agentId = "77777777-7777-4777-8777-777777777777";
+    const serviceAccountContext = (
+      account: { id: string; kind: "agent" | "resource_bound"; resourceId: string | null },
+      scopes: string[],
+    ) =>
+      ({
+        actor: {
+          kind: "service_account",
+          serviceAccount: {
+            id: account.id,
+            name: "Contacts service account",
+            kind: account.kind,
+            status: "active",
+            delegatedUserId: null,
+            appId: account.resourceId ? "contacts" : null,
+            resourceType: account.resourceId ? "contact_book" : null,
+            resourceId: account.resourceId,
+            createdBy: null,
+            createdAt: timestamp,
+          },
+          delegatedUser: null,
+          scopes,
+        },
+        accessSubject: { type: "service_account", serviceAccountId: account.id },
+        user: null,
+        locale: "en",
+        requestId: "req-test",
+        origin: "app",
+        signal: new AbortController().signal,
+      }) satisfies CapabilityExecutionContext;
+    const agent = (scopes: string[]) => serviceAccountContext({ id: agentId, kind: "agent", resourceId: null }, scopes);
+    spyOn(contactsService.book, "get").mockResolvedValue(book);
+    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
+    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    const permission = spyOn(contactsService.book.permission, "get").mockResolvedValue("write");
+    const listPage = spyOn(contactsService.book, "listPage").mockResolvedValue({
+      items: [{ ...book, permission: "write" }],
+      page: 1,
+      perPage: 25,
+      total: 1,
+      hasNext: false,
+    });
+    const search = spyOn(contactsService.contact, "search").mockResolvedValue({
+      items: [contact],
+      page: 1,
+      perPage: 20,
+      total: 1,
+      hasNext: false,
+    });
+    const bookList = contactsCapabilities.queries["book.list"];
+    const contactRead = contactsCapabilities.queries["contact.read"];
+
+    const listed = await bookList.run(bookList.input.parse({}), agent(["read"]));
+    expect(listed.ok).toBeTrue();
+    expect(listPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ subject: { type: "service_account", serviceAccountId: agentId }, boundBookId: null }),
+    );
+    // Scopes cap the grant: a read-only token reports read access on a write grant.
+    if (listed.ok) expect(listed.data.data.map((item) => item.permission)).toEqual(["read"]);
+    expect((await contactRead.run({ id: publicContactId }, agent(["read"]))).ok).toBeTrue();
+    expect(permission).toHaveBeenLastCalledWith({ bookId, subject: { type: "service_account", serviceAccountId: agentId } });
+    const found = await contactsCapabilities.queries["contact.search"].run({ query: "Ada", tags: [], limit: 20 }, agent(["read"]));
+    expect(found.ok && found.data.data.length).toBe(1);
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ boundBookId: null }));
+
+    // Without a read scope nothing is reachable; without a grant the book is denied.
+    expect((await bookList.run(bookList.input.parse({}), agent(["openid"]))).ok).toBeFalse();
+    permission.mockResolvedValue("none");
+    expect((await contactRead.run({ id: publicContactId }, agent(["read"]))).ok).toBeFalse();
+
+    // A resource-bound key stays inside its bound book, whatever it was granted elsewhere.
+    permission.mockResolvedValue("admin");
+    const bound = serviceAccountContext(
+      { id: "88888888-8888-4888-8888-888888888888", kind: "resource_bound", resourceId: "99999999-9999-4999-8999-999999999999" },
+      ["read"],
+    );
+    expect((await contactRead.run({ id: publicContactId }, bound)).ok).toBeFalse();
+  });
+
   test("keeps exact resolution bounded and rejects unrelated contact fields", () => {
     const value = { items: [], matchedEmails: ["ada@example.com"] };
     expect(ContactResolveDataSchema.safeParse(value).success).toBeTrue();

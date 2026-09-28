@@ -104,12 +104,13 @@ account as target.
 
 ## Grant access
 
-Grant a standalone or agent account access like a person: pick it in a
-Space or Notebook permission editor, or use the CLI:
+Grant a standalone or agent account access like a person, with the CLI or
+the REST API:
 
 ```bash
 cld spaces access grant "Roadmap" --service-account "Release agent" --permission write
 cld notebooks access grant "Product Notes" --service-account "Release agent" --permission read
+cld contacts access grant "Customers" --service-account "Release agent" --permission read
 cld spaces access search-principals "Release agent" --kind service_account
 ```
 
@@ -130,11 +131,13 @@ Two limits apply to every request, and the lower one wins:
 Scopes never add access, and there is no resource binding to widen or narrow.
 In Spaces an agent lists the Spaces it was granted, reads and changes items,
 claims tasks, reports progress, and comments under its own name. In Notebooks
-it lists its notebooks, reads notes, and writes notes with a `write` grant.
-Actions that belong to a person stay user-only: creating a Space or Notebook,
-managing access and API keys, personal views such as favorites and the Spaces
-work overview,
-and editing or deleting comments (and, in Notebooks, writing comments).
+it lists its notebooks, reads notes, and writes notes with a `write` grant. In
+Contacts it lists, searches, and resolves its contact books and contacts, and
+creates or changes contacts with a `write` grant.
+Actions that belong to a person stay user-only: creating a Space, Notebook, or
+contact book, managing access and API keys, personal views such as favorites
+and the Spaces work overview, editing or deleting comments (and, in Notebooks,
+writing comments), and writing contact notes.
 Resource-bound API keys keep their binding and behave as before.
 
 ## Use an agent from the CLI

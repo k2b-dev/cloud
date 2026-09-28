@@ -10,7 +10,12 @@ import {
   paginateItems,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import { type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
+import {
+  isStandaloneServiceAccountKind,
+  type ServiceAccountCredential,
+  serviceAccountCredentials,
+  serviceAccounts,
+} from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { conflictError, contactsMessages, notFoundError } from "./messages";
@@ -31,6 +36,18 @@ export const CONTACT_BOOK_RESOURCE_TYPE = "contact_book";
 
 export type ContactBookApiKey = ServiceAccountCredential & {
   permission: PermissionLevel;
+};
+
+/**
+ * Reads across contact books. A resource-bound service account must pass its
+ * bound book; a standalone or agent account is limited only by its own grants.
+ * The kind is read from the account row, so a caller that omits a binding
+ * fails closed.
+ */
+export const mayReadAcrossBooks = async (subject: AccessSubject, boundBookId: string | null | undefined): Promise<boolean> => {
+  if (subject.type !== "service_account" || isUuid(boundBookId ?? "")) return true;
+  const account = await serviceAccounts.get({ id: subject.serviceAccountId });
+  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
 };
 
 /**

@@ -13,7 +13,7 @@ import {
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
-import { type AuditActor, audit } from "@k2b/cloud/services";
+import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Paginated, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
@@ -452,9 +452,17 @@ const resourceBoundBookId = (context: CapabilityExecutionContext): string | null
   return account.appId === CONTACTS_APP_ID && account.resourceType === CONTACT_BOOK_RESOURCE_TYPE ? (account.resourceId ?? null) : null;
 };
 
-const serviceAccountBindingValid = (context: CapabilityExecutionContext): boolean =>
+/** A standalone or agent account acts under its own grants instead of a resource binding. */
+const isStandaloneAccount = (context: CapabilityExecutionContext): boolean =>
+  context.actor.kind === "service_account" &&
+  isStandaloneServiceAccountKind(context.actor.serviceAccount.kind) &&
+  context.accessSubject.type === "service_account" &&
+  context.accessSubject.serviceAccountId === context.actor.serviceAccount.id;
+
+/** A service account reads Contacts through its bound book or, when standalone, its own grants; either way with a `read` scope. */
+const serviceAccountMayRead = (context: CapabilityExecutionContext): boolean =>
   context.accessSubject.type !== "service_account" ||
-  (resourceBoundBookId(context) !== null &&
+  ((isStandaloneAccount(context) || resourceBoundBookId(context) !== null) &&
     hasPermission(permissionFromScopes(context.actor.kind === "service_account" ? context.actor.scopes : []), "read"));
 
 const requireBookPermissionInternal = async (
@@ -468,13 +476,14 @@ const requireBookPermissionInternal = async (
   const user = userBacked(context);
   if (user && hasRole(user, "admin")) return ok({ book, permission: "admin" });
 
-  if (context.accessSubject.type === "service_account") {
+  if (context.accessSubject.type === "service_account" && !isStandaloneAccount(context)) {
     const boundBookId = resourceBoundBookId(context);
     if (!boundBookId || boundBookId !== bookId) return fail(err.forbidden("Access denied"));
   }
 
   let permission = await contactsService.book.permission.get({ bookId, subject: context.accessSubject });
-  if (context.actor.kind === "service_account" && context.actor.serviceAccount.kind === "resource_bound") {
+  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
+  if (context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated") {
     permission = minPermission(permission, permissionFromScopes(context.actor.scopes));
   }
   return hasPermission(permission, required)
@@ -559,7 +568,7 @@ const boundedCapabilitySummary = (value: string): string => {
 
 const runSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
   const user = userBacked(context);
-  if ((!user || (!user.roles.includes("user") && !user.roles.includes("admin"))) && !serviceAccountBindingValid(context)) {
+  if ((!user || (!user.roles.includes("user") && !user.roles.includes("admin"))) && !serviceAccountMayRead(context)) {
     return ok({ data: [] });
   }
   const tags = new Set(input.tags);
@@ -581,7 +590,7 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
 const runContactSuggest = async (input: z.infer<typeof ContactSuggestInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
-  if (!serviceAccountBindingValid(context)) return fail(err.forbidden("A readable Contacts credential is required"));
+  if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
   const user = userBacked(context);
   const page = await contactsService.contact.search({
     subject: context.accessSubject,
@@ -598,7 +607,7 @@ const runContactSuggest = async (input: z.infer<typeof ContactSuggestInputSchema
 };
 
 const runContactResolve = async (input: z.infer<typeof ContactResolveInputSchema>, context: CapabilityExecutionContext) => {
-  if (!serviceAccountBindingValid(context)) return fail(err.forbidden("A readable Contacts credential is required"));
+  if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
   const internalContactIds = input.contactIds ? await resolvePublicIds("contacts", input.contactIds) : undefined;
   if (input.contactIds && !internalContactIds) return fail(err.notFound("Contact"));
   const normalizedInput = {
@@ -737,9 +746,9 @@ const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, co
 const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, context: CapabilityExecutionContext) => {
   const cursor = decodeContactCapabilityCursor(input.cursor);
   if (!cursor.ok) return cursor;
-  if (!serviceAccountBindingValid(context)) return fail(err.forbidden("A resource-bound Contacts credential is required"));
+  if (!serviceAccountMayRead(context)) return fail(err.forbidden("A readable Contacts credential is required"));
   const scopedPermission =
-    context.actor.kind === "service_account" && context.actor.serviceAccount.kind === "resource_bound"
+    context.actor.kind === "service_account" && context.actor.serviceAccount.kind !== "user_delegated"
       ? permissionFromScopes(context.actor.scopes)
       : ("admin" as PermissionLevel);
   if (!hasPermission(scopedPermission, input.minimumPermission)) {

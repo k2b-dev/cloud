@@ -4,6 +4,7 @@ import { err, fail, ok, type PageParams, type Paginated, paginate, type Result }
 import { sql } from "bun";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
+import { mayReadAcrossBooks } from "./access";
 import { emptyToNull, isUuid, type SqlExecutor, toDateOnly, toPgUuidArray } from "./shared";
 import * as tags from "./tags";
 import { buildContactTree, type ContactTreeRow } from "./tree";
@@ -1860,7 +1861,7 @@ export const search = async (config: {
   filter?: ContactListFilter;
 }): Promise<Paginated<Contact>> => {
   const { page, perPage, offset } = paginate(config.pagination);
-  if (config.subject.type === "service_account" && !isUuid(config.boundBookId ?? "")) {
+  if (!(await mayReadAcrossBooks(config.subject, config.boundBookId))) {
     return { items: [], page, perPage, total: 0, hasNext: false };
   }
   const requestedFavoriteUserId = config.filter?.favoriteUserId;
@@ -1878,7 +1879,8 @@ export const search = async (config: {
   const phonePresence = config.filter?.phone ?? "all";
   const sort = config.filter?.sort ?? "name";
   const favoriteUserId = requestedFavoriteUserId ?? null;
-  const bindingMatch = config.subject.type === "service_account" ? sql`c.book_id = ${config.boundBookId}::uuid` : sql`true`;
+  const bindingMatch =
+    config.subject.type === "service_account" && config.boundBookId ? sql`c.book_id = ${config.boundBookId}::uuid` : sql`true`;
 
   const [countRow] = await sql<{ count: number }[]>`
     SELECT COUNT(DISTINCT c.id)::int AS count
