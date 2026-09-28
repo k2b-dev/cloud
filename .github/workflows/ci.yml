@@ -145,7 +145,7 @@ jobs:
         with:
           name: ui-dist
           path: packages/ui/dist
-      - name: Install the Playwright browser used by Assistant code-host tests
+      - name: Install the Playwright browser used by the unit tests that launch Chromium
         run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
       - run: bun run test --shard ${{ matrix.shard }}/3
         env:
