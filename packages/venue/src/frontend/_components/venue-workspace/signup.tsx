@@ -222,7 +222,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
                             <span
                               class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
                             >
-                              {slot.full ? t().full : t().open}
+                              {slot.full ? t().full : t().openSpots}
                             </span>
                           </div>
                           <div class="mt-3">

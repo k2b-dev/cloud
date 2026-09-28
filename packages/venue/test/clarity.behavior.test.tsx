@@ -112,6 +112,8 @@ describe("Venue clarity behavior", () => {
       expect(requested.map((query) => [query.get("slotStartDate"), query.get("slotDays")])).toEqual([[today, String(SIGNUP_PAGE_DAYS)]]);
       expect(dom.root.querySelectorAll(".paper").length).toBe(20);
       expect(dom.root.textContent).toContain("20 shifts up to");
+      // A shift with free places says so, in words that do not read as the Venue's opening status.
+      expect(dom.root.querySelector(".paper .tag")?.textContent).toBe("Open spots");
 
       buttonNamed(dom.root, "Load more shifts").click();
       await flush();

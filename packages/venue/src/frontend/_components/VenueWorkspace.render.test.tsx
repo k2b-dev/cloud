@@ -60,7 +60,7 @@ const render = (permission: Venue["permission"], sections: PublicSection[], opti
     sections,
     feedback: permission === "read" ? null : { count: 0, averageRating: null, commentCount: 0, buckets: [] },
     feedbackEntries: [],
-    feedbackEntriesPage: { page: 1, pageSize: 50, total: 0 },
+    feedbackEntriesPage: null,
     ...options.dashboard,
   };
   return renderToString(() =>
@@ -135,12 +135,37 @@ describe("Venue public sections show whether visitors see them", () => {
   });
 
   test("states the section's visibility above its preview", () => {
-    expect(text(render("admin", [draft], { sectionId: "Draft1" }))).toContain(
-      "Draft Not on the public page. Only staff and admins see this draft. Choose Edit to publish it.",
+    const admin = text(render("admin", [draft], { sectionId: "Draft1" }));
+    expect(admin).toContain("Preview in the style of the public page.");
+    expect(admin).toContain("Draft Not on the public page. Only staff and admins see this draft. Choose Edit to publish it.");
+    expect(admin).toContain(" Edit ");
+
+    // A published section on a Venue whose public page is on.
+    const live = { dashboard: { venue: { ...venue("admin"), publicEnabled: true } } };
+    expect(text(render("admin", [published], { sectionId: "Menu01", ...live }))).toContain(
+      "Public Visitors see this section on the public page.",
     );
+  });
+
+  test("points staff, who have no Edit action, to admins for publishing", () => {
+    const staff = text(render("write", [draft], { sectionId: "Draft1" }));
+    expect(staff).toContain("Draft Not on the public page. Only staff and admins see this draft. Only admins can publish it.");
+    expect(staff).not.toContain("Choose Edit");
+    expect(staff).not.toContain(" Edit ");
+
+    expect(text(render("write", [draft], { sectionId: "Draft1", locale: "de" }))).toContain(
+      "Entwurf Nicht auf der öffentlichen Seite. Nur Personen mit Zugriff „Mitarbeit“ oder „Admin“ sehen diesen Entwurf. Veröffentlichen können nur Admins.",
+    );
+  });
+
+  test("does not call a section public while the public page is switched off", () => {
     // The fixture Venue has its public page switched off.
-    expect(text(render("admin", [published], { sectionId: "Menu01" }))).toContain(
-      "Public The public page is switched off, so visitors see nothing right now.",
+    const html = text(render("admin", [published], { sectionId: "Menu01" }));
+    expect(html).toContain("Public page off The public page is switched off, so visitors see nothing right now.");
+    expect(html).not.toContain(" Public The public page");
+
+    expect(text(render("admin", [published], { sectionId: "Menu01", locale: "de" }))).toContain(
+      "Öffentliche Seite aus Die öffentliche Seite ist ausgeschaltet. Besucher sehen gerade nichts.",
     );
   });
 });

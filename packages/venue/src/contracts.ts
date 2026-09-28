@@ -332,12 +332,17 @@ export const VenueDashboardSchema = z.object({
   feedback: FeedbackSummarySchema.nullable(),
   /** One page of the entries in the feedback window that match the search, newest first. */
   feedbackEntries: z.array(FeedbackEntrySchema),
-  /** Where `feedbackEntries` sits in the full result; `total` counts every matching entry, not only this page. */
-  feedbackEntriesPage: z.object({
-    page: z.number().int().min(1),
-    pageSize: z.number().int().min(1),
-    total: z.number().int().min(0),
-  }),
+  /**
+   * Where `feedbackEntries` sits in the full result; `total` counts every matching entry, not only this page.
+   * `null` when the request did not ask for entries (`includeFeedbackEntries`) or the caller does not see feedback.
+   */
+  feedbackEntriesPage: z
+    .object({
+      page: z.number().int().min(1),
+      pageSize: z.number().int().min(1),
+      total: z.number().int().min(0),
+    })
+    .nullable(),
 });
 export type VenueDashboard = z.infer<typeof VenueDashboardSchema>;
 

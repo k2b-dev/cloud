@@ -122,10 +122,11 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   // The server scopes counts, buckets, and entries to the same feedback window.
   const feedbackBuckets = () => dashboard().feedback?.buckets ?? [];
   const feedbackAverage = () => dashboard().feedback?.averageRating ?? null;
-  const feedbackPage = () => dashboard().feedbackEntriesPage;
-  const feedbackTotalPages = () => Math.max(1, Math.ceil(feedbackPage().total / feedbackPage().pageSize));
-  const feedbackPageFrom = () => (feedbackPage().page - 1) * feedbackPage().pageSize + 1;
-  const feedbackPageTo = () => feedbackPageFrom() + dashboard().feedbackEntries.length - 1;
+  /** The list's place in all matching entries; `null` while the loaded view carries no entries. */
+  const feedbackPage = () => {
+    const page = dashboard().feedbackEntriesPage;
+    return page && page.total > 0 ? page : null;
+  };
   const feedbackPageBaseUrl = () => {
     const url = new URL(feedbackFilterUrl(feedbackRangeDays()), "http://venue.local");
     url.searchParams.set("page", "");
@@ -707,18 +708,30 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     <div class="flex flex-wrap items-center gap-2 px-1">
                       <i class={`${sectionKindIcon(section().kind)} text-dimmed`} aria-hidden="true" />
                       <span class="tag">{sectionKindLabel(section().kind, t())}</span>
-                      <StatusBadge
-                        tone={section().enabled ? "ok" : "neutral"}
-                        icon={section().enabled ? "ti ti-world" : "ti ti-eye-off"}
-                        label={section().enabled ? t().sectionPublic : t().sectionDraft}
-                      />
-                      <span class="text-xs text-dimmed">
-                        {!section().enabled
-                          ? t().sectionDraftDetail
-                          : venue().publicEnabled
-                            ? t().sectionPublicDetail
-                            : t().sectionPublicPageOffDetail}
-                      </span>
+                      <Show
+                        when={section().enabled}
+                        fallback={
+                          <>
+                            <StatusBadge tone="neutral" icon="ti ti-eye-off" label={t().sectionDraft} />
+                            <span class="text-xs text-dimmed">
+                              {canAdmin(venue()) ? t().sectionDraftDetailAdmin : t().sectionDraftDetailStaff}
+                            </span>
+                          </>
+                        }
+                      >
+                        <Show
+                          when={venue().publicEnabled}
+                          fallback={
+                            <>
+                              <StatusBadge tone="neutral" icon="ti ti-world-off" label={t().sectionPublicPageOff} />
+                              <span class="text-xs text-dimmed">{t().sectionPublicPageOffDetail}</span>
+                            </>
+                          }
+                        >
+                          <StatusBadge tone="ok" icon="ti ti-world" label={t().sectionPublic} />
+                          <span class="text-xs text-dimmed">{t().sectionPublicDetail}</span>
+                        </Show>
+                      </Show>
                     </div>
                     <section class="paper p-4">
                       <PublicSectionPreview section={section()} />
@@ -981,20 +994,25 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       }}
                     />
                   </div>
-                  <Show when={feedbackPage().total > 0}>
-                    <div class="flex flex-wrap items-center justify-between gap-2 px-1">
-                      <p class="text-xs text-dimmed">
-                        {props.initialFeedbackSearch
-                          ? t().feedbackMatchesRange({
-                              from: feedbackPageFrom(),
-                              to: feedbackPageTo(),
-                              total: feedbackPage().total,
-                              search: props.initialFeedbackSearch,
-                            })
-                          : t().feedbackEntriesRange({ from: feedbackPageFrom(), to: feedbackPageTo(), total: feedbackPage().total })}
-                      </p>
-                      <Pagination currentPage={feedbackPage().page} totalPages={feedbackTotalPages()} baseUrl={feedbackPageBaseUrl()} />
-                    </div>
+                  <Show when={feedbackPage()}>
+                    {(page) => {
+                      const from = () => (page().page - 1) * page().pageSize + 1;
+                      const range = () => ({ from: from(), to: from() + dashboard().feedbackEntries.length - 1, total: page().total });
+                      return (
+                        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+                          <p class="text-xs text-dimmed">
+                            {props.initialFeedbackSearch
+                              ? t().feedbackMatchesRange({ ...range(), search: props.initialFeedbackSearch })
+                              : t().feedbackEntriesRange(range())}
+                          </p>
+                          <Pagination
+                            currentPage={page().page}
+                            totalPages={Math.ceil(page().total / page().pageSize)}
+                            baseUrl={feedbackPageBaseUrl()}
+                          />
+                        </div>
+                      );
+                    }}
                   </Show>
                 </section>
               </Show>

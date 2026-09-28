@@ -8,7 +8,8 @@ import { Hono } from "hono";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
-import type { PublicSection, PublicStatus, VenueDashboard } from "./contracts";
+import type { PublicSection, PublicStatus, ShiftTemplate, VenueDashboard } from "./contracts";
+import { venueService } from "./service";
 
 const suite = suiteFor("database", "nats", "valkey");
 setDefaultTimeout(30_000);
@@ -107,6 +108,46 @@ suite("Venue sections and feedback say what they do", () => {
     expect(((await invalid.json()) as { message: string }).message).toContain("content.items");
   });
 
+  test("a shift window across the autumn clock change still sees who took its last evening's shifts", async () => {
+    // Berlin leaves summer time on Sunday 2025-10-26, so the 14 days from 2025-10-13 last 14 days and one hour.
+    const created = await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
+      weekday: 0,
+      title: "Late close",
+      startTime: "23:00",
+      endTime: "23:30",
+      minPeople: 1,
+      maxPeople: 1,
+    });
+    const template = await json<ShiftTemplate>(created, 201, "create template");
+    const [row] = await sql<{ venue_id: string; template_id: string }[]>`
+      SELECT venue_id::text, id::text AS template_id FROM venue.shift_templates WHERE short_id = ${template.id}
+    `;
+    const shortId = crypto.randomUUID().replaceAll("-", "").slice(0, 6);
+    // 23:00 in Berlin on 2025-10-26 is 22:00 UTC.
+    await sql`
+      INSERT INTO venue.shift_assignments (short_id, venue_id, template_id, user_id, starts_at, ends_at)
+      VALUES (${shortId}, ${row!.venue_id}::uuid, ${row!.template_id}::uuid, ${admin.id}::uuid, '2025-10-26T22:00:00Z', '2025-10-26T22:30:00Z')
+    `;
+
+    const board = await json<VenueDashboard>(
+      await send("GET", `/api/venue/venues/${venueId}/dashboard?slotStartDate=2025-10-13&slotDays=14`, cookie),
+      200,
+      "dashboard across the clock change",
+    );
+    expect(board.slots.find((slot) => slot.template.id === template.id && slot.date === "2025-10-26")).toMatchObject({
+      assignedCount: 1,
+      full: true,
+    });
+
+    // Capabilities read shifts through the summary, which builds the same window.
+    const venue = await venueService.venues.get(row!.venue_id);
+    const summaries = await venueService.shifts.listSummary(venue!, { startDate: "2025-10-13", days: 14 });
+    expect(summaries.find((slot) => slot.template.title === "Late close" && slot.date === "2025-10-26")).toMatchObject({
+      assignedCount: 1,
+      full: true,
+    });
+  });
+
   test("feedback counts, pages, and list totals cover the same window", async () => {
     const [venue] = await sql<{ id: string }[]>`SELECT id::text FROM venue.venues WHERE short_id = ${venueId}`;
     // 120 ratings in the last 30 days, every third with a comment, plus one older rating outside the window.
@@ -144,12 +185,22 @@ suite("Venue sections and feedback say what they do", () => {
     expect(seen.size).toBe(120);
 
     // A page past the end shows the last page instead of an empty table.
-    expect((await dashboard("&feedbackPage=99")).feedbackEntriesPage.page).toBe(3);
+    expect((await dashboard("&feedbackPage=99")).feedbackEntriesPage?.page).toBe(3);
 
     // A search narrows the list, not the window's counts.
     const searched = await dashboard("&feedbackSearch=espresso");
     expect(searched.feedback).toMatchObject({ count: 120, commentCount: 40 });
-    expect(searched.feedbackEntriesPage.total).toBe(40);
+    expect(searched.feedbackEntriesPage?.total).toBe(40);
     expect(searched.feedbackEntries.every((entry) => entry.comment?.startsWith("Espresso note"))).toBe(true);
+
+    // Without entries there is no list to place, so no page claims a total of zero next to 120 ratings.
+    const summaryOnly = await json<VenueDashboard>(
+      await send("GET", `/api/venue/venues/${venueId}/dashboard`, cookie),
+      200,
+      "summary only",
+    );
+    expect(summaryOnly.feedback).toMatchObject({ count: 120 });
+    expect(summaryOnly.feedbackEntries).toEqual([]);
+    expect(summaryOnly.feedbackEntriesPage).toBeNull();
   });
 });

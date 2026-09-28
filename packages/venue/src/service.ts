@@ -1073,7 +1073,8 @@ const upcomingSlots = async (venue: Venue, options: number | UpcomingSlotsOption
 
   const startDate = config.startDate ?? localDateKey(new Date(), venue.timezone);
   const rangeStart = instantFor(startDate, "00:00", venue.timezone);
-  const rangeEnd = new Date(rangeStart.getTime() + days * 86_400_000);
+  // Local midnight after the last day: a day with a clock change is not 24 hours long.
+  const rangeEnd = instantFor(dateKeyAfterDays(startDate, days, venue.timezone), "00:00", venue.timezone);
   const assignments = await assignmentsForRange(venue.id, rangeStart, rangeEnd);
   const templatesForWeekday = templatesByWeekday(templates);
   const assignmentsBySlot = assignmentsByTemplateSlot(assignments);
@@ -1105,7 +1106,8 @@ const upcomingSlotSummaries = async (
 
   const startDate = options.startDate ?? localDateKey(new Date(), venue.timezone);
   const rangeStart = instantFor(startDate, "00:00", venue.timezone);
-  const rangeEnd = new Date(rangeStart.getTime() + days * 86_400_000);
+  // Local midnight after the last day: a day with a clock change is not 24 hours long.
+  const rangeEnd = instantFor(dateKeyAfterDays(startDate, days, venue.timezone), "00:00", venue.timezone);
   const summaries = await assignmentSummariesForRange(venue.id, rangeStart, rangeEnd, options.currentUserId ?? null);
   const summariesBySlot = new Map(
     summaries.filter((summary) => summary.templateId).map((summary) => [`${summary.templateId}:${summary.startsAt}`, summary]),
@@ -1381,7 +1383,7 @@ const feedbackSummary = async (
   const search = options.search?.trim() || null;
   const pattern = search ? `%${search}%` : null;
   let entries: DbFeedbackEntry[] = [];
-  let entriesPage = { page: 1, pageSize: FEEDBACK_PAGE_SIZE, total: 0 };
+  let entriesPage: VenueDashboard["feedbackEntriesPage"] = null;
   if (options.includeEntries) {
     const [matching] = await sql<{ total: number }[]>`
       SELECT COUNT(*)::int AS total
@@ -1510,7 +1512,7 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
     sections,
     feedback: feedback?.summary ?? null,
     feedbackEntries: feedback?.entries ?? [],
-    feedbackEntriesPage: feedback?.entriesPage ?? { page: 1, pageSize: FEEDBACK_PAGE_SIZE, total: 0 },
+    feedbackEntriesPage: feedback?.entriesPage ?? null,
   };
 };
 

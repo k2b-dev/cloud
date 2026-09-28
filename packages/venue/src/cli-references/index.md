@@ -36,7 +36,9 @@ Creating a public section requires a section kind, title, and JSON content. Read
 ```bash
 cld venue sections update "Cafe Counter" <section-id> --title "Winter hours"
 cld venue sections update "Cafe Counter" <section-id> --enabled
-``` Inspect shift assignments before cancelling one; `cld venue shifts cancel <venue> <assignment-id> --yes` is destructive.
+```
+
+Inspect shift assignments before cancelling one; `cld venue shifts cancel <venue> <assignment-id> --yes` is destructive.
 
 ## Venue access and API keys
 
