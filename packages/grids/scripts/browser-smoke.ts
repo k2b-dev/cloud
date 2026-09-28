@@ -322,7 +322,9 @@ const watchPage = (page: Page, errors: string[]) => {
 
 const createWatchedPages = async (browser: Browser, options: BrowserContextOptions & { sessionToken?: string; pageCount?: number }) => {
   const { sessionToken, pageCount = 1, ...contextOptions } = options;
-  const context = await browser.newContext({ baseURL: BASE_URL, ...contextOptions });
+  const context = await browser.newContext({ baseURL: BASE_URL, timezoneId: "UTC", ...contextOptions });
+  // Cloud reloads a browser once when it learns a new timezone; that reload can land mid-step and reset what a page shows.
+  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: BASE_URL, sameSite: "Lax" }]);
   if (sessionToken) await addSessionCookie(context, sessionToken);
   const errors: string[] = [];
   const pages = await Promise.all(Array.from({ length: pageCount }, () => context.newPage()));
@@ -402,14 +404,15 @@ const runLiveRefresh = async (browser: Browser, fixture: Fixture) => {
   await expectVisibleText(pageB, "Review invoices", "live tab B table route renders");
 
   const suffix = `${Date.now()}`;
-  const metadataTableName = `Live metadata ${suffix}`;
-  await browserMutation<{ id: string }>(pageA, {
-    method: "POST",
-    path: `/api/grids/tables/by-base/${fixture.base.id}`,
-    expected: 201,
-    body: { name: metadataTableName, icon: "ti ti-table-plus" },
+  // A structure change to the table tab B shows asks for a reload instead of replacing the page under the user.
+  await browserMutation(pageA, {
+    method: "PATCH",
+    path: `/api/grids/tables/${fixture.table.id}`,
+    body: { name: `Tasks renamed ${suffix}` },
   });
-  await expectVisibleText(pageB, metadataTableName, "live metadata table appears in second tab sidebar");
+  await expectVisibleText(pageB, "Workspace changed", "live rename of the shown table announces a workspace change in second tab");
+  // Later steps find the table by its original name.
+  await browserMutation(pageA, { method: "PATCH", path: `/api/grids/tables/${fixture.table.id}`, body: { name: "Tasks" } });
 
   const createdTitle = `Live create ${suffix}`;
   const updatedTitle = `Live update ${suffix}`;
