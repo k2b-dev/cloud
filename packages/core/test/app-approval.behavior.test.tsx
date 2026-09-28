@@ -315,6 +315,41 @@ describe("Cloud app approval UI", () => {
     const footer = dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
     expect(button(footer, "Confirm identity")).toBeDefined();
   });
+  test("identity confirmation returns to the pairing page with the continue marker, which the page then clears", async () => {
+    const dom = createDomTestHarness();
+    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const page = `/me/security/pair?userId=${deviceId}`;
+    const returned = `${page}&pairDevice=${deviceId}&reauthenticate=1`;
+    dom.window.history.replaceState(null, "", returned);
+    pairStart.mockImplementationOnce(async () => Response.json({ code: "REAUTHENTICATE" }, { status: 403 }));
+    const dispose = render(
+      () =>
+        createComponent(Pairing, {
+          actorId: id,
+          userId: deviceId,
+          name: "Another user",
+          appOrigin: "https://app.example",
+          returnTo: `/app/accounts/users/${deviceId}`,
+          install: false,
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    // A later reload or back navigation opens with the install step again.
+    expect(dom.window.location.pathname + dom.window.location.search).toBe(page);
+    await Bun.sleep(170);
+    await flush();
+    button(dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!, "Confirm identity").click();
+    await flush();
+    // pair.page skips the install step when pairDevice names the target account.
+    const login = new URL(dom.window.location.href);
+    expect(login.pathname).toBe("/auth/login");
+    expect(login.searchParams.get("redirectTo")).toBe(returned);
+  });
   test("a resumed pairing without its transfer link offers a danger footer action that cancels and closes", async () => {
     const dom = createDomTestHarness();
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
