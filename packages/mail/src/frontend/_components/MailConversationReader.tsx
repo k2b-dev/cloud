@@ -922,7 +922,7 @@ export default function MailConversationReader(props: {
         ],
       });
       actions.push({
-        sectionLabel: t().conversation,
+        sectionLabel: t().conversationSection,
         items: [
           {
             label: props.conversationSummary?.summary ? t().editSummary : t().createSummary,

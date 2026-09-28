@@ -76,7 +76,7 @@ export const getMailConversationToolbarSections = (locale: string): readonly Mai
     },
     {
       id: "conversation",
-      label: t.conversation,
+      label: t.conversationSection,
       options: [
         { id: "merge", label: t.merge, description: t.mergeDescription, icon: "ti ti-git-merge" },
         { id: "split", label: t.splitConversation, description: t.splitDescription, icon: "ti ti-arrows-split-2" },
