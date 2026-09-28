@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
+import { selectHtml } from "../../../../../../tests/fixtures/select-html";
 import type { PublicOkWorkspaceState, PublicWorkflow } from "./workspace-public-state-model";
 
 const { default: GridsSidebar } = await import("./GridsSidebar");
@@ -211,5 +212,18 @@ describe("GridsSidebar Apps", () => {
 
     expect(html).not.toContain(">Apps<");
     expect(html).toContain(">New<");
+  });
+});
+
+describe("GridsSidebar tables", () => {
+  test("shows an empty table list as one inline line where the first table row would be", async () => {
+    const html = renderToString(() => createComponent(GridsSidebar, { state: workflowState() }));
+    const [placeholder, ...others] = await selectHtml(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child");
+
+    expect(others).toEqual([]);
+    expect(placeholder?.attributes["data-variant"]).toBe("inline");
+    expect(placeholder?.attributes["data-align"]).toBe("left");
+    expect(placeholder?.text).toBe("No tables yet.");
+    expect(await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i.ti-table')).toHaveLength(1);
   });
 });

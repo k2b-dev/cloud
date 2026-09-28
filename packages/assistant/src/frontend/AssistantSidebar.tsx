@@ -12,6 +12,7 @@ import {
   IconButton,
   type NavigationItem,
   PanelDialog,
+  Placeholder,
   panelDialogOptions,
   toast,
   useLocale,
@@ -336,7 +337,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                 </IconButton>
               </div>
             </div>
-            <For each={props.projects ?? []} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noProjects}</p>}>
+            <For
+              each={props.projects ?? []}
+              fallback={<Placeholder variant="inline" align="left" icon="ti ti-folder" description={t().noProjects} />}
+            >
               {(project) => (
                 <AppWorkspace.SidebarItem
                   icon={project.icon || "ti ti-folder"}
@@ -415,7 +419,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         )}
       </For>
       <Show when={!doneConversations().length}>
-        <p class="px-2 py-1 text-xs text-dimmed">{text("No done chats.")}</p>
+        <Placeholder variant="inline" align="left" description={text("No done chats.")} />
       </Show>
       <AppWorkspace.SidebarItem icon="ti ti-eye" onClick={() => openAllChats()}>
         {t().allChats}
@@ -638,7 +642,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
 
           <AppWorkspace.SidebarBody scrollPreserveKey="assistant-sidebar" sidebarMode="expanded">
             <AppWorkspace.SidebarSection>
-              <Show when={chatConversations().length > 0} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().noChats}</p>}>
+              <Show
+                when={chatConversations().length > 0}
+                fallback={<Placeholder variant="inline" align="left" description={t().noChats} />}
+              >
                 <For each={chatConversations()}>
                   {(conversation) => (
                     <ConversationSidebarItem

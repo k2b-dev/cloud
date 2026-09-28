@@ -51,7 +51,10 @@ function StudioCatalog(props: { open: boolean; close: () => void; activeAppId?: 
             <Placeholder state="error" title={t().loadFailed} action={<Button onClick={() => void refetch()}>{t().retry}</Button>} />
           }
         >
-          <For each={apps()?.items} fallback={<p class="px-2 py-1 text-xs text-dimmed">{t().emptyApps}</p>}>
+          <For
+            each={apps()?.items}
+            fallback={<Placeholder variant="inline" align="left" icon="ti ti-app-window" description={t().emptyApps} />}
+          >
             {(app) => (
               <AppWorkspace.SidebarItem
                 icon={app.icon || "ti ti-app-window"}

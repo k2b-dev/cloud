@@ -1,4 +1,4 @@
-import { AppWorkspace, useLocale } from "@k2b/ui";
+import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import { navigationMessages } from "../../../navigation-messages";
 import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
 import FormSidebarEntry from "../sidebar/FormSidebarEntry.island";
@@ -104,9 +104,14 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
     <>
       <AppWorkspace.SidebarSection title={t.tables}>
         {state.catalog.tables.length === 0 ? (
-          <p class="px-2 py-1 text-xs text-dimmed">
-            {state.catalog.sidebarForms.length > 0 || state.catalog.sidebarDocumentTemplates.length > 0 ? t.noTableAccessShort : t.noTables}
-          </p>
+          <Placeholder
+            variant="inline"
+            align="left"
+            icon="ti ti-table"
+            description={
+              state.catalog.sidebarForms.length > 0 || state.catalog.sidebarDocumentTemplates.length > 0 ? t.noTableAccessShort : t.noTables
+            }
+          />
         ) : (
           state.catalog.tables.map((table) => {
             const active = recordsRoute?.activeTable.id === table.id && recordsRoute.activeView === null;
