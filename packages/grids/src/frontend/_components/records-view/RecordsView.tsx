@@ -195,6 +195,14 @@ export default function RecordsView(props: Props) {
   const [search, setSearch] = createSignal<RecordsState["search"]>(resolvedSearchState(props.initialState.search));
   // The search follows the fields the page shows, so adding, editing, or deleting a field applies without a reload.
   const searchableFields = createMemo(() => filterSearchableFields(fields()));
+  /**
+   * A scope field that was deleted or stopped being searchable makes every records read fail; keep only the others.
+   * A saved view can search table fields outside its columns, so this checks the table's fields.
+   */
+  const searchableFieldIds = (fieldIds: string[]) => {
+    const available = new Set(filterSearchableFields(tableFields()).map((field) => field.id));
+    return fieldIds.filter((id) => available.has(id));
+  };
   const [calendarState, setCalendarState] = createSignal<RecordsState["calendar"]>(props.initialState.calendar);
   const [cardSize, setCardSize] = createSignal<CardSize>(props.initialState.cardSize);
   const groupBy = () => (query().groupBy ?? []) as GroupBySpec[];
@@ -383,7 +391,8 @@ export default function RecordsView(props: Props) {
       setCursor(restored.cursor);
       setSelectedRecordId(restored.selectedRecordId);
       setSelectedGroup(null);
-      setSearch(resolvedSearchState(restored.search));
+      // An older history entry can still name a field deleted since.
+      setSearch(resolvedSearchState({ ...restored.search, fieldIds: searchableFieldIds(restored.search.fieldIds) }));
       setCalendarState(restored.calendar);
       setCardSize(restored.cardSize);
       setAdminMode(restoredAdminMode);
@@ -479,15 +488,14 @@ export default function RecordsView(props: Props) {
   /** SearchBar's onSearchChange. Mirror semantics to onToolbarCommit. */
   const onSearchChange = (next: { q: string; fieldIds: string[] }) => commitSearch({ ...next, override: true });
 
-  // A scope field that was deleted or stopped being searchable makes every records read fail; drop it and keep the
-  // rest of the search. Saved views never change their fields here, so they keep the scope they were saved with.
+  // When a field leaves the searchable list, drop it from the scope and keep the rest of the search. Saved views never
+  // change their fields here, so they keep the scope they were saved with.
   createEffect(
     on(
       searchableFields,
-      (available) => {
+      () => {
         const current = search();
-        const availableIds = new Set(available.map((field) => field.id));
-        const fieldIds = current.fieldIds.filter((id) => availableIds.has(id));
+        const fieldIds = searchableFieldIds(current.fieldIds);
         if (fieldIds.length < current.fieldIds.length) commitSearch({ ...current, fieldIds });
       },
       { defer: true },

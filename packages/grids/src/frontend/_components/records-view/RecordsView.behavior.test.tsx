@@ -520,6 +520,88 @@ domTest("deleting a field removes it from the search scope and from a search tha
   }
 });
 
+domTest("going back to a search limited to a deleted field searches the remaining fields", async () => {
+  const page = await mountTableEditor(searchingNotes());
+  try {
+    await page.deleteField("Notes");
+    const readsBeforeBack = page.reads.length;
+
+    // Back lands on an older history entry that still limits the search to the deleted field.
+    window.history.replaceState(null, "", `/app/grids/BASE01/table/TABLE1?q=stage&qFields=${notesField.id}`);
+    window.dispatchEvent(new Event("popstate"));
+    await waitFor(() => page.reads.length > readsBeforeBack);
+
+    expect(page.reads.slice(readsBeforeBack).map((read) => read.query.search)).toEqual([{ q: "stage", fieldIds: [] }]);
+    expect(page.readScope()).toEqual({ offered: ["Title"], selected: [] });
+    expect(page.searchInput()?.value).toBe("stage");
+  } finally {
+    page.cleanup();
+  }
+});
+
+domTest("going back in a saved view keeps a search in a table field outside the view's columns", async () => {
+  const dom = createDomTestHarness();
+  const previousObserver = globalThis.IntersectionObserver;
+  Object.assign(globalThis, {
+    IntersectionObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+  });
+  const reads: RecordQuery[] = [];
+  fetchRecords = async (args) => {
+    reads.push(args.query);
+    return memberPage;
+  };
+  const query: RecordQuery = { columns: [{ fieldId: titleField.id }], search: { q: "venue", fieldIds: [notesField.id] } };
+  const view: PublicView & { query: RecordQuery; displayConfig: { mode: "table" } } = {
+    id: "VIEW01",
+    tableId: "TABLE1",
+    name: "Venue tasks",
+    description: null,
+    icon: null,
+    source: `from table {TABLE1} search 'venue' in {${notesField.id}} select {${titleField.id}}`,
+    ui: {},
+    ownerUserId: null,
+    position: 0,
+    deletedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    query,
+    displayConfig: { mode: "table" },
+  };
+  const { default: RecordsView } = await import("./RecordsView");
+  const dispose = render(
+    () =>
+      createComponent(
+        RecordsView,
+        recordsViewProps({
+          viewId: view.id,
+          fields: [titleField],
+          fieldsByTable: { TABLE1: [titleField, notesField] },
+          activeView: view,
+          viewMode: true,
+          activeRecordQuery: query,
+          workspaceRouteKey: "records:TABLE1:VIEW01:false",
+        }),
+      ),
+    dom.root,
+  );
+  try {
+    // Back lands on an entry where the person changed the text of the view's search.
+    window.history.replaceState(null, "", `/app/grids/BASE01/table/TABLE1/view/VIEW01?q=stage&qFields=${notesField.id}`);
+    window.dispatchEvent(new Event("popstate"));
+    await waitFor(() => reads.length > 0);
+
+    expect(reads.map((read) => read.search)).toEqual([{ q: "stage", fieldIds: [notesField.id] }]);
+  } finally {
+    dispose();
+    dom.cleanup();
+    Object.assign(globalThis, { IntersectionObserver: previousObserver });
+    fetchRecords = async () => memberPage;
+  }
+});
+
 domTest("a field restored elsewhere returns to the search scope with the table's next field read", async () => {
   const page = await mountTableEditor(searchingNotes());
   try {
