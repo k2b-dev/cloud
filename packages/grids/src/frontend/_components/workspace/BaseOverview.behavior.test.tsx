@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import type { PublicForm, PublicTable } from "../../../api/public-dto";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
 const state = (): PublicOkWorkspaceState => ({
@@ -155,6 +156,96 @@ describe("Base navigation interactions", () => {
       expect(requests).toBe(0);
       expect(dom.root.querySelector<HTMLButtonElement>("button")!.disabled).toBe(false);
     } finally {
+      globalThis.fetch = originalFetch;
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("New form says it is already saved and finishes with Done", async () => {
+    const dom = createDomTestHarness();
+    const { default: NewResource } = await import("../sidebar/NewResourceButton.island");
+    const { dialogCore } = await import("@k2b/ui");
+    const table: PublicTable = {
+      id: "TABLE1",
+      baseId: "BASE01",
+      name: "Loans",
+      description: null,
+      icon: null,
+      kind: "stored",
+      columns: [],
+      displayConfig: { mode: "table" },
+      auditPolicy: {},
+      mutationPolicy: { mode: "all" },
+      position: 0,
+      disableDirectInsert: false,
+      createdAt: "2026-09-09T00:00:00Z",
+      updatedAt: "2026-09-09T00:00:00Z",
+      deletedAt: null,
+    };
+    const created: PublicForm = {
+      id: "FORM01",
+      tableId: table.id,
+      name: "Loan request",
+      config: { fields: [] },
+      publicToken: null,
+      isActive: true,
+      ownerUserId: null,
+      position: 0,
+      isDefault: false,
+      deletedAt: null,
+      createdAt: "2026-09-09T00:00:00Z",
+      updatedAt: "2026-09-09T00:00:00Z",
+    };
+    const dispose = render(
+      () =>
+        createComponent(NewResource, {
+          baseId: "BASE01",
+          tables: [table],
+          fieldsByTable: { [table.id]: [] },
+          tableLevels: { [table.id]: "admin" },
+          canCreateTables: false,
+          canManageBase: false,
+          activeTableId: table.id,
+        }),
+      dom.root,
+    );
+    const originalFetch = globalThis.fetch;
+    const methods: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        methods.push(init?.method ?? "GET");
+        return Response.json(created);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    const buttons = (label: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button")).filter((button) => button.textContent?.trim() === label);
+    try {
+      dom.root.querySelector<HTMLButtonElement>("button")!.click();
+      await flush();
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.includes("Collect records"))!
+        .click();
+      await flush();
+      buttons("Continue")[0]!.click();
+      await flush();
+      const name = document.querySelector<HTMLInputElement>('input[placeholder="Example: Public sign-up"]')!;
+      name.value = "Loan request";
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      buttons("Create")[0]!.click();
+      await flush();
+      expect(methods).toEqual(["POST"]);
+      expect(document.body.textContent).toContain("Form created");
+      expect(buttons("Save")).toHaveLength(0);
+      buttons("Done")[0]!.click();
+      await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(methods).toEqual(["POST"]);
+    } finally {
+      while (dialogCore.isOpen()) dialogCore.close();
+      reload.mockRestore();
       globalThis.fetch = originalFetch;
       dispose();
       dom.cleanup();

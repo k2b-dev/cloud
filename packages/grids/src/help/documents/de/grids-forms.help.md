@@ -28,6 +28,8 @@ Reicht der Platz nicht aus, öffnest du den Editor über die Zusammenfassung ein
 
 Jede Tabelle hat ein virtuelles Standardformular. Eigene Formulare steuern Eingaben, Beschriftungen, Hinweise, Standardwerte und öffentlichen Zugriff.
 
+**Erstellen** speichert ein neues eigenes Formular sofort und öffnet seinen Editor. Passe es an und wähle **Speichern** oder übernimm es mit **Fertig** so, wie es erstellt wurde.
+
 Der Datumsstandard `{"kind":"now"}` erscheint beim Öffnen eines Erstellformulars in deiner Datumszeitzone. Prüfe ihn vor dem Speichern. Bearbeiten behält gespeicherte Datumswerte bei.
 
 In einem eigenen Formular kannst du:

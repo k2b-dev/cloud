@@ -115,7 +115,7 @@ export function createNewResource(props: Props) {
       } else {
         const form = await createForm({ tableId: table.id, fields: props.fieldsByTable[table.id] ?? [] }, locale());
         if (form) {
-          await openFormEditorDialog({ form, tableFields: props.fieldsByTable[table.id] ?? [] });
+          await openFormEditorDialog({ form, tableFields: props.fieldsByTable[table.id] ?? [], justCreated: true });
           window.location.reload();
         }
       }
