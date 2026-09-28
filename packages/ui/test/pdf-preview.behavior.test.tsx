@@ -132,7 +132,6 @@ domTest("composed preview keeps controls in the caller's header and exposes a fa
   const dispose = render(
     () => (
       <PdfPreview
-        autoLoad
         title="Invoice preview"
         request={async () => {
           if (++calls > 1) return Response.json({ message: "Due date is missing" }, { status: 400 });
@@ -151,6 +150,7 @@ domTest("composed preview keeps controls in the caller's header and exposes a fa
     dom.root,
   );
   try {
+    click(dom.root.querySelector<HTMLButtonElement>("header button:last-child")!);
     await Bun.sleep(0);
     expect(dom.root.querySelector(".k2b-content-pdf-preview")).toBeNull();
     expect(dom.root.querySelectorAll("header button")).toHaveLength(2);
@@ -166,6 +166,199 @@ domTest("composed preview keeps controls in the caller's header and exposes a fa
     dispose();
     URL.createObjectURL = originalCreate;
     URL.revokeObjectURL = originalRevoke;
+    dom.cleanup();
+  }
+});
+
+const stubPdfBrowser = (dom: ReturnType<typeof createDomTestHarness>) => {
+  const originalCreate = URL.createObjectURL;
+  const originalRevoke = URL.revokeObjectURL;
+  const objectUrls = new Map<string, Blob>();
+  const tab = { opener: {} as unknown, document: { title: "", body: { textContent: "" } }, location: { href: "" }, close() {} };
+  URL.createObjectURL = (blob) => {
+    const url = `blob:document-${objectUrls.size + 1}`;
+    objectUrls.set(url, blob as Blob);
+    return url;
+  };
+  URL.revokeObjectURL = () => {};
+  dom.window.open = (() => tab) as unknown as typeof dom.window.open;
+  return {
+    objectUrls,
+    tab,
+    restore: () => {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    },
+  };
+};
+const labels = (root: HTMLElement) => Array.from(root.querySelectorAll("button"), (button) => button.textContent?.trim());
+
+domTest("an automatic preview opens the shown document in a new tab and offers the host's download", async () => {
+  const dom = createDomTestHarness();
+  const browser = stubPdfBrowser(dom);
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  const pdf = new Blob(["%PDF-1.4"], { type: "application/pdf" });
+  let calls = 0;
+  let downloads = 0;
+  const dispose = render(
+    () => (
+      <PdfPreview
+        autoLoad
+        title="Report.pdf"
+        openButtonLabel="Open in new tab"
+        onDownload={() => downloads++}
+        request={async () => {
+          calls++;
+          return pdf;
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    expect(labels(dom.root)).toEqual(["Open in new tab", "Download"]);
+    await Bun.sleep(0);
+    // Rendering again would show the same document, so only open and download remain.
+    expect(labels(dom.root)).toEqual(["Open in new tab", "Download"]);
+    const [open, download] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"));
+    click(download!);
+    expect(downloads).toBe(1);
+    click(open!);
+    await Bun.sleep(0);
+    expect(calls).toBe(1);
+    expect(browser.tab.opener).toBeNull();
+    expect(browser.objectUrls.get(browser.tab.location.href)).toBe(pdf);
+    expect(browser.tab.location.href).not.toBe(dom.root.querySelector("iframe")?.getAttribute("src"));
+  } finally {
+    dispose();
+    browser.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("an on-demand preview keeps rendering and opens the current document for editable input", async () => {
+  const dom = createDomTestHarness();
+  const browser = stubPdfBrowser(dom);
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  const versions: Blob[] = [];
+  const dispose = render(
+    () => (
+      <PdfPreview
+        request={async () => {
+          const pdf = new Blob([`%PDF version ${versions.length + 1}`], { type: "application/pdf" });
+          versions.push(pdf);
+          return pdf;
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const [open, renderPreview] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2b-content-pdf-preview__actions button"));
+    click(renderPreview!);
+    await Bun.sleep(0);
+    expect(labels(dom.root)).toEqual(["Open preview", "Preview PDF"]);
+    click(open!);
+    await Bun.sleep(0);
+    expect(versions).toHaveLength(2);
+    expect(browser.objectUrls.get(browser.tab.location.href)).toBe(versions[1]);
+  } finally {
+    dispose();
+    browser.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("an automatic preview keeps its retry in place while it loads and then moves focus to the open action", async () => {
+  const dom = createDomTestHarness();
+  const browser = stubPdfBrowser(dom);
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  let calls = 0;
+  let resolveRetry!: (blob: Blob) => void;
+  const dispose = render(
+    () => (
+      <PdfPreview
+        autoLoad
+        openButtonLabel="Open in new tab"
+        buttonLabel="Try again"
+        request={() => {
+          if (++calls === 1) return Promise.reject(new Error("Network error"));
+          return new Promise<Blob>((resolve) => {
+            resolveRetry = resolve;
+          });
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(0);
+    expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe("Network error");
+    const [open, retry] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"));
+    expect(labels(dom.root)).toEqual(["Open in new tab", "Try again"]);
+    retry!.focus();
+    click(retry!);
+    // The activated control stays where it is and shows that it is busy.
+    expect(retry!.isConnected).toBe(true);
+    expect(retry!.disabled).toBe(true);
+    expect(dom.root.querySelector('[role="status"]')?.textContent).toBe("Loading...");
+    resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+    await Bun.sleep(0);
+    expect(calls).toBe(2);
+    expect(dom.root.querySelector("iframe")).not.toBeNull();
+    // The shown document makes the retry redundant; keyboard focus continues on the open action.
+    expect(labels(dom.root)).toEqual(["Open in new tab"]);
+    expect(dom.document.activeElement).toBe(open!);
+  } finally {
+    dispose();
+    browser.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a blocked tab keeps the shown document and says so in the inherited locale", async () => {
+  const dom = createDomTestHarness();
+  dom.document.documentElement.lang = "de";
+  const browser = stubPdfBrowser(dom);
+  let blocked = true;
+  dom.window.open = (() => (blocked ? null : browser.tab)) as unknown as typeof dom.window.open;
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  const pdf = new Blob(["%PDF-1.4"], { type: "application/pdf" });
+  let calls = 0;
+  const dispose = render(
+    () => (
+      <PdfPreview
+        autoLoad
+        request={async () => {
+          calls++;
+          return pdf;
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(0);
+    const frame = dom.root.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    const open = dom.root.querySelector<HTMLButtonElement>("button")!;
+    click(open);
+    await Bun.sleep(0);
+    expect(dom.root.querySelector("iframe")).toBe(frame);
+    expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe(
+      "Der Browser hat den neuen Tab blockiert. Erlaube Pop-ups und versuche es erneut.",
+    );
+    // Showing the same stored document again is not a way out of a blocked tab.
+    expect(labels(dom.root)).toEqual(["Vorschau öffnen"]);
+    blocked = false;
+    click(open);
+    await Bun.sleep(0);
+    expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+    expect(browser.objectUrls.get(browser.tab.location.href)).toBe(pdf);
+    expect(calls).toBe(1);
+  } finally {
+    dispose();
+    browser.restore();
     dom.cleanup();
   }
 });

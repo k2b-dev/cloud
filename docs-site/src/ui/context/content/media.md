@@ -38,7 +38,11 @@ Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. 
 
 The component provides separate actions to render inside the page or open the document in a new tab. `disabled` is a reactive guard for invalid form state or an unavailable renderer.
 
+Pass `onDownload` to add a **Download** action. The caller owns the download, for example issuing a fresh attachment URL with the right file name; `disabled` also disables it.
+
 Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows a loading state. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
+
+An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request, and the render action only appears until a document is shown, for example to retry a failed request. A retry keeps the action in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
 
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
@@ -48,7 +52,7 @@ Pass a `children` render function to place `actions` and `content` in an existin
 
 For a dialog, put `actions` in `PanelDialog.Header` and `content` in a flex column that fills the remaining body height. Keep explanatory text in `InlineGuidance` above the content. Do not put another preview card inside the dialog.
 
-Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. Errors replace the document, including a previously rendered PDF after a failed reload; they are not centered inside an empty viewer. Keep an accessible alert role in custom error content.
+Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. Errors replace the document, including a previously rendered PDF after a failed reload; they are not centered inside an empty viewer. Keep an accessible alert role in custom error content. A blocked new tab is not a document error: a localized alert beside the actions says so, and the shown document stays.
 
 ## Zoomable content
 
@@ -76,7 +80,7 @@ type PdfPreviewRequest = () => Promise<Response | Blob>;
 
 type PdfPreviewProps = {
   request: PdfPreviewRequest; autoLoad?: boolean; disabled?: () => boolean; title?: string; buttonLabel?: string;
-  openButtonLabel?: string; emptyText?: string; class?: string;
+  openButtonLabel?: string; onDownload?: () => void; emptyText?: string; class?: string;
   children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
   renderError?: (message: string) => JSX.Element;
 };
@@ -101,7 +105,7 @@ type ZoomPanViewportProps = {
 
 The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`.
 
-`PdfPreview` labels its iframe with `title`. Keep the open and preview button labels specific when several documents appear on one page.
+`PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. When a retry shows the document of an automatic preview, focus moves from the removed retry action to the open action.
 
 `ZoomPanViewport` is a focusable group with the caller's `label` and a localized description of its keys. With focus on the viewport, `+` and `-` zoom, `0` resets, `F` opens fullscreen, and arrow keys pan when zoomed in. At fit, arrow keys keep scrolling the page. Every control has a localized label and a tooltip with its key. Motion is off under `prefers-reduced-motion`.
 

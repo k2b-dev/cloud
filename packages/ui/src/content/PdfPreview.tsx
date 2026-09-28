@@ -10,6 +10,8 @@ export type PdfPreviewProps = {
   title?: string;
   buttonLabel?: string;
   openButtonLabel?: string;
+  /** Adds a Download action. The host owns the download, for example a fresh attachment URL. */
+  onDownload?: () => void;
   emptyText?: string;
   class?: string;
   children?: (parts: { actions: JSX.Element; content: JSX.Element }) => JSX.Element;
@@ -32,6 +34,12 @@ export default function PdfPreview(props: PdfPreviewProps) {
   const [loading, setLoading] = createSignal(false);
   const [opening, setOpening] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [failed, setFailed] = createSignal(false);
+  const [tabBlocked, setTabBlocked] = createSignal(false);
+  // An automatic preview shows one fixed document; the open action reuses it instead of requesting it again.
+  let shownBlob: Blob | null = null;
+  let openButton: HTMLButtonElement | undefined;
+  let renderButton: HTMLButtonElement | undefined;
   let disposed = false;
   let loadGeneration = 0;
   let openGeneration = 0;
@@ -60,6 +68,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
   const load = async () => {
     if (loading() || opening() || props.disabled?.()) return;
     const generation = ++loadGeneration;
+    const retryFocused = props.autoLoad && document.activeElement === renderButton;
     setLoading(true);
     setError(null);
     try {
@@ -70,10 +79,18 @@ export default function PdfPreview(props: PdfPreviewProps) {
         return;
       }
       const previousUrl = url();
+      shownBlob = blob;
+      setFailed(false);
       setUrl(nextUrl);
+      setLoading(false);
       if (previousUrl) URL.revokeObjectURL(previousUrl);
+      // The shown document removes the retry action; keep keyboard focus in the actions instead of the page.
+      if (retryFocused && document.activeElement === document.body) openButton?.focus();
     } catch (e) {
-      if (!disposed && generation === loadGeneration) setError(e instanceof Error ? e.message : "PDF preview failed");
+      if (disposed || generation !== loadGeneration) return;
+      shownBlob = null;
+      setFailed(true);
+      setError(e instanceof Error ? e.message : "PDF preview failed");
     } finally {
       if (!disposed && generation === loadGeneration) setLoading(false);
     }
@@ -87,17 +104,16 @@ export default function PdfPreview(props: PdfPreviewProps) {
     if (loading() || opening() || props.disabled?.()) return;
     const generation = ++openGeneration;
     const tab = window.open("", "_blank");
-    if (!tab) {
-      setError("Browser blocked the preview tab");
-      return;
-    }
+    // A blocked tab is not a document error: keep the shown document and report it beside the actions.
+    setTabBlocked(!tab);
+    if (!tab) return;
     tab.opener = null;
     tab.document.title = props.title ?? messages().pdfPreview;
     tab.document.body.textContent = "Rendering PDF preview...";
     setOpening(true);
     setError(null);
     try {
-      const blob = await readPdfBlob();
+      const blob = (props.autoLoad ? shownBlob : null) ?? (await readPdfBlob());
       if (disposed || generation !== openGeneration) {
         tab.close();
         return;
@@ -113,9 +129,13 @@ export default function PdfPreview(props: PdfPreviewProps) {
     }
   };
 
+  // With autoLoad, rendering again would show the same document: offer it only until one is shown, e.g. to retry,
+  // and keep it in place while a retry loads.
+  const renderable = () => !props.autoLoad || failed() || (!url() && !loading());
   const actions = () => (
     <div class="k2b-content-pdf-preview__actions">
       <button
+        ref={openButton}
         type="button"
         class="k2b-button"
         data-variant="secondary"
@@ -126,17 +146,38 @@ export default function PdfPreview(props: PdfPreviewProps) {
         <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
         {props.openButtonLabel ?? messages().openPreview}
       </button>
-      <button
-        type="button"
-        class="k2b-button"
-        data-variant="secondary"
-        data-size="sm"
-        onClick={() => void load()}
-        disabled={loading() || opening() || props.disabled?.()}
-      >
-        <i class={loading() ? "ti ti-loader-2 k2b-spin" : "ti ti-file-type-pdf"} aria-hidden="true" />
-        {props.buttonLabel ?? messages().previewPdf}
-      </button>
+      <Show when={props.onDownload}>
+        <button
+          type="button"
+          class="k2b-button"
+          data-variant="secondary"
+          data-size="sm"
+          onClick={() => props.onDownload?.()}
+          disabled={props.disabled?.()}
+        >
+          <i class="ti ti-download" aria-hidden="true" />
+          {messages().download}
+        </button>
+      </Show>
+      <Show when={renderable()}>
+        <button
+          ref={renderButton}
+          type="button"
+          class="k2b-button"
+          data-variant="secondary"
+          data-size="sm"
+          onClick={() => void load()}
+          disabled={loading() || opening() || props.disabled?.()}
+        >
+          <i class={loading() ? "ti ti-loader-2 k2b-spin" : "ti ti-file-type-pdf"} aria-hidden="true" />
+          {props.buttonLabel ?? messages().previewPdf}
+        </button>
+      </Show>
+      <Show when={tabBlocked()}>
+        <span role="alert" class="k2b-content-pdf-preview__notice">
+          {messages().pdfPreviewTabBlocked}
+        </span>
+      </Show>
     </div>
   );
   const content = () => (
