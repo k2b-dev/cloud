@@ -59,15 +59,19 @@ function RevisionPreview(props: PreviewProps) {
           <Placeholder icon="ti ti-file" title={t().noPreview} description={t().noPreviewDescription} action={download} />
         </Match>
         <Match when={kind() === "pdf"}>
+          {/* Safari on iOS shows only the first page of an embedded PDF; the new tab opens the whole document. */}
           <PdfPreview
             autoLoad
             title={props.entry.name}
+            openButtonLabel={t().openInTab}
+            buttonLabel={t().retry}
+            onDownload={props.onDownload}
             request={() => readPreview(props.baseId, props.entry, abort.signal, t().previewFailed)}
           >
             {(parts) => (
-              <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-2" classList={{ "h-[min(56rem,70dvh)]": props.previewLines === undefined }}>
+                {parts.actions}
                 {parts.content}
-                <div class="flex flex-wrap items-center gap-2">{parts.actions}</div>
               </div>
             )}
           </PdfPreview>

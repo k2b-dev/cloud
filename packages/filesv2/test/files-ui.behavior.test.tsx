@@ -65,6 +65,7 @@ const directory: DirectoryResult = {
   items: [
     { name: "Final ?", path: "Budget #1/Final ?", directory: true, size: 0, modified: "2026-09-17T10:00:00Z" },
     { name: "report.txt", path: "Budget #1/report.txt", directory: false, size: 4, modified: "2026-09-17T10:00:00Z" },
+    { name: "Bericht Q3.pdf", path: "Budget #1/Bericht Q3.pdf", directory: false, size: 8, modified: "2026-09-17T10:00:00Z" },
   ],
   next: "next/+=",
 };
@@ -188,5 +189,122 @@ describe("Filesv2 interactions", () => {
     dispose();
     expect(requests[before + 1]!.signal.aborted).toBe(true);
     cleanup = () => dom.cleanup();
+  });
+
+  test("a previewed PDF opens in a new tab from its loaded bytes and downloads through a fresh lease", async () => {
+    const dom = createDomTestHarness();
+    const { default: Browser } = await import("../src/frontend/Browser");
+    const pdf = directory.items[2]!;
+    const bytes = "%PDF-1.4";
+    const originalFetch = globalThis.fetch;
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    const fetched: string[] = [];
+    const objectUrls = new Map<string, Blob>();
+    const clicked: Array<{ href: string; download: string }> = [];
+    const tab = {
+      opener: {} as unknown,
+      closed: false,
+      document: { title: "", body: { textContent: "" } },
+      location: { href: "" },
+      close() {},
+    };
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        fetched.push(String(input));
+        return new Response(bytes, { headers: { "content-type": "application/pdf" } });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    URL.createObjectURL = (blob) => {
+      const url = `blob:preview-${objectUrls.size + 1}`;
+      objectUrls.set(url, blob as Blob);
+      return url;
+    };
+    URL.revokeObjectURL = () => {};
+    const anchor = dom.window.HTMLAnchorElement.prototype;
+    const originalClick = anchor.click;
+    dom.window.open = (() => tab) as unknown as typeof dom.window.open;
+    anchor.click = function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.href, download: this.download });
+    };
+    const dispose = render(
+      () =>
+        createComponent(Browser, {
+          directory,
+          bases: [directory.base],
+          cloudUrl: "https://cloud.test",
+          onNavigate: async () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      globalThis.fetch = originalFetch;
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+      anchor.click = originalClick;
+      dom.cleanup();
+    };
+    // Every lease Cloud issues here is distinct, so a URL identifies the request that produced it.
+    const settleLeases = async () => {
+      for (let round = 0; round < 8; round++) {
+        for (const [index, request] of requests.entries())
+          if (request.kind === "download" && !request.signal.aborted)
+            request.resolve(Response.json({ url: `https://filegate.test/lease/${index}`, method: "GET", expires: "2026-09-17T10:01:00Z" }));
+        await flush();
+        await Bun.sleep(0);
+      }
+    };
+
+    [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(pdf.name))!.click();
+    await settleLeases();
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Preview")!.click();
+    await settleLeases();
+
+    const dialog = dom.document.querySelector("dialog")!;
+    expect(dialog.querySelector("iframe")?.getAttribute("src")).toMatch(/^blob:preview-/);
+    const actions = [...dialog.querySelectorAll<HTMLButtonElement>(".filesv2-preview button")];
+    // Visible text names each action for keyboard and screen-reader users; reloading an unchanged file is not offered.
+    expect(actions.map((button) => button.textContent?.trim())).toEqual(["Open in new tab", "Download"]);
+    expect(actions.every((button) => !button.disabled && !button.hasAttribute("aria-label"))).toBe(true);
+    const leasesBefore = requests.length;
+    const fetchesBefore = fetched.length;
+
+    actions[0]!.click();
+    await flush();
+    expect(tab.opener).toBeNull();
+    expect(await objectUrls.get(tab.location.href)?.text()).toBe(bytes);
+    expect(requests).toHaveLength(leasesBefore);
+    expect(fetched).toHaveLength(fetchesBefore);
+
+    actions[1]!.click();
+    await flush();
+    expect(requests).toHaveLength(leasesBefore + 1);
+    expect(requests[leasesBefore]!.input).toEqual({ param: { baseId: "base-1" }, json: { path: pdf.path } });
+    await settleLeases();
+    expect(clicked).toEqual([{ href: `https://filegate.test/lease/${leasesBefore}`, download: pdf.name }]);
+    expect(fetched).toHaveLength(fetchesBefore);
+  });
+
+  test("PDF preview actions follow the German locale", async () => {
+    const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "de";
+    const { default: FilePreview } = await import("../src/frontend/FilePreview");
+    const dispose = render(
+      () =>
+        createComponent(FilePreview, {
+          baseId: "base-1",
+          entry: { name: "Bericht.pdf", path: "Bericht.pdf", directory: false, size: 8, modified: "2026-09-17T10:00:00Z" },
+          onDownload: () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const labels = [...dom.root.querySelectorAll("button")].map((button) => button.textContent?.trim());
+    expect(labels).toEqual(["In neuem Tab öffnen", "Herunterladen"]);
   });
 });
