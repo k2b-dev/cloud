@@ -1,12 +1,13 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Select, SettingsField, SettingsGroup, useLocale } from "@k2b/ui";
+import { Select, SettingsField, SettingsGroup, Switch, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import { isPresentationMode, type PresentationMode } from "@/lib/presentation-mode";
+import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
 import type { Notebook } from "../sidebar/types";
 import { notebookSettingsMessages } from "./messages";
-import { readSettings, writeSettings } from "./NotebookSettingsStore";
+import { readSettings, readTabMovesFocus, setTabMovesFocus, writeSettings } from "./NotebookSettingsStore";
 import { SaveStatus, settingsChoiceClass } from "./shared";
 import { readErrorMessage } from "./utils";
 
@@ -61,6 +62,26 @@ function ViewSection(props: { notebook: Notebook }) {
         <span class="mt-1 block text-xs text-dimmed">{t().navigatorDescription}</span>
       </button>
     </div>
+  );
+}
+
+/** Personal Tab key preference; an open note editor applies it without a reload. */
+function EditorKeyboardSection() {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
+  const [tabMovesFocus, setTabMovesFocusValue] = createSignal(readTabMovesFocus());
+
+  const change = (next: boolean) => {
+    setTabMovesFocusValue(next);
+    setTabMovesFocus(next);
+    window.dispatchEvent(new Event(TAB_KEY_PREFERENCE_EVENT));
+  };
+
+  return (
+    <SettingsGroup title={t().editor} description={t().yourViewDescription}>
+      <Switch label={t().tabMovesFocus} description={t().tabMovesFocusDescription} value={tabMovesFocus} onValueChange={change} />
+      <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
+    </SettingsGroup>
   );
 }
 
@@ -120,6 +141,7 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
         <ViewSection notebook={props.notebook} />
         <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
       </SettingsGroup>
+      <EditorKeyboardSection />
     </>
   );
 }

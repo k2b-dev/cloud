@@ -51,6 +51,7 @@ import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOv
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { createNoteNavigationCoordinator, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { slashCommandsExtension } from "./slash-commands";
+import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
 type EditorInstanceProps = {
@@ -305,6 +306,7 @@ function EditorInstance(props: EditorInstanceProps) {
   });
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
+  const tabKeys = createTabKeyPreference(() => !!props.readOnly);
 
   const doc = new Y.Doc({ gc: true });
   if (props.initialSnapshot) {
@@ -403,6 +405,8 @@ function EditorInstance(props: EditorInstanceProps) {
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
+  // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
+  addExtension(tabKeys.extension);
 
   addExtension(() => {
     if (richMode()) return isDark() ? editor.customDarkInit() : editor.customLightInit();
@@ -836,6 +840,11 @@ function EditorInstance(props: EditorInstanceProps) {
       >
         <div ref={editorRef} />
       </ScrollArea>
+      <Show when={tabKeys.indents()}>
+        <p id={tabKeys.hintId} class="sr-only">
+          {t().tabIndentHint}
+        </p>
+      </Show>
       <Show when={!props.readOnly}>
         <EditorToolbar
           connected={connected()}

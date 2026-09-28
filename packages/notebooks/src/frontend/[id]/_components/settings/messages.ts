@@ -66,6 +66,10 @@ export const notebookSettingsMessages = i18n.define({
       yourView: "Your view",
       yourViewDescription: "Stored in this browser and applied immediately.",
       savedBrowser: "Saved in this browser",
+      editor: "Editor",
+      tabMovesFocus: "Tab moves focus instead of indenting",
+      tabMovesFocusDescription:
+        "When this is off, Tab indents in notes and Shift+Tab reduces the indent. Press Esc, then Tab to leave the editor.",
       apiKeysLoadFailed: "Failed to load notebook API keys.",
       apiKeysReconcileFailed: "The change was saved, but the API key list could not be reloaded.",
       integrationAccess: "Integration access",
@@ -199,6 +203,10 @@ export const notebookSettingsMessages = i18n.define({
       yourView: "Deine Ansicht",
       yourViewDescription: "Wird in diesem Browser gespeichert und sofort angewendet.",
       savedBrowser: "In diesem Browser gespeichert",
+      editor: "Editor",
+      tabMovesFocus: "Tab-Taste bewegt den Fokus statt einzurücken",
+      tabMovesFocusDescription:
+        "Ist die Option aus, rückt Tab in Notizen ein und Umschalt+Tab verringert den Einzug. Mit Esc und dann Tab verlässt du den Editor.",
       apiKeysLoadFailed: "Die API-Schlüssel des Notizbuchs konnten nicht geladen werden.",
       apiKeysReconcileFailed: "Die Änderung wurde gespeichert, aber die Liste der API-Schlüssel konnte nicht neu geladen werden.",
       integrationAccess: "Zugriff für Integrationen",

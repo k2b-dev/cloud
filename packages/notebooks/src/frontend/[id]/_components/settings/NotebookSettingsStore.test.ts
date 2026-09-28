@@ -5,9 +5,11 @@ import {
   parseSettings,
   readPinnedNotebookIds,
   readSettings,
+  readTabMovesFocus,
   setDetailPanelOpen,
   setLastNotebookId,
   setPinnedNotebookIds,
+  setTabMovesFocus,
   writeSettings,
 } from "./NotebookSettingsStore";
 
@@ -62,6 +64,18 @@ describe("NotebookSettingsStore", () => {
     expect(parseSettings(cookieHeader(), "second").treeSort).toBe("created");
     expect(parseSettings(cookieHeader(), "first").navigatorSort).toBe("updated");
     expect(parseSettings(cookieHeader(), "first").treeSort).toBe("title");
+  });
+
+  test("keeps the personal Tab key preference across other notebook preferences", () => {
+    expect(readTabMovesFocus()).toBe(false);
+    setTabMovesFocus(true);
+    writeSettings("first", { richMode: "source", sidebarMode: "navigator" });
+    setDetailPanelOpen(true);
+    expect(readTabMovesFocus()).toBe(true);
+
+    setTabMovesFocus(false);
+    expect(readTabMovesFocus()).toBe(false);
+    expect(readSettings("first").richMode).toBe("source");
   });
 
   test("persists detail-panel visibility for server rendering", () => {

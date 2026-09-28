@@ -9,6 +9,8 @@ export const DETAIL_PANEL_TOGGLE_EVENT = "notebooks.detail-panel.toggle";
 /** Panel → toolbar: current open/closed state after every flip (and on mount). */
 export const DETAIL_PANEL_STATE_EVENT = "notebooks.detail-panel.stateChanged";
 export const TOGGLE_RICH_MODE_EVENT = "notebooks.editor.toggleRich";
+/** Settings → editor: the personal Tab key preference changed; the editor rereads it. */
+export const TAB_KEY_PREFERENCE_EVENT = "notebooks.editor.tabKeyPreference";
 /** Editor → panel: current rich/raw mode after every flip (and on mount). */
 export const RICH_MODE_CHANGED_EVENT = "notebooks.editor.richModeChanged";
 export const TOC_UPDATE_EVENT = "notebooks.toc.updated";
