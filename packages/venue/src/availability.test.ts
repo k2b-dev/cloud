@@ -126,11 +126,26 @@ describe("buildPublicAvailability", () => {
     expect(result.upcomingOpenings).toEqual([
       {
         kind: "free",
-        title: "Additional opening",
+        title: "Additionally open",
         startsAt: "2026-07-13T11:00:00.000Z",
         endsAt: "2026-07-13T13:00:00.000Z",
       },
     ]);
+  });
+
+  test("lists a staffed shift under a generic label instead of its internal template title", () => {
+    const staffed = {
+      venue: { openMode: "staffed" as const, timezone: "Europe/Berlin" },
+      templates: [shiftTemplate({ weekday: 2, title: "Early bar crew" })],
+      assignments: [assignment({ startsAt: "2026-07-14T08:00:00.000Z", endsAt: "2026-07-14T10:00:00.000Z" })],
+    };
+
+    const result = project(staffed);
+    expect(result.upcomingOpenings).toEqual([
+      { kind: "shift", title: "Additionally open", startsAt: "2026-07-14T08:00:00.000Z", endsAt: "2026-07-14T10:00:00.000Z" },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("Early bar crew");
+    expect(project({ ...staffed, locale: "de" }).upcomingOpenings[0]?.title).toBe("Zusätzlich geöffnet");
   });
 
   test("opens during an active free assignment without exposing assignment details", () => {
@@ -205,6 +220,6 @@ describe("buildPublicAvailability", () => {
     });
 
     expect(result.todayLabel).toBe("Heute keine regelmäßigen Öffnungszeiten");
-    expect(result.upcomingOpenings[0]?.title).toBe("Zusätzliche Öffnung");
+    expect(result.upcomingOpenings[0]?.title).toBe("Zusätzlich geöffnet");
   });
 });

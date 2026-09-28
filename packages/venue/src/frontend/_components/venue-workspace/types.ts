@@ -11,7 +11,8 @@ export type VenueWorkspaceProps = {
   dashboard: VenueDashboard;
   dashboardSource: VenueDashboardSource;
   userId: string;
-  icalToken: string;
+  /** The viewer's personal iCal subscription URL; renewing it replaces the token. */
+  calendarUrl: string;
   accessEntries: AccessEntry[];
   apiKeys: ResourceApiKey[];
   initialView: VenueView;
@@ -20,4 +21,5 @@ export type VenueWorkspaceProps = {
   initialCalendarDate: string;
   initialFeedbackDays: FeedbackRange;
   initialFeedbackSearch: string;
+  initialFeedbackComments?: boolean;
 };

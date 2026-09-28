@@ -6,7 +6,7 @@ description: Grundbegriffe, Einrichtung und öffentliche Seite.
 order: 100
 ---
 
-Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Schichtanmeldung, öffentlichen Inhalten und Feedback von Besuchern. Die Übersicht zeigt alle zugänglichen Standorte. Dort lässt sich ein leerer Standort oder eine Vorlage auswählen.
+Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Schichtplan, öffentlichen Inhalten und Feedback von Besuchern. Die Übersicht zeigt alle zugänglichen Standorte. Dort lässt sich ein leerer Standort oder eine Vorlage auswählen.
 
 ## Überblick {icon="layout-grid"}
 
@@ -23,5 +23,5 @@ Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Sch
 - **Standort erstellen:** Beginne in der Übersicht mit einem leeren Standort oder einer Vorlage.
 - **Zeitplan einrichten:** Verwalte in den Einstellungen reguläre Öffnungszeiten, Abweichungen und wiederkehrende Schichtvorlagen.
 - **Informationen veröffentlichen:** Öffne die öffentliche Seite über die Seitenleiste des Arbeitsbereichs. Dort erscheinen Abschnitte, bei denen **Auf der öffentlichen Seite zeigen** eingeschaltet ist, und das Feedback-Formular. Besucher wählen 1 bis 5 Sterne, bevor sie Feedback senden können; ein Kommentar ist optional.
-- **Schichten besetzen:** Personen mit Zugriff „Mitarbeit“ oder „Admin“ melden sich für sichtbare Schichten an. Administratoren können Zuweisungen auch stornieren.
+- **Schichten besetzen:** Personen mit Zugriff „Mitarbeit“ oder „Admin“ übernehmen sichtbare Schichten mit **Schicht übernehmen**. Administratoren können Personen auch aus Schichten entfernen.
 :::

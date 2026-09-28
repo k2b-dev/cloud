@@ -121,9 +121,10 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
         const qualifies = template.requireTargetForOpening ? assignedCount >= Math.max(1, template.minPeople) : assignedCount > 0;
         if (!qualifies) continue;
 
+        // Template titles are internal shift names; visitors see only that the venue is additionally open.
         dynamicOpenings.push({
           kind: "shift",
-          title: template.title,
+          title: t.additionalOpening,
           startsAt,
           endsAt: instantFor(date, template.endTime, timezone).toISOString(),
         });

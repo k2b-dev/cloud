@@ -4,7 +4,6 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
-  ButtonLink,
   CheckboxCard,
   ColorInput,
   confirmDiscardIfDirty,
@@ -40,6 +39,7 @@ import type {
   VenueInput,
 } from "../../../contracts";
 import { venueMessages } from "../../../messages";
+import { formatDateKey } from "../../../time-format";
 import { createVenueSettingsQuery, settingsCloseBlocked, settingsInteractionBlocked, venueSettingsCanAdmin } from "../../settings-contract";
 import { openVenuePublicDisplayDialog } from "./public-display";
 import { ClosedDayDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
@@ -105,7 +105,8 @@ export function SettingsDialog(props: {
   dashboard: VenueDashboard;
   accessEntries: AccessEntry[];
   apiKeys: ResourceApiKey[];
-  icalToken: string;
+  /** Opens the personal calendar subscription, the same dialog as in My shifts. */
+  onOpenCalendarSubscription: () => void;
   close: (changed: boolean) => void;
 }) {
   const locale = useLocale();
@@ -939,8 +940,15 @@ export function SettingsDialog(props: {
                 <For each={overrides()}>
                   {(entry) => (
                     <SettingsCollection.Item
-                      title={entry.date}
-                      description={`${entry.kind}${entry.note ? ` · ${entry.note}` : ""}`}
+                      title={formatDateKey(entry.date, locale(), { weekday: "short", day: "numeric", month: "numeric", year: "numeric" })}
+                      description={[
+                        entry.kind === "open" && entry.startTime && entry.endTime
+                          ? t().specialOpening({ window: `${entry.startTime}–${entry.endTime}` })
+                          : t().closed,
+                        entry.note,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                       icon={<i class="ti ti-calendar-off" aria-hidden="true" />}
                     >
                       <Show when={venueSettingsCanAdmin(settings())}>
@@ -1031,10 +1039,10 @@ export function SettingsDialog(props: {
                     <i class="ti ti-device-tv" />
                     {t().publicPage}
                   </Button>
-                  <ButtonLink variant="secondary" size="sm" href={`/api/venue/calendar/${props.icalToken}.ics`}>
-                    <i class="ti ti-calendar-down" />
-                    iCal
-                  </ButtonLink>
+                  <Button type="button" variant="secondary" size="sm" onClick={props.onOpenCalendarSubscription}>
+                    <i class="ti ti-calendar-share" aria-hidden="true" />
+                    {t().subscribeCalendar}
+                  </Button>
                 </div>
               </SettingsGroup.Action>
             </SettingsGroup>

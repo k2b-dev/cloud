@@ -2,7 +2,7 @@
 id: venue-troubleshooting
 title: Probleme beheben
 icon: ti ti-lifebuoy
-description: Öffnungsstatus, Schichten, Anmeldung, öffentliche Inhalte, Feedback und Kalenderabonnements prüfen.
+description: Öffnungsstatus, Schichten, Schichtübernahme, öffentliche Inhalte, Feedback und Kalenderabonnements prüfen.
 order: 120
 ---
 
@@ -11,12 +11,13 @@ order: 120
 :::reference
 - **Die öffentliche Seite zeigt den falschen Öffnungsstatus:** Prüfe die regulären Öffnungszeiten, Abweichungen, Zeitzone und die Aktivierung des Standorts für das betreffende Datum.
 - **Eine Schicht fehlt:** Prüfe die ausgewählte Woche oder den Monat, die wiederkehrende Vorlage und aktive Zeitplanfilter.
-- **Eine Person kann sich nicht anmelden:** Die Person benötigt Zugriff „Mitarbeit“ oder „Admin“. Außerdem muss die Schicht einen weiteren Platz haben und die Anmeldefrist noch laufen.
+- **Eine Person kann keine Schicht übernehmen:** Die Person benötigt Zugriff „Mitarbeit“ oder „Admin“. Außerdem muss die Schicht einen weiteren Platz haben und darf noch nicht beendet sein.
 - **Eine Person mit „Mitarbeit“ kann Einstellungen nicht ändern:** Zugriff „Mitarbeit“ erlaubt die Arbeit mit Schichten, aber keine Standortverwaltung. Vergib Zugriff „Admin“ nur an Personen, die die Konfiguration verwalten sollen.
 - **Ein öffentlicher Abschnitt fehlt:** Öffne den Abschnitt und prüfe, ob er ein Entwurf ist: **Auf der öffentlichen Seite zeigen** muss eingeschaltet sein. Prüfe außerdem, ob die öffentliche Seite des richtigen Standorts geöffnet ist. Mit Zugriff „Lesen“ erscheinen nur die Abschnitte, die die öffentliche Seite zeigt.
 - **Zeiten wirken verschoben:** Standorte zeigt jede Zeit in der Zeitzone des Standorts. Läuft dein Gerät in einer anderen Zeitzone, nennt der Arbeitsbereich die Zeitzone des Standorts. Wirkt sie falsch, prüfe die Zeitzone des Standorts.
-- **Feedback fehlt:** Prüfe, ob Feedback aktiviert ist, und entferne die aktuelle Suche oder den Zeitraumfilter. Ältere Bewertungen stehen auf den weiteren Seiten der Liste. Die Ansicht „Feedback“ erfordert Zugriff „Mitarbeit“ oder „Admin“.
-- **Ein Kalenderabonnement ist veraltet:** Kalenderprogramme legen ihr Aktualisierungsintervall selbst fest. Prüfe zunächst, ob die persönliche iCal-URL noch gültig ist.
+- **Feedback fehlt:** Prüfe, ob Feedback aktiviert ist, und entferne die aktuelle Suche, **Nur mit Kommentar** oder den Zeitraumfilter. Ältere Bewertungen stehen auf den weiteren Seiten der Liste. Die Ansicht „Feedback“ erfordert Zugriff „Mitarbeit“ oder „Admin“.
+- **Ein Kalenderabonnement ist veraltet:** Kalender-Apps legen ihr Aktualisierungsintervall selbst fest. Aktualisiert sich der Kalender nicht mehr, seit jemand den Link erneuert hat, öffne **Meine Schichten** > **Kalender abonnieren** und abonniere den aktuellen Link.
+- **Die öffentliche Seite zeigt „Zusätzlich geöffnet“ statt eines Schichtnamens:** Das ist so gewollt. Besucher sehen, wann Personal den Standort öffnet, aber nicht die internen Namen der Schichten.
 :::
 
 ## Öffnungsstatus prüfen {icon="point"}
@@ -29,5 +30,5 @@ order: 120
 :::
 
 :::warning Öffentliche und persönliche Links
-Öffentliche Seiten zeigen bewusst alle aktivierten öffentlichen Inhalte. Persönliche iCal-Links können zugewiesene Schichtdetails für jede Person mit dieser URL sichtbar machen. Ersetze oder deaktiviere den Zugriff, wenn ein Link unbeabsichtigt geteilt wurde.
+Öffentliche Seiten zeigen bewusst alle aktivierten öffentlichen Inhalte. Ein persönlicher Kalender-Link zeigt deine Schichten jeder Person, die ihn hat. Hast du ihn versehentlich geteilt, nutze **Link erneuern** in **Kalender abonnieren**: Der alte Link funktioniert sofort nicht mehr.
 :::

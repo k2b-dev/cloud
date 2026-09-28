@@ -97,7 +97,7 @@ describe("Venue shift sign-up entry points", () => {
               dashboard={dashboard}
               dashboardSource={{ venueId: "Cafe01", query: {} }}
               userId="user-1"
-              icalToken="calendar-token"
+              calendarUrl="https://cloud.example.test/api/venue/calendar/calendar-token.ics"
               accessEntries={[]}
               apiKeys={[]}
               initialView="shifts"
@@ -143,18 +143,18 @@ describe("Venue shift sign-up entry points", () => {
         expect(dom.document.querySelector(".k2b-dialog__panel")).toBeNull();
         expect(dom.root.textContent).toContain("See staffing coverage for the upcoming shifts.");
         expect(dom.root.textContent).toContain("Unfilled spots");
-        expect(dom.root.textContent).not.toContain("Open spots");
+        expect(dom.root.textContent).not.toContain("Free spots");
         dispose();
       }
 
       const dispose = workspace("write");
       await flush();
       expect(shiftEntry().tagName).toBe("BUTTON");
-      expect(dom.root.textContent).toContain("See staffing coverage and join an available shift.");
-      expect(dom.root.textContent).toContain("Open spots");
+      expect(dom.root.textContent).toContain("See staffing coverage and take a shift with a free spot.");
+      expect(dom.root.textContent).toContain("Free spots");
       shiftEntry().dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
       await flush();
-      expect(dom.document.querySelector(".k2b-dialog__panel")?.textContent).toContain("Join this shift?");
+      expect(dom.document.querySelector(".k2b-dialog__panel")?.textContent).toContain("Take this shift?");
       dispose();
     } finally {
       dom.cleanup();

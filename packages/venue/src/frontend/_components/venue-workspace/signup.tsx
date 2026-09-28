@@ -90,10 +90,10 @@ export function SignupDialog(props: { dashboard: VenueDashboard; userId: string;
     },
     onSuccess: (added) => {
       if (added === 0) {
-        toast(t().noShiftsAdded);
+        toast(t().noShiftsTaken);
         return;
       }
-      toast.success(added === 1 ? t().shiftAdded : t().shiftsAdded({ count: added }));
+      toast.success(added === 1 ? t().shiftTaken : t().shiftsTaken({ count: added }));
       props.close(true);
     },
     onError: (err) => prompts.error(err.message),
@@ -108,7 +108,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; userId: string;
       if (!res.ok) throw new Error(await readError(res, t().signupFailed));
     },
     onSuccess: () => {
-      toast.success(t().shiftAdded);
+      toast.success(t().shiftTaken);
       props.close(true);
     },
     onError: (err) => prompts.error(err.message),
@@ -165,11 +165,10 @@ export function SignupDialog(props: { dashboard: VenueDashboard; userId: string;
                   onValueChange={setFreeRange}
                   withTime
                   dateConfig={timeZoneDateConfig(dashboard().venue.timezone, locale())}
-                  durationPresets={[
-                    { label: "2h", minutes: 120 },
-                    { label: "4h", minutes: 240 },
-                    { label: "8h", minutes: 480 },
-                  ]}
+                  durationPresets={[2, 4, 8].map((hours) => ({
+                    label: new Intl.NumberFormat(locale(), { style: "unit", unit: "hour", unitDisplay: "narrow" }).format(hours),
+                    minutes: hours * 60,
+                  }))}
                 />
                 <TextInput label={t().note} value={note} onValueChange={setNote} multiline lines={3} />
                 <Button

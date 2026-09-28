@@ -47,7 +47,7 @@ describe("Venue overview", () => {
     expect(html).toContain("Opening hours and shifts");
     expect(html).toContain("k2b-app-overview__cards");
     expect(html).toContain('href="/app/venue/Cafe01"');
-    expect(html).toContain("shift + free signup · public page active");
+    expect(html).toContain("take shifts, add free time · public page active");
     expect(html).toContain("Front desk");
     expect(html).toContain("Viewer");
     expect(html).not.toContain("k2b-app-overview__aside");

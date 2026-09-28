@@ -14,8 +14,9 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { logger, serviceAccounts } from "@k2b/cloud/services";
+import { coreSettings, logger, serviceAccounts } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { z } from "zod";
@@ -1350,6 +1351,8 @@ export type FeedbackQuery = {
   days?: number;
   includeEntries?: boolean;
   search?: string;
+  /** Lists only ratings with a written comment; like `search`, it narrows the entries, not the figures. */
+  withComment?: boolean;
   /** 1-based page of matching entries; clamped to the last page. */
   page?: number;
 };
@@ -1380,6 +1383,7 @@ const feedbackSummary = async (
   `;
   const search = options.search?.trim() || null;
   const pattern = search ? `%${search}%` : null;
+  const withComment = options.withComment === true;
   let entries: DbFeedbackEntry[] = [];
   let entriesPage: VenueDashboard["feedbackEntriesPage"] = null;
   if (options.includeEntries) {
@@ -1389,6 +1393,7 @@ const feedbackSummary = async (
       WHERE venue_id = ${venue.id}::uuid
         AND created_at >= ${windowStart}
         AND (${pattern}::text IS NULL OR COALESCE(comment, '') ILIKE ${pattern})
+        AND (NOT ${withComment}::boolean OR comment IS NOT NULL)
     `;
     const total = matching?.total ?? 0;
     const page = Math.min(Math.max(1, options.page ?? 1), Math.max(1, Math.ceil(total / FEEDBACK_PAGE_SIZE)));
@@ -1397,6 +1402,7 @@ const feedbackSummary = async (
       WHERE venue_id = ${venue.id}::uuid
         AND created_at >= ${windowStart}
         AND (${pattern}::text IS NULL OR COALESCE(comment, '') ILIKE ${pattern})
+        AND (NOT ${withComment}::boolean OR comment IS NOT NULL)
       ORDER BY created_at DESC, id DESC
       LIMIT ${FEEDBACK_PAGE_SIZE} OFFSET ${(page - 1) * FEEDBACK_PAGE_SIZE}
     `;
@@ -1459,6 +1465,7 @@ export type VenueDashboardOptions = {
   includeFeedbackEntries?: boolean;
   feedbackDays?: number;
   feedbackSearch?: string;
+  feedbackComments?: boolean;
   feedbackPage?: number;
 };
 
@@ -1482,6 +1489,7 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
           days: options.feedbackDays,
           includeEntries: options.includeFeedbackEntries ?? false,
           search: options.feedbackSearch,
+          withComment: options.feedbackComments,
           page: options.feedbackPage,
         })
       : Promise.resolve(null),
@@ -1522,6 +1530,22 @@ const getOrCreateIcalToken = async (userId: string): Promise<string> => {
     RETURNING token
   `;
   if (!row) throw new Error("Failed to create iCal token");
+  return row.token;
+};
+
+/** The subscription URL of a calendar token on the Cloud's public origin, so it works when copied into a calendar app. */
+const icalUrl = async (token: string): Promise<string> =>
+  `${publicCloudOrigin(await coreSettings.get<string>("app.url"))}/api/venue/calendar/${token}.ics`;
+
+/** Replaces the user's calendar token, so the previous subscription URL stops working. */
+const renewIcalToken = async (userId: string): Promise<string> => {
+  const [row] = await sql<{ token: string }[]>`
+    INSERT INTO venue.user_ical_tokens (user_id)
+    VALUES (${userId}::uuid)
+    ON CONFLICT (user_id) DO UPDATE SET token = encode(gen_random_bytes(24), 'hex'), created_at = now()
+    RETURNING token
+  `;
+  if (!row) throw new Error("Failed to renew iCal token");
   return row.token;
 };
 
@@ -1595,5 +1619,11 @@ export const venueService = {
   publicStatus,
   dashboard,
   publicResources: { resolve: resolvePublicId, resolveOwned: resolveVenuePublicId, ...publicProjection },
-  ical: { getOrCreateToken: getOrCreateIcalToken, getUserIdByToken: getUserIdByIcalToken, generateUser: generateUserIcs },
+  ical: {
+    getOrCreateToken: getOrCreateIcalToken,
+    renewToken: renewIcalToken,
+    url: icalUrl,
+    getUserIdByToken: getUserIdByIcalToken,
+    generateUser: generateUserIcs,
+  },
 } as const;

@@ -148,7 +148,7 @@ describe("Venue clarity behavior", () => {
       expect(dom.root.querySelectorAll(".paper").length).toBe(20);
       expect(dom.root.textContent).toContain("20 shifts up to");
       // A shift with free places says so, in words that do not read as the Venue's opening status.
-      expect(dom.root.querySelector(".paper .tag")?.textContent).toBe("Open spots");
+      expect(dom.root.querySelector(".paper .tag")?.textContent).toBe("Free spots");
 
       buttonNamed(dom.root, "Load more shifts").click();
       await flush();
@@ -182,13 +182,13 @@ describe("Venue clarity behavior", () => {
     try {
       await flush();
       const [joinedCard, openCard] = [...dom.root.querySelectorAll<HTMLElement>(".paper")];
-      expect(joinedCard?.querySelector(".tag")?.textContent?.trim()).toBe("Joined");
-      expect(buttonNamed(joinedCard!, "Join").disabled).toBe(true);
+      expect(joinedCard?.querySelector(".tag")?.textContent?.trim()).toBe("You're in");
+      expect(buttonNamed(joinedCard!, "Take shift").disabled).toBe(true);
       // Joining the following weeks still adds shifts the viewer does not have yet.
-      expect(buttonNamed(joinedCard!, "Join next 4 weeks").disabled).toBe(false);
+      expect(buttonNamed(joinedCard!, "Take the next 4 weeks").disabled).toBe(false);
 
-      expect(openCard?.querySelector(".tag")?.textContent?.trim()).toBe("Open spots");
-      expect(buttonNamed(openCard!, "Join").disabled).toBe(false);
+      expect(openCard?.querySelector(".tag")?.textContent?.trim()).toBe("Free spots");
+      expect(buttonNamed(openCard!, "Take shift").disabled).toBe(false);
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -219,20 +219,20 @@ describe("Venue clarity behavior", () => {
     );
     try {
       await flush();
-      buttonNamed(dom.root, "Join next 4 weeks").click();
+      buttonNamed(dom.root, "Take the next 4 weeks").click();
       await flush();
       // Nothing was added, so the dialog stays open and says so instead of reporting a new shift.
       expect(closes).toEqual([]);
       expect(toasts().map((entry) => [entry.dataset.tone, entry.textContent])).toEqual([
-        ["info", expect.stringContaining("No shifts added. You are already signed up for these weeks, or they are full.")],
+        ["info", expect.stringContaining("No shifts taken. You already have these weeks, or they are full.")],
       ]);
 
       created = [8, 15].map((days) => assignment(slot(addDays(today, days), "Lunch counter"), "user-1", "Alex Example"));
-      buttonNamed(dom.root, "Join next 4 weeks").click();
+      buttonNamed(dom.root, "Take the next 4 weeks").click();
       await flush();
       expect(closes).toEqual([true]);
       expect(toasts().at(-1)?.dataset.tone).toBe("success");
-      expect(toasts().at(-1)?.textContent).toContain("2 shifts added");
+      expect(toasts().at(-1)?.textContent).toContain("2 shifts taken");
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -324,6 +324,137 @@ describe("Venue clarity behavior", () => {
       expect(saved.at(-1)).toMatchObject({ enabled: true, position: 4 });
     } finally {
       dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("leaving one of my shifts asks first and shows progress only on that entry", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    let finishLeave: (response: Response) => void = () => {};
+    const requests: string[] = [];
+    const lunch = slot(addDays(dates.formatDateKey(new Date(), { timeZone: venue.timezone }), 2), "Lunch counter");
+    const mine = [
+      assignment(lunch, "user-1", "Alex Example"),
+      { ...assignment(lunch, "user-1", "Alex Example"), id: "Asg-free", templateId: null, note: "Inventory count" },
+    ];
+    const board = { ...dashboard, myUpcomingShifts: mine };
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      requests.push(`${method} ${new URL(url, "http://localhost").pathname}`);
+      if (method === "DELETE") return new Promise<Response>((resolve) => (finishLeave = resolve));
+      return Response.json(board);
+    }) as typeof fetch;
+
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: VenueWorkspace } = await import("../src/frontend/_components/VenueWorkspace.island");
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <VenueWorkspace
+            dashboard={board}
+            dashboardSource={{ venueId: "Cafe01", query: {} }}
+            userId="user-1"
+            calendarUrl="https://cloud.example.test/api/venue/calendar/calendar-token.ics"
+            accessEntries={[]}
+            apiKeys={[]}
+            initialView="my-shifts"
+            initialCalendarView="week"
+            initialCalendarDate={lunch.date}
+            initialFeedbackDays={30}
+            initialFeedbackSearch=""
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      await flush();
+      const rows = [...dom.root.querySelectorAll<HTMLElement>("[data-my-shift]")];
+      expect(rows.map((row) => row.querySelector("p")?.textContent)).toEqual([
+        expect.stringContaining("11:00–14:00 · Lunch counter"),
+        expect.stringContaining("11:00–14:00 · Free time"),
+      ]);
+      const [first, second] = rows.map((row) => buttonNamed(row, "Leave"));
+      expect(first?.dataset.variant).toBe("secondary");
+
+      first!.click();
+      await flush();
+      const confirmation = dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!;
+      expect(confirmation.textContent).toContain("Leave “Lunch counter” on");
+      expect(requests.filter((request) => request.startsWith("DELETE"))).toEqual([]);
+
+      buttonNamed(confirmation, "Leave").click();
+      await flush();
+      expect(requests.filter((request) => request.startsWith("DELETE"))).toEqual([
+        "DELETE /api/venue/venues/Cafe01/assignments/Asg-user-1",
+      ]);
+      expect(first!.getAttribute("aria-busy")).toBe("true");
+      expect(second!.getAttribute("aria-busy")).toBeNull();
+      expect(second!.querySelector(".k2b-spin")).toBeNull();
+
+      finishLeave(Response.json({ message: "Shift cancelled" }));
+      await flush();
+      // The workspace reloads after leaving; no Leave button keeps spinning.
+      expect(requests.at(-1)).toBe("GET /api/venue/venues/Cafe01/dashboard");
+      expect(dom.root.querySelectorAll("[data-my-shift] [aria-busy]")).toHaveLength(0);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("the calendar subscription offers a webcal link and renews the personal link after a confirmation", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const requests: string[] = [];
+    const renewed = "https://cloud.example.test/api/venue/calendar/fresh-token.ics";
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      requests.push(`${method} ${new URL(url, "http://localhost").pathname}`);
+      return Response.json({ href: renewed });
+    }) as typeof fetch;
+
+    const { CalendarSubscriptionDialog } = await import("../src/frontend/_components/venue-workspace/calendar-subscription");
+    const handedBack: string[] = [];
+    const dispose = render(
+      () => (
+        <CalendarSubscriptionDialog
+          url="https://cloud.example.test/api/venue/calendar/old-token.ics"
+          onRenewed={(url) => handedBack.push(url)}
+          close={() => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const link = () => dom.root.querySelector<HTMLInputElement>("input")!;
+      const webcal = () =>
+        [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find((anchor) => anchor.textContent?.includes("Open in calendar app"));
+      expect(link().value).toBe("https://cloud.example.test/api/venue/calendar/old-token.ics");
+      expect(link().readOnly).toBe(true);
+      expect(webcal()?.getAttribute("href")).toBe("webcal://cloud.example.test/api/venue/calendar/old-token.ics");
+      expect(buttonNamed(dom.root, "Copy link")).toBeTruthy();
+      expect(dom.root.textContent).toContain("This link is personal");
+
+      buttonNamed(dom.root, "Renew link").click();
+      await flush();
+      const confirmation = dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!;
+      expect(confirmation.textContent).toContain("The old link stops working at once.");
+      expect(requests).toEqual([]);
+
+      buttonNamed(confirmation, "Renew link").click();
+      await flush();
+      expect(requests).toEqual(["POST /api/venue/calendar/my/renew"]);
+      expect(link().value).toBe(renewed);
+      expect(webcal()?.getAttribute("href")).toBe("webcal://cloud.example.test/api/venue/calendar/fresh-token.ics");
+      expect(handedBack).toEqual([renewed]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
       dom.cleanup();
     }
   });

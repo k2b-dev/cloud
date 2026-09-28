@@ -358,6 +358,11 @@ export const VenueDashboardQuerySchema = z.object({
     .optional(),
   feedbackDays: z.coerce.number().int().min(1).max(365).optional(),
   feedbackSearch: z.string().trim().max(200).optional(),
+  /** `true` lists only entries with a comment; the counts and buckets stay those of the whole window. */
+  feedbackComments: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   /** 1-based; the server clamps it to the last page. */
   feedbackPage: z.coerce.number().int().min(1).optional(),
 });

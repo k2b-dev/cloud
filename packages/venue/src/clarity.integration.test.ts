@@ -234,6 +234,16 @@ suite("Venue sections and feedback say what they do", () => {
     expect(searched.feedbackEntriesPage?.total).toBe(40);
     expect(searched.feedbackEntries.every((entry) => entry.comment?.startsWith("Espresso note"))).toBe(true);
 
+    // "Only with comment" narrows the list and its total to the rated comments; the figures stay the window's.
+    const withComment = await dashboard("&feedbackComments=true");
+    expect(withComment.feedback).toMatchObject({ count: 120, commentCount: 40 });
+    expect(withComment.feedbackEntriesPage).toEqual({ page: 1, pageSize: 50, total: 40 });
+    expect(withComment.feedbackEntries).toHaveLength(40);
+    expect(withComment.feedbackEntries.every((entry) => entry.comment)).toBe(true);
+    const commentedSearch = await dashboard("&feedbackComments=true&feedbackSearch=note%201");
+    expect(commentedSearch.feedbackEntriesPage?.total).toBe(commentedSearch.feedbackEntries.length);
+    expect(commentedSearch.feedbackEntries.every((entry) => entry.comment?.includes("note 1"))).toBe(true);
+
     // Without entries there is no list to place, so no page claims a total of zero next to 120 ratings.
     const summaryOnly = await json<VenueDashboard>(
       await send("GET", `/api/venue/venues/${venueId}/dashboard`, cookie),
@@ -243,5 +253,54 @@ suite("Venue sections and feedback say what they do", () => {
     expect(summaryOnly.feedback).toMatchObject({ count: 120 });
     expect(summaryOnly.feedbackEntries).toEqual([]);
     expect(summaryOnly.feedbackEntriesPage).toBeNull();
+  });
+
+  test("the public status lists staffed openings without the internal template title", async () => {
+    // A shift with a title only staff should see, taken for its next occurrence within the public 14-day window.
+    const tomorrow = shiftDate(dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" }), 1);
+    const created = await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
+      weekday: new Date(`${tomorrow}T12:00:00Z`).getUTCDay(),
+      title: "Crew Z backroom rota",
+      startTime: "17:00",
+      endTime: "21:00",
+      minPeople: 1,
+      maxPeople: 2,
+    });
+    const template = await json<ShiftTemplate>(created, 201, "create internal template");
+    await json(
+      await send("POST", `/api/venue/venues/${venueId}/templates/${template.id}/signup`, cookie, { date: tomorrow }),
+      201,
+      "take it",
+    );
+
+    const response = await send("GET", `/api/venue/public/${venueId}/status`, null);
+    const raw = await response.clone().text();
+    const status = await json<PublicStatus>(response, 200, "public status");
+    const opening = status.upcomingOpenings.find((entry) => entry.kind === "shift");
+    expect(opening).toMatchObject({ title: "Additionally open" });
+    expect(raw).not.toContain("Crew Z backroom rota");
+  });
+
+  test("renewing the calendar link retires the old subscription URL", async () => {
+    const path = (href: string) => new URL(href).pathname;
+    const current = await json<{ href: string }>(await send("GET", "/api/venue/calendar/my", cookie), 200, "calendar link");
+    // A calendar app needs an absolute URL, even when `app.url` is configured without a scheme.
+    expect(current.href).toMatch(/^https?:\/\/[^/]+\/api\/venue\/calendar\//);
+    expect((await send("GET", path(current.href), null)).status).toBe(200);
+
+    const renewed = await json<{ href: string }>(await send("POST", "/api/venue/calendar/my/renew", cookie), 200, "renew");
+    expect(renewed.href).not.toBe(current.href);
+    expect(path(renewed.href)).toMatch(/^\/api\/venue\/calendar\/[0-9a-f]{48}\.ics$/);
+    expect((await send("GET", path(current.href), null)).status).toBe(404);
+    const feed = await send("GET", path(renewed.href), null);
+    expect(feed.status).toBe(200);
+    expect(await feed.text()).toContain("BEGIN:VCALENDAR");
+    // The link the workspace shows next is the renewed one.
+    expect((await json<{ href: string }>(await send("GET", "/api/venue/calendar/my", cookie), 200, "calendar link again")).href).toBe(
+      renewed.href,
+    );
+
+    // Renewing needs a signed-in person.
+    expect((await send("POST", "/api/venue/calendar/my/renew", null)).status).toBe(401);
   });
 });
