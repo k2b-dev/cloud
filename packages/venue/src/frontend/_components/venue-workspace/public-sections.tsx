@@ -131,6 +131,8 @@ const buildPublicSectionContent = (
 export function PublicSectionDialog(props: {
   close: (value: PublicSectionInput | null) => void;
   nextPosition: number;
+  /** Whether the Venue's public page is on, so the switch says who sees the section. */
+  publicPageEnabled: boolean;
   initial?: PublicSection;
   title?: string;
   submitLabel?: string;
@@ -233,7 +235,18 @@ export function PublicSectionDialog(props: {
           />
         </Show>
         <TextInput label={t().title} description={t().sectionTitleDescription} value={title} onValueChange={setTitle} required />
-        <Switch label={t().showOnPublicPage} description={t().showOnPublicPageDescription} value={enabled} onValueChange={setEnabled} />
+        <Switch
+          label={t().showOnPublicPage}
+          description={
+            !enabled()
+              ? t().showOnPublicPageOffDescription
+              : props.publicPageEnabled
+                ? t().sectionPublicDetail
+                : t().showOnPublicPagePageOffDescription
+          }
+          value={enabled}
+          onValueChange={setEnabled}
+        />
         <Show
           when={kind() === "menu"}
           fallback={

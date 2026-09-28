@@ -8,12 +8,12 @@ order: 110
 
 Der Standort-Arbeitsbereich trennt die tägliche Personalplanung, persönliche Zuweisungen, öffentliche Inhalte, Feedback und administrative Einstellungen.
 
-Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal wo du den Standort öffnest. Läuft dein Gerät in einer anderen Zeitzone, nennt der Arbeitsbereich die Zeitzone des Standorts über den Zeiten.
+Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal wo du den Standort öffnest. Läuft dein Gerät in einer anderen Zeitzone, nennt der Arbeitsbereich die Zeitzone des Standorts über den Zeiten, als Sommer- oder Normalzeit für die gezeigten Tage.
 
 ## Ansichten im Arbeitsbereich {icon="layout-list"}
 
 :::reference
-- **Schichten:** Zeigt Zeiträume in einer Wochen- oder Monatsansicht. Personen mit Zugriff „Mitarbeit“ oder „Admin“ melden sich über die Aktion oder per Doppelklick auf eine Schicht an. Der Anmelde-Dialog listet alle Schichten der nächsten 14 Tage ab heute und sagt, bis wann die Liste reicht. **Weitere Schichten laden** ergänzt die nächsten 14 Tage.
+- **Schichten:** Zeigt Zeiträume in einer Wochen- oder Monatsansicht. Personen mit Zugriff „Mitarbeit“ oder „Admin“ melden sich über die Aktion an oder, wenn der Standort Schichtanmeldungen annimmt, per Doppelklick auf eine Schicht. Mit „Lesen“ zeigt der Kalender nur die Besetzung. Der Anmelde-Dialog listet alle Schichten der nächsten 14 Tage ab heute und sagt, bis wann die Liste reicht. **Weitere Schichten laden** ergänzt die nächsten 14 Tage. Schichten, für die du schon angemeldet bist, tragen **Angemeldet**.
 - **Meine Schichten:** Listet deine kommenden Zuweisungen mit Tag und Uhrzeit und erlaubt, eigene Schichten zu stornieren.
 - **Feedback:** Zeigt Bewertungstrends, eine Kommentarsuche und Zeitraumfilter für 7, 14 oder 30 Tage. Ein Zeitraum zählt Kalendertage in der Zeitzone des Standorts, heute eingeschlossen. Kennzahlen und Liste umfassen denselben Zeitraum. Die Liste zeigt 50 Bewertungen pro Seite; eine Suche grenzt die Liste ein, nicht die Kennzahlen. Diese Ansicht sehen nur Personen mit Zugriff „Mitarbeit“ oder „Admin“.
 - **Öffentliche Abschnitte:** Administratoren können Abschnitte für Markdown, Speisekarte, Hinweise und Links erstellen, bearbeiten, duplizieren oder löschen. Der Schalter **Auf der öffentlichen Seite zeigen** entscheidet, ob Besucher einen Abschnitt sehen. Ist er aus, ist der Abschnitt ein Entwurf. Speichern übernimmt immer, was der Schalter zeigt. Entwürfe tragen in der Seitenleiste die Markierung **Entwurf**, und über jeder Vorschau steht, ob Besucher den Abschnitt sehen. Personen mit Zugriff „Mitarbeit“ oder „Admin“ sehen auch Entwürfe; mit „Lesen“ ist nur zu sehen, was die öffentliche Seite zeigt.

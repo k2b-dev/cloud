@@ -8,12 +8,12 @@ order: 110
 
 The venue workspace separates daily staffing, personal assignments, public content, feedback, and administrative settings.
 
-All times use the venue's time zone and a 24-hour clock, wherever you open the venue. When your device runs in another time zone, the workspace names the venue's time zone above the times.
+All times use the venue's time zone and a 24-hour clock, wherever you open the venue. When your device runs in another time zone, the workspace names the venue's time zone above the times, as summer or standard time for the dates shown.
 
 ## Workspace views {icon="layout-list"}
 
 :::reference
-- **Shifts:** Shows staffing slots in a week or month calendar. Staff users can sign up from the action button or by double-clicking a slot. The sign-up dialog lists every shift of the next 14 days, starting today, and says how far the list reaches; **Load more shifts** adds the next 14 days.
+- **Shifts:** Shows staffing slots in a week or month calendar. Staff users sign up from the action button or, when the venue takes shift sign-ups, by double-clicking a slot. For read users, the calendar only shows coverage. The sign-up dialog lists every shift of the next 14 days, starting today, and says how far the list reaches; **Load more shifts** adds the next 14 days. Shifts you already joined read **Joined**.
 - **My shifts:** Lists your upcoming assignments with day and time range and lets you cancel your own shifts.
 - **Feedback:** Shows rating trends, comment search, and 7-, 14-, or 30-day filters for visitor ratings and comments from the public page. A period counts calendar days in the venue's time zone, today included. The figures and the list cover the same period; the list shows 50 ratings per page, and a search narrows the list but not the figures. Only staff and admins see this view.
 - **Public sections:** Admins can add, edit, duplicate, or delete markdown, menu, notice, and links sections. The switch **Show on the public page** decides whether visitors see a section; when it is off, the section is a draft. Saving an edit keeps whatever the switch shows. Drafts carry the label **Draft** in the sidebar, and every section states above its preview whether visitors see it. Staff and admins also see drafts; read users see only what the public page shows.

@@ -32,7 +32,7 @@ import { apiClient } from "../../api/client";
 import type { FeedbackEntry, PublicSection, PublicSectionInput, ShiftAssignment, UpcomingSlot } from "../../contracts";
 import { venueMessages } from "../../messages";
 import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueTime } from "../../time-format";
-import { loadVenueDashboard, sameVenueDashboardSource } from "../dashboard-query";
+import { loadVenueDashboard, sameVenueDashboardSource, shiftDate } from "../dashboard-query";
 import { reconcileChangedSettings } from "../settings-contract";
 import { DOUBLE_CLICK_CONFIRM_COOKIE } from "./venue-workspace/constants";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
@@ -141,6 +141,17 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       .filter(({ bucket }) => bucket.averageRating !== null)
       .map(({ bucket, index }) => ({ x: index + 1, y: bucket.averageRating ?? 0 })),
   );
+  // Shift sign-up needs staff access and a Venue that takes sign-ups for its shifts; the server enforces both.
+  const canJoinShifts = () => canWrite(venue()) && venue().signupMode !== "free";
+  const joinedSlot = (slot: UpcomingSlot) => slot.assignments.some((assignment) => assignment.userId === props.userId);
+  /** Midday of the first and last day the calendar grid shows (weeks start on Monday). */
+  const calendarTimes = createMemo(() => {
+    const key = dateKey(calendarDate());
+    const weekStart = (day: string) => shiftDate(day, -((parseDateKey(day).getUTCDay() + 6) % 7));
+    const first = calendarView() === "month" ? `${key.slice(0, 7)}-01` : key;
+    const last = calendarView() === "month" ? shiftDate(`${shiftDate(first, 31).slice(0, 7)}-01`, -1) : key;
+    return [`${weekStart(first)}T12:00:00Z`, `${shiftDate(weekStart(last), 6)}T12:00:00Z`];
+  });
   const activeSlots = createMemo(() => dashboard().slots.filter(isSlotActive));
   const openRegistrationCount = createMemo(() => activeSlots().reduce((sum, slot) => sum + slot.missingPeople, 0));
   const feedbackColumns: DataTableColumn<FeedbackEntry>[] = [
@@ -190,7 +201,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const openSignup = async () => {
     const snapshot = dashboard();
     await runPromptedAction(
-      () => dialogCore.open<boolean>((close) => <SignupDialog dashboard={snapshot} close={close} />, panelDialogOptions),
+      () =>
+        dialogCore.open<boolean>((close) => <SignupDialog dashboard={snapshot} userId={props.userId} close={close} />, panelDialogOptions),
       async (changed) => {
         await reconcileChangedSettings(changed, async () => {
           await reconcileDashboard();
@@ -212,6 +224,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   });
 
   const signupFromCalendar = async (slot: UpcomingSlot) => {
+    if (joinedSlot(slot)) {
+      await prompts.alert(t().alreadyJoinedShift, { title: t().joined, icon: "ti ti-user-check" });
+      return;
+    }
     if (slot.full) {
       prompts.error(t().shiftFull);
       return;
@@ -300,11 +316,11 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   });
 
   const openAddSection = async () => {
-    const intent = { venueId: venue().id, nextPosition: dashboard().sections.length + 1 };
+    const intent = { venueId: venue().id, nextPosition: dashboard().sections.length + 1, publicPageEnabled: venue().publicEnabled };
     await runPromptedAction(
       () =>
         dialogCore.open<PublicSectionInput | null>(
-          (close) => <PublicSectionDialog close={close} nextPosition={intent.nextPosition} />,
+          (close) => <PublicSectionDialog close={close} nextPosition={intent.nextPosition} publicPageEnabled={intent.publicPageEnabled} />,
           panelDialogOptions,
         ),
       async (input) => {
@@ -325,7 +341,12 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   });
 
   const openEditSection = async (section: PublicSection) => {
-    const intent = { venueId: venue().id, sectionId: section.id, section: { ...section, content: { ...section.content } } };
+    const intent = {
+      venueId: venue().id,
+      sectionId: section.id,
+      section: { ...section, content: { ...section.content } },
+      publicPageEnabled: venue().publicEnabled,
+    };
     await runPromptedAction(
       () =>
         dialogCore.open<PublicSectionInput | null>(
@@ -334,6 +355,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
               close={close}
               initial={intent.section}
               nextPosition={intent.section.position}
+              publicPageEnabled={intent.publicPageEnabled}
               title={t().editPublicSection}
               submitLabel={t().saveSection}
             />
@@ -599,10 +621,11 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                   <AppWorkspace.SidebarItem
                     icon="ti ti-plus"
                     tone="success"
+                    title={t().addPublicSection}
                     disabled={workspaceActionBlocked()}
                     onClick={() => void openAddSection()}
                   >
-                    {t().addPublicSection}
+                    <AppWorkspace.SidebarItemLabel marquee={false}>{t().addPublicSection}</AppWorkspace.SidebarItemLabel>
                   </AppWorkspace.SidebarItem>
                 </Show>
                 <For
@@ -610,14 +633,16 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                   fallback={<Placeholder align="left" class="px-2 py-2" description={<>{t().noSections}</>} />}
                 >
                   {(section) => (
+                    // Only drafts carry a marker; a published section is the normal case.
                     <AppWorkspace.SidebarItem
                       href={sectionHref(section)}
                       navigation="document"
                       icon={sectionKindIcon(section.kind)}
+                      title={section.enabled ? section.title : `${section.title} · ${t().sectionDraft}`}
                       meta={section.enabled ? undefined : t().sectionDraft}
                       active={selectedSectionId() === section.id}
                     >
-                      {section.title}
+                      <AppWorkspace.SidebarItemLabel marquee={false}>{section.title}</AppWorkspace.SidebarItemLabel>
                     </AppWorkspace.SidebarItem>
                   )}
                 </For>
@@ -744,7 +769,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                 <>
                   <ViewHeader
                     title={t().schedule}
-                    description={t().scheduleDescription}
+                    description={canJoinShifts() ? t().scheduleDescription : t().scheduleDescriptionReadOnly}
                     action={
                       <Show when={canWrite(venue())}>
                         <Button type="button" size="sm" disabled={workspaceActionBlocked()} onClick={openSignup}>
@@ -753,15 +778,15 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       </Show>
                     }
                   />
-                  <VenueTimeZoneNote timeZone={venue().timezone} />
+                  <VenueTimeZoneNote timeZone={venue().timezone} times={calendarTimes()} />
                   <StatGrid columns={3} size="sm" class="shrink-0">
                     <StatCell
-                      label={t().openSpots}
+                      label={canJoinShifts() ? t().openSpots : t().unfilledSpots}
                       value={openRegistrationCount()}
                       sub={t().peopleStillNeeded}
                       accent={{
                         tone: openRegistrationCount() > 0 ? "amber" : "emerald",
-                        icon: openRegistrationCount() > 0 ? "ti ti-user-plus" : "ti ti-check",
+                        icon: openRegistrationCount() > 0 ? (canJoinShifts() ? "ti ti-user-plus" : "ti ti-users") : "ti ti-check",
                       }}
                     />
                     <StatCell
@@ -792,10 +817,15 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     getViewHref={(nextView) => calendarHref(nextView, calendarDate())}
                     getDateHref={(nextDate, nextView) => calendarHref(nextView, nextDate)}
                     eventActivation="double"
-                    onEventActivate={(event) => {
-                      const slot = slotByKey().get(event.id);
-                      if (slot) void signupFromCalendar(slot);
-                    }}
+                    // Without a handler, shifts render as plain calendar entries: no pointer, touch, or keyboard sign-up.
+                    onEventActivate={
+                      canJoinShifts()
+                        ? (event) => {
+                            const slot = slotByKey().get(event.id);
+                            if (slot) void signupFromCalendar(slot);
+                          }
+                        : undefined
+                    }
                     renderEvent={(event, context) => {
                       const slot = slotByKey().get(event.id);
                       const slotProgress = !context.compact ? slot : undefined;
@@ -848,7 +878,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       </>
                     }
                   />
-                  <VenueTimeZoneNote timeZone={venue().timezone} />
+                  <VenueTimeZoneNote
+                    timeZone={venue().timezone}
+                    times={dashboard().myUpcomingShifts.flatMap((shift) => [shift.startsAt, shift.endsAt])}
+                  />
                   <section class="paper p-2">
                     <Show
                       when={dashboard().myUpcomingShifts.length > 0}
@@ -901,7 +934,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       </Show>
                     }
                   />
-                  <VenueTimeZoneNote timeZone={venue().timezone} />
+                  <VenueTimeZoneNote timeZone={venue().timezone} times={dashboard().feedbackEntries.map((entry) => entry.createdAt)} />
 
                   <StatGrid columns={3} size="sm" class="shrink-0">
                     <StatCell

@@ -134,6 +134,19 @@ describe("Venue public sections show whether visitors see them", () => {
     expect(text(html)).not.toContain("Autumn menu Draft");
   });
 
+  test("cuts long section titles and the add action with an ellipsis and keeps the full text in a tooltip", () => {
+    const long = { ...draft, title: "Winter hours for the terrace and the reading room" };
+    const html = render("admin", [published, long], { locale: "de" });
+    const row = (label: string) => html.match(new RegExp(`<a[^>]*title="${label}"[^>]*>.*?</a>`))?.[0] ?? "";
+    const addRow = html.match(/<button[^>]*title="Öffentlichen Abschnitt hinzufügen"[^>]*>.*?<\/button>/)?.[0] ?? "";
+
+    // `data-marquee="false"` is the sidebar label's ellipsis mode.
+    expect(row("Winter hours for the terrace and the reading room · Entwurf")).toContain('data-marquee="false"');
+    expect(row("Autumn menu")).toContain('data-marquee="false"');
+    expect(row("Autumn menu")).not.toContain("Entwurf");
+    expect(addRow).toContain('data-marquee="false"');
+  });
+
   test("states the section's visibility above its preview", () => {
     const admin = text(render("admin", [draft], { sectionId: "Draft1" }));
     expect(admin).toContain("Preview in the style of the public page.");
