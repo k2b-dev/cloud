@@ -200,7 +200,7 @@ describe("Mail search builder model", () => {
       tags: [{ id: "Tag001", name: "Invoices" }],
     };
     expect(summarizeMailSearchExpression(expression, "en", references)).toBe("(In folder “Projects / Harbor”) and (Has tag “Invoices”)");
-    expect(summarizeMailSearchExpression(expression, "de", references)).toBe("(Im Ordner “Projects / Harbor”) und (Mit Tag “Invoices”)");
+    expect(summarizeMailSearchExpression(expression, "de", references)).toBe("(Im Ordner „Projects / Harbor“) und (Mit Tag „Invoices“)");
     expect(summarizeMailSearchExpression(expression, "en", { folders: [], tags: [] })).toBe(
       "(In a deleted folder) and (Has a deleted tag)",
     );
