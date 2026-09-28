@@ -3,14 +3,14 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import type { CalendarView } from "@k2b/ui";
+import { getCookie } from "hono/cookie";
 import { ssr } from "../../config";
 import { venueMessages } from "../../messages";
 import { venueService } from "../../service";
 import VenueWorkspace from "../_components/VenueWorkspace.island";
 import { venueDashboardRouteScope } from "../dashboard-query";
+import { CALENDAR_VIEW_COOKIE, parseCalendarView, parseShiftSelection } from "../schedule-url";
 
-const calendarViews: CalendarView[] = ["week", "month"];
 const feedbackDaysOptions = [7, 14, 30] as const;
 type FeedbackDays = (typeof feedbackDaysOptions)[number];
 
@@ -66,8 +66,11 @@ export default ssr<AuthContext>(async (c) => {
   const pathView = c.req.param("view");
   const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search, venueService.canSeeInternal(venue));
   if (resolved.redirectTo) return c.redirect(resolved.redirectTo);
-  const calendarViewParam = url.searchParams.get("cv") as CalendarView | null;
-  const initialCalendarView = calendarViewParam && calendarViews.includes(calendarViewParam) ? calendarViewParam : "week";
+  // The URL wins; without one, the view this browser used last; a first visit starts with the week.
+  const urlCalendarView = parseCalendarView(url.searchParams.get("cv"));
+  const cookieCalendarView = parseCalendarView(getCookie(c, CALENDAR_VIEW_COOKIE));
+  const initialCalendarView = urlCalendarView ?? cookieCalendarView ?? "week";
+  const initialCalendarViewSource = urlCalendarView ? "url" : cookieCalendarView ? "cookie" : "default";
   const initialCalendarDate = parseCalendarDate(url.searchParams.get("cd"));
   const initialFeedbackDays = parseFeedbackDays(url.searchParams.get("days"));
   const initialFeedbackSearch = (url.searchParams.get("search") ?? "").trim();
@@ -132,6 +135,9 @@ export default ssr<AuthContext>(async (c) => {
         initialView={resolved.initialView}
         initialSectionId={resolved.initialSectionId}
         initialCalendarView={initialCalendarView}
+        initialCalendarViewSource={initialCalendarViewSource}
+        initialGapsOnly={url.searchParams.get("gaps") === "1"}
+        initialShiftId={parseShiftSelection(url.searchParams.get("shift"))}
         initialCalendarDate={initialCalendarDate}
         initialFeedbackDays={initialFeedbackDays}
         initialFeedbackSearch={initialFeedbackSearch}

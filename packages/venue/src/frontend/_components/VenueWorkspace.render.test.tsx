@@ -48,6 +48,9 @@ type RenderOptions = {
   feedbackSearch?: string;
   feedbackComments?: boolean;
   calendarDate?: string;
+  calendarView?: "day" | "week" | "month" | "mobile-month";
+  shift?: string;
+  gaps?: boolean;
   locale?: string;
 };
 
@@ -58,6 +61,8 @@ const render = (permission: Venue["permission"], sections: PublicSection[], opti
     overrides: [],
     templates: [],
     slots: [],
+    otherAssignments: [],
+    outlook: { startDate: "2026-09-28", endDate: "2026-10-04", missingPeople: 0, nextGap: null },
     assignments: [],
     myUpcomingShifts: [],
     myShiftCount: 0,
@@ -80,8 +85,10 @@ const render = (permission: Venue["permission"], sections: PublicSection[], opti
           apiKeys: [],
           initialView: options.view ?? "shifts",
           initialSectionId: options.sectionId ?? null,
-          initialCalendarView: "week",
+          initialCalendarView: options.calendarView ?? "week",
           initialCalendarDate: options.calendarDate ?? "2026-09-28",
+          initialShiftId: options.shift ?? null,
+          initialGapsOnly: options.gaps,
           initialFeedbackDays: 30,
           initialFeedbackSearch: options.feedbackSearch ?? "",
           initialFeedbackComments: options.feedbackComments,
@@ -491,5 +498,224 @@ describe("Venue feedback evaluation", () => {
 
     const empty = text(render("admin", [], { view: "feedback", feedbackComments: true, dashboard: { feedback } }));
     expect(empty).toContain("No rating with a comment in the last 30 days.");
+  });
+});
+
+describe("Venue shift detail and schedule", () => {
+  // A fixed future Tuesday in winter: 10:00 UTC is 11:00 in Berlin.
+  const day = "2030-01-08";
+  const person = (id: string, userId: string, name: string, overrides: Partial<ShiftAssignment> = {}) =>
+    assignment({ id, userId, userDisplayName: name, startsAt: `${day}T10:00:00.000Z`, endsAt: `${day}T13:00:00.000Z`, ...overrides });
+  const counter = (overrides: Partial<UpcomingSlot> = {}): UpcomingSlot => ({
+    date: day,
+    template,
+    startsAt: `${day}T10:00:00.000Z`,
+    endsAt: `${day}T13:00:00.000Z`,
+    assignedCount: 1,
+    minPeople: 2,
+    maxPeople: 3,
+    missingPeople: 1,
+    full: false,
+    assignments: [person("Asg002", "user-2", "Sam Sample")],
+    ...overrides,
+  });
+  const staffed = counter({
+    template: { ...template, id: "Temp02", title: "Evening bar", startTime: "17:00", endTime: "20:00" },
+    startsAt: `${day}T16:00:00.000Z`,
+    endsAt: `${day}T19:00:00.000Z`,
+    assignedCount: 2,
+    missingPeople: 0,
+    assignments: [person("Asg003", "user-3", "Kim Muster"), person("Asg004", "user-4", "Lee Beispiel")],
+  });
+  const freeTime = person("Asg005", "user-5", "Robin Probe", {
+    templateId: null,
+    templateTitle: null,
+    startsAt: `${day}T14:00:00.000Z`,
+    endsAt: `${day}T15:00:00.000Z`,
+    note: "Inventory count",
+  });
+  const board: Partial<VenueDashboard> = {
+    templates: [template],
+    slots: [counter(), staffed],
+    otherAssignments: [freeTime],
+    outlook: {
+      startDate: "2030-01-07",
+      endDate: "2030-01-13",
+      missingPeople: 3,
+      nextGap: {
+        templateId: "Temp01",
+        date: day,
+        title: "Theke",
+        startsAt: `${day}T10:00:00.000Z`,
+        endsAt: `${day}T13:00:00.000Z`,
+        missingPeople: 1,
+      },
+    },
+  };
+  const detailOf = (html: string) => html.match(/<aside[^>]*k2b-app-workspace__detail[\s\S]*?<\/aside>/)?.[0] ?? "";
+
+  test("renders the selected shift's detail on the server, beside the calendar from 1024 px on", () => {
+    const html = render("admin", [], { calendarDate: day, shift: `Temp01:${day}`, dashboard: board });
+    const detail = detailOf(html);
+
+    expect(detail).toContain("max-lg:hidden!");
+    expect(detail).not.toMatch(/<aside[^>]*\shidden/);
+    expect(text(detail)).toContain("Theke");
+    expect(text(detail)).toContain("Tue, Jan 8 · 11:00–14:00");
+    expect(text(detail)).toContain("1 of 2–3 staffed");
+    expect(text(detail)).toContain("Sam Sample");
+    // Admins remove other people; the viewer can still take the shift.
+    expect(detail).toContain('aria-label="Remove Sam Sample"');
+    expect(text(detail)).toContain("Take shift");
+    expect(text(detail)).toContain("Also the next 4 weeks");
+
+    // Without a selection, the detail stays closed.
+    expect(detailOf(render("admin", [], { calendarDate: day, dashboard: board }))).toMatch(/<aside[^>]*\shidden/);
+  });
+
+  test("gives staff Take without Remove, and readers the detail without any action", () => {
+    const staff = detailOf(render("write", [], { calendarDate: day, shift: `Temp01:${day}`, dashboard: board }));
+    expect(text(staff)).toContain("Take shift");
+    expect(staff).not.toContain("Remove Sam Sample");
+
+    const reader = detailOf(render("read", [], { calendarDate: day, shift: `Temp01:${day}`, dashboard: board }));
+    expect(text(reader)).toContain("Sam Sample");
+    expect(text(reader)).not.toContain("Take shift");
+    expect(text(reader)).not.toContain("Leave");
+    expect(reader).not.toContain("Remove");
+
+    // The viewer's own shift offers Leave instead of Take.
+    const mine = detailOf(
+      render("write", [], {
+        calendarDate: day,
+        shift: `Temp01:${day}`,
+        dashboard: { ...board, slots: [counter({ assignments: [person("Asg001", "user-1", "Alex Example")] })] },
+      }),
+    );
+    expect(text(mine)).toContain("Alex Example (you)");
+    expect(text(mine)).toContain("Leave");
+    expect(text(mine)).not.toContain("Take shift");
+  });
+
+  test("opens free time from the calendar in the same detail, also through its sign-up link", () => {
+    const html = render("admin", [], { calendarDate: day, shift: "a:Asg005", dashboard: board });
+    const detail = text(detailOf(html));
+    expect(detail).toContain("Free time");
+    expect(detail).toContain("Robin Probe");
+    expect(detail).toContain("Inventory count");
+    expect(detailOf(html)).toContain('aria-label="Remove Robin Probe"');
+
+    // A sign-up for a paused shift keeps its name and says why the schedule no longer lists the shift.
+    const paused = person("Asg006", "user-6", "Toni Test", { templateId: "Old001", templateTitle: "Old brunch" });
+    const pausedDetail = text(
+      detailOf(render("read", [], { calendarDate: day, shift: "a:Asg006", dashboard: { ...board, otherAssignments: [paused] } })),
+    );
+    expect(pausedDetail).toContain("Old brunch");
+    expect(pausedDetail).toContain("This shift was paused or its time changed after the sign-up");
+    expect(pausedDetail).not.toContain("Time someone added outside the recurring shifts.");
+
+    // A sign-up link from My shifts opens the shift it belongs to.
+    expect(text(detailOf(render("read", [], { calendarDate: day, shift: "a:Asg002", dashboard: board })))).toContain("Theke");
+  });
+
+  test("links every shift and free time to its detail and offers day, week, and month", () => {
+    const html = render("write", [], { calendarDate: day, dashboard: board });
+    expect(html).toContain(`href="/app/venue/Cafe01/shifts?cv=week&amp;cd=${day}&amp;shift=Temp01:${day}"`);
+    expect(html).toContain(`href="/app/venue/Cafe01/shifts?cv=week&amp;cd=${day}&amp;shift=a:Asg005"`);
+    expect(text(html)).toContain("Robin Probe");
+    for (const view of ["day", "week", "month"]) expect(html).toContain(`cv=${view}&amp;cd=${day}"`);
+    // No double-click path: calendar entries are single-activation links.
+    expect(html).not.toContain("Don't show this confirmation again");
+  });
+
+  test("hides shifts without a gap and free time with the gaps filter, and keeps it in every link", () => {
+    const html = render("write", [], { calendarDate: day, gaps: true, dashboard: board });
+    expect(text(html)).toContain("Theke");
+    expect(text(html)).not.toContain("Evening bar");
+    expect(text(html)).not.toContain("Robin Probe");
+    expect(html).toContain(`cv=month&amp;cd=${day}&amp;gaps=1"`);
+    expect(text(render("write", [], { calendarDate: day, dashboard: board }))).toContain("Evening bar");
+  });
+
+  test("shows the week's figures in one row that does not change with the calendar view", () => {
+    const outlook = (options: RenderOptions, permission: Venue["permission"] = "write") =>
+      text(
+        render(permission, [], { calendarDate: day, dashboard: board, ...options }).match(
+          /<div[^>]*data-schedule-outlook[\s\S]*?<\/a>/,
+        )?.[0] ?? "",
+      );
+    const week = outlook({});
+    expect(week).toContain("This week: 3 spots free");
+    expect(week).toContain("Next unstaffed shift: Tue 11:00 · Theke");
+    expect(outlook({ calendarView: "month" })).toBe(week);
+    expect(outlook({ calendarView: "day", calendarDate: "2030-02-01" })).toBe(week);
+    expect(outlook({}, "read")).toContain("This week: 3 unfilled spots");
+    expect(
+      text(
+        render("write", [], {
+          calendarDate: day,
+          dashboard: { ...board, outlook: { ...board.outlook!, missingPeople: 0, nextGap: null } },
+        }),
+      ),
+    ).toContain("This week: no free spots Next unstaffed shift: none this week");
+  });
+
+  test("the phone month view lists the chosen day's shifts with their state in words", () => {
+    const html = render("write", [], { calendarDate: day, calendarView: "mobile-month", dashboard: board });
+    const agenda = html.match(/k2b-calendar-mobile-month__agenda[\s\S]*$/)?.[0] ?? "";
+    expect(text(agenda)).toContain("Theke");
+    expect(text(agenda)).toContain("1 missing");
+    expect(text(agenda)).toContain("Target reached");
+    // Its day cells pick a day in the same view.
+    expect(html).toContain(`cv=mobile-month&amp;cd=${day}"`);
+  });
+});
+
+describe("Venue shift detail permissions", () => {
+  const slotFor = (overrides: Partial<UpcomingSlot> = {}): UpcomingSlot => ({
+    date: "2030-01-08",
+    template,
+    startsAt: "2030-01-08T10:00:00.000Z",
+    endsAt: "2030-01-08T13:00:00.000Z",
+    assignedCount: 1,
+    minPeople: 1,
+    maxPeople: 2,
+    missingPeople: 0,
+    full: false,
+    assignments: [assignment({ id: "Asg002", userId: "user-2", userDisplayName: "Sam Sample" })],
+    ...overrides,
+  });
+
+  test("take needs staff with shift sign-up on an open shift; remove needs admin and another person", async () => {
+    const { shiftDetailPermissions } = await import("./venue-workspace/shift-detail");
+    const selection = (slot: UpcomingSlot) => ({ kind: "slot" as const, eventId: "Temp01:2030-01-08", slot });
+    const other = slotFor().assignments[0]!;
+    const now = new Date("2030-01-07T12:00:00.000Z");
+    const allowed = (permission: Venue["permission"], slot = slotFor(), signupMode: Venue["signupMode"] = "both") => {
+      const result = shiftDetailPermissions(selection(slot), { ...venue(permission), signupMode }, "user-1", now);
+      return { take: result.take, leave: result.leave?.id ?? null, remove: result.remove(other) };
+    };
+
+    expect(allowed("read")).toEqual({ take: false, leave: null, remove: false });
+    expect(allowed("write")).toEqual({ take: true, leave: null, remove: false });
+    expect(allowed("admin")).toEqual({ take: true, leave: null, remove: true });
+    expect(allowed("write", slotFor(), "free")).toMatchObject({ take: false });
+    expect(allowed("write", slotFor({ full: true }))).toMatchObject({ take: false });
+    const mine = slotFor({ assignments: [assignment({ id: "Asg001" }), other] });
+    expect(allowed("write", mine)).toEqual({ take: false, leave: "Asg001", remove: false });
+    // An ended shift keeps its record: nobody takes, leaves, or removes.
+    const late = new Date("2030-01-09T00:00:00.000Z");
+    const ended = shiftDetailPermissions(selection(mine), venue("admin"), "user-1", late);
+    expect({ take: ended.take, leave: ended.leave, remove: ended.remove(other) }).toEqual({ take: false, leave: null, remove: false });
+  });
+
+  test("resolves a sign-up to the shift it belongs to and unknown selections to nothing", async () => {
+    const { resolveShiftSelection } = await import("./venue-workspace/shift-detail");
+    const board = { slots: [slotFor()], otherAssignments: [assignment({ id: "Asg009", templateId: null, templateTitle: null })] };
+    expect(resolveShiftSelection(board, "a:Asg002")).toMatchObject({ kind: "slot", eventId: "Temp01:2030-01-08" });
+    expect(resolveShiftSelection(board, "a:Asg009")).toMatchObject({ kind: "assignment", eventId: "a:Asg009" });
+    expect(resolveShiftSelection(board, "Temp01:2030-01-08")).toMatchObject({ kind: "slot" });
+    expect(resolveShiftSelection(board, "Temp01:2030-01-15")).toBeNull();
+    expect(resolveShiftSelection(board, null)).toBeNull();
   });
 });

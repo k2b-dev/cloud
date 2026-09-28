@@ -31,6 +31,8 @@ const dashboard = (permission: Venue["permission"]): VenueDashboard => ({
   overrides: [],
   templates: [],
   slots: [],
+  otherAssignments: [],
+  outlook: { startDate: "2026-09-28", endDate: "2026-10-04", missingPeople: 0, nextGap: null },
   assignments: [],
   myUpcomingShifts: [],
   myShiftCount: 0,

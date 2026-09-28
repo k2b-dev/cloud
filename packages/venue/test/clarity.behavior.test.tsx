@@ -87,6 +87,8 @@ const dashboard: VenueDashboard = {
   overrides: [],
   templates: [template],
   slots: [],
+  otherAssignments: [],
+  outlook: { startDate: "2026-09-28", endDate: "2026-10-04", missingPeople: 0, nextGap: null },
   assignments: [],
   myUpcomingShifts: [],
   myShiftCount: 0,
@@ -165,33 +167,67 @@ describe("Venue clarity behavior", () => {
     }
   });
 
-  test("the sign-up dialog marks shifts the viewer already joined instead of offering them again", async () => {
+  test("the sign-up dialog groups free shifts by day, marks the viewer's own with Leave, and hides full ones until asked", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
     const mine = slot(addDays(today, 1), "Lunch counter");
-    const theirs = slot(addDays(today, 2), "Evening bar");
-    globalThis.fetch = (async () =>
-      Response.json({
-        ...dashboard,
-        slots: [
-          withAssignments(mine, [assignment(mine, "user-1", "Alex Example")]),
-          withAssignments(theirs, [assignment(theirs, "user-2", "Sam Sample")]),
-        ],
-      })) as typeof fetch;
+    const open = slot(addDays(today, 1), "Evening bar");
+    const full = { ...slot(addDays(today, 2), "Brunch"), full: true, missingPeople: 0 };
+    const requests: string[] = [];
+    let slots = [withAssignments(mine, [assignment(mine, "user-1", "Alex Example")]), open, full];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      requests.push(`${method} ${new URL(url, "http://localhost").pathname}`);
+      if (method === "DELETE") {
+        slots = [mine, open, full];
+        return Response.json({ message: "Shift cancelled" });
+      }
+      return Response.json({ ...dashboard, slots });
+    }) as typeof fetch;
 
     const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
-    const dispose = render(() => <SignupDialog dashboard={dashboard} userId="user-1" close={() => {}} />, dom.root);
+    const closes: boolean[] = [];
+    const dispose = render(
+      () => <SignupDialog dashboard={dashboard} userId="user-1" close={(changed) => closes.push(changed)} />,
+      dom.root,
+    );
+    const cards = () => [...dom.root.querySelectorAll<HTMLElement>("[data-signup-slot]")];
+    const card = (title: string) => cards().find((entry) => entry.textContent?.includes(title))!;
     try {
       await flush();
-      const [joinedCard, openCard] = [...dom.root.querySelectorAll<HTMLElement>(".paper")];
-      expect(joinedCard?.querySelector(".tag")?.textContent?.trim()).toBe("You're in");
-      expect(buttonNamed(joinedCard!, "Take shift").disabled).toBe(true);
-      // Joining the following weeks still adds shifts the viewer does not have yet.
-      expect(buttonNamed(joinedCard!, "Take the next 4 weeks").disabled).toBe(false);
+      // Only free is on: the full shift is hidden, and both shifts of the first day sit under one heading.
+      const days = [...dom.root.querySelectorAll<HTMLElement>("[data-signup-day]")];
+      expect(days.map((day) => day.dataset.signupDay)).toEqual([addDays(today, 1)]);
+      expect(days[0]?.querySelector("h3")?.className).toContain("sticky");
+      expect(cards().map((entry) => entry.querySelector("p")?.textContent)).toEqual(["Lunch counter", "Evening bar"]);
 
-      expect(openCard?.querySelector(".tag")?.textContent?.trim()).toBe("Free spots");
-      expect(buttonNamed(openCard!, "Take shift").disabled).toBe(false);
+      expect(card("Lunch counter").textContent).toContain("You're in");
+      expect(buttonNamed(card("Lunch counter"), "Leave")).toBeTruthy();
+      expect([...card("Lunch counter").querySelectorAll("button")].map((button) => button.textContent?.trim())).not.toContain("Take shift");
+      expect(card("Evening bar").querySelector(".tag")?.textContent?.trim()).toBe("Free spots");
+      expect(buttonNamed(card("Evening bar"), "Take shift").disabled).toBe(false);
+
+      const onlyFree = dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+      expect(onlyFree.checked).toBe(true);
+      onlyFree.click();
+      await flush();
+      expect(card("Brunch")?.querySelector(".tag")?.textContent?.trim()).toBe("Full");
+      expect(buttonNamed(card("Brunch"), "Take shift").disabled).toBe(true);
+
+      // Leaving asks first, keeps the dialog open, and reports the change when it closes.
+      buttonNamed(card("Lunch counter"), "Leave").click();
+      await flush();
+      buttonNamed(dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!, "Leave").click();
+      await flush();
+      expect(requests.filter((request) => request.startsWith("DELETE"))).toEqual([
+        "DELETE /api/venue/venues/Cafe01/assignments/Asg-user-1",
+      ]);
+      expect(buttonNamed(card("Lunch counter"), "Take shift").disabled).toBe(false);
+      expect(closes).toEqual([]);
+      buttonNamed(dom.root, "Close").click();
+      expect(closes).toEqual([true]);
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -199,18 +235,22 @@ describe("Venue clarity behavior", () => {
     }
   });
 
-  test("joining the next weeks says how many shifts it added, and that nothing changed when it added none", async () => {
+  test("taking a shift with the following weeks says how many it added, and that nothing changed when it added none", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
-    const mine = slot(addDays(today, 1), "Lunch counter");
+    const lunch = slot(addDays(today, 1), "Lunch counter");
     // The server skips weeks the viewer already has or that are full and answers with the sign-ups it made.
     let created: ShiftAssignment[] = [];
+    const bodies: unknown[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       const method = input instanceof Request ? input.method : (init?.method ?? "GET");
-      if (method === "POST" && url.includes("/signup-weeks")) return Response.json(created, { status: 201 });
-      return Response.json({ ...dashboard, slots: [withAssignments(mine, [assignment(mine, "user-1", "Alex Example")])] });
+      if (method === "POST" && url.includes("/signup-weeks")) {
+        bodies.push(JSON.parse(String(init?.body)));
+        return Response.json(created, { status: 201 });
+      }
+      return Response.json({ ...dashboard, slots: [lunch] });
     }) as typeof fetch;
     const toasts = () => [...dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] > [data-tone]")];
 
@@ -222,8 +262,16 @@ describe("Venue clarity behavior", () => {
     );
     try {
       await flush();
-      buttonNamed(dom.root, "Take the next 4 weeks").click();
+      // One choice for the whole list instead of a second button per shift.
+      const weeks = [...dom.root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].filter((input) =>
+        input.closest("label")?.textContent?.includes("Also the next 4 weeks"),
+      );
+      expect(weeks).toHaveLength(1);
+      weeks[0]!.click();
+      buttonNamed(dom.root, "Take shift").click();
       await flush();
+      // This shift and the four following weeks.
+      expect(bodies).toEqual([{ date: lunch.date, weeks: 5 }]);
       // Nothing was added, so the dialog stays open and says so instead of reporting a new shift.
       expect(closes).toEqual([]);
       expect(toasts().map((entry) => [entry.dataset.tone, entry.textContent])).toEqual([
@@ -231,11 +279,41 @@ describe("Venue clarity behavior", () => {
       ]);
 
       created = [8, 15].map((days) => assignment(slot(addDays(today, days), "Lunch counter"), "user-1", "Alex Example"));
-      buttonNamed(dom.root, "Take the next 4 weeks").click();
+      buttonNamed(dom.root, "Take shift").click();
       await flush();
       expect(closes).toEqual([true]);
       expect(toasts().at(-1)?.dataset.tone).toBe("success");
       expect(toasts().at(-1)?.textContent).toContain("2 shifts taken");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("free time starts on a quarter hour and adds itself from the dialog footer", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const bodies: { startsAt: string; endsAt: string }[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json({}, { status: 201 });
+    }) as typeof fetch;
+
+    const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
+    const freeOnly = { ...dashboard, venue: { ...venue, signupMode: "free" as const } };
+    const closes: boolean[] = [];
+    const dispose = render(() => <SignupDialog dashboard={freeOnly} userId="user-1" close={(changed) => closes.push(changed)} />, dom.root);
+    try {
+      await flush();
+      const add = buttonNamed(dom.root, "Add free shift");
+      expect(add.closest("footer")).not.toBeNull();
+      add.click();
+      await flush();
+      const [body] = bodies;
+      expect(new Date(body!.startsAt).getTime() % (15 * 60_000)).toBe(0);
+      expect(new Date(body!.endsAt).getTime() - new Date(body!.startsAt).getTime()).toBe(2 * 60 * 60_000);
+      expect(closes).toEqual([true]);
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -458,6 +536,44 @@ describe("Venue clarity behavior", () => {
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("copying the public page link shows progress on its own button", async () => {
+    const dom = createDomTestHarness();
+    const copied: string[] = [];
+    const held: Array<() => void> = [];
+    Object.defineProperty(dom.window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) =>
+          new Promise<void>((resolve) => {
+            copied.push(text);
+            held.push(resolve);
+          }),
+      },
+    });
+    const { openVenuePublicDisplayDialog } = await import("../src/frontend/_components/venue-workspace/public-display");
+    const closed = openVenuePublicDisplayDialog("Cafe01", "en");
+    try {
+      await flush();
+      const dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!;
+      const copy = buttonNamed(dialog, "Copy link");
+      copy.click();
+      await flush();
+      expect(copied).toHaveLength(1);
+      expect(copy.getAttribute("aria-busy")).toBe("true");
+      expect(buttonNamed(dialog, "Open page").disabled).toBe(true);
+      expect(buttonNamed(dialog, "Open page").getAttribute("aria-busy")).toBeNull();
+
+      for (const release of held.splice(0)) release();
+      await flush();
+      expect(copy.getAttribute("aria-busy")).toBeNull();
+      expect(buttonNamed(dialog, "Open page").disabled).toBe(false);
+      dialog.querySelector<HTMLButtonElement>(".k2b-dialog__close")!.click();
+      await closed;
+    } finally {
       dom.cleanup();
     }
   });

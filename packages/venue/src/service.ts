@@ -35,6 +35,7 @@ import type {
   PublicSectionInput,
   PublicSectionPatch,
   PublicStatus,
+  ScheduleOutlook,
   ShiftAssignment,
   ShiftTemplate,
   ShiftTemplateInput,
@@ -46,7 +47,7 @@ import type {
   VenueTemplateCreateInput,
   VenueTemplateSummary,
 } from "./contracts";
-import { FEEDBACK_PAGE_SIZE, PublicSectionInputSchema } from "./contracts";
+import { FEEDBACK_PAGE_SIZE, PublicSectionInputSchema, SCHEDULE_OUTLOOK_DAYS } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
 import { filterPublicMenuSections } from "./public-menu";
@@ -1069,21 +1070,25 @@ const slotForTemplate = (venue: Venue, template: ShiftTemplate, date: string, sl
   };
 };
 
-const upcomingSlots = async (venue: Venue, options: number | UpcomingSlotsOptions = 14): Promise<InternalUpcomingSlot[]> => {
-  const config = typeof options === "number" ? { days: options } : options;
-  const days = Math.max(0, config.days ?? 14);
-  if (days === 0) return [];
+type SlotWindow = { slots: InternalUpcomingSlot[]; otherAssignments: ShiftAssignment[] };
 
-  const templates = (config.templates ?? (await listTemplates(venue.id))).filter((template) => template.active);
-  if (templates.length === 0) return [];
+/**
+ * The shifts of `days` local days from `startDate`, each with its sign-ups, and the sign-ups in the same days
+ * that belong to none of them: free time, and sign-ups for a paused shift or an old shift time.
+ */
+const slotWindow = async (venue: Venue, options: UpcomingSlotsOptions = {}): Promise<SlotWindow> => {
+  const days = Math.max(0, options.days ?? 14);
+  if (days === 0) return { slots: [], otherAssignments: [] };
 
-  const startDate = config.startDate ?? localDateKey(new Date(), venue.timezone);
+  const templates = (options.templates ?? (await listTemplates(venue.id))).filter((template) => template.active);
+  const startDate = options.startDate ?? localDateKey(new Date(), venue.timezone);
   const rangeStart = instantFor(startDate, "00:00", venue.timezone);
   // Local midnight after the last day: a day with a clock change is not 24 hours long.
   const rangeEnd = instantFor(dateKeyAfterDays(startDate, days, venue.timezone), "00:00", venue.timezone);
   const assignments = await assignmentsForRange(venue.id, rangeStart, rangeEnd);
   const templatesForWeekday = templatesByWeekday(templates);
   const assignmentsBySlot = assignmentsByTemplateSlot(assignments);
+  const slotted = new Set<string>();
 
   const slots: InternalUpcomingSlot[] = [];
   for (let offset = 0; offset < days; offset++) {
@@ -1094,11 +1099,15 @@ const upcomingSlots = async (venue: Venue, options: number | UpcomingSlotsOption
     for (const template of weekdayTemplates) {
       const startsAt = instantFor(date, template.startTime, venue.timezone).toISOString();
       const slotAssignments = assignmentsBySlot.get(`${template.id}:${startsAt}`) ?? [];
+      for (const assignment of slotAssignments) slotted.add(assignment.id);
       slots.push(slotForTemplate(venue, template, date, slotAssignments));
     }
   }
-  return slots;
+  return { slots, otherAssignments: assignments.filter((assignment) => !slotted.has(assignment.id)) };
 };
+
+const upcomingSlots = async (venue: Venue, options: number | UpcomingSlotsOptions = 14): Promise<InternalUpcomingSlot[]> =>
+  (await slotWindow(venue, typeof options === "number" ? { days: options } : options)).slots;
 
 const upcomingSlotSummaries = async (
   venue: Venue,
@@ -1467,6 +1476,33 @@ const publicStatus = async (shortId: string, now = new Date(), locale?: string):
   return venue?.publicEnabled ? statusForVenue(venue, now, true, locale) : null;
 };
 
+/**
+ * The schedule's key figures for today and the following days in the Venue's time zone. The window does not
+ * follow the calendar, so the figures stay the same while people page through weeks and months.
+ */
+const scheduleOutlook = async (venue: Venue, templates: ShiftTemplate[], now = new Date()): Promise<ScheduleOutlook> => {
+  const startDate = localDateKey(now, venue.timezone);
+  const slots = (await upcomingSlotSummaries(venue, { startDate, days: SCHEDULE_OUTLOOK_DAYS, templates })).filter(
+    (slot) => new Date(slot.endsAt) >= now,
+  );
+  const next = slots.filter((slot) => slot.missingPeople > 0).sort((left, right) => left.startsAt.localeCompare(right.startsAt))[0];
+  return {
+    startDate,
+    endDate: dateKeyAfterDays(startDate, SCHEDULE_OUTLOOK_DAYS - 1, venue.timezone),
+    missingPeople: slots.reduce((sum, slot) => sum + slot.missingPeople, 0),
+    nextGap: next
+      ? {
+          templateId: next.template.id,
+          date: next.date,
+          title: next.template.title,
+          startsAt: next.startsAt,
+          endsAt: next.endsAt,
+          missingPeople: next.missingPeople,
+        }
+      : null,
+  };
+};
+
 export type VenueDashboardOptions = {
   slotStartDate?: string;
   slotDays?: number;
@@ -1510,8 +1546,9 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
     `.then((rows) => rows[0]?.count ?? 0)
       : Promise.resolve(0),
   ]);
-  const [slots] = await Promise.all([
-    slotDays > 0 ? upcomingSlots(venue, { startDate: options.slotStartDate, days: slotDays, templates }) : Promise.resolve([]),
+  const [{ slots, otherAssignments }, outlook] = await Promise.all([
+    slotWindow(venue, { startDate: options.slotStartDate, days: slotDays, templates }),
+    scheduleOutlook(venue, templates),
   ]);
 
   return {
@@ -1520,6 +1557,8 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
     overrides,
     templates,
     slots,
+    otherAssignments,
+    outlook,
     assignments,
     myUpcomingShifts: user ? assignments.filter((assignment) => assignment.userId === user.id) : [],
     myShiftCount,

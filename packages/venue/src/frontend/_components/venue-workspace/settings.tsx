@@ -85,18 +85,9 @@ export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending
   });
 
   return (
-    <Button type="button" variant="danger" onClick={handleDelete} disabled={remove.loading()} class="self-start">
-      {remove.loading() ? (
-        <>
-          <i class="ti ti-loader-2 animate-spin" />
-          {t().deleting}
-        </>
-      ) : (
-        <>
-          <i class="ti ti-trash" />
-          {t().deleteVenue}
-        </>
-      )}
+    <Button type="button" variant="danger" onClick={handleDelete} loading={remove.loading()} loadingLabel={t().deleting} class="self-start">
+      <i class="ti ti-trash" aria-hidden="true" />
+      {t().deleteVenue}
     </Button>
   );
 }
@@ -896,8 +887,14 @@ export function SettingsDialog(props: {
               <SettingsCollection title={t().regularHours} description={t().regularHoursDescription} empty={t().noRegularHours}>
                 <Show when={venueSettingsCanAdmin(settings())}>
                   <SettingsCollection.Action>
-                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateOpening()}>
-                      <i class={createOpening.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> {t().newHours}
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={scheduleBusy()}
+                      loading={createOpening.loading()}
+                      onClick={() => void openCreateOpening()}
+                    >
+                      <i class="ti ti-plus" aria-hidden="true" /> {t().newHours}
                     </Button>
                   </SettingsCollection.Action>
                 </Show>
@@ -934,8 +931,14 @@ export function SettingsDialog(props: {
               <SettingsCollection title={t().closedDays} description={t().closedDaysDescription} empty={t().noClosedDays}>
                 <Show when={venueSettingsCanAdmin(settings())}>
                   <SettingsCollection.Action>
-                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openAddHoliday()}>
-                      <i class={addHoliday.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> {t().newClosedDay}
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={scheduleBusy()}
+                      loading={addHoliday.loading()}
+                      onClick={() => void openAddHoliday()}
+                    >
+                      <i class="ti ti-plus" aria-hidden="true" /> {t().newClosedDay}
                     </Button>
                   </SettingsCollection.Action>
                 </Show>
@@ -979,8 +982,14 @@ export function SettingsDialog(props: {
               <SettingsCollection title={t().shifts} description={t().shiftsDescription} empty={t().noShifts}>
                 <Show when={venueSettingsCanAdmin(settings())}>
                   <SettingsCollection.Action>
-                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateShift()}>
-                      <i class={createShift.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plus"} /> {t().newShift}
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={scheduleBusy()}
+                      loading={createShift.loading()}
+                      onClick={() => void openCreateShift()}
+                    >
+                      <i class="ti ti-plus" aria-hidden="true" /> {t().newShift}
                     </Button>
                   </SettingsCollection.Action>
                 </Show>

@@ -65,12 +65,12 @@ export const openVenuePublicDisplayDialog = async (venueId: string, locale: stri
               <Switch label={t.autoRefresh} value={refresh} onValueChange={setRefresh} />
             </div>
             <div class="flex flex-wrap justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" size="sm" disabled={busy() !== null} onClick={copyLink}>
-                <i class={`ti ${busy() === "copy" ? "ti-loader-2 animate-spin" : "ti-copy"}`} />
+              <Button type="button" variant="secondary" size="sm" disabled={busy() !== null} loading={busy() === "copy"} onClick={copyLink}>
+                <i class="ti ti-copy" aria-hidden="true" />
                 {t.copyLink}
               </Button>
-              <Button type="button" variant="secondary" size="sm" disabled={busy() !== null} onClick={openLink}>
-                <i class={`ti ${busy() === "open" ? "ti-loader-2 animate-spin" : "ti-external-link"}`} />
+              <Button type="button" variant="secondary" size="sm" disabled={busy() !== null} loading={busy() === "open"} onClick={openLink}>
+                <i class="ti ti-external-link" aria-hidden="true" />
                 {t.openPage}
               </Button>
             </div>

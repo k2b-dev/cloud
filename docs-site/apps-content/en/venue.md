@@ -19,7 +19,9 @@ across different places.
 
 - Start from a blank venue or a template and set its public identity.
 - Define weekly opening hours and exceptions for individual dates.
-- Publish staffing slots and let staff take upcoming shifts.
+- Publish staffing slots and let staff take upcoming shifts. One click or tap
+  on a shift opens its details with the people on it; on a phone they open as
+  a sheet from the bottom.
 - Add notices, Markdown, links, or menu sections to the public page, or keep
   them as drafts until they are ready.
 - Review visitor feedback, optionally only ratings with a comment, and
@@ -52,7 +54,7 @@ Read, staff, and admin permissions serve different jobs:
 | --- | --- |
 | Read | The shift schedule, your own shifts, and exactly what the public page shows; no visitor feedback and no drafts |
 | Staff (`write`) | Also joins shifts and sees visitor feedback and drafts |
-| Admin | Also changes schedules, public content, feedback settings, and access |
+| Admin | Also changes schedules, public content, feedback settings, and access, and removes other people from a shift |
 
 Read and staff users can open the venue settings, but only read them.
 

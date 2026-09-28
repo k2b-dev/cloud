@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { VenueDashboardQuerySchema } from "../contracts";
-import { sameVenueDashboardSource, venueDashboardRouteScope } from "./dashboard-query";
+import { sameVenueDashboardSource, slotWindow, venueDashboardRouteScope } from "./dashboard-query";
 
 describe("venue dashboard query scope", () => {
   test("uses the same calendar window for SSR options and browser query input", () => {
@@ -16,8 +16,9 @@ describe("venue dashboard query scope", () => {
     });
 
     expect(scope.options).toEqual({
-      slotStartDate: "2026-08-03",
-      slotDays: 45,
+      // The month grid starts on the Monday before August 1 and shows six weeks.
+      slotStartDate: "2026-07-27",
+      slotDays: 42,
       includeFeedbackEntries: false,
       feedbackDays: 30,
       feedbackSearch: undefined,
@@ -101,6 +102,15 @@ describe("venue dashboard query scope", () => {
     expect(scope("feedback").source.query.feedbackComments).toBe("true");
     expect(VenueDashboardQuerySchema.parse(scope("feedback").source.query)).toEqual(scope("feedback").options);
     expect(scope("shifts").source.query.feedbackComments).toBeUndefined();
+  });
+
+  test("loads exactly the days each calendar view shows", () => {
+    // 2026-08-12 is a Wednesday; August 2026 starts on a Saturday.
+    expect(slotWindow("day", "2026-08-12")).toEqual({ startDate: "2026-08-12", days: 1 });
+    expect(slotWindow("week", "2026-08-12")).toEqual({ startDate: "2026-08-10", days: 7 });
+    expect(slotWindow("week", "2026-08-16")).toEqual({ startDate: "2026-08-10", days: 7 });
+    expect(slotWindow("month", "2026-08-31")).toEqual({ startDate: "2026-07-27", days: 42 });
+    expect(slotWindow("mobile-month", "2026-08-12")).toEqual({ startDate: "2026-07-27", days: 42 });
   });
 
   test("rejects unbounded browser query input", () => {

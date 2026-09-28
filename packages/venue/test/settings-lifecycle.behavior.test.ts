@@ -49,6 +49,8 @@ const dashboard: VenueDashboard = {
   overrides: [],
   templates: [],
   slots: [],
+  otherAssignments: [],
+  outlook: { startDate: "2026-09-28", endDate: "2026-10-04", missingPeople: 0, nextGap: null },
   assignments: [],
   myUpcomingShifts: [],
   myShiftCount: 0,
@@ -244,6 +246,10 @@ describe("Venue settings lifecycle behavior", () => {
     await flush();
     expect(pending.at(-1)).toBeTrue();
     expect(requestSignal.aborted).toBeFalse();
+    // The running deletion shows on the button itself, busy for assistive technology too.
+    const button = dom.root.querySelector<HTMLButtonElement>("button")!;
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.textContent?.trim()).toBe("Deleting");
 
     dispose();
     expect(requestSignal.aborted).toBeTrue();

@@ -319,12 +319,44 @@ export const PublicStatusSchema = z.object({
 });
 export type PublicStatus = z.infer<typeof PublicStatusSchema>;
 
+/** Days the schedule's key figures cover: today and the six following days in the Venue's time zone. */
+export const SCHEDULE_OUTLOOK_DAYS = 7;
+
+/**
+ * The schedule's key figures for a fixed window of {@link SCHEDULE_OUTLOOK_DAYS} days starting today in the
+ * Venue's time zone, independent of the calendar window. Shifts that already ended do not count.
+ */
+export const ScheduleOutlookSchema = z.object({
+  startDate: DateKeySchema,
+  endDate: DateKeySchema,
+  /** People still missing to reach the target, summed over the window's shifts. */
+  missingPeople: z.number().int().min(0),
+  /** The earliest shift in the window that still misses people; `null` when every shift reached its target. */
+  nextGap: z
+    .object({
+      templateId: VenueResourceIdSchema,
+      date: DateKeySchema,
+      title: z.string(),
+      startsAt: z.string(),
+      endsAt: z.string(),
+      missingPeople: z.number().int().min(1),
+    })
+    .nullable(),
+});
+export type ScheduleOutlook = z.infer<typeof ScheduleOutlookSchema>;
+
 export const VenueDashboardSchema = z.object({
   venue: VenueSchema,
   openingRules: z.array(OpeningRuleSchema),
   overrides: z.array(DateOverrideSchema),
   templates: z.array(ShiftTemplateSchema),
   slots: z.array(UpcomingSlotSchema),
+  /**
+   * Sign-ups in the slot window that belong to none of `slots`: free time, and sign-ups for a paused shift
+   * or for a shift time that has since changed. The calendar shows them as their own entries.
+   */
+  otherAssignments: z.array(ShiftAssignmentSchema),
+  outlook: ScheduleOutlookSchema,
   assignments: z.array(ShiftAssignmentSchema),
   myUpcomingShifts: z.array(ShiftAssignmentSchema),
   myShiftCount: z.number().int().min(0),
