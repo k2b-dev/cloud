@@ -415,7 +415,7 @@ const assertWheelScroll = async (page: Page, scroller: Locator, target: Locator,
 };
 
 /**
- * Clicks the card itself: its visually hidden input stays in place while the dialog's list scrolls,
+ * Clicks the card itself: its visually hidden input stays in place while the dialog's list scrolls (#404),
  * so pointer actions on the input land on whatever covers that spot.
  */
 const setCheckboxCard = async (card: Locator, checked: boolean) => {
@@ -451,11 +451,15 @@ const assertMailboxTools = async (container: Locator, sectionLabels: string[]) =
 const menuSectionLabels = (menu: Locator) =>
   menu.getByRole("group").evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label") ?? ""));
 
-/** Labels of one level of the @k2b/ui navigation tree below `branch`: the navigation itself or one of its items. */
-const navigationLabels = async (branch: Locator) =>
-  (
-    await branch.locator(":is(:scope > ul, :scope > div > ul) > li > .k2b-navigation__row > .k2b-navigation__control").allTextContents()
-  ).map((label) => label.trim());
+/**
+ * Labels of one navigation level: the first list inside `branch` (the navigation itself or one of its list items)
+ * holds one item per entry, and each item's first link or button names it; deeper levels are sublists of the items.
+ */
+const navigationLabels = (branch: Locator) =>
+  branch
+    .getByRole("list")
+    .first()
+    .evaluate((list) => Array.from(list.children, (item) => item.querySelector("a, button")?.textContent?.trim() ?? ""));
 
 const runSmoke = async (fixture: Fixture) => {
   const browser = await chromium.launch({ headless: HEADLESS });
@@ -518,7 +522,8 @@ const runSmoke = async (fixture: Fixture) => {
     await clickHydratedDropdownTrigger(page, page.getByRole("button", { name: "Choose list view", exact: true }));
     await page.locator('[role="menu"]:popover-open').getByText("Conversation view", { exact: true }).click();
     await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
-    // The reload also replaces the cached message-view document that browser Back below would otherwise restore.
+    // Workaround for #403: without this reload, browser Back below replays the cached message-view document,
+    // which saves Message view again. Remove it with the fix.
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
     ok("message list mode survives SSR reload and returns to conversation view");
@@ -570,7 +575,7 @@ const runSmoke = async (fixture: Fixture) => {
     }
     if (!mobileDirectActions.includes("Settings")) fail("mobile navigation lost its direct Settings action");
     const mobileTools = mobileNavigation
-      .locator(":scope > ul > li")
+      .getByRole("listitem")
       .filter({ has: page.getByRole("button", { name: "Mailbox tools", exact: true }) });
     await page.evaluate(() => document.documentElement.classList.add("dark"));
     await assertMailboxTools(mobileTools, await navigationLabels(mobileTools));
