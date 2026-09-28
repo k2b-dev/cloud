@@ -162,6 +162,8 @@ export const ShiftAssignmentSchema = z.object({
   id: VenueResourceIdSchema,
   venueId: VenueResourceIdSchema,
   templateId: VenueResourceIdSchema.nullable(),
+  /** The shift's name, also after its template was paused or deleted; `null` for free time. */
+  templateTitle: z.string().nullable(),
   userId: z.string(),
   userDisplayName: z.string(),
   startsAt: z.string(),

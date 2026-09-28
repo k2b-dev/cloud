@@ -180,10 +180,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       description: slotStaffingLabel(slot, t()),
     })),
   );
-  /** Template titles by ID, so an assignment can name its shift; free time has no template. */
-  const templateTitles = createMemo(() => new Map(dashboard().templates.map((template) => [template.id, template.title])));
-  const assignmentTitle = (assignment: ShiftAssignment) =>
-    (assignment.templateId ? templateTitles().get(assignment.templateId) : undefined) ?? t().freeTime;
+  /** An assignment carries its shift's name, also once the template is paused or deleted; free time has none. */
+  const assignmentTitle = (assignment: ShiftAssignment) => assignment.templateTitle ?? t().freeTime;
   const sectionHref = (section: PublicSection) => `/app/venue/${venue().id}/public-sections/${section.id}`;
   // Only admins manage sections; others see the group only when their view contains a section.
   const showPublicContent = () => canAdmin(venue()) || dashboard().sections.length > 0;

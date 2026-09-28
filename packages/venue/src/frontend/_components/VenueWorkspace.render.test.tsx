@@ -249,6 +249,7 @@ const assignment = (overrides: Partial<ShiftAssignment>): ShiftAssignment => ({
   id: "Asg001",
   venueId: "Cafe01",
   templateId: "Temp01",
+  templateTitle: "Theke",
   userId: "user-1",
   userDisplayName: "Alex Example",
   // Tuesday 29 September, 11:00–14:00 in Berlin.
@@ -266,6 +267,7 @@ describe("Venue My shifts", () => {
     assignment({
       id: "Asg002",
       templateId: null,
+      templateTitle: null,
       startsAt: "2026-10-01T15:00:00.000Z",
       endsAt: "2026-10-01T17:00:00.000Z",
       note: "Inventory count",
@@ -282,6 +284,13 @@ describe("Venue My shifts", () => {
     const en = text(render("write", [], { view: "my-shifts", dashboard: board }));
     expect(en).toContain("Tue, Sep 29 · 11:00–14:00 · Theke");
     expect(en).toContain("Thu, Oct 1 · 17:00–19:00 · Free time Inventory count");
+  });
+
+  test("keeps the shift's name after its template was paused or deleted", () => {
+    // Active templates are all the dashboard lists; the assignment still names its shift.
+    const html = text(render("write", [], { view: "my-shifts", dashboard: { templates: [], myUpcomingShifts: [assignment({})] } }));
+    expect(html).toContain("Tue, Sep 29 · 11:00–14:00 · Theke");
+    expect(html).not.toContain("Free time");
   });
 
   test("offers Leave as an ordinary full-size button and a calendar subscription instead of a raw iCal link", () => {
@@ -386,22 +395,24 @@ describe("Venue German workspace", () => {
     typeof en[key] === "string" && en[key] !== de[key] ? [{ key, value: en[key] as string }] : [],
   );
   const today = dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" });
+  // A fixed future Monday, so the open shift never reads as ended at some time of day.
+  const shiftDay = "2030-01-07";
 
   test.each(["shifts", "my-shifts", "feedback"] as const)("shows no English catalog text in the %s view", (view) => {
     const html = text(
       render("admin", [], {
         view,
         locale: "de",
-        calendarDate: today,
+        calendarDate: shiftDay,
         dashboard: {
           templates: [template],
           myUpcomingShifts: [assignment({})],
           slots: [
             {
-              date: today,
+              date: shiftDay,
               template,
-              startsAt: `${today}T20:00:00.000Z`,
-              endsAt: `${today}T21:00:00.000Z`,
+              startsAt: `${shiftDay}T20:00:00.000Z`,
+              endsAt: `${shiftDay}T21:00:00.000Z`,
               assignedCount: 0,
               minPeople: 1,
               maxPeople: 3,

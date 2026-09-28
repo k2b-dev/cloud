@@ -7,7 +7,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
       types: {
         assignment: {
           title: "Schichtzuordnung",
-          description: "Die konkrete Anmeldung eines Benutzers für eine Venue-Schicht.",
+          description: "Der Platz einer Person in einer datierten Venue-Schicht.",
         },
         venue: {
           title: "Venue",
@@ -113,7 +113,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
       },
       actions: {
         "assignment.cancel": {
-          title: "Storniere meinen Schichtauftrag",
+          title: "Aus meiner Venue-Schicht austreten",
           description:
             "Löschen Sie nur die eigene Zuweisung des aktuellen vom Benutzer unterstützten Akteurs. Geben Sie einen Idempotenzschlüssel an, damit ein unsicherer Versuch sicher wiederholt werden kann.",
           input: {
@@ -122,7 +122,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "assignment.signup": {
-          title: "Melden Sie sich für die Venue-Schicht an",
+          title: "Venue-Schicht übernehmen",
           description:
             "Erstellen Sie eine nicht idempotente Zuweisung für ein datiertes Vorlagenvorkommen, das von shift.list zurückgegeben wird.",
           input: {
@@ -132,7 +132,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "assignment.signup_free": {
-          title: "Melden Sie sich für die kostenlose Venue-Schicht an",
+          title: "Freie Venue-Schicht hinzufügen",
           description:
             "Erstellen Sie innerhalb des nächsten Jahres eine nicht idempotente kostenlose Aufgabe mit genauen Zeitpunkten für höchstens 24 Stunden.",
           input: {

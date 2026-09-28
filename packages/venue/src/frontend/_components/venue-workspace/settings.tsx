@@ -42,7 +42,7 @@ import { venueMessages } from "../../../messages";
 import { formatDateKey } from "../../../time-format";
 import { createVenueSettingsQuery, settingsCloseBlocked, settingsInteractionBlocked, venueSettingsCanAdmin } from "../../settings-contract";
 import { openVenuePublicDisplayDialog } from "./public-display";
-import { ClosedDayDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
+import { ExceptionDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
 import { bannerTransform, readError, sortOpeningRules, sortOverrides, sortShiftTemplates } from "./utils";
 
 export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending: boolean) => void }) {
@@ -113,6 +113,8 @@ export function SettingsDialog(props: {
   const t = () => venueMessages.resolve([locale()]).t;
   const weekday = (value: number) =>
     new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + value)));
+  const exceptionDate = (entry: DateOverride) =>
+    formatDateKey(entry.date, locale(), { weekday: "short", day: "numeric", month: "numeric", year: "numeric" });
   const venue = props.dashboard.venue;
   const initialContext = {
     venue,
@@ -403,7 +405,7 @@ export function SettingsDialog(props: {
   const openAddHoliday = async () => {
     const timezone = currentVenue().timezone;
     await runPromptedAction(
-      () => dialogCore.open<DateOverrideInput | null>((close) => <ClosedDayDialog close={close} timeZone={timezone} />, panelDialogOptions),
+      () => dialogCore.open<DateOverrideInput | null>((close) => <ExceptionDialog close={close} timeZone={timezone} />, panelDialogOptions),
       async (input) => {
         if (input) await runReconciledMutation(addHoliday, input, t().closedDayAdded);
       },
@@ -416,7 +418,7 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, t().updateClosedDayFailed));
+      if (!res.ok) throw new Error(await readError(res, t().updateExceptionFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -425,11 +427,11 @@ export function SettingsDialog(props: {
     await runPromptedAction(
       () =>
         dialogCore.open<DateOverrideInput | null>(
-          (close) => <ClosedDayDialog close={close} timeZone={target.timezone} initial={target.initial} />,
+          (close) => <ExceptionDialog close={close} timeZone={target.timezone} initial={target.initial} />,
           panelDialogOptions,
         ),
       async (input) => {
-        if (input) await runReconciledMutation(editHoliday, { id: target.id, input }, t().closedDayUpdated);
+        if (input) await runReconciledMutation(editHoliday, { id: target.id, input }, t().exceptionUpdated);
       },
     );
   };
@@ -440,21 +442,21 @@ export function SettingsDialog(props: {
         { param: { id: venue.id, resourceId: id } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, t().deleteClosedDayFailed));
+      if (!res.ok) throw new Error(await readError(res, t().deleteExceptionFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
   const confirmDeleteHoliday = async (entry: DateOverride) => {
-    const target = { id: entry.id, date: entry.date };
+    const target = { id: entry.id, date: exceptionDate(entry) };
     await runPromptedAction(
       () =>
-        prompts.confirm(t().deleteClosedDayQuestion({ date: target.date }), {
-          title: t().deleteClosedDay,
+        prompts.confirm(t().deleteExceptionQuestion({ date: target.date }), {
+          title: t().deleteException,
           variant: "danger",
           confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteHoliday, target.id, t().closedDayDeleted);
+        if (confirmed) await runReconciledMutation(deleteHoliday, target.id, t().exceptionDeleted);
       },
     );
   };
@@ -940,7 +942,7 @@ export function SettingsDialog(props: {
                 <For each={overrides()}>
                   {(entry) => (
                     <SettingsCollection.Item
-                      title={formatDateKey(entry.date, locale(), { weekday: "short", day: "numeric", month: "numeric", year: "numeric" })}
+                      title={exceptionDate(entry)}
                       description={[
                         entry.kind === "open" && entry.startTime && entry.endTime
                           ? t().specialOpening({ window: `${entry.startTime}–${entry.endTime}` })
@@ -949,19 +951,19 @@ export function SettingsDialog(props: {
                       ]
                         .filter(Boolean)
                         .join(" · ")}
-                      icon={<i class="ti ti-calendar-off" aria-hidden="true" />}
+                      icon={<i class={entry.kind === "open" ? "ti ti-calendar-plus" : "ti ti-calendar-off"} aria-hidden="true" />}
                     >
                       <Show when={venueSettingsCanAdmin(settings())}>
                         <SettingsCollection.Item.Actions>
                           <ScheduleActionButton
-                            label={t().editClosedDay}
+                            label={t().editException}
                             icon="ti ti-pencil"
                             tone="edit"
                             loading={scheduleBusy()}
                             onClick={() => void openEditHoliday(entry)}
                           />
                           <ScheduleActionButton
-                            label={t().deleteClosedDay}
+                            label={t().deleteException}
                             icon="ti ti-trash"
                             tone="delete"
                             loading={scheduleBusy()}

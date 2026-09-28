@@ -322,7 +322,7 @@ describe("Venue capabilities", () => {
         const signupReview = venueCapabilities.actions["assignment.signup"].review;
         if (!signupReview) throw new Error("Template signup review missing");
         const reviewedSignup = await signupReview({ venueId: venueShortId, templateId: templateShortId, date: shiftDate }, context);
-        expect(reviewedSignup).toMatchObject({ ok: true, data: { message: "Sign up for Agent shift at Agent Venue." } });
+        expect(reviewedSignup).toMatchObject({ ok: true, data: { message: "Take the shift “Agent shift” at Agent Venue." } });
         if (reviewedSignup.ok) {
           expect(reviewedSignup.data.details).toEqual(
             expect.arrayContaining([
@@ -342,7 +342,7 @@ describe("Venue capabilities", () => {
           templateId: templateShortId,
           venueName: "Agent Venue",
         });
-        expect(signup.ok && signup.data.summary).toBe("Signed up for “Agent shift” at Agent Venue.");
+        expect(signup.ok && signup.data.summary).toBe("Took the shift “Agent shift” at Agent Venue.");
         if (!signup.ok) throw new Error(signup.error.message);
         const assignedShifts = await invokeQuery(
           "shift.list",
@@ -369,7 +369,7 @@ describe("Venue capabilities", () => {
           { venueId: venueShortId, startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Agent-created shift" },
           context,
         );
-        expect(reviewedFreeSignup).toMatchObject({ ok: true, data: { message: "Create a free shift assignment at Agent Venue." } });
+        expect(reviewedFreeSignup).toMatchObject({ ok: true, data: { message: "Add a free shift at Agent Venue." } });
         if (reviewedFreeSignup.ok) {
           expect(reviewedFreeSignup.data.details).toEqual(
             expect.arrayContaining([
@@ -389,7 +389,7 @@ describe("Venue capabilities", () => {
           templateId: null,
           note: "Agent-created shift",
         });
-        expect(freeSignup.ok && freeSignup.data.summary).toBe("Signed up for a shift at Agent Venue.");
+        expect(freeSignup.ok && freeSignup.data.summary).toBe("Added a free shift at Agent Venue.");
         const duplicateFree = await invokeAction(
           "assignment.signup_free",
           { venueId: venueShortId, startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Duplicate" },
@@ -424,7 +424,7 @@ describe("Venue capabilities", () => {
         expect(await cancelReview({ venueId: venueShortId, assignmentId: signup.data.data.id }, context)).toMatchObject({ ok: true });
         const cancelled = await invokeAction("assignment.cancel", { venueId: venueShortId, assignmentId: signup.data.data.id }, context);
         expect(cancelled.ok && cancelled.data.data).toEqual({ assignmentId: signup.data.data.id, cancelled: true });
-        expect(cancelled.ok && cancelled.data.summary).toBe("Cancelled your shift at Agent Venue.");
+        expect(cancelled.ok && cancelled.data.summary).toBe("Left your shift at Agent Venue.");
         const successfulActions = [signup, freeSignup, cancelled];
         expect(successfulActions).toHaveLength(Object.keys(venueCapabilities.actions).length);
         for (const result of successfulActions) {

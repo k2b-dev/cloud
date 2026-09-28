@@ -565,7 +565,7 @@ export const venueCapabilities = defineCapabilities({
   },
   actions: {
     "assignment.signup": {
-      title: "Sign up for Venue shift",
+      title: "Take Venue shift",
       description: "Create one non-idempotent assignment for a dated template occurrence returned by shift.list.",
       input: AssignmentSignupInputSchema,
       data: AssignmentActionDataSchema,
@@ -606,7 +606,7 @@ export const venueCapabilities = defineCapabilities({
       run: runAssignmentSignup,
     },
     "assignment.signup_free": {
-      title: "Sign up for free Venue shift",
+      title: "Add free Venue shift",
       description: "Create one non-idempotent free assignment with exact instants, for at most 24 hours within the next year.",
       input: AssignmentFreeSignupInputSchema,
       data: AssignmentActionDataSchema,
@@ -635,7 +635,7 @@ export const venueCapabilities = defineCapabilities({
       run: runAssignmentFreeSignup,
     },
     "assignment.cancel": {
-      title: "Cancel my shift assignment",
+      title: "Leave my Venue shift",
       description:
         "Delete only the current user-backed actor's own assignment. Supply an idempotency key so an uncertain attempt can be repeated safely.",
       input: AssignmentCancelInputSchema,

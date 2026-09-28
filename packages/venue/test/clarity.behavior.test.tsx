@@ -3,6 +3,8 @@ import { dates } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type {
+  DateOverride,
+  DateOverrideInput,
   PublicSection,
   PublicSectionInput,
   ShiftAssignment,
@@ -98,6 +100,7 @@ const assignment = (entry: UpcomingSlot, userId: string, userDisplayName: string
   id: `Asg-${userId}`,
   venueId: "Cafe01",
   templateId: entry.template.id,
+  templateTitle: entry.template.title,
   userId,
   userDisplayName,
   startsAt: entry.startsAt,
@@ -336,7 +339,7 @@ describe("Venue clarity behavior", () => {
     const lunch = slot(addDays(dates.formatDateKey(new Date(), { timeZone: venue.timezone }), 2), "Lunch counter");
     const mine = [
       assignment(lunch, "user-1", "Alex Example"),
-      { ...assignment(lunch, "user-1", "Alex Example"), id: "Asg-free", templateId: null, note: "Inventory count" },
+      { ...assignment(lunch, "user-1", "Alex Example"), id: "Asg-free", templateId: null, templateTitle: null, note: "Inventory count" },
     ];
     const board = { ...dashboard, myUpcomingShifts: mine };
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -469,6 +472,53 @@ describe("Venue clarity behavior", () => {
       expect(descriptionOf(visibility)).toBe("Visitors see this section once the venue's public page is switched on.");
     } finally {
       dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("editing an exception keeps its kind, so a special opening stays open with its times", async () => {
+    const dom = createDomTestHarness();
+    const { ExceptionDialog } = await import("../src/frontend/_components/venue-workspace/schedule");
+    const exception = (overrides: Partial<DateOverride>): DateOverride => ({
+      id: "Exc001",
+      venueId: "Cafe01",
+      date: "2030-10-17",
+      kind: "closed",
+      startTime: null,
+      endTime: null,
+      note: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      ...overrides,
+    });
+    /** Opens the dialog for `initial`, saves it unchanged, and returns what it showed and saved. */
+    const saveUnchanged = (initial: DateOverride) => {
+      const saved: Array<DateOverrideInput | null> = [];
+      const dispose = render(
+        () => <ExceptionDialog close={(value) => saved.push(value)} timeZone="Europe/Berlin" initial={initial} />,
+        dom.root,
+      );
+      try {
+        const text = dom.root.textContent ?? "";
+        const inputs = [...dom.root.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value);
+        buttonNamed(dom.root, "Save").click();
+        return { text, inputs, saved };
+      } finally {
+        dispose();
+      }
+    };
+    try {
+      const special = saveUnchanged(exception({ kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }));
+      expect(special.text).toContain("Edit exception");
+      expect(special.text).toContain("Special opening");
+      expect(special.inputs).toEqual(expect.arrayContaining(["18:00", "22:00", "Long night"]));
+      expect(special.saved).toEqual([{ date: "2030-10-17", kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }]);
+
+      const closed = saveUnchanged(exception({ id: "Exc002", note: "Staff meeting" }));
+      expect(closed.text).toContain("Closed");
+      expect(closed.inputs).not.toContain("18:00");
+      expect(closed.saved).toEqual([{ date: "2030-10-17", kind: "closed", note: "Staff meeting" }]);
+    } finally {
       dom.cleanup();
     }
   });

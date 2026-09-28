@@ -38,6 +38,7 @@ const assignment = (overrides: Partial<ShiftAssignment> = {}): ShiftAssignment =
   id: "assignment-1",
   venueId: "venue-1",
   templateId: "shift-1",
+  templateTitle: "Service desk",
   userId: "user-1",
   userDisplayName: "Private volunteer",
   startsAt: "2026-07-13T08:00:00.000Z",

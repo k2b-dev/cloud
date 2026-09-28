@@ -125,6 +125,8 @@ type DbShiftAssignment = {
   short_id: string;
   venue_id: string;
   template_id: string | null;
+  /** Joined from the template, which may be inactive; `null` for free time. */
+  template_title: string | null;
   user_id: string;
   user_display_name: string | null;
   starts_at: Date;
@@ -287,6 +289,7 @@ const mapAssignment = (row: DbShiftAssignment): ShiftAssignment => ({
   id: row.id,
   venueId: row.venue_id,
   templateId: row.template_id,
+  templateTitle: row.template_title,
   userId: row.user_id,
   userDisplayName: row.user_display_name ?? "Unknown user",
   startsAt: row.starts_at.toISOString(),
@@ -948,9 +951,10 @@ const deleteTemplate = async (venueId: string, id: string): Promise<Result<void>
 
 const assignmentsForRange = async (venueId: string, start: Date, end: Date): Promise<ShiftAssignment[]> => {
   const rows = await sql<DbShiftAssignment[]>`
-    SELECT sa.*, u.display_name AS user_display_name
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.venue_id = ${venueId}::uuid
       AND sa.starts_at < ${end}
       AND sa.ends_at > ${start}
@@ -1002,10 +1006,11 @@ const listPersonalAssignments = async (
   const limit = Math.min(101, Math.max(1, options.limit ?? 25));
   const offset = Math.max(0, options.offset ?? 0);
   const rows = await sql<(DbShiftAssignment & { venue_name: string; venue_timezone: string })[]>`
-    SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
     JOIN venue.venues v ON v.id = sa.venue_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.user_id = ${userId}::uuid
       AND (${options.venueId ?? null}::uuid IS NULL OR sa.venue_id = ${options.venueId ?? null}::uuid)
       AND sa.starts_at < ${options.to}
@@ -1195,7 +1200,8 @@ const signupTemplate = async (
             WHERE sa.template_id = t.id AND sa.starts_at = ${start}
           ) < t.max_people
         )
-      RETURNING *, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
+      RETURNING *, ${template.title}::text AS template_title,
+        (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
     `,
     );
     const row = rows[0];
@@ -1239,7 +1245,7 @@ const signupFree = async (
     INSERT INTO venue.shift_assignments (short_id, venue_id, user_id, starts_at, ends_at, note)
     VALUES (${shortId}, ${venueId}::uuid, ${user.id}::uuid, ${start}, ${end}, ${input.note?.trim() || null})
     ON CONFLICT (venue_id, user_id, starts_at, ends_at) DO NOTHING
-    RETURNING *, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
+    RETURNING *, NULL::text AS template_title, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
   `,
   );
   const row = rows[0];
@@ -1259,9 +1265,10 @@ const cancelAssignment = async (venueId: string, assignmentId: string, user: Use
 
 const getPersonalAssignment = async (venueId: string, assignmentId: string, userId: string): Promise<ShiftAssignment | null> => {
   const [row] = await sql<DbShiftAssignment[]>`
-    SELECT sa.*, u.display_name AS user_display_name
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.venue_id = ${venueId}::uuid
       AND sa.id = ${assignmentId}::uuid
       AND sa.user_id = ${userId}::uuid
@@ -1271,10 +1278,11 @@ const getPersonalAssignment = async (venueId: string, assignmentId: string, user
 
 const getPersonalAssignmentById = async (assignmentId: string, userId: string): Promise<PersonalShiftAssignment | null> => {
   const [row] = await sql<(DbShiftAssignment & { venue_name: string; venue_timezone: string })[]>`
-    SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
     JOIN venue.venues v ON v.id = sa.venue_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.id = ${assignmentId}::uuid AND sa.user_id = ${userId}::uuid
   `;
   return row ? { ...mapAssignment(row), venueName: row.venue_name, venueTimezone: row.venue_timezone } : null;
@@ -1557,7 +1565,7 @@ const getUserIdByIcalToken = async (token: string): Promise<string | null> => {
 };
 
 const generateUserIcs = async (userId: string, baseUrl: string): Promise<string> => {
-  const rows = await sql<(DbShiftAssignment & { venue_name: string; venue_short_id: string })[]>`
+  const rows = await sql<(Omit<DbShiftAssignment, "template_title"> & { venue_name: string; venue_short_id: string })[]>`
     SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.short_id AS venue_short_id
     FROM venue.shift_assignments sa
     JOIN venue.venues v ON v.id = sa.venue_id

@@ -22,7 +22,7 @@ const venueApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }
   })
   .route("/api/venue", apiRoutes);
 
-const send = (method: "GET" | "POST" | "PATCH", path: string, cookie: string | null, body?: unknown) =>
+const send = (method: "GET" | "POST" | "PATCH" | "DELETE", path: string, cookie: string | null, body?: unknown) =>
   venueApp.request(path, {
     method,
     headers: {
@@ -155,7 +155,7 @@ suite("Venue sections and feedback say what they do", () => {
     });
   });
 
-  test("a sign-up answers with the name of the person who signed up", async () => {
+  test("a sign-up answers with the name of the person and the shift", async () => {
     const created = await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
       weekday: 3,
       title: "Morning counter",
@@ -171,7 +171,7 @@ suite("Venue sections and feedback say what they do", () => {
     const signup = (path: string, body: unknown) => send("POST", `/api/venue/venues/${venueId}/${path}`, cookie, body);
 
     const single = await json<ShiftAssignment>(await signup(`templates/${template.id}/signup`, { date }), 201, "sign up");
-    expect(single.userDisplayName).toBe("Venue clarity admin");
+    expect(single).toMatchObject({ userDisplayName: "Venue clarity admin", templateTitle: "Morning counter" });
 
     const weeks = await json<ShiftAssignment[]>(
       await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 }),
@@ -179,6 +179,7 @@ suite("Venue sections and feedback say what they do", () => {
       "sign up for two weeks",
     );
     expect(weeks.map((entry) => entry.userDisplayName)).toEqual(["Venue clarity admin", "Venue clarity admin"]);
+    expect(weeks.map((entry) => entry.templateTitle)).toEqual(["Morning counter", "Morning counter"]);
     // Weeks the person already has are skipped; the dialog reads the empty answer as "nothing added".
     const again = await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 });
     expect(await json<ShiftAssignment[]>(again, 201, "sign up for the same weeks again")).toEqual([]);
@@ -186,7 +187,15 @@ suite("Venue sections and feedback say what they do", () => {
     const startsAt = new Date(`${shiftDate(date, 1)}T15:00:00Z`).toISOString();
     const endsAt = new Date(`${shiftDate(date, 1)}T17:00:00Z`).toISOString();
     const free = await json<ShiftAssignment>(await signup("free-signup", { startsAt, endsAt, note: null }), 201, "free sign-up");
-    expect(free.userDisplayName).toBe("Venue clarity admin");
+    expect(free).toMatchObject({ userDisplayName: "Venue clarity admin", templateTitle: null });
+
+    // Deleting a template only deactivates it; the person's shift keeps its name instead of turning into free time.
+    expect((await send("DELETE", `/api/venue/venues/${venueId}/templates/${template.id}`, cookie)).status).toBe(200);
+    const board = await json<VenueDashboard>(await send("GET", `/api/venue/venues/${venueId}/dashboard`, cookie), 200, "dashboard");
+    expect(board.templates.some((entry) => entry.id === template.id)).toBe(false);
+    const mine = board.myUpcomingShifts.find((entry) => entry.id === single.id);
+    expect(mine).toMatchObject({ templateId: template.id, templateTitle: "Morning counter" });
+    expect(board.myUpcomingShifts.find((entry) => entry.id === free.id)?.templateTitle).toBeNull();
   });
 
   test("feedback counts, pages, and list totals cover the same window", async () => {

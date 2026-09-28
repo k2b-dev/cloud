@@ -208,24 +208,40 @@ export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | nul
   );
 }
 
-export function ClosedDayDialog(props: { close: (value: DateOverrideInput | null) => void; timeZone: string; initial?: DateOverride }) {
+/**
+ * Adds a closed day or edits an exception in its own kind: a special opening shows and saves its times, so saving
+ * never turns it into a closed day. Special openings are created through the API or CLI.
+ */
+export function ExceptionDialog(props: { close: (value: DateOverrideInput | null) => void; timeZone: string; initial?: DateOverride }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
+  const specialOpening = props.initial?.kind === "open";
   const [date, setDate] = createSignal<string | null>(props.initial?.date ?? todayDateKey());
-  const [note, setNote] = createSignal(props.initial?.note ?? t().publicHoliday);
+  const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "");
+  const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "");
+  const [note, setNote] = createSignal(props.initial?.note ?? (specialOpening ? "" : t().publicHoliday));
 
   const submit = () => {
     if (!date()) {
       prompts.error(t().pickDate);
       return;
     }
-    props.close({ date: date()!, kind: "closed", note: note().trim() || t().publicHoliday });
+    if (!specialOpening) {
+      props.close({ date: date()!, kind: "closed", note: note().trim() || t().publicHoliday });
+      return;
+    }
+    if (!startTime().trim() || !endTime().trim()) {
+      prompts.error(t().timesRequired);
+      return;
+    }
+    props.close({ date: date()!, kind: "open", startTime: startTime().trim(), endTime: endTime().trim(), note: note().trim() || null });
   };
 
   return (
     <DialogFrame
-      title={props.initial ? t().editClosedDay : t().addClosedDay}
-      icon="ti ti-calendar-x"
+      title={props.initial ? t().editException : t().addClosedDay}
+      subtitle={props.initial ? (specialOpening ? t().specialOpeningKind : t().closed) : undefined}
+      icon={specialOpening ? "ti ti-calendar-plus" : "ti ti-calendar-x"}
       submitLabel={props.initial ? t().save : t().add}
       onCancel={() => props.close(null)}
       onSubmit={submit}
@@ -238,7 +254,20 @@ export function ClosedDayDialog(props: { close: (value: DateOverrideInput | null
           dateConfig={timeZoneDateConfig(props.timeZone, locale())}
           required
         />
-        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().publicHoliday} />
+        <Show when={specialOpening}>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label={t().startTime}
+              value={startTime}
+              onValueChange={setStartTime}
+              placeholder="18:00"
+              inputMode="numeric"
+              required
+            />
+            <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="22:00" inputMode="numeric" required />
+          </div>
+        </Show>
+        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={specialOpening ? t().optional : t().publicHoliday} />
       </div>
     </DialogFrame>
   );

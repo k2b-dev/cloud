@@ -29,6 +29,26 @@ describe("Venue internationalization", () => {
     expect(Object.values(de).filter((value) => typeof value === "string" && /\banmelden\b/i.test(value))).toEqual([]);
   });
 
+  test("lets the assistant confirm shift work in the workspace's words", () => {
+    const de = venueMessages.resolve(["de"]).t;
+    const shift = { title: "Theke", venue: "Café am Markt" };
+    expect([
+      de.capabilitySignupReview(shift),
+      de.capabilitySignedUp(shift),
+      de.capabilityFreeReview(shift),
+      de.capabilityFreeSignedUp(shift),
+      de.capabilityCancelReview(shift),
+      de.capabilityCancelled(shift),
+    ]).toEqual([
+      "Schicht „Theke“ bei Café am Markt übernehmen.",
+      "Schicht „Theke“ bei Café am Markt übernommen.",
+      "Freie Schicht bei Café am Markt hinzufügen.",
+      "Freie Schicht bei Café am Markt hinzugefügt.",
+      "Aus deiner Schicht bei Café am Markt austreten.",
+      "Du bist aus deiner Schicht bei Café am Markt ausgetreten.",
+    ]);
+  });
+
   test("localizes built-in templates without changing their stable IDs", () => {
     expect(listVenueTemplates("de-DE").map(({ id, name }) => ({ id, name }))).toEqual([
       { id: "service-desk", name: "Serviceschalter" },
