@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { type GotenbergTrap, probeDocument, probeTemplate, startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -73,12 +73,15 @@ suiteFor("gotenberg")("html_to_pdf in Gotenberg", () => {
   let config: GotenbergConfig;
   let trap: GotenbergTrap;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
+  });
+
+  beforeEach(async () => {
     trap = await startGotenbergTrap(config.url);
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await trap?.stop();
   });
 

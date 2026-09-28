@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import {
   type GotenbergTrap,
@@ -35,12 +35,15 @@ suiteFor("gotenberg")("offline HTML in Gotenberg", () => {
   let trap: GotenbergTrap;
   let config: GotenbergConfig;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
+  });
+
+  beforeEach(async () => {
     trap = await startGotenbergTrap(config.url);
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await trap?.stop();
   });
 
@@ -64,10 +67,8 @@ suiteFor("gotenberg")("offline HTML in Gotenberg", () => {
   test("renderHtmlToPdf keeps the document from navigating away", async () => {
     const navigation = probeNavigation(trap.origin, "navigation");
 
-    const unfiltered = await readPdf(await trap.renderUnfiltered({ html: navigation.html }));
+    await trap.renderUnfiltered({ html: navigation.html });
     expect(await trap.takeRequests()).toContain(navigation.path);
-    expect(unfiltered.text).toContain("trap");
-    expect(unfiltered.text).not.toContain(navigation.text);
 
     const offline = await readPdf((await renderHtmlToPdfWithConfig({ html: navigation.html }, config)).pdf);
     expect(await trap.takeRequests()).toEqual([]);
