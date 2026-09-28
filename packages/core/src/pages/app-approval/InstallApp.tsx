@@ -3,19 +3,34 @@ import { Button, dialogCore, PanelDialog, panelDialogOptions, toast, useLocale }
 import { onCleanup } from "solid-js";
 import { appApprovalMessages } from "./messages";
 
+/** The configured sign-in app address as a QR code with a copy action. */
+export function InstallLink(props: { origin: string }) {
+  const locale = useLocale();
+  const t = () => appApprovalMessages.resolve([locale()]).t;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(props.origin);
+      toast.success(t().installLinkCopied);
+    } catch {
+      toast.error(t().failure);
+    }
+  };
+  return (
+    <div class="flex flex-col items-center gap-4">
+      <img class="w-64 max-w-full" alt={t().installQr} src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`} />
+      <p class="break-all text-sm text-dimmed">{props.origin}</p>
+      <Button variant="secondary" onClick={copy}>
+        {t().copyInstallLink}
+      </Button>
+    </div>
+  );
+}
+
 export default function InstallApp(props: { origin: string }) {
   const locale = useLocale();
   const t = () => appApprovalMessages.resolve([locale()]).t;
   let closeDialog: (() => void) | undefined;
   onCleanup(() => closeDialog?.());
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(props.origin);
-      toast.success(t().copied);
-    } catch {
-      toast.error(t().failure);
-    }
-  };
   const open = () => {
     const mobile =
       /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
@@ -34,15 +49,7 @@ export default function InstallApp(props: { origin: string }) {
               <PanelDialog.Body>
                 <div class="flex flex-col items-center gap-4">
                   <p class="text-sm text-dimmed">{t().installHint}</p>
-                  <img
-                    class="w-64 max-w-full"
-                    alt={t().installQr}
-                    src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`}
-                  />
-                  <p class="break-all text-sm text-dimmed">{props.origin}</p>
-                  <Button variant="secondary" onClick={copy}>
-                    {t().copyInstallLink}
-                  </Button>
+                  <InstallLink origin={props.origin} />
                 </div>
               </PanelDialog.Body>
             </PanelDialog>

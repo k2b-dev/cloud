@@ -23,6 +23,8 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = appApprovalMessages.resolve([getLocale(c)]);
   c.header("Referrer-Policy", "no-referrer");
   const returnTo = id === actor.id ? "/me/security" : `/app/accounts/users/${id}`;
+  // Returning from identity confirmation continues after the install step.
+  const continuing = c.req.query("pairDevice") === id;
   return () => {
     const content = () =>
       config?.enabled && config.appOrigin ? (
@@ -32,6 +34,7 @@ export default ssr<AuthContext>(async (c) => {
           name={`${user.displayName || user.uid} (${user.uid})`}
           appOrigin={config.appOrigin}
           returnTo={returnTo}
+          install={!continuing}
         />
       ) : (
         <div class="flex flex-col items-start gap-3">
