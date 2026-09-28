@@ -255,7 +255,7 @@ const markdownToPlainText = (source: string): Result<string> => {
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
   try {
-    const html = sanitizeHtml(markdown.renderSync(source), {
+    const html = sanitizeHtml(markdown.renderSync(source, { links: "plain" }), {
       allowedTags: [...EMAIL_HTML_TAGS],
       allowedAttributes: EMAIL_HTML_ALLOWED_ATTRIBUTES,
       allowedSchemes: [...EMAIL_HTML_ALLOWED_SCHEMES],
@@ -349,7 +349,7 @@ export const renderComposeContent = (params: {
   if (!complexity.ok) return complexity;
 
   try {
-    const fragment = sanitizeHtml(markdown.renderSync(source), {
+    const fragment = sanitizeHtml(markdown.renderSync(source, { links: "plain" }), {
       allowedTags: [...EMAIL_HTML_TAGS],
       allowedAttributes: EMAIL_HTML_ALLOWED_ATTRIBUTES,
       allowedSchemes: [...EMAIL_HTML_ALLOWED_SCHEMES],

@@ -89,14 +89,45 @@ describe("compose renderer", () => {
     expect(rendered.data.html).not.toContain("href=");
   });
 
-  test("inserts snippet values into a Markdown draft as plain text", () => {
+  test("inserts snippet addresses and URLs as plain text and sends them as ordinary links", () => {
     const inserted = renderComposeTemplateSource(
-      "Reach me at {{ actor.email }} or {{ sender.reply_to }}",
-      { ...context, sender: { ...context.sender, reply_to: "grace_hopper@example.test" } },
+      "Reach me at {{ actor.email }} or {{ sender.reply_to }}. Help: {{ mailbox.description }}.",
+      {
+        ...context,
+        mailbox: { ...context.mailbox, description: "https://example.test/help" },
+        sender: { ...context.sender, reply_to: "grace_hopper@example.test" },
+      },
       "markdown",
     );
+    const draft = "Reach me at ada@example.test or grace_hopper@example.test. Help: https://example.test/help.";
+    expect(inserted).toEqual({ ok: true, data: draft });
 
-    expect(inserted).toEqual({ ok: true, data: "Reach me at ada@example.test or grace_hopper@example.test" });
+    const sent = renderComposeContent({ body: draft, format: "markdown", customCss: "", context, renderLiquid: true });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    const link = (href: string, text: string) => `<a href="${href}" style="color:#0f766e;text-decoration:underline">${text}</a>`;
+    expect(sent.data.html).toContain(
+      `Reach me at ${link("mailto:ada@example.test", "ada@example.test")} or ${link("mailto:grace_hopper@example.test", "grace_hopper@example.test")}. Help: ${link("https://example.test/help", "https://example.test/help")}.`,
+    );
+    expect(sent.data.text).toBe(draft);
+  });
+
+  test("sends typed Markdown links as their label followed by the address in plain text", () => {
+    const sent = renderComposeContent({
+      body: "Read [the **offer**](https://example.test/offer).",
+      format: "markdown",
+      customCss: "",
+      context,
+      renderLiquid: true,
+    });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    expect(sent.data.html).not.toContain("[");
+    expect(sent.data.text).toBe("Read the offer [https://example.test/offer].");
+    expect(renderComposeTemplateSource("Read [the offer](https://example.test/offer).", context, "plain")).toEqual({
+      ok: true,
+      data: "Read the offer [https://example.test/offer].",
+    });
   });
 
   test("keeps inserted snippet values literal when the draft is sent", () => {

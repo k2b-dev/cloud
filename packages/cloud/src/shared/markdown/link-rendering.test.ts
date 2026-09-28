@@ -12,6 +12,18 @@ describe("markdown links", () => {
     expect(html).not.toContain('<span class="md-link-widget');
   });
 
+  test("renders plain links as ordinary anchors around their text", () => {
+    const html = renderMarkdownSync("See [the **offer**](https://example.com/offer) or write to ada@example.test.", { links: "plain" });
+
+    expect(html).toBe(
+      '<p>See <a href="https://example.com/offer">the <strong>offer</strong></a> or write to <a href="mailto:ada@example.test">ada@example.test</a>.</p>\n',
+    );
+    expect(renderMarkdownSync(":::note\nHi\n:::\n[Cloud](https://example.com)", { notices: "minimal", links: "plain" })).toContain(
+      '<a href="https://example.com">Cloud</a>',
+    );
+    expect(renderMarkdownSync("[Cloud](https://example.com)")).toContain('<span class="md-link-label">[Cloud]</span>');
+  });
+
   test("keeps help links in the current browsing context", () => {
     const html = renderHelpMarkdown("[Next](/docs/next)");
 
