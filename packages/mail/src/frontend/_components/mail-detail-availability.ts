@@ -1,3 +1,4 @@
+import { i18n } from "@k2b/stdlib";
 import type { MailSelectionDetail } from "../../service/workspace";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
@@ -13,9 +14,11 @@ const DETAIL_SECTIONS: Array<keyof MailSelectionDetail["detailErrors"]> = [
   "drafts",
 ];
 
-export const listUnavailableMailDetailSections = (errors: MailSelectionDetail["detailErrors"], locale: string): string[] => {
+/** Names the detail sections that failed to refresh in the reader's language, or null when every section loaded. */
+export const describeUnavailableMailDetails = (errors: MailSelectionDetail["detailErrors"], locale: string): string | null => {
   const t = mailConversationUiMessages.resolve([locale]).t;
-  return DETAIL_SECTIONS.flatMap((section) => (errors[section] ? [t.detailSection({ section })] : []));
+  const sections = DETAIL_SECTIONS.flatMap((section) => (errors[section] ? [t.detailSection({ section })] : []));
+  return sections.length > 0 ? t.unavailableSections({ sections: i18n.formatList(sections, locale) }) : null;
 };
 
 export const preserveUnavailableMailDetail = <T extends MailSelectionDetail>(current: T, incoming: T): T => ({

@@ -593,7 +593,7 @@ export const mailConversationUiMessages = i18n.define({
       detailAvailability: "Verfügbarkeit der Details",
       detailsTemporarilyUnavailable: "Einige Unterhaltungsdetails sind vorübergehend nicht verfügbar",
       unavailableSections: ({ sections }) =>
-        `${sections} konnten nicht aktualisiert werden. Bereits geladene Werte bleiben soweit verfügbar sichtbar.`,
+        `Folgende Bereiche konnten nicht aktualisiert werden: ${sections}. Bereits geladene Werte bleiben soweit verfügbar sichtbar.`,
       detailSection: ({ section }) =>
         ({
           collaboration: "Bearbeitungsstatus",

@@ -42,7 +42,7 @@ import MailRelatedConversations from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { listUnavailableMailDetailSections } from "./mail-detail-availability";
+import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import {
   applyMailCollaborationPatch,
   applyMailTagIds,
@@ -113,7 +113,7 @@ export default function MailDetailsPanel(props: {
   const attachmentCount = () => attachments().length;
   const activityItems = createMemo(() => presentMailActivity(props.activity, locale()));
   const visibleComments = createMemo(() => comments().filter((comment) => !comment.deletedAt));
-  const unavailableSections = createMemo(() => listUnavailableMailDetailSections(props.detailErrors, locale()));
+  const unavailableDetails = createMemo(() => describeUnavailableMailDetails(props.detailErrors, locale()));
   const addressList = (addresses: Array<{ name: string | null; address: string }>) =>
     addresses.map((address) => address.name || address.address).join(", ");
 
@@ -583,21 +583,23 @@ export default function MailDetailsPanel(props: {
         />
 
         <DetailPanel.Body scrollPreserveKey="mail-conversation-detail">
-          <Show when={unavailableSections().length > 0}>
-            <DetailPanel.Section title={t().detailAvailability} icon="ti ti-alert-circle" tone="danger">
-              <Placeholder
-                state="error"
-                variant="compact"
-                align="center"
-                title={t().detailsTemporarilyUnavailable}
-                description={t().unavailableSections({ sections: unavailableSections().join(", ") })}
-                action={
-                  <Button variant="secondary" size="sm" type="button" onClick={() => void props.onReconcile()}>
-                    <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                  </Button>
-                }
-              />
-            </DetailPanel.Section>
+          <Show when={unavailableDetails()}>
+            {(description) => (
+              <DetailPanel.Section title={t().detailAvailability} icon="ti ti-alert-circle" tone="danger">
+                <Placeholder
+                  state="error"
+                  variant="compact"
+                  align="center"
+                  title={t().detailsTemporarilyUnavailable}
+                  description={description()}
+                  action={
+                    <Button variant="secondary" size="sm" type="button" onClick={() => void props.onReconcile()}>
+                      <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
+                    </Button>
+                  }
+                />
+              </DetailPanel.Section>
+            )}
           </Show>
 
           <Show when={props.conversationSummary?.summary}>
