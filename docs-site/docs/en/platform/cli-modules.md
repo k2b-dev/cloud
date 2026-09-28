@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-09-26
+updated: 2026-09-28
 ---
 
 # Application CLI modules
@@ -33,7 +33,14 @@ deterministic default is `en`. Regional tags use normal ancestor fallback, so
 The resolved tag is available as `ctx.options.locale` and is sent as
 `Accept-Language` with every authenticated application request. This keeps
 server-owned API messages aligned with the CLI without process-global locale
-state. For application-owned text, use `cliText(ctx, { en, de })` at the final
+state. The same requests carry the machine's IANA timezone (`TZ` overrides it)
+in the `cloud.timezone` cookie that browsers send, so `getTimeZone(c)` and
+day-based filters such as "due today" use the local day. A machine without a
+configured timezone, such as most containers and CI runners, sends `UTC`
+rather than falling back to `app.timezone`. The cookie only carries the
+timezone; authentication still comes from the bearer token.
+
+For application-owned text, use `cliText(ctx, { en, de })` at the final
 `ctx.print()` or `ctx.error()` boundary.
 
 Command names, flags, argument names, examples, IDs, enum values, error codes,

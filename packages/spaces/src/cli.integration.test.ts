@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
+import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
@@ -225,6 +226,21 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       expect(await cldJson<unknown>(["rm", ship.id, "--yes"])).toEqual({ deleted: { id: ship.id, spaceId: space.id, title: "Ship it" } });
       expect((await cld(["spaces", "show", ship.id])).exitCode).toBe(1);
     }, 180_000);
+
+    test("--due today lists the deadlines of the CLI machine's local day", async () => {
+      const space = await cldJson<{ id: string }>(["create", `Deadlines ${crypto.randomUUID().slice(0, 6)}`]);
+      // cld runs in Europe/Berlin; this API has no settings snapshot, so without the CLI's timezone it would use UTC.
+      // Berlin's 00:30 falls on the previous UTC date and its 23:30 on the same one; take the one outside today's UTC day.
+      const now = new Date();
+      const dayIn = (timeZone: string, instant: Date) => new Intl.DateTimeFormat("en-CA", { timeZone }).format(instant);
+      const deadline = ["00:30", "23:30"]
+        .map((time) => dates.zonedDateTimeToInstant(`${dayIn("Europe/Berlin", now)}T${time}`, "Europe/Berlin"))
+        .find((instant) => dayIn("UTC", new Date(instant)) !== dayIn("UTC", now))!;
+      const item = await cldJson<Item>(["add", `${space.id}:Local today`, "--deadline", deadline]);
+
+      const today = await cldJson<{ items: Item[] }>(["ls", space.id, "--due", "today"]);
+      expect(today.items.map((entry) => entry.id)).toEqual([item.id]);
+    }, 60_000);
 
     test("an item ID in a space without access resolves like a missing item", async () => {
       const [foreign] = await sql<{ id: string }[]>`

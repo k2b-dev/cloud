@@ -18,6 +18,7 @@ type MockServerState = {
   appsSearch?: string | null;
   capabilityCatalog?: unknown;
   acceptLanguages?: string[];
+  cookies?: Array<string | null>;
 };
 
 const tempDirs: string[] = [];
@@ -73,6 +74,8 @@ const startMockServer = (state: MockServerState) =>
       const url = new URL(request.url);
       state.acceptLanguages ??= [];
       state.acceptLanguages.push(request.headers.get("accept-language") ?? "");
+      state.cookies ??= [];
+      state.cookies.push(request.headers.get("cookie"));
       if (url.pathname === "/oauth/token") {
         if (state.tokenDelayMs) await Bun.sleep(state.tokenDelayMs);
         const body = await request.formData();
@@ -1138,6 +1141,39 @@ describe("cloud CLI OAuth session handling", () => {
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.stdout).uid).toBe("tester");
       expect(state.acceptLanguages).toContain("de-CH");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("sends the machine timezone so server-side day windows match the local day", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const pluginDir = join(dir, "cloud", "cld", "plugins", "cookies");
+    await mkdir(join(pluginDir, "dist"), { recursive: true });
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "cookies", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
+    );
+    await writeFile(
+      join(pluginDir, "dist", "cli.js"),
+      `export default { name: "cookies", summary: "Own cookie", run: async (ctx) => {
+        await ctx.fetch("/api/me", { headers: { Cookie: "a=b" } });
+        return 0;
+      } };`,
+    );
+    const cloud = ["--server", `http://127.0.0.1:${server.port}`, "--token", "test-token"];
+
+    try {
+      const whoami = await runCli(configPath, [...cloud, "account", "whoami", "--json"], { TZ: "Pacific/Chatham" });
+      expect(whoami.exitCode, whoami.stderr).toBe(0);
+      // A module's own Cookie header keeps its cookies next to the timezone.
+      const ownCookie = await runCli(configPath, [...cloud, "plugins", "run", "cookies"], { TZ: "Pacific/Chatham" });
+      expect(ownCookie.exitCode, ownCookie.stderr).toBe(0);
+      expect(state.meCalls).toBe(2);
+      expect(state.cookies).toEqual(["cloud.timezone=Pacific%2FChatham", "a=b; cloud.timezone=Pacific%2FChatham"]);
     } finally {
       server.stop(true);
     }
