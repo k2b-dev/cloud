@@ -1,5 +1,5 @@
 import { logger } from "@k2b/cloud/services";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   type ConversationDraftSummary,
@@ -25,6 +25,7 @@ import * as conversationReferences from "./conversation-reference";
 import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
 import * as drafts from "./drafts";
+import { localizeMailError } from "./error-messages";
 import { latestMailInvalidationCursor } from "./events";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
@@ -80,16 +81,47 @@ const EMPTY_VIEW_COUNTS: ConversationViewCounts = {
   recently_active: 0,
 };
 
-const VIEW_LABELS: Record<ConversationView, string> = {
-  needs_action: "Needs action",
-  mine: "Assigned to me",
-  unassigned: "Unassigned",
-  waiting: "Waiting for reply",
-  done: "Done",
-  snoozed: "Later",
-  send_problems: "Send problems",
-  recently_active: "Recent activity",
-};
+const workspaceMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      view: ({ view }: { view: ConversationView }) =>
+        ({
+          needs_action: "Needs action",
+          mine: "Assigned to me",
+          unassigned: "Unassigned",
+          waiting: "Waiting for reply",
+          done: "Done",
+          snoozed: "Later",
+          send_problems: "Send problems",
+          recently_active: "Recent activity",
+        })[view],
+      scheduled: "Scheduled",
+      search: "Search",
+      resultsFor: ({ query }: { query: string }) => `Results for “${query}”`,
+      filteredSearch: "Filtered search",
+      allMail: "All mail",
+    },
+    de: {
+      view: ({ view }) =>
+        ({
+          needs_action: "Handlungsbedarf",
+          mine: "Mir zugewiesen",
+          unassigned: "Nicht zugewiesen",
+          waiting: "Wartet auf Antwort",
+          done: "Erledigt",
+          snoozed: "Später",
+          send_problems: "Versandprobleme",
+          recently_active: "Letzte Aktivität",
+        })[view],
+      scheduled: "Geplant",
+      search: "Suche",
+      resultsFor: ({ query }) => `Ergebnisse für „${query}“`,
+      filteredSearch: "Gefilterte Suche",
+      allMail: "Alle E-Mails",
+    },
+  },
+});
 
 const optionalUuidSearchParam = (url: URL, name: string): string | null => {
   const parsed = z.string().uuid().safeParse(url.searchParams.get(name));
@@ -286,7 +318,9 @@ const loadConversationDetails = async (params: {
   mailboxId: string;
   conversationId: string;
   preferredFolderId?: string | null;
+  locale?: string | null;
 }) => {
+  const errorMessage = (error: ServiceError) => localizeMailError(error, params.locale).message;
   const [
     detailResult,
     stateResult,
@@ -319,7 +353,7 @@ const loadConversationDetails = async (params: {
     detailMessages: detailResult.ok ? detailResult.data : [],
     conversationSummary: summaryResult.ok ? summaryResult.data : null,
     conversationDrafts: draftsResult.ok ? draftsResult.data : [],
-    detailError: detailResult.ok ? null : detailResult.error.message,
+    detailError: detailResult.ok ? null : errorMessage(detailResult.error),
     collaborationState: stateResult.ok ? stateResult.data : null,
     conversationLocalTags: tagResult.ok ? tagResult.data : null,
     comments: commentsResult.ok ? commentsResult.data.items : [],
@@ -327,17 +361,17 @@ const loadConversationDetails = async (params: {
     assignableUsers: usersResult.ok ? usersResult.data : [],
     activity: activityResult.ok ? activityResult.data.items : [],
     reminder: reminderResult.ok ? reminderResult.data : null,
-    collaborationError: !stateResult.ok ? stateResult.error.message : !tagResult.ok ? tagResult.error.message : null,
+    collaborationError: !stateResult.ok ? errorMessage(stateResult.error) : !tagResult.ok ? errorMessage(tagResult.error) : null,
     detailErrors: {
-      collaboration: stateResult.ok ? null : stateResult.error.message,
-      tags: tagResult.ok ? null : tagResult.error.message,
-      comments: commentsResult.ok ? null : commentsResult.error.message,
-      assignableUsers: usersResult.ok ? null : usersResult.error.message,
-      activity: activityResult.ok ? null : activityResult.error.message,
-      reminder: reminderResult.ok ? null : reminderResult.error.message,
-      reference: referenceResult.ok ? null : referenceResult.error.message,
-      summary: summaryResult.ok ? null : summaryResult.error.message,
-      drafts: draftsResult.ok ? null : draftsResult.error.message,
+      collaboration: stateResult.ok ? null : errorMessage(stateResult.error),
+      tags: tagResult.ok ? null : errorMessage(tagResult.error),
+      comments: commentsResult.ok ? null : errorMessage(commentsResult.error),
+      assignableUsers: usersResult.ok ? null : errorMessage(usersResult.error),
+      activity: activityResult.ok ? null : errorMessage(activityResult.error),
+      reminder: reminderResult.ok ? null : errorMessage(reminderResult.error),
+      reference: referenceResult.ok ? null : errorMessage(referenceResult.error),
+      summary: summaryResult.ok ? null : errorMessage(summaryResult.error),
+      drafts: draftsResult.ok ? null : errorMessage(draftsResult.error),
     },
     selectedReference: referenceResult.ok
       ? ((referenceResult.data.find((reference) => reference.role === "primary") ?? referenceResult.data[0])?.value ?? null)
@@ -355,23 +389,29 @@ export const loadMailboxConversationDetail = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   conversationId: string;
+  locale?: string | null;
 }): Promise<MailConversationDetailData | null> => {
   const permission = await collaboration.requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
   if (!permission.ok || permission.data === "none") return null;
-  const conversation = await messages.listConversationMessages({ ...params, limit: 1 });
+  const conversation = await messages.listConversationMessages({
+    context: params.context,
+    mailboxId: params.mailboxId,
+    conversationId: params.conversationId,
+    limit: 1,
+  });
   if (!conversation.ok) return null;
   const [detail, availableTags] = await Promise.all([
     loadConversationDetails(params),
     localTags.listLocalTags(params.context, params.mailboxId),
   ]);
-  const availableTagsError = availableTags.ok ? null : availableTags.error.message;
+  const availableTagsError = availableTags.ok ? null : localizeMailError(availableTags.error, params.locale).message;
   return {
     ...detail,
     conversationId: params.conversationId,
     collaborationError: detail.collaborationError ?? availableTagsError,
     detailErrors: { ...detail.detailErrors, tags: detail.detailErrors.tags ?? availableTagsError },
     localTags: availableTags.ok ? availableTags.data : [],
-    selectedSubject: detail.detailMessages.at(-1)?.subject || "Message",
+    selectedSubject: detail.detailMessages.at(-1)?.subject ?? "",
   };
 };
 
@@ -381,6 +421,7 @@ const loadSelectionDetail = async (params: {
   conversationId: string | null;
   messageId: string | null;
   preferredFolderId?: string | null;
+  locale?: string | null;
 }): Promise<MailSelectionDetail> => {
   if (params.conversationId) {
     return await loadConversationDetails({
@@ -388,6 +429,7 @@ const loadSelectionDetail = async (params: {
       mailboxId: params.mailboxId,
       conversationId: params.conversationId,
       preferredFolderId: params.preferredFolderId,
+      locale: params.locale,
     });
   }
   if (!params.messageId) return EMPTY_SELECTION_DETAIL;
@@ -399,7 +441,7 @@ const loadSelectionDetail = async (params: {
   });
   return detail.ok
     ? { ...EMPTY_SELECTION_DETAIL, detailMessages: [detail.data] }
-    : { ...EMPTY_SELECTION_DETAIL, detailError: detail.error.message };
+    : { ...EMPTY_SELECTION_DETAIL, detailError: localizeMailError(detail.error, params.locale).message };
 };
 
 const loadListItems = async (params: {
@@ -538,7 +580,9 @@ export const loadMailboxPageData = async (params: {
   requestUrl: URL;
   search: ResolvedMailSearchRoute;
   listMode?: MailListMode;
+  locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
+  const t = workspaceMessages.resolve([params.locale ?? "en"]).t;
   const permission = await collaboration.requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
   if (!permission.ok) return fail(permission.error);
   if (permission.data === "none") return fail(err.forbidden());
@@ -633,10 +677,11 @@ export const loadMailboxPageData = async (params: {
         conversationId: selectedConversationId,
         messageId: selectedMessageId,
         preferredFolderId,
+        locale: params.locale,
       });
 
   const activeFolder = folders.find((folder) => folder.id === folderId);
-  const selectedSubject = selection.detailMessages.at(-1)?.subject || selectedListItem?.subject || "Message";
+  const selectedSubject = selection.detailMessages.at(-1)?.subject || selectedListItem?.subject || "";
 
   return ok({
     mailbox: mailboxResult.data,
@@ -647,7 +692,8 @@ export const loadMailboxPageData = async (params: {
     scheduledMode,
     scheduledCount: scheduledPageResult?.ok ? scheduledPageResult.data.total : scheduledCountResult.ok ? scheduledCountResult.data : 0,
     scheduledPage: scheduledPageResult?.ok ? scheduledPageResult.data : null,
-    scheduledError: scheduledPageResult && !scheduledPageResult.ok ? scheduledPageResult.error.message : null,
+    scheduledError:
+      scheduledPageResult && !scheduledPageResult.ok ? localizeMailError(scheduledPageResult.error, params.locale).message : null,
     localTags: localTagResult.ok ? localTagResult.data : [],
     activeView,
     savedViewId,
@@ -663,16 +709,16 @@ export const loadMailboxPageData = async (params: {
     nextListCursor: list.nextCursor,
     listError: list.error,
     listTitle: scheduledMode
-      ? "Scheduled"
+      ? t.scheduled
       : resolvedSearch.error
-        ? "Search"
+        ? t.search
         : searchExpression
           ? query
-            ? `Results for “${query}”`
-            : "Filtered search"
+            ? t.resultsFor({ query })
+            : t.filteredSearch
           : activeView
-            ? VIEW_LABELS[activeView]
-            : (activeSavedView?.name ?? activeFolder?.name ?? "All mail"),
+            ? t.view({ view: activeView })
+            : (activeSavedView?.name ?? activeFolder?.name ?? t.allMail),
     ...selection,
     selectedSubject,
   });

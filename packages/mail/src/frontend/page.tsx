@@ -64,6 +64,7 @@ export default ssr<AuthContext>(async (c) => {
         context,
         mailboxId: internalMailboxId,
         conversationId: internalConversationId,
+        locale,
       });
       return detail ? projectMailConversationDetail(detail) : null;
     })(),

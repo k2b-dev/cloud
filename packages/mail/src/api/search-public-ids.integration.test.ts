@@ -225,6 +225,25 @@ suite("Mail search by public folder and tag IDs", () => {
     expect(withoutStaleTag.listItems.map((item) => item.conversationId)).toEqual([conversationShortId]);
   });
 
+  test("the workspace route titles the list in the request locale", async () => {
+    const titleFor = async (href: string, locale: string) => {
+      const response = await app.request(`/mailboxes/${mailboxShortId}/workspace-route?${new URLSearchParams({ href })}`, {
+        headers: { authorization: "Bearer owner", "x-cloud-locale": locale },
+      });
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { listTitle: string }).listTitle;
+    };
+    const mailboxHref = `/app/mail/${mailboxShortId}`;
+
+    expect(await titleFor(searchHref(tagged()), "en")).toBe("Filtered search");
+    expect(await titleFor(searchHref(tagged()), "de")).toBe("Gefilterte Suche");
+    expect(await titleFor(`${mailboxHref}?q=order`, "de")).toBe("Ergebnisse für „order“");
+    expect(await titleFor(`${mailboxHref}?view=needs_action`, "de")).toBe("Handlungsbedarf");
+    expect(await titleFor(`${mailboxHref}?scheduled=1`, "de")).toBe("Geplant");
+    expect(await titleFor(`${mailboxHref}?search=${encodeURIComponent("{not json")}`, "de")).toBe("Suche");
+    expect(await titleFor(mailboxHref, "de")).toBe("Alle E-Mails");
+  });
+
   test("a failing list reports a stable code instead of raw service text", async () => {
     const invalid = await workspaceRoute(`/app/mail/${mailboxShortId}?search=${encodeURIComponent("{not json")}`);
     expect(invalid.listError).toBe("invalid_search");
