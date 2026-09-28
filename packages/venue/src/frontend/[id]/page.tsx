@@ -46,12 +46,9 @@ export default ssr<AuthContext>(async (c) => {
   if (!id) return ssr.error(c, 404);
   const url = new URL(c.req.raw.url);
   const user = expectUserBackedActor(c);
-  const venue = await venueService.venues.getByShortId(id, user);
-
-  if (!venue) return ssr.error(c, 404);
-
-  const access = await venueService.access.require(venue.id, user, "read");
-  if (!access.ok) return ssr.error(c, access.error.status);
+  const venueResult = await venueService.venues.resolve(id, user, "read");
+  if (!venueResult.ok) return ssr.error(c, venueResult.error.status);
+  const venue = venueResult.data;
 
   const pathView = c.req.param("view");
   const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search);

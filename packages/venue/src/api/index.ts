@@ -99,22 +99,12 @@ const requireUserBackedActor = (c: Context<AuthContext>) => {
   return ok(user);
 };
 
-const getVenueAccessSubject = (c: Context<AuthContext>, venueId?: string) => {
-  const scope = venueAccessScopeFor(c.get("actor"), c.get("accessSubject"));
-  if (!scope.ok || !venueId || !scope.data.serviceAccountResourceId || scope.data.serviceAccountResourceId === venueId) return scope;
-  return fail(err.forbidden("Access denied"));
-};
+const getVenueAccessSubject = (c: Context<AuthContext>) => venueAccessScopeFor(c.get("actor"), c.get("accessSubject"));
 
-const requireVenue = async (c: Context<AuthContext>, id: string, permission: PermissionLevel) => {
-  const internalId = await venueService.publicResources.resolve("venues", id);
-  if (!internalId) return fail(err.notFound("Venue"));
-  const subject = getVenueAccessSubject(c, internalId);
+const requireVenue = async (c: Context<AuthContext>, publicId: string, permission: PermissionLevel) => {
+  const subject = getVenueAccessSubject(c);
   if (!subject.ok) return subject;
-  const venue = await venueService.venues.get(internalId, subject.data);
-  if (!venue) return fail(err.notFound("Venue"));
-  const allowed = await venueService.access.require(id, subject.data, permission);
-  if (!allowed.ok) return allowed;
-  return ok(venue);
+  return venueService.venues.resolve(publicId, subject.data, permission);
 };
 
 const resolveOwned = async (
@@ -177,7 +167,7 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
 
   const dashboard = await venueService.dashboard(venue, user);
   const [publicVenue] = await venueService.publicResources.projectVenues([venue]);
-  const status = await venueService.publicStatus(publicVenue!.id, new Date(), getLocale(c));
+  const status = venue.publicEnabled ? await venueService.status(venue, new Date(), false, getLocale(c)) : null;
   const nextShift = dashboard.myUpcomingShifts[0];
   const missing = dashboard.slots.reduce((sum, slot) => sum + slot.missingPeople, 0);
 

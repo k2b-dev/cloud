@@ -7,6 +7,7 @@ import {
   type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@k2b/cloud/contracts";
+import { hasPermission } from "@k2b/cloud/server";
 import { err, fail, ok } from "@k2b/stdlib";
 import type { z } from "zod";
 import { type VenueAccessScope, venueAccessScopeFor } from "./access-control";
@@ -91,14 +92,13 @@ const mapVenue = (venue: CapabilityVenue) => ({
 });
 
 const requireVenue = async (venueId: string, scope: VenueAccessScope, permission: "read" | "write", allowPublic = false) => {
-  const internalId = await venueService.publicResources.resolve("venues", venueId);
-  if (!internalId) return fail(err.notFound("Venue"));
-  if (scope.serviceAccountResourceId && scope.serviceAccountResourceId !== internalId) return fail(err.forbidden("Access denied"));
-  const venue = await venueService.venues.getSummary(internalId, scope);
-  if (!venue) return fail(err.notFound("Venue"));
-  const access = await venueService.access.require(internalId, scope, permission);
-  if (access.ok || (allowPublic && venue.publicEnabled && !scope.serviceAccountResourceId)) return ok({ ...venue, publicId: venueId });
-  return fail(err.notFound("Venue"));
+  // Capabilities also read public Venues and answer "not found" when a grant is missing, so they authorize here.
+  const venue = await venueService.venues.resolve(venueId, scope, "none", { summary: true });
+  if (!venue.ok) return venue;
+  const allowed =
+    hasPermission(venue.data.permission ?? "none", permission) ||
+    (allowPublic && venue.data.publicEnabled && !scope.serviceAccountResourceId);
+  return allowed ? ok({ ...venue.data, publicId: venueId }) : fail(err.notFound("Venue"));
 };
 
 const runVenueSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
@@ -288,8 +288,7 @@ const runAssignmentMine = async (input: z.infer<typeof AssignmentMineInputSchema
   if (scope.data.serviceAccountResourceId) {
     const internalVenue = await venueService.venues.getSummary(scope.data.serviceAccountResourceId, scope.data);
     if (!internalVenue) return fail(err.notFound("Venue"));
-    const access = await venueService.access.require(internalVenue.id, scope.data, "read");
-    if (!access.ok) return access;
+    if (!hasPermission(internalVenue.permission ?? "none", "read")) return fail(err.forbidden("You do not have access to this venue"));
     publicVenueId = (await venueService.publicResources.projectVenues([internalVenue]))[0]!.id;
   }
   const cursor = decodeCursor(input.cursor);

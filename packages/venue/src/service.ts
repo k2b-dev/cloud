@@ -432,16 +432,6 @@ const getPermission = async (venueId: string, subjectInput: UserLike | VenueAcce
     : permission;
 };
 
-const requirePermission = async (
-  venueId: string,
-  subject: UserLike | VenueAccessSubject,
-  required: PermissionLevel,
-): Promise<Result<PermissionLevel>> => {
-  const permission = await getPermission(venueId, subject);
-  if (!hasPermission(permission, required)) return fail(err.forbidden("You do not have access to this venue"));
-  return ok(permission);
-};
-
 const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<Venue[]> => {
   const subject = toAccessSubject(subjectInput);
   if (subject.subject.type === "service_account" && !UUID_PATTERN.test(subject.serviceAccountResourceId ?? "")) {
@@ -571,9 +561,32 @@ const getVenueSummary = async (id: string, subject?: UserLike | VenueAccessSubje
   return mapVenue(row, subject ? await getPermission(row.id, subject) : undefined);
 };
 
-const getVenueByShortId = async (shortId: string, subject?: UserLike | VenueAccessSubject): Promise<Venue | null> => {
+const getVenueByShortId = async (shortId: string): Promise<Venue | null> => {
   const id = await resolvePublicId("venues", shortId);
-  return id ? getVenue(id, subject) : null;
+  return id ? getVenue(id) : null;
+};
+
+/**
+ * Resolves the public Venue ID of an API, page, or capability request to the
+ * internal record and fails unless the subject's effective `permission` reaches
+ * `required`. Callers pass `venue.id` on, so the public ID never reaches a query
+ * that expects the internal UUID. `"none"` leaves authorization to a caller
+ * with its own rule, such as capabilities that read public Venues.
+ */
+const resolveVenue = async (
+  publicId: string,
+  subjectInput: UserLike | VenueAccessSubject,
+  required: PermissionLevel,
+  options: { summary?: boolean } = {},
+): Promise<Result<Venue>> => {
+  const id = await resolvePublicId("venues", publicId);
+  if (!id) return fail(err.notFound("Venue"));
+  const subject = toAccessSubject(subjectInput);
+  if (subject.serviceAccountResourceId && subject.serviceAccountResourceId !== id) return fail(err.forbidden("Access denied"));
+  const venue = options.summary ? await getVenueSummary(id, subject) : await getVenue(id, subject);
+  if (!venue) return fail(err.notFound("Venue"));
+  if (!hasPermission(venue.permission ?? "none", required)) return fail(err.forbidden("You do not have access to this venue"));
+  return ok(venue);
 };
 
 const createVenueInTx = async (tx: SqlClient, input: VenueInput, user: UserLike): Promise<Result<Venue>> => {
@@ -1488,8 +1501,9 @@ const generateUserIcs = async (userId: string, baseUrl: string): Promise<string>
 };
 
 export const venueService = {
-  access: { list: listAccess, grant: grantAccess, update: changeAccess, revoke: revokeAccess, require: requirePermission },
+  access: { list: listAccess, grant: grantAccess, update: changeAccess, revoke: revokeAccess },
   venues: {
+    resolve: resolveVenue,
     list: listVenues,
     discover: discoverVenues,
     discoverPublic: discoverPublicVenues,
