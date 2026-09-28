@@ -11,6 +11,7 @@ import { Readable } from "node:stream";
 import { parseArgs } from "node:util";
 import { sql } from "bun";
 import { type BrowserContext, chromium, type Locator, type Page } from "playwright";
+import { newShortId } from "../src/lib/short-id";
 import type { ConnectorEnvelope } from "../src/service/connectors";
 import { hydrateMessageFromSource } from "../src/service/message-hydration";
 import { ingestEnvelope } from "../src/service/sync-runtime";
@@ -50,9 +51,11 @@ const HEADLESS = !options.headed;
 const KEEP = options.keep;
 const TIMEOUT = Number(options["timeout-ms"]);
 
+/** `*Id` fields are the short public IDs the browser sees; `mailboxUuid` is the database key for seeding and cleanup. */
 type Fixture = {
   sessionToken: string;
   mailboxId: string;
+  mailboxUuid: string;
   mailboxName: string;
   conversationId: string;
   messageId: string;
@@ -117,7 +120,13 @@ const createFixture = async (): Promise<Fixture> => {
     },
     sessionToken,
   );
-  createdMailboxId = mailbox.id;
+  const [mailboxRow] = await sql<{ id: string }[]>`
+    SELECT id
+    FROM mail.mailboxes
+    WHERE short_id = ${mailbox.id}
+  `;
+  const mailboxUuid = mailboxRow?.id ?? fail(`created mailbox ${mailbox.id} is not in the Mail database`);
+  createdMailboxId = mailboxUuid;
   const scope = "a".repeat(64);
 
   const [connection] = await sql<{ id: string }[]>`
@@ -127,7 +136,7 @@ const createFixture = async (): Promise<Fixture> => {
       encrypted_secret, authenticated_principal, capabilities, server_identity,
       last_verified_at
     ) VALUES (
-      ${mailbox.id}::uuid, 'Browser fixture', 'sender@example.test',
+      ${mailboxUuid}::uuid, 'Browser fixture', 'sender@example.test',
       'sender@example.test', 'imap.example.test', 993, 'implicit',
       'smtp.example.test', 587, 'starttls', 'password', 'browser-fixture',
       'sender@example.test', '{}'::jsonb, '{}'::jsonb, now()
@@ -138,7 +147,7 @@ const createFixture = async (): Promise<Fixture> => {
     INSERT INTO mail.remote_resources (
       mailbox_id, remote_locator, server_identity, scope_fingerprint, status
     ) VALUES (
-      ${mailbox.id}::uuid, '{}'::jsonb, '{}'::jsonb, ${scope}, 'active'
+      ${mailboxUuid}::uuid, '{}'::jsonb, '{}'::jsonb, ${scope}, 'active'
     )
     RETURNING id
   `;
@@ -156,9 +165,9 @@ const createFixture = async (): Promise<Fixture> => {
   // The smoke owns the mailbox health state; background sync must not race its assertions.
   const [folder] = await sql<{ id: string }[]>`
     INSERT INTO mail.folders (
-      remote_resource_id, stable_key, name, role, selected_for_sync, sync_status
+      short_id, remote_resource_id, stable_key, name, role, selected_for_sync, sync_status
     ) VALUES (
-      ${resource!.id}::uuid, 'browser-inbox', 'Inbox', 'inbox', false, 'current'
+      ${newShortId()}, ${resource!.id}::uuid, 'browser-inbox', 'Inbox', 'inbox', false, 'current'
     )
     RETURNING id
   `;
@@ -174,10 +183,10 @@ const createFixture = async (): Promise<Fixture> => {
   `;
   const [identity] = await sql<{ id: string }[]>`
     INSERT INTO mail.sender_identities (
-      mailbox_id, label, display_name, from_address, automation_policy,
+      short_id, mailbox_id, label, display_name, from_address, automation_policy,
       is_default, status
     ) VALUES (
-      ${mailbox.id}::uuid, 'Browser fixture', 'Browser Fixture',
+      ${newShortId()}, ${mailboxUuid}::uuid, 'Browser fixture', 'Browser Fixture',
       'sender@example.test', 'disabled', true, 'verified'
     )
     RETURNING id
@@ -197,7 +206,7 @@ const createFixture = async (): Promise<Fixture> => {
       health = 'degraded',
       health_reason = 'Failed to establish connection in required time',
       updated_at = now()
-    WHERE id = ${mailbox.id}::uuid
+    WHERE id = ${mailboxUuid}::uuid
   `;
 
   const internalDate = new Date();
@@ -230,7 +239,7 @@ const createFixture = async (): Promise<Fixture> => {
   };
   const messageId = await ingestEnvelope({
     db: sql,
-    mailboxId: mailbox.id,
+    mailboxId: mailboxUuid,
     remoteResourceId: resource!.id,
     folderId: folder!.id,
     message: envelope,
@@ -264,12 +273,14 @@ const createFixture = async (): Promise<Fixture> => {
     source: Readable.from([source]),
     expectedSize: source.byteLength,
   });
-  const [conversation] = await sql<{ id: string }[]>`
-    SELECT conversation_id AS id
-    FROM mail.conversation_messages
-    WHERE message_id = ${messageId}::uuid
+  const [conversationRow] = await sql<{ id: string; short_id: string; message_short_id: string }[]>`
+    SELECT conversation.id, conversation.short_id, message.short_id AS message_short_id
+    FROM mail.conversation_messages membership
+    JOIN mail.conversations conversation ON conversation.id = membership.conversation_id
+    JOIN mail.message_contents message ON message.id = membership.message_id
+    WHERE membership.message_id = ${messageId}::uuid
   `;
-  if (!conversation) fail("fixture message has no conversation");
+  const conversation = conversationRow ?? fail("fixture message has no conversation");
   const summary = [
     "Customer needs confirmation that the reply composer remains stable during the operational review.",
     "",
@@ -288,9 +299,10 @@ const createFixture = async (): Promise<Fixture> => {
   return {
     sessionToken,
     mailboxId: mailbox.id,
+    mailboxUuid,
     mailboxName,
-    conversationId: conversation.id,
-    messageId,
+    conversationId: conversation.short_id,
+    messageId: conversation.message_short_id,
     subject,
   };
 };
@@ -355,6 +367,18 @@ const clickHydratedDropdownTrigger = async (page: Page, locator: Locator) => {
   await locator.click();
 };
 
+/** A click while the surrounding dialog is still opening leaves the list closed, so retry until it opens. */
+const chooseSelectOption = async (page: Page, select: Locator, option: string) => {
+  const choice = page.getByRole("option", { name: option, exact: true });
+  const deadline = Date.now() + TIMEOUT;
+  while (!(await choice.isVisible())) {
+    if (Date.now() > deadline) fail(`select option ${JSON.stringify(option)} did not open`);
+    if ((await select.getAttribute("aria-expanded")) !== "true") await select.click();
+    await page.waitForTimeout(100);
+  }
+  await choice.click();
+};
+
 const waitForWidth = async (page: Page, locator: Locator, width: number, label: string) => {
   const deadline = Date.now() + TIMEOUT;
   while (Date.now() < deadline) {
@@ -372,14 +396,32 @@ const assertWheelScroll = async (page: Page, scroller: Locator, target: Locator,
   });
   await target.hover();
   await page.mouse.wheel(0, 400);
-  const state = await scroller.evaluate((element) => ({
-    clientHeight: element.clientHeight,
-    scrollHeight: element.scrollHeight,
-    scrollTop: element.scrollTop,
-  }));
+  // The wheel event returns before the browser has scrolled.
+  const readState = () =>
+    scroller.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+    }));
+  const deadline = Date.now() + 1_000;
+  let state = await readState();
+  while (state.scrollTop <= 0 && Date.now() < deadline) {
+    await page.waitForTimeout(50);
+    state = await readState();
+  }
   if (state.scrollHeight <= state.clientHeight || state.scrollTop <= 0) {
     fail(`${label} did not scroll the conversation history with wheel input: ${JSON.stringify(state)}`);
   }
+};
+
+/**
+ * Clicks the card itself: its visually hidden input stays in place while the dialog's list scrolls,
+ * so pointer actions on the input land on whatever covers that spot.
+ */
+const setCheckboxCard = async (card: Locator, checked: boolean) => {
+  const input = card.locator('input[type="checkbox"]');
+  if ((await input.isChecked()) !== checked) await card.click();
+  if ((await input.isChecked()) !== checked) fail(`checkbox card did not become ${checked ? "checked" : "unchecked"}`);
 };
 
 const continueDraft = async (page: Page) => {
@@ -387,11 +429,9 @@ const continueDraft = async (page: Page) => {
   await dialog.getByText("Continue", { exact: true }).first().click();
 };
 
-const assertMailboxToolsMenu = async (menu: Locator) => {
-  const sectionLabels = await menu
-    .getByRole("group")
-    .evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label") ?? ""));
-  const expectedSections = ["Mailbox", "Automation", "Manage", "This browser"];
+/** Desktop shows the tools as a menu with labelled groups, mobile as a branch of the app navigation. */
+const assertMailboxTools = async (container: Locator, sectionLabels: string[]) => {
+  const expectedSections = ["Mailbox", "Manage", "This browser"];
   if (JSON.stringify(sectionLabels) !== JSON.stringify(expectedSections)) {
     fail(`mailbox tools sections are not stable: ${JSON.stringify(sectionLabels)}`);
   }
@@ -399,23 +439,34 @@ const assertMailboxToolsMenu = async (menu: Locator) => {
     "Sync mailbox",
     "Mailbox health",
     "Automations",
-    "Rules",
-    "Subscriptions",
+    "Mailing lists",
     "Remote images",
     "Shared links",
-    "Open email links with Cloud Mail",
+    "Email link setup",
   ]) {
-    await menu.getByText(item, { exact: true }).waitFor();
+    await container.getByText(item, { exact: true }).waitFor();
   }
 };
+
+const menuSectionLabels = (menu: Locator) =>
+  menu.getByRole("group").evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label") ?? ""));
+
+/** Labels of one level of the @k2b/ui navigation tree below `branch`: the navigation itself or one of its items. */
+const navigationLabels = async (branch: Locator) =>
+  (
+    await branch.locator(":is(:scope > ul, :scope > div > ul) > li > .k2b-navigation__row > .k2b-navigation__control").allTextContents()
+  ).map((label) => label.trim());
 
 const runSmoke = async (fixture: Fixture) => {
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext({
     baseURL: BASE_URL,
     viewport: { width: 1440, height: 900 },
+    timezoneId: "UTC",
   });
   await addSessionCookie(context, fixture.sessionToken);
+  // Cloud reloads a browser once when it learns a new timezone; that reload would abort the smoke's next navigation.
+  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: BASE_URL, sameSite: "Lax" }]);
   await addStaleCollapsedMailWorkspaceCookie(context);
   const errors: string[] = [];
   const page = await context.newPage();
@@ -426,27 +477,16 @@ const runSmoke = async (fixture: Fixture) => {
     const mailboxPath = `/app/mail/${fixture.mailboxId}`;
     const staleCollapseResponse = await context.request.get(mailboxPath);
     const staleCollapseHtml = await staleCollapseResponse.text();
-    if (!staleCollapseHtml.includes("--workspace-sidebar-width:248px")) {
+    if (!staleCollapseHtml.includes("--k2b-workspace-sidebar-width:248px")) {
       fail("Mail SSR did not restore the expanded sidebar width from a stale collapsed preference");
     }
     if (staleCollapseHtml.includes('data-workspace-sidebar-collapsed="true"')) {
       fail("Mail SSR rendered a stale collapsed sidebar state");
     }
-    await page.goto(`/app/mail?q=${encodeURIComponent(fixture.mailboxName)}`, { waitUntil: "domcontentloaded" });
+    // The start page is the cross-mailbox focus overview; it lists mailboxes without a search field.
+    await page.goto("/app/mail", { waitUntil: "domcontentloaded" });
     await page.getByText(fixture.mailboxName, { exact: true }).waitFor();
-    await page.waitForFunction(
-      () =>
-        typeof (document.querySelector('[aria-label="Search mailboxes"]') as HTMLInputElement & { $$input?: unknown })?.$$input ===
-        "function",
-    );
-    const mailboxSearch = page.getByRole("searchbox", { name: "Search mailboxes" });
-    const literalWildcardQuery = `%${fixture.mailboxName}%`;
-    await mailboxSearch.fill(literalWildcardQuery);
-    await expectUrl(page, (url) => url.searchParams.get("q") === literalWildcardQuery, "mailbox search updates the URL");
-    await page.getByText("No matching mailboxes", { exact: true }).waitFor();
-    await mailboxSearch.fill(fixture.mailboxName);
-    await page.getByText(fixture.mailboxName, { exact: true }).waitFor();
-    ok("mailbox search uses server-owned literal matching");
+    ok("Mail overview lists the mailbox");
 
     await addStaleCollapsedMailWorkspaceCookie(context);
     await page.goto(mailboxPath, { waitUntil: "load" });
@@ -478,6 +518,9 @@ const runSmoke = async (fixture: Fixture) => {
     await clickHydratedDropdownTrigger(page, page.getByRole("button", { name: "Choose list view", exact: true }));
     await page.locator('[role="menu"]:popover-open').getByText("Conversation view", { exact: true }).click();
     await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
+    // The reload also replaces the cached message-view document that browser Back below would otherwise restore.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
     ok("message list mode survives SSR reload and returns to conversation view");
 
     const desktopDirectActions = (await desktopSidebar.locator("footer > button, footer > a").allTextContents()).map((label) =>
@@ -489,7 +532,7 @@ const runSmoke = async (fixture: Fixture) => {
     if (!desktopDirectActions.includes("Settings")) fail("desktop sidebar lost its direct Settings action");
     await desktopSidebar.getByRole("button", { name: "Mailbox tools", exact: true }).click();
     const desktopToolsMenu = page.locator('[role="menu"]:popover-open');
-    await assertMailboxToolsMenu(desktopToolsMenu);
+    await assertMailboxTools(desktopToolsMenu, await menuSectionLabels(desktopToolsMenu));
     await desktopToolsMenu.getByText("Automations", { exact: true }).click();
     await expectUrl(
       page,
@@ -506,8 +549,7 @@ const runSmoke = async (fixture: Fixture) => {
     await page.goto(`${mailboxPath}/automations/incoming?new=blank`, { waitUntil: "domcontentloaded" });
     const automationDialog = page.getByRole("dialog").filter({ hasText: "Create incoming automation" });
     const incomingMessages = automationDialog.getByRole("combobox", { name: "Incoming messages", exact: true });
-    await incomingMessages.press("ArrowDown");
-    await incomingMessages.press("Enter");
+    await chooseSelectOption(page, incomingMessages, "Mail matching conditions");
     const automationValue = automationDialog.getByRole("textbox", { name: "Value", exact: true });
     await automationValue.pressSequentially("focus-stays");
     if ((await automationValue.inputValue()) !== "focus-stays") fail("incoming automation condition input lost keystrokes");
@@ -518,21 +560,23 @@ const runSmoke = async (fixture: Fixture) => {
     await page.goto(mailboxPath, { waitUntil: "domcontentloaded" });
 
     await page.setViewportSize({ width: 390, height: 812 });
-    const mobileSidebar = page.locator("nav:has(details)").filter({ hasText: fixture.mailboxName });
-    await mobileSidebar.locator("summary").click();
-    const mobileDirectActions = (await mobileSidebar.locator("details > div > button, details > div > a").allTextContents()).map((label) =>
-      label.trim(),
-    );
+    await page.getByRole("button", { name: "Open apps", exact: true }).click();
+    const mobileMenu = page.getByRole("dialog", { name: fixture.mailboxName, exact: true });
+    const mobileNavigation = mobileMenu.getByRole("navigation", { name: fixture.mailboxName, exact: true });
+    await mobileNavigation.waitFor();
+    const mobileDirectActions = await navigationLabels(mobileNavigation);
     if (mobileDirectActions.some((label) => label.includes("Automations"))) {
-      fail(`mobile sidebar still exposes standalone Automations: ${JSON.stringify(mobileDirectActions)}`);
+      fail(`mobile navigation still exposes standalone Automations: ${JSON.stringify(mobileDirectActions)}`);
     }
-    if (!mobileDirectActions.includes("Settings")) fail("mobile sidebar lost its direct Settings action");
-    await mobileSidebar.getByRole("button", { name: "Mailbox tools", exact: true }).click();
+    if (!mobileDirectActions.includes("Settings")) fail("mobile navigation lost its direct Settings action");
+    const mobileTools = mobileNavigation
+      .locator(":scope > ul > li")
+      .filter({ has: page.getByRole("button", { name: "Mailbox tools", exact: true }) });
     await page.evaluate(() => document.documentElement.classList.add("dark"));
-    await assertMailboxToolsMenu(page.locator('[role="menu"]:popover-open'));
+    await assertMailboxTools(mobileTools, await navigationLabels(mobileTools));
     await page.evaluate(() => document.documentElement.classList.remove("dark"));
     await page.keyboard.press("Escape");
-    await mobileSidebar.locator("summary").click();
+    await mobileMenu.waitFor({ state: "hidden" });
     await page.setViewportSize({ width: 1440, height: 900 });
     ok("mailbox tools consolidate sync and automation navigation on desktop and mobile");
 
@@ -543,11 +587,12 @@ const runSmoke = async (fixture: Fixture) => {
     }
     await healthNotice.getByRole("button", { name: "View status", exact: true }).click();
     const healthDialog = page.getByRole("dialog").filter({ hasText: "Mailbox health" });
-    await healthDialog.getByText("Failed to establish connection in required time", { exact: true }).waitFor();
+    // Diagnostics show a localized status, not the provider's raw reason.
+    await healthDialog.getByText("Needs review", { exact: true }).waitFor();
     await healthDialog.getByRole("button", { name: "close dialog", exact: true }).click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const settings = page.getByRole("region", { name: "Mailbox settings" });
-    await settings.getByRole("tab", { name: "Delivery", exact: true }).click();
+    await settings.getByRole("tab", { name: "Accounts & identities", exact: true }).click();
     await settings.getByText("The saved account is valid, but the latest synchronization timed out.", { exact: false }).waitFor();
     await settings.getByRole("button", { name: "Close settings", exact: true }).click();
     ok("mailbox health explains the runtime problem in the workspace, diagnostics, and settings");
@@ -565,7 +610,7 @@ const runSmoke = async (fixture: Fixture) => {
     if ((await messageCard.getAttribute("data-mail-direction")) !== "incoming") fail("incoming message direction is not exposed");
     const readerScroll = page.locator(`[data-scroll-preserve="mail-reader-${fixture.conversationId}"]`);
     const summary = readerScroll.locator("[data-mail-conversation-summary]");
-    await summary.getByText("Summary", { exact: true }).waitFor();
+    await summary.getByRole("heading", { name: "Conversation summary", exact: true }).waitFor();
     const summaryLayout = await summary.evaluate((element) => {
       const messages = element.parentElement?.querySelector<HTMLElement>("[data-mail-conversation-messages]");
       const style = getComputedStyle(element);
@@ -582,9 +627,6 @@ const runSmoke = async (fixture: Fixture) => {
     if (Math.abs(summaryLayout.paddingTop - summaryLayout.paddingBottom) > 0.5) {
       fail(`conversation summary spacing is unbalanced: ${JSON.stringify(summaryLayout)}`);
     }
-    const summaryToggle = summary.getByRole("button", { name: "More", exact: true });
-    if ((await summaryToggle.getAttribute("data-size")) !== "xs") fail("conversation summary toggle is not compact");
-    if ((await summaryToggle.getAttribute("data-variant")) !== "text") fail("conversation summary toggle is not visually quiet");
     const readerState = await readerScroll.evaluate((element) => {
       const message = element.querySelector<HTMLElement>("[data-mail-message-id]");
       const body = element.querySelector<HTMLElement>(".mail-message-body");
@@ -604,10 +646,8 @@ const runSmoke = async (fixture: Fixture) => {
     )
       fail(`long message did not follow its conversation summary: ${JSON.stringify(readerState)}`);
     if (readerState.nestedVerticalScroll) fail("long message body introduced a nested vertical scrollbar");
-    await summaryToggle.click();
     await summary.getByText("The summary intentionally spans several paragraphs", { exact: false }).waitFor();
-    await assertWheelScroll(page, readerScroll, summary, "expanded conversation summary");
-    await summary.getByRole("button", { name: "Show less", exact: true }).click();
+    await assertWheelScroll(page, readerScroll, summary, "conversation summary");
     await readerScroll.evaluate((element) => {
       element.scrollTop = 0;
       element.dispatchEvent(new Event("scroll"));
@@ -642,17 +682,9 @@ const runSmoke = async (fixture: Fixture) => {
     for (const section of ["Respond", "Organize", "Mark", "Conversation", "Other"]) {
       await toolbarDialog.getByText(section, { exact: true }).waitFor();
     }
-    await toolbarDialog
-      .locator("label")
-      .filter({ hasText: /^Delete/u })
-      .locator('input[type="checkbox"]')
-      .uncheck();
-    await toolbarDialog.locator("label").filter({ hasText: /^Tags/u }).locator('input[type="checkbox"]').check();
-    await toolbarDialog
-      .locator("label")
-      .filter({ hasText: /^Split conversation/u })
-      .locator('input[type="checkbox"]')
-      .check();
+    await setCheckboxCard(toolbarDialog.locator("label").filter({ hasText: /^Delete/u }), false);
+    await setCheckboxCard(toolbarDialog.locator("label").filter({ hasText: /^Tags/u }), true);
+    await setCheckboxCard(toolbarDialog.locator("label").filter({ hasText: /^Split conversation/u }), true);
     await toolbarDialog.getByRole("button", { name: "Save toolbar", exact: true }).click();
     await page.waitForTimeout(250);
     const tagsToolbarAction = page.locator('[data-mail-toolbar-action="tags"]');
@@ -721,7 +753,7 @@ const runSmoke = async (fixture: Fixture) => {
     const [untouchedDraftCount] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count
       FROM mail.drafts
-      WHERE mailbox_id = ${fixture.mailboxId}::uuid
+      WHERE mailbox_id = ${fixture.mailboxUuid}::uuid
     `;
     if (untouchedDraftCount?.count !== 0) {
       fail(`opening an untouched reply persisted ${untouchedDraftCount?.count ?? "unknown"} drafts`);
@@ -805,7 +837,7 @@ const runSmoke = async (fixture: Fixture) => {
     );
     ok("composer options, file drop, and explicit draft save work through the canonical flows");
 
-    await page.getByRole("button", { name: "Reply", exact: true }).click();
+    await page.getByRole("button", { name: "Reply, draft available", exact: true }).click();
     await continueDraft(page);
     await expectUrl(
       page,
@@ -833,7 +865,7 @@ const runSmoke = async (fixture: Fixture) => {
     ok("local draft recovery survives a page lifecycle");
     await page.getByText(fixture.subject, { exact: true }).first().waitFor();
 
-    await page.getByRole("button", { name: "Reply", exact: true }).click();
+    await page.getByRole("button", { name: "Reply, draft available", exact: true }).click();
     await continueDraft(page);
     await body.waitFor({ state: "visible" });
     const sendResponse = page.waitForResponse(
@@ -909,7 +941,7 @@ const runSmoke = async (fixture: Fixture) => {
     const [draftCountBeforeMailto] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count
       FROM mail.drafts
-      WHERE mailbox_id = ${fixture.mailboxId}::uuid
+      WHERE mailbox_id = ${fixture.mailboxUuid}::uuid
     `;
     await continueIntent.click();
     await expectUrl(
@@ -920,7 +952,7 @@ const runSmoke = async (fixture: Fixture) => {
     const [draftCountAfterMailto] = await sql<{ count: number }[]>`
       SELECT count(*)::int AS count
       FROM mail.drafts
-      WHERE mailbox_id = ${fixture.mailboxId}::uuid
+      WHERE mailbox_id = ${fixture.mailboxUuid}::uuid
     `;
     if (draftCountAfterMailto?.count !== draftCountBeforeMailto?.count) {
       fail("opening an untouched mailto intent persisted a draft");
@@ -970,7 +1002,7 @@ const runSmoke = async (fixture: Fixture) => {
 };
 
 const cleanup = async (fixture: Fixture | null) => {
-  const mailboxId = fixture?.mailboxId ?? createdMailboxId;
+  const mailboxId = fixture?.mailboxUuid ?? createdMailboxId;
   if (!mailboxId || KEEP) return;
   await sql.begin(async (tx) => {
     const accessRows = await tx<{ access_id: string }[]>`
