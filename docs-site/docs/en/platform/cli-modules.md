@@ -35,8 +35,10 @@ The resolved tag is available as `ctx.options.locale` and is sent as
 server-owned API messages aligned with the CLI without process-global locale
 state. The same requests carry the machine's IANA timezone (`TZ` overrides it)
 in the `cloud.timezone` cookie that browsers send, so `getTimeZone(c)` and
-day-based filters such as "due today" use the local day. The cookie only
-carries the timezone; authentication still comes from the bearer token.
+day-based filters such as "due today" use the local day. A machine without a
+configured timezone, such as most containers and CI runners, sends `UTC`
+rather than falling back to `app.timezone`. The cookie only carries the
+timezone; authentication still comes from the bearer token.
 
 For application-owned text, use `cliText(ctx, { en, de })` at the final
 `ctx.print()` or `ctx.error()` boundary.
