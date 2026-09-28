@@ -832,9 +832,11 @@ export const TableQueryResponseSchema = z.object({
   /** Group-mode flag (only set when groupBy is non-empty). */
   explode: z.boolean().optional(),
   /** UUID → presentable label for relation-typed bucket keys (group
-   *  mode), relation-cell values (list mode), and the related records a
-   *  relation filter names. Unreadable or deleted targets have no entry,
-   *  so the UI shows them as unavailable. */
+   *  mode), relation-cell values (list mode), the related records a
+   *  relation filter names, and the users and groups that People-and-groups
+   *  values name (list mode). Unreadable or deleted targets and identities
+   *  outside the actor's directory scope have no entry, so the UI shows
+   *  them as unavailable or private. */
   relationLabels: z.record(z.string(), z.string()).optional(),
   /** recordId → fieldId → first image file metadata for card covers. */
   filePreviews: z

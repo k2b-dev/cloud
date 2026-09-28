@@ -426,7 +426,10 @@ const runListQuery = async (
       items: listResult.data.items,
       aggregates,
       nextCursor: listResult.data.nextCursor,
-      relationLabels: await deps.service.relations.buildLabelCache(listResult.data.items, params.tableFields, viewer),
+      relationLabels: {
+        ...(await deps.service.relations.buildLabelCache(listResult.data.items, params.tableFields, viewer)),
+        ...(await buildPrincipalLabelCache(principalReferencesFromRecords(listResult.data.items, params.tableFields), viewer.userId)),
+      },
       filePreviews: listResult.data.filePreviews,
     },
   };

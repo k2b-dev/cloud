@@ -1,4 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { field } from "../query-dsl/resolver-fixtures";
+import * as publicResources from "../service/public-resources";
 import {
   fromPublicFieldWrite,
   fromPublicUpdateTable,
@@ -12,12 +14,14 @@ import {
   PublicMutationPolicyImpactSchema,
   PublicMutationPolicyInputSchema,
   PublicMutationPolicyUpdateSchema,
+  PublicTableQueryResponseSchema,
   PublicTableSchema,
   PublicUpdateTableSchema,
   PublicUpdateViewSchema,
   PublicViewSchema,
   publicFieldKey,
   resourceTypeForKnownIdKey,
+  toPublicTableQueryResponse,
 } from "./public-dto";
 
 const now = "2026-08-15T00:00:00.000Z";
@@ -312,5 +316,66 @@ describe("Grids public DTO ID boundary", () => {
     expect(PublicFederatedSourcePublicationSchema.safeParse(publication).success).toBe(true);
     expect(PublicFederatedSourcePublicationSchema.safeParse({ ...publication, targetTableId: uuid }).success).toBe(false);
     expect(PublicFederatedSourcePublicationSchema.safeParse({ ...publication, targetTableShortId: "TABL01" }).success).toBe(false);
+  });
+});
+
+describe("Grids public query envelope", () => {
+  const relationFieldId = "22222222-2222-4222-8222-222222222222";
+  const ownerFieldId = "33333333-3333-4333-8333-333333333333";
+  const recordId = "44444444-4444-4444-8444-444444444444";
+  const linkedId = "55555555-5555-4555-8555-555555555555";
+  const userId = "66666666-6666-4666-8666-666666666666";
+  const groupId = "77777777-7777-4777-8777-777777777777";
+  const fields = [
+    field({ id: relationFieldId, shortId: "RELATE", name: "Customer", type: "relation", config: { targetTableId: uuid } }),
+    field({ id: ownerFieldId, shortId: "OWNERS", name: "Owners", type: "principal" }),
+  ];
+  const owners = [
+    { type: "user", id: userId },
+    { type: "group", id: groupId },
+  ];
+  const response = {
+    items: [
+      {
+        id: recordId,
+        shortId: "RECD01",
+        tableId: uuid,
+        data: { [relationFieldId]: [linkedId], [ownerFieldId]: owners },
+        version: 1,
+        deletedAt: null,
+        createdBy: null,
+        updatedBy: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    nextCursor: null,
+    relationLabels: { [linkedId]: "Acme", [userId]: "Ada Example", [groupId]: "Support" },
+  };
+  const publicIds = new Map([
+    [uuid, "TABL01"],
+    [linkedId, "LINK01"],
+  ]);
+  let projectPublicIds: ReturnType<typeof spyOn>;
+  beforeEach(() => {
+    projectPublicIds = spyOn(publicResources, "projectPublicIds").mockImplementation(
+      async (_type, ids) => new Map(ids.flatMap((id) => (publicIds.has(id) ? [[id, publicIds.get(id)!] as const] : []))),
+    );
+  });
+  afterEach(() => projectPublicIds.mockRestore());
+
+  test("keeps People-and-groups labels under the account IDs the record data already shows", async () => {
+    const projected = await toPublicTableQueryResponse(response, fields);
+
+    expect(projected.items?.[0]?.data).toEqual({ RELATE: ["LINK01"], OWNERS: owners });
+    expect(projected.relationLabels).toEqual({ LINK01: "Acme", [userId]: "Ada Example", [groupId]: "Support" });
+    expect(PublicTableQueryResponseSchema.safeParse(projected).success).toBe(true);
+  });
+
+  test("still refuses a label that neither a record nor a shown principal owns", async () => {
+    const unknownId = "88888888-8888-4888-8888-888888888888";
+    await expect(
+      toPublicTableQueryResponse({ ...response, relationLabels: { ...response.relationLabels, [unknownId]: "Hidden" } }, fields),
+    ).rejects.toThrow("Missing public ID for record");
   });
 });
