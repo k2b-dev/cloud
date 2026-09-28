@@ -126,6 +126,35 @@ describe("Venue capabilities", () => {
     expect(venueCapabilities.queries["venue.read"].input.safeParse({ id: crypto.randomUUID() }).success).toBeFalse();
   });
 
+  test("takes only public IDs as Venue resource inputs", () => {
+    const venueId = newShortId();
+    const idInputs: Record<string, Record<string, unknown>> = {
+      "venue.read": { id: venueId },
+      "venue.status": { venueId },
+      "shift.list": { venueId, startDate: "2026-10-05", days: 1, limit: 25 },
+      "shift.read": { venueId, templateId: newShortId(), date: "2026-10-05" },
+      "assignment.mine": { venueId, days: 30, limit: 25 },
+      "assignment.read": { id: newShortId() },
+      "feedback.summary": { venueId },
+      "assignment.signup": { venueId, templateId: newShortId(), date: "2026-10-05" },
+      "assignment.signup_free": { venueId, startsAt: "2026-10-05T10:00:00Z", endsAt: "2026-10-05T11:00:00Z" },
+      "assignment.cancel": { venueId, assignmentId: newShortId() },
+    };
+    const operations: Readonly<Record<string, CapabilityQueryDefinition | CapabilityActionDefinition>> = {
+      ...(venueCapabilities.queries as unknown as Readonly<Record<string, CapabilityQueryDefinition>>),
+      ...(venueCapabilities.actions as unknown as Readonly<Record<string, CapabilityActionDefinition>>),
+    };
+    expect([...Object.keys(idInputs), "venue.list", "venue.search"].sort()).toEqual(Object.keys(operations).sort());
+    for (const [localId, input] of Object.entries(idInputs)) {
+      const schema = operations[localId]!.input;
+      expect({ localId, success: schema.safeParse(input).success }).toEqual({ localId, success: true });
+      for (const field of ["id", "venueId", "templateId", "assignmentId"].filter((key) => key in input)) {
+        const internal = { ...input, [field]: crypto.randomUUID() };
+        expect({ localId, field, success: schema.safeParse(internal).success }).toEqual({ localId, field, success: false });
+      }
+    }
+  });
+
   test("accepts item-local links for navigable Venue lists", () => {
     const venueId = newShortId();
     const links = [{ rel: "open" as const, href: `/app/venue/${venueId}` }];
@@ -390,6 +419,9 @@ describe("Venue capabilities", () => {
         expect(calendar).toContain(`UID:venue-${signup.data.data.id}@stuve.cloud`);
         expect(calendar).not.toContain(venueId);
 
+        const cancelReview = venueCapabilities.actions["assignment.cancel"].review;
+        if (!cancelReview) throw new Error("Cancel review missing");
+        expect(await cancelReview({ venueId: venueShortId, assignmentId: signup.data.data.id }, context)).toMatchObject({ ok: true });
         const cancelled = await invokeAction("assignment.cancel", { venueId: venueShortId, assignmentId: signup.data.data.id }, context);
         expect(cancelled.ok && cancelled.data.data).toEqual({ assignmentId: signup.data.data.id, cancelled: true });
         expect(cancelled.ok && cancelled.data.summary).toBe("Cancelled your shift at Agent Venue.");
