@@ -142,7 +142,7 @@ import { resolveByteRange } from "../service/byte-range";
 import { localizeMailError } from "../service/error-messages";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
-import { loadMailboxConversationDetail, loadMailboxPageData } from "../service/workspace";
+import { loadMailboxConversationDetail, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import wsRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import contactDirectoryRoutes from "./contact-directory";
@@ -318,26 +318,11 @@ const providerDiscoveryQuerySchema = z.object({
   email: z.string().email().max(320),
 });
 
-const parseWorkspaceRouteUrl = async (publicMailboxId: string, internalMailboxId: string, href: string): Promise<URL | null> => {
+const parseWorkspaceRouteUrl = (publicMailboxId: string, href: string): URL | null => {
   try {
     const base = new URL("https://cloud.invalid");
     const url = new URL(href, base);
-    if (url.origin !== base.origin || url.pathname !== `/app/mail/${publicMailboxId}`) return null;
-    const resourceParams = [
-      ["savedView", "savedViews"],
-      ["folder", "folders"],
-      ["conversation", "conversations"],
-      ["message", "messages"],
-    ] as const;
-    for (const [name, table] of resourceParams) {
-      const publicId = url.searchParams.get(name);
-      if (publicId === null) continue;
-      if (!ResourceShortIdSchema.safeParse(publicId).success) return null;
-      const resolved = await publicResources.resolveMailboxPublicId(table, internalMailboxId, publicId);
-      if (!resolved) return null;
-      url.searchParams.set(name, resolved);
-    }
-    return url;
+    return url.origin === base.origin && url.pathname === `/app/mail/${publicMailboxId}` ? url : null;
   } catch {
     return null;
   }
@@ -789,13 +774,14 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .get("/mailboxes/:mailboxId/workspace-route", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
     const mailboxId = internalMailboxId(c);
-    const query = await internalInput(c, c.req.valid("query"));
-    const requestUrl = await parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, mailboxId, query.href);
-    if (!requestUrl) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    const query = c.req.valid("query");
+    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
     const data = await loadMailboxPageData({
       context: requestContext(c),
       mailboxId,
-      requestUrl,
+      ...request,
       listMode: query.listMode,
     });
     return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));

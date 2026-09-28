@@ -177,6 +177,18 @@ export const resolveMailboxPublicId = async (
   db: SqlClient = sql,
 ): Promise<string | null> => (await resolveMailboxPublicIds(table, mailboxId, [shortId], db))?.[0] ?? null;
 
+/** Maps the short IDs that exist in this mailbox to internal IDs; unknown IDs are left out. */
+export const resolveExistingMailboxPublicIds = async (
+  table: MailboxOwnedPublicResourceTable,
+  mailboxId: string,
+  values: string[],
+  db: SqlClient = sql,
+): Promise<Map<string, string>> => {
+  const shortIds = [...new Set(values.filter((value) => SHORT_ID_REGEX.test(value)))];
+  if (shortIds.length === 0) return new Map();
+  return new Map((await rowsByShortIds(db, table, shortIds, mailboxId)).map((row) => [row.short_id, row.id]));
+};
+
 /** Resolve a reminder link even after the reminder row was removed. */
 export const resolveReminderNotificationSourceId = async (
   mailboxId: string,

@@ -10,7 +10,14 @@ import {
   type ScheduledSendPage,
   type SenderIdentity,
 } from "../contracts";
-import { resolveMailSearchRoute } from "../search-state";
+import {
+  MAIL_SEARCH_MATCHES_NOTHING,
+  MAIL_SEARCH_PARAMETER,
+  mailSearchReferences,
+  type ResolvedMailSearchRoute,
+  replaceMailSearchReferences,
+  resolveMailSearchRoute,
+} from "../search-state";
 import type { MailRequestContext } from "./auth";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
 import * as collaboration from "./collaboration";
@@ -24,6 +31,7 @@ import * as localTags from "./local-tags";
 import * as mailboxes from "./mailboxes";
 import type { ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
+import * as publicResources from "./public-resources";
 import type { ConversationReminder } from "./reminders";
 import * as reminders from "./reminders";
 import type { SavedConversationView } from "./saved-views";
@@ -110,7 +118,7 @@ export type MailboxPageData = {
   listItems: MailListItem[];
   listCursor: string | null;
   nextListCursor: string | null;
-  listError: string | null;
+  listError: MailListError | null;
   listTitle: string;
   detailMessages: MessageDetail[];
   conversationSummary: ConversationContentSummary | null;
@@ -214,10 +222,13 @@ const conversationToListItem = (conversation: ConversationSummary): MailListItem
   revision: conversation.revision,
 });
 
+/** Why the list could not load. Codes stay untranslated; the list shows a localized, actionable message. */
+export type MailListError = "invalid_search" | "search_failed" | "load_failed";
+
 type MailListPage = {
   items: MailListItem[];
   nextCursor: string | null;
-  error: string | null;
+  error: MailListError | null;
 };
 
 export const searchHitToListItem = (item: search.MessageSearchHit, listMode: MailListMode): MailListItem => {
@@ -259,7 +270,7 @@ const attachLocalTags = async (
     mailboxId,
     conversationIds: items.flatMap((item) => (item.conversationId ? [item.conversationId] : [])),
   });
-  if (!result.ok) return { items: [], nextCursor: null, error: result.error.message };
+  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
   return {
     error: null,
     nextCursor,
@@ -440,7 +451,9 @@ const loadListItems = async (params: {
       groupByConversation: params.listMode === "conversations",
       excludedFolderIds: params.excludedFolderIds,
     });
-    if (!result.ok) return { items: [], nextCursor: null, error: result.error.message };
+    if (!result.ok) {
+      return { items: [], nextCursor: null, error: params.searchExpression || params.savedView ? "search_failed" : "load_failed" };
+    }
     const items = result.data.items.map((item) => searchHitToListItem(item, params.listMode));
     return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
   }
@@ -453,7 +466,7 @@ const loadListItems = async (params: {
       cursor: params.cursor,
       limit: 50,
     });
-    if (!result.ok) return { items: [], nextCursor: null, error: result.error.message };
+    if (!result.ok) return { items: [], nextCursor: null, error: "search_failed" };
     const items = result.data.items.map(conversationToListItem);
     return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
   }
@@ -467,15 +480,63 @@ const loadListItems = async (params: {
     cursor: params.cursor,
     limit: 50,
   });
-  if (!result.ok) return { items: [], nextCursor: null, error: result.error.message };
+  if (!result.ok) return { items: [], nextCursor: null, error: "load_failed" };
   const items = result.data.items.map(conversationToListItem);
   return attachLocalTags(params.context, params.mailboxId, items, result.data.nextCursor);
+};
+
+/** A workspace URL after its public IDs were resolved: resource parameters and search conditions carry internal IDs. */
+export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearchRoute };
+
+/**
+ * Resolves the public IDs of a browser workspace URL once, for the SSR page and the workspace-route API alike.
+ * Returns null when a resource parameter is not part of this mailbox. A folder or tag condition whose folder or
+ * tag no longer exists matches nothing, so a stale search link still opens and shows no results.
+ */
+export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string): Promise<MailWorkspaceRequest | null> => {
+  const requestUrl = new URL(publicUrl);
+  const resources = [
+    ["savedView", "savedViews"],
+    ["folder", "folders"],
+    ["conversation", "conversations"],
+    ["message", "messages"],
+  ] as const;
+  for (const [name, table] of resources) {
+    const shortId = requestUrl.searchParams.get(name);
+    if (shortId === null) continue;
+    const id = await publicResources.resolveMailboxPublicId(table, mailboxId, shortId);
+    if (!id) return null;
+    requestUrl.searchParams.set(name, id);
+  }
+  requestUrl.searchParams.delete(MAIL_SEARCH_PARAMETER);
+  const search = resolveMailSearchRoute(publicUrl);
+  if (!search.expression) return { requestUrl, search };
+  const references = mailSearchReferences(search.expression);
+  const [folders, tags] = await Promise.all([
+    publicResources.resolveExistingMailboxPublicIds(
+      "folders",
+      mailboxId,
+      references.flatMap((reference) => (reference.type === "folder_id" ? [reference.folderId] : [])),
+    ),
+    publicResources.resolveExistingMailboxPublicIds(
+      "tags",
+      mailboxId,
+      references.flatMap((reference) => (reference.type === "local_tag_id" ? [reference.tagId] : [])),
+    ),
+  ]);
+  const expression = replaceMailSearchReferences(search.expression, (reference) => {
+    const id = reference.type === "folder_id" ? folders.get(reference.folderId) : tags.get(reference.tagId);
+    if (!id) return MAIL_SEARCH_MATCHES_NOTHING;
+    return reference.type === "folder_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
+  });
+  return { requestUrl, search: { ...search, expression } };
 };
 
 export const loadMailboxPageData = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   requestUrl: URL;
+  search: ResolvedMailSearchRoute;
   listMode?: MailListMode;
 }): Promise<Result<MailboxPageData>> => {
   const permission = await collaboration.requireMailboxCollaborationPermission(params.context, params.mailboxId, "read");
@@ -518,7 +579,7 @@ export const loadMailboxPageData = async (params: {
   const activeView = parsedView.success ? parsedView.data : null;
   const savedViewId = activeView ? null : optionalUuidSearchParam(params.requestUrl, "savedView");
   const folderId = activeView || savedViewId ? null : optionalUuidSearchParam(params.requestUrl, "folder");
-  const resolvedSearch = resolveMailSearchRoute(params.requestUrl);
+  const resolvedSearch = params.search;
   const { query, expression: searchExpression, sort: searchSort } = resolvedSearch;
   const listCursor = params.requestUrl.searchParams.get("cursor");
   const selectedConversationId = optionalUuidSearchParam(params.requestUrl, "conversation");
@@ -537,7 +598,7 @@ export const loadMailboxPageData = async (params: {
         ? Promise.resolve({
             items: [],
             nextCursor: null,
-            error: resolvedSearch.error,
+            error: "invalid_search" as const,
           })
         : loadListItems({
             context: params.context,

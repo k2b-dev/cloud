@@ -1508,6 +1508,8 @@ function MailWorkspaceView(props: {
                     canWrite={canWrite()}
                     canAdmin={canAdmin()}
                     junkFolderIds={data.folders.filter((folder) => folder.role === "junk").map((folder) => folder.id)}
+                    folders={data.folders}
+                    localTags={data.localTags}
                     savedViews={data.savedViews}
                     activeSavedViewId={data.savedViewId}
                     listMode={data.listMode}

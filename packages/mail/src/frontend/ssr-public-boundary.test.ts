@@ -11,7 +11,6 @@ import {
   projectSsrPaths,
   resolveSsrMailboxId,
   resolveSsrMailboxResourceId,
-  resolveSsrWorkspaceUrl,
 } from "./ssr-public-boundary";
 
 const ids = {
@@ -198,25 +197,6 @@ describe("Mail SSR public boundary", () => {
     expect(projected.conversationId).toBe("Conv01");
     expect(projected.collaborationState?.conversationId).toBe("Conv01");
     expect(projected.activity[0]).toMatchObject({ conversationId: "Conv01", targetId: "Conv01" });
-  });
-
-  test("resolves short workspace URL state without changing the public URL", async () => {
-    const publicUrl = new URL(
-      'https://cloud.test/app/mail/Box001?conversation=Conv01&search={"expression":{"type":"and","expressions":[{"type":"folder_id","folderId":"Fold01"},{"type":"local_tag_id","tagId":"Tag001"}]},"sort":"newest"}',
-    );
-    const resolved = await resolveSsrWorkspaceUrl(publicUrl, ids.mailbox, async (table, _mailboxId, values) =>
-      values.map((value) =>
-        table === "conversations" && value === "Conv01"
-          ? ids.conversation
-          : table === "tags"
-            ? "00000000-0000-4000-8000-000000000007"
-            : "00000000-0000-4000-8000-000000000006",
-      ),
-    );
-    expect(publicUrl.searchParams.get("conversation")).toBe("Conv01");
-    expect(resolved?.searchParams.get("conversation")).toBe(ids.conversation);
-    expect(resolved?.searchParams.get("search")).toContain("00000000-0000-4000-8000-000000000006");
-    expect(resolved?.searchParams.get("search")).toContain("00000000-0000-4000-8000-000000000007");
   });
 
   test("projects automation roots without touching technical workflow IDs", async () => {

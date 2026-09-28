@@ -27,8 +27,10 @@ import {
   parseMailSearchState,
   resolveMailSearchRoute,
 } from "../../search-state";
+import type { LocalTag } from "../../service/local-tags";
+import type { MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
-import type { MailListMode } from "../../service/workspace";
+import type { MailListError, MailListMode } from "../../service/workspace";
 import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationRow from "./MailConversationRow";
 import { openMailSearchBuilder } from "./MailSearchBuilder";
@@ -54,7 +56,7 @@ export default function MailConversationList(props: {
   query: string;
   title: string;
   items: MailListItem[];
-  error: string | null;
+  error: MailListError | null;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
   selectedConversationIds: ReadonlySet<string>;
@@ -64,6 +66,8 @@ export default function MailConversationList(props: {
   canWrite: boolean;
   canAdmin: boolean;
   junkFolderIds: string[];
+  folders: MailFolderView[];
+  localTags: LocalTag[];
   savedViews: SavedConversationView[];
   activeSavedViewId: string | null;
   listMode: MailListMode;
@@ -121,7 +125,7 @@ export default function MailConversationList(props: {
   });
   const structuredSummary = createMemo(() => {
     const state = currentSearchState();
-    return state ? summarizeMailSearchExpression(state.expression, locale()) : null;
+    return state ? summarizeMailSearchExpression(state.expression, locale(), { folders: props.folders, tags: props.localTags }) : null;
   });
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) || props.activeSavedViewId);
@@ -432,17 +436,23 @@ export default function MailConversationList(props: {
               state="error"
               variant="panel"
               title={messages().couldNotLoad}
-              description={props.error}
+              description={
+                props.error === "invalid_search"
+                  ? messages().invalidSearch
+                  : props.error === "search_failed"
+                    ? messages().searchFailed
+                    : messages().loadFailed
+              }
               action={
                 <ButtonLink
-                  href={listHref()}
+                  href={props.error === "invalid_search" ? buildMailListHref(requestUrl(), true) : listHref()}
                   variant="secondary"
                   size="sm"
                   navigation="enhanced"
                   onNavigate={props.onNavigate}
                   scroll="preserve"
                 >
-                  {messages().retry}
+                  {props.error === "invalid_search" ? messages().clearSearch : messages().retry}
                 </ButtonLink>
               }
             />
