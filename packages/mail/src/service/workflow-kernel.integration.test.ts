@@ -47,6 +47,36 @@ const noEffectBudget = {
   maxAiCalls: 0,
 };
 
+type PlanNode = {
+  "Node Type": string;
+  "Relation Name"?: string;
+  "Index Cond"?: string;
+  "Recheck Cond"?: string;
+  Plans?: PlanNode[];
+};
+type ExplainRow = { "QUERY PLAN": [{ Plan: PlanNode }] };
+
+/**
+ * Every relation scan in an `EXPLAIN (FORMAT JSON)` result with the index
+ * condition that bounds it. Tests assert this shape instead of an index name,
+ * because the planner may serve the same bounded lookup from any index that
+ * covers it.
+ */
+const planScans = ([row]: ExplainRow[]) => {
+  const nodes: PlanNode[] = [];
+  const visit = (node: PlanNode): void => {
+    nodes.push(node);
+    node.Plans?.forEach(visit);
+  };
+  if (row) visit(row["QUERY PLAN"][0].Plan);
+  return nodes.flatMap((node) =>
+    node["Relation Name"]
+      ? [{ relation: node["Relation Name"], node: node["Node Type"], bound: node["Index Cond"] ?? node["Recheck Cond"] ?? null }]
+      : [],
+  );
+};
+const indexScan = /^(Index Scan|Index Only Scan|Bitmap Heap Scan)$/;
+
 suite("Mail shared workflow kernel", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   let userId = "";
@@ -670,9 +700,15 @@ steps:
 
       await sql`ANALYZE mail.workflow_profile, workflows.workflow, workflows.activation`;
       const [mailboxPlan, activationPlan] = await sql.begin(async (tx) => {
+        // At this table size the planner would read everything, so only index
+        // paths are allowed. Index-only scans are excluded because their cost
+        // follows the visibility map, which autovacuum updates at its own pace:
+        // once the heap is all-visible, PostgreSQL 15 reads every enabled
+        // activation through the covering dispatch index and filters workflow_id.
         await tx`SET LOCAL enable_seqscan = off`;
+        await tx`SET LOCAL enable_indexonlyscan = off`;
         return Promise.all([
-          tx`
+          tx<ExplainRow[]>`
             EXPLAIN (FORMAT JSON)
             SELECT workflow.id
             FROM mail.workflow_profile profile
@@ -682,7 +718,7 @@ steps:
               AND workflow.active_version_id IS NOT NULL
             ORDER BY profile.priority, workflow.id
           `,
-          tx`
+          tx<ExplainRow[]>`
             EXPLAIN (FORMAT JSON)
             SELECT activation.workflow_id
             FROM workflows.activation activation
@@ -694,8 +730,20 @@ steps:
           `,
         ]);
       });
-      expect(JSON.stringify(mailboxPlan)).toContain("workflow_profile_mailbox_priority_idx");
-      expect(JSON.stringify(activationPlan)).toContain("activation_workflow_id_key_key");
+      const mailboxScans = planScans(mailboxPlan);
+      expect(mailboxScans.map((scan) => scan.node)).not.toContain("Seq Scan");
+      expect(mailboxScans).toEqual(
+        expect.arrayContaining([
+          {
+            relation: "workflow_profile",
+            node: expect.stringMatching(indexScan),
+            bound: expect.stringContaining(`mailbox_id = '${targetMailboxId}'::uuid`),
+          },
+        ]),
+      );
+      expect(planScans(activationPlan)).toEqual([
+        { relation: "activation", node: expect.stringMatching(indexScan), bound: expect.stringContaining("workflow_id = ANY") },
+      ]);
     } finally {
       for (const scopedMailboxId of [targetMailboxId, unrelatedMailboxId]) {
         const rows = await sql<{ access_id: string }[]>`
