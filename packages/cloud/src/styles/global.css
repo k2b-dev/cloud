@@ -278,6 +278,11 @@ solid-island {
 @media (max-width: 1023px) {
   .cloud-app-canvas {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+  /* The flat surface replaces the app gradient in both themes. The dark
+     selector matches the specificity of the dark gradient above. */
+  .cloud-app-canvas,
+  .dark .cloud-app-canvas {
     background: var(--ui-surface);
   }
   /* Below lg the document is the page scroller; reserve its scrollbar gutter

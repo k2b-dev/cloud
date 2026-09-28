@@ -176,6 +176,7 @@
         "@types/bun": "1.4.2",
         "babel-preset-solid": "1.9.15",
         "hono": "4.13.8",
+        "playwright": "1.62.0",
         "solid-js": "1.9.15",
         "typescript": "5.9.3",
         "zod": "4.6.5",

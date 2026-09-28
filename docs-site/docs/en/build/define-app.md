@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-08-27
+updated: 2026-09-28
 ---
 
 # Define an application
@@ -182,6 +182,9 @@ when their containing object is present.
 `strength` is applied as declared in light mode. Dark mode uses half of that
 strength so application identity remains visible without overpowering the
 shared dark surface hierarchy.
+
+The background appears at 1024 px and above. Narrower screens use the flat work
+surface in both light and dark mode.
 
 ## Declare platform integrations
 
