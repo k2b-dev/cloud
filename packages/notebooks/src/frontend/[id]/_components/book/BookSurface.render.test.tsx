@@ -14,6 +14,7 @@ const render = (
   locale = "en",
   html: string | null = '<h1 id="welcome">Welcome</h1><p>Our handbook.</p>',
   historyIncomplete = false,
+  selectedNoteId: string | null = html === null ? null : "note02",
 ) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -22,7 +23,7 @@ const render = (
         return createComponent(BookSurface, {
           notebookId: "book01",
           notebookName: "Company handbook",
-          selectedNoteId: html === null ? null : "note02",
+          selectedNoteId,
           currentHref: html === null ? "/app/notebooks/book01" : "/app/notebooks/book01/notes/note02",
           canWrite,
           locked,
@@ -62,6 +63,11 @@ describe("Book surface", () => {
     expect(html).not.toContain("sidebar-mobile");
     expect(html).toContain("data-cloud-workspace-navigation");
     expect(html).toContain("sidebar-desktop");
+  });
+  test("a page load shows the open page's sub-pages, so they stay reachable before or without JavaScript", () => {
+    const html = render(false, false, "en", "<h1>Getting started</h1>", false, "note01");
+    expect(html).toMatch(/role="treeitem"[^>]*aria-expanded="true"[^>]*data-k2b-nav-tree-id="note01"/);
+    expect(html).toContain('<a href="/app/notebooks/book01/notes/note02?mode=book"');
   });
   test("authors get a floating edit action only on unlocked notes", () => {
     expect(render(true)).toContain("mode=write");

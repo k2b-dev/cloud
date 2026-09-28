@@ -152,11 +152,15 @@ describe("Book navigation tree", () => {
     }
   });
 
-  test("keyboard folding holds across snapshots and Enter still opens the note", async () => {
+  test("a page load unfolds the open note, keyboard folding holds across snapshots, and Enter still opens a note", async () => {
     const app = await mount("note01");
     try {
       const guide = app.item("note01");
+      expect(app.expanded("note01")).toBe("true");
+      expect(app.item("note02")).not.toBeNull();
       guide.focus();
+      press(guide, "ArrowLeft");
+      expect(app.expanded("note01")).toBe("false");
       press(guide, "ArrowRight");
       expect(app.expanded("note01")).toBe("true");
       press(guide, "ArrowLeft");

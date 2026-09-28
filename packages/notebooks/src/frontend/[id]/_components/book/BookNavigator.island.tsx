@@ -32,9 +32,12 @@ export default function BookNavigator(props: BookNavigatorProps) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
   const [state, setState] = createSignal(props);
-  // Folding belongs to the reader. Opening another note only reveals it; its own sub-notes and every
-  // later snapshot of the same note (live refreshes) leave the folds as they are.
-  const [expanded, setExpanded] = createSignal<readonly string[]>(ancestorIds(props.tree, props.selectedNoteId) ?? []);
+  // A page load also unfolds the open note, so its sub-notes stay reachable before or without JavaScript.
+  // After that, folding belongs to the reader: opening another note only reveals it, and its own
+  // sub-notes and every later snapshot of the same note (live refreshes) leave the folds as they are.
+  const [expanded, setExpanded] = createSignal<readonly string[]>(
+    props.selectedNoteId ? [...(ancestorIds(props.tree, props.selectedNoteId) ?? []), props.selectedNoteId] : [],
+  );
   onMount(() => {
     const update = (event: Event) => {
       const next = (event as CustomEvent<BookMetadata>).detail;
