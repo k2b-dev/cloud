@@ -3,6 +3,36 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.22.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.21.0...cloud-v0.22.0) (2026-09-28)
+
+
+### Features
+
+* **accounts:** allow local accounts without email when enabled ([#371](https://github.com/k2b-dev/cloud/issues/371)) ([9b46e69](https://github.com/k2b-dev/cloud/commit/9b46e6964d558eeee8af77e132707cf5cfc79400))
+* **accounts:** let admins revoke a user's paired sign-in devices ([#369](https://github.com/k2b-dev/cloud/issues/369)) ([a0ac811](https://github.com/k2b-dev/cloud/commit/a0ac8115b555172b042051a63abb27170344867b))
+* **assistant:** turn HTML with CSS into PDF ([#367](https://github.com/k2b-dev/cloud/issues/367)) ([f3467ea](https://github.com/k2b-dev/cloud/commit/f3467eadb0649f6f28b6e0f36599195626eed994))
+* **cloud:** render every HTML-to-PDF path offline ([#354](https://github.com/k2b-dev/cloud/issues/354)) ([5c2f159](https://github.com/k2b-dev/cloud/commit/5c2f159439b3b3c8a8d69651d051e1043c388597))
+* **grids:** keep table columns in sync when fields change ([#360](https://github.com/k2b-dev/cloud/issues/360)) ([1648231](https://github.com/k2b-dev/cloud/commit/1648231104448fc6995786a5560430f027c4f40c))
+* **pwa-auth:** show which account each connected Cloud signs in ([#358](https://github.com/k2b-dev/cloud/issues/358)) ([a123878](https://github.com/k2b-dev/cloud/commit/a123878ce8b1cde33130bce98dc758a897a78603))
+* **ui:** add an inline Placeholder for empty lists and use it in empty notebooks ([#365](https://github.com/k2b-dev/cloud/issues/365)) ([792c256](https://github.com/k2b-dev/cloud/commit/792c256f2798d9ac3efbe237bffbf24331617ed1)), closes [#359](https://github.com/k2b-dev/cloud/issues/359)
+
+
+### Bug Fixes
+
+* **apps:** use the shared inline placeholder for empty lists ([#372](https://github.com/k2b-dev/cloud/issues/372)) ([bdb6550](https://github.com/k2b-dev/cloud/commit/bdb6550d53e614d85ae151e1104e376121f1c27c))
+* **assistant:** align fullscreen Studio apps with the workspace frame ([#368](https://github.com/k2b-dev/cloud/issues/368)) ([d9789f0](https://github.com/k2b-dev/cloud/commit/d9789f05e2fd2a3a051da4357997176c83b58916))
+* **cloud:** use the flat app background on phones in dark mode ([#376](https://github.com/k2b-dev/cloud/issues/376)) ([b8c465f](https://github.com/k2b-dev/cloud/commit/b8c465f7d7309d97412dd9c9cfb97658d090f1e0))
+* **deps:** resolve lodash-es to 4.18.1 for GHSA-r5fr-rjxr-66jc ([#356](https://github.com/k2b-dev/cloud/issues/356)) ([5b53e85](https://github.com/k2b-dev/cloud/commit/5b53e859df2dd8495078eaf89f62b10dc3f1527e))
+* **files:** keep the trash out of the sidebar folder tree ([#370](https://github.com/k2b-dev/cloud/issues/370)) ([034526a](https://github.com/k2b-dev/cloud/commit/034526a3ccd8b1a8a5b2602127a43287ead6afb4))
+* **files:** mark the active row in list mode like in tree mode ([#366](https://github.com/k2b-dev/cloud/issues/366)) ([ad5dd1a](https://github.com/k2b-dev/cloud/commit/ad5dd1ab66f8c758e1c0e89c46e590df74c475fd)), closes [#361](https://github.com/k2b-dev/cloud/issues/361)
+* **grids:** keep search fields in step with the table schema ([#380](https://github.com/k2b-dev/cloud/issues/380)) ([c52f133](https://github.com/k2b-dev/cloud/commit/c52f133c62967b84e9067b8e23ff289eab9d7435))
+* **grids:** reload filtered and sorted table URLs ([#375](https://github.com/k2b-dev/cloud/issues/375)) ([a3978d6](https://github.com/k2b-dev/cloud/commit/a3978d672a479097658df305dc62fc1e01442f86))
+* **grids:** render loaded records without the loading state ([#379](https://github.com/k2b-dev/cloud/issues/379)) ([dceddb4](https://github.com/k2b-dev/cloud/commit/dceddb491e984a1500da889c2d1827a0cbccd33c))
+* **grids:** show record titles in group details ([#378](https://github.com/k2b-dev/cloud/issues/378)) ([9cdd084](https://github.com/k2b-dev/cloud/commit/9cdd084bd186724d0996c85e3cfff2417de8d7c5))
+* **pwa-auth:** keep Cloud Login still and simplify the PIN prompt ([#350](https://github.com/k2b-dev/cloud/issues/350)) ([43dfe36](https://github.com/k2b-dev/cloud/commit/43dfe3635f2c8fcb1f8090ef3281d2b8532520be))
+* **ui:** load more table rows when the page scrolls ([#377](https://github.com/k2b-dev/cloud/issues/377)) ([a9d4e6d](https://github.com/k2b-dev/cloud/commit/a9d4e6dfca2971fb154ca5470ddde25c5dbdc0f6))
+* **ui:** show how many selections a narrow multi-select hides ([#357](https://github.com/k2b-dev/cloud/issues/357)) ([38c1b2c](https://github.com/k2b-dev/cloud/commit/38c1b2cc7e2102e3de553dfd588bf5187cc45638))
+
 ## [0.21.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.20.0...cloud-v0.21.0) (2026-09-27)
 
 
