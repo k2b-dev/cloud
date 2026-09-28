@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { toPublicRecordQuery } from "../../../api/public-query";
 import { gridsService } from "../../../service";
 import * as publicResources from "../../../service/public-resources";
 import { loadGridsWorkspaceState } from "./workspace-state";
@@ -325,7 +326,7 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
     lookupTable = table;
     lookupView = savedView;
 
-    const hostileFilter = encodeURIComponent(JSON.stringify({ fieldId: statusField.id, op: "equals", value: "Closed" }));
+    const hostileFilter = encodeURIComponent(JSON.stringify({ fieldId: statusField.shortId, op: "equals", value: "Closed" }));
     const state = await loadWorkspaceState({
       user,
       baseShortId: base.shortId,
@@ -341,6 +342,57 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
     expect(lastRecordListParams?.deletedOnly).toBe(false);
     expect(state.route.initialState.query.filter).toEqual({ fieldId: statusField.id, op: "equals", value: "Open" });
     expect(state.route.initialState.query.deletedOnly).toBeUndefined();
+  });
+
+  test("resolves the public field IDs of a shared filtered, sorted, and scoped-search URL", async () => {
+    lookupTable = table;
+    const computed = { kind: "computed" as const, id: "computed_status", label: "Status copy", expression: "1" };
+    const filter = encodeURIComponent(JSON.stringify({ fieldId: statusField.shortId, op: "equals", value: "Open" }));
+    const sort = encodeURIComponent(JSON.stringify([{ fieldId: statusField.shortId, direction: "desc" }]));
+    const columns = encodeURIComponent(JSON.stringify([{ fieldId: statusField.shortId }, computed]));
+
+    const state = await loadWorkspaceState({
+      user,
+      baseShortId: base.shortId,
+      href:
+        `/app/grids/${base.shortId}/table/${table.shortId}` +
+        `?filter=${filter}&sort=${sort}&columns=${columns}&q=Open&qFields=${statusField.shortId}`,
+      activeTableSlug: table.shortId,
+    });
+
+    expect(state.kind).toBe("ok");
+    if (state.kind !== "ok" || state.route.kind !== "records") throw new Error("Expected records route");
+    expect(lastRecordListParams?.filter).toEqual({ fieldId: statusField.id, op: "equals", value: "Open" });
+    expect(lastRecordListParams?.sort).toEqual([{ fieldId: statusField.id, direction: "desc" }]);
+    expect(lastRecordListParams?.search).toEqual({ q: "Open", fieldIds: [statusField.id] });
+    expect(state.route.activeViewColumns).toEqual([{ fieldId: statusField.id }, computed]);
+    const publicQuery = await toPublicRecordQuery(state.route.initialState.query, [statusField] as never);
+    expect(publicQuery.filter).toEqual({ fieldId: statusField.shortId, op: "equals", value: "Open" });
+    expect(publicQuery.sort).toEqual([{ fieldId: statusField.shortId, direction: "desc" }]);
+    expect(publicQuery.columns).toEqual([{ fieldId: statusField.shortId }, computed]);
+  });
+
+  test("ignores URL query parameters that name unknown fields or are malformed", async () => {
+    lookupTable = table;
+    const filter = encodeURIComponent(JSON.stringify({ fieldId: "GONE01", op: "equals", value: "Open" }));
+    const sort = encodeURIComponent(JSON.stringify([{ fieldId: "GONE01", direction: "desc" }]));
+    const groupBy = encodeURIComponent(JSON.stringify([{ fieldId: statusField.shortId, granularity: "decade" }]));
+
+    const state = await loadWorkspaceState({
+      user,
+      baseShortId: base.shortId,
+      href: `/app/grids/${base.shortId}/table/${table.shortId}?filter=${filter}&sort=${sort}&groupBy=${groupBy}&q=Open&qFields=GONE01`,
+      activeTableSlug: table.shortId,
+    });
+
+    expect(state.kind).toBe("ok");
+    if (state.kind !== "ok" || state.route.kind !== "records") throw new Error("Expected records route");
+    expect(lastRecordGroupParams).toBeNull();
+    expect(lastRecordListParams?.filter).toBeNull();
+    expect(lastRecordListParams?.sort).toEqual([]);
+    expect(lastRecordListParams?.search).toEqual({ q: "Open", fieldIds: [] });
+    expect(state.route.initialState.query).toMatchObject({ filter: undefined, sort: [], groupBy: [] });
+    expect(await toPublicRecordQuery(state.route.initialState.query, [statusField] as never)).toMatchObject({ sort: [], groupBy: [] });
   });
 
   test("loads a directly addressed query-result view when the catalog snapshot omits its table", async () => {

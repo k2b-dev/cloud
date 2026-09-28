@@ -267,6 +267,8 @@ export const fromPublicRecordQuery = async (
   const filter = visitFilter(query.filter);
   if (!filter.ok) return filter;
 
+  if (!relationIds.every((id) => ShortIdSchema.safeParse(id).success)) return fail(err.badInput("Unknown related record ID"));
+
   const recordPublicIds = query.recordMeta?.ids ?? [];
   const resolveIds = deps.resolveIds ?? resolvePublicIds;
   const [records, relations] = await Promise.all([resolveIds("record", recordPublicIds), resolveIds("record", relationIds)]);

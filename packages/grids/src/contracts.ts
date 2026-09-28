@@ -638,7 +638,7 @@ export const FieldColumnSpecSchema = z.object({
 });
 export type FieldColumnSpec = z.infer<typeof FieldColumnSpecSchema>;
 
-const ComputedColumnSpecSchema = z.object({
+export const ComputedColumnSpecSchema = z.object({
   kind: z.literal("computed"),
   id: z.string().regex(/^computed_[A-Za-z0-9]{5,32}$/),
   label: z.string().trim().min(1).max(120),

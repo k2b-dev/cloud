@@ -191,6 +191,7 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
     const queryFields = state.catalog.fieldsByTable[route.activeTable.id] ?? (await gridsService.field.listByTable(route.activeTable.id));
     const publicQuery = await toPublicRecordQuery(route.initialState.query, queryFields);
     const publicActiveQuery = route.activeRecordQuery ? await toPublicRecordQuery(route.activeRecordQuery, queryFields) : null;
+    const publicFieldIds = new Map(queryFields.map((field) => [field.id, field.shortId]));
     const publicActiveTable = required(activeTable, "active table");
     return {
       ...route,
@@ -209,7 +210,10 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
         ...route.initialState,
         query: publicQuery,
         selectedRecordId,
-        search: { ...route.initialState.search, fieldIds: publicQuery.search?.fieldIds ?? [] },
+        search: {
+          ...route.initialState.search,
+          fieldIds: route.initialState.search.fieldIds.flatMap((id) => publicFieldIds.get(id) ?? []),
+        },
       },
       initialData,
       initialSelectedRecord: records[0] ?? null,

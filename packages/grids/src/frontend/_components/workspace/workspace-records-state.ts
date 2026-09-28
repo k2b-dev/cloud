@@ -1,4 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
+import { fromPublicRecordQuery, PublicRecordQuerySchema } from "../../../api/public-query";
 import type { RecordDisplayConfig, RecordQuery } from "../../../contracts";
 import type { DslResolverDiagnostic } from "../../../query-dsl/resolver";
 import type { Field, GridRecord, Table, View } from "../../../service";
@@ -136,6 +137,7 @@ type ResolvedRecordsView = {
   queryResultView: View | null;
   canEditActiveView: boolean;
   fields: Field[];
+  tableFields: Field[];
   baseReadable: boolean;
 };
 
@@ -200,6 +202,7 @@ const resolveRecordsView = async (
       : queryResultFieldIds
         ? allFields.filter((field) => queryResultFieldIds.has(field.id))
         : allFields,
+    tableFields: allFields,
     baseReadable,
   };
 };
@@ -220,6 +223,45 @@ const buildQueryResultViewRoute = async (
     canEditActiveView: view.canEditActiveView,
     initialCursor: common.chrome.url.searchParams.get("cursor"),
     initialResult: null,
+  };
+};
+
+type UrlQueryKey = Exclude<keyof RecordsState["query"], "includeDeleted" | "deletedOnly">;
+
+/**
+ * Grids URLs name fields and related records by public ID. Each query parameter
+ * resolves on its own; one that is malformed or names a field or record that no
+ * longer exists is ignored, like malformed JSON in `parseRecordsState`, so a
+ * stale link still opens the table.
+ */
+const resolveUrlRecordsState = async (tableId: string, fields: Field[], state: RecordsState): Promise<RecordsState> => {
+  const resolveParam = async <K extends UrlQueryKey>(key: K): Promise<RecordQuery[K] | undefined> => {
+    if (state.query[key] === undefined) return undefined;
+    const parsed = PublicRecordQuerySchema.safeParse({ [key]: state.query[key] });
+    if (!parsed.success) return undefined;
+    const resolved = await fromPublicRecordQuery(tableId, parsed.data, { listFields: async () => fields });
+    return resolved.ok ? resolved.data[key] : undefined;
+  };
+  const fieldIds = new Map(fields.map((field) => [field.shortId, field.id]));
+  const searchFieldIds = state.search.fieldIds.map((id) => fieldIds.get(id));
+  return {
+    ...state,
+    query: {
+      filter: await resolveParam("filter"),
+      recordMeta: await resolveParam("recordMeta"),
+      sort: await resolveParam("sort"),
+      groupBy: await resolveParam("groupBy"),
+      groupSort: await resolveParam("groupSort"),
+      aggregations: await resolveParam("aggregations"),
+      columns: await resolveParam("columns"),
+      includeDeleted: state.query.includeDeleted,
+      deletedOnly: state.query.deletedOnly,
+    },
+    search: {
+      ...state.search,
+      fieldIds: searchFieldIds.every((id): id is string => id !== undefined) ? searchFieldIds : [],
+    },
+    selectedRecordId: state.selectedRecordId ? await publicResources.resolveStoredPublicId("record", state.selectedRecordId) : null,
   };
 };
 
@@ -360,13 +402,7 @@ export const loadRecordsState = async (
       { title: view.queryResultView.name },
     ]);
   }
-  const parsedRecordsState = parseRecordsState(common.chrome.url.searchParams);
-  const recordsState: RecordsState = {
-    ...parsedRecordsState,
-    selectedRecordId: parsedRecordsState.selectedRecordId
-      ? await publicResources.resolveStoredPublicId("record", parsedRecordsState.selectedRecordId)
-      : null,
-  };
+  const recordsState = await resolveUrlRecordsState(activeTable.id, view.tableFields, parseRecordsState(common.chrome.url.searchParams));
   const displayConfig = activeDisplayConfig(activeTable.displayConfig, view.activeViewForQuery?.displayConfig);
   const strictViewScope = !!view.activeViewForQuery && !gridsService.permission.hasAtLeast(view.activeTableLevel, "read");
   const initial = await loadInitialRecords({
