@@ -183,4 +183,27 @@ describe("Mail search builder model", () => {
     });
     expect(normalizeMailSearchExpression({ type: "text", field: "any", query: "", match: "words" })).toEqual({ type: "all" });
   });
+
+  test("names folders and tags instead of showing their IDs", () => {
+    const expression: MailSearchExpression = {
+      type: "and",
+      expressions: [
+        { type: "folder_id", folderId: "Fold02" },
+        { type: "local_tag_id", tagId: "Tag001" },
+      ],
+    };
+    const references = {
+      folders: [
+        { id: "Fold01", parentId: null, name: "Projects" },
+        { id: "Fold02", parentId: "Fold01", name: "Harbor" },
+      ],
+      tags: [{ id: "Tag001", name: "Invoices" }],
+    };
+    expect(summarizeMailSearchExpression(expression, "en", references)).toBe("(In folder “Projects / Harbor”) and (Has tag “Invoices”)");
+    expect(summarizeMailSearchExpression(expression, "de", references)).toBe("(Im Ordner “Projects / Harbor”) und (Mit Tag “Invoices”)");
+    expect(summarizeMailSearchExpression(expression, "en", { folders: [], tags: [] })).toBe(
+      "(In a deleted folder) and (Has a deleted tag)",
+    );
+    expect(summarizeMailSearchExpression(expression, "de")).toBe("(In einem bestimmten Ordner) und (Mit einem bestimmten Tag)");
+  });
 });

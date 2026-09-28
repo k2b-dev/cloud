@@ -162,7 +162,7 @@ Open **Settings > Organization** to create a saved view from folder and collabor
 - **Everyone with mailbox access** creates a mailbox view and requires write access.
 - Visibility is fixed after creation. Create a replacement view if you need a different visibility.
 
-Local tags are mailbox labels used by people, search, and automations. Select a tag under **Tags** in the left navigation to open all matching conversations. They are not IMAP folders or provider keywords and do not appear in other clients. Deleting a local tag removes it from every conversation in that mailbox.
+Local tags are mailbox labels used by people, search, and automations. Select a tag under **Tags** in the left navigation to open all matching conversations. They are not IMAP folders or provider keywords and do not appear in other clients. Deleting a local tag removes it from every conversation in that mailbox. Saved views and search links that filter by a deleted tag or folder find no conversations for that condition.
 
 ## Correct conversation grouping {icon="arrows-split-2"}
 

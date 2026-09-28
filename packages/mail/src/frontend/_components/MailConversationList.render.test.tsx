@@ -35,6 +35,8 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       canWrite: true,
       canAdmin: false,
       junkFolderIds: [],
+      folders: [],
+      localTags: [],
       savedViews: [],
       activeSavedViewId: null,
       listMode: "conversations",
@@ -75,5 +77,22 @@ describe("Mail conversation list", () => {
     expect(html.match(/class="k2b-pull-to-refresh /g)).toHaveLength(1);
     expect(html).toContain('data-state="idle"');
     expect(html).toContain("Needs action");
+  });
+
+  test("names the tag of a structured search and never shows its ID", () => {
+    const search = JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" });
+    const requestUrl = `/app/mail/Box001?${new URLSearchParams({ search })}`;
+    const summary = (html: string) => /class="mail-search-summary__text"[^>]*>([^<]*)</.exec(html)?.[1];
+    const tag = { id: "Tag001", name: "Invoices", color: "#0f766e" } as Parameters<typeof MailConversationList>[0]["localTags"][number];
+
+    expect(summary(renderList({ requestUrl, localTags: [tag] }))).toBe("Has tag “Invoices”");
+    expect(summary(renderList({ requestUrl, localTags: [] }))).toBe("Has a deleted tag");
+  });
+
+  test("explains a failed search instead of showing service text", () => {
+    const html = renderList({ error: "search_failed" });
+    expect(html).toContain("Could not load conversations");
+    expect(html).toContain("The search could not run. Try again, and change the search conditions if it keeps failing.");
+    expect(html).toContain("Retry");
   });
 });

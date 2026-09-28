@@ -162,7 +162,7 @@ Informationen zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustellungsopt
 - **Alle mit Postfachzugriff** erstellt eine Postfachansicht und erfordert Schreibzugriff.
 - Die Sichtbarkeit steht nach der Erstellung fest. Erstelle eine Ersatzansicht, wenn du eine andere Sichtbarkeit benötigst.
 
-Lokale Tags sind Postfachkennzeichnungen für Personen, Suche und Automatisierungen. Wähle in der linken Navigation unter **Tags** einen Tag aus, um alle passenden Unterhaltungen zu öffnen. Tags sind weder IMAP-Ordner noch Anbieter-Schlüsselwörter und erscheinen nicht in anderen E-Mail-Programmen. Wenn du einen lokalen Tag löschst, wird er aus jeder Unterhaltung dieses Postfachs entfernt.
+Lokale Tags sind Postfachkennzeichnungen für Personen, Suche und Automatisierungen. Wähle in der linken Navigation unter **Tags** einen Tag aus, um alle passenden Unterhaltungen zu öffnen. Tags sind weder IMAP-Ordner noch Anbieter-Schlüsselwörter und erscheinen nicht in anderen E-Mail-Programmen. Wenn du einen lokalen Tag löschst, wird er aus jeder Unterhaltung dieses Postfachs entfernt. Gespeicherte Ansichten und Suchlinks, die nach einem gelöschten Tag oder Ordner filtern, finden für diese Bedingung keine Unterhaltungen mehr.
 
 ## Unterhaltungsgruppierung korrigieren {icon="arrows-split-2"}
 

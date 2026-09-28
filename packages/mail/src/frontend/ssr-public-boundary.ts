@@ -132,63 +132,6 @@ export const resolveSsrMailboxResourceId = async (
   return resolve(table, mailboxId, shortId);
 };
 
-export const resolveSsrWorkspaceUrl = async (
-  publicUrl: URL,
-  mailboxId: string,
-  resolve: typeof publicResources.resolveMailboxPublicIds = publicResources.resolveMailboxPublicIds,
-): Promise<URL | null> => {
-  const internalUrl = new URL(publicUrl);
-  const resources = [
-    ["savedView", "savedViews"],
-    ["folder", "folders"],
-    ["conversation", "conversations"],
-    ["message", "messages"],
-  ] as const;
-  for (const [name, table] of resources) {
-    const shortId = internalUrl.searchParams.get(name);
-    if (shortId === null) continue;
-    if (!ResourceShortIdSchema.safeParse(shortId).success) return null;
-    const ids = await resolve(table, mailboxId, [shortId]);
-    if (!ids) return null;
-    internalUrl.searchParams.set(name, ids[0]!);
-  }
-  const encodedSearch = internalUrl.searchParams.get("search");
-  if (!encodedSearch) return internalUrl;
-  try {
-    const state = JSON.parse(encodedSearch) as { expression?: unknown };
-    const resources: Array<{ owner: Record<string, unknown>; field: "folderId" | "tagId"; table: "folders" | "tags"; shortId: string }> =
-      [];
-    const visit = (value: unknown): void => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) return;
-      const node = value as Record<string, unknown>;
-      if (node.type === "folder_id" && typeof node.folderId === "string") {
-        resources.push({ owner: node, field: "folderId", table: "folders", shortId: node.folderId });
-      }
-      if (node.type === "local_tag_id" && typeof node.tagId === "string") {
-        resources.push({ owner: node, field: "tagId", table: "tags", shortId: node.tagId });
-      }
-      for (const child of Object.values(node)) Array.isArray(child) ? child.forEach(visit) : visit(child);
-    };
-    visit(state.expression);
-    if (resources.some(({ shortId }) => !ResourceShortIdSchema.safeParse(shortId).success)) return null;
-    for (const table of ["folders", "tags"] as const) {
-      const selected = resources.filter((resource) => resource.table === table);
-      if (selected.length === 0) continue;
-      const ids = await resolve(
-        table,
-        mailboxId,
-        selected.map(({ shortId }) => shortId),
-      );
-      if (!ids) return null;
-      selected.forEach(({ owner, field }, index) => Object.assign(owner, { [field]: ids[index] }));
-    }
-    internalUrl.searchParams.set("search", JSON.stringify(state));
-  } catch {
-    // Keep malformed search state intact so the workspace can render its normal validation error.
-  }
-  return internalUrl;
-};
-
 const add = (paths: Path[], table: Table, segments: Path["segments"], value: unknown): void => {
   if (typeof value === "string" && UUID.test(value)) paths.push({ table, segments });
 };

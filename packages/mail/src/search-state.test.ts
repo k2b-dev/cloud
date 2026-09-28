@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { MailSearchExpression } from "./contracts";
 import {
+  MAIL_SEARCH_MATCHES_NOTHING,
   MAIL_SEARCH_PARAMETER,
   MAX_MAIL_SEARCH_PARAMETER_LENGTH,
+  mailSearchReferences,
   parseMailQuickSearchFields,
   parseMailSearchState,
+  replaceMailSearchReferences,
   resolveMailSearchRoute,
   serializeMailSearchState,
   simpleMailSearchExpression,
@@ -157,6 +160,43 @@ describe("Mail search URL state", () => {
       expression: null,
       sort: "relevance",
       error: "The search query is invalid or too long.",
+    });
+  });
+
+  test("replaces only folder and tag conditions, however deeply they are nested", () => {
+    const expression: MailSearchExpression = {
+      type: "or",
+      expressions: [
+        { type: "not", expression: { type: "local_tag_id", tagId: "Tag001" } },
+        {
+          type: "and",
+          expressions: [
+            { type: "folder_id", folderId: "Fold01" },
+            { type: "snoozed", value: false },
+          ],
+        },
+      ],
+    };
+    expect(mailSearchReferences(expression)).toEqual([
+      { type: "local_tag_id", tagId: "Tag001" },
+      { type: "folder_id", folderId: "Fold01" },
+    ]);
+    expect(
+      replaceMailSearchReferences(expression, (reference) =>
+        reference.type === "folder_id" ? { ...reference, folderId: "internal-folder" } : MAIL_SEARCH_MATCHES_NOTHING,
+      ),
+    ).toEqual({
+      type: "or",
+      expressions: [
+        { type: "not", expression: MAIL_SEARCH_MATCHES_NOTHING },
+        {
+          type: "and",
+          expressions: [
+            { type: "folder_id", folderId: "internal-folder" },
+            { type: "snoozed", value: false },
+          ],
+        },
+      ],
     });
   });
 });

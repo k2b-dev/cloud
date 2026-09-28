@@ -715,18 +715,25 @@ export const mailSearchSnoozedSchema = z
   })
   .strict();
 export const mailSearchAllSchema = z.object({ type: z.literal("all").describe("Match-all search expression.") }).strict();
-export const mailSearchFolderIdSchema = z
-  .object({
-    type: z.literal("folder_id").describe("Folder search expression."),
-    folderId: ResourceShortIdSchema.describe("Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."),
-  })
-  .strict();
-export const mailSearchLocalTagIdSchema = z
-  .object({
-    type: z.literal("local_tag_id").describe("Local-tag search expression."),
-    tagId: ResourceShortIdSchema.describe("Stable local tag ID."),
-  })
-  .strict();
+// Requests carry public folder and tag IDs. After the transport boundary resolves them, services and
+// stored saved views carry internal UUIDs, so each form of the expression has its own schema.
+const mailSearchReferenceSchemas = (referenceId: z.ZodString) => ({
+  folder: z
+    .object({
+      type: z.literal("folder_id").describe("Folder search expression."),
+      folderId: referenceId.describe("Stable folder ID from the folder list; an unknown ID fails instead of matching nothing."),
+    })
+    .strict(),
+  tag: z
+    .object({
+      type: z.literal("local_tag_id").describe("Local-tag search expression."),
+      tagId: referenceId.describe("Stable local tag ID."),
+    })
+    .strict(),
+});
+const publicMailSearchReferences = mailSearchReferenceSchemas(ResourceShortIdSchema);
+export const mailSearchFolderIdSchema = publicMailSearchReferences.folder;
+export const mailSearchLocalTagIdSchema = publicMailSearchReferences.tag;
 export const mailSearchAssignedToMeSchema = z
   .object({ type: z.literal("assigned_to_me").describe("Match conversations assigned to the current user.") })
   .strict();
@@ -786,38 +793,53 @@ export type MailSearchExpression =
   | { type: "or"; expressions: MailSearchExpression[] }
   | { type: "not"; expression: MailSearchExpression };
 
-const mailSearchExpressionRecursiveSchema: z.ZodType<MailSearchExpression> = z.lazy(() =>
-  z.discriminatedUnion("type", [
-    mailSearchTermSchema,
-    mailSearchDateSchema,
-    mailSearchSizeSchema,
-    mailSearchWorkStatusSchema,
-    mailSearchAssigneeSchema,
-    mailSearchSnoozedSchema,
-    mailSearchAllSchema,
-    mailSearchFolderIdSchema,
-    mailSearchLocalTagIdSchema,
-    mailSearchAssignedToMeSchema,
-    z
-      .object({
-        type: z.literal("and"),
-        expressions: z.array(mailSearchExpressionRecursiveSchema).min(1).max(20),
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("or"),
-        expressions: z.array(mailSearchExpressionRecursiveSchema).min(1).max(20),
-      })
-      .strict(),
-    z
-      .object({
-        type: z.literal("not"),
-        expression: mailSearchExpressionRecursiveSchema,
-      })
-      .strict(),
-  ]),
-);
+const mailSearchExpressionSchemaFor = (references: ReturnType<typeof mailSearchReferenceSchemas>) => {
+  const recursive: z.ZodType<MailSearchExpression> = z.lazy(() =>
+    z.discriminatedUnion("type", [
+      mailSearchTermSchema,
+      mailSearchDateSchema,
+      mailSearchSizeSchema,
+      mailSearchWorkStatusSchema,
+      mailSearchAssigneeSchema,
+      mailSearchSnoozedSchema,
+      mailSearchAllSchema,
+      references.folder,
+      references.tag,
+      mailSearchAssignedToMeSchema,
+      z
+        .object({
+          type: z.literal("and"),
+          expressions: z.array(recursive).min(1).max(20),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("or"),
+          expressions: z.array(recursive).min(1).max(20),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.literal("not"),
+          expression: recursive,
+        })
+        .strict(),
+    ]),
+  );
+  const validated = boundedTreeInputSchema({
+    label: "Search expressions",
+    children: (value) => [
+      ...(Array.isArray(value.expressions) ? value.expressions : []),
+      ...(value.expression === undefined ? [] : [value.expression]),
+    ],
+  }).pipe(recursive) as z.ZodType<MailSearchExpression>;
+  return z.unknown().transform((value, context): MailSearchExpression => {
+    const parsed = validated.safeParse(value);
+    if (parsed.success) return parsed.data;
+    for (const issue of parsed.error.issues) context.addIssue({ ...issue });
+    return z.NEVER;
+  });
+};
 
 const mailSearchExpressionOpenApi = {
   $dynamicAnchor: "MailSearchExpression",
@@ -963,23 +985,7 @@ const mailSearchExpressionOpenApi = {
   ],
 };
 
-const validatedMailSearchExpressionSchema = boundedTreeInputSchema({
-  label: "Search expressions",
-  children: (value) => [
-    ...(Array.isArray(value.expressions) ? value.expressions : []),
-    ...(value.expression === undefined ? [] : [value.expression]),
-  ],
-}).pipe(mailSearchExpressionRecursiveSchema) as z.ZodType<MailSearchExpression>;
-
-export const mailSearchExpressionSchema = z
-  .unknown()
-  .transform((value, context): MailSearchExpression => {
-    const parsed = validatedMailSearchExpressionSchema.safeParse(value);
-    if (parsed.success) return parsed.data;
-    for (const issue of parsed.error.issues) context.addIssue({ ...issue });
-    return z.NEVER;
-  })
-  .meta(mailSearchExpressionOpenApi);
+export const mailSearchExpressionSchema = mailSearchExpressionSchemaFor(publicMailSearchReferences).meta(mailSearchExpressionOpenApi);
 
 export const mailSearchSortSchema = z.enum(["relevance", "newest"]);
 export type MailSearchSort = z.infer<typeof mailSearchSortSchema>;
@@ -991,6 +997,14 @@ export const mailSearchStateSchema = z
   })
   .strict();
 export type MailSearchState = z.infer<typeof mailSearchStateSchema>;
+
+/** Search state after the transport boundary resolved its folder and tag IDs; saved views store this form. */
+export const internalMailSearchStateSchema = z
+  .object({
+    expression: mailSearchExpressionSchemaFor(mailSearchReferenceSchemas(z.string().uuid())),
+    sort: mailSearchSortSchema.default("relevance"),
+  })
+  .strict();
 
 export const searchRequestSchema = z.object({
   expression: mailSearchExpressionSchema,

@@ -98,3 +98,27 @@ export const resolveMailSearchRoute = (url: URL): ResolvedMailSearchRoute => {
     ? { query, expression: parsed.data, sort: "relevance", error: null }
     : { query, expression: null, sort: "relevance", error: "The search query is invalid or too long." };
 };
+
+export type MailSearchReference = Extract<MailSearchExpression, { type: "folder_id" | "local_tag_id" }>;
+
+/** Stands in for a folder or tag condition whose folder or tag no longer exists: it matches nothing. */
+export const MAIL_SEARCH_MATCHES_NOTHING: MailSearchExpression = { type: "not", expression: { type: "all" } };
+
+/** Lists the folder and tag conditions of an expression. */
+export const mailSearchReferences = (expression: MailSearchExpression): MailSearchReference[] => {
+  if (expression.type === "and" || expression.type === "or") return expression.expressions.flatMap(mailSearchReferences);
+  if (expression.type === "not") return mailSearchReferences(expression.expression);
+  return expression.type === "folder_id" || expression.type === "local_tag_id" ? [expression] : [];
+};
+
+/** Replaces every folder and tag condition of an expression and keeps all other conditions. */
+export const replaceMailSearchReferences = (
+  expression: MailSearchExpression,
+  replace: (reference: MailSearchReference) => MailSearchExpression,
+): MailSearchExpression => {
+  if (expression.type === "and" || expression.type === "or") {
+    return { ...expression, expressions: expression.expressions.map((child) => replaceMailSearchReferences(child, replace)) };
+  }
+  if (expression.type === "not") return { ...expression, expression: replaceMailSearchReferences(expression.expression, replace) };
+  return expression.type === "folder_id" || expression.type === "local_tag_id" ? replace(expression) : expression;
+};

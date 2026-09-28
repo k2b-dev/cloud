@@ -157,7 +157,7 @@ export default function MailOrganizationSettings(props: {
           {(view) => (
             <SettingsCollection.Item
               title={view.name}
-              description={`${view.scope === "private" ? messages().onlyMe : messages().sharedWithMailbox} · ${summarizeMailSearchExpression(view.filter.expression, locale())}`}
+              description={`${view.scope === "private" ? messages().onlyMe : messages().sharedWithMailbox} · ${summarizeMailSearchExpression(view.filter.expression, locale(), { tags: tags() })}`}
               icon={<i class={`ti ${view.scope === "private" ? "ti-user" : "ti-users"}`} aria-hidden="true" />}
             >
               <Show when={view.scope === "private" || canWrite()}>

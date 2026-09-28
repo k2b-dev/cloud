@@ -21,6 +21,8 @@ const listProps = (requestUrl: string) => ({
   canWrite: true,
   canAdmin: false,
   junkFolderIds: [],
+  folders: [],
+  localTags: [],
   savedViews: [],
   activeSavedViewId: null,
   listMode: "conversations" as const,

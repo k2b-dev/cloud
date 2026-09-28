@@ -7,11 +7,13 @@ import type {
   SavedConversationViewScope,
   UpdateSavedConversationView,
 } from "../contracts";
-import { savedConversationViewFilterSchema } from "../contracts";
+import { internalMailSearchStateSchema } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
+import { MAIL_SEARCH_MATCHES_NOTHING, mailSearchReferences, replaceMailSearchReferences } from "../search-state";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { lockMailboxForCollaboration } from "./collaboration";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
+import * as publicResources from "./public-resources";
 import * as search from "./search";
 
 type SqlClient = typeof sql;
@@ -41,13 +43,53 @@ export type SavedConversationView = {
 };
 
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
+// Stored filters carry internal folder and tag IDs; the API resolves public IDs before a view is written.
 const parseFilter = (value: SavedConversationViewFilter | string): Result<SavedConversationViewFilter> => {
   try {
-    const parsed = savedConversationViewFilterSchema.safeParse(typeof value === "string" ? JSON.parse(value) : value);
+    const parsed = internalMailSearchStateSchema.safeParse(typeof value === "string" ? JSON.parse(value) : value);
     return parsed.success ? ok(parsed.data) : fail(err.internal("Saved conversation view contains invalid search state"));
   } catch {
     return fail(err.internal("Saved conversation view contains malformed search state"));
   }
+};
+
+/**
+ * A folder or tag deleted after a view was saved can no longer match. Its condition is returned as a
+ * match-nothing term, so the view still loads and never carries an ID without a public counterpart.
+ */
+const withCurrentReferences = async (views: SavedConversationView[], db: SqlClient): Promise<SavedConversationView[]> => {
+  const references = views.flatMap((view) => mailSearchReferences(view.filter.expression));
+  if (references.length === 0) return views;
+  const [folders, tags] = await Promise.all([
+    publicResources.publicIds(
+      "folders",
+      references.map((reference) => (reference.type === "folder_id" ? reference.folderId : null)),
+      db,
+    ),
+    publicResources.publicIds(
+      "tags",
+      references.map((reference) => (reference.type === "local_tag_id" ? reference.tagId : null)),
+      db,
+    ),
+  ]);
+  return views.map((view) => ({
+    ...view,
+    filter: {
+      ...view.filter,
+      expression: replaceMailSearchReferences(view.filter.expression, (reference) =>
+        (reference.type === "folder_id" ? folders.has(reference.folderId) : tags.has(reference.tagId))
+          ? reference
+          : MAIL_SEARCH_MATCHES_NOTHING,
+      ),
+    },
+  }));
+};
+
+const mapCurrentView = async (row: SavedViewRow, db: SqlClient): Promise<Result<SavedConversationView>> => {
+  const view = mapView(row);
+  if (!view.ok) return view;
+  const [current] = await withCurrentReferences([view.data], db);
+  return ok(current!);
 };
 
 const mapView = (row: SavedViewRow): Result<SavedConversationView> => {
@@ -198,7 +240,7 @@ export const listSavedConversationViews = async (params: {
     if (!view.ok) return view;
     views.push(view.data);
   }
-  return ok(views);
+  return ok(await withCurrentReferences(views, sql));
 };
 
 export const getSavedConversationView = async (params: {
@@ -213,7 +255,7 @@ export const getSavedConversationView = async (params: {
     viewId: params.viewId,
     userId: userBackedActor(params.context)?.id ?? null,
   });
-  return row ? mapView(row) : fail(err.notFound("Saved conversation view"));
+  return row ? mapCurrentView(row, sql) : fail(err.notFound("Saved conversation view"));
 };
 
 export const createSavedConversationView = async (params: {
@@ -268,7 +310,7 @@ export const createSavedConversationView = async (params: {
           metadata: { scope: row.scope, name: row.name },
         });
       }
-      return mapView(row);
+      return mapCurrentView(row, tx);
     });
   } catch (error) {
     return isUniqueViolation(error)
@@ -326,7 +368,7 @@ export const updateSavedConversationView = async (params: {
           metadata: { scope: row.scope, name: row.name, revision },
         });
       }
-      return mapView(row);
+      return mapCurrentView(row, tx);
     });
   } catch (error) {
     return isUniqueViolation(error)

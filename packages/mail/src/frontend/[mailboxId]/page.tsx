@@ -5,12 +5,12 @@ import { ssr } from "../../config";
 import { requestContactDirectory } from "../../contact-directory-settings";
 import type { MailRequestContext } from "../../service";
 import { getSpacesMailIntegrationAvailability } from "../../service/app-integrations";
-import { loadMailboxPageData } from "../../service/workspace";
+import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/workspace";
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
 import { mailPageMessages } from "../pages-messages";
-import { projectMailboxPageData, resolveSsrMailboxId, resolveSsrWorkspaceUrl } from "../ssr-public-boundary";
+import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = mailPageMessages.resolve([getLocale(c)]);
@@ -20,9 +20,8 @@ export default ssr<AuthContext>(async (c) => {
   const actor = c.get("actor");
   const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
   if (!user) return ssr.error(c, 403);
-  const requestUrl = new URL(c.req.raw.url);
-  const internalRequestUrl = await resolveSsrWorkspaceUrl(requestUrl, mailboxId);
-  if (!internalRequestUrl) return c.redirect(`/app/mail/${mailboxShortId}`);
+  const request = await resolveWorkspaceRequest(new URL(c.req.raw.url), mailboxId);
+  if (!request) return c.redirect(`/app/mail/${mailboxShortId}`);
   const context: MailRequestContext = {
     actor,
     accessSubject: c.get("accessSubject"),
@@ -33,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
   const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
   const theme = readThemeFromCookieHeader(cookieHeader);
   const [internalData, spacesIntegration] = await Promise.all([
-    loadMailboxPageData({ context, mailboxId, requestUrl: internalRequestUrl, listMode: workspacePreferences.listMode }),
+    loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode }),
     getSpacesMailIntegrationAvailability(),
   ]);
   if (!internalData.ok) return ssr.error(c, internalData.error.status);

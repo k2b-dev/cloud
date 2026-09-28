@@ -1,4 +1,5 @@
 import type { MailSearchExpression, MailSearchField } from "../../contracts";
+import { type MailFolderTreeEntry, mailFolderPaths } from "../../folder-tree";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export type MailSearchNodePath = readonly number[];
@@ -212,33 +213,56 @@ const sizeLabel = (bytes: number, locale: string): string => {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(megabytes)} MB`;
 };
 
+/**
+ * Folders and tags the summary can name. A missing list keeps the summary neutral; a present list is
+ * authoritative, so a reference outside it belongs to a deleted folder or tag. IDs are never shown.
+ */
+export type MailSearchSummaryReferences = {
+  folders?: readonly MailFolderTreeEntry[];
+  tags?: readonly { id: string; name: string }[];
+};
+
 export const summarizeMailSearchExpression = (
   expression: MailSearchExpression,
   locale = typeof document === "undefined" ? "en" : document.documentElement.lang,
+  references: MailSearchSummaryReferences = {},
 ): string => {
   const messages = mailRemainingMessages.resolve([locale]).t;
-  if (expression.type === "not") return `${messages.not} (${summarizeMailSearchExpression(expression.expression, locale)})`;
-  if (expression.type === "and" || expression.type === "or") {
-    const separator = expression.type === "and" ? ` ${messages.and} ` : ` ${messages.or} `;
-    return expression.expressions.map((child) => `(${summarizeMailSearchExpression(child, locale)})`).join(separator);
-  }
-  if (expression.type === "text") {
-    const field = expression.field === "keyword" ? "text:keyword" : `text:${expression.field}`;
-    return `${messages.searchField({ field })} ${messages.textOperator({ operator: expression.match })} “${expression.query || "…"}”`;
-  }
-  if (expression.type === "date") {
-    return `${expression.field === "internal_date" ? messages.received : messages.sent} ${messages.textOperator({ operator: expression.operator })} ${expression.value}`;
-  }
-  if (expression.type === "size") {
-    return `${expression.field === "message" ? messages.message : messages.attachment} ${messages.size.toLocaleLowerCase(locale)} ${messages.textOperator({ operator: expression.operator })} ${sizeLabel(expression.bytes, locale)}`;
-  }
-  if (expression.type === "work_status") {
-    return `${messages.workStatus}: ${messages.automationStatus({ status: expression.value })}`;
-  }
-  if (expression.type === "assignee") return expression.userId ? messages.assignedTo({ id: expression.userId }) : messages.unassigned;
-  if (expression.type === "snoozed") return expression.value ? messages.isSnoozed : messages.isNotSnoozed;
-  if (expression.type === "folder_id") return messages.inFolder({ id: expression.folderId });
-  if (expression.type === "local_tag_id") return messages.hasTag({ id: expression.tagId });
-  if (expression.type === "assigned_to_me") return messages.assignedToMe;
-  return messages.searchField({ field: "all" });
+  const folderPaths = references.folders ? mailFolderPaths(references.folders) : null;
+  const tagNames = references.tags ? new Map(references.tags.map((tag) => [tag.id, tag.name])) : null;
+  const summarize = (node: MailSearchExpression): string => {
+    if (node.type === "not") return `${messages.not} (${summarize(node.expression)})`;
+    if (node.type === "and" || node.type === "or") {
+      const separator = node.type === "and" ? ` ${messages.and} ` : ` ${messages.or} `;
+      return node.expressions.map((child) => `(${summarize(child)})`).join(separator);
+    }
+    if (node.type === "text") {
+      const field = node.field === "keyword" ? "text:keyword" : `text:${node.field}`;
+      return `${messages.searchField({ field })} ${messages.textOperator({ operator: node.match })} “${node.query || "…"}”`;
+    }
+    if (node.type === "date") {
+      return `${node.field === "internal_date" ? messages.received : messages.sent} ${messages.textOperator({ operator: node.operator })} ${node.value}`;
+    }
+    if (node.type === "size") {
+      return `${node.field === "message" ? messages.message : messages.attachment} ${messages.size.toLocaleLowerCase(locale)} ${messages.textOperator({ operator: node.operator })} ${sizeLabel(node.bytes, locale)}`;
+    }
+    if (node.type === "work_status") {
+      return `${messages.workStatus}: ${messages.automationStatus({ status: node.value })}`;
+    }
+    if (node.type === "assignee") return node.userId ? messages.assignedTo({ id: node.userId }) : messages.unassigned;
+    if (node.type === "snoozed") return node.value ? messages.isSnoozed : messages.isNotSnoozed;
+    if (node.type === "folder_id") {
+      if (!folderPaths) return messages.inSpecificFolder;
+      const path = folderPaths.get(node.folderId);
+      return path ? messages.inFolder({ name: path }) : messages.inDeletedFolder;
+    }
+    if (node.type === "local_tag_id") {
+      if (!tagNames) return messages.hasSpecificTag;
+      const name = tagNames.get(node.tagId);
+      return name ? messages.hasTag({ name }) : messages.hasDeletedTag;
+    }
+    if (node.type === "assigned_to_me") return messages.assignedToMe;
+    return messages.searchField({ field: "all" });
+  };
+  return summarize(expression);
 };
