@@ -108,13 +108,15 @@ const AppChart = (props: { block: ChartBlock; data: ChartBlockData; dateConfig: 
     return <Placeholder variant="compact" align="left" title={messages().chartUnavailable} description={props.data.message} />;
   }
   return (
-    <div class="flex h-72 min-h-0 flex-col">
+    <div>
       {props.block.subtitle ? <p class="mb-3 text-sm text-secondary">{props.block.subtitle}</p> : null}
       <CustomAppChart
         chartType={props.block.chartType}
         data={props.data.chart}
         valueFormat={props.block.valueFormat}
         dateConfig={props.dateConfig}
+        xAxisLabel={props.block.xAxisLabel}
+        yAxisLabel={props.block.yAxisLabel}
       />
     </div>
   );

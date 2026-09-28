@@ -161,8 +161,8 @@ export const bucketsToBars = (
 /**
  * Line — one `Series` per aggregation. x is the bucket index (0..N)
  * so categorical groupBys (strings, mixed types) work without
- * domain math; the renderer puts the category label on the x-axis
- * tick via a custom `xAxis.format` (see `chartXAxisFormat`).
+ * domain math; the renderer names each index with the matching
+ * entry of `categories` below the plot, as it does for bars.
  *
  * For numeric groupBys (e.g. a "year" field), the index-as-x makes
  * the line evenly spaced regardless of source spacing — semantically
@@ -183,26 +183,6 @@ export const bucketsToLineSeries = (buckets: ChartBucket[], aggs: AggregationSpe
   });
 };
 
-/** Format-function for the x-axis tick numeric index, looking up the
- *  bucket key by position and rendering it via `formatCategoryKey`.
- *  Stdlib's `AxisOptions.format(v: number)` is called with each tick
- *  value — we round-trip the index back to a label. The optional
- *  `relationLabels` map lets relation-typed groupBy ticks render as
- *  presentable strings instead of raw UUIDs. */
-export const chartXAxisFormat = (
-  buckets: ChartBucket[],
-  groupBy: GroupBySpec | undefined,
-  relationLabels?: Record<string, string>,
-  format?: ChartCategoryFormat,
-): ((v: number) => string) => {
-  return (v: number) => {
-    const idx = Math.round(v);
-    const bucket = buckets[idx];
-    if (!bucket) return "";
-    return formatCategoryKey(bucket.keys[0], groupBy, relationLabels, format);
-  };
-};
-
 /**
  * Resolves the chartType-specific data + axis options bundle the
  * renderer hands straight to `<Chart kind=... />`. Splitting this
@@ -215,7 +195,8 @@ type ChartRenderData =
   | {
       kind: "line";
       series: Series[];
-      xAxisFormat: (v: number) => string;
+      /** One label per bucket; series x values index into it. */
+      categories: string[];
     };
 
 /**
@@ -234,7 +215,7 @@ type ChartRenderInput = {
   fieldsById: Map<string, Field>;
   /** UUID → presentable label map for relation-typed groupBy bucket
    *  keys. Resolved server-side via `buildLabelCacheForGroupedKeys`;
-   *  the transformers and tick formatter use it to avoid printing
+   *  the transformers use it to avoid printing
    *  raw UUIDs on chart axes / slice labels. */
   relationLabels?: Record<string, string>;
   categoryFormat?: ChartCategoryFormat;
@@ -266,7 +247,7 @@ export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData =
       return {
         kind: "line",
         series: bucketsToLineSeries(input.buckets, aggs, input.fieldsById),
-        xAxisFormat: chartXAxisFormat(input.buckets, groupBy, relLabels, input.categoryFormat),
+        categories: input.buckets.map((bucket) => formatCategoryKey(bucket.keys[0], groupBy, relLabels, input.categoryFormat)),
       };
   }
 };

@@ -63,7 +63,7 @@ Metrics and Chart read either an existing saved view or an inline GQL query. The
 
 Metrics normally infer number formatting from selected fields. For aggregate expressions without field metadata, set a common `valueFormat`, such as `{ style: "number", decimalPlaces: 2, unit: "EUR" }`. This explicit override applies to every value in the block; Grids does not infer a currency from the query. It changes display only, preserving exact calculation values.
 
-Metrics accepts an ungrouped aggregate query and renders up to 12 named scalar results. Chart accepts a grouped aggregate query and renders a donut, bar, or line chart with at least one aggregate value series. A Chart block may render at most 100 groups through its `limit`.
+Metrics accepts an ungrouped aggregate query and renders up to 12 named scalar results. Chart accepts a grouped aggregate query and renders a donut, bar, or line chart with at least one aggregate value series. A Chart block may render at most 100 groups through its `limit`. Bar and line charts show the optional x-axis and y-axis labels; donut charts ignore them. Category names that do not fit below the chart are shortened; hover over one to see it in full. With more than 12 groups, at most 12 evenly spaced names are shown.
 
 The published capability records the exact tables and fields behind the block. App readers need no Base access, and the runtime cannot query sources outside that immutable capability. Republish after changing a saved View's source.
 

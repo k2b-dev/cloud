@@ -180,3 +180,37 @@ test("an older displayed document never conceals running work or recovery", () =
     expect(html).toContain(status === "running" ? "Creation requested" : status === "attention" ? 'role="alert"' : "<button");
   }
 });
+
+test("a chart block keeps its subtitle above a fixed-height chart and shows its axis labels", () => {
+  const input = fixture();
+  input.page.rows[0]!.columns[0]!.blocks = [
+    {
+      id: "tickets",
+      type: "chart",
+      chartType: "bar",
+      source: { kind: "view", viewId: "VIEW01" },
+      limit: 100,
+      subtitle: "Open tickets by status",
+      xAxisLabel: "Status",
+      yAxisLabel: "Tickets",
+    },
+  ];
+  input.charts.set("tickets", {
+    ok: true,
+    chart: {
+      kind: "chart",
+      buckets: [
+        { keys: ["New"], values: { "*__count": 4 } },
+        { keys: ["Done"], values: { "*__count": 9 } },
+      ],
+      fields: [],
+      viewQuery: { groupBy: [{ fieldId: "status" }], aggregations: [{ fieldId: "*", agg: "count" }] },
+      relationLabels: {},
+    },
+  });
+  const html = renderToString(() => createComponent(CustomAppPage, input));
+  // The subtitle must not eat into the chart's height, or the chart spills over the next block.
+  expect(html).toContain('<p class="mb-3 text-sm text-secondary">Open tickets by status</p><div class="flex h-72 flex-col">');
+  expect(html).toMatch(/<text class="stdlib-chart-axis-label"[^>]*>Tickets<\/text>/);
+  expect(html).toMatch(/<p[^>]*data-chart-x-axis-label[^>]*>Status<\/p>/);
+});

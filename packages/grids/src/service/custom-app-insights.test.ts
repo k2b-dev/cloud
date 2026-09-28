@@ -49,8 +49,8 @@ test("date-typed chart categories use the request locale without reinterpreting 
           fieldsById: new Map(),
           categoryFormat: { locale },
         });
-        const label = rendered.kind === "line" ? rendered.xAxisFormat(0) : rendered.data[0]?.label;
-        const empty = rendered.kind === "line" ? rendered.xAxisFormat(1) : rendered.data[1]?.label;
+        const label = rendered.kind === "line" ? rendered.categories[0] : rendered.data[0]?.label;
+        const empty = rendered.kind === "line" ? rendered.categories[1] : rendered.data[1]?.label;
         expect(label).toBe(expected);
         expect(empty).toBe("—");
       }
