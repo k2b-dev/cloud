@@ -485,7 +485,7 @@ export const venueCapabilities = defineCapabilities({
     "venue.search": {
       title: "Search Venues",
       description:
-        "Find a public or accessible Venue by name, slug, or description when its ID is unknown. Use returned venue.venue refs with venue.read, venue.status, shift.list, or feedback.summary.",
+        "Find a public or accessible Venue by name, slug, or description when its ID is unknown. Use returned venue.venue refs with venue.read, venue.status, shift.list, or, for Venues with write or admin permission, feedback.summary.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -495,7 +495,7 @@ export const venueCapabilities = defineCapabilities({
     "venue.list": {
       title: "List accessible Venues",
       description:
-        "Normal entry for permission-scoped Venue work. List accessible Venues and use returned venue.venue refs or IDs with venue.read, venue.status, shift.list, assignment.mine, or feedback.summary.",
+        "Normal entry for permission-scoped Venue work. List accessible Venues and use returned venue.venue refs or IDs with venue.read, venue.status, shift.list, assignment.mine, or, for Venues with write or admin permission, feedback.summary.",
       input: VenueListInputSchema,
       data: VenueListDataSchema,
       openWorld: false,

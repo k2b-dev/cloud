@@ -23,5 +23,5 @@ Standorte verwaltet Orte mit Personalplanung, öffentlichem Öffnungsstatus, Sch
 - **Standort erstellen:** Beginne in der Übersicht mit einem leeren Standort oder einer Vorlage.
 - **Zeitplan einrichten:** Verwalte in den Einstellungen reguläre Öffnungszeiten, Abweichungen und wiederkehrende Schichtvorlagen.
 - **Informationen veröffentlichen:** Öffne die öffentliche Seite über die Seitenleiste des Arbeitsbereichs. Dort erscheinen aktivierte Abschnitte und die Feedback-Funktion.
-- **Schichten besetzen:** Personen mit Mitarbeiterzugriff melden sich für sichtbare Schichten an. Administratoren können Zuweisungen auch stornieren.
+- **Schichten besetzen:** Personen mit Zugriff „Mitarbeit“ oder „Admin“ melden sich für sichtbare Schichten an. Administratoren können Zuweisungen auch stornieren.
 :::

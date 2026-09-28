@@ -207,7 +207,8 @@ export const venueMessages = i18n.define({
       accessDescription: "Permission changes save immediately.",
       refreshBeforeAccess: "Refresh venue settings before changing access or API keys.",
       peopleAndGroups: "People and groups",
-      peopleAndGroupsDescription: "Grant read, staff, or admin access to this venue.",
+      peopleAndGroupsDescription:
+        "Read: sees the schedule and what the public page shows. Staff: also signs up for shifts and sees visitor feedback and hidden sections. Admin: also changes the schedule, public content, settings, and access.",
       grantAccessFailed: "Failed to grant access.",
       updateAccessFailed: "Failed to update access.",
       revokeAccessFailed: "Failed to revoke access.",
@@ -616,7 +617,8 @@ export const venueMessages = i18n.define({
       accessDescription: "Änderungen an Berechtigungen werden sofort gespeichert.",
       refreshBeforeAccess: "Aktualisiere die Standorteinstellungen, bevor du Zugriffe oder API-Schlüssel änderst.",
       peopleAndGroups: "Personen und Gruppen",
-      peopleAndGroupsDescription: "Erteile Lese-, Mitarbeiter- oder Administratorzugriff auf diesen Standort.",
+      peopleAndGroupsDescription:
+        "Lesen: sieht den Schichtplan und was die öffentliche Seite zeigt. Mitarbeit: meldet sich zusätzlich für Schichten an und sieht Feedback von Besuchern und ausgeblendete Abschnitte. Admin: ändert zusätzlich Zeitplan, öffentliche Inhalte, Einstellungen und Zugriff.",
       grantAccessFailed: "Der Zugriff konnte nicht erteilt werden.",
       updateAccessFailed: "Der Zugriff konnte nicht aktualisiert werden.",
       revokeAccessFailed: "Der Zugriff konnte nicht entzogen werden.",

@@ -13,7 +13,7 @@ The venue workspace separates daily staffing, personal assignments, public conte
 :::reference
 - **Shifts:** Shows staffing slots in a week or month calendar. Staff users can sign up from the action button or by double-clicking a slot.
 - **My shifts:** Lists your upcoming assignments and lets you cancel your own shifts.
-- **Feedback:** Shows rating trends, comment search, and 7-, 14-, or 30-day filters for public feedback entries. Only staff and admins see this view.
+- **Feedback:** Shows rating trends, comment search, and 7-, 14-, or 30-day filters for visitor ratings and comments from the public page. Only staff and admins see this view.
 - **Public sections:** Admins can add, edit, duplicate, or delete markdown, menu, notice, and links sections. Staff and admins also see hidden sections; read users see only what the public page shows.
 :::
 
@@ -39,7 +39,7 @@ The venue workspace separates daily staffing, personal assignments, public conte
 | Change settings, access, schedule, or public sections | No | No | Yes |
 | Cancel another person's shift | No | No | Yes |
 
-Read access shows no more than the public page: when the public page is off, read users see no public sections. The same rules apply to the API, `cld venue`, AI tools, and Venue API keys with the matching permission.
+For public sections, read access shows no more than the public page: when the public page is off, read users see none. The same rules apply to the API, `cld venue`, AI tools, and Venue API keys with the matching permission.
 
 :::note Stable links
 Venue links use the venue's immutable short ID. Editing the display slug changes discovery metadata, not the public or staff URL.

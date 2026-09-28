@@ -11,8 +11,8 @@ order: 120
 :::reference
 - **Die öffentliche Seite zeigt den falschen Öffnungsstatus:** Prüfe die regulären Öffnungszeiten, Abweichungen, Zeitzone und die Aktivierung des Standorts für das betreffende Datum.
 - **Eine Schicht fehlt:** Prüfe die ausgewählte Woche oder den Monat, die wiederkehrende Vorlage und aktive Zeitplanfilter.
-- **Eine Person kann sich nicht anmelden:** Die Person benötigt Mitarbeiter- oder Administratorzugriff. Außerdem muss die Schicht einen weiteren Platz haben und die Anmeldefrist noch laufen.
-- **Ein Mitarbeiter kann Einstellungen nicht ändern:** Mitarbeiterzugriff erlaubt die Arbeit mit Schichten, aber keine Standortverwaltung. Vergib Administratorzugriff nur an Personen, die die Konfiguration verwalten sollen.
+- **Eine Person kann sich nicht anmelden:** Die Person benötigt Zugriff „Mitarbeit“ oder „Admin“. Außerdem muss die Schicht einen weiteren Platz haben und die Anmeldefrist noch laufen.
+- **Eine Person mit „Mitarbeit“ kann Einstellungen nicht ändern:** Zugriff „Mitarbeit“ erlaubt die Arbeit mit Schichten, aber keine Standortverwaltung. Vergib Zugriff „Admin“ nur an Personen, die die Konfiguration verwalten sollen.
 - **Ein öffentlicher Abschnitt fehlt:** Prüfe, ob der Abschnitt aktiviert ist und ob die öffentliche Seite des richtigen Standorts geöffnet ist. Mit Zugriff „Lesen“ erscheinen nur die Abschnitte, die die öffentliche Seite zeigt.
 - **Feedback fehlt:** Prüfe, ob Feedback aktiviert ist, und entferne die aktuelle Suche oder den Zeitraumfilter. Die Ansicht „Feedback“ erfordert Zugriff „Mitarbeit“ oder „Admin“.
 - **Ein Kalenderabonnement ist veraltet:** Kalenderprogramme legen ihr Aktualisierungsintervall selbst fest. Prüfe zunächst, ob die persönliche iCal-URL noch gültig ist.

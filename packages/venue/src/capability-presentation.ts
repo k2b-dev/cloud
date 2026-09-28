@@ -68,7 +68,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "venue.list": {
           title: "Liste zugänglich Venues",
           description:
-            "Normaler Eintrag für berechtigungsbezogene Venue-Arbeiten. Listen Sie zugängliches Venues auf und verwenden Sie zurückgegebenes venue.venue refs oder IDs mit venue.read, venue.status, shift.list, assignment.mine oder feedback.summary.",
+            "Normaler Eintrag für berechtigungsbezogene Venue-Arbeiten. Listen Sie zugängliches Venues auf und verwenden Sie zurückgegebenes venue.venue refs oder IDs mit venue.read, venue.status, shift.list, assignment.mine oder, bei Venues mit der Berechtigung write oder admin, feedback.summary.",
           input: {
             query: "Optionale Venue-Namens-, Slug- oder Beschreibungssuche.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -86,7 +86,7 @@ export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
         "venue.search": {
           title: "Suche Venues",
           description:
-            "Suchen Sie einen öffentlichen oder zugänglichen Venue anhand des Namens, des Slugs oder der Beschreibung, wenn sein ID unbekannt ist. Verwenden Sie das zurückgegebene venue.venue refs mit venue.read, venue.status, shift.list oder feedback.summary.",
+            "Suchen Sie einen öffentlichen oder zugänglichen Venue anhand des Namens, des Slugs oder der Beschreibung, wenn sein ID unbekannt ist. Verwenden Sie das zurückgegebene venue.venue refs mit venue.read, venue.status, shift.list oder, bei Venues mit der Berechtigung write oder admin, feedback.summary.",
           input: {
             scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
             "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
