@@ -454,7 +454,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                       value={imapTls}
                       onValueChange={(value) => setImapTls(value === "starttls" ? "starttls" : "implicit")}
                       options={[
-                        { id: "implicit", label: "Implicit TLS" },
+                        { id: "implicit", label: messages().implicitTls },
                         { id: "starttls", label: "STARTTLS" },
                       ]}
                     />
@@ -483,7 +483,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                       onValueChange={(value) => setSmtpTls(value === "implicit" ? "implicit" : "starttls")}
                       options={[
                         { id: "starttls", label: "STARTTLS" },
-                        { id: "implicit", label: "Implicit TLS" },
+                        { id: "implicit", label: messages().implicitTls },
                       ]}
                     />
                   </div>

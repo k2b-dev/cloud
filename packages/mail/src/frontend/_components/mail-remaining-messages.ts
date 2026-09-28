@@ -245,6 +245,8 @@ export const mailRemainingMessages = i18n.define({
       savedViewUpdated: "Saved view updated",
       savedViewCreated: "Saved view created",
       enterSavedViewName: "Enter a name for the saved view.",
+      searchInvalid: "The search contains an invalid condition.",
+      searchTooLarge: "The search is too large to keep in the mailbox URL. Remove or shorten a condition.",
       saveSearchAsView: "Save search as view",
       name: "Name",
       visibility: "Visibility",
@@ -582,6 +584,7 @@ export const mailRemainingMessages = i18n.define({
       inDeletedFolder: "In a deleted folder",
       inSpecificFolder: "In a specific folder",
       hasTag: ({ name }: { name: string }) => `Has tag “${name}”`,
+      quoted: ({ text }: { text: string }) => `“${text}”`,
       hasDeletedTag: "Has a deleted tag",
       hasSpecificTag: "Has a specific tag",
       assignedToMe: "Assigned to me",
@@ -787,6 +790,10 @@ export const mailRemainingMessages = i18n.define({
       actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
       addStep: "Add step",
       changeDestination: "Change destination",
+      useOutput: "Use output",
+      changeItem: "Change item",
+      eventDataSourceDescription:
+        "Uses the earlier AI event-data output. Event creation stops when required data is missing or ambiguous and is safe to retry.",
       aiFlowNotice: ({ count }: { count: number }) =>
         `This flow makes up to ${count} AI call${count === 1 ? "" : "s"} per matching message. AI flows only process future mail. AI can be wrong; reply drafts always remain drafts for human review.`,
       completedEffectsRemain:
@@ -1045,6 +1052,8 @@ export const mailRemainingMessages = i18n.define({
       savedViewUpdated: "Gespeicherte Ansicht aktualisiert",
       savedViewCreated: "Gespeicherte Ansicht erstellt",
       enterSavedViewName: "Gib einen Namen für die gespeicherte Ansicht ein.",
+      searchInvalid: "Die Suche enthält eine ungültige Bedingung.",
+      searchTooLarge: "Die Suche ist zu umfangreich für die Postfach-URL. Entferne oder kürze eine Bedingung.",
       saveSearchAsView: "Suche als Ansicht speichern",
       name: "Name",
       visibility: "Sichtbarkeit",
@@ -1385,6 +1394,7 @@ export const mailRemainingMessages = i18n.define({
       inDeletedFolder: "In einem gelöschten Ordner",
       inSpecificFolder: "In einem bestimmten Ordner",
       hasTag: ({ name }) => `Mit Tag „${name}“`,
+      quoted: ({ text }) => `„${text}“`,
       hasDeletedTag: "Mit einem gelöschten Tag",
       hasSpecificTag: "Mit einem bestimmten Tag",
       assignedToMe: "Mir zugewiesen",
@@ -1595,6 +1605,10 @@ export const mailRemainingMessages = i18n.define({
       actionsFor: ({ name }) => `Aktionen für ${name}`,
       addStep: "Schritt hinzufügen",
       changeDestination: "Ziel ändern",
+      useOutput: "Ausgabe verwenden",
+      changeItem: "Element ändern",
+      eventDataSourceDescription:
+        "Verwendet die Termindaten des vorherigen KI-Schritts. Fehlen Pflichtangaben oder sind sie mehrdeutig, wird kein Termin erstellt; der Schritt kann gefahrlos wiederholt werden.",
       aiFlowNotice: ({ count }) =>
         `Dieser Ablauf führt pro passender Nachricht bis zu ${count} ${count === 1 ? "KI-Aufruf" : "KI-Aufrufe"} aus. KI-Abläufe verarbeiten nur neue E-Mails. KI kann sich irren; Antwortentwürfe bleiben deshalb immer Entwürfe zur menschlichen Prüfung.`,
       completedEffectsRemain:

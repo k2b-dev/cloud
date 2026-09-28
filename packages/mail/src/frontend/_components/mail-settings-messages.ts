@@ -356,6 +356,7 @@ export const mailSettingsMessages = i18n.define({
       outgoingMail: "Outgoing mail",
       imapHost: "IMAP host",
       smtpHost: "SMTP host",
+      implicitTls: "Implicit TLS",
       port: "Port",
       authentication: "Authentication",
       replaceCredentialDescription: "Enter the complete credential again. It is verified before the saved account is updated.",
@@ -1180,6 +1181,7 @@ export const mailSettingsMessages = i18n.define({
       outgoingMail: "E-Mail-Versand",
       imapHost: "IMAP-Host",
       smtpHost: "SMTP-Host",
+      implicitTls: "Implizites TLS",
       port: "Port",
       authentication: "Authentifizierung",
       replaceCredentialDescription:

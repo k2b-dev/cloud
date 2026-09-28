@@ -740,7 +740,7 @@ export default function MailConversationReader(props: {
           description: mailCommandMessages
             .resolve([locale()])
             .t[intent === "reply_all" ? "replyAllDescription" : intent === "reply" ? "replyDescription" : "forwardDescription"]({
-              subject: props.subject,
+              subject: props.subject || t().noSubject,
             }),
           icon: intent === "forward" ? "ti ti-arrow-forward-up" : "ti ti-arrow-back-up",
           ...(intent === "reply" ? { shortcut: "r" } : {}),

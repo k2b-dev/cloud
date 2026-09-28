@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailSelectionDetail } from "../../service/workspace";
-import { listUnavailableMailDetailSections, preserveUnavailableMailDetail } from "./mail-detail-availability";
+import { describeUnavailableMailDetails, preserveUnavailableMailDetail } from "./mail-detail-availability";
 
 const detail = (overrides: Partial<MailSelectionDetail> = {}): MailSelectionDetail => ({
   detailMessages: [],
@@ -60,13 +60,20 @@ describe("Mail detail availability", () => {
     expect(preserveUnavailableMailDetail(current, detail()).comments).toEqual([]);
   });
 
-  test("names unavailable sections instead of presenting them as empty", () => {
-    expect(
-      listUnavailableMailDetailSections({
-        ...detail().detailErrors,
-        comments: "Comments timed out",
-        reminder: "Reminder timed out",
-      }),
-    ).toEqual(["team notes", "personal reminder"]);
+  test("names unavailable sections in the reader's language instead of presenting them as empty", () => {
+    const errors = { ...detail().detailErrors, comments: "Comments timed out", reminder: "Reminder timed out" };
+    expect(describeUnavailableMailDetails(errors, "en")).toBe(
+      "Could not refresh team notes and personal reminder. Previously loaded values remain visible where available.",
+    );
+    expect(describeUnavailableMailDetails(errors, "de")).toBe(
+      "Folgende Bereiche konnten nicht aktualisiert werden: Interne Notizen und Persönliche Erinnerung. Bereits geladene Werte bleiben soweit verfügbar sichtbar.",
+    );
+    expect(describeUnavailableMailDetails(detail().detailErrors, "de")).toBeNull();
+  });
+
+  test("keeps the German sentence grammatical when a single singular section fails", () => {
+    expect(describeUnavailableMailDetails({ ...detail().detailErrors, summary: "Summary timed out" }, "de")).toBe(
+      "Folgende Bereiche konnten nicht aktualisiert werden: Zusammenfassung. Bereits geladene Werte bleiben soweit verfügbar sichtbar.",
+    );
   });
 });

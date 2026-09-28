@@ -342,6 +342,7 @@ describe("Mail conversation detail panel", () => {
     });
 
     expect(html).toContain("Some conversation details are temporarily unavailable");
+    expect(html).toContain("Could not refresh tags and recent activity.");
     expect(html).toContain("Retry");
     expect(html).toContain('data-align="center"');
     expect(html).toContain('class="k2b-discussion__count">0</span>');

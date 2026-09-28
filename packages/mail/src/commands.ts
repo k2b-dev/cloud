@@ -46,6 +46,7 @@ export const mailCommandMessages = i18n.define({
       sourceTask: "Create a task from this conversation",
       sourceEvent: "Create an event from this conversation",
       sourceDescription: "Opens Spaces with this email conversation linked.",
+      sourceDescriptionFor: ({ subject }: { subject: string }) => `“${subject}” · Opens Spaces with this email conversation linked.`,
     },
     de: {
       linkSpaceTitle: "Diese Konversation mit Aufgabe oder Termin verknüpfen",
@@ -75,6 +76,7 @@ export const mailCommandMessages = i18n.define({
       sourceTask: "Aufgabe aus dieser Konversation erstellen",
       sourceEvent: "Termin aus dieser Konversation erstellen",
       sourceDescription: "Öffnet Spaces mit dieser E-Mail-Konversation als Verknüpfung.",
+      sourceDescriptionFor: ({ subject }) => `„${subject}“ · Öffnet Spaces mit dieser E-Mail-Konversation als Verknüpfung.`,
     },
   },
 });

@@ -946,7 +946,7 @@ function AutomationStepsEditor(props: {
                                 : (capacityIssueFor({ localSteps: 1, totalSteps: 1, aiCalls: 0, branchDepth: 0 }) ?? undefined)
                             }
                           >
-                            <i class="ti ti-plus" aria-hidden="true" /> Use output
+                            <i class="ti ti-plus" aria-hidden="true" /> {messages().useOutput}
                           </Dropdown.Trigger>
                         </Dropdown.Root>
                       </div>
@@ -1071,7 +1071,7 @@ function AutomationStepsEditor(props: {
                           void chooseSpaceItem().then((itemId) => itemId && replace(index(), { ...step, itemId }));
                         }}
                       >
-                        <i class="ti ti-search" aria-hidden="true" /> Change item
+                        <i class="ti ti-search" aria-hidden="true" /> {messages().changeItem}
                       </Button>
                     </div>
                   </Show>
@@ -1085,10 +1085,7 @@ function AutomationStepsEditor(props: {
                         readOnly
                       />
                       <div class="flex flex-wrap items-center justify-between gap-2 md:col-span-2">
-                        <p class="min-w-48 flex-1 text-[11px] text-dimmed">
-                          Uses the earlier AI event-data output. Event creation stops when required data is missing or ambiguous and is safe
-                          to retry.
-                        </p>
+                        <p class="min-w-48 flex-1 text-[11px] text-dimmed">{messages().eventDataSourceDescription}</p>
                         <Button
                           type="button"
                           size="sm"

@@ -225,7 +225,7 @@ export default function MailConversationContext(props: {
           scope: "selection",
           id: `mail.${id}.${kind}`,
           title: kind === "task" ? t.sourceTask : t.sourceEvent,
-          description: props.subject ? `“${props.subject}” · ${t.sourceDescription}` : t.sourceDescription,
+          description: props.subject ? t.sourceDescriptionFor({ subject: props.subject }) : t.sourceDescription,
           icon: kind === "task" ? "ti ti-checkbox" : "ti ti-calendar-event",
           action: { command: `spaces.${kind}.compose`, input: { source: { type: "mail.conversation", id } }, options: commandOptions() },
         }),

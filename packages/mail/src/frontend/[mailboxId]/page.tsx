@@ -13,7 +13,8 @@ import { mailPageMessages } from "../pages-messages";
 import { projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
-  const { t } = mailPageMessages.resolve([getLocale(c)]);
+  const locale = getLocale(c);
+  const { t } = mailPageMessages.resolve([locale]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
   if (!mailboxId) return ssr.error(c, 404);
@@ -32,7 +33,7 @@ export default ssr<AuthContext>(async (c) => {
   const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
   const theme = readThemeFromCookieHeader(cookieHeader);
   const [internalData, spacesIntegration] = await Promise.all([
-    loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode }),
+    loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
     getSpacesMailIntegrationAvailability(),
   ]);
   if (!internalData.ok) return ssr.error(c, internalData.error.status);

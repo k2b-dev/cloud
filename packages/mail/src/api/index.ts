@@ -783,6 +783,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       mailboxId,
       ...request,
       listMode: query.listMode,
+      locale: getLocale(c),
     });
     return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
   })
@@ -800,6 +801,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const detail = await loadMailboxConversationDetail({
         context: requestContext(c),
         ...params,
+        locale: getLocale(c),
       });
       return respondAggregate(c, detail ? { ok: true, data: detail } : fail(err.notFound("Conversation")));
     },

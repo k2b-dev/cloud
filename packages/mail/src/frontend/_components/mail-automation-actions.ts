@@ -5,43 +5,10 @@ export type AutomationActionKind = MailAutomationAction["kind"];
 
 const PROVIDER_ACTION_KINDS = new Set<AutomationActionKind>(["junk", "trash", "mark_read", "add_keyword", "move_to_folder"]);
 
-export const mailAutomationActionKindLabels: Record<AutomationActionKind, string> = {
-  junk: "Move to junk",
-  trash: "Move to trash",
-  mark_read: "Mark as read",
-  add_keyword: "Add provider keyword",
-  move_to_folder: "Move to folder",
-  add_local_tag: "Add tag",
-  assign_user: "Assign user",
-  set_status: "Set conversation status",
-};
-
-export const mailAutomationStatusLabels = {
-  needs_action: "Needs action",
-  waiting: "Waiting",
-  done: "Done",
-} as const;
+export const MAIL_AUTOMATION_STATUSES = ["needs_action", "waiting", "done"] as const;
 
 export const mailAutomationDestinationFolders = (catalog: MailWorkflowCatalogSnapshot) =>
   catalog.folders.filter((folder) => folder.role !== "junk" && folder.role !== "trash");
-
-export const mailAutomationActionLabel = (action: MailAutomationAction, catalog: MailWorkflowCatalogSnapshot): string => {
-  if (action.kind === "junk") return "Move to junk";
-  if (action.kind === "trash") return "Move to trash";
-  if (action.kind === "mark_read") return "Mark as read";
-  if (action.kind === "add_keyword") return `Add keyword ${action.keyword}`;
-  if (action.kind === "move_to_folder") {
-    const folder = catalog.folders.find((candidate) => candidate.id === action.folderId);
-    return `Move to ${folder?.path ?? folder?.name ?? "folder"}`;
-  }
-  if (action.kind === "add_local_tag") {
-    return `Add tag ${catalog.localTags?.find((tag) => tag.id === action.tagId)?.name ?? "tag"}`;
-  }
-  if (action.kind === "assign_user") {
-    return `Assign ${catalog.assignableUsers.find((user) => user.id === action.userId)?.name ?? "user"}`;
-  }
-  return `Set status to ${mailAutomationStatusLabels[action.status]}`;
-};
 
 export const initialMailAutomationAction = (kind: AutomationActionKind, catalog?: MailWorkflowCatalogSnapshot): MailAutomationAction => {
   if (kind === "junk" || kind === "trash" || kind === "mark_read") return { kind };

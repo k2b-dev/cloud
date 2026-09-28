@@ -26,6 +26,13 @@ service API contracts, localization, CSS architecture, formatting, the
 application set, and every package typecheck. `bun run test` runs every
 workspace in its own process and reports the integration files it skipped.
 
+The localization check also rejects hard-coded prose in frontends whose text
+comes only from message catalogs, currently Mail: JSX text and expressions,
+labels, titles, descriptions, placeholders, and toast or prompt messages with
+two or more words. It reads every branch of a conditional, and in a template
+literal a substitution next to a word counts as a second word. Single words
+such as product names or protocol labels stay allowed.
+
 For one package:
 
 ```bash
