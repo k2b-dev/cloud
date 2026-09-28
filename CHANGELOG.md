@@ -3,6 +3,18 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.23.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.22.0...cloud-v0.23.0) (2026-09-28)
+
+
+### Features
+
+* **notebooks:** indent with Tab in the note editor ([#384](https://github.com/k2b-dev/cloud/issues/384)) ([f1b743c](https://github.com/k2b-dev/cloud/commit/f1b743c7b53f44d346762f963ea6f16bab9778b9))
+
+
+### Bug Fixes
+
+* **venue:** accept public venue IDs in every authenticated request ([#382](https://github.com/k2b-dev/cloud/issues/382)) ([0164513](https://github.com/k2b-dev/cloud/commit/01645131cfcccc8bac36527cf5f2262cd9dabce7)), closes [#381](https://github.com/k2b-dev/cloud/issues/381)
+
 ## [0.22.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.21.0...cloud-v0.22.0) (2026-09-28)
 
 
