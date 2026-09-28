@@ -540,6 +540,44 @@ describe("Venue clarity behavior", () => {
     }
   });
 
+  test("copying the public page link shows progress on its own button", async () => {
+    const dom = createDomTestHarness();
+    const copied: string[] = [];
+    const held: Array<() => void> = [];
+    Object.defineProperty(dom.window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) =>
+          new Promise<void>((resolve) => {
+            copied.push(text);
+            held.push(resolve);
+          }),
+      },
+    });
+    const { openVenuePublicDisplayDialog } = await import("../src/frontend/_components/venue-workspace/public-display");
+    const closed = openVenuePublicDisplayDialog("Cafe01", "en");
+    try {
+      await flush();
+      const dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!;
+      const copy = buttonNamed(dialog, "Copy link");
+      copy.click();
+      await flush();
+      expect(copied).toHaveLength(1);
+      expect(copy.getAttribute("aria-busy")).toBe("true");
+      expect(buttonNamed(dialog, "Open page").disabled).toBe(true);
+      expect(buttonNamed(dialog, "Open page").getAttribute("aria-busy")).toBeNull();
+
+      for (const release of held.splice(0)) release();
+      await flush();
+      expect(copy.getAttribute("aria-busy")).toBeNull();
+      expect(buttonNamed(dialog, "Open page").disabled).toBe(false);
+      dialog.querySelector<HTMLButtonElement>(".k2b-dialog__close")!.click();
+      await closed;
+    } finally {
+      dom.cleanup();
+    }
+  });
+
   test("the public-page switch does not promise visitors while the Venue's public page is off", async () => {
     const dom = createDomTestHarness();
     const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
