@@ -18,6 +18,7 @@ type MockServerState = {
   appsSearch?: string | null;
   capabilityCatalog?: unknown;
   acceptLanguages?: string[];
+  cookies?: Array<string | null>;
 };
 
 const tempDirs: string[] = [];
@@ -73,6 +74,8 @@ const startMockServer = (state: MockServerState) =>
       const url = new URL(request.url);
       state.acceptLanguages ??= [];
       state.acceptLanguages.push(request.headers.get("accept-language") ?? "");
+      state.cookies ??= [];
+      state.cookies.push(request.headers.get("cookie"));
       if (url.pathname === "/oauth/token") {
         if (state.tokenDelayMs) await Bun.sleep(state.tokenDelayMs);
         const body = await request.formData();
@@ -1138,6 +1141,26 @@ describe("cloud CLI OAuth session handling", () => {
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.stdout).uid).toBe("tester");
       expect(state.acceptLanguages).toContain("de-CH");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("sends the machine timezone so server-side day windows match the local day", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+
+    try {
+      const result = await runCli(
+        configPath,
+        ["--server", `http://127.0.0.1:${server.port}`, "--token", "test-token", "account", "whoami", "--json"],
+        { TZ: "Pacific/Chatham" },
+      );
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(state.meCalls).toBe(1);
+      expect(state.cookies).toEqual(["cloud.timezone=Pacific%2FChatham"]);
     } finally {
       server.stop(true);
     }

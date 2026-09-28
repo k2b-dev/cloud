@@ -893,6 +893,8 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
   let bearerToken = options.token;
   const cloudOrigin = options.server ? new URL(options.server).origin : null;
   const authHeaders = () => ({ Authorization: `Bearer ${bearerToken}` });
+  // The cookie the browser writes, so server-side day windows use this machine's local day.
+  const timeZoneCookie = `cloud.timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`;
   const fetchWithAuth = async (pathOrUrl: string | URL | Request, init: RequestInit = {}, retry = true): Promise<Response> => {
     const url =
       typeof pathOrUrl === "string" && pathOrUrl.startsWith("/")
@@ -906,6 +908,8 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     headers.set("authorization", `Bearer ${bearerToken}`);
     headers.set("accept-language", options.locale ?? "en");
+    const cookie = headers.get("cookie");
+    headers.set("cookie", cookie ? `${cookie}; ${timeZoneCookie}` : timeZoneCookie);
     const response = await fetch(url, {
       ...init,
       headers,

@@ -5,7 +5,7 @@ section: Server
 order: 240
 description: Resolve the request locale and timezone once and reuse them for formatting, SSR, and capability metadata.
 tags: [server, locale, timezone, i18n, formatting]
-updated: 2026-08-27
+updated: 2026-09-28
 ---
 
 # Locale and time
@@ -60,9 +60,11 @@ preference is browser-local; it is not an account setting.
 ## Keep timezone separate
 
 `getTimeZone(c)` resolves the viewer's timezone from the `cloud.timezone`
-cookie, then the operator's `app.timezone` setting, then `"UTC"`. Locale and
-timezone are independent values: a visitor in Zurich may read English pages in
-`Europe/Zurich`, and a German-speaking visitor may live in `UTC`.
+cookie, then the operator's `app.timezone` setting, then `"UTC"`. Browsers
+write the cookie from their own timezone, and `cld` sends it with every
+request from the machine's timezone. Locale and timezone are independent
+values: a visitor in Zurich may read English pages in `Europe/Zurich`, and a
+German-speaking visitor may live in `UTC`.
 
 `getDateConfig(c)` combines both into the `DateContext` that `@k2b/stdlib`
 date formatters and `@k2b/ui` date surfaces accept. Pass it instead of

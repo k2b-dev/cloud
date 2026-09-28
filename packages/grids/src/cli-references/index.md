@@ -211,10 +211,10 @@ Use `--json` whenever another command or agent will consume the result. Normal t
 
 ### Time and locale
 
-CLI requests use the Cloud instance's `app.timezone` for date grouping, relative date filters, generated date sequences, and document
-dates. Browser requests may use the user's timezone cookie instead. Workflow schedules use the IANA timezone declared in their YAML and
-default to UTC. Server-rendered number and date output uses the resolved request locale; Grids App `valueFormat` controls
-numeric style and precision, not locale or query values.
+Date grouping, relative date filters, generated date sequences, and document dates use your system timezone (`TZ` overrides it),
+just as browser requests use the viewer's timezone; without one, Grids uses the Cloud instance's `app.timezone`. Workflow schedules
+use the IANA timezone declared in their YAML and default to UTC. Server-rendered number and date output uses the resolved request
+locale; Grids App `valueFormat` controls numeric style and precision, not locale or query values.
 
 ## Build schema and records
 

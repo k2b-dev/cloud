@@ -60,7 +60,7 @@ cld spaces show Item01 --context --json
 | `--type all\|task\|event` | Item type |
 | `--mine`, `--unassigned`, `--assignee <user-id>` | Assignment; `--mine` needs a user-backed actor |
 | `--ready`, `--blocked` | Open tasks without, or with, active blockers |
-| `--due overdue\|today\|week\|none` | Deadline window in the application timezone |
+| `--due overdue\|today\|week\|none` | Deadline window in your system timezone (`TZ` overrides it) |
 | `--due-before <iso\|YYYY-MM-DD>` | Deadline strictly before this instant; a date means the start of that local day |
 | `--inactive` | Open tasks without activity for 30 days |
 | `--priority`, `--column`, `--tag` | Repeatable; columns and tags by ID or exact name |
