@@ -170,6 +170,9 @@ const rowInteractiveSelector = [
 const isNestedRowControl = (event: Event): boolean =>
   event.target instanceof Element && event.target.closest(rowInteractiveSelector) !== event.currentTarget;
 
+/** Distance in pixels before the table's end at which the next page is requested. */
+const loadMoreMargin = 240;
+
 type DataTableScrollbarAxis = "x" | "y";
 type DataTableScrollbarMetrics = { overflow: boolean; offset: number; size: number };
 
@@ -217,14 +220,27 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     if (shouldHoverRows()) setHoveredColumn(index);
   };
 
+  /**
+   * A bounded table scrolls its own viewport. A table that grows with its rows
+   * leaves scrolling to the page or an ancestor, so its end is measured against
+   * the browser viewport instead.
+   */
   const isNearBottom = () => {
-    if (!scrollRef) return false;
-    return scrollRef.scrollTop + scrollRef.clientHeight >= scrollRef.scrollHeight - 240;
+    if (!scrollRef || !loadMoreRef) return false;
+    if (scrollRef.scrollHeight > scrollRef.clientHeight + 1) {
+      return scrollRef.scrollTop + scrollRef.clientHeight >= scrollRef.scrollHeight - loadMoreMargin;
+    }
+    return loadMoreRef.getBoundingClientRect().top <= window.innerHeight + loadMoreMargin;
   };
 
   const maybeLoadMore = () => {
-    if (!hasMore || loadingMore || loadMoreRequested || !onLoadMore) return;
-    if (!isNearBottom()) return;
+    if (!hasMore || loadingMore || !onLoadMore) return;
+    if (!isNearBottom()) {
+      // Leaving the end re-arms a request the owner declined, for example while its first page was still loading.
+      loadMoreRequested = false;
+      return;
+    }
+    if (loadMoreRequested) return;
     loadMoreRequested = true;
     try {
       onLoadMore();
@@ -402,13 +418,9 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   };
 
   onMount(() => {
-    if (typeof IntersectionObserver === "undefined" || !scrollRef || !loadMoreRef) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) maybeLoadMore();
-      },
-      { root: scrollRef, rootMargin: "240px" },
-    );
+    if (typeof IntersectionObserver === "undefined" || !loadMoreRef) return;
+    // The viewport root notices the end whichever element scrolls; `isNearBottom` decides.
+    const observer = new IntersectionObserver(maybeLoadMore, { rootMargin: `${loadMoreMargin}px` });
     observer.observe(loadMoreRef);
     onCleanup(() => observer.disconnect());
   });
