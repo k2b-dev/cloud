@@ -10,6 +10,7 @@ export type VenueDashboardSource = {
     includeFeedbackEntries?: "true" | "false";
     feedbackDays?: string;
     feedbackSearch?: string;
+    feedbackPage?: string;
   };
 };
 
@@ -21,10 +22,12 @@ export type VenueDashboardRouteScope = {
     includeFeedbackEntries: boolean;
     feedbackDays: number;
     feedbackSearch?: string;
+    feedbackPage?: number;
   };
 };
 
-const shiftDate = (date: string, days: number): string => {
+/** The date key `days` calendar days after `date`; date keys carry no time zone, so plain UTC arithmetic is exact. */
+export const shiftDate = (date: string, days: number): string => {
   const [year = "1970", month = "1", day = "1"] = date.split("-");
   const next = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day) + days, 12));
   return next.toISOString().slice(0, 10);
@@ -40,6 +43,7 @@ export const venueDashboardRouteScope = (input: {
   calendarDate: string;
   feedbackDays: number;
   feedbackSearch: string;
+  feedbackPage: number;
 }): VenueDashboardRouteScope => {
   const slots = input.view === "shifts" ? slotWindow(input.calendarView, input.calendarDate) : { startDate: input.calendarDate, days: 14 };
   const includeFeedbackEntries = input.view === "feedback";
@@ -49,6 +53,7 @@ export const venueDashboardRouteScope = (input: {
     includeFeedbackEntries,
     feedbackDays: input.feedbackDays,
     feedbackSearch: input.feedbackSearch || undefined,
+    feedbackPage: includeFeedbackEntries && input.feedbackPage > 1 ? input.feedbackPage : undefined,
   };
   return {
     options,
@@ -60,6 +65,7 @@ export const venueDashboardRouteScope = (input: {
         includeFeedbackEntries: String(options.includeFeedbackEntries) as "true" | "false",
         feedbackDays: String(options.feedbackDays),
         feedbackSearch: options.feedbackSearch,
+        feedbackPage: options.feedbackPage === undefined ? undefined : String(options.feedbackPage),
       },
     },
   };
@@ -71,7 +77,8 @@ export const sameVenueDashboardSource = (left: VenueDashboardSource, right: Venu
   left.query.slotDays === right.query.slotDays &&
   left.query.includeFeedbackEntries === right.query.includeFeedbackEntries &&
   left.query.feedbackDays === right.query.feedbackDays &&
-  left.query.feedbackSearch === right.query.feedbackSearch;
+  left.query.feedbackSearch === right.query.feedbackSearch &&
+  left.query.feedbackPage === right.query.feedbackPage;
 
 export const loadVenueDashboard = async (
   source: VenueDashboardSource,

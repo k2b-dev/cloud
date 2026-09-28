@@ -34,6 +34,8 @@ import {
   FreeSignupInputSchema,
   OpeningRuleInputSchema,
   PublicSectionInputSchema,
+  PublicSectionPatchSchema,
+  PublicSectionSchema,
   PublicStatusSchema,
   ShiftAssignmentSchema,
   ShiftTemplateInputSchema,
@@ -49,6 +51,7 @@ import {
 } from "../contracts";
 import { venueMessages } from "../messages";
 import { venueService } from "../service";
+import { formatVenueDateTime } from "../time-format";
 
 const VenueIdParamSchema = z.object({ id: VenueResourceIdSchema });
 const AccessParamSchema = z.object({ id: VenueResourceIdSchema, accessId: z.string().uuid() });
@@ -198,7 +201,7 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
               {
                 icon: "ti ti-calendar-event",
                 label: t.widgetNextShift,
-                sub: new Date(nextShift.startsAt).toLocaleString(locale),
+                sub: formatVenueDateTime(nextShift.startsAt, venue.timezone, locale),
                 href: `/app/venue/${publicVenue!.id}`,
               },
             ],
@@ -693,15 +696,32 @@ const venueRoutes = new Hono<AuthContext>()
       201,
     );
   })
-  .patch("/:id/sections/:resourceId", v("param", ResourceParamSchema), v("json", PublicSectionInputSchema), async (c) => {
-    const param = c.req.valid("param");
-    const venue = await adminVenue(c, param.id);
-    if (!venue.ok) return respond(c, venue);
-    const resource = await resolveOwned("sections", venue.data.id, param.resourceId);
-    if (!resource.ok) return respond(c, resource);
-    const updated = await venueService.sections.update(venue.data.id, resource.data, c.req.valid("json"));
-    return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectSections([value]))[0]!));
-  })
+  .patch(
+    "/:id/sections/:resourceId",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Update public section",
+      description:
+        "Change only the fields in the body. Omitted fields keep their stored value: an edit keeps a draft (`enabled: false`) off the public page and keeps its position. Requires admin permission.",
+      responses: {
+        200: jsonResponse(PublicSectionSchema, "Updated section"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid section"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Section not found"),
+      },
+    }),
+    v("param", ResourceParamSchema),
+    v("json", PublicSectionPatchSchema),
+    async (c) => {
+      const param = c.req.valid("param");
+      const venue = await adminVenue(c, param.id);
+      if (!venue.ok) return respond(c, venue);
+      const resource = await resolveOwned("sections", venue.data.id, param.resourceId);
+      if (!resource.ok) return respond(c, resource);
+      const updated = await venueService.sections.update(venue.data.id, resource.data, c.req.valid("json"));
+      return respond(c, await projectResult(updated, async (value) => (await venueService.publicResources.projectSections([value]))[0]!));
+    },
+  )
   .delete("/:id/sections/:resourceId", v("param", ResourceParamSchema), async (c) => {
     const param = c.req.valid("param");
     const venue = await adminVenue(c, param.id);

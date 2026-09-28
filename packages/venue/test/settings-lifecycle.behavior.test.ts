@@ -53,8 +53,9 @@ const dashboard: VenueDashboard = {
   myUpcomingShifts: [],
   myShiftCount: 0,
   sections: [],
-  feedback: { count: 0, averageRating: null, buckets: [] },
+  feedback: { count: 0, averageRating: null, commentCount: 0, buckets: [] },
   feedbackEntries: [],
+  feedbackEntriesPage: { page: 1, pageSize: 50, total: 0 },
 };
 
 describe("Venue settings lifecycle behavior", () => {

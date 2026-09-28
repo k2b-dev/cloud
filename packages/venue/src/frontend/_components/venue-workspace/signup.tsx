@@ -1,10 +1,12 @@
+import { dates } from "@k2b/stdlib";
 import { cookies } from "@k2b/stdlib/browser";
-import { mutation } from "@k2b/stdlib/solid";
+import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
   DateRangePicker,
   type DateRangeValue,
+  InlineGuidance,
   PanelDialog,
   Placeholder,
   prompts,
@@ -13,13 +15,21 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { UpcomingSlot, VenueDashboard } from "../../../contracts";
 import { venueMessages } from "../../../messages";
+import { formatDateKey, formatVenueSpan } from "../../../time-format";
+import { shiftDate } from "../../dashboard-query";
 import { DOUBLE_CLICK_CONFIRM_COOKIE } from "./constants";
 import { ProgressBar } from "./schedule";
-import { defaultShiftRange, fmt, fmtTime, isSlotActive, readError, timeZoneDateConfig } from "./utils";
+import { VenueTimeZoneNote } from "./time-zone-note";
+import { defaultShiftRange, isSlotActive, readError, timeZoneDateConfig } from "./utils";
+
+/** The dialog lists shifts in steps of this many days, starting today in the Venue's time zone. */
+export const SIGNUP_PAGE_DAYS = 14;
+
+type SlotPage = { startDate: string; slots: UpcomingSlot[] };
 
 export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed: boolean) => void }) {
   const locale = useLocale();
@@ -29,7 +39,32 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
   const [mode, setMode] = createSignal<"shifts" | "free">(defaultMode);
   const [freeRange, setFreeRange] = createSignal<DateRangeValue>(defaultShiftRange());
   const [note, setNote] = createSignal("");
-  const availableSlots = createMemo(() => dashboard().slots.filter(isSlotActive).slice(0, 16));
+  const hasShiftTemplates = () => dashboard().templates.some((template) => template.active);
+  // The dialog owns its window instead of reusing the calendar's: it always starts today and grows on request.
+  const slotPages = query.createInfinite<{ venueId: string; startDate: string }, SlotPage, string>({
+    source: () => ({
+      venueId: dashboard().venue.id,
+      startDate: dates.formatDateKey(new Date(), { timeZone: dashboard().venue.timezone }),
+    }),
+    isSameSource: (left, right) => left.venueId === right.venueId && left.startDate === right.startDate,
+    enabled: () => dashboard().venue.signupMode !== "free" && hasShiftTemplates(),
+    loadPage: async (source, { cursor, abortSignal }) => {
+      const startDate = cursor ?? source.startDate;
+      const response = await apiClient.venues[":id"].dashboard.$get(
+        { param: { id: source.venueId }, query: { slotStartDate: startDate, slotDays: String(SIGNUP_PAGE_DAYS) } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(t().loadShiftsFailed);
+      return { startDate, slots: (await response.json()).slots.filter(isSlotActive) };
+    },
+    getNextCursor: (page) => shiftDate(page.startDate, SIGNUP_PAGE_DAYS),
+  });
+  const availableSlots = () => slotPages.pages().flatMap((page) => page.slots);
+  const loadedThrough = () => {
+    const last = slotPages.pages().at(-1);
+    if (!last) return "";
+    return formatDateKey(shiftDate(last.startDate, SIGNUP_PAGE_DAYS - 1), locale(), { weekday: "short", day: "numeric", month: "short" });
+  };
 
   const signup = mutation.create<void, { venueId: string; templateId: string; date: string; weeks?: number }>({
     mutation: async ({ venueId, templateId, date, weeks }, { abortSignal }) => {
@@ -79,6 +114,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
   };
 
   onCleanup(() => {
+    slotPages.abort();
     signup.abort();
     freeSignup.abort();
   });
@@ -103,6 +139,7 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
               ]}
             />
           </Show>
+          <VenueTimeZoneNote timeZone={dashboard().venue.timezone} />
           <Show
             when={mode() === "shifts"}
             fallback={
@@ -133,73 +170,120 @@ export function SignupDialog(props: { dashboard: VenueDashboard; close: (changed
               </div>
             }
           >
-            <div class="flex flex-col gap-2">
-              <For
-                each={availableSlots()}
-                fallback={
-                  <Placeholder
-                    surface="paper"
-                    variant="panel"
-                    title={t().noShiftsAvailable}
-                    description={t().noShiftsAvailableDescription}
-                    icon="ti ti-calendar-off"
-                  />
-                }
-              >
-                {(slot) => (
-                  <div class="paper p-3">
-                    <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <p class="font-medium text-primary">{slot.template.title}</p>
-                        <p class="text-xs text-dimmed">
-                          {fmt(slot.startsAt, locale())} · {slot.template.startTime}-{slot.template.endTime}
-                        </p>
-                      </div>
-                      <span
-                        class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
-                      >
-                        {slot.full ? t().full : t().open}
-                      </span>
-                    </div>
-                    <div class="mt-3">
-                      <ProgressBar slot={slot} />
-                    </div>
-                    <div class="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={slot.full || !isSlotActive(slot) || signup.loading()}
-                        onClick={() =>
-                          signup.mutate({
-                            venueId: dashboard().venue.id,
-                            templateId: slot.template.id,
-                            date: slot.date,
-                          })
-                        }
-                      >
-                        {t().join}
-                      </Button>
+            <Show
+              when={hasShiftTemplates()}
+              fallback={
+                <Placeholder
+                  surface="paper"
+                  variant="panel"
+                  title={t().noShiftsAvailable}
+                  description={t().noShiftsAvailableDescription}
+                  icon="ti ti-calendar-off"
+                />
+              }
+            >
+              <Show when={!slotPages.loading()} fallback={<Placeholder state="loading" description={t().loadingShifts} />}>
+                <Show
+                  when={slotPages.pages().length > 0}
+                  fallback={
+                    <Placeholder
+                      state="error"
+                      description={t().loadShiftsFailed}
+                      action={
+                        <Button type="button" variant="secondary" size="sm" onClick={() => void slotPages.refresh()}>
+                          {t().retry}
+                        </Button>
+                      }
+                    />
+                  }
+                >
+                  <div class="flex flex-col gap-2">
+                    <For
+                      each={availableSlots()}
+                      fallback={
+                        <Placeholder
+                          surface="paper"
+                          variant="panel"
+                          title={t().noShiftsUntil({ date: loadedThrough() })}
+                          description={t().noShiftsUntilDescription}
+                          icon="ti ti-calendar-off"
+                        />
+                      }
+                    >
+                      {(slot) => (
+                        <div class="paper p-3">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                              <p class="font-medium text-primary">{slot.template.title}</p>
+                              <p class="text-xs text-dimmed">
+                                {formatVenueSpan(slot.startsAt, slot.endsAt, dashboard().venue.timezone, locale())}
+                              </p>
+                            </div>
+                            <span
+                              class={`tag ${slot.full ? "bg-zinc-100 text-dimmed dark:bg-zinc-800" : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"}`}
+                            >
+                              {slot.full ? t().full : t().openSpots}
+                            </span>
+                          </div>
+                          <div class="mt-3">
+                            <ProgressBar slot={slot} />
+                          </div>
+                          <div class="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={slot.full || !isSlotActive(slot) || signup.loading()}
+                              onClick={() =>
+                                signup.mutate({
+                                  venueId: dashboard().venue.id,
+                                  templateId: slot.template.id,
+                                  date: slot.date,
+                                })
+                              }
+                            >
+                              {t().join}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              disabled={slot.full || !isSlotActive(slot) || signup.loading()}
+                              onClick={() =>
+                                signup.mutate({
+                                  venueId: dashboard().venue.id,
+                                  templateId: slot.template.id,
+                                  date: slot.date,
+                                  weeks: 4,
+                                })
+                              }
+                            >
+                              {t().joinNextWeeks({ count: 4 })}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                    <Show when={slotPages.error()}>
+                      <InlineGuidance tone="danger" icon="ti ti-alert-circle">
+                        {t().loadShiftsFailed}
+                      </InlineGuidance>
+                    </Show>
+                    <div class="flex flex-wrap items-center justify-between gap-2 px-1 pt-1">
+                      <p class="text-xs text-dimmed">{t().shiftsUpTo({ count: availableSlots().length, date: loadedThrough() })}</p>
                       <Button
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={slot.full || !isSlotActive(slot) || signup.loading()}
-                        onClick={() =>
-                          signup.mutate({
-                            venueId: dashboard().venue.id,
-                            templateId: slot.template.id,
-                            date: slot.date,
-                            weeks: 4,
-                          })
-                        }
+                        loading={slotPages.loadingMore()}
+                        onClick={() => void slotPages.loadMore()}
                       >
-                        {t().joinNextWeeks({ count: 4 })}
+                        {t().loadMoreShifts}
                       </Button>
                     </div>
                   </div>
-                )}
-              </For>
-            </div>
+                </Show>
+              </Show>
+            </Show>
           </Show>
         </PanelDialog.Body>
         <PanelDialog.Footer>
@@ -225,14 +309,12 @@ export function ConfirmShiftSignupDialog(props: { slot: UpcomingSlot; timezone: 
     <div class="grid gap-4">
       <div class="rounded-xl bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
         <p class="font-semibold text-primary">{props.slot.template.title}</p>
-        <p class="mt-1 text-dimmed">
-          {fmt(props.slot.startsAt, locale())} · {fmtTime(props.slot.startsAt, props.timezone, locale())}-
-          {fmtTime(props.slot.endsAt, props.timezone, locale())}
-        </p>
+        <p class="mt-1 text-dimmed">{formatVenueSpan(props.slot.startsAt, props.slot.endsAt, props.timezone, locale())}</p>
         <div class="mt-3">
           <ProgressBar slot={props.slot} />
         </div>
       </div>
+      <VenueTimeZoneNote timeZone={props.timezone} />
       <CheckboxCard
         label={t().skipConfirmation}
         description={t().skipConfirmationDescription}

@@ -22,6 +22,6 @@ Venues manages staffed places that need public opening status, shift signup, pub
 :::reference
 - **Create or use a template:** Start from a blank venue or one of the starter templates on the overview page.
 - **Configure the schedule:** Use settings to maintain weekly opening hours, date overrides, and recurring shift templates.
-- **Publish what visitors need:** Open the public page from the workspace sidebar. Enabled sections and feedback appear there.
+- **Publish what visitors need:** Open the public page from the workspace sidebar. Sections with **Show on the public page** switched on and the feedback form appear there. Visitors choose 1 to 5 stars before they can send feedback; a comment is optional.
 - **Staff the venue:** Staff users sign up for visible shift slots. Admin users can also cancel assignments.
 :::

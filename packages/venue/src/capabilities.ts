@@ -325,7 +325,7 @@ const runFeedbackSummary = async (input: z.infer<typeof VenueTargetInputSchema>,
   const venue = await requireVenue(input.venueId, scope.data, "read");
   if (!venue.ok) return venue;
   if (!venueService.canSeeInternal(venue.data)) return fail(err.forbidden(t.capabilityFeedbackForbidden));
-  const feedback = await venueService.feedback.summary(venue.data.id, { summaryDays: 30 });
+  const feedback = await venueService.feedback.summary(venue.data, { days: 30 });
   return ok({
     data: {
       venueId: venue.data.publicId,

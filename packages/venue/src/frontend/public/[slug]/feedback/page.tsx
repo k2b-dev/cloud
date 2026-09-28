@@ -1,5 +1,6 @@
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
+import { accentTokens } from "../../../../accent";
 import { ssr } from "../../../../config";
 import { venueMessages } from "../../../../messages";
 import { venueService } from "../../../../service";
@@ -40,10 +41,10 @@ export default ssr(async (c) => {
             <img src={status.venue.logoBase64} alt="" class="size-12 rounded-xl bg-white object-contain p-1 ring-1 ring-zinc-200" />
           ) : (
             <span
-              class="flex size-12 items-center justify-center rounded-xl text-xl text-white"
-              style={{ "background-color": status.venue.accentColor }}
+              class="flex size-12 items-center justify-center rounded-xl bg-[var(--venue-accent)] text-xl text-[var(--venue-on-accent)]"
+              style={accentTokens(status.venue.accentColor)}
             >
-              <i class={status.venue.icon || "ti ti-building-carousel"} />
+              <i class={status.venue.icon || "ti ti-building-carousel"} aria-hidden="true" />
             </span>
           )}
           <div class="min-w-0">

@@ -13,8 +13,9 @@ order: 120
 - **A shift is missing:** Confirm the current week or month, recurring template, and any schedule filters.
 - **A user cannot sign up:** The user needs staff or admin access, the shift must allow another person, and the signup window must still be valid.
 - **A staff member cannot change settings:** Staff access allows shift work, not venue administration. Grant admin access only when that person should manage configuration.
-- **A public section is missing:** Confirm that the section is enabled and that you are viewing the current venue's public page. Read users see only the sections the public page shows.
-- **Feedback is absent:** Confirm that feedback is enabled and clear the current search or date-range filter. The Feedback view needs staff or admin access.
+- **A public section is missing:** Open the section and check that it is not a draft: **Show on the public page** must be on. Also confirm that you are viewing the current venue's public page. Read users see only the sections the public page shows.
+- **Times look shifted:** Venue shows every time in the venue's time zone. The workspace names that time zone when your device runs in another one; check the venue's time zone if it looks wrong.
+- **Feedback is absent:** Confirm that feedback is enabled and clear the current search or date-range filter. Older ratings are on later pages of the list. The Feedback view needs staff or admin access.
 - **A calendar subscription is stale:** Calendar clients choose their own refresh interval. Confirm the personal iCal URL is still valid before replacing it.
 :::
 

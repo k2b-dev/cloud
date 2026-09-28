@@ -16,11 +16,13 @@ import {
   Dropdown,
   dialogCore,
   FilterChip,
+  Pagination,
   Placeholder,
   panelDialogOptions,
   prompts,
   StatCell,
   StatGrid,
+  StatusBadge,
   Tooltip,
   toast,
   useLocale,
@@ -29,30 +31,18 @@ import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-
 import { apiClient } from "../../api/client";
 import type { FeedbackEntry, PublicSection, PublicSectionInput, ShiftAssignment, UpcomingSlot } from "../../contracts";
 import { venueMessages } from "../../messages";
+import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueTime } from "../../time-format";
 import { loadVenueDashboard, sameVenueDashboardSource } from "../dashboard-query";
 import { reconcileChangedSettings } from "../settings-contract";
 import { DOUBLE_CLICK_CONFIRM_COOKIE } from "./venue-workspace/constants";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
-import { PublicSectionDialog, PublicSectionPreview, sectionKindIcon } from "./venue-workspace/public-sections";
+import { PublicSectionDialog, PublicSectionPreview, sectionKindIcon, sectionKindLabel } from "./venue-workspace/public-sections";
 import { ProgressBar } from "./venue-workspace/schedule";
 import { SettingsDialog } from "./venue-workspace/settings";
 import { ConfirmShiftSignupDialog, SignupDialog } from "./venue-workspace/signup";
+import { VenueTimeZoneNote } from "./venue-workspace/time-zone-note";
 import type { FeedbackRange, VenueView, VenueWorkspaceProps } from "./venue-workspace/types";
-import {
-  canAdmin,
-  canWrite,
-  dateKey,
-  feedbackBucketAverage,
-  feedbackBucketCount,
-  fmt,
-  fmtDate,
-  fmtTime,
-  isSlotActive,
-  parseDateKey,
-  readError,
-  timeZoneDateConfig,
-  withinLastDays,
-} from "./venue-workspace/utils";
+import { canAdmin, canWrite, dateKey, isSlotActive, parseDateKey, readError, timeZoneDateConfig } from "./venue-workspace/utils";
 
 function ViewHeader(props: { title: string; description: string; action?: JSX.Element }) {
   return (
@@ -129,24 +119,30 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     const next = Number(value[0] ?? 30);
     navigateTo(feedbackFilterUrl(next === 7 || next === 14 ? next : 30));
   };
-  const feedbackBucketsForDays = (days: number) =>
-    (dashboard().feedback?.buckets ?? []).filter((bucket) => withinLastDays(bucket.date, days));
-  const feedbackBuckets = createMemo(() => feedbackBucketsForDays(feedbackRangeDays()));
-  const feedbackRangeCount = createMemo(() => feedbackBucketCount(feedbackBuckets()));
-  const feedbackRangeAverage = createMemo(() => feedbackBucketAverage(feedbackBuckets()));
-  const feedbackChartLabels = createMemo(() => feedbackBuckets().map((bucket) => fmtDate(bucket.date, locale())));
+  // The server scopes counts, buckets, and entries to the same feedback window.
+  const feedbackBuckets = () => dashboard().feedback?.buckets ?? [];
+  const feedbackAverage = () => dashboard().feedback?.averageRating ?? null;
+  /** The list's place in all matching entries; `null` while the loaded view carries no entries. */
+  const feedbackPage = () => {
+    const page = dashboard().feedbackEntriesPage;
+    return page && page.total > 0 ? page : null;
+  };
+  const feedbackPageBaseUrl = () => {
+    const url = new URL(feedbackFilterUrl(feedbackRangeDays()), "http://venue.local");
+    url.searchParams.set("page", "");
+    return `${url.pathname}?${url.searchParams.toString()}`;
+  };
+  const formatAverage = (value: number) =>
+    `${new Intl.NumberFormat(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}/5`;
+  const feedbackChartLabels = createMemo(() => feedbackBuckets().map((bucket) => formatDateKey(bucket.date, locale())));
   const feedbackChartData = createMemo(() =>
     feedbackBuckets()
       .map((bucket, index) => ({ bucket, index }))
       .filter(({ bucket }) => bucket.averageRating !== null)
       .map(({ bucket, index }) => ({ x: index + 1, y: bucket.averageRating ?? 0 })),
   );
-  const filteredFeedbackEntries = createMemo(() =>
-    dashboard().feedbackEntries.filter((entry) => withinLastDays(entry.createdAt, feedbackRangeDays())),
-  );
   const activeSlots = createMemo(() => dashboard().slots.filter(isSlotActive));
   const openRegistrationCount = createMemo(() => activeSlots().reduce((sum, slot) => sum + slot.missingPeople, 0));
-  const feedbackCommentCount = createMemo(() => filteredFeedbackEntries().filter((entry) => Boolean(entry.comment?.trim())).length);
   const feedbackColumns: DataTableColumn<FeedbackEntry>[] = [
     { id: "rating", header: t().rating, value: (entry) => entry.rating, cellClass: "w-px" },
     { id: "comment", header: t().comment, value: (entry) => entry.comment, cellClass: "min-w-64" },
@@ -177,6 +173,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
         ...dashboard().sections.map((section) => ({
           icon: sectionKindIcon(section.kind),
           label: section.title,
+          description: section.enabled ? undefined : t().sectionDraft,
           href: sectionHref(section),
         })),
       ],
@@ -421,7 +418,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     const intent = {
       venueId: venue().id,
       assignmentId: assignment.id,
-      label: t().assignmentAt({ name: assignment.userDisplayName, date: fmt(assignment.startsAt, locale()) }),
+      label: t().assignmentAt({
+        name: assignment.userDisplayName,
+        date: formatVenueSpan(assignment.startsAt, assignment.endsAt, venue().timezone, locale()),
+      }),
     };
     await runPromptedAction(
       () =>
@@ -505,6 +505,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       ...dashboard().sections.map((section) => ({
         id: `section:${section.id}`,
         label: section.title,
+        badge: section.enabled ? undefined : t().sectionDraft,
         icon: sectionKindIcon(section.kind),
         href: sectionHref(section),
         active: selectedSectionId() === section.id,
@@ -601,7 +602,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     disabled={workspaceActionBlocked()}
                     onClick={() => void openAddSection()}
                   >
-                    Add public section
+                    {t().addPublicSection}
                   </AppWorkspace.SidebarItem>
                 </Show>
                 <For
@@ -613,6 +614,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       href={sectionHref(section)}
                       navigation="document"
                       icon={sectionKindIcon(section.kind)}
+                      meta={section.enabled ? undefined : t().sectionDraft}
                       active={selectedSectionId() === section.id}
                     >
                       {section.title}
@@ -625,7 +627,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
 
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
             <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={openSettings}>
-              Venue settings
+              {t().venueSettings}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
           <AppWorkspace.SidebarFooter sidebarMode="collapsed">
@@ -703,11 +705,32 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                         </>
                       }
                     />
-                    <div class="flex items-center gap-2 px-1">
-                      <i class={`${sectionKindIcon(section().kind)} text-dimmed`} />
-                      <span class="tag">{section().kind}</span>
-                      <Show when={!section().enabled}>
-                        <span class="tag bg-zinc-100 text-dimmed dark:bg-zinc-800">{t().hidden}</span>
+                    <div class="flex flex-wrap items-center gap-2 px-1">
+                      <i class={`${sectionKindIcon(section().kind)} text-dimmed`} aria-hidden="true" />
+                      <span class="tag">{sectionKindLabel(section().kind, t())}</span>
+                      <Show
+                        when={section().enabled}
+                        fallback={
+                          <>
+                            <StatusBadge tone="neutral" icon="ti ti-eye-off" label={t().sectionDraft} />
+                            <span class="text-xs text-dimmed">
+                              {canAdmin(venue()) ? t().sectionDraftDetailAdmin : t().sectionDraftDetailStaff}
+                            </span>
+                          </>
+                        }
+                      >
+                        <Show
+                          when={venue().publicEnabled}
+                          fallback={
+                            <>
+                              <StatusBadge tone="neutral" icon="ti ti-world-off" label={t().sectionPublicPageOff} />
+                              <span class="text-xs text-dimmed">{t().sectionPublicPageOffDetail}</span>
+                            </>
+                          }
+                        >
+                          <StatusBadge tone="ok" icon="ti ti-world" label={t().sectionPublic} />
+                          <span class="text-xs text-dimmed">{t().sectionPublicDetail}</span>
+                        </Show>
                       </Show>
                     </div>
                     <section class="paper p-4">
@@ -730,6 +753,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       </Show>
                     }
                   />
+                  <VenueTimeZoneNote timeZone={venue().timezone} />
                   <StatGrid columns={3} size="sm" class="shrink-0">
                     <StatCell
                       label={t().openSpots}
@@ -759,7 +783,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     view={calendarView()}
                     views={["week", "month"]}
                     events={shiftEvents()}
-                    dateConfig={timeZoneDateConfig(venue().timezone)}
+                    dateConfig={timeZoneDateConfig(venue().timezone, locale())}
                     hideAllDay
                     startHour={7}
                     endHour={23}
@@ -781,8 +805,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                         <div class="flex min-h-0 min-w-0 flex-col gap-1">
                           <span class="block truncate text-[11px] font-semibold">{event.title}</span>
                           <span class="block truncate text-[10px] opacity-75">
-                            {fmtTime(context.start.toISOString(), venue().timezone, locale())}-
-                            {fmtTime(context.end.toISOString(), venue().timezone, locale())}
+                            {formatVenueTime(context.start.toISOString(), venue().timezone, locale())}–
+                            {formatVenueTime(context.end.toISOString(), venue().timezone, locale())}
                           </span>
                           <Show
                             when={ended}
@@ -824,6 +848,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       </>
                     }
                   />
+                  <VenueTimeZoneNote timeZone={venue().timezone} />
                   <section class="paper p-2">
                     <Show
                       when={dashboard().myUpcomingShifts.length > 0}
@@ -834,7 +859,9 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                           {(shift) => (
                             <div class="flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900">
                               <div class="min-w-0">
-                                <p class="font-medium text-primary">{fmt(shift.startsAt, locale())}</p>
+                                <p class="font-medium text-primary">
+                                  {formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale())}
+                                </p>
                                 <p class="text-xs text-dimmed">{shift.note || t().shift}</p>
                               </div>
                               <Button
@@ -859,7 +886,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                 <section class="flex flex-col gap-2">
                   <ViewHeader
                     title={t().feedback}
-                    description={`Visitor ratings and comments from the last ${feedbackRangeDays()} days.`}
+                    description={t().feedbackDescription({ count: feedbackRangeDays() })}
                     action={
                       <Show when={venue().feedbackEnabled}>
                         <ButtonLink
@@ -869,31 +896,32 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                           variant="secondary"
                           size="sm"
                         >
-                          <i class="ti ti-external-link" /> {t().feedbackPage}
+                          <i class="ti ti-external-link" aria-hidden="true" /> {t().feedbackPage}
                         </ButtonLink>
                       </Show>
                     }
                   />
+                  <VenueTimeZoneNote timeZone={venue().timezone} />
 
                   <StatGrid columns={3} size="sm" class="shrink-0">
                     <StatCell
                       label={t().averageRating}
-                      value={feedbackRangeAverage() === null ? "-" : `${feedbackRangeAverage()!.toFixed(1)}/5`}
-                      sub={`over the last ${feedbackRangeDays()} days`}
+                      value={feedbackAverage() === null ? "–" : formatAverage(feedbackAverage()!)}
+                      sub={t().inLastDays({ count: feedbackRangeDays() })}
                       accent={{
-                        tone: feedbackRangeAverage() !== null && feedbackRangeAverage()! >= 4 ? "emerald" : "amber",
+                        tone: feedbackAverage() !== null && feedbackAverage()! >= 4 ? "emerald" : "amber",
                         icon: "ti ti-star",
                       }}
                     />
                     <StatCell
                       label={t().ratings}
-                      value={feedbackRangeCount()}
-                      sub={`received in the last ${feedbackRangeDays()} days`}
+                      value={dashboard().feedback?.count ?? 0}
+                      sub={t().inLastDays({ count: feedbackRangeDays() })}
                       accent={{ tone: "blue", icon: "ti ti-message-star" }}
                     />
                     <StatCell
                       label={t().comments}
-                      value={feedbackCommentCount()}
+                      value={dashboard().feedback?.commentCount ?? 0}
                       sub={t().ratingsWithComments}
                       accent={{ tone: "blue", icon: "ti ti-message" }}
                     />
@@ -920,7 +948,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       />
                     </div>
                     <FilterChip
-                      label={`Last ${feedbackRangeDays()} days`}
+                      label={t().lastDays({ count: feedbackRangeDays() })}
                       icon="ti ti-calendar"
                       options={feedbackRangeOptions()}
                       value={[String(feedbackRangeDays())]}
@@ -933,13 +961,17 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
 
                   <div class="paper overflow-hidden">
                     <DataTable
-                      rows={filteredFeedbackEntries()}
+                      rows={dashboard().feedbackEntries}
                       columns={feedbackColumns}
                       getRowId={(entry) => `${entry.createdAt}:${entry.rating}:${entry.comment ?? ""}`}
                       hoverRows
                       highlightColumns={false}
                       class="overflow-x-auto"
-                      empty={`No feedback in the last ${feedbackRangeDays()} days.`}
+                      empty={
+                        props.initialFeedbackSearch
+                          ? t().noMatchingFeedback({ search: props.initialFeedbackSearch })
+                          : t().noFeedbackInDays({ count: feedbackRangeDays() })
+                      }
                       renderCell={({ row: entry, col, value, render }) => {
                         if (col.id === "rating") {
                           return (
@@ -957,11 +989,31 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                             <span class={entry.comment ? "text-primary" : "italic text-dimmed"}>{entry.comment || t().noComment}</span>
                           );
                         }
-                        if (col.id === "created") return fmt(entry.createdAt, locale());
+                        if (col.id === "created") return formatVenueDateTime(entry.createdAt, venue().timezone, locale());
                         return render(value);
                       }}
                     />
                   </div>
+                  <Show when={feedbackPage()}>
+                    {(page) => {
+                      const from = () => (page().page - 1) * page().pageSize + 1;
+                      const range = () => ({ from: from(), to: from() + dashboard().feedbackEntries.length - 1, total: page().total });
+                      return (
+                        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+                          <p class="text-xs text-dimmed">
+                            {props.initialFeedbackSearch
+                              ? t().feedbackMatchesRange({ ...range(), search: props.initialFeedbackSearch })
+                              : t().feedbackEntriesRange(range())}
+                          </p>
+                          <Pagination
+                            currentPage={page().page}
+                            totalPages={Math.ceil(page().total / page().pageSize)}
+                            baseUrl={feedbackPageBaseUrl()}
+                          />
+                        </div>
+                      );
+                    }}
+                  </Show>
                 </section>
               </Show>
             </div>

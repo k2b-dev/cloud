@@ -11,6 +11,7 @@ import {
   dialogCore,
   IconInput,
   ImageInput,
+  InlineGuidance,
   NoticeCard,
   Placeholder,
   panelDialogOptions,
@@ -134,6 +135,7 @@ export function SettingsDialog(props: {
   });
   const settings = () => settingsQuery.data() ?? initialContext;
   const currentVenue = () => settings().venue;
+  const canAdmin = () => venueSettingsCanAdmin(settings());
   const [workspaceChanged, setWorkspaceChanged] = createSignal(false);
   const [name, setName] = createSignal(venue.name);
   const [icon, setIcon] = createSignal(venue.icon || "ti ti-building-carousel");
@@ -562,6 +564,14 @@ export function SettingsDialog(props: {
         if (!disposed) setPrompting(false);
       });
   };
+  // Everyone may look at these settings; only admins may change them, and the server enforces that.
+  const AdminOnlyNote = () => (
+    <Show when={!canAdmin()}>
+      <InlineGuidance tone="info" icon="ti ti-lock">
+        {t().adminOnlySettings}
+      </InlineGuidance>
+    </Show>
+  );
   const SettingsReadError = () => (
     <Show when={settingsQuery.error()}>
       <NoticeCard tone="danger" title={t().settingsRefreshTitle} detail={t().lastConfirmedData}>
@@ -604,7 +614,8 @@ export function SettingsDialog(props: {
         <SettingsModal.Group title={t().venueGroup}>
           <SettingsModal.Tab id="general" title={t().general} icon="ti ti-id" description={t().generalDescription}>
             <SettingsReadError />
-            <fieldset disabled={!settingsHydrated() || settingsWriteBlocked()} class="grid gap-6">
+            <AdminOnlyNote />
+            <fieldset disabled={!canAdmin() || !settingsHydrated() || settingsWriteBlocked()} class="grid gap-6">
               <SettingsGroup title={t().identity} description={t().identityDescription}>
                 <div class="grid gap-4 md:grid-cols-2">
                   <SettingsField
@@ -742,14 +753,16 @@ export function SettingsDialog(props: {
                 />
               </SettingsGroup>
             </fieldset>
-            <SettingsModal.Footer>
-              <SettingsPanelFooter
-                changeCount={generalChangeCount}
-                loading={save.loading}
-                onDiscard={discardGeneral}
-                onSave={() => void saveSettings()}
-              />
-            </SettingsModal.Footer>
+            <Show when={canAdmin()}>
+              <SettingsModal.Footer>
+                <SettingsPanelFooter
+                  changeCount={generalChangeCount}
+                  loading={save.loading}
+                  onDiscard={discardGeneral}
+                  onSave={() => void saveSettings()}
+                />
+              </SettingsModal.Footer>
+            </Show>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
@@ -858,6 +871,7 @@ export function SettingsDialog(props: {
         <SettingsModal.Group title={t().operations}>
           <SettingsModal.Tab id="schedule" title={t().schedule} icon="ti ti-calendar-time" description={t().operationsDescription}>
             <SettingsReadError />
+            <AdminOnlyNote />
             <div class="grid gap-6">
               <Show when={venueSettingsCanAdmin(settings())}>
                 <SettingsGroup title={t().publicOpeningLogic} description={t().publicOpeningLogicDescription}>

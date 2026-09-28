@@ -6,7 +6,6 @@ import type { VenueDashboardSource } from "../../dashboard-query";
 
 export type VenueView = "shifts" | "my-shifts" | "feedback";
 export type FeedbackRange = 7 | 14 | 30;
-export type FeedbackBucket = NonNullable<VenueDashboard["feedback"]>["buckets"][number];
 
 export type VenueWorkspaceProps = {
   dashboard: VenueDashboard;

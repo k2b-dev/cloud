@@ -32,6 +32,7 @@ import type {
   OpeningRuleInput,
   PublicSection,
   PublicSectionInput,
+  PublicSectionPatch,
   PublicStatus,
   ShiftAssignment,
   ShiftTemplate,
@@ -44,6 +45,7 @@ import type {
   VenueTemplateCreateInput,
   VenueTemplateSummary,
 } from "./contracts";
+import { FEEDBACK_PAGE_SIZE, PublicSectionInputSchema } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
 import { filterPublicMenuSections } from "./public-menu";
@@ -1071,7 +1073,8 @@ const upcomingSlots = async (venue: Venue, options: number | UpcomingSlotsOption
 
   const startDate = config.startDate ?? localDateKey(new Date(), venue.timezone);
   const rangeStart = instantFor(startDate, "00:00", venue.timezone);
-  const rangeEnd = new Date(rangeStart.getTime() + days * 86_400_000);
+  // Local midnight after the last day: a day with a clock change is not 24 hours long.
+  const rangeEnd = instantFor(dateKeyAfterDays(startDate, days, venue.timezone), "00:00", venue.timezone);
   const assignments = await assignmentsForRange(venue.id, rangeStart, rangeEnd);
   const templatesForWeekday = templatesByWeekday(templates);
   const assignmentsBySlot = assignmentsByTemplateSlot(assignments);
@@ -1103,7 +1106,8 @@ const upcomingSlotSummaries = async (
 
   const startDate = options.startDate ?? localDateKey(new Date(), venue.timezone);
   const rangeStart = instantFor(startDate, "00:00", venue.timezone);
-  const rangeEnd = new Date(rangeStart.getTime() + days * 86_400_000);
+  // Local midnight after the last day: a day with a clock change is not 24 hours long.
+  const rangeEnd = instantFor(dateKeyAfterDays(startDate, days, venue.timezone), "00:00", venue.timezone);
   const summaries = await assignmentSummariesForRange(venue.id, rangeStart, rangeEnd, options.currentUserId ?? null);
   const summariesBySlot = new Map(
     summaries.filter((summary) => summary.templateId).map((summary) => [`${summary.templateId}:${summary.startsAt}`, summary]),
@@ -1291,20 +1295,38 @@ const createSection = async (venueId: string, input: PublicSectionInput): Promis
   return createSectionInTx(sql, venueId, input);
 };
 
-const updateSection = async (venueId: string, id: string, input: PublicSectionInput): Promise<Result<PublicSection>> => {
-  const [row] = await sql<DbPublicSection[]>`
-    UPDATE venue.public_sections
-    SET kind = ${input.kind},
-        title = ${input.title.trim()},
-        content = ${JSON.stringify(input.content)}::text::jsonb,
-        enabled = ${input.enabled},
-        position = ${input.position},
-        updated_at = now()
-    WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid
-    RETURNING *
-  `;
-  return row ? ok(mapSection(row)) : fail(err.notFound("Public section"));
-};
+/** Applies only the fields `patch` names; visibility and position stay as stored unless the patch sets them. */
+const updateSection = async (venueId: string, id: string, patch: PublicSectionPatch): Promise<Result<PublicSection>> =>
+  sql.begin(async (tx) => {
+    const [row] = await tx<DbPublicSection[]>`
+      SELECT * FROM venue.public_sections WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid FOR UPDATE
+    `;
+    if (!row) return fail(err.notFound("Public section"));
+    const current = mapSection(row);
+    const merged = PublicSectionInputSchema.safeParse({
+      kind: patch.kind ?? current.kind,
+      title: patch.title ?? current.title,
+      content: patch.content ?? current.content,
+      enabled: patch.enabled ?? current.enabled,
+      position: patch.position ?? current.position,
+    });
+    if (!merged.success) {
+      return fail(err.badInput(merged.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ")));
+    }
+    const input = merged.data;
+    const [updated] = await tx<DbPublicSection[]>`
+      UPDATE venue.public_sections
+      SET kind = ${input.kind},
+          title = ${input.title},
+          content = ${JSON.stringify(input.content)}::text::jsonb,
+          enabled = ${input.enabled},
+          position = ${input.position},
+          updated_at = now()
+      WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid
+      RETURNING *
+    `;
+    return updated ? ok(mapSection(updated)) : fail(err.notFound("Public section"));
+  });
 
 const deleteSection = async (venueId: string, id: string): Promise<Result<void>> => {
   await sql`DELETE FROM venue.public_sections WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid`;
@@ -1325,52 +1347,72 @@ const createFeedback = async (venueId: string, input: z.infer<typeof FeedbackInp
   return row ? ok(mapFeedback(row)) : fail(err.internal("Failed to submit feedback"));
 };
 
+export type FeedbackQuery = {
+  /** Calendar days in the Venue's time zone, today included; 1 to 30, default 30. */
+  days?: number;
+  includeEntries?: boolean;
+  search?: string;
+  /** 1-based page of matching entries; clamped to the last page. */
+  page?: number;
+};
+
+/**
+ * Visitor feedback of the last `days` calendar days in the Venue's time zone.
+ * Counts, daily buckets, and the entry list share that one window, so without
+ * a search the entry total equals the ratings count.
+ */
 const feedbackSummary = async (
-  venueId: string,
-  options: { includeEntries?: boolean; entryDays?: number; entrySearch?: string; summaryDays?: number } = {},
-): Promise<{ summary: FeedbackSummary; entries: FeedbackEntry[] }> => {
-  const summaryDays = options.summaryDays === undefined ? null : Math.max(1, Math.min(30, options.summaryDays));
-  const [summary] = await sql<{ count: number; average_rating: number | null }[]>`
-    SELECT COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 2)::float AS average_rating
+  venue: Pick<Venue, "id" | "timezone">,
+  options: FeedbackQuery = {},
+): Promise<{ summary: FeedbackSummary; entries: FeedbackEntry[]; entriesPage: VenueDashboard["feedbackEntriesPage"] }> => {
+  const days = Math.max(1, Math.min(30, options.days ?? 30));
+  const today = localDateKey(new Date(), venue.timezone);
+  const windowStart = instantFor(dateKeyAfterDays(today, -(days - 1), venue.timezone), "00:00", venue.timezone);
+  const [summary] = await sql<{ count: number; average_rating: number | null; comment_count: number }[]>`
+    SELECT COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 2)::float AS average_rating, COUNT(comment)::int AS comment_count
     FROM venue.feedback_entries
-    WHERE venue_id = ${venueId}::uuid
-      AND (${summaryDays}::int IS NULL OR created_at >= now() - (${summaryDays}::text || ' days')::interval)
+    WHERE venue_id = ${venue.id}::uuid AND created_at >= ${windowStart}
   `;
   const buckets = await sql<{ date: string | Date; count: number; average_rating: number | null }[]>`
-    SELECT created_at::date AS date, COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 2)::float AS average_rating
+    SELECT (created_at AT TIME ZONE ${venue.timezone})::date AS date, COUNT(*)::int AS count, ROUND(AVG(rating)::numeric, 2)::float AS average_rating
     FROM venue.feedback_entries
-    WHERE venue_id = ${venueId}::uuid
-      AND created_at >= now() - (${summaryDays ?? 30}::text || ' days')::interval
-    GROUP BY created_at::date
-    ORDER BY created_at::date
+    WHERE venue_id = ${venue.id}::uuid AND created_at >= ${windowStart}
+    GROUP BY 1
+    ORDER BY 1
   `;
-  const entryDays = Math.max(1, Math.min(30, options.entryDays ?? 30));
-  const entrySearch = options.entrySearch?.trim();
-  const entries = options.includeEntries
-    ? entrySearch
-      ? await sql<DbFeedbackEntry[]>`
+  const search = options.search?.trim() || null;
+  const pattern = search ? `%${search}%` : null;
+  let entries: DbFeedbackEntry[] = [];
+  let entriesPage: VenueDashboard["feedbackEntriesPage"] = null;
+  if (options.includeEntries) {
+    const [matching] = await sql<{ total: number }[]>`
+      SELECT COUNT(*)::int AS total
+      FROM venue.feedback_entries
+      WHERE venue_id = ${venue.id}::uuid
+        AND created_at >= ${windowStart}
+        AND (${pattern}::text IS NULL OR COALESCE(comment, '') ILIKE ${pattern})
+    `;
+    const total = matching?.total ?? 0;
+    const page = Math.min(Math.max(1, options.page ?? 1), Math.max(1, Math.ceil(total / FEEDBACK_PAGE_SIZE)));
+    entries = await sql<DbFeedbackEntry[]>`
       SELECT * FROM venue.feedback_entries
-      WHERE venue_id = ${venueId}::uuid
-        AND created_at >= now() - (${entryDays}::text || ' days')::interval
-        AND COALESCE(comment, '') ILIKE ${`%${entrySearch}%`}
-      ORDER BY created_at DESC
-      LIMIT 200
-    `
-      : await sql<DbFeedbackEntry[]>`
-      SELECT * FROM venue.feedback_entries
-      WHERE venue_id = ${venueId}::uuid
-        AND created_at >= now() - (${entryDays}::text || ' days')::interval
-      ORDER BY created_at DESC
-      LIMIT 200
-    `
-    : [];
+      WHERE venue_id = ${venue.id}::uuid
+        AND created_at >= ${windowStart}
+        AND (${pattern}::text IS NULL OR COALESCE(comment, '') ILIKE ${pattern})
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${FEEDBACK_PAGE_SIZE} OFFSET ${(page - 1) * FEEDBACK_PAGE_SIZE}
+    `;
+    entriesPage = { page, pageSize: FEEDBACK_PAGE_SIZE, total };
+  }
   return {
     summary: {
       count: summary?.count ?? 0,
       averageRating: summary?.average_rating ?? null,
+      commentCount: summary?.comment_count ?? 0,
       buckets: buckets.map((bucket) => ({ date: toDateKey(bucket.date), count: bucket.count, averageRating: bucket.average_rating })),
     },
     entries: entries.map(mapFeedback),
+    entriesPage,
   };
 };
 
@@ -1419,6 +1461,7 @@ export type VenueDashboardOptions = {
   includeFeedbackEntries?: boolean;
   feedbackDays?: number;
   feedbackSearch?: string;
+  feedbackPage?: number;
 };
 
 /**
@@ -1437,10 +1480,11 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
     assignmentsForRange(venue.id, start, end),
     internal ? listSections(venue.id) : venue.publicEnabled ? publicSections(venue, start) : Promise.resolve([]),
     internal
-      ? feedbackSummary(venue.id, {
+      ? feedbackSummary(venue, {
+          days: options.feedbackDays,
           includeEntries: options.includeFeedbackEntries ?? false,
-          entryDays: options.feedbackDays,
-          entrySearch: options.feedbackSearch,
+          search: options.feedbackSearch,
+          page: options.feedbackPage,
         })
       : Promise.resolve(null),
     user
@@ -1468,6 +1512,7 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
     sections,
     feedback: feedback?.summary ?? null,
     feedbackEntries: feedback?.entries ?? [],
+    feedbackEntriesPage: feedback?.entriesPage ?? null,
   };
 };
 

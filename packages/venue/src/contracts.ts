@@ -214,10 +214,12 @@ export const PublicMenuItemSchema = z
   });
 export type PublicMenuItem = z.infer<typeof PublicMenuItemSchema>;
 
-const PublicSectionSchema = z.object({
+const PublicSectionKindSchema = z.enum(["markdown", "menu", "notice", "links"]);
+
+export const PublicSectionSchema = z.object({
   id: VenueResourceIdSchema,
   venueId: VenueResourceIdSchema,
-  kind: z.enum(["markdown", "menu", "notice", "links"]),
+  kind: PublicSectionKindSchema,
   title: z.string(),
   content: z.record(z.string(), z.unknown()),
   enabled: z.boolean(),
@@ -229,7 +231,7 @@ export type PublicSection = z.infer<typeof PublicSectionSchema>;
 
 export const PublicSectionInputSchema = z
   .object({
-    kind: z.enum(["markdown", "menu", "notice", "links"]),
+    kind: PublicSectionKindSchema,
     title: z.string().trim().min(1).max(160),
     content: z.record(z.string(), z.unknown()).default({}),
     enabled: z.boolean().default(true),
@@ -252,6 +254,19 @@ export const PublicSectionInputSchema = z
   });
 export type PublicSectionInput = z.infer<typeof PublicSectionInputSchema>;
 
+/**
+ * A section update. Omitted fields keep their stored value, so an edit never
+ * publishes a draft (`enabled: false`) or moves the section by accident.
+ */
+export const PublicSectionPatchSchema = z.object({
+  kind: PublicSectionKindSchema.optional(),
+  title: z.string().trim().min(1).max(160).optional(),
+  content: z.record(z.string(), z.unknown()).optional(),
+  enabled: z.boolean().optional(),
+  position: z.number().int().optional(),
+});
+export type PublicSectionPatch = z.infer<typeof PublicSectionPatchSchema>;
+
 export const FeedbackEntrySchema = z.object({
   venueId: VenueResourceIdSchema,
   rating: z.number().int().min(1).max(5),
@@ -265,12 +280,20 @@ export const FeedbackInputSchema = z.object({
   comment: z.string().trim().max(2_000).nullable().optional(),
 });
 
+/**
+ * Feedback of the last N calendar days in the Venue's time zone, today
+ * included. Counts, daily buckets, and the entry list share that window.
+ */
 const FeedbackSummarySchema = z.object({
   count: z.number().int().min(0),
   averageRating: z.number().nullable(),
+  commentCount: z.number().int().min(0),
   buckets: z.array(z.object({ date: DateKeySchema, count: z.number().int(), averageRating: z.number().nullable() })),
 });
 export type FeedbackSummary = z.infer<typeof FeedbackSummarySchema>;
+
+/** Feedback entries per page in the workspace table and the dashboard API. */
+export const FEEDBACK_PAGE_SIZE = 50;
 
 export const PublicOpeningSchema = z.object({
   kind: z.enum(["regular", "shift", "free"]),
@@ -307,7 +330,19 @@ export const VenueDashboardSchema = z.object({
   sections: z.array(PublicSectionSchema),
   /** `null` below write permission: readers do not see visitor feedback. */
   feedback: FeedbackSummarySchema.nullable(),
+  /** One page of the entries in the feedback window that match the search, newest first. */
   feedbackEntries: z.array(FeedbackEntrySchema),
+  /**
+   * Where `feedbackEntries` sits in the full result; `total` counts every matching entry, not only this page.
+   * `null` when the request did not ask for entries (`includeFeedbackEntries`) or the caller does not see feedback.
+   */
+  feedbackEntriesPage: z
+    .object({
+      page: z.number().int().min(1),
+      pageSize: z.number().int().min(1),
+      total: z.number().int().min(0),
+    })
+    .nullable(),
 });
 export type VenueDashboard = z.infer<typeof VenueDashboardSchema>;
 
@@ -323,4 +358,6 @@ export const VenueDashboardQuerySchema = z.object({
     .optional(),
   feedbackDays: z.coerce.number().int().min(1).max(365).optional(),
   feedbackSearch: z.string().trim().max(200).optional(),
+  /** 1-based; the server clamps it to the last page. */
+  feedbackPage: z.coerce.number().int().min(1).optional(),
 });

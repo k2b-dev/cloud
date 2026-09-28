@@ -19,5 +19,4 @@ export const feedbackRangeOptions: FilterChipSection[] = [
 
 export const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export const weekdayOptions = weekdays.map((label, id) => ({ id: String(id), label }));
-export const DAY_MS = 86_400_000;
 export const DOUBLE_CLICK_CONFIRM_COOKIE = "venue_skip_shift_double_click_confirm";
