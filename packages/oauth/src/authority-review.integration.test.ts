@@ -176,9 +176,11 @@ suite("OAuth external review regressions", () => {
 
   test("audience upgrade rolls back atomically, preserves grants and rejects old writers", async () => {
     const { userId, client } = await fixture();
+    // The test database keeps codes from earlier runs; name and read only this client's codes.
+    const code = (name: string) => `${client.clientId}:${name}`;
     await sql`ALTER TABLE oauth.codes DROP COLUMN audiences`.simple();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
-      VALUES ('before-upgrade', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+      VALUES (${code("before-upgrade")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     await sql`CREATE FUNCTION oauth.reject_audience_backfill() RETURNS trigger AS $$ BEGIN
       RAISE EXCEPTION 'injected audience migration failure'; END; $$ LANGUAGE plpgsql`.simple();
     await sql`CREATE TRIGGER reject_audience_backfill BEFORE UPDATE ON oauth.codes
@@ -198,21 +200,23 @@ suite("OAuth external review regressions", () => {
     // Also repair grants written with the previous migration's incorrect default.
     await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET DEFAULT ARRAY['cloud']::text[]`.simple();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
-      VALUES ('previous-default', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+      VALUES (${code("previous-default")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     await migrate();
     const oldWriter = async () => {
       await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
-        VALUES ('old-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+        VALUES (${code("old-writer")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     };
     await expect(oldWriter()).rejects.toThrow();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, audiences)
-      VALUES ('new-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', ARRAY['cloud', ${client.clientId}])`;
+      VALUES (${code("new-writer")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', ARRAY['cloud', ${client.clientId}])`;
     await migrate();
-    const rows = await sql<{ code: string; audiences: string[] }[]>`SELECT code, audiences FROM oauth.codes ORDER BY code`;
+    const rows = await sql<{ code: string; audiences: string[] }[]>`
+      SELECT code, audiences FROM oauth.codes WHERE client_id = ${client.clientId} ORDER BY code
+    `;
     expect(rows).toEqual([
-      { code: "before-upgrade", audiences: ["mail"] },
-      { code: "new-writer", audiences: ["cloud", client.clientId] },
-      { code: "previous-default", audiences: ["mail"] },
+      { code: code("before-upgrade"), audiences: ["mail"] },
+      { code: code("new-writer"), audiences: ["cloud", client.clientId] },
+      { code: code("previous-default"), audiences: ["mail"] },
     ]);
   }, 60_000);
 
