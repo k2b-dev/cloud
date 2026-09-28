@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.7.0...npm-ui-v0.8.0) (2026-09-28)
+
+
+### Features
+
+* **ui:** add an inline Placeholder for empty lists and use it in empty notebooks ([#365](https://github.com/k2b-dev/cloud/issues/365)) ([792c256](https://github.com/k2b-dev/cloud/commit/792c256f2798d9ac3efbe237bffbf24331617ed1)), closes [#359](https://github.com/k2b-dev/cloud/issues/359)
+
+
+### Bug Fixes
+
+* **ui:** load more table rows when the page scrolls ([#377](https://github.com/k2b-dev/cloud/issues/377)) ([a9d4e6d](https://github.com/k2b-dev/cloud/commit/a9d4e6dfca2971fb154ca5470ddde25c5dbdc0f6))
+* **ui:** show how many selections a narrow multi-select hides ([#357](https://github.com/k2b-dev/cloud/issues/357)) ([38c1b2c](https://github.com/k2b-dev/cloud/commit/38c1b2cc7e2102e3de553dfd588bf5187cc45638))
+
 ## [0.7.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.6.3...npm-ui-v0.7.0) (2026-09-27)
 
 
