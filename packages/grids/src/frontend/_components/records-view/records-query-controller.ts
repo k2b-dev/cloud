@@ -52,28 +52,47 @@ export const createLatestRequestController = () => {
 type RecordsQueryControllerOptions = {
   source: Accessor<RecordsQuerySource>;
   initialValue: TableQueryResult;
+  /** Message of the server's failed read of the initial source, whose `initialValue` is then empty. */
+  initialError: string | null;
   prepareSource?: (source: RecordsQuerySource) => RecordsQuerySource;
 };
 
 export const createRecordsQueryController = (options: RecordsQueryControllerOptions) => {
   const requests = createLatestRequestController();
   let fetchEpoch = 0;
+  const initialValue: RecordsTableQueryResult = { ...options.initialValue, __recordsFetchEpoch: 0 };
+  // The initial value is the server's read of the initial source. Solid loads that source once on creation, so the
+  // first load adopts the initial value instead of repeating the read and showing records that are already there
+  // as loading. On the server, `ssrLoadFrom` keeps the render from reporting that load as pending.
+  let adoptInitialValue = true;
+  // A failed server read is adopted as well, because repeating it would fail the same way. Its failure shows until a
+  // client read succeeds.
+  const [initialFailure, setInitialFailure] = createSignal<RecordsQueryFailure | null>(
+    options.initialError === null ? null : { error: new Error(options.initialError) },
+  );
+
+  const fetchRecords = async (source: RecordsQuerySource): Promise<RecordsTableQueryResult> => {
+    const request = requests.start();
+    const epoch = ++fetchEpoch;
+    try {
+      const result = await fetchTableQuery(options.prepareSource?.(source) ?? source, { signal: request.signal });
+      setInitialFailure(null);
+      return { ...result, __recordsFetchEpoch: epoch };
+    } finally {
+      requests.finish(request);
+    }
+  };
 
   const [data, actions] = createResource<RecordsTableQueryResult, RecordsQuerySource>(
     options.source,
-    async (source) => {
-      const request = requests.start();
-      const epoch = ++fetchEpoch;
-      try {
-        const result = await fetchTableQuery(options.prepareSource?.(source) ?? source, { signal: request.signal });
-        return { ...result, __recordsFetchEpoch: epoch };
-      } finally {
-        requests.finish(request);
-      }
+    (source) => {
+      if (!adoptInitialValue) return fetchRecords(source);
+      adoptInitialValue = false;
+      return initialValue;
     },
-    { initialValue: { ...options.initialValue, __recordsFetchEpoch: 0 } },
+    { initialValue, ssrLoadFrom: "initial" },
   );
-  const [latest, setLatest] = createSignal<RecordsTableQueryResult>({ ...options.initialValue, __recordsFetchEpoch: 0 });
+  const [latest, setLatest] = createSignal<RecordsTableQueryResult>(initialValue);
 
   createEffect(() => {
     const state = data.state;
@@ -86,7 +105,7 @@ export const createRecordsQueryController = (options: RecordsQueryControllerOpti
 
   // Records pages always hydrate with SSR data, so client failures are
   // refresh failures and the last successful result remains renderable.
-  const failure = () => recordsQueryFailure(data.error);
+  const failure = () => recordsQueryFailure(data.error) ?? initialFailure();
 
   return {
     data,

@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { err, fail } from "@k2b/stdlib";
 import type { Field, GridRecord, Table } from "../../../service";
 import { gridsService } from "../../../service";
 import { loadInitialRecords } from "./workspace-records-query";
@@ -89,3 +90,36 @@ test("the first render labels the records a relation filter names, also when the
   expect(filterLabels).toHaveBeenCalledWith(filter, [customer], { userId: user.id, userGroups: [] });
   expect(initial.relationLabels).toEqual({ [linkedId]: "Acme", [filteredId]: "Globex" });
 });
+
+for (const [label, groupBy] of [
+  ["listed", []],
+  ["grouped", [{ fieldId: customer.id }]],
+] as const) {
+  test(`a failed ${label} read gives the page no records and the failure's message`, async () => {
+    const failure = fail(err.badInput("The cursor is invalid."));
+    spyOn(gridsService.record, "list").mockImplementation(async () => failure as never);
+    spyOn(gridsService.record, "group").mockImplementation(async () => failure as never);
+    spyOn(gridsService.relations, "buildFilterLabelCache").mockImplementation(async () => ({}));
+
+    const initial = await loadInitialRecords({
+      activeTable: table,
+      fields: [customer],
+      recordsState: {
+        query: { groupBy: [...groupBy] },
+        cursor: "stale",
+        selectedRecordId: null,
+        search: { q: "", fieldIds: [] },
+        calendar: { view: "month", date: "2026-01-01" },
+        cardSize: "medium",
+      },
+      activeView: null,
+      displayConfig: { mode: "table" },
+      trashMode: false,
+      user,
+    });
+
+    expect(initial.error).toBe("The cursor is invalid.");
+    expect(initial.records.items).toEqual([]);
+    expect(initial.groupedBuckets).toEqual([]);
+  });
+}

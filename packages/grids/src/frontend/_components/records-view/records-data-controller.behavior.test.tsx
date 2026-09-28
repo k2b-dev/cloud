@@ -49,9 +49,11 @@ const until = async (condition: () => boolean) => {
 };
 
 const mount = async ({
+  initialData = { items: [record("old")], nextCursor: null },
   initialEventCursor = null,
   visibility = "visible",
 }: {
+  initialData?: PublicTableQueryResult;
   initialEventCursor?: string | null;
   visibility?: DocumentVisibilityState;
 } = {}) => {
@@ -70,7 +72,8 @@ const mount = async ({
           tableId: "TABLE1",
           trashMode: false,
           source: () => ({ tableId: "TABLE1", query, cursor: cursor(), calendar: { view: "month", date: "2026-09-01" } }),
-          initialData: { items: [record("old")], nextCursor: null },
+          initialData,
+          initialError: null,
           initialEventCursor,
           locale: "en",
           cursor,
@@ -309,10 +312,9 @@ const waitFor = async (condition: () => boolean, timeoutMs = 2_000) => {
 };
 
 domTest("relation labels follow each refetch and stay with earlier pages when more records load", async () => {
-  fetchRecords = async () => ({ items: [record("old")], nextCursor: null, relationLabels: { REL001: "Acme" } });
-  const state = await mount();
+  const state = await mount({ initialData: { items: [record("old")], nextCursor: null, relationLabels: { REL001: "Acme" } } });
   try {
-    await waitFor(() => state.controller.relationLabels().REL001 === "Acme");
+    expect(state.controller.relationLabels()).toEqual({ REL001: "Acme" });
 
     fetchRecords = async () => ({ items: [record("a")], nextCursor: "page-2", relationLabels: { REL002: "Globex" } });
     callbacks.onReady?.("s6t.test.7");
