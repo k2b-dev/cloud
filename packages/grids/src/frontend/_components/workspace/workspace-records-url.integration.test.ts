@@ -15,6 +15,7 @@ type Fixture = {
   titleId: string;
   titlePublicId: string;
   peoplePublicId: string;
+  ownersPublicId: string;
   adaId: string;
   adaPublicId: string;
 };
@@ -30,6 +31,8 @@ const createFixture = async (): Promise<Fixture> => {
   const titlePublicId = testShortId("F");
   const peopleId = testUuid();
   const peoplePublicId = testShortId("F");
+  const ownersId = testUuid();
+  const ownersPublicId = testShortId("F");
   const nameId = testUuid();
   const adaId = testUuid();
   const adaPublicId = testShortId("R");
@@ -50,13 +53,14 @@ const createFixture = async (): Promise<Fixture> => {
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable) VALUES
       (${titleId}::uuid, ${titlePublicId}, ${tasksId}::uuid, 'Title', 'text', '{}'::jsonb, 0, TRUE),
       (${peopleId}::uuid, ${peoplePublicId}, ${tasksId}::uuid, 'People', 'relation', ${{ targetTableId: peopleTableId }}::jsonb, 1, FALSE),
+      (${ownersId}::uuid, ${ownersPublicId}, ${tasksId}::uuid, 'Owners', 'principal', '{}'::jsonb, 2, FALSE),
       (${nameId}::uuid, ${testShortId("F")}, ${peopleTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE)
   `;
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data) VALUES
       (${adaId}::uuid, ${adaPublicId}, ${peopleTableId}::uuid, ${{ [nameId]: "Ada" }}::jsonb),
       (${graceId}::uuid, ${testShortId("R")}, ${peopleTableId}::uuid, ${{ [nameId]: "Grace" }}::jsonb),
-      (${alphaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Alpha" }}::jsonb),
+      (${alphaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Alpha", [ownersId]: [{ type: "user", id: userId }] }}::jsonb),
       (${betaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Beta" }}::jsonb),
       (${gammaId}::uuid, ${testShortId("R")}, ${tasksId}::uuid, ${{ [titleId]: "Gamma" }}::jsonb)
   `;
@@ -71,7 +75,19 @@ const createFixture = async (): Promise<Fixture> => {
     INSERT INTO auth.access (user_id, permission) VALUES (${userId}::uuid, 'read'::auth.permission_level) RETURNING id::text AS id
   `;
   await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${access!.id}::uuid)`;
-  return { userId, accessId: access!.id, baseId, basePublicId, tablePublicId, titleId, titlePublicId, peoplePublicId, adaId, adaPublicId };
+  return {
+    userId,
+    accessId: access!.id,
+    baseId,
+    basePublicId,
+    tablePublicId,
+    titleId,
+    titlePublicId,
+    peoplePublicId,
+    ownersPublicId,
+    adaId,
+    adaPublicId,
+  };
 };
 
 const cleanupFixture = async (fixture: Fixture) => {
@@ -99,6 +115,8 @@ const loadTablePage = async (fixture: Fixture, search: Record<string, unknown>) 
   if (publicState.route.kind !== "records") throw new Error("Expected a public records page");
   return {
     titles: (state.route.initialData.items ?? []).map((record) => record.data[fixture.titleId]),
+    items: publicState.route.initialData.items ?? [],
+    relationLabels: publicState.route.relationLabels,
     initialState: publicState.route.initialState,
     initialError: publicState.route.initialError,
   };
@@ -156,6 +174,16 @@ describe("shared records page URLs", () => {
 
     expect(page.titles).toEqual(["Beta"]);
     expect(page.initialState.search).toMatchObject({ q: "e", fieldIds: [f.titlePublicId] });
+  });
+
+  postgresTest("name the people and linked records that the first page shows", async () => {
+    const f = fixture!;
+
+    const page = await loadTablePage(f, { q: "Alpha", qFields: f.titlePublicId });
+
+    expect(page.initialError).toBeNull();
+    expect(page.items.map((record) => record.data[f.ownersPublicId])).toEqual([[{ type: "user", id: f.userId }]]);
+    expect(page.relationLabels).toEqual({ [f.adaPublicId]: "Ada", [f.userId]: "Table reader" });
   });
 
   postgresTest("carry a failed read to the page instead of rendering an empty table", async () => {

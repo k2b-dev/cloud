@@ -42,6 +42,7 @@ import { groupedColumnFieldId, rewriteGroupedColumnKeys } from "../presentation-
 import { listByTable } from "../service/field-read";
 import type { Form } from "../service/forms";
 import { isSequentialNumberSeriesConfig, loadFieldNumberSeries } from "../service/number-series";
+import { principalReferencesFromRecords } from "../service/principal-values";
 import { publicDiagnosticMessage } from "../service/public-diagnostics";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
 import type { RecordComment } from "../service/record-comments";
@@ -634,7 +635,8 @@ export const PublicTableQueryResponseSchema = TableQueryResponseSchema.omit({
   relationLabels: true,
 }).extend({
   items: z.array(PublicGridRecordSchema).optional(),
-  relationLabels: z.record(ShortIdSchema, z.string()).optional(),
+  /** Keyed by record public ID, or by the account ID a People-and-groups value shows. */
+  relationLabels: z.record(z.union([ShortIdSchema, z.string().uuid()]), z.string()).optional(),
   filePreviews: z.record(ShortIdSchema, z.record(ShortIdSchema, PublicGridFilePreviewSchema)).optional(),
 });
 export type PublicTableQueryResult = z.infer<typeof PublicTableQueryResponseSchema>;
@@ -1175,8 +1177,11 @@ export const toPublicTableQueryResponse = async (
   fields: readonly Field[],
 ): Promise<z.infer<typeof PublicTableQueryResponseSchema>> => {
   const fieldIds = new Map(fields.map((field) => [field.id, field.shortId]));
-  const relationInternalIds = Object.keys(response.relationLabels ?? {});
+  // People-and-groups values keep their account IDs in public record data, so their labels keep those keys too.
+  const principalIds = new Set(principalReferencesFromRecords(response.items ?? [], fields).map((reference) => reference.id));
+  const relationInternalIds = Object.keys(response.relationLabels ?? {}).filter((id) => !principalIds.has(id));
   const relationIds = await projectPublicIds("record", relationInternalIds);
+  const labelKey = (id: string) => (principalIds.has(id) ? id : publicId(relationIds, id, "record"));
   const projectAggregateKeys = (values: Record<string, unknown> | undefined) =>
     values
       ? Object.fromEntries(
@@ -1216,9 +1221,7 @@ export const toPublicTableQueryResponse = async (
       : {}),
     ...(response.relationLabels
       ? {
-          relationLabels: Object.fromEntries(
-            Object.entries(response.relationLabels).map(([id, label]) => [publicId(relationIds, id, "record"), label]),
-          ),
+          relationLabels: Object.fromEntries(Object.entries(response.relationLabels).map(([id, label]) => [labelKey(id), label])),
         }
       : {}),
     ...(previews

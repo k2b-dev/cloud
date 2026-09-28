@@ -34,6 +34,7 @@ import { executePublishedCustomAppRecords } from "../service/custom-app-records-
 import { waitForCustomAppWorkflowChange, workflowCommittedChanges } from "../service/custom-app-workflow-progress";
 import type { CustomApp, CustomAppDraftSave, CustomAppSummary } from "../service/custom-apps";
 import { getMaxFileSizeBytes } from "../service/file-limits";
+import { principalReferencesFromRecords } from "../service/principal-values";
 import {
   fromPublicRecordValues,
   type PublicResourceType,
@@ -563,14 +564,22 @@ const projectRuntimeEditableRecord = async (
     viewer: relationViewer,
     actorUserId: currentActorUserId(c),
   }).catch(() => ({}));
+  // People-and-groups values keep their account IDs in public record data, so their labels keep those keys too.
+  const principalIds = new Set(principalReferencesFromRecords([record], visibleFields).map((reference) => reference.id));
   const [projected, relationRecordIds] = await Promise.all([
     projectGridRecord(projectCustomAppRecord(record, resolved.block.fieldIds), visibleFields),
-    projectPublicIds("record", Object.keys(relationLabels)),
+    projectPublicIds(
+      "record",
+      Object.keys(relationLabels).filter((id) => !principalIds.has(id)),
+    ),
   ]);
   return {
     ...projected,
     relationLabels: Object.fromEntries(
-      Object.entries(relationLabels).map(([id, label]) => [requiredProjected(relationRecordIds, id, "record"), label]),
+      Object.entries(relationLabels).map(([id, label]) => [
+        principalIds.has(id) ? id : requiredProjected(relationRecordIds, id, "record"),
+        label,
+      ]),
     ),
   };
 };

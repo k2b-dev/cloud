@@ -1226,4 +1226,52 @@ describe("classic resource route contracts", () => {
     },
     20_000,
   );
+
+  postgresTest(
+    "names People-and-groups values only for an actor with a directory scope",
+    async () => {
+      const fixture = newFixture();
+      let primaryError: unknown;
+      let primaryFailed = false;
+      try {
+        await setupFixture(fixture);
+        const ownersFieldId = testUuid();
+        const ownersFieldPublicId = testShortId("O");
+        const owners = [{ type: "user", id: fixture.user.id }];
+        await sql`
+          INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (${ownersFieldId}::uuid, ${ownersFieldPublicId}, ${fixture.tableId}::uuid, 'Owners', 'principal', '{}'::jsonb, 1)
+        `;
+        await sql`
+          INSERT INTO grids.records (id, short_id, table_id, data)
+          VALUES (${testUuid()}::uuid, ${testShortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.uniqueFieldId]: "OWNED", [ownersFieldId]: owners }}::jsonb)
+        `;
+
+        const query = async (token: string) => {
+          const response = await app.request(`/tables/${fixture.tablePublicId}/query`, jsonRequest(token, { query: {} }));
+          expect(response.status).toBe(200);
+          return (await response.json()) as { items: Array<{ data: Record<string, unknown> }>; relationLabels?: unknown };
+        };
+        const asUser = await query(fixture.tokens.delegated);
+        expect(asUser.items.map((item) => item.data[ownersFieldPublicId])).toEqual([owners]);
+        expect(asUser.relationLabels).toEqual({ [fixture.user.id]: "Route Matrix" });
+
+        const asResourceToken = await query(fixture.tokens.read);
+        expect(asResourceToken.items.map((item) => item.data[ownersFieldPublicId])).toEqual([owners]);
+        expect(asResourceToken.relationLabels).toEqual({});
+      } catch (error) {
+        primaryError = error;
+        primaryFailed = true;
+        throw error;
+      } finally {
+        try {
+          await cleanupFixture(fixture);
+        } catch (cleanupError) {
+          if (primaryFailed) throw new AggregateError([primaryError, cleanupError], "Principal label query test and cleanup failed");
+          throw cleanupError;
+        }
+      }
+    },
+    20_000,
+  );
 });

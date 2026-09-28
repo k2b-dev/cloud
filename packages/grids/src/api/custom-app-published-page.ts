@@ -62,6 +62,7 @@ import { materializeFormRenderDefaults } from "../service/form-render-defaults";
 import { isExclusiveFormChild, MAX_INLINE_CREATES_PER_FIELD, MAX_INLINE_CREATES_PER_SUBMISSION } from "../service/form-submission";
 import type { PublicRenderableForm } from "../service/forms";
 import { toPublicGqlResponse } from "../service/gql-public-result";
+import { principalReferencesFromRecords } from "../service/principal-values";
 import { projectPublicIds, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { lookupRecords } from "../service/relation-labels";
 import { scannerLauncherPromptInputSources } from "../workflows/contracts";
@@ -466,10 +467,15 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
         viewer: relationViewer,
         actorUserId: accessActorUser(requestAccess)?.id ?? null,
       });
+      // People-and-groups values keep their account IDs in public record data, so their labels keep those keys too.
+      const principalIds = new Set(principalReferencesFromRecords([blockRecord], blockFields).map((reference) => reference.id));
       const [publicRecord, publicFields, publicRelationIds] = await Promise.all([
         toPublicRecord(blockRecord, blockFields),
         toPublicFields(blockFields),
-        projectPublicIds("record", Object.keys(relationLabels)),
+        projectPublicIds(
+          "record",
+          Object.keys(relationLabels).filter((id) => !principalIds.has(id)),
+        ),
       ]);
       const publicFilesByField = Object.fromEntries(
         await Promise.all(
@@ -483,7 +489,7 @@ export async function loadPublishedCustomAppPage<T extends AuthContext>(c: impor
         fields: publicFields,
         relationLabels: Object.fromEntries(
           Object.entries(relationLabels).flatMap(([id, label]) => {
-            const publicId = publicRelationIds.get(id);
+            const publicId = principalIds.has(id) ? id : publicRelationIds.get(id);
             return publicId ? [[publicId, label]] : [];
           }),
         ),
