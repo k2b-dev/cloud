@@ -45,24 +45,35 @@ const svgCategoryTicks = (html: string) =>
   [...html.matchAll(/<text class="stdlib-chart-tick-label"[^>]*text-anchor="middle"[^>]*>([^<]*)<\/text>/g)].map((tick) => tick[1]);
 
 test("every chart type fills a fixed-height box instead of sizing itself by its aspect ratio", () => {
-  for (const chartType of ["bar", "line", "donut"] as const) {
-    const html = chart(statuses, { chartType });
-    // A full-width block would otherwise draw a 480:280 SVG far taller than the block and overlap the next one.
-    expect(html).toMatch(/^<div class="flex h-72 flex-col"><div class="k2b-chart min-h-0 flex-1"/);
+  // A full-width block would otherwise draw a 480:280 SVG far taller than the block and overlap the next one.
+  expect(chart(statuses, { chartType: "donut" })).toMatch(/^<div class="flex h-72 flex-col"><div class="k2b-chart min-h-0 flex-1"/);
+  for (const chartType of ["bar", "line"] as const) {
+    expect(chart(statuses, { chartType })).toMatch(
+      /^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1"><div class="k2b-chart min-w-0 flex-1"/,
+    );
   }
 });
 
-test("bar and line charts show the y-axis label in the chart and the x-axis label below their categories", () => {
+test("bar and line charts show the y-axis label beside the plot and the x-axis label below their categories", () => {
   for (const chartType of ["bar", "line"] as const) {
-    const html = chart(statuses, { chartType, xAxisLabel: "Ticket status", yAxisLabel: "Tickets" });
-    expect(html).toMatch(/<text class="stdlib-chart-axis-label"[^>]*transform="rotate\(-90[^>]*>Tickets<\/text>/);
-    // stdlib's bar chart has no x-axis label, and its line chart would draw it above our category names.
-    expect(html).not.toContain(">Ticket status</text>");
+    const yAxisLabel = "Average handling time in working days per ticket status";
+    const html = chart(statuses, { chartType, xAxisLabel: "Ticket status", yAxisLabel });
+    // stdlib would draw both labels at full length inside the SVG: a long y-axis label runs past
+    // the chart's fixed height and over wide value labels, and its bar chart has no x-axis label.
+    expect(html).not.toContain(`<text class="stdlib-chart-axis-label"`);
+    const side = html.match(
+      /^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1">(<p[^>]*>[^<]*<\/p>)<div class="k2b-chart /,
+    )?.[1];
+    expect(side).toMatch(/^<p class="w-4 [^"]*\brotate-180\b[^"]*\btruncate\b[^"]*" style="writing-mode:vertical-rl;/);
+    expect(side).toContain(`title="${yAxisLabel}" data-chart-y-axis-label>${yAxisLabel}</p>`);
+    // The axis below is indented by the label's width, so its percentages refer to the chart's own width.
     const { width, start, end } = plotArea(html);
-    const caption = html.match(/<\/div><p[^>]*data-chart-x-axis-label[^>]*>Ticket status<\/p><\/div>$/)?.[0];
-    expect(caption).toBeDefined();
-    expect(caption).toContain(`padding-left:${(start / width) * 100}%`);
-    expect(caption).toContain(`padding-right:${((width - end) / width) * 100}%`);
+    const below = html.match(
+      /<\/div><div class="shrink-0 pl-4"><div class="relative[^"]*">.*<\/div>(<p[^>]*>Ticket status<\/p>)<\/div><\/div>$/,
+    )?.[1];
+    expect(below).toContain("data-chart-x-axis-label");
+    expect(below).toContain(`padding-left:${(start / width) * 100}%`);
+    expect(below).toContain(`padding-right:${((width - end) / width) * 100}%`);
   }
 });
 
@@ -108,11 +119,26 @@ test("charts name at most 12 categories and give each shown name the room of the
   }
 });
 
+test("the lowest value label keeps room below its baseline for descenders such as the g in kg", () => {
+  for (const chartType of ["bar", "line"] as const) {
+    const html = chart(statuses, { chartType, valueFormat: { style: "number", unit: "kg" }, xAxisLabel: "Ticket status" });
+    const height = Number(html.match(/viewBox="0 0 \d+ (\d+)"/)?.[1]);
+    const baselines = [
+      ...html.matchAll(/<text class="stdlib-chart-tick-label"[^>]*y="([\d.]+)"[^>]*text-anchor="end"[^>]*>[^<]* kg<\/text>/g),
+    ].map((tick) => Number(tick[1]));
+    expect(baselines.length).toBeGreaterThan(1);
+    // The SVG clips its content. Its 10px labels descend about 3px, and the SVG is drawn
+    // slightly shorter than its viewBox, so 4 units of room are needed below the baseline.
+    expect(height - Math.max(...baselines)).toBeGreaterThanOrEqual(4);
+  }
+});
+
 test("charts without renderable values keep the chart's empty state without an axis", () => {
   for (const chartType of ["bar", "line"] as const) {
-    const html = chart([], { chartType, xAxisLabel: "Ticket status" });
+    const html = chart([], { chartType, xAxisLabel: "Ticket status", yAxisLabel: "Tickets" });
     expect(html).toContain("k2b-chart__empty");
     expect(html).not.toContain("data-chart-x-axis-label");
+    expect(html).not.toContain("data-chart-y-axis-label");
     expect(html).not.toContain("data-chart-category");
   }
 });

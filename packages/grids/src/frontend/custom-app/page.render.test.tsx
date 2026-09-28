@@ -211,6 +211,6 @@ test("a chart block keeps its subtitle above a fixed-height chart and shows its 
   const html = renderToString(() => createComponent(CustomAppPage, input));
   // The subtitle must not eat into the chart's height, or the chart spills over the next block.
   expect(html).toContain('<p class="mb-3 text-sm text-secondary">Open tickets by status</p><div class="flex h-72 flex-col">');
-  expect(html).toMatch(/<text class="stdlib-chart-axis-label"[^>]*>Tickets<\/text>/);
+  expect(html).toMatch(/<p[^>]*data-chart-y-axis-label[^>]*>Tickets<\/p>/);
   expect(html).toMatch(/<p[^>]*data-chart-x-axis-label[^>]*>Status<\/p>/);
 });
