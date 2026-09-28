@@ -2042,3 +2042,128 @@ describe("Grids App Form runtime", () => {
     30_000,
   );
 });
+
+describe("Grids App record block", () => {
+  postgresTest("names the people and groups it shows on the page and in the editor", async () => {
+    const baseId = testUuid();
+    const tableId = testUuid();
+    const titleFieldId = testUuid();
+    const ownersFieldId = testUuid();
+    const recordId = testUuid();
+    const baseShortId = testShortId("B");
+    const tableShortId = testShortId("T");
+    const titleFieldShortId = testShortId("F");
+    const ownersFieldShortId = testShortId("O");
+    const recordShortId = testShortId("R");
+    const viewer = userFor(testUuid());
+    const owners = [{ type: "user", id: viewer.id }];
+    let accessId: string | undefined;
+    try {
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${viewer.id}::uuid, ${viewer.uid}, 'local', 'user', 'Ada Example', ${viewer.givenname}, ${viewer.sn})`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Record block owners')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+        VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Devices')`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
+        (${titleFieldId}::uuid, ${titleFieldShortId}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0),
+        (${ownersFieldId}::uuid, ${ownersFieldShortId}, ${tableId}::uuid, 'Owners', 'principal', '{}'::jsonb, 1)`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data)
+        VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, ${{ [titleFieldId]: "Printer", [ownersFieldId]: owners }}::jsonb)`;
+      const applied = await apply({
+        schemaVersion: 5,
+        kind: "grids.custom-app",
+        id: testShortId("A"),
+        baseId: baseShortId,
+        name: "Device owners",
+        startPageId: "home",
+        pages: [
+          {
+            id: "home",
+            title: "Home",
+            navigation: { visible: true },
+            parameters: {},
+            rows: [{ id: "intro", columns: [{ id: "main", span: 12, blocks: [{ id: "intro", type: "markdown", markdown: "Home" }] }] }],
+          },
+          {
+            id: "device",
+            title: "Device",
+            navigation: { visible: false },
+            parameters: { device: { type: "record", tableId: tableShortId, required: true } },
+            record: { tableId: tableShortId, id: { source: "PARAMS", path: "device" } },
+            rows: [
+              {
+                id: "main",
+                columns: [
+                  {
+                    id: "main",
+                    span: 12,
+                    blocks: [
+                      {
+                        id: "record",
+                        type: "record",
+                        fieldIds: [titleFieldShortId, ownersFieldShortId],
+                        editableFieldIds: [titleFieldShortId],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      if (!applied.ok) throw new Error(applied.error.message);
+      const published = await publish(applied.data.id);
+      if (!published.ok) throw new Error(published.error.message);
+      const grant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: applied.data.id,
+        permission: "read",
+        principal: { type: "public" },
+      });
+      if (!grant.ok) throw new Error(grant.error.message);
+      accessId = grant.data.accessId;
+      const api = new Hono<AuthContext>().route(
+        "/apps",
+        createCustomAppsApi({ loadOptionalActor: authenticateAs(viewer), requireAuthenticated: authenticateAs(viewer) }),
+      );
+      const publicApi = new Hono<AuthContext>().route(
+        "/apps",
+        createCustomAppsApi({ requireAuthenticated: async (c) => c.json({ message: "Authentication required" }, 401) }),
+      );
+      const labels = { [viewer.id]: "Ada Example" };
+      const pageRecord = async (client: Hono<AuthContext>) => {
+        const page = await client.request(`/apps/runtime/${applied.data.shortId}/device?device=${recordShortId}`);
+        expect(page.status).toBe(200);
+        const blocks = ((await page.json()) as { blocks: Array<{ id: string; record?: unknown }> }).blocks;
+        return blocks.find((candidate) => candidate.id === "record")?.record;
+      };
+
+      expect(await pageRecord(api)).toMatchObject({ record: { data: { [ownersFieldShortId]: owners } }, relationLabels: labels });
+      // Without an account there is no directory scope, so the value stays unnamed.
+      expect(await pageRecord(publicApi)).toMatchObject({ record: { data: { [ownersFieldShortId]: owners } }, relationLabels: {} });
+
+      const editUrl = `/apps/runtime/${applied.data.shortId}/device/record/record?device=${recordShortId}`;
+      const loaded = await api.request(editUrl);
+      expect(loaded.status).toBe(200);
+      expect(await loaded.json()).toMatchObject({ data: { [ownersFieldShortId]: owners }, relationLabels: labels });
+
+      const edited = await api.request(editUrl, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "If-Match": "1" },
+        body: JSON.stringify({ values: { [titleFieldShortId]: "Printer, second floor" } }),
+      });
+      expect(edited.status).toBe(200);
+      expect(await edited.json()).toMatchObject({
+        version: 2,
+        data: { [titleFieldShortId]: "Printer, second floor", [ownersFieldShortId]: owners },
+        relationLabels: labels,
+      });
+    } finally {
+      await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.record_event_outbox WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+    }
+  });
+});
