@@ -6,6 +6,7 @@ import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { createConfig } from "@k2b/ssr";
 import { createComponent, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { selectHtml } from "../../../../tests/fixtures/select-html";
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-sidebar-"));
 const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");
@@ -163,6 +164,26 @@ describe("Assistant sidebar", () => {
     expect(html).not.toContain("Mark chat done");
     expect(html).not.toContain(">Ready<");
     expect(html).not.toContain('class="k2b-app-workspace__sidebar-item-description"');
+  });
+
+  test("shows empty chat, Done, Studio, and Project lists as inline lines where their first rows would be", async () => {
+    const html = renderToString(() => createComponent(AssistantSidebar, { conversations: () => [], projects: [], live }));
+    const inline = await selectHtml(html, '.k2b-placeholder[data-variant="inline"][data-align="left"]');
+    const icons = await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i');
+
+    // Both footers (expanded and collapsed sidebar) carry the Studio and Project menus.
+    const studio = "No apps yet. Ask Assistant to build one.";
+    expect(inline.map((placeholder) => placeholder.text)).toEqual([
+      "No chats yet",
+      "No done chats.",
+      studio,
+      "No Projects yet",
+      studio,
+      "No Projects yet",
+    ]);
+    // Chat rows are cards without a leading icon; Studio and Project lines carry their rows' icons.
+    expect(icons.map((icon) => icon.attributes.class)).toEqual(["ti ti-app-window", "ti ti-folder", "ti ti-app-window", "ti ti-folder"]);
+    expect(await selectHtml(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child")).toHaveLength(2);
   });
 
   test("keeps New Chat text and icon stable while creation is pending", () => {

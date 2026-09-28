@@ -502,7 +502,10 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[2]!.resolve(Response.json([]));
     await flush();
     const dialog = dom.document.querySelector<HTMLDialogElement>("dialog")!;
-    expect(dialog.textContent).toContain("Mark files or folders as favorites");
+    // The empty catalog is one line where the first favorite row would be.
+    const empty = dialog.querySelector<HTMLElement>('.k2b-placeholder[data-variant="inline"][data-align="left"]');
+    expect(empty?.textContent).toBe("Mark files or folders as favorites from their details panel.");
+    expect(empty?.querySelector(".k2b-placeholder__icon > i")?.className).toBe("ti ti-star");
     expect(dialog.querySelector(".k2b-scroll-area")).toBe(loadingViewport);
     dialog.dispatchEvent(new dom.window.Event("cancel", { cancelable: true }));
     await modal;

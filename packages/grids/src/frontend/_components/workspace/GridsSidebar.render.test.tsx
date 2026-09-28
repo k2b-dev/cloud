@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
+import { selectHtml } from "../../../../../../tests/fixtures/select-html";
+import type { PublicForm, PublicTable } from "../../../api/public-dto";
 import type { PublicOkWorkspaceState, PublicWorkflow } from "./workspace-public-state-model";
 
 const { default: GridsSidebar } = await import("./GridsSidebar");
@@ -211,5 +213,61 @@ describe("GridsSidebar Apps", () => {
 
     expect(html).not.toContain(">Apps<");
     expect(html).toContain(">New<");
+  });
+});
+
+describe("GridsSidebar tables", () => {
+  test("shows an empty table list as one inline line where the first table row would be", async () => {
+    const html = renderToString(() => createComponent(GridsSidebar, { state: workflowState() }));
+    const [placeholder, ...others] = await selectHtml(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child");
+
+    expect(others).toEqual([]);
+    expect(placeholder?.attributes["data-variant"]).toBe("inline");
+    expect(placeholder?.attributes["data-align"]).toBe("left");
+    expect(placeholder?.text).toBe("No tables yet.");
+    expect(await selectHtml(html, '.k2b-placeholder[data-variant="inline"] .k2b-placeholder__icon > i.ti-table')).toHaveLength(1);
+  });
+
+  test("tells a form-only user that the tables exist but are not theirs to open", async () => {
+    const state = workflowState();
+    const table: PublicTable = {
+      id: "TBL01",
+      baseId: "BASE01",
+      name: "Applications",
+      description: null,
+      icon: null,
+      kind: "stored",
+      columns: [],
+      displayConfig: { mode: "table" },
+      auditPolicy: {},
+      mutationPolicy: { mode: "all" },
+      position: 0,
+      disableDirectInsert: false,
+      createdAt: "2026-08-15T00:00:00.000Z",
+      updatedAt: "2026-08-15T00:00:00.000Z",
+      deletedAt: null,
+    };
+    const form: PublicForm = {
+      id: "FORM01",
+      tableId: table.id,
+      name: "Loan request",
+      config: { fields: [] },
+      publicToken: null,
+      isActive: true,
+      ownerUserId: null,
+      position: 0,
+      isDefault: false,
+      deletedAt: null,
+      createdAt: "2026-08-15T00:00:00.000Z",
+      updatedAt: "2026-08-15T00:00:00.000Z",
+    };
+    state.catalog.sidebarForms = [{ form, table }];
+
+    const html = renderToString(() => createComponent(GridsSidebar, { state }));
+    const [placeholder, ...others] = await selectHtml(html, ".k2b-app-workspace__sidebar-section-content > .k2b-placeholder:first-child");
+
+    expect(others).toEqual([]);
+    expect(placeholder?.text).toBe("No table access.");
+    expect(html).toContain("Loan request");
   });
 });

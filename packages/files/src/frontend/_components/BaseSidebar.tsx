@@ -1,5 +1,5 @@
 import WorkspaceNavigation from "@k2b/cloud/ssr/WorkspaceNavigation.island";
-import { AppWorkspace, useLocale } from "@k2b/ui";
+import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { FileBaseInfo } from "@/contracts";
 import { filesMessages } from "../messages";
@@ -79,10 +79,7 @@ export default function BaseSidebar(props: BaseSidebarProps) {
             )}
 
             {props.bases.length === 0 && (
-              <p class="px-2 py-1 text-xs text-dimmed">
-                <i class="ti ti-folder-off mr-1" />
-                {t().noAccessibleBases}
-              </p>
+              <Placeholder variant="inline" align="left" icon="ti ti-folder-off" description={t().noAccessibleBases} />
             )}
 
             {props.settingsPanel ? <AppWorkspace.SidebarSection>{props.settingsPanel()}</AppWorkspace.SidebarSection> : null}

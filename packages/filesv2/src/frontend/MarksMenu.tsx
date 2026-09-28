@@ -87,7 +87,14 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
         >
           <For
             each={ordered()}
-            fallback={<p class="px-2 py-1 text-xs text-dimmed">{props.kind === "recent" ? b().noRecent : b().noFavorites}</p>}
+            fallback={
+              <Placeholder
+                variant="inline"
+                align="left"
+                icon={props.kind === "recent" ? "ti ti-history" : "ti ti-star"}
+                description={props.kind === "recent" ? b().noRecent : b().noFavorites}
+              />
+            }
           >
             {(item) => (
               <AppWorkspace.SidebarItem

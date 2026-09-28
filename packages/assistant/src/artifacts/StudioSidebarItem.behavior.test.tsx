@@ -100,6 +100,10 @@ test("mobile Studio keeps one compact viewport through loading and empty results
     resolve({ items: [], page: 1, hasNext: false });
     await Bun.sleep(0);
     expect(dom.document.querySelector('[data-viewport-size="compact"]')).toBe(viewport);
+    // The empty catalog is one line where the first app row would be.
+    const empty = viewport?.querySelector<HTMLElement>('.k2b-placeholder[data-variant="inline"][data-align="left"]');
+    expect(empty?.textContent).toBe("No apps yet. Ask Assistant to build one.");
+    expect(empty?.querySelector(".k2b-placeholder__icon > i")?.className).toBe("ti ti-app-window");
   } finally {
     lifetime.abort();
     await dialog;
