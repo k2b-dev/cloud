@@ -11,7 +11,7 @@ import * as refreshTokens from "./service/refresh-tokens";
 import type { OAuthUserGrantReference } from "./service/token-authority";
 import * as tokens from "./service/tokens";
 
-// This suite intentionally exercises schema upgrades and must use a disposable DB.
+// This suite exercises schema upgrades on the shared `_test` database and restores the schema itself.
 const suite = suiteFor("database");
 const deferred = () => {
   let resolve!: () => void;
@@ -206,7 +206,7 @@ suite("OAuth external review regressions", () => {
       await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
         VALUES (${code("old-writer")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     };
-    await expect(oldWriter()).rejects.toThrow();
+    await expect(oldWriter()).rejects.toThrow('null value in column "audiences"');
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, audiences)
       VALUES (${code("new-writer")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', ARRAY['cloud', ${client.clientId}])`;
     await migrate();
@@ -244,7 +244,7 @@ suite("OAuth external review regressions", () => {
           .sign(pair.privateKey);
       const valid = await sign(kid);
       expect(await tokens.verifyAccessToken({ token: valid, issuer: "https://cloud.test" })).not.toBeNull();
-      // The suite is opt-in and asserts its disposable database before running.
+      // The suite is opt-in and asserts its `_test` database before running.
       await sql`ALTER TABLE auth.signing_keys RENAME TO signing_keys_cache_outage`.simple();
       renamed = true;
       expect(await tokens.verifyAccessToken({ token: await sign(crypto.randomUUID()), issuer: "https://cloud.test" })).toBeNull();
