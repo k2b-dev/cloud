@@ -14,8 +14,9 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { logger, serviceAccounts } from "@k2b/cloud/services";
+import { coreSettings, logger, serviceAccounts } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { z } from "zod";
@@ -124,6 +125,8 @@ type DbShiftAssignment = {
   short_id: string;
   venue_id: string;
   template_id: string | null;
+  /** Joined from the template, which may be inactive; `null` for free time. */
+  template_title: string | null;
   user_id: string;
   user_display_name: string | null;
   starts_at: Date;
@@ -286,6 +289,7 @@ const mapAssignment = (row: DbShiftAssignment): ShiftAssignment => ({
   id: row.id,
   venueId: row.venue_id,
   templateId: row.template_id,
+  templateTitle: row.template_title,
   userId: row.user_id,
   userDisplayName: row.user_display_name ?? "Unknown user",
   startsAt: row.starts_at.toISOString(),
@@ -947,9 +951,10 @@ const deleteTemplate = async (venueId: string, id: string): Promise<Result<void>
 
 const assignmentsForRange = async (venueId: string, start: Date, end: Date): Promise<ShiftAssignment[]> => {
   const rows = await sql<DbShiftAssignment[]>`
-    SELECT sa.*, u.display_name AS user_display_name
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.venue_id = ${venueId}::uuid
       AND sa.starts_at < ${end}
       AND sa.ends_at > ${start}
@@ -1001,10 +1006,11 @@ const listPersonalAssignments = async (
   const limit = Math.min(101, Math.max(1, options.limit ?? 25));
   const offset = Math.max(0, options.offset ?? 0);
   const rows = await sql<(DbShiftAssignment & { venue_name: string; venue_timezone: string })[]>`
-    SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
     JOIN venue.venues v ON v.id = sa.venue_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.user_id = ${userId}::uuid
       AND (${options.venueId ?? null}::uuid IS NULL OR sa.venue_id = ${options.venueId ?? null}::uuid)
       AND sa.starts_at < ${options.to}
@@ -1194,7 +1200,8 @@ const signupTemplate = async (
             WHERE sa.template_id = t.id AND sa.starts_at = ${start}
           ) < t.max_people
         )
-      RETURNING *, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
+      RETURNING *, ${template.title}::text AS template_title,
+        (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
     `,
     );
     const row = rows[0];
@@ -1238,7 +1245,7 @@ const signupFree = async (
     INSERT INTO venue.shift_assignments (short_id, venue_id, user_id, starts_at, ends_at, note)
     VALUES (${shortId}, ${venueId}::uuid, ${user.id}::uuid, ${start}, ${end}, ${input.note?.trim() || null})
     ON CONFLICT (venue_id, user_id, starts_at, ends_at) DO NOTHING
-    RETURNING *, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
+    RETURNING *, NULL::text AS template_title, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
   `,
   );
   const row = rows[0];
@@ -1258,9 +1265,10 @@ const cancelAssignment = async (venueId: string, assignmentId: string, user: Use
 
 const getPersonalAssignment = async (venueId: string, assignmentId: string, userId: string): Promise<ShiftAssignment | null> => {
   const [row] = await sql<DbShiftAssignment[]>`
-    SELECT sa.*, u.display_name AS user_display_name
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.venue_id = ${venueId}::uuid
       AND sa.id = ${assignmentId}::uuid
       AND sa.user_id = ${userId}::uuid
@@ -1270,10 +1278,11 @@ const getPersonalAssignment = async (venueId: string, assignmentId: string, user
 
 const getPersonalAssignmentById = async (assignmentId: string, userId: string): Promise<PersonalShiftAssignment | null> => {
   const [row] = await sql<(DbShiftAssignment & { venue_name: string; venue_timezone: string })[]>`
-    SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
+    SELECT sa.*, st.title AS template_title, u.display_name AS user_display_name, v.name AS venue_name, v.timezone AS venue_timezone
     FROM venue.shift_assignments sa
     JOIN auth.users u ON u.id = sa.user_id
     JOIN venue.venues v ON v.id = sa.venue_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.id = ${assignmentId}::uuid AND sa.user_id = ${userId}::uuid
   `;
   return row ? { ...mapAssignment(row), venueName: row.venue_name, venueTimezone: row.venue_timezone } : null;
@@ -1350,6 +1359,8 @@ export type FeedbackQuery = {
   days?: number;
   includeEntries?: boolean;
   search?: string;
+  /** Lists only ratings with a written comment; like `search`, it narrows the entries, not the figures. */
+  withComment?: boolean;
   /** 1-based page of matching entries; clamped to the last page. */
   page?: number;
 };
@@ -1380,6 +1391,7 @@ const feedbackSummary = async (
   `;
   const search = options.search?.trim() || null;
   const pattern = search ? `%${search}%` : null;
+  const withComment = options.withComment === true;
   let entries: DbFeedbackEntry[] = [];
   let entriesPage: VenueDashboard["feedbackEntriesPage"] = null;
   if (options.includeEntries) {
@@ -1389,6 +1401,7 @@ const feedbackSummary = async (
       WHERE venue_id = ${venue.id}::uuid
         AND created_at >= ${windowStart}
         AND (${pattern}::text IS NULL OR COALESCE(comment, '') ILIKE ${pattern})
+        AND (NOT ${withComment}::boolean OR comment IS NOT NULL)
     `;
     const total = matching?.total ?? 0;
     const page = Math.min(Math.max(1, options.page ?? 1), Math.max(1, Math.ceil(total / FEEDBACK_PAGE_SIZE)));
@@ -1397,6 +1410,7 @@ const feedbackSummary = async (
       WHERE venue_id = ${venue.id}::uuid
         AND created_at >= ${windowStart}
         AND (${pattern}::text IS NULL OR COALESCE(comment, '') ILIKE ${pattern})
+        AND (NOT ${withComment}::boolean OR comment IS NOT NULL)
       ORDER BY created_at DESC, id DESC
       LIMIT ${FEEDBACK_PAGE_SIZE} OFFSET ${(page - 1) * FEEDBACK_PAGE_SIZE}
     `;
@@ -1459,6 +1473,7 @@ export type VenueDashboardOptions = {
   includeFeedbackEntries?: boolean;
   feedbackDays?: number;
   feedbackSearch?: string;
+  feedbackComments?: boolean;
   feedbackPage?: number;
 };
 
@@ -1482,6 +1497,7 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
           days: options.feedbackDays,
           includeEntries: options.includeFeedbackEntries ?? false,
           search: options.feedbackSearch,
+          withComment: options.feedbackComments,
           page: options.feedbackPage,
         })
       : Promise.resolve(null),
@@ -1525,6 +1541,22 @@ const getOrCreateIcalToken = async (userId: string): Promise<string> => {
   return row.token;
 };
 
+/** The subscription URL of a calendar token on the Cloud's public origin, so it works when copied into a calendar app. */
+const icalUrl = async (token: string): Promise<string> =>
+  `${publicCloudOrigin(await coreSettings.get<string>("app.url"))}/api/venue/calendar/${token}.ics`;
+
+/** Replaces the user's calendar token, so the previous subscription URL stops working. */
+const renewIcalToken = async (userId: string): Promise<string> => {
+  const [row] = await sql<{ token: string }[]>`
+    INSERT INTO venue.user_ical_tokens (user_id)
+    VALUES (${userId}::uuid)
+    ON CONFLICT (user_id) DO UPDATE SET token = encode(gen_random_bytes(24), 'hex'), created_at = now()
+    RETURNING token
+  `;
+  if (!row) throw new Error("Failed to renew iCal token");
+  return row.token;
+};
+
 const getUserIdByIcalToken = async (token: string): Promise<string | null> => {
   const [row] = await sql<{ user_id: string }[]>`
     SELECT user_id FROM venue.user_ical_tokens WHERE token = ${token}
@@ -1533,7 +1565,7 @@ const getUserIdByIcalToken = async (token: string): Promise<string | null> => {
 };
 
 const generateUserIcs = async (userId: string, baseUrl: string): Promise<string> => {
-  const rows = await sql<(DbShiftAssignment & { venue_name: string; venue_short_id: string })[]>`
+  const rows = await sql<(Omit<DbShiftAssignment, "template_title"> & { venue_name: string; venue_short_id: string })[]>`
     SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.short_id AS venue_short_id
     FROM venue.shift_assignments sa
     JOIN venue.venues v ON v.id = sa.venue_id
@@ -1595,5 +1627,11 @@ export const venueService = {
   publicStatus,
   dashboard,
   publicResources: { resolve: resolvePublicId, resolveOwned: resolveVenuePublicId, ...publicProjection },
-  ical: { getOrCreateToken: getOrCreateIcalToken, getUserIdByToken: getUserIdByIcalToken, generateUser: generateUserIcs },
+  ical: {
+    getOrCreateToken: getOrCreateIcalToken,
+    renewToken: renewIcalToken,
+    url: icalUrl,
+    getUserIdByToken: getUserIdByIcalToken,
+    generateUser: generateUserIcs,
+  },
 } as const;

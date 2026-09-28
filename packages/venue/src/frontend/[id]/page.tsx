@@ -71,6 +71,7 @@ export default ssr<AuthContext>(async (c) => {
   const initialCalendarDate = parseCalendarDate(url.searchParams.get("cd"));
   const initialFeedbackDays = parseFeedbackDays(url.searchParams.get("days"));
   const initialFeedbackSearch = (url.searchParams.get("search") ?? "").trim();
+  const initialFeedbackComments = url.searchParams.get("comments") === "1";
   const dashboardScope = venueDashboardRouteScope({
     venueId: id,
     view: resolved.initialView,
@@ -78,11 +79,12 @@ export default ssr<AuthContext>(async (c) => {
     calendarDate: initialCalendarDate,
     feedbackDays: initialFeedbackDays,
     feedbackSearch: initialFeedbackSearch,
+    feedbackComments: initialFeedbackComments,
     feedbackPage: parsePage(url.searchParams.get("page")),
   });
-  const [internalDashboard, icalToken, accessEntries, apiKeyOverview] = await Promise.all([
+  const [internalDashboard, calendarUrl, accessEntries, apiKeyOverview] = await Promise.all([
     venueService.dashboard(venue, user, dashboardScope.options),
-    venueService.ical.getOrCreateToken(user.id),
+    venueService.ical.getOrCreateToken(user.id).then(venueService.ical.url),
     venue.permission === "admin" ? venueService.access.list(venue.id) : Promise.resolve([]),
     venue.permission === "admin"
       ? serviceAccountCredentials.listOverview({
@@ -124,7 +126,7 @@ export default ssr<AuthContext>(async (c) => {
         dashboard={dashboard}
         dashboardSource={dashboardScope.source}
         userId={user.id}
-        icalToken={icalToken}
+        calendarUrl={calendarUrl}
         accessEntries={accessEntries}
         apiKeys={apiKeys}
         initialView={resolved.initialView}
@@ -133,6 +135,7 @@ export default ssr<AuthContext>(async (c) => {
         initialCalendarDate={initialCalendarDate}
         initialFeedbackDays={initialFeedbackDays}
         initialFeedbackSearch={initialFeedbackSearch}
+        initialFeedbackComments={initialFeedbackComments}
       />
     </Layout>
   );

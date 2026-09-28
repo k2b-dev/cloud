@@ -1,4 +1,17 @@
-import { Button, CheckboxCard, DatePicker, IconButton, PanelDialog, prompts, Select, TextInput, Tooltip, useLocale } from "@k2b/ui";
+import {
+  Button,
+  type CalendarEventColor,
+  CheckboxCard,
+  DatePicker,
+  IconButton,
+  type IntentTone,
+  PanelDialog,
+  prompts,
+  Select,
+  TextInput,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createSignal, Show } from "solid-js";
 import type {
@@ -13,24 +26,75 @@ import type {
 import { type VenueMessages, venueMessages } from "../../../messages";
 import { timeZoneDateConfig, todayDateKey } from "./utils";
 
+/** The staffing target as people read it: `2`, or `1–3` when more people may join than the shift needs. */
+export const slotTarget = (slot: Pick<UpcomingSlot, "minPeople" | "maxPeople">): string =>
+  slot.maxPeople && slot.maxPeople > slot.minPeople ? `${slot.minPeople}–${slot.maxPeople}` : String(slot.minPeople);
+
+/** Below target is only urgent this close to the start, and only when the venue does not open without the shift. */
+const URGENT_BEFORE_START_MS = 24 * 60 * 60_000;
+
+export type SlotState = {
+  tone: IntentTone;
+  color: CalendarEventColor;
+  icon: string;
+  label: string;
+  /** Why the state is urgent, for a tooltip or a screen reader. */
+  hint?: string;
+};
+
+/**
+ * A shift's staffing state in the shared tone vocabulary. Each state carries its own icon and text, so no state
+ * depends on color alone: ended is neutral, a reached target success, missing people a warning, and danger only
+ * for a shift that opens the venue and still lacks people within a day of its start.
+ */
+export const slotState = (slot: UpcomingSlot, t: VenueMessages, now = new Date()): SlotState => {
+  if (new Date(slot.endsAt) < now) return { tone: "neutral", color: "zinc", icon: "ti ti-history", label: t.ended };
+  if (slot.missingPeople === 0) return { tone: "success", color: "emerald", icon: "ti ti-check", label: slot.full ? t.full : t.covered };
+  const label = t.missing({ count: slot.missingPeople });
+  if (slot.template.requireTargetForOpening && new Date(slot.startsAt).getTime() - now.getTime() <= URGENT_BEFORE_START_MS) {
+    return { tone: "danger", color: "red", icon: "ti ti-alert-triangle", label, hint: t.opensOnlyWhenStaffed };
+  }
+  return { tone: "warning", color: "amber", icon: "ti ti-progress", label };
+};
+
+const barTone: Record<IntentTone, string> = {
+  neutral: "bg-zinc-400 dark:bg-zinc-600",
+  info: "bg-blue-500",
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  danger: "bg-red-500",
+};
+
+/** The state line without the bar: `0 of 1–3 staffed · 1 missing`. */
+export const slotStaffingLabel = (slot: UpcomingSlot, t: VenueMessages, now = new Date()): string =>
+  `${t.staffed({ assigned: slot.assignedCount, target: slotTarget(slot) })} · ${slotState(slot, t, now).label}`;
+
+export function SlotStateLabel(props: { state: SlotState; class?: string }) {
+  return (
+    <span class={`inline-flex min-w-0 items-center gap-1 ${props.class ?? ""}`} title={props.state.hint}>
+      <i class={`${props.state.icon} shrink-0`} aria-hidden="true" />
+      <span class="truncate">{props.state.label}</span>
+      <Show when={props.state.hint}>{(hint) => <span class="sr-only">{hint()}</span>}</Show>
+    </span>
+  );
+}
+
 export function ProgressBar(props: { slot: UpcomingSlot; compact?: boolean }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
+  const state = () => slotState(props.slot, t());
   const total = () => props.slot.maxPeople ?? Math.max(props.slot.minPeople, props.slot.assignedCount, 1);
   const pct = () => Math.min(100, Math.round((props.slot.assignedCount / total()) * 100));
   return (
     <div>
       <Show when={!props.compact}>
-        <div class="mb-1 flex items-center justify-between text-[11px] text-dimmed">
-          <span>{t().staffed({ assigned: props.slot.assignedCount, total: props.slot.maxPeople ?? props.slot.minPeople })}</span>
-          <span>{props.slot.missingPeople > 0 ? t().missing({ count: props.slot.missingPeople }) : t().covered}</span>
+        <div class="mb-1 flex flex-wrap items-center justify-between gap-x-2 text-[11px] text-dimmed">
+          <span>{t().staffed({ assigned: props.slot.assignedCount, target: slotTarget(props.slot) })}</span>
+          <SlotStateLabel state={state()} />
         </div>
       </Show>
       <div class={`${props.compact ? "h-1" : "h-1.5"} overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800`}>
-        <div
-          class={`h-full rounded-full ${props.slot.missingPeople > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
-          style={{ width: `${pct()}%` }}
-        />
+        <div class={`h-full rounded-full ${barTone[state().tone]}`} style={{ width: `${pct()}%` }} />
       </div>
     </div>
   );
@@ -144,24 +208,40 @@ export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | nul
   );
 }
 
-export function ClosedDayDialog(props: { close: (value: DateOverrideInput | null) => void; timeZone: string; initial?: DateOverride }) {
+/**
+ * Adds a closed day or edits an exception in its own kind: a special opening shows and saves its times, so saving
+ * never turns it into a closed day. Special openings are created through the API or CLI.
+ */
+export function ExceptionDialog(props: { close: (value: DateOverrideInput | null) => void; timeZone: string; initial?: DateOverride }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
+  const specialOpening = props.initial?.kind === "open";
   const [date, setDate] = createSignal<string | null>(props.initial?.date ?? todayDateKey());
-  const [note, setNote] = createSignal(props.initial?.note ?? t().publicHoliday);
+  const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "");
+  const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "");
+  const [note, setNote] = createSignal(props.initial?.note ?? (specialOpening ? "" : t().publicHoliday));
 
   const submit = () => {
     if (!date()) {
       prompts.error(t().pickDate);
       return;
     }
-    props.close({ date: date()!, kind: "closed", note: note().trim() || t().publicHoliday });
+    if (!specialOpening) {
+      props.close({ date: date()!, kind: "closed", note: note().trim() || t().publicHoliday });
+      return;
+    }
+    if (!startTime().trim() || !endTime().trim()) {
+      prompts.error(t().timesRequired);
+      return;
+    }
+    props.close({ date: date()!, kind: "open", startTime: startTime().trim(), endTime: endTime().trim(), note: note().trim() || null });
   };
 
   return (
     <DialogFrame
-      title={props.initial ? t().editClosedDay : t().addClosedDay}
-      icon="ti ti-calendar-x"
+      title={props.initial ? t().editException : t().addClosedDay}
+      subtitle={props.initial ? (specialOpening ? t().specialOpeningKind : t().closed) : undefined}
+      icon={specialOpening ? "ti ti-calendar-plus" : "ti ti-calendar-x"}
       submitLabel={props.initial ? t().save : t().add}
       onCancel={() => props.close(null)}
       onSubmit={submit}
@@ -174,7 +254,20 @@ export function ClosedDayDialog(props: { close: (value: DateOverrideInput | null
           dateConfig={timeZoneDateConfig(props.timeZone, locale())}
           required
         />
-        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().publicHoliday} />
+        <Show when={specialOpening}>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label={t().startTime}
+              value={startTime}
+              onValueChange={setStartTime}
+              placeholder="18:00"
+              inputMode="numeric"
+              required
+            />
+            <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="22:00" inputMode="numeric" required />
+          </div>
+        </Show>
+        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={specialOpening ? t().optional : t().publicHoliday} />
       </div>
     </DialogFrame>
   );

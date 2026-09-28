@@ -11,6 +11,7 @@ describe("venue dashboard query scope", () => {
       calendarDate: "2026-08-10",
       feedbackDays: 30,
       feedbackSearch: "",
+      feedbackComments: false,
       feedbackPage: 1,
     });
 
@@ -33,6 +34,7 @@ describe("venue dashboard query scope", () => {
       calendarDate: "2026-08-10",
       feedbackDays: 14,
       feedbackSearch: "late shift",
+      feedbackComments: false,
       feedbackPage: 3,
     });
 
@@ -56,6 +58,7 @@ describe("venue dashboard query scope", () => {
         calendarDate: "2026-08-10",
         feedbackDays: 30,
         feedbackSearch: "",
+        feedbackComments: false,
         feedbackPage,
       });
 
@@ -72,12 +75,32 @@ describe("venue dashboard query scope", () => {
       calendarDate: "2026-08-10",
       feedbackDays: 30,
       feedbackSearch: "",
+      feedbackComments: false,
       feedbackPage: 2,
     }).source;
 
     expect(sameVenueDashboardSource(source, { ...source, query: { ...source.query } })).toBe(true);
     expect(sameVenueDashboardSource(source, { ...source, query: { ...source.query, slotDays: "45" } })).toBe(false);
     expect(sameVenueDashboardSource(source, { ...source, query: { ...source.query, feedbackPage: "3" } })).toBe(false);
+    expect(sameVenueDashboardSource(source, { ...source, query: { ...source.query, feedbackComments: "true" } })).toBe(false);
+  });
+
+  test("asks for entries with a comment only in the feedback view", () => {
+    const scope = (view: "shifts" | "feedback") =>
+      venueDashboardRouteScope({
+        venueId: "11111111-1111-4111-8111-111111111111",
+        view,
+        calendarView: "week",
+        calendarDate: "2026-08-10",
+        feedbackDays: 30,
+        feedbackSearch: "",
+        feedbackComments: true,
+        feedbackPage: 1,
+      });
+
+    expect(scope("feedback").source.query.feedbackComments).toBe("true");
+    expect(VenueDashboardQuerySchema.parse(scope("feedback").source.query)).toEqual(scope("feedback").options);
+    expect(scope("shifts").source.query.feedbackComments).toBeUndefined();
   });
 
   test("rejects unbounded browser query input", () => {

@@ -214,14 +214,32 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
 
 const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("authenticated"), venueTodayWidgetHandler);
 
+const CalendarLinkSchema = z.object({ href: z.string() });
+
 const calendarRoutes = new Hono<AuthContext>()
   .get("/my", auth.requireRole("authenticated"), async (c) => {
     const user = requireUserBackedActor(c);
     if (!user.ok) return respond(c, user);
-    const token = await venueService.ical.getOrCreateToken(user.data.id);
-    const appUrl = await coreSettings.get<string>("app.url");
-    return respond(c, ok({ href: `${appUrl}/api/venue/calendar/${token}.ics` }));
+    return respond(c, ok({ href: await venueService.ical.url(await venueService.ical.getOrCreateToken(user.data.id)) }));
   })
+  .post(
+    "/my/renew",
+    describeRoute({
+      tags: ["Venues:Calendar"],
+      summary: "Renew personal calendar link",
+      description: "Replace the caller's personal iCal subscription link with a new one. The previous `.ics` URL answers 404 from then on.",
+      responses: {
+        200: jsonResponse(CalendarLinkSchema, "New calendar link"),
+        403: jsonResponse(ErrorResponseSchema, "The caller is not a user"),
+      },
+    }),
+    auth.requireRole("authenticated"),
+    async (c) => {
+      const user = requireUserBackedActor(c);
+      if (!user.ok) return respond(c, user);
+      return respond(c, ok({ href: await venueService.ical.url(await venueService.ical.renewToken(user.data.id)) }));
+    },
+  )
   .get("/:token", v("param", TokenParamSchema), async (c) => {
     const raw = c.req.valid("param").token;
     const token = raw.endsWith(".ics") ? raw.slice(0, -4) : raw;

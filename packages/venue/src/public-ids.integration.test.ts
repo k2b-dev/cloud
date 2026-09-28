@@ -321,6 +321,16 @@ suite("Venue routes with public IDs", () => {
         { method: "GET", route: "/app/venue/public/:id/feedback", params: venue, as: "anonymous", status: 200 },
         { method: "GET", route: "/api/venue/public/:id/status", params: venue, as: "anonymous", status: 200 },
         { method: "GET", route: "/api/venue/calendar/:token", params: { token: "calendarToken" }, as: "anonymous", status: 200 },
+        {
+          method: "POST",
+          route: "/api/venue/calendar/my/renew",
+          status: 200,
+          onBody: (body) => {
+            const renewed = new URL((body as { href: string }).href).pathname.split("/").pop()!;
+            expect(renewed).not.toBe(ids.calendarToken);
+            ids.calendarToken = renewed;
+          },
+        },
         // Routes without an ID parameter list the same populated Venues.
         {
           method: "GET",
@@ -460,6 +470,8 @@ suite("Venue routes with public IDs", () => {
         ["cafe key", "GET", `/api/venue/venues/${cafe}/dashboard`, undefined, 200],
         ["cafe key", "PATCH", `/api/venue/venues/${cafe}`, venueInput, 403],
         ["cafe key", "GET", `/api/venue/venues/${bakery}/dashboard`, undefined, 403],
+        // A Venue key acts for no person, so it cannot replace anyone's calendar link.
+        ["cafe key", "POST", "/api/venue/calendar/my/renew", undefined, 403],
       ];
       for (const [caller, method, path, body, status] of checks) {
         const response = await send(method, path, callers[caller], body);

@@ -158,7 +158,7 @@ describe("Venue settings lifecycle behavior", () => {
           dashboard,
           accessEntries: [],
           apiKeys: [],
-          icalToken: "ical-token",
+          onOpenCalendarSubscription: () => {},
           close: () => {},
         }),
       dom.root,
@@ -197,7 +197,7 @@ describe("Venue settings lifecycle behavior", () => {
           dashboard,
           accessEntries: [],
           apiKeys: [],
-          icalToken: "ical-token",
+          onOpenCalendarSubscription: () => {},
           close: (changed) => {
             closeResult = changed;
           },

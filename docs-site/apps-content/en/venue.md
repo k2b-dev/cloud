@@ -19,18 +19,21 @@ across different places.
 
 - Start from a blank venue or a template and set its public identity.
 - Define weekly opening hours and exceptions for individual dates.
-- Publish staffing slots and let staff sign up for upcoming shifts.
+- Publish staffing slots and let staff take upcoming shifts.
 - Add notices, Markdown, links, or menu sections to the public page, or keep
   them as drafts until they are ready.
-- Review visitor feedback and share personal calendar subscriptions for shifts.
+- Review visitor feedback, optionally only ratings with a comment, and
+  subscribe to your own shifts in a calendar app.
 
 Every time in a venue uses the venue's time zone and a 24-hour clock, so
 people who open the venue from another time zone see the same times as the
 people on site.
 
 Public content and opening status are visible without a Cloud account when the
-venue enables them. Staffing and administration still follow the venue's
-resource permissions.
+venue enables them. Upcoming staffed openings appear there as "Additionally
+open" with their times; the public page and its status API never show the
+internal names of shift templates. Staffing and administration still follow
+the venue's resource permissions.
 
 ## Understand the Venues model
 
@@ -41,7 +44,7 @@ resource permissions.
 | Shift template and assignment | A recurring staffing slot and the users assigned to its occurrences |
 | Public section | An ordered Markdown, menu, notice, or links block; the public page shows it unless it is a draft |
 | Feedback entry | A visitor rating (1 to 5 stars, required) and optional comment for one venue |
-| Personal calendar link | A tokenized iCal view of the current user's assigned shifts |
+| Personal calendar link | A tokenized iCal feed of the current user's shifts at every venue; renewing it replaces the token, and the old URL answers 404 |
 
 Read, staff, and admin permissions serve different jobs:
 
@@ -86,6 +89,11 @@ Run `cld venue help` for the available areas. Run
 `cld venue <command> --help` before changing access, schedules, shifts, or
 public content. `cld venue sections update` changes only the flags you pass,
 so editing a draft never publishes it.
+
+The feedback filter for ratings with a comment and the renewal of the
+personal calendar link are available in the workspace and the API
+(`feedbackComments=true` on the dashboard, `POST /api/venue/calendar/my/renew`),
+not in `cld venue`.
 
 ## Deployment requirements
 

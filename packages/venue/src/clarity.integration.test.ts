@@ -22,7 +22,7 @@ const venueApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }
   })
   .route("/api/venue", apiRoutes);
 
-const send = (method: "GET" | "POST" | "PATCH", path: string, cookie: string | null, body?: unknown) =>
+const send = (method: "GET" | "POST" | "PATCH" | "DELETE", path: string, cookie: string | null, body?: unknown) =>
   venueApp.request(path, {
     method,
     headers: {
@@ -155,7 +155,7 @@ suite("Venue sections and feedback say what they do", () => {
     });
   });
 
-  test("a sign-up answers with the name of the person who signed up", async () => {
+  test("a sign-up answers with the name of the person and the shift", async () => {
     const created = await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
       weekday: 3,
       title: "Morning counter",
@@ -171,7 +171,7 @@ suite("Venue sections and feedback say what they do", () => {
     const signup = (path: string, body: unknown) => send("POST", `/api/venue/venues/${venueId}/${path}`, cookie, body);
 
     const single = await json<ShiftAssignment>(await signup(`templates/${template.id}/signup`, { date }), 201, "sign up");
-    expect(single.userDisplayName).toBe("Venue clarity admin");
+    expect(single).toMatchObject({ userDisplayName: "Venue clarity admin", templateTitle: "Morning counter" });
 
     const weeks = await json<ShiftAssignment[]>(
       await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 }),
@@ -179,6 +179,7 @@ suite("Venue sections and feedback say what they do", () => {
       "sign up for two weeks",
     );
     expect(weeks.map((entry) => entry.userDisplayName)).toEqual(["Venue clarity admin", "Venue clarity admin"]);
+    expect(weeks.map((entry) => entry.templateTitle)).toEqual(["Morning counter", "Morning counter"]);
     // Weeks the person already has are skipped; the dialog reads the empty answer as "nothing added".
     const again = await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 });
     expect(await json<ShiftAssignment[]>(again, 201, "sign up for the same weeks again")).toEqual([]);
@@ -186,7 +187,15 @@ suite("Venue sections and feedback say what they do", () => {
     const startsAt = new Date(`${shiftDate(date, 1)}T15:00:00Z`).toISOString();
     const endsAt = new Date(`${shiftDate(date, 1)}T17:00:00Z`).toISOString();
     const free = await json<ShiftAssignment>(await signup("free-signup", { startsAt, endsAt, note: null }), 201, "free sign-up");
-    expect(free.userDisplayName).toBe("Venue clarity admin");
+    expect(free).toMatchObject({ userDisplayName: "Venue clarity admin", templateTitle: null });
+
+    // Deleting a template only deactivates it; the person's shift keeps its name instead of turning into free time.
+    expect((await send("DELETE", `/api/venue/venues/${venueId}/templates/${template.id}`, cookie)).status).toBe(200);
+    const board = await json<VenueDashboard>(await send("GET", `/api/venue/venues/${venueId}/dashboard`, cookie), 200, "dashboard");
+    expect(board.templates.some((entry) => entry.id === template.id)).toBe(false);
+    const mine = board.myUpcomingShifts.find((entry) => entry.id === single.id);
+    expect(mine).toMatchObject({ templateId: template.id, templateTitle: "Morning counter" });
+    expect(board.myUpcomingShifts.find((entry) => entry.id === free.id)?.templateTitle).toBeNull();
   });
 
   test("feedback counts, pages, and list totals cover the same window", async () => {
@@ -234,6 +243,16 @@ suite("Venue sections and feedback say what they do", () => {
     expect(searched.feedbackEntriesPage?.total).toBe(40);
     expect(searched.feedbackEntries.every((entry) => entry.comment?.startsWith("Espresso note"))).toBe(true);
 
+    // "Only with comment" narrows the list and its total to the rated comments; the figures stay the window's.
+    const withComment = await dashboard("&feedbackComments=true");
+    expect(withComment.feedback).toMatchObject({ count: 120, commentCount: 40 });
+    expect(withComment.feedbackEntriesPage).toEqual({ page: 1, pageSize: 50, total: 40 });
+    expect(withComment.feedbackEntries).toHaveLength(40);
+    expect(withComment.feedbackEntries.every((entry) => entry.comment)).toBe(true);
+    const commentedSearch = await dashboard("&feedbackComments=true&feedbackSearch=note%201");
+    expect(commentedSearch.feedbackEntriesPage?.total).toBe(commentedSearch.feedbackEntries.length);
+    expect(commentedSearch.feedbackEntries.every((entry) => entry.comment?.includes("note 1"))).toBe(true);
+
     // Without entries there is no list to place, so no page claims a total of zero next to 120 ratings.
     const summaryOnly = await json<VenueDashboard>(
       await send("GET", `/api/venue/venues/${venueId}/dashboard`, cookie),
@@ -243,5 +262,54 @@ suite("Venue sections and feedback say what they do", () => {
     expect(summaryOnly.feedback).toMatchObject({ count: 120 });
     expect(summaryOnly.feedbackEntries).toEqual([]);
     expect(summaryOnly.feedbackEntriesPage).toBeNull();
+  });
+
+  test("the public status lists staffed openings without the internal template title", async () => {
+    // A shift with a title only staff should see, taken for its next occurrence within the public 14-day window.
+    const tomorrow = shiftDate(dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" }), 1);
+    const created = await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
+      weekday: new Date(`${tomorrow}T12:00:00Z`).getUTCDay(),
+      title: "Crew Z backroom rota",
+      startTime: "17:00",
+      endTime: "21:00",
+      minPeople: 1,
+      maxPeople: 2,
+    });
+    const template = await json<ShiftTemplate>(created, 201, "create internal template");
+    await json(
+      await send("POST", `/api/venue/venues/${venueId}/templates/${template.id}/signup`, cookie, { date: tomorrow }),
+      201,
+      "take it",
+    );
+
+    const response = await send("GET", `/api/venue/public/${venueId}/status`, null);
+    const raw = await response.clone().text();
+    const status = await json<PublicStatus>(response, 200, "public status");
+    const opening = status.upcomingOpenings.find((entry) => entry.kind === "shift");
+    expect(opening).toMatchObject({ title: "Additionally open" });
+    expect(raw).not.toContain("Crew Z backroom rota");
+  });
+
+  test("renewing the calendar link retires the old subscription URL", async () => {
+    const path = (href: string) => new URL(href).pathname;
+    const current = await json<{ href: string }>(await send("GET", "/api/venue/calendar/my", cookie), 200, "calendar link");
+    // A calendar app needs an absolute URL, even when `app.url` is configured without a scheme.
+    expect(current.href).toMatch(/^https?:\/\/[^/]+\/api\/venue\/calendar\//);
+    expect((await send("GET", path(current.href), null)).status).toBe(200);
+
+    const renewed = await json<{ href: string }>(await send("POST", "/api/venue/calendar/my/renew", cookie), 200, "renew");
+    expect(renewed.href).not.toBe(current.href);
+    expect(path(renewed.href)).toMatch(/^\/api\/venue\/calendar\/[0-9a-f]{48}\.ics$/);
+    expect((await send("GET", path(current.href), null)).status).toBe(404);
+    const feed = await send("GET", path(renewed.href), null);
+    expect(feed.status).toBe(200);
+    expect(await feed.text()).toContain("BEGIN:VCALENDAR");
+    // The link the workspace shows next is the renewed one.
+    expect((await json<{ href: string }>(await send("GET", "/api/venue/calendar/my", cookie), 200, "calendar link again")).href).toBe(
+      renewed.href,
+    );
+
+    // Renewing needs a signed-in person.
+    expect((await send("POST", "/api/venue/calendar/my/renew", null)).status).toBe(401);
   });
 });

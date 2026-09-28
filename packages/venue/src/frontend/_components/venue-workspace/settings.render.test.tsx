@@ -49,7 +49,7 @@ const render = (permission: Venue["permission"], locale = "en") =>
           dashboard: dashboard(permission),
           accessEntries: [],
           apiKeys: [],
-          icalToken: "calendar-token",
+          onOpenCalendarSubscription: () => {},
           close: () => {},
         });
       },

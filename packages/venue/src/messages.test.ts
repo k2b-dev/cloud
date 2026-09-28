@@ -12,6 +12,43 @@ describe("Venue internationalization", () => {
     expect(venueMessages.resolve(["fr"]).t.appName).toBe("Venues");
   });
 
+  test("says how many people are missing in the singular and the plural", () => {
+    const de = venueMessages.resolve(["de"]).t;
+    const en = venueMessages.resolve(["en"]).t;
+    expect([de.missing({ count: 1 }), de.missing({ count: 2 })]).toEqual(["1 fehlt", "2 fehlen"]);
+    expect([en.missing({ count: 1 }), en.missing({ count: 2 })]).toEqual(["1 missing", "2 missing"]);
+    expect(de.staffed({ assigned: 0, target: "1–3" })).toBe("0 von 1–3 besetzt");
+    expect(en.staffed({ assigned: 0, target: "1–3" })).toBe("0 of 1–3 staffed");
+  });
+
+  test("words shift work so it does not read as signing in", () => {
+    const de = venueMessages.resolve(["de"]).t;
+    const en = venueMessages.resolve(["en"]).t;
+    expect([en.signUp, en.leave, en.openSpots, en.closedDays]).toEqual(["Take shift", "Leave", "Free spots", "Exceptions"]);
+    expect([de.signUp, de.leave, de.openSpots, de.closedDays]).toEqual(["Schicht übernehmen", "Austreten", "Freie Plätze", "Ausnahmen"]);
+    expect(Object.values(de).filter((value) => typeof value === "string" && /\banmelden\b/i.test(value))).toEqual([]);
+  });
+
+  test("lets the assistant confirm shift work in the workspace's words", () => {
+    const de = venueMessages.resolve(["de"]).t;
+    const shift = { title: "Theke", venue: "Café am Markt" };
+    expect([
+      de.capabilitySignupReview(shift),
+      de.capabilitySignedUp(shift),
+      de.capabilityFreeReview(shift),
+      de.capabilityFreeSignedUp(shift),
+      de.capabilityCancelReview(shift),
+      de.capabilityCancelled(shift),
+    ]).toEqual([
+      "Schicht „Theke“ bei Café am Markt übernehmen.",
+      "Schicht „Theke“ bei Café am Markt übernommen.",
+      "Freie Schicht bei Café am Markt hinzufügen.",
+      "Freie Schicht bei Café am Markt hinzugefügt.",
+      "Aus deiner Schicht bei Café am Markt austreten.",
+      "Du bist aus deiner Schicht bei Café am Markt ausgetreten.",
+    ]);
+  });
+
   test("localizes built-in templates without changing their stable IDs", () => {
     expect(listVenueTemplates("de-DE").map(({ id, name }) => ({ id, name }))).toEqual([
       { id: "service-desk", name: "Serviceschalter" },

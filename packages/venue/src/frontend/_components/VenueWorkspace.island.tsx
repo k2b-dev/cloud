@@ -34,10 +34,11 @@ import { venueMessages } from "../../messages";
 import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueTime } from "../../time-format";
 import { loadVenueDashboard, sameVenueDashboardSource, shiftDate } from "../dashboard-query";
 import { reconcileChangedSettings } from "../settings-contract";
+import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscription";
 import { DOUBLE_CLICK_CONFIRM_COOKIE } from "./venue-workspace/constants";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
 import { PublicSectionDialog, PublicSectionPreview, sectionKindIcon, sectionKindLabel } from "./venue-workspace/public-sections";
-import { ProgressBar } from "./venue-workspace/schedule";
+import { ProgressBar, SlotStateLabel, slotStaffingLabel, slotState } from "./venue-workspace/schedule";
 import { SettingsDialog } from "./venue-workspace/settings";
 import { ConfirmShiftSignupDialog, SignupDialog } from "./venue-workspace/signup";
 import { VenueTimeZoneNote } from "./venue-workspace/time-zone-note";
@@ -104,21 +105,24 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   };
   const viewHref = (next: VenueView) => `/app/venue/${venue().id}/${next}`;
   const feedbackRangeDays = createMemo(() => props.initialFeedbackDays);
-  const feedbackSearchAction = createMemo(() => {
-    const url = new URL(viewHref("feedback"), "http://venue.local");
-    if (props.initialFeedbackDays !== 30) url.searchParams.set("days", String(props.initialFeedbackDays));
-    return `${url.pathname}${url.search}`;
-  });
-  const feedbackFilterUrl = (days: FeedbackRange) => {
+  const feedbackComments = () => props.initialFeedbackComments === true;
+  /** The feedback view with its filters in the URL; the search box submits `search` itself. */
+  const feedbackFilterUrl = (filters: { days?: FeedbackRange; comments?: boolean; search?: string } = {}, withSearch = true) => {
+    const days = filters.days ?? feedbackRangeDays();
+    const comments = filters.comments ?? feedbackComments();
+    const search = filters.search ?? props.initialFeedbackSearch;
     const url = new URL(viewHref("feedback"), "http://venue.local");
     if (days !== 30) url.searchParams.set("days", String(days));
-    if (props.initialFeedbackSearch) url.searchParams.set("search", props.initialFeedbackSearch);
+    if (comments) url.searchParams.set("comments", "1");
+    if (withSearch && search) url.searchParams.set("search", search);
     return `${url.pathname}${url.search}`;
   };
+  const feedbackSearchAction = createMemo(() => feedbackFilterUrl({}, false));
   const setFeedbackDays = (value: string[]) => {
     const next = Number(value[0] ?? 30);
-    navigateTo(feedbackFilterUrl(next === 7 || next === 14 ? next : 30));
+    navigateTo(feedbackFilterUrl({ days: next === 7 || next === 14 ? next : 30 }));
   };
+  const setFeedbackComments = (value: string[]) => navigateTo(feedbackFilterUrl({ comments: value[0] === "comments" }));
   // The server scopes counts, buckets, and entries to the same feedback window.
   const feedbackBuckets = () => dashboard().feedback?.buckets ?? [];
   const feedbackAverage = () => dashboard().feedback?.averageRating ?? null;
@@ -128,13 +132,16 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     return page && page.total > 0 ? page : null;
   };
   const feedbackPageBaseUrl = () => {
-    const url = new URL(feedbackFilterUrl(feedbackRangeDays()), "http://venue.local");
+    const url = new URL(feedbackFilterUrl(), "http://venue.local");
     url.searchParams.set("page", "");
     return `${url.pathname}?${url.searchParams.toString()}`;
   };
   const formatAverage = (value: number) =>
     `${new Intl.NumberFormat(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}/5`;
   const feedbackChartLabels = createMemo(() => feedbackBuckets().map((bucket) => formatDateKey(bucket.date, locale())));
+  const feedbackCountData = createMemo(() =>
+    feedbackBuckets().map((bucket, index) => ({ label: feedbackChartLabels()[index] ?? bucket.date, value: bucket.count })),
+  );
   const feedbackChartData = createMemo(() =>
     feedbackBuckets()
       .map((bucket, index) => ({ bucket, index }))
@@ -168,11 +175,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       title: slot.template.title,
       start: slot.startsAt,
       end: slot.endsAt,
-      color: !isSlotActive(slot) || slot.full ? "zinc" : slot.missingPeople > 0 ? "amber" : "emerald",
+      color: slotState(slot, t()).color,
       meta: slot.assignments.map((entry) => entry.userDisplayName).join(", ") || t().noOneYet,
-      description: `${slot.assignedCount}/${slot.minPeople}${slot.maxPeople ? ` · max ${slot.maxPeople}` : ""}`,
+      description: slotStaffingLabel(slot, t()),
     })),
   );
+  /** An assignment carries its shift's name, also once the template is paused or deleted; free time has none. */
+  const assignmentTitle = (assignment: ShiftAssignment) => assignment.templateTitle ?? t().freeTime;
   const sectionHref = (section: PublicSection) => `/app/venue/${venue().id}/public-sections/${section.id}`;
   // Only admins manage sections; others see the group only when their view contains a section.
   const showPublicContent = () => canAdmin(venue()) || dashboard().sections.length > 0;
@@ -211,6 +220,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     );
   };
   const openPublicPage = () => openVenuePublicDisplayDialog(venue().id, locale());
+  // Renewing replaces the token on the server, so every later dialog has to start from the new URL.
+  const [calendarUrl, setCalendarUrl] = createSignal(props.calendarUrl);
+  const openCalendarSubscription = () =>
+    dialogCore.open<void>(
+      (close) => <CalendarSubscriptionDialog url={calendarUrl()} onRenewed={setCalendarUrl} close={() => close()} />,
+      panelDialogOptions,
+    );
 
   const calendarSignup = mutation.create<void, { venueId: string; templateId: string; date: string }>({
     mutation: async ({ venueId, templateId, date }, { abortSignal }) => {
@@ -260,7 +276,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
           await runWorkspaceWrite(
             calendarSignup,
             { venueId: intent.venueId, templateId: intent.templateId, date: intent.date },
-            t().shiftAdded,
+            t().shiftTaken,
           );
         }
       },
@@ -277,7 +293,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
               dashboard={snapshot}
               accessEntries={props.accessEntries}
               apiKeys={props.apiKeys}
-              icalToken={props.icalToken}
+              onOpenCalendarSubscription={openCalendarSubscription}
               close={close}
             />
           ),
@@ -384,7 +400,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
         venueId: venue().id,
         input: {
           kind: section.kind,
-          title: `${section.title} copy`,
+          title: t().sectionCopy({ title: section.title }),
           content: { ...section.content },
           enabled: section.enabled,
           position: dashboard().sections.length + 1,
@@ -431,30 +447,35 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
         { param: { id: venueId, assignmentId } },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, t().cancelShiftFailed));
+      if (!res.ok) throw new Error(await readError(res, t().leaveShiftFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
 
-  const confirmCancelAssignment = async (assignment: ShiftAssignment) => {
+  /** The entry whose Leave action runs, so only its button shows progress. */
+  const [leavingAssignmentId, setLeavingAssignmentId] = createSignal<string | null>(null);
+  const confirmLeaveShift = async (assignment: ShiftAssignment) => {
     const intent = {
       venueId: venue().id,
       assignmentId: assignment.id,
-      label: t().assignmentAt({
-        name: assignment.userDisplayName,
-        date: formatVenueSpan(assignment.startsAt, assignment.endsAt, venue().timezone, locale()),
-      }),
+      title: assignmentTitle(assignment),
+      date: formatVenueSpan(assignment.startsAt, assignment.endsAt, venue().timezone, locale()),
     };
     await runPromptedAction(
+      // Leaving is an ordinary action; only the confirmation carries the danger tone.
       () =>
-        prompts.confirm(t().cancelShiftQuestion({ label: intent.label }), {
-          title: t().cancelShift,
+        prompts.confirm(t().leaveShiftQuestion({ title: intent.title, date: intent.date }), {
+          title: t().leaveShift,
           variant: "danger",
-          confirmText: t().cancelShift,
+          confirmText: t().leave,
         }),
       async (confirmed) => {
-        if (confirmed) {
-          await runWorkspaceWrite(cancelAssignment, { venueId: intent.venueId, assignmentId: intent.assignmentId }, t().shiftCancelled);
+        if (!confirmed) return;
+        setLeavingAssignmentId(intent.assignmentId);
+        try {
+          await runWorkspaceWrite(cancelAssignment, { venueId: intent.venueId, assignmentId: intent.assignmentId }, t().shiftLeft);
+        } finally {
+          setLeavingAssignmentId(null);
         }
       },
     );
@@ -828,9 +849,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     }
                     renderEvent={(event, context) => {
                       const slot = slotByKey().get(event.id);
-                      const slotProgress = !context.compact ? slot : undefined;
+                      const slotProgress = !context.compact && slot && isSlotActive(slot) ? slot : undefined;
                       const slotAttendees = context.durationHours >= 1.5 ? slot : undefined;
-                      const ended = slot ? !isSlotActive(slot) : false;
                       return (
                         <div class="flex min-h-0 min-w-0 flex-col gap-1">
                           <span class="block truncate text-[11px] font-semibold">{event.title}</span>
@@ -838,12 +858,11 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                             {formatVenueTime(context.start.toISOString(), venue().timezone, locale())}–
                             {formatVenueTime(context.end.toISOString(), venue().timezone, locale())}
                           </span>
-                          <Show
-                            when={ended}
-                            fallback={<Show when={slotProgress}>{(currentSlot) => <ProgressBar slot={currentSlot()} compact />}</Show>}
-                          >
-                            <span class="block truncate text-[10px] font-semibold opacity-75">{t().ended}</span>
+                          {/* Text and icon carry the state; the event color only repeats it. */}
+                          <Show when={slot}>
+                            {(currentSlot) => <SlotStateLabel state={slotState(currentSlot(), t())} class="text-[10px] font-semibold" />}
                           </Show>
+                          <Show when={slotProgress}>{(currentSlot) => <ProgressBar slot={currentSlot()} compact />}</Show>
                           <Show when={slotAttendees}>
                             {(currentSlot) => (
                               <span class="block truncate text-[10px] opacity-75">
@@ -867,9 +886,9 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     description={t().myShiftsDescription}
                     action={
                       <>
-                        <ButtonLink variant="secondary" size="sm" href={`/api/venue/calendar/${props.icalToken}.ics`}>
-                          <i class="ti ti-calendar-down" /> iCal
-                        </ButtonLink>
+                        <Button type="button" variant="secondary" size="sm" onClick={openCalendarSubscription}>
+                          <i class="ti ti-calendar-share" aria-hidden="true" /> {t().subscribeCalendar}
+                        </Button>
                         <Show when={canWrite(venue())}>
                           <Button type="button" size="sm" disabled={workspaceActionBlocked()} onClick={openSignup}>
                             <i class="ti ti-user-plus" /> {t().signUp}
@@ -890,21 +909,27 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       <div class="grid gap-1">
                         <For each={dashboard().myUpcomingShifts}>
                           {(shift) => (
-                            <div class="flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900">
-                              <div class="min-w-0">
-                                <p class="font-medium text-primary">
-                                  {formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale())}
+                            // The row wraps on narrow screens: the date line never truncates, and Leave keeps its touch size.
+                            <div
+                              class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg px-3 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                              data-my-shift={shift.id}
+                            >
+                              <div class="min-w-0 flex-1">
+                                <p class="font-medium text-primary [overflow-wrap:anywhere]">
+                                  {formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale())} · {assignmentTitle(shift)}
                                 </p>
-                                <p class="text-xs text-dimmed">{shift.note || t().shift}</p>
+                                <Show when={shift.note}>
+                                  {(note) => <p class="text-xs text-dimmed [overflow-wrap:anywhere]">{note()}</p>}
+                                </Show>
                               </div>
                               <Button
                                 type="button"
-                                variant="danger"
-                                size="sm"
+                                variant="secondary"
+                                loading={leavingAssignmentId() === shift.id}
                                 disabled={workspaceActionBlocked()}
-                                onClick={() => void confirmCancelAssignment(shift)}
+                                onClick={() => void confirmLeaveShift(shift)}
                               >
-                                <i class={cancelAssignment.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-x"} /> {t().cancel}
+                                {t().leave}
                               </Button>
                             </div>
                           )}
@@ -960,19 +985,30 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     />
                   </StatGrid>
 
-                  <div class="paper h-64 p-3 text-dimmed">
+                  {/* Straight segments on the full 1–5 scale, so the line neither overshoots nor exaggerates small changes. */}
+                  <div class="paper flex h-64 flex-col gap-1 p-3 text-dimmed">
+                    <p class="text-xs font-medium">{t().averageRating}</p>
                     <Chart
                       kind="line"
-                      class="h-full min-h-0"
+                      class="min-h-0 flex-1"
                       series={[{ label: t().averageRating, data: feedbackChartData() }]}
                       xAxis={{ format: (value) => feedbackChartLabels()[Math.max(0, Math.round(value) - 1)] ?? "" }}
-                      yAxis={{ format: (value) => `${value}/5` }}
-                      smooth
+                      yAxis={{ domain: [1, 5], ticks: 5, format: (value) => `${value}/5` }}
+                      smooth={false}
+                    />
+                  </div>
+                  <div class="paper flex h-40 flex-col gap-1 p-3 text-dimmed">
+                    <p class="text-xs font-medium">{t().ratingsPerDay}</p>
+                    <Chart
+                      kind="bar"
+                      class="min-h-0 flex-1"
+                      data={feedbackCountData()}
+                      yAxis={{ ticks: 3, format: (value) => (Number.isInteger(value) ? String(value) : "") }}
                     />
                   </div>
 
-                  <div class="flex items-stretch gap-2 px-1">
-                    <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-stretch gap-2 px-1">
+                    <div class="min-w-48 flex-1">
                       <SearchBar
                         action={feedbackSearchAction()}
                         value={props.initialFeedbackSearch}
@@ -990,6 +1026,23 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       defaultValue={["30"]}
                       position="bottom-right"
                     />
+                    <FilterChip
+                      label={feedbackComments() ? t().onlyWithComment : t().allRatings}
+                      icon="ti ti-message"
+                      options={[
+                        {
+                          options: [
+                            { value: "all", label: t().allRatings, icon: "ti ti-message-star" },
+                            { value: "comments", label: t().onlyWithComment, icon: "ti ti-message" },
+                          ],
+                        },
+                      ]}
+                      value={[feedbackComments() ? "comments" : "all"]}
+                      onValueChange={setFeedbackComments}
+                      isActive={feedbackComments()}
+                      defaultValue={["all"]}
+                      position="bottom-right"
+                    />
                   </div>
 
                   <div class="paper overflow-hidden">
@@ -1003,15 +1056,29 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       empty={
                         props.initialFeedbackSearch
                           ? t().noMatchingFeedback({ search: props.initialFeedbackSearch })
-                          : t().noFeedbackInDays({ count: feedbackRangeDays() })
+                          : feedbackComments()
+                            ? t().noFeedbackWithComment({ count: feedbackRangeDays() })
+                            : t().noFeedbackInDays({ count: feedbackRangeDays() })
                       }
                       renderCell={({ row: entry, col, value, render }) => {
                         if (col.id === "rating") {
+                          // Filled and outlined stars differ in shape, and the label states the value.
                           return (
-                            <span class="inline-flex items-center gap-0.5 whitespace-nowrap text-amber-500 dark:text-amber-400">
+                            <span
+                              role="img"
+                              aria-label={t().ratingValue({ count: entry.rating })}
+                              class="inline-flex items-center gap-0.5 whitespace-nowrap text-amber-500 dark:text-amber-400"
+                            >
                               <For each={[1, 2, 3, 4, 5]}>
                                 {(star) => (
-                                  <i class={`ti ti-star text-sm ${star <= entry.rating ? "" : "text-zinc-300 dark:text-zinc-600"}`} />
+                                  <i
+                                    aria-hidden="true"
+                                    class={
+                                      star <= entry.rating
+                                        ? "ti ti-star-filled text-sm"
+                                        : "ti ti-star text-sm text-zinc-300 dark:text-zinc-600"
+                                    }
+                                  />
                                 )}
                               </For>
                             </span>

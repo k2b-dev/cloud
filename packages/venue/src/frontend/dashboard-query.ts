@@ -10,6 +10,7 @@ export type VenueDashboardSource = {
     includeFeedbackEntries?: "true" | "false";
     feedbackDays?: string;
     feedbackSearch?: string;
+    feedbackComments?: "true";
     feedbackPage?: string;
   };
 };
@@ -22,6 +23,7 @@ export type VenueDashboardRouteScope = {
     includeFeedbackEntries: boolean;
     feedbackDays: number;
     feedbackSearch?: string;
+    feedbackComments?: boolean;
     feedbackPage?: number;
   };
 };
@@ -43,6 +45,7 @@ export const venueDashboardRouteScope = (input: {
   calendarDate: string;
   feedbackDays: number;
   feedbackSearch: string;
+  feedbackComments: boolean;
   feedbackPage: number;
 }): VenueDashboardRouteScope => {
   const slots = input.view === "shifts" ? slotWindow(input.calendarView, input.calendarDate) : { startDate: input.calendarDate, days: 14 };
@@ -53,6 +56,7 @@ export const venueDashboardRouteScope = (input: {
     includeFeedbackEntries,
     feedbackDays: input.feedbackDays,
     feedbackSearch: input.feedbackSearch || undefined,
+    feedbackComments: includeFeedbackEntries && input.feedbackComments ? true : undefined,
     feedbackPage: includeFeedbackEntries && input.feedbackPage > 1 ? input.feedbackPage : undefined,
   };
   return {
@@ -65,6 +69,7 @@ export const venueDashboardRouteScope = (input: {
         includeFeedbackEntries: String(options.includeFeedbackEntries) as "true" | "false",
         feedbackDays: String(options.feedbackDays),
         feedbackSearch: options.feedbackSearch,
+        feedbackComments: options.feedbackComments ? "true" : undefined,
         feedbackPage: options.feedbackPage === undefined ? undefined : String(options.feedbackPage),
       },
     },
@@ -78,6 +83,7 @@ export const sameVenueDashboardSource = (left: VenueDashboardSource, right: Venu
   left.query.includeFeedbackEntries === right.query.includeFeedbackEntries &&
   left.query.feedbackDays === right.query.feedbackDays &&
   left.query.feedbackSearch === right.query.feedbackSearch &&
+  left.query.feedbackComments === right.query.feedbackComments &&
   left.query.feedbackPage === right.query.feedbackPage;
 
 export const loadVenueDashboard = async (
