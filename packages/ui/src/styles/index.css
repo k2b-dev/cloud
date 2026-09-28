@@ -5887,6 +5887,12 @@
   /* Keep the observer target measurable without extending a fill-height table. */
   height: 1px;
   margin-top: -1px;
+  /* A wide table scrolled sideways would otherwise clip the sentinel, so a
+     page-scrolling table would never see its end. Positioning paints it above
+     the last row, so it also stays out of hit-testing. */
+  position: sticky;
+  left: 0;
+  pointer-events: none;
 }
 
 /* -------------------------------------------------------------- log table */
