@@ -11,7 +11,7 @@ import * as refreshTokens from "./service/refresh-tokens";
 import type { OAuthUserGrantReference } from "./service/token-authority";
 import * as tokens from "./service/tokens";
 
-// This suite intentionally exercises schema upgrades and must use a disposable DB.
+// This suite exercises schema upgrades on the shared `_test` database and restores the schema itself.
 const suite = suiteFor("database");
 const deferred = () => {
   let resolve!: () => void;
@@ -176,9 +176,11 @@ suite("OAuth external review regressions", () => {
 
   test("audience upgrade rolls back atomically, preserves grants and rejects old writers", async () => {
     const { userId, client } = await fixture();
+    // The test database keeps codes from earlier runs; name and read only this client's codes.
+    const code = (name: string) => `${client.clientId}:${name}`;
     await sql`ALTER TABLE oauth.codes DROP COLUMN audiences`.simple();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
-      VALUES ('before-upgrade', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+      VALUES (${code("before-upgrade")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     await sql`CREATE FUNCTION oauth.reject_audience_backfill() RETURNS trigger AS $$ BEGIN
       RAISE EXCEPTION 'injected audience migration failure'; END; $$ LANGUAGE plpgsql`.simple();
     await sql`CREATE TRIGGER reject_audience_backfill BEFORE UPDATE ON oauth.codes
@@ -198,21 +200,23 @@ suite("OAuth external review regressions", () => {
     // Also repair grants written with the previous migration's incorrect default.
     await sql`ALTER TABLE oauth.codes ALTER COLUMN audiences SET DEFAULT ARRAY['cloud']::text[]`.simple();
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
-      VALUES ('previous-default', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+      VALUES (${code("previous-default")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     await migrate();
     const oldWriter = async () => {
       await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, resource)
-        VALUES ('old-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
+        VALUES (${code("old-writer")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', 'mail')`;
     };
-    await expect(oldWriter()).rejects.toThrow();
+    await expect(oldWriter()).rejects.toThrow('null value in column "audiences"');
     await sql`INSERT INTO oauth.codes (code, client_id, user_id, redirect_uri, audiences)
-      VALUES ('new-writer', ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', ARRAY['cloud', ${client.clientId}])`;
+      VALUES (${code("new-writer")}, ${client.clientId}, ${userId}::uuid, 'https://client.test/callback', ARRAY['cloud', ${client.clientId}])`;
     await migrate();
-    const rows = await sql<{ code: string; audiences: string[] }[]>`SELECT code, audiences FROM oauth.codes ORDER BY code`;
+    const rows = await sql<{ code: string; audiences: string[] }[]>`
+      SELECT code, audiences FROM oauth.codes WHERE client_id = ${client.clientId} ORDER BY code
+    `;
     expect(rows).toEqual([
-      { code: "before-upgrade", audiences: ["mail"] },
-      { code: "new-writer", audiences: ["cloud", client.clientId] },
-      { code: "previous-default", audiences: ["mail"] },
+      { code: code("before-upgrade"), audiences: ["mail"] },
+      { code: code("new-writer"), audiences: ["cloud", client.clientId] },
+      { code: code("previous-default"), audiences: ["mail"] },
     ]);
   }, 60_000);
 
@@ -240,7 +244,7 @@ suite("OAuth external review regressions", () => {
           .sign(pair.privateKey);
       const valid = await sign(kid);
       expect(await tokens.verifyAccessToken({ token: valid, issuer: "https://cloud.test" })).not.toBeNull();
-      // The suite is opt-in and asserts its disposable database before running.
+      // The suite is opt-in and asserts its `_test` database before running.
       await sql`ALTER TABLE auth.signing_keys RENAME TO signing_keys_cache_outage`.simple();
       renamed = true;
       expect(await tokens.verifyAccessToken({ token: await sign(crypto.randomUUID()), issuer: "https://cloud.test" })).toBeNull();
