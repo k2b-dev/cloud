@@ -1194,12 +1194,12 @@ const signupTemplate = async (
             WHERE sa.template_id = t.id AND sa.starts_at = ${start}
           ) < t.max_people
         )
-      RETURNING *, NULL::text AS user_display_name
+      RETURNING *, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
     `,
     );
     const row = rows[0];
     if (!row) return fail(err.badInput("This shift is already full"));
-    return ok((await assignmentsForRange(venue.id, start, end)).find((entry) => entry.id === row.id) ?? mapAssignment(row));
+    return ok(mapAssignment(row));
   });
 };
 
@@ -1238,13 +1238,11 @@ const signupFree = async (
     INSERT INTO venue.shift_assignments (short_id, venue_id, user_id, starts_at, ends_at, note)
     VALUES (${shortId}, ${venueId}::uuid, ${user.id}::uuid, ${start}, ${end}, ${input.note?.trim() || null})
     ON CONFLICT (venue_id, user_id, starts_at, ends_at) DO NOTHING
-    RETURNING *, NULL::text AS user_display_name
+    RETURNING *, (SELECT display_name FROM auth.users WHERE id = ${user.id}::uuid) AS user_display_name
   `,
   );
   const row = rows[0];
-  return row
-    ? ok((await assignmentsForRange(venueId, start, end)).find((entry) => entry.id === row.id) ?? mapAssignment(row))
-    : fail(err.badInput("You are already signed up for this time range"));
+  return row ? ok(mapAssignment(row)) : fail(err.badInput("You are already signed up for this time range"));
 };
 
 const cancelAssignment = async (venueId: string, assignmentId: string, user: UserLike, canAdmin: boolean): Promise<Result<void>> => {
