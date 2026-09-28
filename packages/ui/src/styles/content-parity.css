@@ -1837,6 +1837,11 @@
   @apply flex shrink-0 flex-wrap items-center gap-2;
 }
 
+.k2b-ui .k2b-content-pdf-preview__notice {
+  @apply text-sm;
+  color: var(--k2b-danger-text);
+}
+
 .k2b-ui .k2b-content-pdf-preview__empty {
   @apply flex min-h-0 flex-1 items-center justify-center p-6 text-center text-sm;
   color: var(--k2b-text-muted);
