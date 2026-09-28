@@ -15,6 +15,8 @@ Nutzer mit Leserechten sehen immer **Buch**: eine Leseansicht mit Seitennavigati
 
 In der Buchansicht aktualisieren Seitenlinks, Tagfilter, Suche und Seitennavigation den Inhalt ohne vollständiges Neuladen. Zurück und Vorwärts führen zu vorherigen Lesestellen. Gespeicherte Änderungen aktualisieren die Seite und ihre Abfrageergebnisse automatisch. Ohne JavaScript funktionieren Links und Filter weiterhin über normale Seitenaufrufe.
 
+Wähle in der Seitenleiste der Buchansicht eine Seite aus, um sie zu öffnen, oder blende mit dem Pfeil daneben ihre Unterseiten ein oder aus. Beim Laden zeigt die Buchansicht die aktuelle Seite mit ihren Unterseiten. Danach behält sie deine Auswahl bei und klappt nur die Seiten auf, in denen die geöffnete Seite liegt.
+
 Nutzer mit Schreib- oder Adminrechten können zwischen drei Ansichten wechseln:
 
 - **Bearbeiten:** Die Notiz bearbeiten und den Detailbereich nutzen.
