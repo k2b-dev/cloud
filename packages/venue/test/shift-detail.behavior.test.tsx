@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { dates } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
@@ -87,12 +87,12 @@ const freeTime = person("Asg005", "user-5", "Robin Probe", {
   note: "Inventory count",
 });
 
-const board = (permission: Venue["permission"]): VenueDashboard => ({
+const board = (permission: Venue["permission"], slot: UpcomingSlot = shift): VenueDashboard => ({
   venue: { ...venue, permission },
   openingRules: [],
   overrides: [],
   templates: [shift.template],
-  slots: [shift],
+  slots: [slot],
   otherAssignments: [freeTime],
   outlook: { startDate: shiftDay, endDate: addDays(shiftDay, 6), missingPeople: 1, nextGap: null },
   assignments: [],
@@ -109,13 +109,28 @@ const buttonNamed = (root: ParentNode, name: string) =>
     (entry) => entry.textContent?.trim() === name || entry.getAttribute("aria-label") === name,
   );
 
+/** The shift with the viewer (`user-1`) signed up as well. */
+const mine = person("Asg001", "user-1", "Alex Example");
+const shiftWithMine: UpcomingSlot = {
+  ...shift,
+  assignments: [...people, mine],
+  assignedCount: 3,
+  missingPeople: 0,
+};
+
 type Request = { method: string; path: string; body: unknown };
+
+const previousCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
 
 /** One document for every render: Solid delegates events to the document of the first import. */
 const harness = async (dom: DomTestHarness) => {
+  // Replacing the URL keeps the detail's scroll position through `CSS.escape`, which the DOM harness leaves out.
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
   const requests: Request[] = [];
   let holdDeletes = false;
   const held: Array<() => void> = [];
+  /** What the dashboard reload returns after a change. */
+  let served = board("admin");
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
     const method = input instanceof Request ? input.method : (init?.method ?? "GET");
@@ -126,22 +141,28 @@ const harness = async (dom: DomTestHarness) => {
       return new Promise<Response>((resolve) => held.push(() => resolve(response())));
     }
     if (method === "POST") return Response.json([], { status: 201 });
-    return Response.json(board("admin"));
+    return Response.json(served);
   }) as typeof fetch;
 
   const { LocaleProvider } = await import("@k2b/ui");
   const { default: VenueWorkspace } = await import("../src/frontend/_components/VenueWorkspace.island");
   const mount = (
     permission: Venue["permission"],
-    options: { width?: number; initialShiftId?: string | null; viewSource?: "url" | "cookie" | "default" } = {},
+    options: {
+      width?: number;
+      initialShiftId?: string | null;
+      viewSource?: "url" | "cookie" | "default";
+      dashboard?: VenueDashboard;
+    } = {},
   ) => {
     dom.window.happyDOM.setViewport({ width: options.width ?? 1440, height: 900 });
-    dom.window.history.replaceState(null, "", `/app/venue/Cafe01/shifts?cv=week&cd=${shiftDay}`);
+    const shared = options.initialShiftId ? `&shift=${options.initialShiftId}` : "";
+    dom.window.history.replaceState(null, "", `/app/venue/Cafe01/shifts?cv=week&cd=${shiftDay}${shared}`);
     return render(
       () => (
         <LocaleProvider locale="en">
           <VenueWorkspace
-            dashboard={board(permission)}
+            dashboard={options.dashboard ?? board(permission)}
             dashboardSource={{ venueId: "Cafe01", query: {} }}
             userId="user-1"
             calendarUrl="https://cloud.example.test/api/venue/calendar/calendar-token.ics"
@@ -173,6 +194,14 @@ const harness = async (dom: DomTestHarness) => {
   const detail = () => dom.root.querySelector<HTMLElement>(".k2b-app-workspace__detail")!;
   const sheet = () => dom.document.querySelector<HTMLElement>(".k2b-bottom-sheet-frame");
   const selectedInUrl = () => new URL(dom.window.location.href).searchParams.get("shift");
+  const gapsInUrl = () => new URL(dom.window.location.href).searchParams.get("gaps");
+  const titles = () => [...dom.root.querySelectorAll<HTMLElement>("[data-calendar-event]")].map((node) => node.textContent ?? "");
+  const chooseFilter = async (label: string) => {
+    const option = [...dom.root.querySelectorAll<HTMLElement>("[role='menuitemradio']")].find((node) => node.textContent?.includes(label));
+    if (!option) throw new Error(`No filter option ${label}`);
+    option.click();
+    await flush();
+  };
   return {
     requests,
     mount,
@@ -181,6 +210,12 @@ const harness = async (dom: DomTestHarness) => {
     detail,
     sheet,
     selectedInUrl,
+    gapsInUrl,
+    titles,
+    chooseFilter,
+    serve: (next: VenueDashboard) => {
+      served = next;
+    },
     holdDeletes: () => {
       holdDeletes = true;
     },
@@ -195,6 +230,11 @@ describe("Venue shift detail", () => {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
+
+  afterEach(() => {
+    if (previousCss) Object.defineProperty(globalThis, "CSS", previousCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
+  });
 
   test("one click opens the detail beside the calendar, with actions that follow the viewer's access", async () => {
     const dom = createDomTestHarness();
@@ -322,6 +362,83 @@ describe("Venue shift detail", () => {
       expect(page.detail().hidden).toBe(false);
       expect(page.detail().textContent).toContain("Kim Muster");
       dispose();
+    } finally {
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("closing a detail leaves the schedule as the person left it", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    try {
+      const page = await harness(dom);
+
+      // A shared link opens a shift; picking another one replaces it, so closing does not reopen the first.
+      let dispose = page.mount("read", { initialShiftId: `Temp01:${shiftDay}` });
+      await flush();
+      expect(page.detail().textContent).toContain("Kim Muster");
+      const entries = dom.window.history.length;
+      await page.tap("Free time");
+      expect(page.selectedInUrl()).toBe("a:Asg005");
+      expect(dom.window.history.length).toBe(entries);
+      buttonNamed(page.detail(), "Close shift details")!.click();
+      await flush();
+      expect(page.detail().hidden).toBe(true);
+      expect(page.selectedInUrl()).toBeNull();
+      dispose();
+
+      // Without a change, closing goes back to where the person came from.
+      dispose = page.mount("read");
+      await flush();
+      await page.tap("Lunch counter");
+      buttonNamed(page.detail(), "Close shift details")!.click();
+      await flush();
+      expect(page.detail().hidden).toBe(true);
+      expect(page.selectedInUrl()).toBeNull();
+      expect(dom.window.history.state).toBeNull();
+
+      // The gaps filter chosen while the detail is open stays on after closing it.
+      await page.tap("Lunch counter");
+      await page.chooseFilter("Gaps only");
+      expect({ shift: page.selectedInUrl(), gaps: page.gapsInUrl() }).toEqual({ shift: `Temp01:${shiftDay}`, gaps: "1" });
+      buttonNamed(page.detail(), "Close shift details")!.click();
+      await flush();
+      expect(page.detail().hidden).toBe(true);
+      expect({ shift: page.selectedInUrl(), gaps: page.gapsInUrl() }).toEqual({ shift: null, gaps: "1" });
+      expect(page.titles().some((title) => title.includes("Free time"))).toBe(false);
+      dispose();
+    } finally {
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("leaving a shift opened from My shifts keeps its detail open on the shift", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    try {
+      const page = await harness(dom);
+      for (const width of [1440, 390]) {
+        page.serve(board("write"));
+        const dispose = page.mount("write", { width, initialShiftId: "a:Asg001", dashboard: board("write", shiftWithMine) });
+        await flush();
+        const surface = () => (width === 1440 ? page.detail() : page.sheet()!);
+        const opened = surface();
+        expect(opened.textContent).toContain("Alex Example (you)");
+
+        buttonNamed(surface(), "Leave")!.click();
+        await flush();
+        buttonNamed(dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!, "Leave")!.click();
+        await flush();
+        expect(page.requests.at(-2)).toMatchObject({ method: "DELETE", path: "/api/venue/venues/Cafe01/assignments/Asg001" });
+        // The sign-up is gone; the same detail stays on the shift and offers Take again.
+        expect(page.selectedInUrl()).toBe(`Temp01:${shiftDay}`);
+        expect(surface()).toBe(opened);
+        expect(surface().textContent).not.toContain("Alex Example");
+        expect(buttonNamed(surface(), "Take shift")).toBeDefined();
+        dispose();
+      }
     } finally {
       globalThis.fetch = originalFetch;
       dom.cleanup();

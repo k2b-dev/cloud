@@ -258,23 +258,27 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     view() === "shifts" && !selectedSectionId() ? resolveShiftSelection(dashboard(), selectedShiftId()) : null,
   );
   const selectedEventId = createMemo(() => selection()?.eventId ?? null);
-  type SelectionHistoryState = { venueShiftSelection?: boolean } | null;
+  /** Marks an entry this page pushed for a selection; `gaps` is the filter of the entry below it. */
+  type SelectionHistoryState = { venueShiftSelection?: boolean; gaps?: boolean } | null;
   const selectShift = (id: string) => {
-    // Switching from one selected shift to another replaces its entry, so Back and closing leave the detail.
-    const replace = Boolean(selectedShiftId() && (window.history.state as SelectionHistoryState)?.venueShiftSelection);
+    // Switching from one selected shift to another, also one a link opened, replaces its entry and keeps its
+    // state, so Back and closing leave the detail instead of reopening the previous shift.
+    const replace = Boolean(selectedShiftId());
     setSelectedShiftId(id);
     navigate(calendarHref(calendarView(), calendarDate(), id), {
       replace,
       scroll: "preserve",
       viewTransition: false,
-      state: { venueShiftSelection: true },
+      state: replace ? window.history.state : { venueShiftSelection: true, gaps: gapsOnly() },
     });
   };
   const clearSelection = () => {
     if (!selectedShiftId()) return;
     setSelectedShiftId(null);
-    // Closing a detail this page opened goes back to where the person came from; a shared link just drops `shift`.
-    if ((window.history.state as SelectionHistoryState)?.venueShiftSelection) window.history.back();
+    // Closing a detail this page opened goes back to where the person came from, unless the gaps filter changed
+    // since: going back would undo it. A shared link, or a changed filter, just drops `shift`.
+    const state = window.history.state as SelectionHistoryState;
+    if (state?.venueShiftSelection && state.gaps === gapsOnly()) window.history.back();
     else navigate(calendarHref(calendarView(), calendarDate()), { replace: true, scroll: "preserve", viewTransition: false });
   };
   const setGapsFilter = (value: string[]) => {
@@ -331,27 +335,36 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       if (added > 0) await reconcileDashboard();
     });
 
-  /** After a sign-up disappears, a detail that showed only that sign-up closes. */
-  const dropStaleSelection = () => {
-    if (selectedShiftId() && !selection()) clearSelection();
+  /**
+   * Leave and Remove delete a sign-up the detail may show. A detail on a shift stays on it: a selection that
+   * names the sign-up (`a:<id>`, as links from My shifts do) first moves to its shift. A sign-up outside every
+   * shift leaves nothing to show, so its detail closes.
+   */
+  const cancelSignup = async (cancel: () => Promise<unknown>) => {
+    const shown = selection();
+    if (shown?.kind === "slot" && selectedShiftId() !== shown.eventId) selectShift(shown.eventId);
+    await cancel();
+    if (!disposed && shown && !selection()) clearSelection();
   };
   const leaveShift = async (assignment: ShiftAssignment) => {
     if (!(await confirmLeave(assignment, venue().timezone, locale(), t()))) return;
     const venueId = venue().id;
-    await actions.run([assignmentActionKey(assignment)], async (signal) => {
-      await cancelAssignment({ venueId, assignmentId: assignment.id }, signal, t().leaveShiftFailed);
-      await reconcileDashboard(t().shiftLeft);
-    });
-    if (!disposed) dropStaleSelection();
+    await cancelSignup(() =>
+      actions.run([assignmentActionKey(assignment)], async (signal) => {
+        await cancelAssignment({ venueId, assignmentId: assignment.id }, signal, t().leaveShiftFailed);
+        await reconcileDashboard(t().shiftLeft);
+      }),
+    );
   };
   const removePerson = async (assignment: ShiftAssignment) => {
     if (!(await confirmRemove(assignment, venue().timezone, locale(), t()))) return;
     const venueId = venue().id;
-    await actions.run([assignmentActionKey(assignment)], async (signal) => {
-      await cancelAssignment({ venueId, assignmentId: assignment.id }, signal, t().removeFromShiftFailed);
-      await reconcileDashboard(t().personRemoved);
-    });
-    if (!disposed) dropStaleSelection();
+    await cancelSignup(() =>
+      actions.run([assignmentActionKey(assignment)], async (signal) => {
+        await cancelAssignment({ venueId, assignmentId: assignment.id }, signal, t().removeFromShiftFailed);
+        await reconcileDashboard(t().personRemoved);
+      }),
+    );
   };
   const detailProps = () => ({
     venue: venue(),
