@@ -10,9 +10,9 @@ const { default: VenueOverview } = await import("./VenueOverview.island.tsx");
 const venue = (overrides: Partial<Venue>): Venue =>
   ({
     id: "Cafe01",
-    name: "StuVe Café",
+    name: "Campus-Café",
     icon: "ti ti-coffee",
-    slug: "stuve-cafe",
+    slug: "campus-cafe",
     description: null,
     signupMode: "both",
     publicEnabled: true,
@@ -53,13 +53,20 @@ describe("Venue overview", () => {
     expect(html).not.toContain("k2b-app-overview__aside");
   });
 
-  test("offers the create menu from the empty state page", () => {
+  test("offers the templates and a blank start in the first empty state, without a search", () => {
     const html = render([]);
 
     expect(html).toContain("No venues yet");
-    expect(html).toContain("Create your first venue to start scheduling.");
     expect(html).toContain("New venue");
     expect(html).not.toContain("k2b-app-overview__cards");
+    expect(html).not.toContain('name="venue-search"');
+    const actions = html.slice(html.indexOf("data-venue-empty-actions"));
+    expect(actions).toContain("Café");
+    expect(actions).toContain("Start blank");
+  });
+
+  test("shows the search once there is a venue", () => {
+    expect(render([venue({})])).toContain('name="venue-search"');
   });
 
   test("keeps a search without matches resettable", () => {

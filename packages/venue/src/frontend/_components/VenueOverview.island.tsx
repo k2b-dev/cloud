@@ -1,29 +1,27 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { mutation } from "@k2b/stdlib/solid";
-import { AppOverview, Button, Dropdown, type DropdownItem, LinkCard, prompts, Tag, TextInput, toast, useLocale } from "@k2b/ui";
+import {
+  AppOverview,
+  Button,
+  Dropdown,
+  type DropdownItem,
+  dialogCore,
+  LinkCard,
+  panelDialogOptions,
+  Tag,
+  TextInput,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { apiClient } from "../../api/client";
 import type { Venue, VenueTemplateSummary } from "../../contracts";
 import { venueMessages } from "../../messages";
+import { CreateVenueDialog } from "./create-venue-dialog";
 
 type Props = {
   venues: Venue[];
   templates: VenueTemplateSummary[];
   initialQuery: string;
 };
-
-const readError = async (res: Pick<Response, "json">, fallback: string): Promise<string> => {
-  const body = (await res.json().catch(() => null)) as { message?: string } | null;
-  return body?.message ?? fallback;
-};
-
-const slugify = (value: string): string =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
 
 const venueMatches = (venue: Venue, query: string): boolean => {
   const normalized = query.trim().toLowerCase();
@@ -52,98 +50,33 @@ export default function VenueOverview(props: Props) {
     setQuery(value);
     updateQueryParam(value);
   };
-  const createVenue = mutation.create<string | null, void>({
-    mutation: async () => {
-      const result = await prompts.form({
-        title: t().createVenue,
-        icon: "ti ti-building-carousel",
-        confirmText: t().create,
-        fields: {
-          name: { type: "text", label: t().name, required: true, placeholder: "StuVe Café" },
-          slug: { type: "text", label: t().publicSlug, required: true, placeholder: "stuve-cafe" },
-          description: { type: "text", label: t().description, multiline: true, lines: 3 },
-        },
-      });
-      if (!result) return null;
-
-      const data = result as { name: string; slug: string; description?: string };
-      const res = await apiClient.venues.$post({
-        json: {
-          name: data.name,
-          icon: "ti ti-building-carousel",
-          slug: data.slug,
-          description: data.description || null,
-          timezone: "Europe/Berlin",
-          openMode: "combined",
-          signupMode: "both",
-          publicEnabled: true,
-          feedbackEnabled: true,
-          accentColor: "#2563eb",
-          logoBase64: null,
-          bannerBase64: null,
-        },
-      });
-      if (!res.ok) throw new Error(await readError(res, t().createVenueFailed));
-      const venue = await res.json();
-      return venue.id;
-    },
-    onSuccess: (id) => {
-      if (!id) return;
+  const [creating, setCreating] = createSignal(false);
+  /** Opens the create dialog, blank or for a template; it creates the venue itself and keeps its input on errors. */
+  const openCreate = async (template?: VenueTemplateSummary) => {
+    if (creating()) return;
+    setCreating(true);
+    try {
+      const venueId = await dialogCore.open<string | null>(
+        (close, context) => <CreateVenueDialog template={template} close={close} guardDismiss={context.setDismissHandler} />,
+        panelDialogOptions,
+      );
+      if (!venueId) return;
       toast.success(t().venueCreated);
-      navigateTo(`/app/venue/${id}`);
-    },
-    onError: (err) => prompts.error(err.message),
-  });
-
-  const createFromTemplate = mutation.create<string | null, { template: VenueTemplateSummary; name?: string; slug?: string }>({
-    mutation: async (input) => {
-      const res = await apiClient.templates[":templateId"].$post({
-        param: { templateId: input.template.id },
-        json: {
-          name: input.name?.trim() || undefined,
-          slug: input.slug?.trim() || undefined,
-        },
-      });
-      if (!res.ok) throw new Error(await readError(res, t().createFromTemplateFailed));
-      const venue = await res.json();
-      return venue.id;
-    },
-    onSuccess: (id) => {
-      if (!id) return;
-      toast.success(t().venueCreated);
-      navigateTo(`/app/venue/${id}`);
-    },
-    onError: (err) => prompts.error(err.message),
-  });
-
-  const openTemplate = async (template: VenueTemplateSummary) => {
-    const defaultSlug = slugify(template.name);
-    const result = await prompts.form({
-      title: template.name,
-      icon: template.icon,
-      confirmText: t().create,
-      fields: {
-        name: { type: "text", label: t().name, placeholder: template.name },
-        slug: { type: "text", label: t().publicSlug, placeholder: defaultSlug },
-      },
-    });
-    if (!result) return;
-    createFromTemplate.mutate({
-      template,
-      name: String(result.name ?? "").trim() || undefined,
-      slug: String(result.slug ?? "").trim() || defaultSlug,
-    });
+      navigateTo(`/app/venue/${venueId}`);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const createMenuItems = (): DropdownItem[] => [
-    { items: [{ label: t().blankVenue, description: t().blankVenueDescription, icon: "ti ti-plus", action: () => createVenue.mutate() }] },
+    { items: [{ label: t().blankVenue, description: t().blankVenueDescription, icon: "ti ti-plus", action: () => void openCreate() }] },
     {
       sectionLabel: t().templates,
       items: props.templates.map((template) => ({
         label: template.name,
         description: template.description,
         icon: template.icon,
-        action: () => void openTemplate(template),
+        action: () => void openCreate(template),
       })),
     },
   ];
@@ -155,7 +88,7 @@ export default function VenueOverview(props: Props) {
       subtitle={props.venues.length === 0 ? t().createFirstVenue : t().venuesAvailable({ count: props.venues.length })}
       actions={
         <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(26rem, calc(100vw - 1rem))" label={t().newVenue}>
-          <Dropdown.Trigger variant="primary" disabled={createVenue.loading() || createFromTemplate.loading()}>
+          <Dropdown.Trigger variant="primary" disabled={creating()}>
             <i class="ti ti-plus" aria-hidden="true" /> {t().newVenue}
             <i class="ti ti-chevron-down" aria-hidden="true" />
           </Dropdown.Trigger>
@@ -164,19 +97,22 @@ export default function VenueOverview(props: Props) {
     >
       <AppOverview.Main
         title={t().yourVenues}
+        // Without any venue there is nothing to search yet.
         toolbar={
-          <TextInput
-            name="venue-search"
-            type="search"
-            aria-label={t().searchVenues}
-            placeholder={t().searchVenuesPlaceholder}
-            icon="ti ti-search"
-            activeIcon="ti ti-search"
-            value={query}
-            onValueChange={onSearchInput}
-            clearable
-            onClear={() => onSearchInput("")}
-          />
+          props.venues.length === 0 ? undefined : (
+            <TextInput
+              name="venue-search"
+              type="search"
+              aria-label={t().searchVenues}
+              placeholder={t().searchVenuesPlaceholder}
+              icon="ti ti-search"
+              activeIcon="ti ti-search"
+              value={query}
+              onValueChange={onSearchInput}
+              clearable
+              onClear={() => onSearchInput("")}
+            />
+          )
         }
       >
         {props.venues.length === 0 ? (
@@ -185,14 +121,28 @@ export default function VenueOverview(props: Props) {
             description={t().noVenuesDescription}
             icon="ti ti-building-carousel"
             class="min-h-72"
-          />
+          >
+            {/* The first venue starts from a template or blank, right here. */}
+            <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-center" data-venue-empty-actions="">
+              <For each={props.templates}>
+                {(template) => (
+                  <Button type="button" variant="secondary" disabled={creating()} onClick={() => void openCreate(template)}>
+                    <i class={template.icon} aria-hidden="true" /> {template.name}
+                  </Button>
+                )}
+              </For>
+              <Button type="button" variant="secondary" disabled={creating()} onClick={() => void openCreate()}>
+                <i class="ti ti-plus" aria-hidden="true" /> {t().startBlank}
+              </Button>
+            </div>
+          </AppOverview.EmptyState>
         ) : (
           <Show
             when={filteredVenues().length > 0}
             fallback={
               <AppOverview.EmptyState title={t().noMatchingVenues} description={t().noMatchingVenuesDescription} icon="ti ti-search">
                 <Button type="button" variant="secondary" size="sm" onClick={() => onSearchInput("")}>
-                  <i class="ti ti-x" /> {t().clearSearch}
+                  <i class="ti ti-x" aria-hidden="true" /> {t().clearSearch}
                 </Button>
               </AppOverview.EmptyState>
             }

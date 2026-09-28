@@ -50,7 +50,8 @@ import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscript
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
 import { PublicSectionDialog, PublicSectionPreview, sectionKindIcon, sectionKindLabel } from "./venue-workspace/public-sections";
 import { ProgressBar, SlotStateLabel, slotStaffingLabel, slotState } from "./venue-workspace/schedule";
-import { SettingsDialog } from "./venue-workspace/settings";
+import { SettingsDialog, type VenueSettingsTab } from "./venue-workspace/settings";
+import { ScheduleEmptyState, scheduleIsEmpty } from "./venue-workspace/setup-checklist";
 import { announceTaken, cancelAssignment, confirmLeave, confirmRemove, createActionKeys, takeShift } from "./venue-workspace/shift-actions";
 import {
   assignmentActionKey,
@@ -115,6 +116,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const [wide, setWide] = createSignal(true);
   const [phone, setPhone] = createSignal(false);
   const [prompting, setPrompting] = createSignal(false);
+  /** Who has access, for admins; the settings dialog reports changes, so the setup checklist follows them. */
+  const [accessEntries, setAccessEntries] = createSignal(props.accessEntries);
   /** Running writes by the slot, sign-up, or section they change; unrelated actions stay available. */
   const actions = createActionKeys();
   let disposed = false;
@@ -408,7 +411,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     }),
   );
 
-  const openSettings = async () => {
+  const openSettings = async (tab?: VenueSettingsTab) => {
     const snapshot = dashboard();
     await runPromptedAction(
       () =>
@@ -416,7 +419,9 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
           (close) => (
             <SettingsDialog
               dashboard={snapshot}
-              accessEntries={props.accessEntries}
+              accessEntries={accessEntries()}
+              onAccessEntriesChange={setAccessEntries}
+              initialTab={tab}
               apiKeys={props.apiKeys}
               onOpenCalendarSubscription={openCalendarSubscription}
               close={close}
@@ -726,13 +731,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
           </AppWorkspace.SidebarBody>
 
           <AppWorkspace.SidebarFooter sidebarMode="expanded">
-            <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={openSettings}>
+            <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={() => void openSettings()}>
               {t().venueSettings}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
           <AppWorkspace.SidebarFooter sidebarMode="collapsed">
             <AppWorkspace.SidebarIconGrid>
-              <AppWorkspace.SidebarIconAction icon="ti ti-settings" label={t().venueSettings} onClick={openSettings} />
+              <AppWorkspace.SidebarIconAction icon="ti ti-settings" label={t().venueSettings} onClick={() => void openSettings()} />
             </AppWorkspace.SidebarIconGrid>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
@@ -856,8 +861,20 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     }
                   />
                   <VenueTimeZoneNote timeZone={venue().timezone} times={calendarTimes()} />
+                  <Show when={scheduleIsEmpty(dashboard())}>
+                    <ScheduleEmptyState
+                      dashboard={dashboard()}
+                      accessEntries={accessEntries()}
+                      userId={props.userId}
+                      onOpenSettings={(tab) => void openSettings(tab)}
+                    />
+                  </Show>
                   {/* Fixed figures for today and the next six days: paging through the calendar does not change them. */}
-                  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-1 text-sm" data-schedule-outlook="">
+                  {/* Without any shift the figures would only say "0" and a check; the empty state speaks instead. */}
+                  <div
+                    class={`${scheduleIsEmpty(dashboard()) ? "hidden" : "flex"} flex-wrap items-center gap-x-4 gap-y-2 px-1 text-sm`}
+                    data-schedule-outlook=""
+                  >
                     <span class="inline-flex items-center gap-1.5 font-medium text-primary">
                       <i
                         class={`ti ${dashboard().outlook.missingPeople > 0 ? "ti-user-plus text-amber-600 dark:text-amber-400" : "ti-check text-emerald-600 dark:text-emerald-400"}`}

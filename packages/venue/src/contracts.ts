@@ -30,17 +30,33 @@ export const VenueSchema = z.object({
 });
 export type Venue = z.infer<typeof VenueSchema>;
 
+/** A venue slug: 2 to 80 lowercase letters or digits, with single dashes between them. */
+export const VENUE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+export const VENUE_SLUG_MIN_LENGTH = 2;
+export const VENUE_SLUG_MAX_LENGTH = 80;
+const VenueSlugSchema = z
+  .string()
+  .trim()
+  .min(VENUE_SLUG_MIN_LENGTH)
+  .max(VENUE_SLUG_MAX_LENGTH)
+  .regex(VENUE_SLUG_PATTERN, "Use lowercase letters, numbers, and dashes");
+
+/** Whether the runtime knows the IANA time zone; every venue time is computed in it. */
+export const isKnownTimeZone = (value: string): boolean => {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const VenueInputSchema = z.object({
   name: z.string().trim().min(1).max(160),
   icon: z.string().trim().min(1).max(120).default("ti ti-building-carousel"),
-  slug: z
-    .string()
-    .trim()
-    .min(2)
-    .max(80)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and dashes"),
+  slug: VenueSlugSchema,
   description: z.string().trim().max(1_000).nullable().optional(),
-  timezone: z.string().trim().min(1).max(80).default("Europe/Berlin"),
+  timezone: z.string().trim().min(1).max(80).refine(isKnownTimeZone, "Unknown time zone").default("Europe/Berlin"),
   openMode: VenueOpenModeSchema.default("combined"),
   signupMode: VenueSignupModeSchema.default("both"),
   publicEnabled: z.boolean().default(true),
@@ -61,13 +77,7 @@ export type VenueTemplateSummary = z.infer<typeof VenueTemplateSummarySchema>;
 
 export const VenueTemplateCreateInputSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(2)
-    .max(80)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers, and dashes")
-    .optional(),
+  slug: VenueSlugSchema.optional(),
 });
 export type VenueTemplateCreateInput = z.infer<typeof VenueTemplateCreateInputSchema>;
 
@@ -84,12 +94,16 @@ const OpeningRuleSchema = z.object({
 });
 export type OpeningRule = z.infer<typeof OpeningRuleSchema>;
 
-export const OpeningRuleInputSchema = z.object({
-  weekday: WeekdaySchema,
-  startTime: TimeSchema,
-  endTime: TimeSchema,
-  note: z.string().trim().max(500).nullable().optional(),
-});
+const endsAfterStart = { path: ["endTime"], message: "End time must be after start time" };
+
+export const OpeningRuleInputSchema = z
+  .object({
+    weekday: WeekdaySchema,
+    startTime: TimeSchema,
+    endTime: TimeSchema,
+    note: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((input) => input.startTime < input.endTime, endsAfterStart);
 export type OpeningRuleInput = z.infer<typeof OpeningRuleInputSchema>;
 
 const DateOverrideSchema = z.object({
@@ -111,17 +125,19 @@ export const DateOverrideInputSchema = z.discriminatedUnion("kind", [
     kind: z.literal("closed"),
     note: z.string().trim().max(500).nullable().optional(),
   }),
-  z.object({
-    date: DateKeySchema,
-    kind: z.literal("open"),
-    startTime: TimeSchema,
-    endTime: TimeSchema,
-    note: z.string().trim().max(500).nullable().optional(),
-  }),
+  z
+    .object({
+      date: DateKeySchema,
+      kind: z.literal("open"),
+      startTime: TimeSchema,
+      endTime: TimeSchema,
+      note: z.string().trim().max(500).nullable().optional(),
+    })
+    .refine((input) => input.startTime < input.endTime, endsAfterStart),
 ]);
 export type DateOverrideInput = z.infer<typeof DateOverrideInputSchema>;
 
-const ShiftTemplateSchema = z.object({
+export const ShiftTemplateSchema = z.object({
   id: VenueResourceIdSchema,
   venueId: VenueResourceIdSchema,
   weekday: WeekdaySchema,
@@ -148,6 +164,7 @@ export const ShiftTemplateInputSchema = z
     requireTargetForOpening: z.boolean().default(false),
     active: z.boolean().default(true),
   })
+  .refine((input) => input.startTime < input.endTime, endsAfterStart)
   .refine((input) => input.maxPeople == null || input.maxPeople >= input.minPeople, {
     path: ["maxPeople"],
     message: "Maximum people must be greater than or equal to required people",
@@ -157,6 +174,12 @@ export const ShiftTemplateInputSchema = z
     message: "Target people must be at least one when it controls public opening",
   });
 export type ShiftTemplateInput = z.infer<typeof ShiftTemplateInputSchema>;
+
+/** Templates that one request creates together, for example the same shift on several weekdays: all or none. */
+export const ShiftTemplateBatchInputSchema = z.object({
+  templates: z.array(ShiftTemplateInputSchema).min(1).max(7),
+});
+export type ShiftTemplateBatchInput = z.infer<typeof ShiftTemplateBatchInputSchema>;
 
 export const ShiftAssignmentSchema = z.object({
   id: VenueResourceIdSchema,
@@ -348,7 +371,9 @@ export type ScheduleOutlook = z.infer<typeof ScheduleOutlookSchema>;
 export const VenueDashboardSchema = z.object({
   venue: VenueSchema,
   openingRules: z.array(OpeningRuleSchema),
+  /** Exceptions from a week ago through the next year. */
   overrides: z.array(DateOverrideSchema),
+  /** Every shift template that was not deleted; a paused one has `active: false` and plans no slots. */
   templates: z.array(ShiftTemplateSchema),
   slots: z.array(UpcomingSlotSchema),
   /**

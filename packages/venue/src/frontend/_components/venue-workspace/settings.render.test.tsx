@@ -2,12 +2,43 @@ import { describe, expect, test } from "bun:test";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { Venue, VenueDashboard } from "../../../contracts";
+import type { DateOverride, ShiftTemplate, Venue, VenueDashboard } from "../../../contracts";
 import "../../ssr-test-plugin";
 
 const { SettingsDialog } = await import("./settings");
 
-const dashboard = (permission: Venue["permission"]): VenueDashboard => ({
+const timestamp = "2026-09-01T00:00:00.000Z";
+
+const exception = (overrides: Partial<DateOverride>): DateOverride => ({
+  id: "Exc001",
+  venueId: "Cafe01",
+  date: "2030-10-19",
+  kind: "closed",
+  startTime: null,
+  endTime: null,
+  note: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  ...overrides,
+});
+
+const template = (overrides: Partial<ShiftTemplate>): ShiftTemplate => ({
+  id: "Temp01",
+  venueId: "Cafe01",
+  weekday: 1,
+  title: "Morning counter",
+  startTime: "09:00",
+  endTime: "12:00",
+  minPeople: 1,
+  maxPeople: 2,
+  requireTargetForOpening: false,
+  active: true,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+  ...overrides,
+});
+
+const dashboard = (permission: Venue["permission"], data: Partial<VenueDashboard> = {}): VenueDashboard => ({
   venue: {
     id: "Cafe01",
     slug: "corner-cafe",
@@ -24,8 +55,8 @@ const dashboard = (permission: Venue["permission"]): VenueDashboard => ({
     bannerBase64: null,
     icalToken: "calendar-token",
     permission,
-    createdAt: "2026-09-01T00:00:00.000Z",
-    updatedAt: "2026-09-01T00:00:00.000Z",
+    createdAt: timestamp,
+    updatedAt: timestamp,
   },
   openingRules: [],
   overrides: [],
@@ -40,17 +71,22 @@ const dashboard = (permission: Venue["permission"]): VenueDashboard => ({
   feedback: null,
   feedbackEntries: [],
   feedbackEntriesPage: { page: 1, pageSize: 50, total: 0 },
+  ...data,
 });
 
-const render = (permission: Venue["permission"], locale = "en") =>
+const render = (
+  permission: Venue["permission"],
+  options: { locale?: string; tab?: "general" | "schedule"; data?: Partial<VenueDashboard> } = {},
+) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
-      locale,
+      locale: options.locale ?? "en",
       get children() {
         return createComponent(SettingsDialog, {
-          dashboard: dashboard(permission),
+          dashboard: dashboard(permission, options.data),
           accessEntries: [],
           apiKeys: [],
+          initialTab: options.tab,
           onOpenCalendarSubscription: () => {},
           close: () => {},
         });
@@ -68,7 +104,7 @@ describe("Venue settings: General", () => {
   });
 
   test("says the same in German", () => {
-    expect(render("read", "de")).toContain("Nur Admins dieses Standorts können diese Einstellungen ändern.");
+    expect(render("read", { locale: "de" })).toContain("Nur Admins dieses Standorts können diese Einstellungen ändern.");
   });
 
   test("gives admins the save footer without the read-only note", () => {
@@ -76,5 +112,73 @@ describe("Venue settings: General", () => {
 
     expect(html).not.toContain("Only admins of this venue can change these settings.");
     expect(html).toContain("No unsaved changes");
+  });
+
+  test("holds the public page switch, sign-up, time zone, and opening logic, which only admins can change", () => {
+    for (const permission of ["admin", "write", "read"] as const) {
+      const html = render(permission);
+      for (const label of ["Public page on", "Sign-up", "Time zone", "Public opening logic", "Europe/Berlin", "Free time"]) {
+        expect({ permission, label, shown: html.includes(label) }).toEqual({ permission, label, shown: true });
+      }
+      // Until the fresh settings arrive the fields stay locked for everyone; only admins get the save footer.
+      expect({ permission, footer: html.includes("No unsaved changes"), readOnlyNote: html.includes("Only admins") }).toEqual({
+        permission,
+        footer: permission === "admin",
+        readOnlyNote: permission !== "admin",
+      });
+    }
+    expect(render("admin", { locale: "de" })).toContain("Öffentliche Seite an");
+  });
+});
+
+describe("Venue settings: Schedule", () => {
+  test("saves every change at once, so the tab has no save bar", () => {
+    const html = render("admin", { tab: "schedule" });
+
+    expect(html).not.toContain("No unsaved changes");
+    expect(html).not.toContain("Public opening logic");
+  });
+
+  test("names exceptions by weekday, date, and localized kind, and folds past ones away", () => {
+    const overrides = [
+      exception({ id: "Exc001", kind: "open", startTime: "18:00", endTime: "23:00", note: "Long night" }),
+      exception({ id: "Exc002", date: "2020-03-03", note: "Staff outing" }),
+    ];
+    const html = render("admin", { tab: "schedule", data: { overrides } });
+
+    expect(html).toContain("Exceptions");
+    expect(html).toContain("Sat, 10/19/2030");
+    expect(html).toContain("Special opening 18:00–23:00 · Long night");
+    expect(html).toContain("Past exceptions (1)");
+    expect(html).toContain("New exception");
+    expect(html).not.toMatch(/<details[^>]*open/);
+
+    const german = render("admin", { locale: "de", tab: "schedule", data: { overrides } });
+    expect(german).toContain("Sa., 19.10.2030");
+    expect(german).toContain("Sonderöffnung 18:00–23:00 · Long night");
+  });
+
+  test("groups shifts by weekday and marks paused ones", () => {
+    const templates = [
+      template({ id: "Temp01", weekday: 2, title: "Tuesday bar" }),
+      template({ id: "Temp02", weekday: 1, title: "Monday bar", active: false }),
+      template({ id: "Temp03", weekday: 1, title: "Monday lunch", startTime: "12:00", endTime: "14:00" }),
+    ];
+    const html = render("admin", { tab: "schedule", data: { templates } });
+
+    const order = ["Monday", "Monday bar", "Monday lunch", "Tuesday", "Tuesday bar"].map((text) => html.indexOf(`>${text}<`));
+    expect(order.every((index) => index >= 0)).toBeTrue();
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+    expect(html.match(/>Paused</g)).toHaveLength(1);
+    expect(html.match(/role="switch"/g)).toHaveLength(3);
+    expect(html).toContain("“Monday bar” is active");
+  });
+
+  test("shows staff the schedule without switches or row actions", () => {
+    const html = render("write", { tab: "schedule", data: { templates: [template({})] } });
+
+    expect(html).toContain("Morning counter");
+    expect(html).not.toContain('role="switch"');
+    expect(html).not.toContain("Delete shift");
   });
 });

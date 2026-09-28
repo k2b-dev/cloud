@@ -87,3 +87,24 @@ testFor("database")(
   },
   30_000,
 );
+
+testFor("database")(
+  "keeps paused shift templates paused and deleted ones deleted across startups",
+  async () => {
+    await migrate();
+    const venue = crypto.randomUUID();
+    await sql`INSERT INTO venue.venues(id,short_id,slug,name) VALUES (${venue}::uuid,'TestV2',${venue},'pause fixture')`;
+    try {
+      await sql`INSERT INTO venue.shift_templates(short_id,venue_id,weekday,title,start_time,end_time,active,deleted_at) VALUES
+        ('TestP1',${venue}::uuid,1,'paused','09:00','12:00',false,NULL),
+        ('TestD1',${venue}::uuid,1,'deleted','09:00','12:00',false,now())`;
+      await migrate();
+      await migrate();
+      const { venueService } = await import("./service");
+      expect((await venueService.templates.list(venue)).map((template) => [template.title, template.active])).toEqual([["paused", false]]);
+    } finally {
+      await sql`DELETE FROM venue.venues WHERE id=${venue}::uuid`;
+    }
+  },
+  30_000,
+);

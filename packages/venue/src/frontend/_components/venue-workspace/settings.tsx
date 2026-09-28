@@ -1,12 +1,14 @@
 import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
+import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,
   ColorInput,
   confirmDiscardIfDirty,
+  Disclosure,
   dialogCore,
   IconInput,
   ImageInput,
@@ -16,34 +18,70 @@ import {
   panelDialogOptions,
   prompts,
   SegmentedControl,
+  Select,
   SettingsCollection,
   SettingsField,
   SettingsGroup,
   SettingsModal,
   SettingsPanelFooter,
+  Switch,
+  Tag,
   TextInput,
+  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
-import type {
-  DateOverride,
-  DateOverrideInput,
-  OpeningRule,
-  OpeningRuleInput,
-  ShiftTemplate,
-  ShiftTemplateInput,
-  Venue,
-  VenueDashboard,
-  VenueInput,
+import {
+  type DateOverride,
+  type DateOverrideInput,
+  type OpeningRule,
+  type OpeningRuleInput,
+  type ShiftTemplate,
+  type ShiftTemplateInput,
+  type Venue,
+  type VenueDashboard,
+  type VenueInput,
 } from "../../../contracts";
-import { venueMessages } from "../../../messages";
+import { type VenueMessages, venueMessages } from "../../../messages";
 import { formatDateKey } from "../../../time-format";
 import { createVenueSettingsQuery, settingsCloseBlocked, settingsInteractionBlocked, venueSettingsCanAdmin } from "../../settings-contract";
+import { venueSlugError } from "../../venue-slug";
 import { openVenuePublicDisplayDialog } from "./public-display";
-import { ExceptionDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
+import { type DialogSubmit, ExceptionDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
 import { bannerTransform, readError, sortOpeningRules, sortOverrides, sortShiftTemplates } from "./utils";
+
+/** The settings tabs another view can open directly. */
+export type VenueSettingsTab = "general" | "access" | "schedule" | "links" | "danger";
+
+/** A slug that no other venue has yet is required; the server answers 409 when it is taken. */
+class VenueSlugTakenError extends Error {}
+
+/** `Special opening 18:00–23:00 · Long night`: an exception's kind, its times, and its note. */
+const describeException = (entry: DateOverride, t: VenueMessages): string =>
+  [
+    entry.kind === "open" && entry.startTime && entry.endTime
+      ? t.specialOpening({ window: `${entry.startTime}–${entry.endTime}` })
+      : t.closed,
+    entry.note,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+/** Every IANA time zone this runtime knows, plus the venue's own when the list lacks it. */
+const timeZoneOptions = (current: string) => {
+  let zones: string[];
+  try {
+    zones = Intl.supportedValuesOf("timeZone");
+  } catch {
+    zones = [];
+  }
+  return [...new Set([current, ...zones])].sort().map((zone) => ({ id: zone, label: zone.replaceAll("_", " ") }));
+};
+
+/** Weekdays in calendar order, Monday first. */
+const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending: boolean) => void }) {
   const locale = useLocale();
@@ -64,11 +102,15 @@ export function VenueDangerZone(props: { venue: Venue; onPendingChange: (pending
     props.onPendingChange(true);
     try {
       const intent = { venueId: props.venue.id, venueName: props.venue.name };
+      // Deleting removes shifts, sign-ups, feedback, and the public page for good, so it takes the typed name.
+      // The prompt accepts only a single-line phrase; a name with a line break falls back to the slug.
+      const phrase = /[\r\n\t]/.test(intent.venueName) ? props.venue.slug : intent.venueName;
       const confirmed = await prompts.confirm(t().deleteVenueQuestion({ name: intent.venueName }), {
         title: t().deleteVenue,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: t().delete,
+        confirmText: t().deleteVenue,
+        confirmationPhrase: phrase,
       });
       if (disposed || !confirmed) return;
       await remove.mutate({ venueId: intent.venueId });
@@ -96,6 +138,10 @@ export function SettingsDialog(props: {
   dashboard: VenueDashboard;
   accessEntries: AccessEntry[];
   apiKeys: ResourceApiKey[];
+  /** The tab to show first, for example `schedule` from the setup checklist. */
+  initialTab?: VenueSettingsTab;
+  /** Receives the access list whenever the dialog loads or changes it, so the workspace can follow. */
+  onAccessEntriesChange?: (entries: AccessEntry[]) => void;
   /** Opens the personal calendar subscription, the same dialog as in My shifts. */
   onOpenCalendarSubscription: () => void;
   close: (changed: boolean) => void;
@@ -134,16 +180,32 @@ export function SettingsDialog(props: {
   const [name, setName] = createSignal(venue.name);
   const [icon, setIcon] = createSignal(venue.icon || "ti ti-building-carousel");
   const [slug, setSlug] = createSignal(venue.slug);
+  const [slugTaken, setSlugTaken] = createSignal(false);
   const [description, setDescription] = createSignal(venue.description ?? "");
   const [openMode, setOpenMode] = createSignal<Venue["openMode"]>(venue.openMode);
+  const [signupMode, setSignupMode] = createSignal<Venue["signupMode"]>(venue.signupMode);
+  const [timezone, setTimezone] = createSignal(venue.timezone);
+  const [publicEnabled, setPublicEnabled] = createSignal(venue.publicEnabled);
   const [accentColor, setAccentColor] = createSignal(venue.accentColor);
   const [feedbackEnabled, setFeedbackEnabled] = createSignal(venue.feedbackEnabled);
   const [logo, setLogo] = createSignal(venue.logoBase64);
   const [banner, setBanner] = createSignal(venue.bannerBase64);
   const [generalDirty, setGeneralDirty] = createSignal(false);
   const openingRules = () => sortOpeningRules(settings().openingRules);
-  const overrides = () => sortOverrides(settings().overrides);
-  const shiftTemplates = () => sortShiftTemplates(settings().templates);
+  /** Today in the venue's time zone: exceptions before it are past. */
+  const venueToday = () => dates.formatDateKey(new Date(), { timeZone: currentVenue().timezone });
+  const upcomingOverrides = () => sortOverrides(settings().overrides).filter((entry) => entry.date >= venueToday());
+  const pastOverrides = () =>
+    sortOverrides(settings().overrides)
+      .filter((entry) => entry.date < venueToday())
+      .reverse();
+  const shiftsByWeekday = () => {
+    const templates = sortShiftTemplates(settings().templates);
+    return WEEKDAY_ORDER.map((day) => ({ weekday: day, templates: templates.filter((template) => template.weekday === day) })).filter(
+      (group) => group.templates.length > 0,
+    );
+  };
+  const zones = createMemo(() => timeZoneOptions(currentVenue().timezone));
 
   let disposed = false;
   const [settingsHydrated, setSettingsHydrated] = createSignal(false);
@@ -153,7 +215,9 @@ export function SettingsDialog(props: {
   const [reconciliationFailed, setReconciliationFailed] = createSignal(false);
   const [dangerPending, setDangerPending] = createSignal(false);
   const [requestCount, setRequestCount] = createSignal(0);
-  const [activeTab, setActiveTab] = createSignal("general");
+  /** The row whose delete or pause is running; only that row shows progress. */
+  const [busyRow, setBusyRow] = createSignal<string | null>(null);
+  const [activeTab, setActiveTab] = createSignal<string>(props.initialTab ?? "general");
   const requestControllers = new Set<AbortController>();
   const runRequest = async <T,>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     if (writePending() || reconciling()) throw new Error(t().waitForSettings);
@@ -202,21 +266,35 @@ export function SettingsDialog(props: {
   };
   const settingsWriteBlocked = () =>
     writePending() || reconciling() || requestCount() > 0 || settingsQuery.refreshing() || Boolean(settingsQuery.error());
-  const runReconciledMutation = async <V,>(
-    control: { mutate: (value: V) => Promise<void>; error: () => Error | null | undefined },
-    value: V,
-    successMessage: string,
-  ) => {
+  type SettingsMutation<V> = { mutate: (value: V) => Promise<void>; error: () => Error | null | undefined };
+  /** Runs a confirmed row action; `row` names the row that shows progress. */
+  const runReconciledMutation = async <V,>(control: SettingsMutation<V>, value: V, successMessage: string, row: string) => {
     if (settingsWriteBlocked()) return;
     setWritePending(true);
+    setBusyRow(row);
     try {
       await control.mutate(value);
       if (disposed || control.error()) return;
       await finishSettingsChange(successMessage);
     } finally {
       setWritePending(false);
+      setBusyRow(null);
     }
   };
+  /** Saves from inside a dialog: the dialog stays open with its input and shows why a save failed. */
+  const dialogSubmit =
+    <V,>(control: SettingsMutation<V>): DialogSubmit<V> =>
+    async (value) => {
+      if (settingsWriteBlocked()) return t().waitForSettings;
+      setWritePending(true);
+      try {
+        await control.mutate(value);
+        if (disposed) return null;
+        return control.error()?.message ?? null;
+      } finally {
+        setWritePending(false);
+      }
+    };
   const runPromptedAction = async <T,>(readIntent: () => Promise<T>, applyIntent: (intent: T) => Promise<void>) => {
     if (prompting()) return;
     setPrompting(true);
@@ -227,6 +305,18 @@ export function SettingsDialog(props: {
     } finally {
       setPrompting(false);
     }
+  };
+  /** Opens a dialog that saves on its own and refreshes the settings once it closed after a save. */
+  const openSavingDialog = async (
+    render: (close: (saved: boolean) => void, guardDismiss: (handler: () => void) => void) => JSX.Element,
+    successMessage: () => string,
+  ) => {
+    await runPromptedAction(
+      () => dialogCore.open<boolean>((close, context) => render(close, context.setDismissHandler), panelDialogOptions),
+      async (saved) => {
+        if (saved) await finishSettingsChange(successMessage());
+      },
+    );
   };
 
   createEffect(() => {
@@ -240,21 +330,25 @@ export function SettingsDialog(props: {
     setSlug(next.slug);
     setDescription(next.description ?? "");
     setOpenMode(next.openMode);
+    setSignupMode(next.signupMode);
+    setTimezone(next.timezone);
+    setPublicEnabled(next.publicEnabled);
     setAccentColor(next.accentColor);
     setFeedbackEnabled(next.feedbackEnabled);
     setLogo(next.logoBase64);
     setBanner(next.bannerBase64);
   });
+  createEffect(() => props.onAccessEntriesChange?.(settings().accessEntries));
 
   const venueInput = (): VenueInput => ({
     name: name(),
     icon: icon(),
     slug: slug(),
     description: description().trim() || null,
-    timezone: currentVenue().timezone,
+    timezone: timezone(),
     openMode: openMode(),
-    signupMode: currentVenue().signupMode,
-    publicEnabled: currentVenue().publicEnabled,
+    signupMode: signupMode(),
+    publicEnabled: publicEnabled(),
     feedbackEnabled: feedbackEnabled(),
     accentColor: accentColor(),
     logoBase64: logo(),
@@ -269,25 +363,41 @@ export function SettingsDialog(props: {
       Number(draft.slug !== confirmed.slug) +
       Number(draft.description !== (confirmed.description ?? null)) +
       Number(draft.openMode !== confirmed.openMode) +
+      Number(draft.signupMode !== confirmed.signupMode) +
+      Number(draft.timezone !== confirmed.timezone) +
+      Number(draft.publicEnabled !== confirmed.publicEnabled) +
       Number(draft.feedbackEnabled !== confirmed.feedbackEnabled) +
       Number(draft.accentColor !== confirmed.accentColor) +
       Number(draft.logoBase64 !== confirmed.logoBase64) +
       Number(draft.bannerBase64 !== confirmed.bannerBase64)
     );
   };
+  const nameError = () => (!name().trim() ? t().nameRequired : undefined);
+  const slugError = () => venueSlugError(slug(), t()) ?? (slugTaken() ? t().slugTaken : undefined);
   const discardGeneral = () => {
     const confirmed = currentVenue();
     setName(confirmed.name);
     setIcon(confirmed.icon || "ti ti-building-carousel");
     setSlug(confirmed.slug);
+    setSlugTaken(false);
     setDescription(confirmed.description ?? "");
     setOpenMode(confirmed.openMode);
+    setSignupMode(confirmed.signupMode);
+    setTimezone(confirmed.timezone);
+    setPublicEnabled(confirmed.publicEnabled);
     setAccentColor(confirmed.accentColor);
     setFeedbackEnabled(confirmed.feedbackEnabled);
     setLogo(confirmed.logoBase64);
     setBanner(confirmed.bannerBase64);
     setGeneralDirty(false);
   };
+  /** Marks General as edited and applies the change. */
+  const edit =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      setGeneralDirty(true);
+      set(value);
+    };
   const save = mutation.create<void, VenueInput>({
     mutation: async (input, { abortSignal }) => {
       const res = await apiClient.venues[":id"].$patch(
@@ -297,12 +407,16 @@ export function SettingsDialog(props: {
         },
         { init: { signal: abortSignal } },
       );
+      if (res.status === 409) throw new VenueSlugTakenError(t().slugTaken);
       if (!res.ok) throw new Error(await readError(res, t().saveVenueFailed));
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => {
+      if (err instanceof VenueSlugTakenError) setSlugTaken(true);
+      else prompts.error(err.message);
+    },
   });
   const saveSettings = async () => {
-    if (settingsWriteBlocked()) return;
+    if (settingsWriteBlocked() || nameError() || slugError()) return;
     setWritePending(true);
     try {
       await save.mutate(venueInput());
@@ -323,16 +437,12 @@ export function SettingsDialog(props: {
       );
       if (!res.ok) throw new Error(await readError(res, t().addOpeningFailed));
     },
-    onError: (err) => prompts.error(err.message),
   });
-  const openCreateOpening = async () => {
-    await runPromptedAction(
-      () => dialogCore.open<OpeningRuleInput | null>((close) => <OpeningRuleDialog close={close} />, panelDialogOptions),
-      async (input) => {
-        if (input) await runReconciledMutation(createOpening, input, t().openingAdded);
-      },
+  const openCreateOpening = () =>
+    openSavingDialog(
+      (close, guardDismiss) => <OpeningRuleDialog close={close} guardDismiss={guardDismiss} submit={dialogSubmit(createOpening)} />,
+      () => t().openingAdded,
     );
-  };
 
   const editOpening = mutation.create<void, { id: string; input: OpeningRuleInput }>({
     mutation: async ({ id, input }, { abortSignal }) => {
@@ -342,19 +452,20 @@ export function SettingsDialog(props: {
       );
       if (!res.ok) throw new Error(await readError(res, t().updateOpeningFailed));
     },
-    onError: (err) => prompts.error(err.message),
   });
-  const openEditOpening = async (rule: OpeningRule) => {
+  const openEditOpening = (rule: OpeningRule) => {
     const target = { id: rule.id, initial: { ...rule } };
-    await runPromptedAction(
-      () =>
-        dialogCore.open<OpeningRuleInput | null>(
-          (close) => <OpeningRuleDialog close={close} initial={target.initial} />,
-          panelDialogOptions,
-        ),
-      async (input) => {
-        if (input) await runReconciledMutation(editOpening, { id: target.id, input }, t().openingUpdated);
-      },
+    const submit = dialogSubmit(editOpening);
+    return openSavingDialog(
+      (close, guardDismiss) => (
+        <OpeningRuleDialog
+          close={close}
+          guardDismiss={guardDismiss}
+          initial={target.initial}
+          submit={(input) => submit({ id: target.id, input })}
+        />
+      ),
+      () => t().openingUpdated,
     );
   };
 
@@ -369,7 +480,7 @@ export function SettingsDialog(props: {
     onError: (err) => prompts.error(err.message),
   });
   const confirmDeleteOpening = async (rule: OpeningRule) => {
-    const target = { id: rule.id, label: `${weekday(rule.weekday)} ${rule.startTime}-${rule.endTime}` };
+    const target = { id: rule.id, label: `${weekday(rule.weekday)} ${rule.startTime}–${rule.endTime}` };
     await runPromptedAction(
       () =>
         prompts.confirm(t().deleteOpeningQuestion({ label: target.label }), {
@@ -378,56 +489,64 @@ export function SettingsDialog(props: {
           confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteOpening, target.id, t().openingDeleted);
+        if (confirmed) await runReconciledMutation(deleteOpening, target.id, t().openingDeleted, `opening:${target.id}`);
       },
     );
   };
 
-  const addHoliday = mutation.create<void, DateOverrideInput>({
+  const addException = mutation.create<void, DateOverrideInput>({
     mutation: async (input, { abortSignal }) => {
       const res = await apiClient.venues[":id"].overrides.$post(
         { param: { id: venue.id }, json: input },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readError(res, t().addClosedDayFailed));
+      if (!res.ok) throw new Error(await readError(res, t().addExceptionFailed));
     },
-    onError: (err) => prompts.error(err.message),
   });
-  const openAddHoliday = async () => {
+  const openAddException = () => {
     const timezone = currentVenue().timezone;
-    await runPromptedAction(
-      () => dialogCore.open<DateOverrideInput | null>((close) => <ExceptionDialog close={close} timeZone={timezone} />, panelDialogOptions),
-      async (input) => {
-        if (input) await runReconciledMutation(addHoliday, input, t().closedDayAdded);
-      },
+    return openSavingDialog(
+      (close, guardDismiss) => (
+        <ExceptionDialog
+          close={close}
+          guardDismiss={guardDismiss}
+          timeZone={timezone}
+          today={venueToday()}
+          submit={dialogSubmit(addException)}
+        />
+      ),
+      () => t().exceptionAdded,
     );
   };
 
-  const editHoliday = mutation.create<void, { id: string; input: DateOverrideInput }>({
+  const editException = mutation.create<void, { id: string; input: DateOverrideInput }>({
     mutation: async ({ id, input }, { abortSignal }) => {
       const res = await apiClient.venues[":id"].overrides[":resourceId"].$patch(
         { param: { id: venue.id, resourceId: id }, json: input },
         { init: { signal: abortSignal } },
       );
+      if (res.status === 409) throw new Error(t().exceptionDateTaken);
       if (!res.ok) throw new Error(await readError(res, t().updateExceptionFailed));
     },
-    onError: (err) => prompts.error(err.message),
   });
-  const openEditHoliday = async (entry: DateOverride) => {
+  const openEditException = (entry: DateOverride) => {
     const target = { id: entry.id, initial: { ...entry }, timezone: currentVenue().timezone };
-    await runPromptedAction(
-      () =>
-        dialogCore.open<DateOverrideInput | null>(
-          (close) => <ExceptionDialog close={close} timeZone={target.timezone} initial={target.initial} />,
-          panelDialogOptions,
-        ),
-      async (input) => {
-        if (input) await runReconciledMutation(editHoliday, { id: target.id, input }, t().exceptionUpdated);
-      },
+    const submit = dialogSubmit(editException);
+    return openSavingDialog(
+      (close, guardDismiss) => (
+        <ExceptionDialog
+          close={close}
+          guardDismiss={guardDismiss}
+          timeZone={target.timezone}
+          initial={target.initial}
+          submit={(input) => submit({ id: target.id, input })}
+        />
+      ),
+      () => t().exceptionUpdated,
     );
   };
 
-  const deleteHoliday = mutation.create<void, string>({
+  const deleteException = mutation.create<void, string>({
     mutation: async (id, { abortSignal }) => {
       const res = await apiClient.venues[":id"].overrides[":resourceId"].$delete(
         { param: { id: venue.id, resourceId: id } },
@@ -437,7 +556,7 @@ export function SettingsDialog(props: {
     },
     onError: (err) => prompts.error(err.message),
   });
-  const confirmDeleteHoliday = async (entry: DateOverride) => {
+  const confirmDeleteException = async (entry: DateOverride) => {
     const target = { id: entry.id, date: exceptionDate(entry) };
     await runPromptedAction(
       () =>
@@ -447,27 +566,35 @@ export function SettingsDialog(props: {
           confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteHoliday, target.id, t().exceptionDeleted);
+        if (confirmed) await runReconciledMutation(deleteException, target.id, t().exceptionDeleted, `exception:${target.id}`);
       },
     );
   };
 
-  const createShift = mutation.create<void, ShiftTemplateInput>({
-    mutation: async (input, { abortSignal }) => {
-      const res = await apiClient.venues[":id"].templates.$post(
-        { param: { id: venue.id }, json: input },
+  const createShifts = mutation.create<void, ShiftTemplateInput[]>({
+    mutation: async (templates, { abortSignal }) => {
+      const res = await apiClient.venues[":id"].templates.batch.$post(
+        { param: { id: venue.id }, json: { templates } },
         { init: { signal: abortSignal } },
       );
       if (!res.ok) throw new Error(await readError(res, t().addShiftFailed));
     },
-    onError: (err) => prompts.error(err.message),
   });
-  const openCreateShift = async () => {
-    await runPromptedAction(
-      () => dialogCore.open<ShiftTemplateInput | null>((close) => <ShiftTemplateDialog close={close} />, panelDialogOptions),
-      async (input) => {
-        if (input) await runReconciledMutation(createShift, input, t().shiftAdded);
-      },
+  const openCreateShift = () => {
+    let count = 1;
+    const submit = dialogSubmit(createShifts);
+    return openSavingDialog(
+      (close, guardDismiss) => (
+        <ShiftTemplateDialog
+          close={close}
+          guardDismiss={guardDismiss}
+          submit={(inputs) => {
+            count = inputs.length;
+            return submit(inputs);
+          }}
+        />
+      ),
+      () => (count > 1 ? t().shiftsAdded({ count }) : t().shiftAdded),
     );
   };
 
@@ -479,20 +606,36 @@ export function SettingsDialog(props: {
       );
       if (!res.ok) throw new Error(await readError(res, t().updateShiftFailed));
     },
+  });
+  const openEditShift = (shift: ShiftTemplate) => {
+    const target = { id: shift.id, initial: { ...shift } };
+    const submit = dialogSubmit(editShift);
+    return openSavingDialog(
+      (close, guardDismiss) => (
+        <ShiftTemplateDialog
+          close={close}
+          guardDismiss={guardDismiss}
+          initial={target.initial}
+          submit={([input]) => (input ? submit({ id: target.id, input }) : Promise.resolve(t().updateShiftFailed))}
+        />
+      ),
+      () => t().shiftUpdated,
+    );
+  };
+  /** Pauses or resumes a shift at once: a paused shift keeps its settings but plans no more slots. */
+  const pauseShift = mutation.create<void, { id: string; input: ShiftTemplateInput }>({
+    mutation: async ({ id, input }, { abortSignal }) => {
+      const res = await apiClient.venues[":id"].templates[":resourceId"].$patch(
+        { param: { id: venue.id, resourceId: id }, json: input },
+        { init: { signal: abortSignal } },
+      );
+      if (!res.ok) throw new Error(await readError(res, input.active ? t().resumeShiftFailed : t().pauseShiftFailed));
+    },
     onError: (err) => prompts.error(err.message),
   });
-  const openEditShift = async (shift: ShiftTemplate) => {
-    const target = { id: shift.id, initial: { ...shift } };
-    await runPromptedAction(
-      () =>
-        dialogCore.open<ShiftTemplateInput | null>(
-          (close) => <ShiftTemplateDialog close={close} initial={target.initial} />,
-          panelDialogOptions,
-        ),
-      async (input) => {
-        if (input) await runReconciledMutation(editShift, { id: target.id, input }, t().shiftUpdated);
-      },
-    );
+  const setShiftActive = (shift: ShiftTemplate, active: boolean) => {
+    const { id, venueId: _venueId, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = shift;
+    void runReconciledMutation(pauseShift, { id, input: { ...input, active } }, active ? t().shiftResumed : t().shiftPaused, `shift:${id}`);
   };
 
   const deleteShift = mutation.create<void, string>({
@@ -515,7 +658,7 @@ export function SettingsDialog(props: {
           confirmText: t().delete,
         }),
       async (confirmed) => {
-        if (confirmed) await runReconciledMutation(deleteShift, target.id, t().shiftDeleted);
+        if (confirmed) await runReconciledMutation(deleteShift, target.id, t().shiftDeleted, `shift:${target.id}`);
       },
     );
   };
@@ -525,11 +668,12 @@ export function SettingsDialog(props: {
     createOpening.loading() ||
     editOpening.loading() ||
     deleteOpening.loading() ||
-    addHoliday.loading() ||
-    editHoliday.loading() ||
-    deleteHoliday.loading() ||
-    createShift.loading() ||
+    addException.loading() ||
+    editException.loading() ||
+    deleteException.loading() ||
+    createShifts.loading() ||
     editShift.loading() ||
+    pauseShift.loading() ||
     deleteShift.loading();
   const interactionState = () => ({
     prompting: prompting(),
@@ -575,6 +719,51 @@ export function SettingsDialog(props: {
       </NoticeCard>
     </Show>
   );
+  /** Edit and delete for one row: only the row that runs an action shows progress; the others wait. */
+  const RowActions = (rowProps: {
+    row: string;
+    editLabel: string;
+    deleteLabel: string;
+    onEdit: () => void;
+    onDelete: () => void;
+    children?: JSX.Element;
+  }) => (
+    <Show when={canAdmin()}>
+      <SettingsCollection.Item.Actions>
+        {rowProps.children}
+        <ScheduleActionButton
+          label={rowProps.editLabel}
+          icon="ti ti-pencil"
+          tone="edit"
+          disabled={scheduleBusy()}
+          onClick={rowProps.onEdit}
+        />
+        <ScheduleActionButton
+          label={rowProps.deleteLabel}
+          icon="ti ti-trash"
+          tone="delete"
+          loading={busyRow() === rowProps.row}
+          disabled={scheduleBusy() && busyRow() !== rowProps.row}
+          onClick={rowProps.onDelete}
+        />
+      </SettingsCollection.Item.Actions>
+    </Show>
+  );
+  const ExceptionItem = (itemProps: { entry: DateOverride }) => (
+    <SettingsCollection.Item
+      title={exceptionDate(itemProps.entry)}
+      description={describeException(itemProps.entry, t())}
+      icon={<i class={itemProps.entry.kind === "open" ? "ti ti-calendar-plus" : "ti ti-calendar-off"} aria-hidden="true" />}
+    >
+      <RowActions
+        row={`exception:${itemProps.entry.id}`}
+        editLabel={t().editException}
+        deleteLabel={t().deleteException}
+        onEdit={() => void openEditException(itemProps.entry)}
+        onDelete={() => void confirmDeleteException(itemProps.entry)}
+      />
+    </SettingsCollection.Item>
+  );
 
   onCleanup(() => {
     disposed = true;
@@ -582,11 +771,12 @@ export function SettingsDialog(props: {
     createOpening.abort();
     editOpening.abort();
     deleteOpening.abort();
-    addHoliday.abort();
-    editHoliday.abort();
-    deleteHoliday.abort();
-    createShift.abort();
+    addException.abort();
+    editException.abort();
+    deleteException.abort();
+    createShifts.abort();
     editShift.abort();
+    pauseShift.abort();
     deleteShift.abort();
     for (const controller of requestControllers) controller.abort();
     requestControllers.clear();
@@ -609,37 +799,29 @@ export function SettingsDialog(props: {
           <SettingsModal.Tab id="general" title={t().general} icon="ti ti-id" description={t().generalDescription}>
             <SettingsReadError />
             <AdminOnlyNote />
-            <fieldset disabled={!canAdmin() || !settingsHydrated() || settingsWriteBlocked()} class="grid gap-6">
+            <fieldset disabled={!canAdmin() || !settingsHydrated() || settingsWriteBlocked()} class="grid gap-6" data-settings-general="">
               <SettingsGroup title={t().identity} description={t().identityDescription}>
                 <div class="grid gap-4 md:grid-cols-2">
                   <SettingsField
                     label={t().name}
                     description={t().nameDescription}
-                    error={() => (!name().trim() ? t().nameRequired : undefined)}
+                    error={nameError}
                     changed={() => name() !== currentVenue().name}
                   >
-                    <TextInput
-                      aria-label={t().name}
-                      value={name}
-                      onValueChange={(value) => {
-                        setGeneralDirty(true);
-                        setName(value);
-                      }}
-                      required
-                    />
+                    <TextInput aria-label={t().name} value={name} onValueChange={edit(setName)} required />
                   </SettingsField>
                   <SettingsField
                     label={t().slug}
                     description={t().slugDescription}
-                    error={() => (!slug().trim() ? t().slugRequired : undefined)}
+                    error={slugError}
                     changed={() => slug() !== currentVenue().slug}
                   >
                     <TextInput
                       aria-label={t().slug}
                       value={slug}
                       onValueChange={(value) => {
-                        setGeneralDirty(true);
-                        setSlug(value);
+                        setSlugTaken(false);
+                        edit(setSlug)(value);
                       }}
                       required
                     />
@@ -651,17 +833,77 @@ export function SettingsDialog(props: {
                   error={() => undefined}
                   changed={() => description() !== (currentVenue().description ?? "")}
                 >
-                  <TextInput
-                    aria-label={t().description}
-                    value={description}
-                    onValueChange={(value) => {
-                      setGeneralDirty(true);
-                      setDescription(value);
-                    }}
-                    multiline
-                    lines={3}
-                  />
+                  <TextInput aria-label={t().description} value={description} onValueChange={edit(setDescription)} multiline lines={3} />
                 </SettingsField>
+              </SettingsGroup>
+
+              <SettingsGroup title={t().scheduleRules} description={t().scheduleRulesDescription}>
+                <div class="grid gap-4">
+                  <SettingsField
+                    label={t().publicOpeningLogic}
+                    description={t().publicOpeningLogicDescription}
+                    error={() => undefined}
+                    changed={() => openMode() !== currentVenue().openMode}
+                  >
+                    <SegmentedControl<Venue["openMode"]>
+                      ariaLabel={t().publicOpeningLogic}
+                      value={openMode}
+                      onValueChange={edit(setOpenMode)}
+                      disabled={!canAdmin()}
+                      options={[
+                        { value: "regular", label: t().regular, icon: "ti ti-clock" },
+                        { value: "staffed", label: t().staffedMode, icon: "ti ti-users" },
+                        { value: "combined", label: t().both, icon: "ti ti-arrows-join" },
+                      ]}
+                    />
+                  </SettingsField>
+                  <SettingsField
+                    label={t().signupMode}
+                    description={t().signupModeDescription}
+                    error={() => undefined}
+                    changed={() => signupMode() !== currentVenue().signupMode}
+                  >
+                    <SegmentedControl<Venue["signupMode"]>
+                      ariaLabel={t().signupMode}
+                      value={signupMode}
+                      onValueChange={edit(setSignupMode)}
+                      disabled={!canAdmin()}
+                      options={[
+                        { value: "templates", label: t().signupModeShifts, icon: "ti ti-calendar-event" },
+                        { value: "free", label: t().freeTime, icon: "ti ti-clock-plus" },
+                        { value: "both", label: t().both, icon: "ti ti-arrows-join" },
+                      ]}
+                    />
+                  </SettingsField>
+                  <SettingsField
+                    label={t().timezone}
+                    description={t().timezoneDescription}
+                    error={() => undefined}
+                    changed={() => timezone() !== currentVenue().timezone}
+                  >
+                    <Select
+                      aria-label={t().timezone}
+                      value={timezone}
+                      onValueChange={(value) => {
+                        if (value) edit(setTimezone)(value);
+                      }}
+                      options={zones()}
+                      searchable
+                      clearable={false}
+                    />
+                  </SettingsField>
+                </div>
+              </SettingsGroup>
+
+              <SettingsGroup title={t().publicPage} description={t().publicPageSettingDescription}>
+                <CheckboxCard
+                  label={t().publicPageOn}
+                  description={t().publicPageOnDescription}
+                  icon="ti ti-world"
+                  value={publicEnabled}
+                  onValueChange={edit(setPublicEnabled)}
+                  variant="input"
+                />
               </SettingsGroup>
 
               <SettingsGroup title={t().publicBranding} description={t().publicBrandingDescription}>
@@ -675,10 +917,7 @@ export function SettingsDialog(props: {
                     <IconInput
                       aria-label={t().icon}
                       value={icon}
-                      onValueChange={(value) => {
-                        setGeneralDirty(true);
-                        setIcon(value ?? "ti ti-building-carousel");
-                      }}
+                      onValueChange={(value) => edit(setIcon)(value ?? "ti ti-building-carousel")}
                       clearable={false}
                     />
                   </SettingsField>
@@ -688,14 +927,7 @@ export function SettingsDialog(props: {
                     error={() => undefined}
                     changed={() => accentColor() !== currentVenue().accentColor}
                   >
-                    <ColorInput
-                      aria-label={t().themeColor}
-                      value={accentColor}
-                      onValueChange={(value) => {
-                        setGeneralDirty(true);
-                        setAccentColor(value);
-                      }}
-                    />
+                    <ColorInput aria-label={t().themeColor} value={accentColor} onValueChange={edit(setAccentColor)} />
                   </SettingsField>
                   <SettingsField
                     label={t().logo}
@@ -703,15 +935,7 @@ export function SettingsDialog(props: {
                     error={() => undefined}
                     changed={() => logo() !== currentVenue().logoBase64}
                   >
-                    <ImageInput
-                      aria-label={t().logo}
-                      value={logo}
-                      onValueChange={(value) => {
-                        setGeneralDirty(true);
-                        setLogo(value);
-                      }}
-                      variant="small"
-                    />
+                    <ImageInput aria-label={t().logo} value={logo} onValueChange={edit(setLogo)} variant="small" />
                   </SettingsField>
                   <SettingsField
                     label={t().bannerImage}
@@ -722,10 +946,7 @@ export function SettingsDialog(props: {
                     <ImageInput
                       aria-label={t().bannerImage}
                       value={banner}
-                      onValueChange={(value) => {
-                        setGeneralDirty(true);
-                        setBanner(value);
-                      }}
+                      onValueChange={edit(setBanner)}
                       variant="small"
                       transform={bannerTransform}
                     />
@@ -739,10 +960,7 @@ export function SettingsDialog(props: {
                   description={t().feedbackActivatedDescription}
                   icon="ti ti-message-star"
                   value={feedbackEnabled}
-                  onValueChange={(value) => {
-                    setGeneralDirty(true);
-                    setFeedbackEnabled(value);
-                  }}
+                  onValueChange={edit(setFeedbackEnabled)}
                   variant="input"
                 />
               </SettingsGroup>
@@ -752,6 +970,7 @@ export function SettingsDialog(props: {
                 <SettingsPanelFooter
                   changeCount={generalChangeCount}
                   loading={save.loading}
+                  saveDisabled={() => Boolean(nameError() || slugError())}
                   onDiscard={discardGeneral}
                   onSave={() => void saveSettings()}
                 />
@@ -863,37 +1082,15 @@ export function SettingsDialog(props: {
         )}
 
         <SettingsModal.Group title={t().operations}>
+          {/* Every change in this tab saves at once; the opening logic lives in General with its save bar. */}
           <SettingsModal.Tab id="schedule" title={t().schedule} icon="ti ti-calendar-time" description={t().operationsDescription}>
             <SettingsReadError />
             <AdminOnlyNote />
             <div class="grid gap-6">
-              <Show when={venueSettingsCanAdmin(settings())}>
-                <SettingsGroup title={t().publicOpeningLogic} description={t().publicOpeningLogicDescription}>
-                  <SegmentedControl<Venue["openMode"]>
-                    value={openMode}
-                    onValueChange={(value) => {
-                      setGeneralDirty(true);
-                      setOpenMode(value);
-                    }}
-                    options={[
-                      { value: "regular", label: t().regular, icon: "ti ti-clock" },
-                      { value: "staffed", label: t().staffedMode, icon: "ti ti-users" },
-                      { value: "combined", label: t().both, icon: "ti ti-arrows-join" },
-                    ]}
-                  />
-                </SettingsGroup>
-              </Show>
-
               <SettingsCollection title={t().regularHours} description={t().regularHoursDescription} empty={t().noRegularHours}>
-                <Show when={venueSettingsCanAdmin(settings())}>
+                <Show when={canAdmin()}>
                   <SettingsCollection.Action>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={scheduleBusy()}
-                      loading={createOpening.loading()}
-                      onClick={() => void openCreateOpening()}
-                    >
+                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateOpening()}>
                       <i class="ti ti-plus" aria-hidden="true" /> {t().newHours}
                     </Button>
                   </SettingsCollection.Action>
@@ -902,137 +1099,95 @@ export function SettingsDialog(props: {
                   {(rule) => (
                     <SettingsCollection.Item
                       title={weekday(rule.weekday)}
-                      description={`${rule.startTime}-${rule.endTime}${rule.note ? ` · ${rule.note}` : ""}`}
+                      description={`${rule.startTime}–${rule.endTime}${rule.note ? ` · ${rule.note}` : ""}`}
                       icon={<i class="ti ti-clock" aria-hidden="true" />}
                     >
-                      <Show when={venueSettingsCanAdmin(settings())}>
-                        <SettingsCollection.Item.Actions>
-                          <ScheduleActionButton
-                            label={t().editOpening}
-                            icon="ti ti-pencil"
-                            tone="edit"
-                            loading={scheduleBusy()}
-                            onClick={() => void openEditOpening(rule)}
-                          />
-                          <ScheduleActionButton
-                            label={t().deleteOpening}
-                            icon="ti ti-trash"
-                            tone="delete"
-                            loading={scheduleBusy()}
-                            onClick={() => void confirmDeleteOpening(rule)}
-                          />
-                        </SettingsCollection.Item.Actions>
-                      </Show>
+                      <RowActions
+                        row={`opening:${rule.id}`}
+                        editLabel={t().editOpening}
+                        deleteLabel={t().deleteOpening}
+                        onEdit={() => void openEditOpening(rule)}
+                        onDelete={() => void confirmDeleteOpening(rule)}
+                      />
                     </SettingsCollection.Item>
                   )}
                 </For>
               </SettingsCollection>
 
-              <SettingsCollection title={t().closedDays} description={t().closedDaysDescription} empty={t().noClosedDays}>
-                <Show when={venueSettingsCanAdmin(settings())}>
-                  <SettingsCollection.Action>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={scheduleBusy()}
-                      loading={addHoliday.loading()}
-                      onClick={() => void openAddHoliday()}
-                    >
-                      <i class="ti ti-plus" aria-hidden="true" /> {t().newClosedDay}
-                    </Button>
-                  </SettingsCollection.Action>
+              <div class="grid gap-2" data-settings-exceptions="">
+                <SettingsCollection title={t().exceptions} description={t().exceptionsDescription} empty={t().noUpcomingExceptions}>
+                  <Show when={canAdmin()}>
+                    <SettingsCollection.Action>
+                      <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openAddException()}>
+                        <i class="ti ti-plus" aria-hidden="true" /> {t().newException}
+                      </Button>
+                    </SettingsCollection.Action>
+                  </Show>
+                  <For each={upcomingOverrides()}>{(entry) => <ExceptionItem entry={entry} />}</For>
+                </SettingsCollection>
+                <Show when={pastOverrides().length > 0}>
+                  <Disclosure surface="plain" icon="ti ti-history" summary={t().pastExceptions({ count: pastOverrides().length })}>
+                    <SettingsCollection title={t().pastExceptionsTitle}>
+                      <For each={pastOverrides()}>{(entry) => <ExceptionItem entry={entry} />}</For>
+                    </SettingsCollection>
+                  </Disclosure>
                 </Show>
-                <For each={overrides()}>
-                  {(entry) => (
-                    <SettingsCollection.Item
-                      title={exceptionDate(entry)}
-                      description={[
-                        entry.kind === "open" && entry.startTime && entry.endTime
-                          ? t().specialOpening({ window: `${entry.startTime}–${entry.endTime}` })
-                          : t().closed,
-                        entry.note,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      icon={<i class={entry.kind === "open" ? "ti ti-calendar-plus" : "ti ti-calendar-off"} aria-hidden="true" />}
-                    >
-                      <Show when={venueSettingsCanAdmin(settings())}>
-                        <SettingsCollection.Item.Actions>
-                          <ScheduleActionButton
-                            label={t().editException}
-                            icon="ti ti-pencil"
-                            tone="edit"
-                            loading={scheduleBusy()}
-                            onClick={() => void openEditHoliday(entry)}
-                          />
-                          <ScheduleActionButton
-                            label={t().deleteException}
-                            icon="ti ti-trash"
-                            tone="delete"
-                            loading={scheduleBusy()}
-                            onClick={() => void confirmDeleteHoliday(entry)}
-                          />
-                        </SettingsCollection.Item.Actions>
-                      </Show>
-                    </SettingsCollection.Item>
-                  )}
-                </For>
-              </SettingsCollection>
+              </div>
 
-              <SettingsCollection title={t().shifts} description={t().shiftsDescription} empty={t().noShifts}>
-                <Show when={venueSettingsCanAdmin(settings())}>
-                  <SettingsCollection.Action>
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={scheduleBusy()}
-                      loading={createShift.loading()}
-                      onClick={() => void openCreateShift()}
-                    >
+              <SettingsGroup title={t().shifts} description={t().shiftsDescription}>
+                <Show when={canAdmin()}>
+                  <SettingsGroup.Action>
+                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateShift()}>
                       <i class="ti ti-plus" aria-hidden="true" /> {t().newShift}
                     </Button>
-                  </SettingsCollection.Action>
+                  </SettingsGroup.Action>
                 </Show>
-                <For each={shiftTemplates()}>
-                  {(shift) => (
-                    <SettingsCollection.Item
-                      title={shift.title}
-                      description={`${weekday(shift.weekday)} · ${shift.startTime}-${shift.endTime} · ${t().target({ min: shift.minPeople, max: shift.maxPeople })}`}
-                      icon={<i class="ti ti-users" aria-hidden="true" />}
-                    >
-                      <Show when={venueSettingsCanAdmin(settings())}>
-                        <SettingsCollection.Item.Actions>
-                          <ScheduleActionButton
-                            label={t().editShift}
-                            icon="ti ti-pencil"
-                            tone="edit"
-                            loading={scheduleBusy()}
-                            onClick={() => void openEditShift(shift)}
-                          />
-                          <ScheduleActionButton
-                            label={t().deleteShift}
-                            icon="ti ti-trash"
-                            tone="delete"
-                            loading={scheduleBusy()}
-                            onClick={() => void confirmDeleteShift(shift)}
-                          />
-                        </SettingsCollection.Item.Actions>
-                      </Show>
-                    </SettingsCollection.Item>
-                  )}
-                </For>
-              </SettingsCollection>
+                <Show
+                  when={shiftsByWeekday().length > 0}
+                  fallback={<Placeholder variant="compact" align="left" description={<>{t().noShifts}</>} />}
+                >
+                  <div class="grid gap-4" data-settings-shifts="">
+                    <For each={shiftsByWeekday()}>
+                      {(group) => (
+                        <SettingsCollection title={weekday(group.weekday)}>
+                          <For each={group.templates}>
+                            {(shift) => (
+                              <SettingsCollection.Item
+                                title={shift.title}
+                                description={`${shift.startTime}–${shift.endTime} · ${t().target({ min: shift.minPeople, max: shift.maxPeople })}`}
+                                icon={<i class={shift.active ? "ti ti-users" : "ti ti-player-pause"} aria-hidden="true" />}
+                              >
+                                <Show when={!shift.active}>
+                                  <SettingsCollection.Item.Status>
+                                    <Tag size="sm">{t().paused}</Tag>
+                                  </SettingsCollection.Item.Status>
+                                </Show>
+                                <RowActions
+                                  row={`shift:${shift.id}`}
+                                  editLabel={t().editShift}
+                                  deleteLabel={t().deleteShift}
+                                  onEdit={() => void openEditShift(shift)}
+                                  onDelete={() => void confirmDeleteShift(shift)}
+                                >
+                                  <Tooltip.Anchor content={shift.active ? t().pauseShift : t().resumeShift}>
+                                    <Switch
+                                      aria-label={t().shiftActiveLabel({ title: shift.title })}
+                                      value={shift.active}
+                                      disabled={scheduleBusy()}
+                                      onValueChange={(active) => setShiftActive(shift, active)}
+                                    />
+                                  </Tooltip.Anchor>
+                                </RowActions>
+                              </SettingsCollection.Item>
+                            )}
+                          </For>
+                        </SettingsCollection>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </SettingsGroup>
             </div>
-            <Show when={venueSettingsCanAdmin(settings())}>
-              <SettingsModal.Footer>
-                <SettingsPanelFooter
-                  changeCount={generalChangeCount}
-                  loading={save.loading}
-                  onDiscard={discardGeneral}
-                  onSave={() => void saveSettings()}
-                />
-              </SettingsModal.Footer>
-            </Show>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
