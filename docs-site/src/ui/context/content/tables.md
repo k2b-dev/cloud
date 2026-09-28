@@ -102,7 +102,7 @@ component keeps scrolling on its inner viewport. Bound a scrolling table with
 `height`, `max-height`, or a correctly sized `min-h-0 flex-1` region instead of
 adding another scroll container.
 
-`hasMore`, `loadingMore`, and `onLoadMore` add an infinite-load sentinel. The owning island still fetches the next server page and appends its rows. The table keeps one request in flight until rows or loading state advance.
+`hasMore`, `loadingMore`, and `onLoadMore` add an infinite-load sentinel. The owning island still fetches the next server page and appends its rows. The table requests that page when its end comes near the visible area, whether the table scrolls its own viewport or grows with its rows while the page scrolls. While `loadingMore` is true, the table requests nothing more. Otherwise it requests again after rows or loading state advance, or after the end has left the visible area and returned, so a request the owner ignored is not lost. An owner that omits `loadingMore` must ignore a repeated call while its page is still loading.
 
 ## API reference
 

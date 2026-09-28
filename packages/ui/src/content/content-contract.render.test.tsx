@@ -314,6 +314,11 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*height: 1px[^}]*margin-top: -1px/s);
   });
 
+  test("keeps the load-more sentinel in view while a wide table is scrolled sideways", () => {
+    // The page-level observer only sees the end of a growing table when the sentinel is not clipped horizontally.
+    expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*position: sticky;[^}]*left: 0;[^}]*pointer-events: none;/s);
+  });
+
   test("composes a labelled professional DataTable panel without component-valued props", () => {
     type Row = { id: string; name: string };
     const html = renderToString(() =>
