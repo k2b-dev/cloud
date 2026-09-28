@@ -32,7 +32,7 @@ type Caller = { cookie?: string; authorization?: string };
 type Step = {
   method: Method;
   route: string;
-  params: Record<string, string>;
+  params?: Record<string, string>;
   query?: string;
   body?: unknown;
   as?: "anonymous" | "apiKey";
@@ -44,13 +44,9 @@ type Step = {
 const takesVenueResourceId = (route: string, param: string) =>
   ["id", "resourceId", "templateId", "assignmentId"].includes(param) && !route.startsWith("/api/venue/templates/");
 
-/** Every declared route with a path parameter, as `METHOD /path`. */
-const idRoutes = (): string[] =>
-  [
-    ...new Set(
-      venueApp.routes.filter((route) => route.method !== "ALL" && route.path.includes(":")).map((route) => `${route.method} ${route.path}`),
-    ),
-  ].sort();
+/** Every declared route, as `METHOD /path`; routes without an ID parameter can still return Venue records. */
+const declaredRoutes = (): string[] =>
+  [...new Set(venueApp.routes.filter((route) => route.method !== "ALL").map((route) => `${route.method} ${route.path}`))].sort();
 
 const dateInDays = (days: number): string => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 const weekdayOf = (date: string): number => new Date(`${date}T12:00:00Z`).getUTCDay();
@@ -119,7 +115,7 @@ suite("Venue routes with public IDs", () => {
     await settings.set("security.rate_limit_per_second", 1000);
   });
 
-  test("every route that takes an ID accepts the public ID, rejects the internal UUID, and never returns one", async () => {
+  test("every route accepts public IDs, rejects internal UUIDs, and never returns one", async () => {
     const ownerId = await insertUser("owner");
     const staffId = await insertUser("staff");
     const owner = await sessionFor(ownerId);
@@ -134,20 +130,36 @@ suite("Venue routes with public IDs", () => {
     const freeStart = new Date(Date.now() + 14 * 86_400_000);
 
     try {
-      const created = await send("POST", "/api/venue/venues", owner, { name: "Harbor Cafe", slug });
-      expect(created.status).toBe(201);
-      saveId("venue")(await created.json());
-      expect(ids.venue).toMatch(/^[0-9A-Za-z]{6}$/);
-      const widget = await send("GET", "/api/venue/widget/today", owner);
-      expect(widget.status).toBe(200);
-      bodies.push(await widget.text());
-      const calendar = (await (await send("GET", "/api/venue/calendar/my", owner)).json()) as { href: string };
-      ids.calendarToken = new URL(calendar.href).pathname.split("/").pop()!;
-      ids.builtInTemplate = ((await (await send("GET", "/api/venue/templates", owner)).json()) as { id: string }[])[0]!.id;
       ids.feedbackView = "feedback";
 
       const venue = { id: "venue" };
       const steps: Step[] = [
+        {
+          method: "POST",
+          route: "/api/venue/venues",
+          body: { name: "Harbor Cafe", slug },
+          status: 201,
+          onBody: (body) => {
+            saveId("venue")(body);
+            expect(ids.venue).toMatch(/^[0-9A-Za-z]{6}$/);
+          },
+        },
+        {
+          method: "GET",
+          route: "/api/venue/calendar/my",
+          status: 200,
+          onBody: (body) => {
+            ids.calendarToken = new URL((body as { href: string }).href).pathname.split("/").pop()!;
+          },
+        },
+        {
+          method: "GET",
+          route: "/api/venue/templates",
+          status: 200,
+          onBody: (body) => {
+            ids.builtInTemplate = (body as { id: string }[])[0]!.id;
+          },
+        },
         {
           method: "POST",
           route: "/api/venue/templates/:templateId",
@@ -309,6 +321,19 @@ suite("Venue routes with public IDs", () => {
         { method: "GET", route: "/app/venue/public/:id/feedback", params: venue, as: "anonymous", status: 200 },
         { method: "GET", route: "/api/venue/public/:id/status", params: venue, as: "anonymous", status: 200 },
         { method: "GET", route: "/api/venue/calendar/:token", params: { token: "calendarToken" }, as: "anonymous", status: 200 },
+        // Routes without an ID parameter list the same populated Venues.
+        {
+          method: "GET",
+          route: "/api/venue/venues",
+          status: 200,
+          onBody: (body) => {
+            const listed = (body as { venues: { id: string }[] }).venues.map((item) => item.id).sort();
+            expect(listed).toEqual([ids.venue ?? "", ids.templateVenue ?? ""].sort());
+          },
+        },
+        { method: "GET", route: "/app/venue", status: 200 },
+        { method: "GET", route: "/api/venue/widget/today", status: 200 },
+        { method: "GET", route: "/api/venue/schema", status: 200 },
         {
           method: "DELETE",
           route: "/api/venue/venues/:id/assignments/:assignmentId",
@@ -357,12 +382,12 @@ suite("Venue routes with public IDs", () => {
       for (const step of steps) {
         const label = `${step.method} ${step.route}`;
         const caller = step.as === "anonymous" ? {} : step.as === "apiKey" ? { authorization: `Bearer ${ids.apiKey}` } : owner;
-        const publicValue = (param: string) => ids[step.params[param] ?? ""];
+        const publicValue = (param: string) => ids[step.params?.[param] ?? ""];
         for (const [publicId, internalId] of await internalIdsOwnedBy(ownerId)) internal.set(publicId, internalId);
 
         // Internal UUIDs are not a second way in. API ID parameters use the public ID schema, so a UUID fails
         // validation (400); pages resolve the ID and do not find a UUID (404).
-        for (const param of Object.keys(step.params).filter((name) => takesVenueResourceId(step.route, name))) {
+        for (const param of Object.keys(step.params ?? {}).filter((name) => takesVenueResourceId(step.route, name))) {
           const path = fill(step.route, (name) => (name === param ? internal.get(publicValue(name) ?? "") : publicValue(name)));
           const rejected = await send(step.method, `${path}${step.query ?? ""}`, caller, step.body);
           expect({ label, param, status: rejected.status }).toEqual({ label, param, status: step.route.startsWith("/app/") ? 404 : 400 });
@@ -379,7 +404,7 @@ suite("Venue routes with public IDs", () => {
         step.onBody?.(JSON.parse(text));
       }
 
-      expect([...new Set(steps.map((step) => `${step.method} ${step.route}`))].sort()).toEqual(idRoutes());
+      expect([...new Set(steps.map((step) => `${step.method} ${step.route}`))].sort()).toEqual(declaredRoutes());
       expect(internal.size).toBeGreaterThan(0);
       for (const internalId of internal.values()) {
         for (const body of bodies) expect(body).not.toContain(internalId);
