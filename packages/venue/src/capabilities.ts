@@ -92,7 +92,8 @@ const mapVenue = (venue: CapabilityVenue) => ({
 });
 
 const requireVenue = async (venueId: string, scope: VenueAccessScope, permission: "read" | "write", allowPublic = false) => {
-  const venue = await venueService.venues.resolve(venueId, scope, { summary: true });
+  // Capabilities also read public Venues and answer "not found" when a grant is missing, so they authorize here.
+  const venue = await venueService.venues.resolve(venueId, scope, "none", { summary: true });
   if (!venue.ok) return venue;
   const allowed =
     hasPermission(venue.data.permission ?? "none", permission) ||

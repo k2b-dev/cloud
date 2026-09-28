@@ -6,6 +6,7 @@ import {
   err,
   fail,
   getEffectivePermission,
+  hasPermission,
   ok,
   type PermissionLevel,
   type Principal,
@@ -567,13 +568,15 @@ const getVenueByShortId = async (shortId: string): Promise<Venue | null> => {
 
 /**
  * Resolves the public Venue ID of an API, page, or capability request to the
- * internal record, with the subject's effective `permission`. Callers authorize
- * with that permission and pass `venue.id` on, so the public ID never reaches a
- * query that expects the internal UUID.
+ * internal record and fails unless the subject's effective `permission` reaches
+ * `required`. Callers pass `venue.id` on, so the public ID never reaches a query
+ * that expects the internal UUID. `"none"` leaves authorization to a caller
+ * with its own rule, such as capabilities that read public Venues.
  */
 const resolveVenue = async (
   publicId: string,
   subjectInput: UserLike | VenueAccessSubject,
+  required: PermissionLevel,
   options: { summary?: boolean } = {},
 ): Promise<Result<Venue>> => {
   const id = await resolvePublicId("venues", publicId);
@@ -581,7 +584,9 @@ const resolveVenue = async (
   const subject = toAccessSubject(subjectInput);
   if (subject.serviceAccountResourceId && subject.serviceAccountResourceId !== id) return fail(err.forbidden("Access denied"));
   const venue = options.summary ? await getVenueSummary(id, subject) : await getVenue(id, subject);
-  return venue ? ok(venue) : fail(err.notFound("Venue"));
+  if (!venue) return fail(err.notFound("Venue"));
+  if (!hasPermission(venue.permission ?? "none", required)) return fail(err.forbidden("You do not have access to this venue"));
+  return ok(venue);
 };
 
 const createVenueInTx = async (tx: SqlClient, input: VenueInput, user: UserLike): Promise<Result<Venue>> => {

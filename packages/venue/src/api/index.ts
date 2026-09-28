@@ -14,7 +14,6 @@ import {
   err,
   fail,
   getLocale,
-  hasPermission,
   jsonResponse,
   ok,
   type Result,
@@ -105,10 +104,7 @@ const getVenueAccessSubject = (c: Context<AuthContext>) => venueAccessScopeFor(c
 const requireVenue = async (c: Context<AuthContext>, publicId: string, permission: PermissionLevel) => {
   const subject = getVenueAccessSubject(c);
   if (!subject.ok) return subject;
-  const venue = await venueService.venues.resolve(publicId, subject.data);
-  if (!venue.ok) return venue;
-  if (!hasPermission(venue.data.permission ?? "none", permission)) return fail(err.forbidden("You do not have access to this venue"));
-  return venue;
+  return venueService.venues.resolve(publicId, subject.data, permission);
 };
 
 const resolveOwned = async (

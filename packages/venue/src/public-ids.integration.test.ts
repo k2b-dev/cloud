@@ -9,6 +9,7 @@ import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
 import "./frontend/ssr-test-plugin";
+import { newShortId } from "./lib/short-id";
 
 const { default: pageRoutes } = await import("./frontend");
 
@@ -99,6 +100,20 @@ const insertUser = async (label: string): Promise<string> => {
   return row!.id;
 };
 
+const sessionFor = async (userId: string): Promise<Caller> => ({ cookie: `session_token=${await createTestSession(userId)}` });
+
+/** Removes the owner's Venues with their API keys, then the test users. */
+const removeTestData = async (ownerId: string, ...otherUserIds: string[]) => {
+  const owned = await sql<{ id: string }[]>`
+    SELECT va.venue_id::text AS id FROM venue.venue_access va JOIN auth.access a ON a.id = va.access_id WHERE a.user_id = ${ownerId}::uuid
+  `;
+  for (const { id } of owned) {
+    await sql`DELETE FROM auth.service_accounts WHERE app_id = 'venue' AND resource_id = ${id}`;
+    await sql`DELETE FROM venue.venues WHERE id = ${id}::uuid`;
+  }
+  for (const userId of [ownerId, ...otherUserIds]) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+};
+
 suite("Venue routes with public IDs", () => {
   beforeAll(async () => {
     await settings.set("security.rate_limit_per_second", 1000);
@@ -107,7 +122,7 @@ suite("Venue routes with public IDs", () => {
   test("every route that takes an ID accepts the public ID, rejects the internal UUID, and never returns one", async () => {
     const ownerId = await insertUser("owner");
     const staffId = await insertUser("staff");
-    const owner: Caller = { cookie: `session_token=${await createTestSession(ownerId)}` };
+    const owner = await sessionFor(ownerId);
     const ids: Record<string, string> = {};
     const saveId = (name: string) => (body: unknown) => {
       ids[name] = (body as { id: string }).id;
@@ -370,14 +385,63 @@ suite("Venue routes with public IDs", () => {
         for (const body of bodies) expect(body).not.toContain(internalId);
       }
     } finally {
-      const owned = await sql<{ id: string }[]>`
-        SELECT va.venue_id::text AS id FROM venue.venue_access va JOIN auth.access a ON a.id = va.access_id WHERE a.user_id = ${ownerId}::uuid
-      `;
-      for (const { id } of owned) {
-        await sql`DELETE FROM auth.service_accounts WHERE app_id = 'venue' AND resource_id = ${id}`;
-        await sql`DELETE FROM venue.venues WHERE id = ${id}::uuid`;
+      await removeTestData(ownerId, staffId);
+    }
+  });
+
+  test("API routes and pages deny callers below the required permission", async () => {
+    const ownerId = await insertUser("owner");
+    const outsiderId = await insertUser("outsider");
+    const readerId = await insertUser("reader");
+    const owner = await sessionFor(ownerId);
+    const slug = (name: string) => `${name}-${ownerId.slice(0, 8)}`;
+    const createVenue = async (name: string, venueSlug: string): Promise<string> => {
+      const response = await send("POST", "/api/venue/venues", owner, { name, slug: venueSlug });
+      expect(response.status).toBe(201);
+      return ((await response.json()) as { id: string }).id;
+    };
+
+    try {
+      const cafe = await createVenue("Harbor Cafe", slug("harbor-cafe"));
+      const bakery = await createVenue("Dockside Bakery", slug("dockside-bakery"));
+      const grant = { principal: { type: "user", userId: readerId }, permission: "read" };
+      expect((await send("POST", `/api/venue/venues/${cafe}/access`, owner, grant)).status).toBe(201);
+      const key = await send("POST", `/api/venue/venues/${cafe}/api-keys`, owner, { name: "Lobby display", permission: "read" });
+      expect(key.status).toBe(201);
+      const callers = {
+        outsider: await sessionFor(outsiderId),
+        reader: await sessionFor(readerId),
+        "cafe key": { authorization: `Bearer ${((await key.json()) as { token: string }).token}` },
+      };
+      const venueInput = { name: "Harbor Cafe", slug: slug("harbor-cafe") };
+      const freeStart = new Date(Date.now() + 14 * 86_400_000);
+      const freeSlot = { startsAt: freeStart.toISOString(), endsAt: new Date(freeStart.getTime() + 3_600_000).toISOString() };
+      const notice = { kind: "notice", title: "Closed on Monday", content: { text: "We reopen on Tuesday." } };
+
+      // Signed-out requests never reach the permission check, and the allowed requests show that the grant and
+      // the key work, so each 403 comes from the permission the route requires.
+      const checks: [caller: keyof typeof callers, method: Method, path: string, body: unknown, status: number][] = [
+        ["outsider", "GET", `/api/venue/venues/${cafe}/dashboard`, undefined, 403],
+        ["outsider", "GET", `/app/venue/${cafe}/shifts`, undefined, 403],
+        ["outsider", "GET", `/api/venue/venues/${newShortId()}/dashboard`, undefined, 404],
+        ["reader", "GET", `/api/venue/venues/${cafe}/dashboard`, undefined, 200],
+        ["reader", "GET", `/app/venue/${cafe}/shifts`, undefined, 200],
+        ["reader", "POST", `/api/venue/venues/${cafe}/free-signup`, freeSlot, 403],
+        ["reader", "PATCH", `/api/venue/venues/${cafe}`, venueInput, 403],
+        ["reader", "POST", `/api/venue/venues/${cafe}/sections`, notice, 403],
+        ["reader", "GET", `/api/venue/venues/${cafe}/access`, undefined, 403],
+        ["reader", "POST", `/api/venue/venues/${cafe}/api-keys`, { name: "Reader key", permission: "read" }, 403],
+        ["reader", "DELETE", `/api/venue/venues/${cafe}`, undefined, 403],
+        ["cafe key", "GET", `/api/venue/venues/${cafe}/dashboard`, undefined, 200],
+        ["cafe key", "PATCH", `/api/venue/venues/${cafe}`, venueInput, 403],
+        ["cafe key", "GET", `/api/venue/venues/${bakery}/dashboard`, undefined, 403],
+      ];
+      for (const [caller, method, path, body, status] of checks) {
+        const response = await send(method, path, callers[caller], body);
+        expect({ caller, method, path, status: response.status }).toEqual({ caller, method, path, status });
       }
-      await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${staffId}::uuid)`;
+    } finally {
+      await removeTestData(ownerId, outsiderId, readerId);
     }
   });
 });

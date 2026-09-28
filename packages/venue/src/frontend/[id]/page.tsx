@@ -1,6 +1,6 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale, hasPermission } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import type { CalendarView } from "@k2b/ui";
@@ -46,10 +46,9 @@ export default ssr<AuthContext>(async (c) => {
   if (!id) return ssr.error(c, 404);
   const url = new URL(c.req.raw.url);
   const user = expectUserBackedActor(c);
-  const venueResult = await venueService.venues.resolve(id, user);
+  const venueResult = await venueService.venues.resolve(id, user, "read");
   if (!venueResult.ok) return ssr.error(c, venueResult.error.status);
   const venue = venueResult.data;
-  if (!hasPermission(venue.permission ?? "none", "read")) return ssr.error(c, 403);
 
   const pathView = c.req.param("view");
   const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search);
