@@ -72,19 +72,28 @@ export function SignupDialog(props: { dashboard: VenueDashboard; userId: string;
     return formatDateKey(shiftDate(last.startDate, SIGNUP_PAGE_DAYS - 1), locale(), { weekday: "short", day: "numeric", month: "short" });
   };
 
-  const signup = mutation.create<void, { venueId: string; templateId: string; date: string; weeks?: number }>({
+  /** Resolves to the number of new sign-ups: the weeks sign-up skips weeks the viewer already has or that are full. */
+  const signup = mutation.create<number, { venueId: string; templateId: string; date: string; weeks?: number }>({
     mutation: async ({ venueId, templateId, date, weeks }, { abortSignal }) => {
       const target = apiClient.venues[":id"].templates[":templateId"];
-      const res = weeks
-        ? await target["signup-weeks"].$post(
-            { param: { id: venueId, templateId }, json: { date, weeks } },
-            { init: { signal: abortSignal } },
-          )
-        : await target.signup.$post({ param: { id: venueId, templateId }, json: { date } }, { init: { signal: abortSignal } });
+      if (weeks) {
+        const res = await target["signup-weeks"].$post(
+          { param: { id: venueId, templateId }, json: { date, weeks } },
+          { init: { signal: abortSignal } },
+        );
+        if (!res.ok) throw new Error(await readError(res, t().signupFailed));
+        return (await res.json()).length;
+      }
+      const res = await target.signup.$post({ param: { id: venueId, templateId }, json: { date } }, { init: { signal: abortSignal } });
       if (!res.ok) throw new Error(await readError(res, t().signupFailed));
+      return 1;
     },
-    onSuccess: () => {
-      toast.success(t().shiftAdded);
+    onSuccess: (added) => {
+      if (added === 0) {
+        toast(t().noShiftsAdded);
+        return;
+      }
+      toast.success(added === 1 ? t().shiftAdded : t().shiftsAdded({ count: added }));
       props.close(true);
     },
     onError: (err) => prompts.error(err.message),

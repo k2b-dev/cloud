@@ -196,6 +196,50 @@ describe("Venue clarity behavior", () => {
     }
   });
 
+  test("joining the next weeks says how many shifts it added, and that nothing changed when it added none", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const mine = slot(addDays(today, 1), "Lunch counter");
+    // The server skips weeks the viewer already has or that are full and answers with the sign-ups it made.
+    let created: ShiftAssignment[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const method = input instanceof Request ? input.method : (init?.method ?? "GET");
+      if (method === "POST" && url.includes("/signup-weeks")) return Response.json(created, { status: 201 });
+      return Response.json({ ...dashboard, slots: [withAssignments(mine, [assignment(mine, "user-1", "Alex Example")])] });
+    }) as typeof fetch;
+    const toasts = () => [...dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] > [data-tone]")];
+
+    const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
+    const closes: boolean[] = [];
+    const dispose = render(
+      () => <SignupDialog dashboard={dashboard} userId="user-1" close={(changed) => closes.push(changed)} />,
+      dom.root,
+    );
+    try {
+      await flush();
+      buttonNamed(dom.root, "Join next 4 weeks").click();
+      await flush();
+      // Nothing was added, so the dialog stays open and says so instead of reporting a new shift.
+      expect(closes).toEqual([]);
+      expect(toasts().map((entry) => [entry.dataset.tone, entry.textContent])).toEqual([
+        ["info", expect.stringContaining("No shifts added. You are already signed up for these weeks, or they are full.")],
+      ]);
+
+      created = [8, 15].map((days) => assignment(slot(addDays(today, days), "Lunch counter"), "user-1", "Alex Example"));
+      buttonNamed(dom.root, "Join next 4 weeks").click();
+      await flush();
+      expect(closes).toEqual([true]);
+      expect(toasts().at(-1)?.dataset.tone).toBe("success");
+      expect(toasts().at(-1)?.textContent).toContain("2 shifts added");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test("feedback starts without a rating and sends only the rating the visitor chose", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;

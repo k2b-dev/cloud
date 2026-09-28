@@ -179,6 +179,9 @@ suite("Venue sections and feedback say what they do", () => {
       "sign up for two weeks",
     );
     expect(weeks.map((entry) => entry.userDisplayName)).toEqual(["Venue clarity admin", "Venue clarity admin"]);
+    // Weeks the person already has are skipped; the dialog reads the empty answer as "nothing added".
+    const again = await signup(`templates/${template.id}/signup-weeks`, { date: shiftDate(date, 7), weeks: 2 });
+    expect(await json<ShiftAssignment[]>(again, 201, "sign up for the same weeks again")).toEqual([]);
 
     const startsAt = new Date(`${shiftDate(date, 1)}T15:00:00Z`).toISOString();
     const endsAt = new Date(`${shiftDate(date, 1)}T17:00:00Z`).toISOString();
