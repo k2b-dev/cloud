@@ -145,4 +145,14 @@ describe("shared records page URLs", () => {
     expect(page.initialState.query.sort).toEqual([]);
     expect(page.initialState.search).toMatchObject({ q: "a", fieldIds: [] });
   });
+
+  postgresTest("keep the search-scope fields that still exist", async () => {
+    const f = fixture!;
+
+    // "e" matches the title Beta and, through People, the name Grace on Beta and Gamma.
+    const page = await loadTablePage(f, { q: "e", qFields: `GONE01,${f.titlePublicId}` });
+
+    expect(page.titles).toEqual(["Beta"]);
+    expect(page.initialState.search).toMatchObject({ q: "e", fieldIds: [f.titlePublicId] });
+  });
 });

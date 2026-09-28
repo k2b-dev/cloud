@@ -395,6 +395,20 @@ describe("loadGridsWorkspaceState — GQL-backed views", () => {
     expect(await toPublicRecordQuery(state.route.initialState.query, [statusField] as never)).toMatchObject({ sort: [], groupBy: [] });
   });
 
+  test("keeps the search-scope fields of a URL that still exist", async () => {
+    lookupTable = table;
+
+    const state = await loadWorkspaceState({
+      user,
+      baseShortId: base.shortId,
+      href: `/app/grids/${base.shortId}/table/${table.shortId}?q=Open&qFields=GONE01,${statusField.shortId}`,
+      activeTableSlug: table.shortId,
+    });
+
+    expect(state.kind).toBe("ok");
+    expect(lastRecordListParams?.search).toEqual({ q: "Open", fieldIds: [statusField.id] });
+  });
+
   test("loads a directly addressed query-result view when the catalog snapshot omits its table", async () => {
     const aggregateView = {
       ...savedView,

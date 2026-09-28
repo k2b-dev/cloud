@@ -232,7 +232,9 @@ type UrlQueryKey = Exclude<keyof RecordsState["query"], "includeDeleted" | "dele
  * Grids URLs name fields and related records by public ID. Each query parameter
  * resolves on its own; one that is malformed or names a field or record that no
  * longer exists is ignored, like malformed JSON in `parseRecordsState`, so a
- * stale link still opens the table.
+ * stale link still opens the table. The search scope only drops the fields
+ * that no longer exist: a missing field can match nothing, so the remaining
+ * fields keep the search the link describes.
  */
 const resolveUrlRecordsState = async (tableId: string, fields: Field[], state: RecordsState): Promise<RecordsState> => {
   const resolveParam = async <K extends UrlQueryKey>(key: K): Promise<RecordQuery[K] | undefined> => {
@@ -243,7 +245,6 @@ const resolveUrlRecordsState = async (tableId: string, fields: Field[], state: R
     return resolved.ok ? resolved.data[key] : undefined;
   };
   const fieldIds = new Map(fields.map((field) => [field.shortId, field.id]));
-  const searchFieldIds = state.search.fieldIds.map((id) => fieldIds.get(id));
   return {
     ...state,
     query: {
@@ -257,10 +258,7 @@ const resolveUrlRecordsState = async (tableId: string, fields: Field[], state: R
       includeDeleted: state.query.includeDeleted,
       deletedOnly: state.query.deletedOnly,
     },
-    search: {
-      ...state.search,
-      fieldIds: searchFieldIds.every((id): id is string => id !== undefined) ? searchFieldIds : [],
-    },
+    search: { ...state.search, fieldIds: state.search.fieldIds.flatMap((id) => fieldIds.get(id) ?? []) },
     selectedRecordId: state.selectedRecordId ? await publicResources.resolveStoredPublicId("record", state.selectedRecordId) : null,
   };
 };
