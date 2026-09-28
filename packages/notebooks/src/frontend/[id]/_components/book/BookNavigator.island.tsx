@@ -18,13 +18,13 @@ export type BookNavigatorProps = {
   locked?: boolean;
 };
 
-const expandedParents = (nodes: BookTreeNode[], selected: string | null): string[] => {
+/** The notes that contain the selected note, outermost first; `undefined` when it is not in the tree. */
+const ancestorIds = (nodes: BookTreeNode[], selected: string | null): string[] | undefined => {
   for (const node of nodes) {
-    if (node.id === selected) return [node.id];
-    const children = expandedParents(node.children, selected);
-    if (children.length) return [node.id, ...children];
+    if (node.id === selected) return [];
+    const ancestors = ancestorIds(node.children, selected);
+    if (ancestors) return [node.id, ...ancestors];
   }
-  return [];
 };
 
 /** Reading navigation deliberately has no dependency on the editor or inspector. */
@@ -32,12 +32,15 @@ export default function BookNavigator(props: BookNavigatorProps) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
   const [state, setState] = createSignal(props);
-  const [expanded, setExpanded] = createSignal<readonly string[]>(expandedParents(props.tree, props.selectedNoteId));
+  // Folding belongs to the reader. Opening another note only reveals it; its own sub-notes and every
+  // later snapshot of the same note (live refreshes) leave the folds as they are.
+  const [expanded, setExpanded] = createSignal<readonly string[]>(ancestorIds(props.tree, props.selectedNoteId) ?? []);
   onMount(() => {
     const update = (event: Event) => {
       const next = (event as CustomEvent<BookMetadata>).detail;
+      const opened = next.selectedNoteId !== state().selectedNoteId;
       setState({ ...props, ...next, activeTag: next.activeTag });
-      setExpanded((current) => [...new Set([...current, ...expandedParents(next.tree, next.selectedNoteId)])]);
+      if (opened) setExpanded((current) => [...new Set([...current, ...(ancestorIds(next.tree, next.selectedNoteId) ?? [])])]);
     };
     window.addEventListener(BOOK_SNAPSHOT_EVENT, update);
     onCleanup(() => window.removeEventListener(BOOK_SNAPSHOT_EVENT, update));

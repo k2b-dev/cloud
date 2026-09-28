@@ -153,7 +153,10 @@ export default function BookController(props: Props) {
     );
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      const target = event.target instanceof Element ? event.target : null;
+      // The tree's chevron sits inside its row link; the tree folds the branch and cancels that link itself.
+      if (target?.closest("[data-k2b-nav-tree-toggle]")) return;
+      const anchor = target?.closest<HTMLAnchorElement>("a[href]") ?? null;
       if (
         !anchor ||
         !anchor.closest(".notebook-book-shell") ||
