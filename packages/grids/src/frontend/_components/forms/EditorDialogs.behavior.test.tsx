@@ -224,7 +224,11 @@ domTest("a new form says it is already saved and closes with Done until it is ed
 
     const { openFormEditorDialog } = await import("./FormEditorDialog");
     void openFormEditorDialog({ form, tableFields: [field], justCreated: true });
+    expect(dom.document.body.textContent).toContain("It is already saved.");
     change(inputFor(dom.document, "Name"), "Updated request");
+    expect(dom.document.body.textContent).toContain("Form created");
+    expect(dom.document.body.textContent).not.toContain("It is already saved.");
+    expect(dom.document.body.textContent).toContain("Choose Save to keep your changes.");
     expect(buttons("Done")).toHaveLength(0);
     expect(button(dom.document, "Save").disabled).toBe(false);
     expect(buttons("Cancel")).toHaveLength(1);

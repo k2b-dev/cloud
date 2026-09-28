@@ -31,7 +31,10 @@ import { gridsFormMessages } from "./messages";
 type OpenFormEditorDialogArgs = {
   form: PublicForm;
   tableFields: Field[];
-  /** The caller just created this form, so it is already saved: the editor says so and offers Done until something changes. */
+  /**
+   * The caller just created this form, so it is already saved: the editor says so and offers Done until something
+   * changes. After the first edit the notice stays in place, so the fields below it do not jump, and asks for Save.
+   */
   justCreated?: boolean;
   onSaved?: (next: PublicForm) => void;
   onDelete?: () => Promise<void> | void;
@@ -228,7 +231,7 @@ function FormEditor(props: {
     <>
       <PanelDialog.Body>
         <Show when={props.justCreated}>
-          <NoticeCard tone="success" title={t().formCreated} detail={t().formCreatedDetail} />
+          <NoticeCard tone="success" title={t().formCreated} detail={dirty() ? t().formCreatedUnsavedDetail : t().formCreatedDetail} />
         </Show>
         <Show when={props.deleteError}>{(error) => <NoticeCard tone="danger" title={error()} />}</Show>
         <Show when={updateMut.error()}>
