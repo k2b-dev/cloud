@@ -116,11 +116,12 @@ All matching native button or anchor attributes pass through. The default button
 
 ### Touch targets
 
-On a device with a coarse pointer, such as a phone or tablet, every button and
-the dialog close control accept taps in an invisible area at least 44 px
-(2.75rem) tall and wide, centered on the control. The visible size stays the
-same, so `xs`, `sm`, and icon-only buttons keep their compact look. Tap areas
-end at the edge of a clipping container (`overflow: hidden` or a scroll area).
+On a device with a coarse pointer, such as a phone or tablet, every button, the
+dialog close control, and a toast's action and close button accept taps in an
+invisible area at least 44 px (2.75rem) tall and wide, centered on the control.
+The visible size stays the same, so `xs`, `sm`, and icon-only buttons keep their
+compact look. Tap areas end at the edge of a clipping container
+(`overflow: hidden` or a scroll area).
 
 A tap area never reaches back over the control before it. A button that
 follows anything in its row, such as another button or a field, does not extend
