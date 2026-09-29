@@ -27,11 +27,22 @@ All times use the venue's time zone and a 24-hour clock, wherever you open the v
 ## Settings and access {icon="shield-lock"}
 
 :::reference
-- **General:** Edit name, slug, description, icon, theme color, logo, banner, and feedback activation. Read and staff users see these settings read-only; only admins can change them.
-- **Schedule:** Choose the public opening logic and manage regular hours, exceptions for single dates, and recurring shifts.
+- **General:** Edit name, slug, description, icon, theme color, logo, banner, and feedback activation, and the schedule rules:
+  - **Public opening logic** decides whether regular hours, staffed shifts, or both open the venue.
+  - **Sign-up** decides whether staff take the recurring **Shifts**, add their own **Free time**, or **Both**.
+  - **Time zone** sets the zone of every venue time. Existing opening hours, exceptions, and shifts keep their clock times: 09:00 stays 09:00 in the new zone.
+  - **Public page on** switches the public page and its monitor display on or off. While it is off, the link shows only that the venue is not available.
+
+  Changes in **General** wait for **Save**. Read and staff users see these settings read-only; only admins can change them.
+- **Schedule:** Manage regular hours, exceptions, and recurring shifts. Every change here saves at once.
+  - **New exception** chooses between **Closed** for the whole day and **Special opening** with a start and end time; a special opening replaces the day's regular hours and shows the venue as open during its times, whatever the opening logic. Exceptions read like **Sat, 10/17/2026 · Special opening 18:00–23:00 · Long night**; past ones are folded under **Past exceptions**.
+  - **New shift** can pick several weekdays at once and creates one shift per weekday in a single step: either all of them or, when something is wrong, none. The list groups shifts by weekday, and each shift is edited on its own.
+  - The switch next to a shift pauses or resumes it at once. A paused shift keeps its settings and reads **Paused**, but the schedule plans no slots for it, nobody can take it, and it does not open the venue. Deleting a shift removes it for good; past sign-ups keep its name.
+  - Times take a 24-hour clock time such as 09:30; typing `9` becomes 09:00. An end time of 24:00 means until midnight. Fields say what is missing or wrong, and a dialog stays open with your input until the save succeeds.
 - **Access:** Admins grant read, staff, or admin access to users, groups, public, or signed-in users.
 - **Links:** Open the public page, or open **Subscribe to calendar**, the same dialog as in **My shifts**.
 - **API keys:** Admins can create resource-bound keys for integrations that need access to this venue.
+- **Danger zone:** **Delete venue** removes the venue with its shifts, sign-ups, feedback, and public page. It asks you to type the venue's name before it deletes anything.
 :::
 
 ## Who sees what {icon="eye"}

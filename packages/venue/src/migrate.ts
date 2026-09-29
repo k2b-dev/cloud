@@ -112,6 +112,20 @@ export const migrate = async (): Promise<void> => {
     ADD COLUMN IF NOT EXISTS require_target_for_opening BOOLEAN NOT NULL DEFAULT false
   `.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_venue_shift_templates_venue_weekday ON venue.shift_templates(venue_id, weekday, start_time)`.simple();
+  // `active` now means "not paused". Before `deleted_at` existed, deleting a template only cleared `active`, so the
+  // step that adds the column also marks those templates deleted; it runs once, then paused templates stay paused.
+  await sql.begin(async (tx) => {
+    await tx`LOCK TABLE venue.shift_templates IN SHARE ROW EXCLUSIVE MODE`;
+    const [column] = await tx<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'venue' AND table_name = 'shift_templates' AND column_name = 'deleted_at'
+      ) AS exists
+    `;
+    if (column?.exists) return;
+    await tx`ALTER TABLE venue.shift_templates ADD COLUMN deleted_at TIMESTAMPTZ`;
+    await tx`UPDATE venue.shift_templates SET deleted_at = updated_at WHERE active = false`;
+  });
   console.log("  ✓ venue.shift_templates table");
 
   await sql`

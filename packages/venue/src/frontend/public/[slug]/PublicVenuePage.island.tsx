@@ -342,6 +342,14 @@ function UnavailablePage(props: RefreshDiagnostics) {
         <i class="ti ti-building-store-off mb-4 text-5xl text-zinc-500" />
         <h1 class="text-2xl font-semibold">{t().publicUnavailable}</h1>
         <p class="mt-2 text-sm text-zinc-400">{t().publicUnavailableDescription}</p>
+        {/* The same link for every visitor and every unknown or switched-off venue, so the page reveals nothing. */}
+        <a
+          href="/app/venue"
+          class="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg px-4 text-sm font-medium text-zinc-100 ring-1 ring-zinc-700 hover:bg-zinc-900"
+        >
+          <i class="ti ti-building-carousel" aria-hidden="true" />
+          {t().openInVenues}
+        </a>
       </div>
     </main>
   );

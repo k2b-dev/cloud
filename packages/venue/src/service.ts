@@ -14,7 +14,7 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { coreSettings, logger, serviceAccounts } from "@k2b/cloud/services";
+import { coreSettings, isUniqueViolation, logger, serviceAccounts } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
@@ -352,8 +352,11 @@ const localWeekday = (dateKey: string): number => {
   return day === 0 ? 0 : day;
 };
 
+/** The instant of a venue clock time on `date`; `24:00` ends the day, at the next day's midnight. */
 const instantFor = (date: string, time: string, timezone: string): Date =>
-  new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
+  time === "24:00"
+    ? instantFor(dateKeyAfterDays(date, 1, timezone), "00:00", timezone)
+    : new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
 
 const endInstantFor = (date: string, startTime: string, endTime: string, timezone: string): Date => {
   const endDate = endTime <= startTime ? dateKeyAfterDays(date, 1, timezone) : date;
@@ -628,8 +631,17 @@ const createVenueInTx = async (tx: SqlClient, input: VenueInput, user: UserLike)
   return ok(mapVenue(row, "admin"));
 };
 
+/** Every venue needs its own slug; the database enforces it with this constraint. */
+const VENUE_SLUG_CONSTRAINT = "venues_slug_key";
+const venueSlugTaken = () => fail(err.conflict("Venue slug"));
+
 const createVenue = async (input: VenueInput, user: UserLike): Promise<Result<Venue>> => {
-  return sql.begin((tx) => createVenueInTx(tx, input, user));
+  try {
+    return await sql.begin((tx) => createVenueInTx(tx, input, user));
+  } catch (error) {
+    if (isUniqueViolation(error, VENUE_SLUG_CONSTRAINT)) return venueSlugTaken();
+    throw error;
+  }
 };
 
 const listVenueTemplates = (locale?: string): VenueTemplateSummary[] => localizedVenueTemplates(locale);
@@ -649,7 +661,9 @@ const instantiateVenueTemplate = async (
   if (!template) return fail(err.notFound("Template"));
 
   const name = input.name?.trim() || template.venue.name;
-  const slug = await resolveAvailableVenueSlug(input.slug?.trim() || name || template.venue.slug);
+  // A slug someone chose is used as is, and a taken one is a conflict as for a blank venue; only a slug derived
+  // from the name moves on to a free variant.
+  const slug = input.slug ?? (await resolveAvailableVenueSlug(name || template.venue.slug));
 
   try {
     return await sql.begin(async (tx) => {
@@ -676,6 +690,7 @@ const instantiateVenueTemplate = async (
       return venue;
     });
   } catch (error) {
+    if (isUniqueViolation(error, VENUE_SLUG_CONSTRAINT)) return venueSlugTaken();
     log.error("Venue template instantiation failed", {
       templateId,
       error: error instanceof Error ? error.message : String(error),
@@ -734,7 +749,7 @@ const createSectionInTx = async (tx: SqlClient, venueId: string, input: PublicSe
 };
 
 const updateVenue = async (id: string, input: VenueInput): Promise<Result<Venue>> => {
-  const [row] = await sql<DbVenue[]>`
+  const rows = await sql<DbVenue[]>`
     UPDATE venue.venues
     SET
       slug = ${slugify(input.slug)},
@@ -752,7 +767,12 @@ const updateVenue = async (id: string, input: VenueInput): Promise<Result<Venue>
       updated_at = now()
     WHERE id = ${id}::uuid
     RETURNING *
-  `;
+  `.catch((error: unknown) => {
+    if (isUniqueViolation(error, VENUE_SLUG_CONSTRAINT)) return null;
+    throw error;
+  });
+  if (!rows) return venueSlugTaken();
+  const row = rows[0];
   return row ? ok(mapVenue(row)) : fail(err.notFound("Venue"));
 };
 
@@ -843,7 +863,8 @@ const deleteOpeningRule = async (venueId: string, id: string): Promise<Result<vo
   return ok();
 };
 
-const listOverrides = async (venueId: string, days = 60): Promise<DateOverride[]> => {
+/** Exceptions from a week ago through the next year: enough to plan ahead, bounded by one row per date. */
+const listOverrides = async (venueId: string, days = 366): Promise<DateOverride[]> => {
   const rows = await sql<DbDateOverride[]>`
     SELECT * FROM venue.date_overrides
     WHERE venue_id = ${venueId}::uuid
@@ -887,7 +908,7 @@ const upsertOverride = async (venueId: string, input: DateOverrideInput): Promis
 };
 
 const updateOverride = async (venueId: string, id: string, input: DateOverrideInput): Promise<Result<DateOverride>> => {
-  const [row] = await sql<DbDateOverride[]>`
+  const rows = await sql<DbDateOverride[]>`
     UPDATE venue.date_overrides
     SET date = ${input.date}::date,
         kind = ${input.kind},
@@ -897,7 +918,13 @@ const updateOverride = async (venueId: string, id: string, input: DateOverrideIn
         updated_at = now()
     WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid
     RETURNING *
-  `;
+  `.catch((error: unknown) => {
+    // One exception per date: moving an exception onto a date that has one already is a conflict.
+    if (isUniqueViolation(error)) return null;
+    throw error;
+  });
+  if (!rows) return fail(err.conflict("Exception for this date"));
+  const row = rows[0];
   return row ? ok(mapOverride(row)) : fail(err.notFound("Date override"));
 };
 
@@ -906,12 +933,16 @@ const deleteOverride = async (venueId: string, id: string): Promise<Result<void>
   return ok();
 };
 
+/**
+ * The venue's shift templates, paused ones (`active: false`) included so admins can resume them; deleted ones
+ * are gone. Every consumer that plans shifts or openings uses only the active ones.
+ */
 const listTemplates = async (venueId: string, options: { limit?: number } = {}): Promise<ShiftTemplate[]> => {
   const limit = options.limit === undefined ? null : Math.min(101, Math.max(1, options.limit));
   const rows = await sql<DbShiftTemplate[]>`
     SELECT * FROM venue.shift_templates
     WHERE venue_id = ${venueId}::uuid
-      AND active = true
+      AND deleted_at IS NULL
     ORDER BY weekday, start_time, id
     LIMIT ${limit}
   `;
@@ -927,6 +958,22 @@ const createTemplate = async (venueId: string, input: ShiftTemplateInput): Promi
   return createTemplateInTx(sql, venueId, input);
 };
 
+/** Creates every template in one transaction, so a failure leaves none of them behind. */
+const createTemplates = async (venueId: string, inputs: ShiftTemplateInput[]): Promise<Result<ShiftTemplate[]>> => {
+  try {
+    return ok(
+      await sql.begin(async (tx) => {
+        const created: ShiftTemplate[] = [];
+        for (const input of inputs) created.push(requireTemplateResult(await createTemplateInTx(tx, venueId, input)));
+        return created;
+      }),
+    );
+  } catch (error) {
+    if (error instanceof TemplateError) return fail(error.resultError);
+    throw error;
+  }
+};
+
 const updateTemplate = async (venueId: string, id: string, input: ShiftTemplateInput): Promise<Result<ShiftTemplate>> => {
   const [row] = await sql<DbShiftTemplate[]>`
     UPDATE venue.shift_templates
@@ -939,14 +986,18 @@ const updateTemplate = async (venueId: string, id: string, input: ShiftTemplateI
         require_target_for_opening = ${input.requireTargetForOpening},
         active = ${input.active},
         updated_at = now()
-    WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid
+    WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid AND deleted_at IS NULL
     RETURNING *
   `;
   return row ? ok(mapTemplate(row)) : fail(err.notFound("Shift"));
 };
 
+/** Sign-ups keep their shift's name, so a deleted template stays as a row that no list, plan, or edit reaches. */
 const deleteTemplate = async (venueId: string, id: string): Promise<Result<void>> => {
-  await sql`UPDATE venue.shift_templates SET active = false, updated_at = now() WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid`;
+  await sql`
+    UPDATE venue.shift_templates SET active = false, deleted_at = COALESCE(deleted_at, now()), updated_at = now()
+    WHERE venue_id = ${venueId}::uuid AND id = ${id}::uuid
+  `;
   return ok();
 };
 
@@ -1648,7 +1699,14 @@ export const venueService = {
   venueTemplates: { list: listVenueTemplates, instantiate: instantiateVenueTemplate },
   openingRules: { list: listOpeningRules, create: createOpeningRule, update: updateOpeningRule, delete: deleteOpeningRule },
   overrides: { list: listOverrides, upsert: upsertOverride, update: updateOverride, delete: deleteOverride },
-  templates: { list: listTemplates, get: getTemplate, create: createTemplate, update: updateTemplate, delete: deleteTemplate },
+  templates: {
+    list: listTemplates,
+    get: getTemplate,
+    create: createTemplate,
+    createMany: createTemplates,
+    update: updateTemplate,
+    delete: deleteTemplate,
+  },
   shifts: { list: upcomingSlots, listSummary: upcomingSlotSummaries },
   assignments: {
     mine: listPersonalAssignments,

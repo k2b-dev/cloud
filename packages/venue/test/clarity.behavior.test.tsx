@@ -608,29 +608,42 @@ describe("Venue clarity behavior", () => {
       ...overrides,
     });
     /** Opens the dialog for `initial`, saves it unchanged, and returns what it showed and saved. */
-    const saveUnchanged = (initial: DateOverride) => {
-      const saved: Array<DateOverrideInput | null> = [];
+    const saveUnchanged = async (initial: DateOverride) => {
+      const saved: DateOverrideInput[] = [];
+      const closed: boolean[] = [];
       const dispose = render(
-        () => <ExceptionDialog close={(value) => saved.push(value)} timeZone="Europe/Berlin" initial={initial} />,
+        () => (
+          <ExceptionDialog
+            submit={async (value) => {
+              saved.push(value);
+              return null;
+            }}
+            close={(value) => closed.push(value)}
+            timeZone="Europe/Berlin"
+            initial={initial}
+          />
+        ),
         dom.root,
       );
       try {
         const text = dom.root.textContent ?? "";
         const inputs = [...dom.root.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value);
         buttonNamed(dom.root, "Save").click();
-        return { text, inputs, saved };
+        for (let index = 0; index < 10; index += 1) await Promise.resolve();
+        return { text, inputs, saved, closed };
       } finally {
         dispose();
       }
     };
     try {
-      const special = saveUnchanged(exception({ kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }));
+      const special = await saveUnchanged(exception({ kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }));
       expect(special.text).toContain("Edit exception");
       expect(special.text).toContain("Special opening");
       expect(special.inputs).toEqual(expect.arrayContaining(["18:00", "22:00", "Long night"]));
       expect(special.saved).toEqual([{ date: "2030-10-17", kind: "open", startTime: "18:00", endTime: "22:00", note: "Long night" }]);
+      expect(special.closed).toEqual([true]);
 
-      const closed = saveUnchanged(exception({ id: "Exc002", note: "Staff meeting" }));
+      const closed = await saveUnchanged(exception({ id: "Exc002", note: "Staff meeting" }));
       expect(closed.text).toContain("Closed");
       expect(closed.inputs).not.toContain("18:00");
       expect(closed.saved).toEqual([{ date: "2030-10-17", kind: "closed", note: "Staff meeting" }]);

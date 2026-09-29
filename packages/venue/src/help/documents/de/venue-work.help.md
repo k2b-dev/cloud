@@ -27,11 +27,22 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 ## Einstellungen und Zugriff {icon="shield-lock"}
 
 :::reference
-- **Allgemein:** Name, Slug, Beschreibung, Symbol, Akzentfarbe, Logo, Banner und Feedback-Funktion bearbeiten. Mit „Lesen“ oder „Mitarbeit“ sind diese Einstellungen nur lesbar; ändern können sie nur Admins.
-- **Zeitplan:** Logik für den öffentlichen Öffnungsstatus wählen und reguläre Öffnungszeiten, Ausnahmen für einzelne Tage sowie wiederkehrende Schichten verwalten.
+- **Allgemein:** Name, Kurzname, Beschreibung, Symbol, Akzentfarbe, Logo, Banner und Feedback-Funktion bearbeiten, dazu die Zeitplan-Regeln:
+  - **Logik für den Öffnungsstatus** legt fest, ob regelmäßige Öffnungszeiten, besetzte Schichten oder beides den Standort öffnen.
+  - **Eintragen** legt fest, ob Mitarbeitende die wiederkehrenden Schichten übernehmen (**Schichten**), eigene freie Zeiträume eintragen (**Freier Zeitraum**) oder **Beides**.
+  - **Zeitzone** bestimmt die Zeitzone aller Zeiten des Standorts. Bestehende Öffnungszeiten, Ausnahmen und Schichten behalten ihre Uhrzeit: 09:00 bleibt 09:00 in der neuen Zeitzone.
+  - **Öffentliche Seite an** schaltet die öffentliche Seite samt Monitor-Anzeige ein oder aus. Solange sie aus ist, zeigt der Link nur, dass der Standort nicht verfügbar ist.
+
+  Änderungen in **Allgemein** warten auf **Speichern**. Mit „Lesen“ oder „Mitarbeit“ sind diese Einstellungen nur lesbar; ändern können sie nur Admins.
+- **Schichtplan:** Reguläre Öffnungszeiten, Ausnahmen und wiederkehrende Schichten verwalten. Jede Änderung hier gilt sofort.
+  - **Neue Ausnahme** wählt zwischen **Geschlossen** für den ganzen Tag und **Sonderöffnung** mit Beginn und Ende; eine Sonderöffnung ersetzt an diesem Tag die regelmäßigen Öffnungszeiten und zeigt den Standort zu ihren Zeiten als geöffnet, egal nach welcher Logik er sonst öffnet. Ausnahmen lauten etwa **Sa., 17.10.2026 · Sonderöffnung 18:00–23:00 · Lange Nacht**; vergangene stehen eingeklappt unter **Vergangene Ausnahmen**.
+  - **Schicht hinzufügen** kann mehrere Wochentage auf einmal wählen und legt in einem Schritt eine Schicht pro Wochentag an: alle oder, wenn etwas nicht stimmt, keine. Die Liste gruppiert Schichten nach Wochentag, und jede Schicht wird einzeln bearbeitet.
+  - Der Schalter neben einer Schicht pausiert sie oder setzt sie sofort fort. Eine pausierte Schicht behält ihre Einstellungen und trägt **Pausiert**, aber der Schichtplan plant sie nicht mehr ein, niemand kann sie übernehmen, und sie öffnet den Standort nicht. Löschen entfernt eine Schicht endgültig; vergangene Einträge behalten ihren Namen.
+  - Zeiten nehmen eine Uhrzeit im 24-Stunden-Format wie 09:30; aus `9` wird 09:00. Ein Ende um 24:00 bedeutet bis Mitternacht. Felder sagen, was fehlt oder nicht stimmt, und ein Dialog bleibt mit deinen Eingaben offen, bis das Speichern gelingt.
 - **Zugriff:** Administratoren vergeben Zugriff „Lesen“, „Mitarbeit“ oder „Admin“ an Personen, Gruppen, die Öffentlichkeit oder angemeldete Personen.
 - **Links:** Öffentliche Seite öffnen oder **Kalender abonnieren** öffnen, denselben Dialog wie in **Meine Schichten**.
 - **API-Schlüssel:** Administratoren erstellen ressourcengebundene Schlüssel für Integrationen, die Zugriff auf diesen Standort benötigen.
+- **Gefahrenbereich:** **Standort löschen** entfernt den Standort mit Schichten, Einträgen, Feedback und öffentlicher Seite. Vorher musst du den Namen des Standorts eintippen.
 :::
 
 ## Wer was sieht {icon="eye"}
@@ -50,5 +61,5 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 Bei öffentlichen Abschnitten zeigt Zugriff „Lesen“ nicht mehr als die öffentliche Seite: Ist die öffentliche Seite ausgeschaltet, sehen Personen mit „Lesen“ keine. Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
 
 :::note Stabile Links
-Standortlinks verwenden die unveränderliche Kurz-ID. Eine Änderung des sichtbaren Slugs betrifft die Auffindbarkeit, aber nicht die öffentlichen oder internen URLs.
+Standortlinks verwenden die unveränderliche Kurz-ID. Eine Änderung des Kurznamens betrifft die Auffindbarkeit, aber nicht die öffentlichen oder internen URLs.
 :::

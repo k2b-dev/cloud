@@ -38,7 +38,9 @@ import {
   PublicSectionSchema,
   PublicStatusSchema,
   ShiftAssignmentSchema,
+  ShiftTemplateBatchInputSchema,
   ShiftTemplateInputSchema,
+  ShiftTemplateSchema,
   TemplateSignupInputSchema,
   UpcomingSlotSchema,
   VenueDashboardQuerySchema,
@@ -268,10 +270,13 @@ const venueTemplateRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues:Templates"],
       summary: "Create a venue from a built-in template",
+      description:
+        "Without a slug, the venue gets a free one derived from its name. A slug another venue uses answers 409, as when creating a blank venue.",
       responses: {
         201: jsonResponse(VenueSchema, "Created venue"),
         400: jsonResponse(ErrorResponseSchema, "Invalid template"),
         404: jsonResponse(ErrorResponseSchema, "Template not found"),
+        409: jsonResponse(ErrorResponseSchema, "Venue slug already in use"),
       },
     }),
     v("param", VenueTemplateParamSchema),
@@ -350,7 +355,11 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "Create venue",
-      responses: { 201: jsonResponse(VenueSchema, "Created venue"), 400: jsonResponse(ErrorResponseSchema, "Invalid venue") },
+      responses: {
+        201: jsonResponse(VenueSchema, "Created venue"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid venue"),
+        409: jsonResponse(ErrorResponseSchema, "Venue slug already in use"),
+      },
     }),
     v("json", VenueInputSchema),
     async (c) => {
@@ -634,6 +643,29 @@ const venueRoutes = new Hono<AuthContext>()
       201,
     );
   })
+  .post(
+    "/:id/templates/batch",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Create several shift templates",
+      description:
+        "Create up to seven shift templates in one transaction, for example the same shift on several weekdays. When one template is invalid, none is created. Requires admin permission.",
+      responses: {
+        201: jsonResponse(z.array(ShiftTemplateSchema), "Created shift templates, in request order"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid shift template"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Venue not found"),
+      },
+    }),
+    v("param", VenueIdParamSchema),
+    v("json", ShiftTemplateBatchInputSchema),
+    async (c) => {
+      const venue = await adminVenue(c, c.req.valid("param").id);
+      if (!venue.ok) return respond(c, venue);
+      const created = await venueService.templates.createMany(venue.data.id, c.req.valid("json").templates);
+      return respond(c, await projectResult(created, (values) => venueService.publicResources.projectTemplates(values)), 201);
+    },
+  )
   .patch("/:id/templates/:resourceId", v("param", ResourceParamSchema), v("json", ShiftTemplateInputSchema), async (c) => {
     const param = c.req.valid("param");
     const venue = await adminVenue(c, param.id);

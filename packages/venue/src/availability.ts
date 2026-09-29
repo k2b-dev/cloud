@@ -28,8 +28,11 @@ export type PublicAvailability = {
 
 const dateKeyAt = (instant: Date, timezone: string): string => dates.formatDateKey(instant, { timeZone: timezone });
 
+/** The instant of a venue clock time on `date`; `24:00` ends the day, at the next day's midnight. */
 const instantFor = (date: string, time: string, timezone: string): Date =>
-  new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
+  time === "24:00"
+    ? instantFor(dateKeyAfterDays(date, 1, timezone), "00:00", timezone)
+    : new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
 
 const dateKeyAfterDays = (date: string, days: number, timezone: string): string =>
   dates.formatDateKey(new Date(instantFor(date, "12:00", timezone).getTime() + days * 86_400_000), { timeZone: timezone });
@@ -78,26 +81,28 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
     else rulesByWeekday.set(rule.weekday, [rule]);
   }
 
+  // A special opening replaces the day's regular hours and opens the venue in every opening mode: an admin set
+  // it for that date on purpose. Regular hours count only when the opening mode uses them.
   const regularOpenings: PublicOpening[] = [];
-  if (input.venue.openMode !== "staffed") {
-    for (let offset = 0; offset < days; offset++) {
-      const date = dateKeyAfterDays(today, offset, timezone);
-      const override = overridesByDate.get(date);
-      if (override?.kind === "closed") continue;
+  for (let offset = 0; offset < days; offset++) {
+    const date = dateKeyAfterDays(today, offset, timezone);
+    const override = overridesByDate.get(date);
+    if (override?.kind === "closed") continue;
 
-      const windows =
-        override?.kind === "open" && override.startTime && override.endTime
-          ? [{ startTime: override.startTime, endTime: override.endTime }]
+    const windows =
+      override?.kind === "open" && override.startTime && override.endTime
+        ? [{ startTime: override.startTime, endTime: override.endTime }]
+        : input.venue.openMode === "staffed"
+          ? []
           : (rulesByWeekday.get(weekdayFor(date)) ?? []);
 
-      for (const window of windows) {
-        regularOpenings.push({
-          kind: "regular",
-          title: t.regularHours,
-          startsAt: instantFor(date, window.startTime, timezone).toISOString(),
-          endsAt: instantFor(date, window.endTime, timezone).toISOString(),
-        });
-      }
+    for (const window of windows) {
+      regularOpenings.push({
+        kind: "regular",
+        title: t.regularHours,
+        startsAt: instantFor(date, window.startTime, timezone).toISOString(),
+        endsAt: instantFor(date, window.endTime, timezone).toISOString(),
+      });
     }
   }
 

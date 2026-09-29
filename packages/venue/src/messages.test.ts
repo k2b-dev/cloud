@@ -7,6 +7,16 @@ describe("Venue internationalization", () => {
     expect(venueMessages.check()).toEqual([]);
   });
 
+  test("keeps interface texts plain, without Markdown code marks that fields would show as is", () => {
+    for (const locale of ["en", "de"]) {
+      const texts = Object.entries(venueMessages.resolve([locale]).t).filter(([, value]) => typeof value === "string");
+      expect({ locale, marked: texts.filter(([, value]) => String(value).includes("`")).map(([key]) => key) }).toEqual({
+        locale,
+        marked: [],
+      });
+    }
+  });
+
   test("resolves regional German tags and falls back to English", () => {
     expect(venueMessages.resolve(["de-CH"]).t.appName).toBe("Standorte");
     expect(venueMessages.resolve(["fr"]).t.appName).toBe("Venues");
@@ -24,8 +34,8 @@ describe("Venue internationalization", () => {
   test("words shift work so it does not read as signing in", () => {
     const de = venueMessages.resolve(["de"]).t;
     const en = venueMessages.resolve(["en"]).t;
-    expect([en.signUp, en.leave, en.openSpots, en.closedDays]).toEqual(["Take shift", "Leave", "Free spots", "Exceptions"]);
-    expect([de.signUp, de.leave, de.openSpots, de.closedDays]).toEqual(["Schicht übernehmen", "Austreten", "Freie Plätze", "Ausnahmen"]);
+    expect([en.signUp, en.leave, en.openSpots, en.exceptions]).toEqual(["Take shift", "Leave", "Free spots", "Exceptions"]);
+    expect([de.signUp, de.leave, de.openSpots, de.exceptions]).toEqual(["Schicht übernehmen", "Austreten", "Freie Plätze", "Ausnahmen"]);
     expect(Object.values(de).filter((value) => typeof value === "string" && /\banmelden\b/i.test(value))).toEqual([]);
   });
 

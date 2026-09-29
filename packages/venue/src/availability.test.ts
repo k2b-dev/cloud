@@ -82,6 +82,20 @@ describe("buildPublicAvailability", () => {
     expect(result.todayLabel).toBe("09:00-17:00");
   });
 
+  test("reads an end time of 24:00 as midnight, for opening hours and for shifts", () => {
+    const lateEvening = new Date("2026-07-13T21:30:00.000Z");
+    const hours = project({ openingRules: [openingRule({ startTime: "18:00", endTime: "24:00" })], now: lateEvening });
+    expect([hours.open, hours.todayLabel, hours.activeWindowLabel]).toEqual([true, "18:00-00:00", "18:00-00:00"]);
+
+    const shift = project({
+      venue: { openMode: "staffed", timezone: "Europe/Berlin" },
+      templates: [shiftTemplate({ startTime: "18:00", endTime: "24:00" })],
+      assignments: [assignment({ startsAt: "2026-07-13T16:00:00.000Z", endsAt: "2026-07-13T22:00:00.000Z" })],
+      now: lateEvening,
+    });
+    expect([shift.open, shift.activeWindowLabel]).toEqual([true, "18:00-00:00"]);
+  });
+
   test("keeps first-signup shift behavior when no target threshold is configured", () => {
     const result = project({
       venue: { openMode: "staffed", timezone: "Europe/Berlin" },
@@ -222,5 +236,32 @@ describe("buildPublicAvailability", () => {
 
     expect(result.todayLabel).toBe("Heute keine regelmäßigen Öffnungszeiten");
     expect(result.upcomingOpenings[0]?.title).toBe("Zusätzlich geöffnet");
+  });
+  test("opens during a special opening instead of the regular hours, in every opening mode", () => {
+    const specialOpening: DateOverride = {
+      ...closedOverride(),
+      kind: "open",
+      startTime: "10:00",
+      endTime: "12:00",
+      note: "Long night",
+    };
+    for (const openMode of ["regular", "staffed", "combined"] as const) {
+      // 10:30 in Berlin: open during the special opening, although the regular hours would start at 11:00.
+      const during = project({
+        venue: { openMode, timezone: "Europe/Berlin" },
+        openingRules: [openingRule({ startTime: "11:00", endTime: "18:00" })],
+        overrides: [specialOpening],
+        now: new Date("2026-07-13T08:30:00.000Z"),
+      });
+      expect({ openMode, open: during.open, today: during.todayLabel }).toEqual({ openMode, open: true, today: "10:00-12:00" });
+
+      const after = project({
+        venue: { openMode, timezone: "Europe/Berlin" },
+        openingRules: [openingRule({ startTime: "11:00", endTime: "18:00" })],
+        overrides: [specialOpening],
+        now: new Date("2026-07-13T11:00:00.000Z"),
+      });
+      expect({ openMode, open: after.open }).toEqual({ openMode, open: false });
+    }
   });
 });

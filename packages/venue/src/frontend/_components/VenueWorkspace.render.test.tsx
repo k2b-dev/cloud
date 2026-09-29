@@ -719,3 +719,28 @@ describe("Venue shift detail permissions", () => {
     expect(resolveShiftSelection(board, null)).toBeNull();
   });
 });
+
+describe("Venue workspace empty schedule", () => {
+  test("shows admins of a venue without shifts the setup steps instead of an all-clear", () => {
+    const html = render("admin", []);
+
+    expect(html).toContain("Set up this venue");
+    expect(html).toContain("Open schedule settings");
+    expect(html).toMatch(/class="hidden [^"]*"[^>]*data-schedule-outlook/);
+  });
+
+  test("tells everyone else that no shifts are planned yet", () => {
+    for (const permission of ["write", "read"] as const) {
+      const html = render(permission, []);
+      expect({
+        permission,
+        checklist: html.includes("Set up this venue"),
+        empty: html.includes("No shifts are planned here yet."),
+      }).toEqual({
+        permission,
+        checklist: false,
+        empty: true,
+      });
+    }
+  });
+});

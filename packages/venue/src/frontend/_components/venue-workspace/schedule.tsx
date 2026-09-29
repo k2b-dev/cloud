@@ -4,16 +4,17 @@ import {
   CheckboxCard,
   DatePicker,
   IconButton,
+  InlineGuidance,
   type IntentTone,
   PanelDialog,
-  prompts,
+  SegmentedControl,
   Select,
   TextInput,
   Tooltip,
   useLocale,
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type {
   DateOverride,
   DateOverrideInput,
@@ -24,6 +25,7 @@ import type {
   UpcomingSlot,
 } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
+import { completeClockTime, isClockTime, isEndTime, TimeInput } from "./time-input";
 import { timeZoneDateConfig, todayDateKey } from "./utils";
 
 /** The staffing target as people read it: `2`, or `1–3` when more people may join than the shift needs. */
@@ -105,6 +107,7 @@ export function ScheduleActionButton(props: {
   icon: string;
   tone: "edit" | "delete";
   loading?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -115,6 +118,7 @@ export function ScheduleActionButton(props: {
         variant="ghost"
         class={props.tone === "edit" ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400"}
         loading={props.loading}
+        disabled={props.disabled}
         onClick={props.onClick}
       >
         <i class={props.icon} aria-hidden="true" />
@@ -130,50 +134,133 @@ export function DialogFrame(props: {
   submitLabel: string;
   onSubmit: () => void;
   onCancel: () => void;
+  /** While the dialog saves: the submit button shows progress and the dialog cannot be closed. */
+  pending?: boolean;
+  /** Why the last save failed, when no single field is to blame. */
+  error?: string | null;
   children: JSX.Element;
 }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
+  const cancel = () => {
+    if (!props.pending) props.onCancel();
+  };
   return (
     <PanelDialog>
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <PanelDialog.Header title={props.title} subtitle={props.subtitle} icon={props.icon} close={props.onCancel} />
-        <PanelDialog.Body>{props.children}</PanelDialog.Body>
+      <form
+        class="flex min-h-0 flex-1 flex-col overflow-hidden"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!props.pending) props.onSubmit();
+        }}
+      >
+        <PanelDialog.Header title={props.title} subtitle={props.subtitle} icon={props.icon} close={cancel} />
+        <PanelDialog.Body>
+          <div class="grid gap-3">
+            {props.children}
+            <Show when={props.error}>
+              {(error) => (
+                <InlineGuidance tone="danger" icon="ti ti-alert-circle">
+                  {error()}
+                </InlineGuidance>
+              )}
+            </Show>
+          </div>
+        </PanelDialog.Body>
         <PanelDialog.Footer>
           <div />
           <div class="flex justify-end gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={props.onCancel}>
+            <Button type="button" variant="secondary" size="sm" disabled={props.pending} onClick={cancel}>
               {t().cancel}
             </Button>
-            <Button type="button" size="sm" onClick={props.onSubmit}>
+            <Button type="submit" size="sm" loading={props.pending} loadingLabel={props.submitLabel}>
               {props.submitLabel}
             </Button>
           </div>
         </PanelDialog.Footer>
-      </div>
+      </form>
     </PanelDialog>
   );
 }
 
-export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | null) => void; initial?: OpeningRule }) {
+/**
+ * Saves a dialog's value and answers `null` once the server confirmed it, or why it did not. The dialog stays
+ * open with its input until the save succeeds.
+ */
+export type DialogSubmit<T> = (value: T) => Promise<string | null>;
+
+/** A dialog that saves through {@link DialogSubmit}: it closes with `true` after a confirmed save. */
+type SubmittingDialogProps<T> = {
+  submit: DialogSubmit<T>;
+  close: (saved: boolean) => void;
+  /** Receives the dialog's Escape and backdrop handler, which does nothing while a save runs. */
+  guardDismiss?: (handler: () => void) => void;
+};
+
+/** Runs `submit` once at a time and keeps its outcome for the dialog. */
+const createDialogSave = <T,>(props: SubmittingDialogProps<T>) => {
+  const [pending, setPending] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  props.guardDismiss?.(() => {
+    if (!pending()) props.close(false);
+  });
+  const save = async (value: T) => {
+    if (pending()) return;
+    setPending(true);
+    setError(null);
+    try {
+      const failure = await props.submit(value);
+      if (failure === null) props.close(true);
+      else setError(failure);
+    } finally {
+      setPending(false);
+    }
+  };
+  return { pending, error, save };
+};
+
+/** Weekday names in the reader's locale, Monday first as in the calendar. */
+const WEEKDAYS_FROM_MONDAY = [1, 2, 3, 4, 5, 6, 0] as const;
+const weekdayName = (weekday: number, locale: string, width: "long" | "short") =>
+  new Intl.DateTimeFormat(locale, { weekday: width, timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + weekday)));
+const weekdayOptions = (locale: string) =>
+  WEEKDAYS_FROM_MONDAY.map((weekday) => ({ id: String(weekday), label: weekdayName(weekday, locale, "long") }));
+
+type TimeErrors = { startTime?: string; endTime?: string };
+
+/** Field errors for a start and end time on the same day; the end must come after the start and may be 24:00. */
+const timeRangeErrors = (startTime: string, endTime: string, t: VenueMessages): TimeErrors => {
+  const errors: TimeErrors = {};
+  if (!startTime.trim()) errors.startTime = t.timeRequired;
+  else if (!isClockTime(startTime.trim())) errors.startTime = t.timeInvalid;
+  if (!endTime.trim()) errors.endTime = t.timeRequired;
+  else if (!isEndTime(endTime.trim())) errors.endTime = t.timeInvalid;
+  else if (!errors.startTime && endTime.trim() <= startTime.trim()) errors.endTime = t.endAfterStart;
+  return errors;
+};
+
+const hasErrors = (errors: Record<string, string | undefined>) => Object.values(errors).some(Boolean);
+
+export function OpeningRuleDialog(props: SubmittingDialogProps<OpeningRuleInput> & { initial?: OpeningRule }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
-  const weekdayOptions = () =>
-    Array.from({ length: 7 }, (_, weekday) => ({
-      id: String(weekday),
-      label: new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + weekday))),
-    }));
+  const dialog = createDialogSave(props);
   const [weekday, setWeekday] = createSignal(String(props.initial?.weekday ?? 1));
   const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "09:00");
   const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "17:00");
   const [note, setNote] = createSignal(props.initial?.note ?? "");
+  // Fields say what is wrong only after the first attempt to save, not while someone is still typing.
+  const [attempted, setAttempted] = createSignal(false);
+  const errors = () => (attempted() ? timeRangeErrors(startTime(), endTime(), t()) : {});
 
   const submit = () => {
-    if (!startTime().trim() || !endTime().trim()) {
-      prompts.error(t().timesRequired);
-      return;
-    }
-    props.close({
+    // Enter can submit before the time field completes its input on blur.
+    setStartTime(completeClockTime(startTime()));
+    setEndTime(completeClockTime(endTime()));
+    setAttempted(true);
+    if (hasErrors(errors())) return;
+    void dialog.save({
       weekday: Number(weekday()),
       startTime: startTime().trim(),
       endTime: endTime().trim(),
@@ -186,96 +273,120 @@ export function OpeningRuleDialog(props: { close: (value: OpeningRuleInput | nul
       title={props.initial ? t().editOpening : t().addOpening}
       icon="ti ti-clock"
       submitLabel={props.initial ? t().save : t().add}
-      onCancel={() => props.close(null)}
+      onCancel={() => props.close(false)}
       onSubmit={submit}
+      pending={dialog.pending()}
+      error={dialog.error()}
     >
-      <div class="grid gap-3">
-        <Select label={t().weekday} value={weekday} onValueChange={setWeekday} options={weekdayOptions()} />
-        <div class="grid gap-3 sm:grid-cols-2">
-          <TextInput
-            label={t().startTime}
-            value={startTime}
-            onValueChange={setStartTime}
-            placeholder="09:00"
-            inputMode="numeric"
-            required
-          />
-          <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="17:00" inputMode="numeric" required />
-        </div>
-        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().optional} />
+      <Select label={t().weekday} value={weekday} onValueChange={(value) => setWeekday(value ?? "1")} options={weekdayOptions(locale())} />
+      <div class="grid gap-3 sm:grid-cols-2">
+        <TimeInput label={t().startTime} value={startTime()} onValueChange={setStartTime} placeholder="09:00" error={errors().startTime} />
+        <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="17:00" error={errors().endTime} />
       </div>
+      <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().optional} />
     </DialogFrame>
   );
 }
 
 /**
- * Adds a closed day or edits an exception in its own kind: a special opening shows and saves its times, so saving
- * never turns it into a closed day. Special openings are created through the API or CLI.
+ * Adds or edits an exception for one date: closed all day, or a special opening with its own times that replace
+ * the day's regular hours. The kind is an explicit choice, so saving never changes it by accident. A date in
+ * `takenDates` already has another exception; the date field says so instead of replacing that one.
  */
-export function ExceptionDialog(props: { close: (value: DateOverrideInput | null) => void; timeZone: string; initial?: DateOverride }) {
+export function ExceptionDialog(
+  props: SubmittingDialogProps<DateOverrideInput> & {
+    timeZone: string;
+    initial?: DateOverride;
+    today?: string;
+    takenDates?: readonly string[];
+  },
+) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
-  const specialOpening = props.initial?.kind === "open";
-  const [date, setDate] = createSignal<string | null>(props.initial?.date ?? todayDateKey());
-  const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "");
-  const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "");
-  const [note, setNote] = createSignal(props.initial?.note ?? (specialOpening ? "" : t().publicHoliday));
+  const dialog = createDialogSave(props);
+  const [kind, setKind] = createSignal<DateOverride["kind"]>(props.initial?.kind ?? "closed");
+  const [date, setDate] = createSignal<string | null>(props.initial?.date ?? props.today ?? todayDateKey());
+  const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "18:00");
+  const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "22:00");
+  const [note, setNote] = createSignal(props.initial?.note ?? "");
+  const [attempted, setAttempted] = createSignal(false);
+  const errors = (): TimeErrors & { date?: string } => {
+    if (!attempted()) return {};
+    const day = date();
+    return {
+      date: !day ? t().pickDate : props.takenDates?.includes(day) ? t().exceptionDateTaken : undefined,
+      ...(kind() === "open" ? timeRangeErrors(startTime(), endTime(), t()) : {}),
+    };
+  };
 
   const submit = () => {
-    if (!date()) {
-      prompts.error(t().pickDate);
-      return;
-    }
-    if (!specialOpening) {
-      props.close({ date: date()!, kind: "closed", note: note().trim() || t().publicHoliday });
-      return;
-    }
-    if (!startTime().trim() || !endTime().trim()) {
-      prompts.error(t().timesRequired);
-      return;
-    }
-    props.close({ date: date()!, kind: "open", startTime: startTime().trim(), endTime: endTime().trim(), note: note().trim() || null });
+    // Enter can submit before the time field completes its input on blur.
+    setStartTime(completeClockTime(startTime()));
+    setEndTime(completeClockTime(endTime()));
+    setAttempted(true);
+    const day = date();
+    if (hasErrors(errors()) || !day) return;
+    const trimmedNote = note().trim() || null;
+    void dialog.save(
+      kind() === "open"
+        ? { date: day, kind: "open", startTime: startTime().trim(), endTime: endTime().trim(), note: trimmedNote }
+        : { date: day, kind: "closed", note: trimmedNote },
+    );
   };
 
   return (
     <DialogFrame
-      title={props.initial ? t().editException : t().addClosedDay}
-      subtitle={props.initial ? (specialOpening ? t().specialOpeningKind : t().closed) : undefined}
-      icon={specialOpening ? "ti ti-calendar-plus" : "ti ti-calendar-x"}
+      title={props.initial ? t().editException : t().addException}
+      icon={kind() === "open" ? "ti ti-calendar-plus" : "ti ti-calendar-off"}
       submitLabel={props.initial ? t().save : t().add}
-      onCancel={() => props.close(null)}
+      onCancel={() => props.close(false)}
       onSubmit={submit}
+      pending={dialog.pending()}
+      error={dialog.error()}
     >
-      <div class="grid gap-3">
-        <DatePicker
-          label={t().date}
-          value={date}
-          onValueChange={setDate}
-          dateConfig={timeZoneDateConfig(props.timeZone, locale())}
-          required
-        />
-        <Show when={specialOpening}>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <TextInput
-              label={t().startTime}
-              value={startTime}
-              onValueChange={setStartTime}
-              placeholder="18:00"
-              inputMode="numeric"
-              required
-            />
-            <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="22:00" inputMode="numeric" required />
-          </div>
-        </Show>
-        <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={specialOpening ? t().optional : t().publicHoliday} />
-      </div>
+      <SegmentedControl<DateOverride["kind"]>
+        ariaLabel={t().exceptionKind}
+        value={kind}
+        onValueChange={setKind}
+        options={[
+          { value: "closed", label: t().closed, icon: "ti ti-calendar-off" },
+          { value: "open", label: t().specialOpeningKind, icon: "ti ti-calendar-plus" },
+        ]}
+      />
+      <p class="text-xs text-dimmed">{kind() === "open" ? t().specialOpeningHint : t().closedDayHint}</p>
+      <DatePicker
+        label={t().date}
+        value={date}
+        onValueChange={setDate}
+        dateConfig={timeZoneDateConfig(props.timeZone, locale())}
+        error={() => errors().date}
+        required
+      />
+      <Show when={kind() === "open"}>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <TimeInput
+            label={t().startTime}
+            value={startTime()}
+            onValueChange={setStartTime}
+            placeholder="18:00"
+            error={errors().startTime}
+          />
+          <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="22:00" error={errors().endTime} />
+        </div>
+      </Show>
+      <TextInput
+        label={t().note}
+        value={note}
+        onValueChange={setNote}
+        placeholder={kind() === "open" ? t().specialOpeningNotePlaceholder : t().publicHoliday}
+      />
     </DialogFrame>
   );
 }
 
 type ShiftTemplateDraft = {
   title: string;
-  weekday: string;
+  weekdays: number[];
   startTime: string;
   endTime: string;
   minPeople: string;
@@ -284,68 +395,77 @@ type ShiftTemplateDraft = {
   active: boolean;
 };
 
-const parseOptionalPeople = (value: string): number | null => {
-  const trimmed = value.trim();
-  return trimmed ? Number(trimmed) : null;
+type ShiftTemplateErrors = {
+  title?: string;
+  weekdays?: string;
+  startTime?: string;
+  endTime?: string;
+  minPeople?: string;
+  maxPeople?: string;
 };
 
-const parseRequiredPeople = (value: string): number => Number(value.trim() || "1");
+const WHOLE_NUMBER = /^\d+$/;
 
-const buildShiftTemplateInput = (
+/**
+ * Checks a shift draft field by field and builds one template per chosen weekday, in calendar order, when every
+ * field is valid. The server applies the same rules.
+ */
+const buildShiftTemplates = (
   draft: ShiftTemplateDraft,
   t: VenueMessages,
-): { input: ShiftTemplateInput; error: null } | { input: null; error: string } => {
+): { inputs: ShiftTemplateInput[]; errors: ShiftTemplateErrors } => {
   const title = draft.title.trim();
-  const startTime = draft.startTime.trim();
-  const endTime = draft.endTime.trim();
-  const min = parseRequiredPeople(draft.minPeople);
-  const max = parseOptionalPeople(draft.maxPeople);
-
-  if (!title || !startTime || !endTime || Number.isNaN(min) || (max !== null && Number.isNaN(max))) {
-    return { input: null, error: t.shiftValidationRequired };
+  const min = draft.minPeople.trim();
+  const max = draft.maxPeople.trim();
+  const errors: ShiftTemplateErrors = {
+    title: title ? undefined : t.titleRequired,
+    weekdays: draft.weekdays.length > 0 ? undefined : t.pickWeekday,
+    ...timeRangeErrors(draft.startTime, draft.endTime, t),
+    minPeople: WHOLE_NUMBER.test(min) ? undefined : t.peopleInvalid,
+    maxPeople: max && !WHOLE_NUMBER.test(max) ? t.peopleInvalid : undefined,
+  };
+  if (!errors.minPeople && !errors.maxPeople) {
+    if (max && Number(max) < Number(min)) errors.maxPeople = t.shiftValidationMaximum;
+    if (draft.requireTargetForOpening && Number(min) < 1) errors.minPeople = t.shiftValidationTarget;
   }
-  if (min < 0 || (max !== null && max < 0)) return { input: null, error: t.shiftValidationNegative };
-  if (max !== null && max < min) return { input: null, error: t.shiftValidationMaximum };
-  if (draft.requireTargetForOpening && min < 1) {
-    return { input: null, error: t.shiftValidationTarget };
-  }
-
+  if (hasErrors(errors)) return { inputs: [], errors };
+  const weekdays = WEEKDAYS_FROM_MONDAY.filter((weekday) => draft.weekdays.includes(weekday));
   return {
-    input: {
+    inputs: weekdays.map((weekday) => ({
       title,
-      weekday: Number(draft.weekday),
-      startTime,
-      endTime,
-      minPeople: min,
-      maxPeople: max,
+      weekday,
+      startTime: draft.startTime.trim(),
+      endTime: draft.endTime.trim(),
+      minPeople: Number(min),
+      maxPeople: max ? Number(max) : null,
       requireTargetForOpening: draft.requireTargetForOpening,
       active: draft.active,
-    },
-    error: null,
+    })),
+    errors,
   };
 };
 
-export function ShiftTemplateDialog(props: { close: (value: ShiftTemplateInput | null) => void; initial?: ShiftTemplate }) {
+/**
+ * Creates a shift on one or several weekdays at once, as one template per weekday, or edits one template. Its
+ * weekday stays a single choice when editing, because every weekday is a template of its own.
+ */
+export function ShiftTemplateDialog(props: SubmittingDialogProps<ShiftTemplateInput[]> & { initial?: ShiftTemplate }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
-  const weekdayOptions = () =>
-    Array.from({ length: 7 }, (_, weekday) => ({
-      id: String(weekday),
-      label: new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + weekday))),
-    }));
+  const dialog = createDialogSave(props);
   const [title, setTitle] = createSignal(props.initial?.title ?? "");
-  const [weekday, setWeekday] = createSignal(String(props.initial?.weekday ?? 1));
+  const [weekdays, setWeekdays] = createSignal<number[]>([props.initial?.weekday ?? 1]);
   const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "09:00");
   const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "13:00");
   const [minPeople, setMinPeople] = createSignal(String(props.initial?.minPeople ?? 1));
   const [maxPeople, setMaxPeople] = createSignal(props.initial?.maxPeople == null ? "" : String(props.initial.maxPeople));
   const [requireTargetForOpening, setRequireTargetForOpening] = createSignal(props.initial?.requireTargetForOpening ?? false);
-
-  const submit = () => {
-    const result = buildShiftTemplateInput(
+  const [attempted, setAttempted] = createSignal(false);
+  const result = () =>
+    buildShiftTemplates(
       {
         title: title(),
-        weekday: weekday(),
+        weekdays: weekdays(),
         startTime: startTime(),
         endTime: endTime(),
         minPeople: minPeople(),
@@ -355,48 +475,108 @@ export function ShiftTemplateDialog(props: { close: (value: ShiftTemplateInput |
       },
       t(),
     );
-    if (result.error) {
-      prompts.error(result.error);
-      return;
-    }
-    props.close(result.input);
+  const errors = (): ShiftTemplateErrors => (attempted() ? result().errors : {});
+  const toggleWeekday = (weekday: number, checked: boolean) =>
+    setWeekdays((current) => (checked ? [...new Set([...current, weekday])] : current.filter((entry) => entry !== weekday)));
+  const count = () => weekdays().length;
+
+  const submit = () => {
+    // Enter can submit before the time field completes its input on blur.
+    setStartTime(completeClockTime(startTime()));
+    setEndTime(completeClockTime(endTime()));
+    setAttempted(true);
+    const { inputs } = result();
+    if (inputs.length > 0) void dialog.save(inputs);
   };
 
   return (
     <DialogFrame
       title={props.initial ? t().editShift : t().addShift}
       icon="ti ti-calendar-plus"
-      submitLabel={props.initial ? t().save : t().add}
-      onCancel={() => props.close(null)}
+      submitLabel={props.initial ? t().save : count() > 1 ? t().addShifts({ count: count() }) : t().add}
+      onCancel={() => props.close(false)}
       onSubmit={submit}
+      pending={dialog.pending()}
+      error={dialog.error()}
     >
-      <div class="grid gap-3">
-        <TextInput label={t().title} value={title} onValueChange={setTitle} placeholder={t().morningShift} required />
-        <Select label={t().weekday} value={weekday} onValueChange={setWeekday} options={weekdayOptions()} />
-        <div class="grid gap-3 sm:grid-cols-2">
-          <TextInput
-            label={t().startTime}
-            value={startTime}
-            onValueChange={setStartTime}
-            placeholder="09:00"
-            inputMode="numeric"
-            required
+      <TextInput
+        label={t().title}
+        value={title}
+        onValueChange={setTitle}
+        placeholder={t().morningShift}
+        error={() => errors().title}
+        required
+      />
+      <Show
+        when={!props.initial}
+        fallback={
+          <Select
+            label={t().weekday}
+            value={() => String(weekdays()[0] ?? 1)}
+            onValueChange={(value) => setWeekdays([Number(value ?? 1)])}
+            options={weekdayOptions(locale())}
           />
-          <TextInput label={t().endTime} value={endTime} onValueChange={setEndTime} placeholder="13:00" inputMode="numeric" required />
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <TextInput label={t().targetPeople} value={minPeople} onValueChange={setMinPeople} inputMode="numeric" required />
-          <TextInput label={t().maxPeople} value={maxPeople} onValueChange={setMaxPeople} inputMode="numeric" placeholder={t().optional} />
-        </div>
-        <CheckboxCard
-          label={t().requireTarget}
-          description={t().requireTargetDescription}
-          icon="ti ti-users-check"
-          value={requireTargetForOpening}
-          onValueChange={setRequireTargetForOpening}
-          variant="input"
+        }
+      >
+        <fieldset class="k2b-field" data-invalid={errors().weekdays ? "true" : undefined} data-shift-weekdays="">
+          <legend class="k2b-field__label">{t().weekdays}</legend>
+          <p class="k2b-field__description">{t().weekdaysDescription}</p>
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <For each={WEEKDAYS_FROM_MONDAY}>
+              {(weekday) => (
+                <CheckboxCard
+                  label={
+                    <>
+                      <span aria-hidden="true">{weekdayName(weekday, locale(), "short")}</span>
+                      <span class="sr-only">{weekdayName(weekday, locale(), "long")}</span>
+                    </>
+                  }
+                  value={() => weekdays().includes(weekday)}
+                  onValueChange={(checked) => toggleWeekday(weekday, checked)}
+                  variant="input"
+                />
+              )}
+            </For>
+          </div>
+          <Show when={errors().weekdays}>
+            {(error) => (
+              <p class="k2b-field__error" role="alert" aria-live="polite">
+                {error()}
+              </p>
+            )}
+          </Show>
+        </fieldset>
+      </Show>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <TimeInput label={t().startTime} value={startTime()} onValueChange={setStartTime} placeholder="09:00" error={errors().startTime} />
+        <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="13:00" error={errors().endTime} />
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <TextInput
+          label={t().targetPeople}
+          value={minPeople}
+          onValueChange={setMinPeople}
+          inputMode="numeric"
+          error={() => errors().minPeople}
+          required
+        />
+        <TextInput
+          label={t().maxPeople}
+          value={maxPeople}
+          onValueChange={setMaxPeople}
+          inputMode="numeric"
+          placeholder={t().optional}
+          error={() => errors().maxPeople}
         />
       </div>
+      <CheckboxCard
+        label={t().requireTarget}
+        description={t().requireTargetDescription}
+        icon="ti ti-users-check"
+        value={requireTargetForOpening}
+        onValueChange={setRequireTargetForOpening}
+        variant="input"
+      />
     </DialogFrame>
   );
 }

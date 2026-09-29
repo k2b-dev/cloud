@@ -233,6 +233,20 @@ suite("Venue routes with public IDs", () => {
           onBody: saveId("shift"),
         },
         {
+          method: "POST",
+          route: "/api/venue/venues/:id/templates/batch",
+          params: venue,
+          body: {
+            templates: [2, 4].map((weekday) => ({ weekday, title: "Evening bar", startTime: "18:00", endTime: "21:00" })),
+          },
+          status: 201,
+          onBody: (body) => {
+            const created = body as { id: string; weekday: number }[];
+            expect(created.map((template) => template.weekday)).toEqual([2, 4]);
+            for (const template of created) expect(template.id).toMatch(/^[0-9A-Za-z]{6}$/);
+          },
+        },
+        {
           method: "PATCH",
           route: "/api/venue/venues/:id/templates/:resourceId",
           params: { id: "venue", resourceId: "shift" },
@@ -464,6 +478,13 @@ suite("Venue routes with public IDs", () => {
         ["reader", "POST", `/api/venue/venues/${cafe}/free-signup`, freeSlot, 403],
         ["reader", "PATCH", `/api/venue/venues/${cafe}`, venueInput, 403],
         ["reader", "POST", `/api/venue/venues/${cafe}/sections`, notice, 403],
+        [
+          "reader",
+          "POST",
+          `/api/venue/venues/${cafe}/templates/batch`,
+          { templates: [{ weekday: 1, title: "Morning bar", startTime: "09:00", endTime: "12:00" }] },
+          403,
+        ],
         ["reader", "GET", `/api/venue/venues/${cafe}/access`, undefined, 403],
         ["reader", "POST", `/api/venue/venues/${cafe}/api-keys`, { name: "Reader key", permission: "read" }, 403],
         ["reader", "DELETE", `/api/venue/venues/${cafe}`, undefined, 403],
