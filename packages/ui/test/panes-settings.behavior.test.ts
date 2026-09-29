@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { applyPanesIntent, type PanesLayout } from "../src/layout/panes-layout";
 import { createDomTestHarness } from "./dom";
 
@@ -989,6 +989,65 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     expect(dom.root.querySelector(".k2b-settings__footer")?.textContent).toContain("Security save controls");
     dispose();
     dom.cleanup();
+  });
+
+  test("scrolls the selected settings category into the row when it opens past the edge or changes", async () => {
+    const dom = createDomTestHarness();
+    // Solid binds delegated clicks to the document of the first import, an earlier test's.
+    delegateEvents(["click"], dom.document);
+    const { default: SettingsModal } = await import("../src/layout/SettingsModal");
+    const revealed: Array<[string, boolean | ScrollIntoViewOptions | undefined]> = [];
+    HTMLElement.prototype.scrollIntoView = function (this: HTMLElement, options?: boolean | ScrollIntoViewOptions) {
+      revealed.push([this.textContent ?? "", options]);
+    };
+    const nearest: ScrollIntoViewOptions = { block: "nearest", inline: "nearest" };
+    const tabs = () =>
+      ["General", "Tags", "Defaults", "Access", "Keys"].map((title) =>
+        createComponent(SettingsModal.Tab, { id: title.toLowerCase(), title, children: `${title} content` }),
+      );
+    const [active, setActive] = createSignal("access");
+    const dispose = render(
+      () => [
+        createComponent(SettingsModal, {
+          title: "Local settings",
+          defaultTab: "defaults",
+          get children() {
+            return tabs();
+          },
+        }),
+        createComponent(SettingsModal, {
+          title: "Owned settings",
+          get activeTab() {
+            return active();
+          },
+          onTabChange: setActive,
+          get children() {
+            return tabs();
+          },
+        }),
+      ],
+      dom.root,
+    );
+    try {
+      await Promise.resolve();
+      expect(revealed).toEqual([
+        ["Defaults", nearest],
+        ["Access", nearest],
+      ]);
+      setActive("keys");
+      await Promise.resolve();
+      expect(revealed.at(-1)).toEqual(["Keys", nearest]);
+      const local = dom.root.querySelector<HTMLElement>('[aria-label="Local settings"]')!;
+      Array.from(local.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+        .find((tab) => tab.textContent === "Tags")
+        ?.click();
+      await Promise.resolve();
+      expect(revealed.at(-1)).toEqual(["Tags", nearest]);
+      expect(revealed).toHaveLength(4);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 
   test("moves ordered settings items only in available directions", async () => {

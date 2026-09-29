@@ -1,4 +1,4 @@
-import { children, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
 import { assertUniqueStableUiIds } from "./stable-id";
@@ -135,7 +135,14 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
   const firstTabId = () => tabs()[0]?.props.id ?? "";
   const [localActiveTab, setLocalActiveTab] = createSignal(props.defaultTab ?? firstTabId());
   const requestedActiveTabId = () => props.activeTab ?? (localActiveTab() || firstTabId());
-  const resolvedActiveTabId = () => (tabs().some((tab) => tab.props.id === requestedActiveTabId()) ? requestedActiveTabId() : firstTabId());
+  const resolvedActiveTabId = createMemo(() =>
+    tabs().some((tab) => tab.props.id === requestedActiveTabId()) ? requestedActiveTabId() : firstTabId(),
+  );
+  // `defaultTab`, `activeTab` and clicks can select a category past the edge of the scrolling row or rail.
+  createEffect(() => {
+    const id = resolvedActiveTabId();
+    queueMicrotask(() => tabRefs.get(id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+  });
   const activeTab = () => tabs().find((tab) => tab.props.id === resolvedActiveTabId()) ?? null;
   const resolvedPanelChildren = children(() => activeTab()?.props.children);
   const panelChildren = createMemo(() => splitPanelChildren(resolvedPanelChildren()));
