@@ -1316,6 +1316,7 @@ const signupFree = async (
 export type CancelledAssignment = {
   id: string;
   userId: string;
+  /** The display name, or the user name when the display name is empty, as the platform names people. */
   userDisplayName: string;
   /** The shift's public template ID; `null` for free time. */
   templateId: string | null;
@@ -1334,7 +1335,7 @@ const cancelAssignment = async (
     {
       id: string;
       user_id: string;
-      user_display_name: string | null;
+      user_display_name: string;
       template_short_id: string | null;
       template_title: string | null;
       starts_at: Date;
@@ -1346,7 +1347,7 @@ const cancelAssignment = async (
       AND sa.id = ${assignmentId}::uuid
       AND (${canAdmin} OR sa.user_id = ${user.id}::uuid)
     RETURNING sa.id, sa.user_id, sa.starts_at, sa.ends_at,
-      (SELECT NULLIF(u.display_name, '') FROM auth.users u WHERE u.id = sa.user_id) AS user_display_name,
+      (SELECT COALESCE(NULLIF(u.display_name, ''), u.uid) FROM auth.users u WHERE u.id = sa.user_id) AS user_display_name,
       (SELECT st.short_id FROM venue.shift_templates st WHERE st.id = sa.template_id) AS template_short_id,
       (SELECT st.title FROM venue.shift_templates st WHERE st.id = sa.template_id) AS template_title
   `;
@@ -1354,7 +1355,7 @@ const cancelAssignment = async (
   return ok({
     id: row.id,
     userId: row.user_id,
-    userDisplayName: row.user_display_name ?? "Unknown user",
+    userDisplayName: row.user_display_name,
     templateId: row.template_short_id,
     templateTitle: row.template_title,
     startsAt: row.starts_at.toISOString(),

@@ -75,9 +75,9 @@ their notification preferences under **Notifications** in the profile.
 
 | Notification | Recipients | When |
 | --- | --- | --- |
-| Shift reminders (`venue.shiftReminder`) | The person who took the shift, while they still have staff access | About 24 hours before the shift starts, for sign-ups made at least 24 hours ahead; nothing for a closed day |
+| Shift reminders (`venue.shiftReminder`) | The person who took the shift, while they still have staff access | About 24 hours before the shift starts, for sign-ups made at least 24 hours ahead; nothing for a closed day or a paused or deleted shift |
 | Shift cancellations (`venue.shiftCancelled`) | The venue's admins, except the admin who removed the person | After someone leaves an upcoming shift or an admin removes them |
-| Understaffed shifts (`venue.shiftUnderstaffed`) | The venue's admins | Once per shift that starts within 24 hours and still misses people; paused shifts and closed days send nothing |
+| Understaffed shifts (`venue.shiftUnderstaffed`) | The venue's admins | Once per shift that starts within 24 hours and still misses people; paused shifts and closed days send nothing. The title starts with **Closed unless staffed** when the shift opens the venue only once staffed and the venue has no regular hours or special opening during it |
 
 Admins are the users with admin access through a direct or group grant; a
 grant to everyone signed in or to the public names no recipient. A notice

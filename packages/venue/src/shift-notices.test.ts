@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { dates } from "@k2b/stdlib";
-import { isInNoticeWindow, isReminderDue, noticeKeys, noticeRecipients, noticeWindow, noticeWindowDays } from "./shift-notices";
+import type { DateOverride, OpeningRule } from "./contracts";
+import {
+  isClosedUnlessStaffed,
+  isInNoticeWindow,
+  isReminderDue,
+  noticeKeys,
+  noticeRecipients,
+  noticeWindow,
+  noticeWindowDays,
+} from "./shift-notices";
 
 const berlin = "Europe/Berlin";
 /** The instant of a Berlin clock time; 2026 moves clocks forward on March 29 and back on October 25. */
@@ -76,5 +85,64 @@ describe("Venue shift reminders", () => {
     const now = new Date("2026-09-30T08:00:00.000Z");
     expect(isReminderDue({ startsAt, createdAt: "2026-09-29T16:00:00.000Z" }, now)).toBe(true);
     expect(isReminderDue({ startsAt, createdAt: "2026-09-29T16:00:00.001Z" }, now)).toBe(false);
+  });
+});
+
+describe("Venue gap notices", () => {
+  // Invented demo data: Wednesday, September 30, 2026, 18:00–22:00 in Berlin summer time.
+  const timestamp = "2026-09-01T00:00:00.000Z";
+  const slot = (requireTargetForOpening: boolean) => ({
+    date: "2026-09-30",
+    startsAt: "2026-09-30T16:00:00.000Z",
+    endsAt: "2026-09-30T20:00:00.000Z",
+    template: { requireTargetForOpening },
+  });
+  const hours = (startTime: string, endTime: string): OpeningRule => ({
+    id: "rule-1",
+    venueId: "venue-1",
+    weekday: 3,
+    startTime,
+    endTime,
+    note: null,
+    position: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  const override = (kind: "open" | "closed", startTime: string | null = null, endTime: string | null = null): DateOverride => ({
+    id: "override-1",
+    venueId: "venue-1",
+    date: "2026-09-30",
+    kind,
+    startTime,
+    endTime,
+    note: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  const schedule = (openMode: "regular" | "staffed" | "combined", openingRules: OpeningRule[] = [], overrides: DateOverride[] = []) => ({
+    venue: { openMode, timezone: berlin },
+    openingRules,
+    overrides,
+  });
+
+  test("say the venue stays closed only when the shift alone would open it", () => {
+    expect(isClosedUnlessStaffed(slot(true), schedule("combined", [hours("10:00", "17:00")]))).toBe(true);
+    expect(isClosedUnlessStaffed(slot(true), schedule("staffed"))).toBe(true);
+    // Any sign-up opens a shift that needs no full staff, and regular venues open only by their hours.
+    expect(isClosedUnlessStaffed(slot(false), schedule("staffed"))).toBe(false);
+    expect(isClosedUnlessStaffed(slot(true), schedule("regular"))).toBe(false);
+  });
+
+  test("leave it out when regular hours or a special opening open the venue during the shift anyway", () => {
+    expect(isClosedUnlessStaffed(slot(true), schedule("combined", [hours("17:00", "23:00")]))).toBe(false);
+    expect(isClosedUnlessStaffed(slot(true), schedule("combined", [hours("20:00", "21:00")]))).toBe(false);
+    expect(isClosedUnlessStaffed(slot(true), schedule("staffed", [], [override("open", "12:00", "19:00")]))).toBe(false);
+    // Hours that end when the shift starts, hours the staffed mode does not use, or a special opening that
+    // replaces the day's hours do not open the venue during the shift.
+    expect(isClosedUnlessStaffed(slot(true), schedule("combined", [hours("10:00", "18:00")]))).toBe(true);
+    expect(isClosedUnlessStaffed(slot(true), schedule("staffed", [hours("17:00", "23:00")]))).toBe(true);
+    expect(isClosedUnlessStaffed(slot(true), schedule("combined", [hours("17:00", "23:00")], [override("open", "10:00", "14:00")]))).toBe(
+      true,
+    );
   });
 });

@@ -61,9 +61,9 @@ All times use the venue's time zone and a 24-hour clock, wherever you open the v
 Venues sends three kinds of notifications. Each arrives as a browser notification; when you have not turned on browser notifications, or the browser delivery fails, it arrives by email instead. Notifications use the venue's time zone and this Cloud's default language.
 
 :::reference
-- **Shift reminders:** About 24 hours before a shift you took, you get a reminder with its time and venue, such as **Your shift Wed 18:00 · Harbor Cafe**. A shift you take less than 24 hours before it starts gets no reminder, and none arrives for a closed day or after your staff access ends.
+- **Shift reminders:** About 24 hours before a shift you took, you get a reminder with its time and venue, such as **Your shift Wed 18:00 · Harbor Cafe**. A shift you take less than 24 hours before it starts gets no reminder, and none arrives for a closed day, for a shift an admin paused or deleted, or after your staff access ends.
 - **Shift cancellations:** Admins learn when someone leaves an upcoming shift or an admin removes them from it. The admin who removed the person gets no notice.
-- **Understaffed shifts:** Admins get one notice for each shift that starts within the next 24 hours and still misses people, such as **1 missing · Wed 18:00 · Harbor Cafe**. When the venue opens for the shift only once it is staffed, the notice starts with **Closed unless staffed**. Paused shifts and closed days send nothing.
+- **Understaffed shifts:** Admins get one notice for each shift that starts within the next 24 hours and still misses people, such as **1 missing · Wed 18:00 · Harbor Cafe**. When the venue opens for the shift only once it is staffed, and it has no regular hours or special opening during the shift, the notice starts with **Closed unless staffed**. Paused shifts and closed days send nothing.
 - **Open the shift:** Selecting a notification opens the schedule on the shift's day with its details; on a phone the details open as a sheet from the bottom. Email ends with the same link. The page checks your access as usual.
 - **Turn them off:** In your profile, open **Notifications** and switch channels off for **Shift reminders**, **Shift cancellations**, or **Understaffed shifts**.
 :::

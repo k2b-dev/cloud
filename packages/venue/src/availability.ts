@@ -96,42 +96,40 @@ export const upcomingPublicExceptions = (overrides: DateOverride[], today: strin
 
 const isActiveAt = (opening: PublicOpening, now: Date): boolean => new Date(opening.startsAt) <= now && now < new Date(opening.endsAt);
 
+/**
+ * When the venue opens on `date` whatever its shifts: a special opening, which replaces the day's regular hours
+ * and opens the venue in every opening mode because an admin set it for that date on purpose, or the regular
+ * hours when the opening mode uses them. A closed day has none.
+ */
+export const regularWindowsOn = (
+  date: string,
+  input: Pick<PublicAvailabilityInput, "venue" | "openingRules" | "overrides">,
+): { startsAt: string; endsAt: string }[] => {
+  const override = input.overrides.find((entry) => entry.date === date);
+  if (override?.kind === "closed") return [];
+  const windows =
+    override?.kind === "open" && override.startTime && override.endTime
+      ? [{ startTime: override.startTime, endTime: override.endTime }]
+      : input.venue.openMode === "staffed"
+        ? []
+        : input.openingRules.filter((rule) => rule.weekday === weekdayFor(date));
+  return windows.map((window) => ({
+    startsAt: instantFor(date, window.startTime, input.venue.timezone).toISOString(),
+    endsAt: instantFor(date, window.endTime, input.venue.timezone).toISOString(),
+  }));
+};
+
 export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicAvailability => {
   const { locale, t } = venueMessages.resolve(input.locale ? [input.locale] : []);
   const days = Math.max(1, input.days ?? 14);
   const timezone = input.venue.timezone;
   const today = dateKeyAt(input.now, timezone);
   const overridesByDate = new Map(input.overrides.map((override) => [override.date, override]));
-  const rulesByWeekday = new Map<number, OpeningRule[]>();
-  for (const rule of input.openingRules) {
-    const entries = rulesByWeekday.get(rule.weekday);
-    if (entries) entries.push(rule);
-    else rulesByWeekday.set(rule.weekday, [rule]);
-  }
 
-  // A special opening replaces the day's regular hours and opens the venue in every opening mode: an admin set
-  // it for that date on purpose. Regular hours count only when the opening mode uses them.
   const regularOpenings: PublicOpening[] = [];
   for (let offset = 0; offset < days; offset++) {
     const date = dateKeyAfterDays(today, offset, timezone);
-    const override = overridesByDate.get(date);
-    if (override?.kind === "closed") continue;
-
-    const windows =
-      override?.kind === "open" && override.startTime && override.endTime
-        ? [{ startTime: override.startTime, endTime: override.endTime }]
-        : input.venue.openMode === "staffed"
-          ? []
-          : (rulesByWeekday.get(weekdayFor(date)) ?? []);
-
-    for (const window of windows) {
-      regularOpenings.push({
-        kind: "regular",
-        title: t.regularHours,
-        startsAt: instantFor(date, window.startTime, timezone).toISOString(),
-        endsAt: instantFor(date, window.endTime, timezone).toISOString(),
-      });
-    }
+    for (const window of regularWindowsOn(date, input)) regularOpenings.push({ kind: "regular", title: t.regularHours, ...window });
   }
 
   const dynamicOpenings: PublicOpening[] = [];

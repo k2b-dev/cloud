@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { lazySync } from "@k2b/cloud";
-import type { CloudRuntime } from "@k2b/cloud/contracts";
+import type { CapabilityExecutionContext, CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { notifications, settings } from "@k2b/cloud/services";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
@@ -12,6 +12,7 @@ import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import apiRoutes from "./api";
+import { venueCapabilities } from "./capabilities";
 import { app } from "./config";
 import type { ShiftAssignment, ShiftTemplate } from "./contracts";
 import { newShortId } from "./lib/short-id";
@@ -66,19 +67,52 @@ const slotAt = (instant: Date) => {
 const quarterHour = 15 * 60_000;
 const inHours = (hours: number) => new Date(Math.floor((Date.now() + hours * 3_600_000) / quarterHour) * quarterHour);
 
-type Person = { id: string; name: string; cookie: string };
+type Person = { id: string; uid: string; name: string; cookie: string };
 const people: Person[] = [];
-const insertPerson = async (label: string): Promise<Person> => {
+const insertPerson = async (label: string, displayName?: string): Promise<Person> => {
   const suffix = crypto.randomUUID();
-  const name = `Notice ${label} ${suffix.slice(0, 4)}`;
+  const uid = `venue-notice-${label}-${suffix}`;
+  const name = displayName ?? `Notice ${label} ${suffix.slice(0, 4)}`;
   const [row] = await sql<{ id: string }[]>`
     INSERT INTO auth.users (uid, provider, profile, display_name, mail)
-    VALUES (${`venue-notice-${label}-${suffix}`}, 'local', 'user', ${name}, ${`venue-notice-${label}-${suffix}@example.test`})
+    VALUES (${uid}, 'local', 'user', ${name}, ${`${uid}@example.test`})
     RETURNING id
   `;
-  const person = { id: row!.id, name, cookie: `session_token=${await createTestSession(row!.id)}` };
+  const person = { id: row!.id, uid, name, cookie: `session_token=${await createTestSession(row!.id)}` };
   people.push(person);
   return person;
+};
+
+/** The capability context of a signed-in person, as Core resolves it. */
+const capabilityContext = (person: Person): CapabilityExecutionContext => {
+  const user: User = {
+    id: person.id,
+    uid: person.uid,
+    roles: ["user", "local", "local/user"],
+    provider: "local",
+    profile: "user",
+    givenname: "Notice",
+    sn: "Person",
+    displayName: person.name,
+    mail: `${person.uid}@example.test`,
+    avatarHash: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+    ipa: null,
+  };
+  return {
+    actor: { kind: "user", user },
+    accessSubject: { type: "user", userId: person.id },
+    user,
+    locale: "en",
+    requestId: "req-venue-notices",
+    origin: "app",
+    signal: new AbortController().signal,
+  };
 };
 
 type EventRow = { title: string; target_href: string | null; idempotency_key: string; id: string };
@@ -105,6 +139,8 @@ suite("Venue shift notices", () => {
   let colleagueSoon: ShiftAssignment;
   const soonSlot = slotAt(inHours(3));
   const laterSlot = slotAt(inHours(30));
+  const pausedSlot = slotAt(inHours(5));
+  const deletedSlot = slotAt(inHours(7));
 
   const createVenue = async (name: string, slug: string) =>
     (await json<{ id: string }>(await send("POST", "/api/venue/venues", admin.cookie, { name, slug, timezone: TZ }), 201, `create ${name}`))
@@ -160,11 +196,29 @@ suite("Venue shift notices", () => {
     soon = await template(venueId, "Evening bar", soonSlot, { minPeople: 4, maxPeople: 5 });
     later = await template(venueId, "Morning counter", laterSlot, { minPeople: 2 });
     await template(venueId, "Paused shift", soonSlot, { minPeople: 2, active: false });
+    // Two shifts stop running after the colleague took them: one is paused, the other deleted.
+    const pausedLater = await template(venueId, "Late bar", pausedSlot, { minPeople: 1 });
+    const deletedLater = await template(venueId, "Night bar", deletedSlot, { minPeople: 1 });
     await take(venueId, staff, soon, soonSlot.date);
     colleagueSoon = await take(venueId, colleague, soon, soonSlot.date);
+    await take(venueId, colleague, pausedLater, pausedSlot.date);
+    await take(venueId, colleague, deletedLater, deletedSlot.date);
     await take(venueId, leaver, soon, soonSlot.date);
     laterAssignment = await take(venueId, staff, later, laterSlot.date);
     await backdate(venueId);
+    await json(
+      await send("PATCH", `/api/venue/venues/${venueId}/templates/${pausedLater.id}`, admin.cookie, {
+        weekday: pausedSlot.weekday,
+        title: pausedLater.title,
+        startTime: pausedSlot.startTime,
+        endTime: pausedSlot.endTime,
+        minPeople: 1,
+        active: false,
+      }),
+      200,
+      "pause Late bar",
+    );
+    expect((await send("DELETE", `/api/venue/venues/${venueId}/templates/${deletedLater.id}`, admin.cookie)).status).toBe(200);
     // The leaver keeps the sign-up but no longer works here.
     await json(
       await send("PATCH", `/api/venue/venues/${venueId}/access/${leaverAccess.id}`, admin.cookie, { permission: "read" }),
@@ -227,6 +281,7 @@ suite("Venue shift notices", () => {
     const first = await runShiftNotices({ now: new Date() });
     expect(first.failed).toBe(0);
 
+    // The colleague's sign-ups for the paused and the deleted shift get no reminder.
     const reminders = await eventsFor(app.notifications.shiftReminder.id, colleague);
     expect(reminders).toEqual([
       {
@@ -269,6 +324,25 @@ suite("Venue shift notices", () => {
     expect(await eventsFor(app.notifications.shiftReminder.id, colleague)).toHaveLength(1);
     expect(await eventsFor(app.notifications.shiftReminder.id, staff)).toHaveLength(1);
     for (const person of [admin, groupAdmin]) expect(await eventsFor(app.notifications.shiftUnderstaffed.id, person)).toHaveLength(1);
+  });
+
+  test("a scan renews its lease after every batch of notices, also between the gap notices to many admins", async () => {
+    const sends = spyOn(notifications, "send");
+    const sendsPerLease: number[] = [];
+    let counted = 0;
+    const heartbeat = async () => {
+      sendsPerLease.push(sends.mock.calls.length - counted);
+      counted = sends.mock.calls.length;
+    };
+    try {
+      await runShiftNotices({ now: new Date(), batchSize: 1, heartbeat });
+      sendsPerLease.push(sends.mock.calls.length - counted);
+      // The gap goes to two admins and the reminders to two people; nothing new is sent, every send finds its event.
+      expect(sends.mock.calls.length).toBeGreaterThanOrEqual(4);
+      expect(Math.max(...sendsPerLease)).toBe(1);
+    } finally {
+      sends.mockRestore();
+    }
   });
 
   test("a scan stops when it is canceled", async () => {
@@ -333,6 +407,27 @@ suite("Venue shift notices", () => {
     `;
     expect((await send("DELETE", `/api/venue/venues/${venueId}/assignments/${shortId}`, staff.cookie)).status).toBe(200);
     expect(await eventsFor(app.notifications.shiftCancelled.id, groupAdmin)).toHaveLength(2);
+  });
+
+  test("leaving through the capability tells every admin, naming someone without a display name by their user name", async () => {
+    const quiet = await insertPerson("quiet", "");
+    await grant(venueId, { type: "user", userId: quiet.id }, "write");
+    const taken = await take(venueId, quiet, later, laterSlot.date);
+    const assignmentId = await internalId("shift_assignments", taken.id);
+
+    const cancelled = await venueCapabilities.actions["assignment.cancel"].run(
+      { venueId, assignmentId: taken.id },
+      capabilityContext(quiet),
+    );
+    expect(cancelled).toMatchObject({ ok: true, data: { data: { assignmentId: taken.id, cancelled: true } } });
+
+    for (const person of [admin, groupAdmin]) {
+      const events = (await eventsFor(app.notifications.shiftCancelled.id, person)).filter(
+        (event) => event.idempotency_key === noticeKeys.cancelled(assignmentId),
+      );
+      expect(events.map((event) => event.title)).toEqual([expect.stringMatching(new RegExp(`^${quiet.uid} left .+ · Harbor Cafe$`))]);
+    }
+    expect(await eventsFor(app.notifications.shiftCancelled.id, quiet)).toEqual([]);
   });
 
   test("the email ends with the absolute link to the shift", async () => {

@@ -3,9 +3,10 @@ import { getEffectivePermission, hasPermission, listUsersWithAccess } from "@k2b
 import { coreSettings, logger, notifications } from "@k2b/cloud/services";
 import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
+import { regularWindowsOn } from "./availability";
 import { app } from "./config";
-import type { Venue } from "./contracts";
-import { type CancelledAssignment, venueService } from "./service";
+import type { DateOverride, OpeningRule, ShiftTemplate, Venue } from "./contracts";
+import { type CancelledAssignment, type UpcomingSlotSummary, venueService } from "./service";
 import { publicIds } from "./service/public-resources";
 
 /**
@@ -64,6 +65,20 @@ export const isReminderDue = (assignment: { startsAt: string; createdAt: string 
   const dueAt = startsAt - NOTICE_WINDOW_MS;
   return startsAt > now.getTime() && dueAt <= now.getTime() && Date.parse(assignment.createdAt) <= dueAt;
 };
+
+/**
+ * Whether a gap keeps the venue closed for the shift: the shift opens the venue only once it is staffed, and
+ * neither regular hours nor a special opening open it during the shift anyway.
+ */
+export const isClosedUnlessStaffed = (
+  slot: Pick<UpcomingSlotSummary, "date" | "startsAt" | "endsAt"> & { template: Pick<ShiftTemplate, "requireTargetForOpening"> },
+  schedule: { venue: Pick<Venue, "openMode" | "timezone">; openingRules: OpeningRule[]; overrides: DateOverride[] },
+): boolean =>
+  slot.template.requireTargetForOpening &&
+  schedule.venue.openMode !== "regular" &&
+  !regularWindowsOn(slot.date, schedule).some(
+    (window) => Date.parse(window.startsAt) < Date.parse(slot.endsAt) && Date.parse(window.endsAt) > Date.parse(slot.startsAt),
+  );
 
 /** The people a notice to the venue's admins reaches: each admin once, without the person who acted. */
 export const noticeRecipients = (admins: readonly { id: string }[], actorUserId: string | null): string[] =>
@@ -171,6 +186,9 @@ type NoticeScan = {
 
 type ScanState = NoticeScan & { window: NoticeWindow; locale: string; batchSize: number; summary: NoticeScanSummary };
 
+const closedDatesOf = (overrides: DateOverride[]): Set<string> =>
+  new Set(overrides.filter((override) => override.kind === "closed").map((override) => override.date));
+
 type ReminderRow = {
   id: string;
   short_id: string;
@@ -181,6 +199,10 @@ type ReminderRow = {
   template_title: string | null;
 };
 
+/**
+ * Due reminders for sign-ups of shifts that still run: free time and active shifts. A paused or deleted shift
+ * plans no slot and opens nothing, so its sign-ups get no reminder, just as a closed day's.
+ */
 const scanReminders = async (venue: Venue, venueId: string, accessIds: string[], closedDates: Set<string>, scan: ScanState) => {
   const canWork = new Map<string, boolean>();
   let cursor: { startsAt: Date; id: string } | null = null;
@@ -191,6 +213,7 @@ const scanReminders = async (venue: Venue, venueId: string, accessIds: string[],
       FROM venue.shift_assignments sa
       LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
       WHERE sa.venue_id = ${venue.id}::uuid
+        AND (sa.template_id IS NULL OR st.active)
         AND sa.starts_at > ${scan.window.from}
         AND sa.starts_at <= ${scan.window.to}
         AND (${cursor?.startsAt ?? null}::timestamptz IS NULL OR (sa.starts_at, sa.id) > (${cursor?.startsAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
@@ -235,23 +258,27 @@ const scanReminders = async (venue: Venue, venueId: string, accessIds: string[],
   }
 };
 
-const scanGaps = async (venue: Venue, venueId: string, accessIds: string[], closedDates: Set<string>, scan: ScanState) => {
+const scanGaps = async (venue: Venue, venueId: string, accessIds: string[], overrides: DateOverride[], scan: ScanState) => {
   // Where staff only add free time, recurring shifts take no sign-ups and would always miss people.
   if (venue.signupMode === "free") return;
   const { startDate, days } = noticeWindowDays(scan.window, venue.timezone);
   // The schedule's own slot computation: paused shifts plan no slots.
   const slots = await venueService.shifts.listSummary(venue, { startDate, days });
+  const closedDates = closedDatesOf(overrides);
   const gaps = slots.filter(
     (slot) => slot.missingPeople > 0 && !closedDates.has(slot.date) && isInNoticeWindow(slot.startsAt, scan.window),
   );
   if (gaps.length === 0) return;
-  const [admins, templateIds] = await Promise.all([
+  const [admins, templateIds, openingRules] = await Promise.all([
     venueAdmins(accessIds),
     publicIds(
       "templates",
       gaps.map((slot) => slot.template.id),
     ),
+    venueService.openingRules.list(venue.id),
   ]);
+  const recipients = noticeRecipients(admins, null);
+  let sent = 0;
   for (const slot of gaps) {
     const templateId = templateIds.get(slot.template.id);
     if (!templateId) continue;
@@ -266,9 +293,9 @@ const scanGaps = async (venue: Venue, venueId: string, accessIds: string[], clos
       assignedCount: slot.assignedCount,
       minPeople: slot.minPeople,
       maxPeople: slot.maxPeople,
-      blocksOpening: slot.template.requireTargetForOpening && venue.openMode !== "regular",
+      blocksOpening: isClosedUnlessStaffed(slot, { venue, openingRules, overrides }),
     };
-    for (const userId of noticeRecipients(admins, null)) {
+    for (const userId of recipients) {
       scan.signal?.throwIfAborted();
       const outcome = await attempt("shiftUnderstaffed", { venueId: venue.id, templateId: slot.template.id, userId }, () =>
         notifications.send(app.notifications.shiftUnderstaffed, {
@@ -279,6 +306,8 @@ const scanGaps = async (venue: Venue, venueId: string, accessIds: string[], clos
         }),
       );
       count(scan.summary, "understaffed", outcome);
+      // Slots times admins can run long: renew the lease after each batch of notices, as the reminders do.
+      if (++sent % scan.batchSize === 0) await scan.heartbeat?.();
     }
   }
 };
@@ -291,16 +320,16 @@ const scanVenue = async (id: string, venueId: string, scan: ScanState) => {
     venueAccessIds(venue.id),
     venueService.overrides.listRange(venue.id, startDate, dateKeyAfter(startDate, days)),
   ]);
-  const closedDates = new Set(overrides.filter((override) => override.kind === "closed").map((override) => override.date));
   scan.summary.venues++;
-  await scanReminders(venue, venueId, accessIds, closedDates, scan);
-  await scanGaps(venue, venueId, accessIds, closedDates, scan);
+  await scanReminders(venue, venueId, accessIds, closedDatesOf(overrides), scan);
+  await scanGaps(venue, venueId, accessIds, overrides, scan);
 };
 
 /**
  * One scan of the next 24 hours across all venues that have sign-ups or staffed shifts: reminders for due
- * sign-ups and one notice per understaffed slot. Closed days produce nothing. Repeating a scan, or two
- * overlapping scans, send nothing twice, because every notice has a stable idempotency key.
+ * sign-ups and one notice per understaffed slot. Closed days and paused or deleted shifts produce nothing.
+ * Repeating a scan, or two overlapping scans, send nothing twice, because every notice has a stable
+ * idempotency key.
  */
 export const runShiftNotices = async (input: NoticeScan): Promise<NoticeScanSummary> => {
   const scan: ScanState = {
