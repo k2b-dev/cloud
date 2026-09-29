@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { probeCss, probeDocument, probeTemplate, startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
+import { pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { renderDocumentHtmlPdf, renderDocumentPdfPreview } from "./document-rendering";
 
@@ -50,6 +51,8 @@ renderTest(
         const error = await new Response(extraction.stderr).text();
         expect(await extraction.exited, error).toBe(0);
         expect(text).toContain("Expense overview");
+        // PDF viewers show the document's name, not the random name of Gotenberg's upload.
+        expect(await pdfTitle(result.data.pdf)).toBe("expenses");
         if (empty) {
           expect(text).toContain("No expenses selected.");
         } else {

@@ -1991,12 +1991,13 @@ const app = new Hono<AuthContext>()
 
       activeNotePdfConversions += 1;
       try {
+        const filename = notePdfFilename(note.data.title);
         const rendered = await renderMarkdownToPdf({
           markdown: input.markdown,
+          title: note.data.title.trim() || filename.slice(0, -".pdf".length),
           templateId: input.templateId,
           customCss: input.customCss,
         });
-        const filename = notePdfFilename(note.data.title);
         const buffer = rendered.pdf.buffer.slice(rendered.pdf.byteOffset, rendered.pdf.byteOffset + rendered.pdf.byteLength) as ArrayBuffer;
         return new Response(new Blob([buffer], { type: "application/pdf" }), {
           headers: {

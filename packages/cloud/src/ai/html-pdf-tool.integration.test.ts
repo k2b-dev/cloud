@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { type GotenbergTrap, probeDocument, probeTemplate, startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
+import { pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { GotenbergConfig } from "../services/pdf";
 import type { AiFileContent } from "./files-store";
@@ -124,6 +125,8 @@ suiteFor("gotenberg")("html_to_pdf in Gotenberg", () => {
     expect(printed.text).toContain("styled by file");
     expect(printed.text).toContain("styled inline");
     expect(printed.text).toContain("Footer page");
+    // The HTML has no <title>, so PDF viewers show the source file name.
+    expect(await pdfTitle(pdf)).toBe("offer");
     expect(printed.images).toEqual([
       [1, 1],
       [1, 1],

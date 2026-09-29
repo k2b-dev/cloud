@@ -84,7 +84,15 @@ export const createCloudAiMarkdownToPdfTool = (dependencies: MarkdownPdfToolDepe
     let rendered: { pdf: Uint8Array; contentType: string };
     try {
       rendered = await withAiPdfConversionSlot(() =>
-        render({ markdown, templateId: input.template, customCss: input.customCss }, { signal: ctx.signal }),
+        render(
+          {
+            markdown,
+            title: sourcePath.slice(sourcePath.lastIndexOf("/") + 1, -".md".length),
+            templateId: input.template,
+            customCss: input.customCss,
+          },
+          { signal: ctx.signal },
+        ),
       );
     } catch (error) {
       throw ctx.signal.aborted ? cancelled() : error;

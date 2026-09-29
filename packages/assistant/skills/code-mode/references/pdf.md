@@ -19,7 +19,7 @@ Apps.
 
 ```js
 const document = await pdf.render({
-  html: `<!doctype html><html><head><style>
+  html: `<!doctype html><html><head><title>Stock report</title><style>
     body { font-family: sans-serif; }
     h1 { color: #087f70; }
     tr { break-inside: avoid; }
@@ -31,7 +31,8 @@ const document = await pdf.render({
 await files.save(document, "stock-report.pdf");
 ```
 
-`html` is required. `assets` defaults to an empty array and accepts named `Blob`
+`html` is required. Give it a `<title>`: PDF viewers show it as the document
+name, and without one they show a random file name. `assets` defaults to an empty array and accepts named `Blob`
 values for local images, fonts and CSS. Use plain filenames, no directories;
 reference the exact filename from HTML or CSS. Duplicate names and the reserved
 names `index.html`, `header.html`, `footer.html`, `factur-x.xml` fail.

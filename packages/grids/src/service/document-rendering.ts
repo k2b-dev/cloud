@@ -445,6 +445,7 @@ export const renderDocumentPdfPreview = async (
       data,
       filters: documentLiquidFilters,
       filename,
+      title: filename?.replace(/\.pdf$/i, ""),
     },
     config ? { config } : {},
   );
@@ -583,6 +584,7 @@ export const renderDocumentHtmlPdf = async (
       data: input.data,
       filters: documentLiquidFilters,
       filename: input.filename.replace(/\.pdf$/i, ".html"),
+      title: input.filename.replace(/\.pdf$/i, ""),
     },
     options,
   );

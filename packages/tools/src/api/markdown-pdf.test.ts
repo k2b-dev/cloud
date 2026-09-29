@@ -52,7 +52,7 @@ describe("Markdown to PDF API", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("content-disposition")).toContain('filename="Q3 review.pdf"');
     expect(new TextDecoder().decode(await response.arrayBuffer())).toBe("%PDF-cloud");
-    expect(received).toEqual({ markdown: "# Cloud", templateId: undefined, customCss: "h1 { color: navy; }" });
+    expect(received).toEqual({ markdown: "# Cloud", title: "Q3 review", templateId: undefined, customCss: "h1 { color: navy; }" });
   });
 
   test("forwards a preset with CSS overrides", async () => {
@@ -68,7 +68,7 @@ describe("Markdown to PDF API", () => {
 
     const response = await app.request("/pdf", request({ markdown: "Cloud", templateId: "document", customCss: "body { color: navy; }" }));
     expect(response.status).toBe(200);
-    expect(received).toEqual({ markdown: "Cloud", templateId: "document", customCss: "body { color: navy; }" });
+    expect(received).toEqual({ markdown: "Cloud", title: "document", templateId: "document", customCss: "body { color: navy; }" });
   });
 
   test("sanitizes download filenames", async () => {

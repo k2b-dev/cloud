@@ -13,6 +13,13 @@
  * MathML (`math`) and the SVG elements that hold HTML (`foreignObject`,
  * `desc`) go as well; they have no print use in Cloud documents. SVG shapes,
  * images, `title`, and links stay, so graphics still render.
+ *
+ * Chromium takes the PDF title from the document's first `<title>`. Without
+ * one it falls back to the random name Gotenberg gives the uploaded file,
+ * which PDF viewers then show. A caller title fills that gap: it goes ahead
+ * of the document, so it becomes the first title, unless the document names
+ * itself with a non-blank HTML `<title>`. SVG titles label graphics and do
+ * not count.
  */
 const POLICY =
   "default-src 'none'; style-src 'unsafe-inline' file: data:; img-src file: data:; font-src file: data:; base-uri 'none'; form-action 'none'";
@@ -53,10 +60,29 @@ const leadingDoctype = (html: string): string => {
 /** An empty comment stands in for a removed element, so the text on either side stays separate. */
 const REMOVED = "<!---->";
 
-export const offlineHtml = (html: string): string =>
-  leadingDoctype(html) +
-  OFFLINE_META +
-  new HTMLRewriter()
+const escapeTitle = (title: string): string => title.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
+export const offlineHtml = (html: string, title?: string): string => {
+  // Only the text of the first HTML title element names the document.
+  let current: { svg: boolean } | undefined;
+  let firstSeen = false;
+  let named = false;
+  const offline = new HTMLRewriter()
+    .on("title", {
+      element() {
+        if (current && !current.svg) firstSeen = true;
+        current = { svg: false };
+      },
+      text(chunk) {
+        if (!firstSeen && !current?.svg && chunk.text.trim()) named = true;
+      },
+    })
+    // Runs after the title handler for the same element, in registration order.
+    .on("svg title", {
+      element() {
+        if (current) current.svg = true;
+      },
+    })
     // Chromium parses noscript content as markup when JavaScript is disabled.
     // math, foreignObject, and desc: see the module comment.
     .on("script, noscript, meta, base, iframe, frame, frameset, object, embed, math, foreignObject, desc", {
@@ -72,3 +98,6 @@ export const offlineHtml = (html: string): string =>
       },
     })
     .transform(html);
+  const fallbackTitle = title?.trim() && !named ? `<title>${escapeTitle(title.trim())}</title>` : "";
+  return leadingDoctype(html) + OFFLINE_META + fallbackTitle + offline;
+};

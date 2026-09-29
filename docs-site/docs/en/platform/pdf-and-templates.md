@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # PDF and templates
@@ -22,6 +22,7 @@ import { renderHtmlToPdf } from "@k2b/cloud/services";
 
 const result = await renderHtmlToPdf({
   html: "<!doctype html><html><body><h1>Stock report</h1></body></html>",
+  title: "Stock report",
   headerHtml: null,
   footerHtml: "<p>Inventory</p>",
 });
@@ -35,6 +36,11 @@ return new Response(result.pdf, {
 ```
 
 `html` is required. `headerHtml` and `footerHtml` are optional.
+
+`title` is the document title that PDF viewers show in their tab or window,
+usually the document's name. The HTML's own non-blank `<title>` takes
+precedence. Pass a title whenever the HTML may lack one: without either,
+viewers show the random file name the renderer gave the upload.
 
 Cloud sends the HTML to Gotenberg with background printing and CSS page sizes
 enabled. The result contains PDF bytes and the returned content type.
@@ -65,6 +71,7 @@ import { renderMarkdownToPdf } from "@k2b/cloud/services";
 
 const result = await renderMarkdownToPdf({
   markdown: "# Stock report\n\n| Item | Remaining |\n| --- | ---: |\n| Cable | 4 |",
+  title: "Stock report",
   templateId: "report",
   customCss: "h1 { color: #244f75; }",
 });
@@ -77,7 +84,8 @@ use `document`. CSS is limited to 32 KiB. Raw HTML stays inert. Markdown image
 references become safe links, so the renderer never fetches them. CSS imports,
 URLs, and other external resources are rejected. The generated HTML also
 carries a restrictive Content Security Policy before it goes through the
-same bounded, offline HTML renderer.
+same bounded, offline HTML renderer. Markdown has no `<title>`, so pass
+`title`, such as the note or file name, for PDF viewers to show.
 
 The service owns conversion only. Callers still own authentication,
 authorization, request limits, filenames, response headers, and persistence.
@@ -108,7 +116,8 @@ return new Response(preview.pdf.pdf, {
 });
 ```
 
-The input may include header, footer, and page CSS templates. It also accepts
+The input may include header, footer, and page CSS templates, and a `title`
+that names the PDF when the rendered HTML has no `<title>`. It also accepts
 custom Liquid filters. The rendered body, header, footer, and page CSS render
 offline like any other HTML.
 
@@ -175,6 +184,8 @@ fit `maxPdfBytes`. Attachment names in one request must be unique.
 `renderFacturXHtmlToPdf({ html, xml, conformanceLevel, ... })` uses the same HTML
 options, embeds `factur-x.xml`, requests PDF/A-3b and supplies Factur-X metadata.
 The default conformance level is EN 16931. XML shares the HTML input budget.
+It takes no `title`: the PDF/A conversion drops the document title, so viewers
+show the invoice's file name.
 The caller owns XML generation and validation; embedding alone is not invoice
 certification. These features require a Gotenberg version supporting the
 corresponding embedding/Factur-X fields; the local stack uses 8.36.0.
