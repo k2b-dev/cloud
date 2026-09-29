@@ -144,6 +144,7 @@ describe("html_to_pdf", () => {
 
     expect(input).toEqual({
       html: "<!doctype html><p>Report</p>",
+      title: "report",
       headerHtml: undefined,
       footerHtml: undefined,
       assets: [],

@@ -30,6 +30,8 @@ export class MarkdownPdfError extends Error {
 
 export type RenderMarkdownToPdfInput = {
   markdown: string;
+  /** Document title that PDF viewers show, such as the note or file name. */
+  title?: string;
   templateId?: MarkdownPdfTemplateId;
   customCss?: string;
 };
@@ -201,7 +203,7 @@ export const renderMarkdownToPdfWithConfig = (
   input: RenderMarkdownToPdfInput,
   config: GotenbergConfig,
   options: RenderMarkdownToPdfOptions = {},
-): Promise<RenderHtmlToPdfResult> => renderHtmlToPdfWithConfig({ html: buildMarkdownPdfHtml(input) }, config, options);
+): Promise<RenderHtmlToPdfResult> => renderHtmlToPdfWithConfig({ html: buildMarkdownPdfHtml(input), title: input.title }, config, options);
 
 export const renderMarkdownToPdf = async (
   input: RenderMarkdownToPdfInput,

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { probeCss, probeDocument, probeTemplate, startGotenbergTrap } from "../../../../scripts/fixtures/gotenberg-trap";
+import { pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { renderDocumentHtmlPdf, renderDocumentPdfPreview } from "./document-rendering";
 
@@ -50,6 +51,8 @@ renderTest(
         const error = await new Response(extraction.stderr).text();
         expect(await extraction.exited, error).toBe(0);
         expect(text).toContain("Expense overview");
+        // PDF viewers show the document's name, not the random name of Gotenberg's upload.
+        expect(await pdfTitle(result.data.pdf)).toBe("expenses");
         if (empty) {
           expect(text).toContain("No expenses selected.");
         } else {
@@ -69,6 +72,22 @@ renderTest(
     }
   },
   90_000,
+);
+
+testFor("gotenberg")(
+  "PDF previews carry the template name, or the draft name, as their title",
+  async () => {
+    const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 1_000_000, maxPdfBytes: 10_000_000 };
+    const renderer = { kind: "html" as const, numberTemplate: "DOC-1", filenameTemplate: "offer.pdf", body: "<h1>Offer</h1>" };
+    const title = async (template: Parameters<typeof renderDocumentPdfPreview>[0], locale: string) => {
+      const preview = await renderDocumentPdfPreview(template, {}, "abc123-preview.html", config, locale);
+      if (!preview.ok) throw new Error(preview.error.message);
+      return pdfTitle(preview.pdf.pdf);
+    };
+    expect(await title({ name: "Offer & Terms", renderer }, "en")).toBe("Offer & Terms");
+    expect(await title({ renderer }, "de")).toBe("Vorlagenentwurf");
+  },
+  60_000,
 );
 
 testFor("gotenberg")(

@@ -34,7 +34,7 @@ describe("markdown_to_pdf", () => {
 
     const result = await tool.run({ path: "/reports/summary.md", template: "report", customCss: "h1 { color: navy; }" }, context as never);
 
-    expect(renderInput).toEqual({ markdown: "# Summary", templateId: "report", customCss: "h1 { color: navy; }" });
+    expect(renderInput).toEqual({ markdown: "# Summary", title: "summary", templateId: "report", customCss: "h1 { color: navy; }" });
     expect(writeInput).toMatchObject({
       conversationId: "conversation-1",
       path: "/reports/summary.pdf",
@@ -73,7 +73,7 @@ describe("markdown_to_pdf", () => {
     if (tool.location !== "server") throw new Error("Expected server tool");
 
     await tool.run({ path: "/custom.md", customCss: "@page { size: A4; }" }, context as never);
-    expect(renderInput).toEqual({ markdown: "Custom", templateId: undefined, customCss: "@page { size: A4; }" });
+    expect(renderInput).toEqual({ markdown: "Custom", title: "custom", templateId: undefined, customCss: "@page { size: A4; }" });
   });
 
   test("requires a conversation-scoped assistant-owned Markdown source", async () => {

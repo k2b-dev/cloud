@@ -79,6 +79,39 @@ describe("offline HTML", () => {
     expect(offlineHtml(content)).toBe(`${OFFLINE_META}${content}`);
   });
 
+  test("names a document without its own title after the escaped caller title", () => {
+    const title = "<title>Offer &amp; Terms</title>";
+    expect(offlineHtml("<!doctype html><p>Hi</p>", " Offer & Terms ")).toBe(
+      `<!doctype html>${OFFLINE_META}${title}<!doctype html><p>Hi</p>`,
+    );
+    expect(offlineHtml("<p>Hi</p>", "</title><script>x</script>")).toStartWith(
+      `${OFFLINE_META}<title>&lt;/title&gt;&lt;script&gt;x&lt;/script&gt;</title>`,
+    );
+    for (const html of [
+      "<title> </title><title>Later</title>",
+      "<title></title><title>Later</title>",
+      "<svg><title>Chart</title></svg>",
+      "<template><title>Draft</title></template>",
+    ]) {
+      expect(offlineHtml(html, "Offer & Terms")).toBe(`${OFFLINE_META}${title}${html}`);
+    }
+    // Removed elements take their titles with them.
+    for (const html of ["<object><title>Plugin</title></object>", "<math><title>Formula</title></math>"]) {
+      expect(offlineHtml(html, "Offer & Terms")).toBe(`${OFFLINE_META}${title}<!---->`);
+    }
+    expect(offlineHtml("<p>Hi</p>", "  ")).toBe(`${OFFLINE_META}<p>Hi</p>`);
+  });
+
+  test("keeps the document's own title over the caller title", () => {
+    for (const html of [
+      "<title>Invoice</title>",
+      '<svg><title>Chart</title></svg><head><title lang="en">Invoice</title>',
+      "<template><title>Draft</title></template><title>Invoice</title>",
+    ]) {
+      expect(offlineHtml(html, "Offer")).toBe(`${OFFLINE_META}${html}`);
+    }
+  });
+
   test("keeps styles, images, links, and stylesheets that the policy confines", () => {
     const content =
       '<link rel="Stylesheet" href="styles.css"><style>h1 { color: red; }</style><img src="logo.png"><img src="data:image/png;base64,AA=="><a href="https://example.com">Terms</a>';

@@ -39,6 +39,8 @@ export type RenderTemplatePdfPreviewInput = {
   data: Record<string, unknown>;
   filters?: LiquidTemplateOptions["filters"];
   filename?: string;
+  /** PDF document title when the rendered HTML has no `<title>`; see `RenderHtmlToPdfInput.title`. */
+  title?: string;
 };
 
 export type RenderTemplatePdfPreviewOptions = RenderHtmlToPdfOptions & {
@@ -89,7 +91,7 @@ export const renderTemplatePdfPreview = async (
   }
 
   try {
-    const pdfInput = { html, headerHtml, footerHtml, filename: input.filename };
+    const pdfInput = { html, title: input.title, headerHtml, footerHtml, filename: input.filename };
     return {
       ok: true,
       html,
