@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-09-04
+updated: 2026-09-29
 ---
 
 # SSR pages and routing
@@ -39,6 +39,13 @@ export default ssr<AuthContext>(async (c) => {
 ```
 
 Load data, redirect, and set metadata before the returned function.
+
+Every rendered page is sent with `Cache-Control: private, no-store`, so the
+browser asks the server again on Back instead of showing a cached copy of a
+signed-in page. A page that should be cached sets its own header with
+`c.header("Cache-Control", ...)` before returning; the framework keeps it.
+Redirects and other `Response` values returned by the handler are sent as they
+are.
 
 The returned function must be synchronous. Solid SSR creates JSX inside
 `renderToString()`.
