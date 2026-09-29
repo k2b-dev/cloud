@@ -399,12 +399,15 @@ jobs:
           deadline=$((SECONDS + budget))
           delay=10
           until installable; do
-            if ((SECONDS + delay > deadline)); then
-              echo "@k2b/ui@$ui, pinned by @k2b/cloud@$cloud, is not installable from npm after ${budget}s. Publish @k2b/ui@$ui first, then run the release again." >&2
+            remaining=$((deadline - SECONDS))
+            if ((remaining <= 0)); then
+              echo "@k2b/ui@$ui, pinned by @k2b/cloud@$cloud, is not installable from npm after ${SECONDS}s. Publish @k2b/ui@$ui first, then run the release again." >&2
               exit 1
             fi
-            echo "@k2b/ui@$ui is not installable yet; checking again in ${delay}s."
-            sleep "$delay"
+            # The last pause ends at the deadline, so the final check uses the whole budget.
+            pause=$((delay < remaining ? delay : remaining))
+            echo "@k2b/ui@$ui is not installable yet; checking again in ${pause}s."
+            sleep "$pause"
             delay=$((delay * 2 > 120 ? 120 : delay * 2))
           done
           echo "@k2b/ui@$ui is installable from npm."
