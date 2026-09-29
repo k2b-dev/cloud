@@ -3,7 +3,7 @@ import { Button, FileView, PdfPreview, Placeholder } from "@k2b/ui";
 import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
-import { contentLease, previewFile, previewKind, readPreview } from "./file-preview";
+import { contentLease, inlinePdfHref, previewFile, previewKind, readPreview } from "./file-preview";
 import { useFilesMessages } from "./messages";
 
 /** Mounted for one selected revision; closing it aborts text/PDF reads. */
@@ -59,11 +59,13 @@ function RevisionPreview(props: PreviewProps) {
           <Placeholder icon="ti ti-file" title={t().noPreview} description={t().noPreviewDescription} action={download} />
         </Match>
         <Match when={kind() === "pdf"}>
-          {/* Safari on iOS shows only the first page of an embedded PDF; the new tab opens the whole document. */}
+          {/* Safari on iOS shows only the first page of an embedded PDF; the new tab opens the whole document at a
+              stable address, so it reloads and keeps its file name. */}
           <PdfPreview
             autoLoad
             title={props.entry.name}
             openButtonLabel={t().openInTab}
+            openHref={inlinePdfHref(props.baseId, props.entry.path)}
             buttonLabel={t().retry}
             onDownload={props.onDownload}
             request={() => readPreview(props.baseId, props.entry, abort.signal, t().previewFailed)}

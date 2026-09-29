@@ -55,6 +55,7 @@ import {
 import { isMarkdown } from "../document-assets";
 import { FilesError, filesService } from "../service";
 import { apiError, describeError } from "./api-error";
+import { inlinePdfApi } from "./inline-pdf";
 import { errorMessage } from "./messages";
 import { templateApi } from "./templates";
 import { wopiApi } from "./wopi";
@@ -72,6 +73,7 @@ const api = new Hono<AuthContext>()
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
   .route("/templates", templateApi)
+  .route("/", inlinePdfApi)
   .post(
     "/bases/:baseId/markdown",
     middleware.openapi({ summary: "Create an empty Markdown document", ...requiresAuth }),

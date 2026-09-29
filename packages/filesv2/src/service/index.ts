@@ -50,6 +50,7 @@ import { persistedEntryRefId, resolveEntryRefId } from "../data/references";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
+import { isPdfName, pdfBody } from "../pdf-body";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -1440,6 +1441,20 @@ export function createFilesService(
       void rememberOpened(current);
       const lease = await current.root.directDownload(current.target, { expiresIn: 60, fileName: current.relative.split("/").at(-1)! });
       return { url: lease.url, method: "GET", expires: lease.expires };
+    },
+    /** A PDF for the browser's own viewer: the same read right as a download, and only for a PDF by name and content. */
+    async inlinePdf(
+      actor: RequestActor,
+      input: { baseId: string; path: string },
+      signal: AbortSignal,
+    ): Promise<{ name: string; length: string | null; body: ReadableStream<Uint8Array> }> {
+      if (!input.path) throw new FilesError("not_file");
+      const current = await authorized(actor, input.baseId, input.path, false);
+      const name = current.relative.split("/").at(-1)!;
+      if (!isPdfName(name)) throw new FilesError("not_pdf");
+      const lease = await current.root.directDownload(current.target, { expiresIn: 60 });
+      const response = await deps.connect(current.state.config).downloadRaw(lease, signal);
+      return { name, length: response.headers.get("content-length"), body: await pdfBody(response) };
     },
     async saveConfiguration(actor: RequestActor, input: ConfigurationInput) {
       const self = await requireAdmin(actor);

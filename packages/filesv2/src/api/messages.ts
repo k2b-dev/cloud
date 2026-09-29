@@ -184,6 +184,7 @@ const messages: Record<string, [string, string]> = {
   unassigned: ["An administrator must assign this directory first.", "Die Administration muss dieses Verzeichnis zuerst zuordnen."],
   not_directory: ["The selected path is not a directory.", "Der ausgewählte Pfad ist kein Verzeichnis."],
   not_file: ["Select one file to download.", "Wähle eine einzelne Datei zum Herunterladen."],
+  not_pdf: ["This file is not a PDF, so it can only be downloaded.", "Diese Datei ist kein PDF und kann nur heruntergeladen werden."],
   not_found: ["The requested path or identity was not found.", "Der angeforderte Pfad oder die Identität wurde nicht gefunden."],
   insufficient_space: [
     "The storage does not have enough free space for this file.",
