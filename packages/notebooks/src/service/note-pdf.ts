@@ -7,8 +7,23 @@ import {
 } from "@k2b/cloud/services/pdf";
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
 import { renderNotebookBook } from "../lib/book-renderer";
+import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
 import { resolveBookQueries } from "./book";
 import type { NoteQueryResult } from "./note-query";
+
+/**
+ * Display ligatures that become arrows or relations (`->` →, `!=` ≠), the
+ * Unicode blocks Arrows and Mathematical Operators. The presets' fonts in
+ * Gotenberg lack these glyphs: Chromium mixes fallback fonts of different
+ * sizes and composes `≠` as `=` plus a slash that runs into the next letter.
+ * DejaVu Sans, which Gotenberg ships, draws them all alike. The other
+ * ligature symbols (`©`, `…`, `–`) exist in every text font and keep the
+ * preset's typeface. `:where()` keeps the rule at zero specificity, so any
+ * custom CSS rule that styles these spans still wins.
+ */
+const SYMBOL_LIGATURE_CSS = `:where(${LIGATURES.filter(({ symbol }) => /[←-⋿]/u.test(symbol))
+  .map(({ source }) => `.${LIGATURE_CLASS}[title="${source}"]`)
+  .join(", ")}) { font-family: "DejaVu Sans", sans-serif; }`;
 
 /**
  * Print styles for the Book renderer's note blocks. They use `em` and plain
@@ -57,6 +72,7 @@ i.ti { display: none; }
 .hl-number { color: #b45309; }
 .hl-variable { color: #0369a1; }
 .hl-operator { color: #52525b; }
+${SYMBOL_LIGATURE_CSS}
 `;
 
 // The print preset loads no fonts, so KaTeX's layout rules apply with the fallback serif.

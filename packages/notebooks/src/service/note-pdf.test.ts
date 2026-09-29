@@ -59,6 +59,17 @@ describe("note PDF HTML", () => {
     expect(html).toContain('<span class="sr-only">Warnung: </span>');
   });
 
+  test("prints arrow and relation ligatures in one symbol font and keeps the others in the text font", () => {
+    const html = build("x -> y <=> z != w (c) 2026 ... 1 -- 2 +- 3", { templateId: "report" });
+    expect(html).toContain('<span class="notebook-ligature" title="-&gt;">→</span>');
+    expect(html).toContain('<span class="notebook-ligature" title="!=">≠</span>');
+    // Zero specificity, so any custom CSS rule for these spans wins.
+    const rule = /:where\(([^{}]*)\) \{ font-family: "DejaVu Sans", sans-serif; \}/.exec(html)?.[1] ?? "";
+    const selected = [...rule.matchAll(/\.notebook-ligature\[title="([^"]+)"\]/g)].map((match) => match[1]).sort();
+    // `©`, `…`, `–` and `±` exist in every text font and keep the preset's typeface.
+    expect(selected).toEqual(["!=", "->", "<-", "<->", "<=", "<=>", "=>", ">="].sort());
+  });
+
   test("layers note styles between the preset and custom CSS", () => {
     const html = build(":::info\nHello\n:::", { templateId: "compact", customCss: ".k2b-notice-card { border: 0; }" });
     const preset = html.indexOf("@page { size: A4; margin: 14mm");
