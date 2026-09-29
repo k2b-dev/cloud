@@ -4,6 +4,7 @@ import * as awarenessProtocol from "y-protocols/awareness";
 import * as Y from "yjs";
 import { notebooksWorkspace, type PublicNotebookWorkspaceEvent } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
+import { reconnectDelayMs } from "../reconnect";
 
 type YjsErrorCode = (typeof notebooksYjs.errorCode)[keyof typeof notebooksYjs.errorCode];
 
@@ -51,9 +52,6 @@ const WORKSPACE_TERMINAL_ERROR_CODES = new Set<string>([
   "NOTE_NOT_FOUND",
 ]);
 const KNOWN_ERROR_CODES = new Set<string>(Object.values(notebooksYjs.errorCode));
-const RECONNECT_BASE_DELAY_MS = 2_000;
-const RECONNECT_MAX_DELAY_MS = 30_000;
-const RECONNECT_JITTER_MS = 1_500;
 /**
  * Consecutive STORAGE_EXHAUSTED closes before the provider gives up. With the
  * reconnect backoff this spans about a minute: long enough to ride out a
@@ -61,9 +59,6 @@ const RECONNECT_JITTER_MS = 1_500;
  */
 export const MAX_STORAGE_RETRIES = 5;
 
-/** Doubles per failed attempt since the last successful replay, capped, plus jitter. */
-export const reconnectDelayMs = (failedAttempts: number, random: number = Math.random()): number =>
-  Math.min(RECONNECT_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempts), RECONNECT_MAX_DELAY_MS) + Math.floor(random * RECONNECT_JITTER_MS);
 const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;
 
 const resolveHttpBaseUrl = (raw: string): URL => {

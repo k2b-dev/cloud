@@ -1,4 +1,5 @@
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -654,12 +655,10 @@ function MailWorkspaceView(props: {
       },
       classifyClose: ({ code, reason }) => (code === 1008 ? { code: reason || "access_denied", message: t().accessChanged } : null),
       onFatal: (error) => {
-        const current = `${window.location.pathname}${window.location.search}`;
-        if (error.code === "login_required") {
-          documentNavigate(`/auth/login?redirectTo=${encodeURIComponent(current)}`, { replace: true });
-        } else {
-          documentNavigate("/app/mail", { replace: true });
-        }
+        if (error.code !== "login_required") documentNavigate("/app/mail", { replace: true });
+        // A reload lets the route policy send an expired session to sign-in. A
+        // failure that survives it must not reload in a loop.
+        else if (!reloadOnce(`mail:live:${mailboxId}`)) setLiveTransportDegraded(true);
       },
     });
     markLiveApplied = live.markApplied;
