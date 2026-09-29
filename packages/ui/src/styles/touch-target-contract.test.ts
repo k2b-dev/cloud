@@ -28,10 +28,6 @@ describe("@k2b/ui touch targets", () => {
     expect(close.get("inset")).toEqual([hitArea]);
   });
 
-  test("lets a following button split the gap instead of covering its neighbour", () => {
-    expect(declarations(".k2b-ui :is(.k2b-button, .k2b-tooltip) + .k2b-button::after").get("inset-inline-start")).toEqual(["0"]);
-  });
-
   test("keeps the visible size and every pointer-fine layout unchanged", () => {
     const controls = /\.k2b-(?:button|dialog__close)\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));

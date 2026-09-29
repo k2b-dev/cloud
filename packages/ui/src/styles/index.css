@@ -1468,11 +1468,15 @@
 }
 
 /* Touch targets: on a coarse pointer every button gets an invisible hit area
-   of at least 2.75rem (44 px) in both axes. The visible box and the layout do
-   not change. A button that directly follows another button (or its tooltip
-   surface) does not extend backwards, so a row of neighbours splits the gap
-   instead of covering each other. The zero-specificity `position` keeps
-   component rules that already place a button in charge. */
+   of at least 2.75rem (44 px) in both axes, while its visible box stays the
+   same. A later element paints over an earlier one, so a hit area must never
+   reach back over what precedes it: a button that follows anything in its
+   row, directly or as the first control of a Dropdown or toolbar group, does
+   not extend backwards, and the gap before it belongs to the control before
+   it (feedback-parity.css does the same for Tooltip.Anchor). Wrapped or
+   stacked rows need 0.5rem between them, which @k2b/ui's own compact button
+   rows keep on touch. The zero-specificity `position` keeps component rules
+   that already place a button in charge. */
 @media (any-pointer: coarse) {
   :where(.k2b-ui .k2b-button) {
     position: relative;
@@ -1485,8 +1489,20 @@
     inset-inline: min(0px, calc((100% - 2.75rem) / 2));
   }
 
-  .k2b-ui :is(.k2b-button, .k2b-tooltip) + .k2b-button::after {
+  .k2b-ui .k2b-button:not(:first-child)::after,
+  .k2b-ui :is(.k2b-dropdown, .k2b-toolbar__group):not(:first-child) > .k2b-button::after {
     inset-inline-start: 0;
+  }
+
+  .k2b-ui :is(.k2b-detail-panel__primary-actions, .k2b-image-input__actions, .k2b-toolbar[data-wrap="true"], .k2b-toolbar[data-orientation="vertical"]) {
+    row-gap: 0.5rem;
+  }
+
+  /* DetailPanel.Action rows sit flush, so a row that grew vertically would
+     take taps from its neighbour. */
+  .k2b-ui .k2b-button.k2b-detail-panel__action::after,
+  .k2b-ui .k2b-detail-panel__action-row .k2b-button::after {
+    inset-block: 0;
   }
 }
 
