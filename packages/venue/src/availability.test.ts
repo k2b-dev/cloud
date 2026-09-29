@@ -82,6 +82,20 @@ describe("buildPublicAvailability", () => {
     expect(result.todayLabel).toBe("09:00-17:00");
   });
 
+  test("reads an end time of 24:00 as midnight, for opening hours and for shifts", () => {
+    const lateEvening = new Date("2026-07-13T21:30:00.000Z");
+    const hours = project({ openingRules: [openingRule({ startTime: "18:00", endTime: "24:00" })], now: lateEvening });
+    expect([hours.open, hours.todayLabel, hours.activeWindowLabel]).toEqual([true, "18:00-00:00", "18:00-00:00"]);
+
+    const shift = project({
+      venue: { openMode: "staffed", timezone: "Europe/Berlin" },
+      templates: [shiftTemplate({ startTime: "18:00", endTime: "24:00" })],
+      assignments: [assignment({ startsAt: "2026-07-13T16:00:00.000Z", endsAt: "2026-07-13T22:00:00.000Z" })],
+      now: lateEvening,
+    });
+    expect([shift.open, shift.activeWindowLabel]).toEqual([true, "18:00-00:00"]);
+  });
+
   test("keeps first-signup shift behavior when no target threshold is configured", () => {
     const result = project({
       venue: { openMode: "staffed", timezone: "Europe/Berlin" },

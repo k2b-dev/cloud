@@ -352,8 +352,11 @@ const localWeekday = (dateKey: string): number => {
   return day === 0 ? 0 : day;
 };
 
+/** The instant of a venue clock time on `date`; `24:00` ends the day, at the next day's midnight. */
 const instantFor = (date: string, time: string, timezone: string): Date =>
-  new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
+  time === "24:00"
+    ? instantFor(dateKeyAfterDays(date, 1, timezone), "00:00", timezone)
+    : new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
 
 const endInstantFor = (date: string, startTime: string, endTime: string, timezone: string): Date => {
   const endDate = endTime <= startTime ? dateKeyAfterDays(date, 1, timezone) : date;
@@ -658,7 +661,9 @@ const instantiateVenueTemplate = async (
   if (!template) return fail(err.notFound("Template"));
 
   const name = input.name?.trim() || template.venue.name;
-  const slug = await resolveAvailableVenueSlug(input.slug?.trim() || name || template.venue.slug);
+  // A slug someone chose is used as is, and a taken one is a conflict as for a blank venue; only a slug derived
+  // from the name moves on to a free variant.
+  const slug = input.slug ?? (await resolveAvailableVenueSlug(name || template.venue.slug));
 
   try {
     return await sql.begin(async (tx) => {
@@ -685,6 +690,7 @@ const instantiateVenueTemplate = async (
       return venue;
     });
   } catch (error) {
+    if (isUniqueViolation(error, VENUE_SLUG_CONSTRAINT)) return venueSlugTaken();
     log.error("Venue template instantiation failed", {
       templateId,
       error: error instanceof Error ? error.message : String(error),

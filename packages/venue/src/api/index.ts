@@ -270,10 +270,13 @@ const venueTemplateRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues:Templates"],
       summary: "Create a venue from a built-in template",
+      description:
+        "Without a slug, the venue gets a free one derived from its name. A slug another venue uses answers 409, as when creating a blank venue.",
       responses: {
         201: jsonResponse(VenueSchema, "Created venue"),
         400: jsonResponse(ErrorResponseSchema, "Invalid template"),
         404: jsonResponse(ErrorResponseSchema, "Template not found"),
+        409: jsonResponse(ErrorResponseSchema, "Venue slug already in use"),
       },
     }),
     v("param", VenueTemplateParamSchema),
@@ -352,7 +355,11 @@ const venueRoutes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Venues"],
       summary: "Create venue",
-      responses: { 201: jsonResponse(VenueSchema, "Created venue"), 400: jsonResponse(ErrorResponseSchema, "Invalid venue") },
+      responses: {
+        201: jsonResponse(VenueSchema, "Created venue"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid venue"),
+        409: jsonResponse(ErrorResponseSchema, "Venue slug already in use"),
+      },
     }),
     v("json", VenueInputSchema),
     async (c) => {

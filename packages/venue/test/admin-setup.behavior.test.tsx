@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { dates } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
-import type { ShiftTemplate, ShiftTemplateInput, Venue, VenueDashboard } from "../src/contracts";
+import type {
+  DateOverride,
+  OpeningRule,
+  OpeningRuleInput,
+  ShiftTemplate,
+  ShiftTemplateInput,
+  Venue,
+  VenueDashboard,
+} from "../src/contracts";
 
 const flush = async () => {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
@@ -236,7 +245,129 @@ describe("Venue setup behavior", () => {
     }
   });
 
-  test("pausing a shift saves at once, and a running delete shows progress only on its own row", async () => {
+  test("an opening until midnight saves unchanged as 24:00, and 24:00 cannot start one", async () => {
+    const dom = createDomTestHarness();
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { OpeningRuleDialog } = await import("../src/frontend/_components/venue-workspace/schedule");
+    const saved: OpeningRuleInput[] = [];
+    const rule: OpeningRule = {
+      id: "Rule01",
+      venueId: "Cafe01",
+      weekday: 5,
+      startTime: "18:00",
+      endTime: "24:00",
+      note: "Late bar",
+      position: 0,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <OpeningRuleDialog
+            initial={rule}
+            submit={async (input) => {
+              saved.push(input);
+              return null;
+            }}
+            close={() => {}}
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      buttonNamed(dom.root, "Save").click();
+      await flush();
+      expect(saved).toEqual([{ weekday: 5, startTime: "18:00", endTime: "24:00", note: "Late bar" }]);
+
+      const [start, end] = [...dom.root.querySelectorAll<HTMLInputElement>("input[inputmode='numeric']")];
+      type(start!, "24");
+      start!.dispatchEvent(new Event("blur"));
+      type(end!, "24");
+      end!.dispatchEvent(new Event("blur"));
+      await flush();
+      expect([start!.value, end!.value]).toEqual(["24:00", "24:00"]);
+      buttonNamed(dom.root, "Save").click();
+      await flush();
+      expect(start!.getAttribute("aria-invalid")).toBe("true");
+      expect(end!.getAttribute("aria-invalid")).not.toBe("true");
+      expect(saved).toHaveLength(1);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("a new exception on a date that has one says so at the date instead of replacing it", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const closedToday: DateOverride = {
+      id: "Over01",
+      venueId: "Cafe01",
+      date: today,
+      kind: "closed",
+      startTime: null,
+      endTime: null,
+      note: "Inventory",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const context = { venue, openingRules: [], overrides: [closedToday], templates: [], accessEntries: [], apiKeys: [] };
+    const writes: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
+      const method = init?.method ?? "GET";
+      if (method !== "GET") writes.push(`${method} ${url.pathname}`);
+      return Response.json(method === "GET" ? context : closedToday);
+    }) as typeof fetch;
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { SettingsDialog } = await import("../src/frontend/_components/venue-workspace/settings");
+    const dashboard = { venue, openingRules: [], overrides: [closedToday], templates: [] } as unknown as VenueDashboard;
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <SettingsDialog
+            dashboard={dashboard}
+            accessEntries={[]}
+            apiKeys={[]}
+            initialTab="schedule"
+            onOpenCalendarSubscription={() => {}}
+            close={() => {}}
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      await flush();
+      // A new exception starts on today, which already has one.
+      buttonNamed(dom.root, "New exception").click();
+      await flush();
+      const dialog = () => [...dom.document.querySelectorAll<HTMLElement>("dialog")].at(-1)!;
+      buttonNamed(dialog(), "Add").click();
+      await flush();
+      expect(dialog().textContent).toContain("This date already has an exception. Edit that one instead.");
+      expect(writes).toEqual([]);
+      buttonNamed(dialog(), "Cancel").click();
+      const edit = () => dom.root.querySelector<HTMLButtonElement>("button[aria-label='Edit exception']")!;
+      await settle(() => !edit().disabled);
+
+      // Editing that exception keeps its own date.
+      edit().click();
+      await flush();
+      buttonNamed(dialog(), "Save").click();
+      await flush();
+      expect(writes).toEqual(["PATCH /api/venue/venues/Cafe01/overrides/Over01"]);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("a pause shows at its switch until the server answers, and a running delete shows progress only on its own row", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const shift = (id: string, title: string): ShiftTemplate => ({
@@ -257,12 +388,23 @@ describe("Venue setup behavior", () => {
     const context = { venue, openingRules: [], overrides: [], templates, accessEntries: [], apiKeys: [] };
     const requests: { method: string; path: string; body: unknown }[] = [];
     let releaseDelete: (() => void) | undefined;
+    let answerPatch: ((ok: boolean) => void) | undefined;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
       const method = init?.method ?? "GET";
-      requests.push({ method, path: url.pathname, body: init?.body ? JSON.parse(String(init.body)) : null });
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      requests.push({ method, path: url.pathname, body });
       if (method === "DELETE") return new Promise<Response>((resolve) => (releaseDelete = () => resolve(Response.json({ message: "ok" }))));
-      if (method === "PATCH") return Response.json(templates[0]);
+      if (method === "PATCH") {
+        return new Promise<Response>(
+          (resolve) =>
+            (answerPatch = (ok) => {
+              if (!ok) return resolve(Response.json({ message: "Service unavailable" }, { status: 503 }));
+              templates[0] = { ...templates[0]!, active: body.active };
+              resolve(Response.json(templates[0]));
+            }),
+        );
+      }
       return Response.json(context);
     }) as typeof fetch;
     const { LocaleProvider } = await import("@k2b/ui");
@@ -285,12 +427,13 @@ describe("Venue setup behavior", () => {
     );
     try {
       await flush();
-      const switches = [...dom.root.querySelectorAll<HTMLInputElement>("input[role='switch']")];
-      expect(switches.map((input) => input.getAttribute("aria-label"))).toEqual([
+      const switches = () => [...dom.root.querySelectorAll<HTMLInputElement>("input[role='switch']")];
+      const deletes = () => [...dom.root.querySelectorAll<HTMLButtonElement>("button[aria-label='Delete shift']")];
+      expect(switches().map((input) => input.getAttribute("aria-label"))).toEqual([
         "“Morning counter” is active",
         "“Lunch counter” is active",
       ]);
-      switches[0]!.click();
+      switches()[0]!.click();
       await flush();
       expect(requests.filter((request) => request.method === "PATCH")).toEqual([
         {
@@ -299,10 +442,20 @@ describe("Venue setup behavior", () => {
           body: expect.objectContaining({ title: "Morning counter", weekday: 1, active: false }),
         },
       ]);
+      // While the pause saves, its switch shows the asked state and everything waits; no delete button spins.
+      expect(switches().map((input) => [input.checked, input.disabled])).toEqual([
+        [false, true],
+        [true, true],
+      ]);
+      expect(deletes().map((button) => [button.getAttribute("aria-busy"), button.disabled])).toEqual([
+        [null, true],
+        [null, true],
+      ]);
 
       // The pause reloads the settings, which renders the rows anew; the next action waits for that.
-      const deletes = () => [...dom.root.querySelectorAll<HTMLButtonElement>("button[aria-label='Delete shift']")];
+      answerPatch?.(true);
       await settle(() => dom.document.body.textContent?.includes("Shift paused") === true && deletes().every((button) => !button.disabled));
+      expect(switches().map((input) => input.checked)).toEqual([false, true]);
       deletes()[1]!.click();
       await flush();
       buttonNamed(panel(dom)!, "Delete").click();
@@ -320,6 +473,15 @@ describe("Venue setup behavior", () => {
         [null, false],
         [null, false],
       ]);
+
+      // A resume the server refuses flips the switch back to the confirmed state.
+      switches()[0]!.click();
+      await flush();
+      expect(switches()[0]!.checked).toBe(true);
+      answerPatch?.(false);
+      await settle(() => !switches()[0]!.disabled);
+      expect(switches()[0]!.checked).toBe(false);
+      expect(dom.document.body.textContent).toContain("Service unavailable");
     } finally {
       dispose();
       globalThis.fetch = originalFetch;

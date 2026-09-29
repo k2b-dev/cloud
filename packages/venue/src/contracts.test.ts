@@ -66,6 +66,17 @@ describe("ShiftTemplateInputSchema", () => {
     expect(result.requireTargetForOpening).toBe(false);
   });
 
+  test("takes 24:00 as an end time for until midnight, and no clock time past it", () => {
+    const shift = (startTime: string, endTime: string) =>
+      ShiftTemplateInputSchema.safeParse({ weekday: 5, title: "Late bar", startTime, endTime, minPeople: 1 }).success;
+    expect([shift("18:00", "24:00"), shift("24:00", "24:00"), shift("18:00", "24:30"), shift("18:00", "23:60")]).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+  });
+
   test("requires a positive target when target staffing controls opening", () => {
     const result = ShiftTemplateInputSchema.safeParse({
       weekday: 1,

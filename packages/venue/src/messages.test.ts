@@ -7,6 +7,16 @@ describe("Venue internationalization", () => {
     expect(venueMessages.check()).toEqual([]);
   });
 
+  test("keeps interface texts plain, without Markdown code marks that fields would show as is", () => {
+    for (const locale of ["en", "de"]) {
+      const texts = Object.entries(venueMessages.resolve([locale]).t).filter(([, value]) => typeof value === "string");
+      expect({ locale, marked: texts.filter(([, value]) => String(value).includes("`")).map(([key]) => key) }).toEqual({
+        locale,
+        marked: [],
+      });
+    }
+  });
+
   test("resolves regional German tags and falls back to English", () => {
     expect(venueMessages.resolve(["de-CH"]).t.appName).toBe("Standorte");
     expect(venueMessages.resolve(["fr"]).t.appName).toBe("Venues");

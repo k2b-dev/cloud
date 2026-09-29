@@ -28,8 +28,11 @@ export type PublicAvailability = {
 
 const dateKeyAt = (instant: Date, timezone: string): string => dates.formatDateKey(instant, { timeZone: timezone });
 
+/** The instant of a venue clock time on `date`; `24:00` ends the day, at the next day's midnight. */
 const instantFor = (date: string, time: string, timezone: string): Date =>
-  new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
+  time === "24:00"
+    ? instantFor(dateKeyAfterDays(date, 1, timezone), "00:00", timezone)
+    : new Date(dates.zonedDateTimeToInstant(`${date}T${time}`, timezone, { disambiguation: "compatible" }));
 
 const dateKeyAfterDays = (date: string, days: number, timezone: string): string =>
   dates.formatDateKey(new Date(instantFor(date, "12:00", timezone).getTime() + days * 86_400_000), { timeZone: timezone });

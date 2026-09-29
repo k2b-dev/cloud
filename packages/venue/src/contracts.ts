@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 const WeekdaySchema = z.number().int().min(0).max(6);
-const TimeSchema = z.string().regex(/^\d{2}:\d{2}$/, "Expected HH:MM");
+/** A venue clock time; `24:00` is midnight at the end of the day, so it only works as an end time. */
+const TimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, "Expected HH:MM from 00:00 to 24:00");
 const DateKeySchema = z.iso.date();
 const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Color must be a #RRGGBB hex value");
 export const VenueResourceIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/, "Expected a 6-character Venue resource ID");

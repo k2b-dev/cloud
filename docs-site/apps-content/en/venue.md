@@ -33,7 +33,7 @@ across different places.
 
 Every time in a venue uses the venue's time zone and a 24-hour clock, so
 people who open the venue from another time zone see the same times as the
-people on site.
+people on site. An end time of 24:00 means until midnight.
 
 Public content and opening status are visible without a Cloud account while
 the admin keeps the venue's public page switched on. A switched-off venue and

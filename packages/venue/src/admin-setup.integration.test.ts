@@ -214,6 +214,47 @@ suite("Venue setup from the interface", () => {
     expect((await status()).open).toBe(false);
   });
 
+  test("an end time of 24:00 means until midnight for hours, exceptions, and shifts; later times are invalid input", async () => {
+    const venue = await createVenue("Midnight Cafe", { timezone: "Europe/Berlin" });
+    const base = `/api/venue/venues/${venue.id}`;
+    const tomorrow = dates.formatDateKey(new Date(Date.now() + 86_400_000), { timeZone: "Europe/Berlin" });
+    const dayAfter = new Date(Date.parse(`${tomorrow}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const weekday = new Date(`${tomorrow}T12:00:00Z`).getUTCDay();
+    const midnight = new Date(dates.zonedDateTimeToInstant(`${dayAfter}T00:00`, "Europe/Berlin")).toISOString();
+
+    await expectStatus(
+      await send("POST", `${base}/opening-rules`, admin.cookie, { weekday, startTime: "18:00", endTime: "24:00" }),
+      201,
+      "opening until midnight",
+    );
+    await expectStatus(
+      await send("POST", `${base}/overrides`, admin.cookie, { date: dayAfter, kind: "open", startTime: "20:00", endTime: "24:00" }),
+      201,
+      "special opening until midnight",
+    );
+    const [late] = await json<ShiftTemplate[]>(
+      await send("POST", `${base}/templates/batch`, admin.cookie, {
+        templates: [shift(weekday, { startTime: "18:00", endTime: "24:00" })],
+      }),
+      201,
+      "shift until midnight",
+    );
+    await expectStatus(await send("GET", `/api/venue/public/${venue.id}/status`, ""), 200, "public status");
+    const dashboard = await json<VenueDashboard>(await send("GET", `${base}/dashboard`, admin.cookie), 200, "dashboard");
+    expect(dashboard.slots.find((slot) => slot.template.id === late!.id && slot.date === tomorrow)?.endsAt).toBe(midnight);
+    await expectStatus(
+      await send("POST", `${base}/templates/${late!.id}/signup`, staff.cookie, { date: tomorrow }),
+      201,
+      "take the shift until midnight",
+    );
+
+    await expectStatus(
+      await send("POST", `${base}/opening-rules`, admin.cookie, { weekday, startTime: "18:00", endTime: "24:30" }),
+      400,
+      "past midnight",
+    );
+  });
+
   test("admins switch the public page off and on; the unavailable page looks the same as for an unknown venue", async () => {
     const venue = await createVenue("Hidden Cafe");
     const input = { name: venue.name, slug: venue.slug, timezone: venue.timezone };
@@ -275,5 +316,18 @@ suite("Venue setup from the interface", () => {
       409,
       "save with a taken slug",
     );
+
+    // From a template, a chosen slug is a conflict the same way; without one, the name leads to a free variant.
+    await expectStatus(
+      await send("POST", "/api/venue/templates/cafe-counter", admin.cookie, { name: "Copy Cafe", slug: first.slug }),
+      409,
+      "template with a taken slug",
+    );
+    const derived = await json<Venue>(
+      await send("POST", "/api/venue/templates/cafe-counter", admin.cookie, { name: first.slug }),
+      201,
+      "template without a slug",
+    );
+    expect(derived.slug).toBe(`${first.slug}-2`);
   });
 });

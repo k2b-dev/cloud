@@ -5,9 +5,13 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 /** Whether `value` is a 24-hour clock time such as `09:30`. */
 export const isClockTime = (value: string): boolean => TIME_PATTERN.test(value);
 
+/** Whether `value` can end a time range: a clock time, or `24:00` for until midnight. */
+export const isEndTime = (value: string): boolean => isClockTime(value) || value === "24:00";
+
 /**
- * Completes what people type into a clock time: `9` becomes `09:00`, `930` becomes `09:30`, and `9.5` becomes
- * `09:05`. Anything that is no time stays as typed, so the field can say what is wrong.
+ * Completes what people type into a clock time: `9` becomes `09:00`, `930` becomes `09:30`, `9.5` becomes
+ * `09:05`, and `24` becomes `24:00`, which only an end time accepts. Anything that is no time stays as typed, so
+ * the field can say what is wrong.
  */
 export const completeClockTime = (value: string): string => {
   const trimmed = value.trim();
@@ -19,7 +23,7 @@ export const completeClockTime = (value: string): string => {
   else [hours, minutes] = [trimmed, "0"];
   if (!/^\d{1,2}$/.test(hours) || !/^\d{1,2}$/.test(minutes)) return value;
   const completed = `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
-  return isClockTime(completed) ? completed : value;
+  return isEndTime(completed) ? completed : value;
 };
 
 /**

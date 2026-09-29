@@ -25,7 +25,7 @@ import type {
   UpcomingSlot,
 } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
-import { completeClockTime, isClockTime, TimeInput } from "./time-input";
+import { completeClockTime, isClockTime, isEndTime, TimeInput } from "./time-input";
 import { timeZoneDateConfig, todayDateKey } from "./utils";
 
 /** The staffing target as people read it: `2`, or `1–3` when more people may join than the shift needs. */
@@ -229,13 +229,13 @@ const weekdayOptions = (locale: string) =>
 
 type TimeErrors = { startTime?: string; endTime?: string };
 
-/** Field errors for a start and end time on the same day; the end must come after the start. */
+/** Field errors for a start and end time on the same day; the end must come after the start and may be 24:00. */
 const timeRangeErrors = (startTime: string, endTime: string, t: VenueMessages): TimeErrors => {
   const errors: TimeErrors = {};
   if (!startTime.trim()) errors.startTime = t.timeRequired;
   else if (!isClockTime(startTime.trim())) errors.startTime = t.timeInvalid;
   if (!endTime.trim()) errors.endTime = t.timeRequired;
-  else if (!isClockTime(endTime.trim())) errors.endTime = t.timeInvalid;
+  else if (!isEndTime(endTime.trim())) errors.endTime = t.timeInvalid;
   else if (!errors.startTime && endTime.trim() <= startTime.trim()) errors.endTime = t.endAfterStart;
   return errors;
 };
@@ -290,10 +290,16 @@ export function OpeningRuleDialog(props: SubmittingDialogProps<OpeningRuleInput>
 
 /**
  * Adds or edits an exception for one date: closed all day, or a special opening with its own times that replace
- * the day's regular hours. The kind is an explicit choice, so saving never changes it by accident.
+ * the day's regular hours. The kind is an explicit choice, so saving never changes it by accident. A date in
+ * `takenDates` already has another exception; the date field says so instead of replacing that one.
  */
 export function ExceptionDialog(
-  props: SubmittingDialogProps<DateOverrideInput> & { timeZone: string; initial?: DateOverride; today?: string },
+  props: SubmittingDialogProps<DateOverrideInput> & {
+    timeZone: string;
+    initial?: DateOverride;
+    today?: string;
+    takenDates?: readonly string[];
+  },
 ) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
@@ -306,8 +312,9 @@ export function ExceptionDialog(
   const [attempted, setAttempted] = createSignal(false);
   const errors = (): TimeErrors & { date?: string } => {
     if (!attempted()) return {};
+    const day = date();
     return {
-      date: date() ? undefined : t().pickDate,
+      date: !day ? t().pickDate : props.takenDates?.includes(day) ? t().exceptionDateTaken : undefined,
       ...(kind() === "open" ? timeRangeErrors(startTime(), endTime(), t()) : {}),
     };
   };

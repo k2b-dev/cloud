@@ -217,6 +217,8 @@ export function SettingsDialog(props: {
   const [requestCount, setRequestCount] = createSignal(0);
   /** The row whose delete or pause is running; only that row shows progress. */
   const [busyRow, setBusyRow] = createSignal<string | null>(null);
+  /** The shift whose pause or resume is saving: its switch shows the asked state until the server answers. */
+  const [pendingPause, setPendingPause] = createSignal<{ id: string; active: boolean } | null>(null);
   const [activeTab, setActiveTab] = createSignal<string>(props.initialTab ?? "general");
   const requestControllers = new Set<AbortController>();
   const runRequest = async <T,>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -503,8 +505,10 @@ export function SettingsDialog(props: {
       if (!res.ok) throw new Error(await readError(res, t().addExceptionFailed));
     },
   });
+  // Adding saves through the upsert route, which would replace another exception on the same date without a word.
   const openAddException = () => {
     const timezone = currentVenue().timezone;
+    const takenDates = settings().overrides.map((entry) => entry.date);
     return openSavingDialog(
       (close, guardDismiss) => (
         <ExceptionDialog
@@ -512,6 +516,7 @@ export function SettingsDialog(props: {
           guardDismiss={guardDismiss}
           timeZone={timezone}
           today={venueToday()}
+          takenDates={takenDates}
           submit={dialogSubmit(addException)}
         />
       ),
@@ -530,7 +535,14 @@ export function SettingsDialog(props: {
     },
   });
   const openEditException = (entry: DateOverride) => {
-    const target = { id: entry.id, initial: { ...entry }, timezone: currentVenue().timezone };
+    const target = {
+      id: entry.id,
+      initial: { ...entry },
+      timezone: currentVenue().timezone,
+      takenDates: settings()
+        .overrides.filter((other) => other.id !== entry.id)
+        .map((other) => other.date),
+    };
     const submit = dialogSubmit(editException);
     return openSavingDialog(
       (close, guardDismiss) => (
@@ -539,6 +551,7 @@ export function SettingsDialog(props: {
           guardDismiss={guardDismiss}
           timeZone={target.timezone}
           initial={target.initial}
+          takenDates={target.takenDates}
           submit={(input) => submit({ id: target.id, input })}
         />
       ),
@@ -633,9 +646,24 @@ export function SettingsDialog(props: {
     },
     onError: (err) => prompts.error(err.message),
   });
-  const setShiftActive = (shift: ShiftTemplate, active: boolean) => {
+  const setShiftActive = async (shift: ShiftTemplate, active: boolean) => {
     const { id, venueId: _venueId, createdAt: _createdAt, updatedAt: _updatedAt, ...input } = shift;
-    void runReconciledMutation(pauseShift, { id, input: { ...input, active } }, active ? t().shiftResumed : t().shiftPaused, `shift:${id}`);
+    setPendingPause({ id, active });
+    try {
+      await runReconciledMutation(
+        pauseShift,
+        { id, input: { ...input, active } },
+        active ? t().shiftResumed : t().shiftPaused,
+        `pause:${id}`,
+      );
+    } finally {
+      // A failed save leaves the confirmed state, so the switch flips back.
+      setPendingPause(null);
+    }
+  };
+  const shiftSwitchValue = (shift: ShiftTemplate) => {
+    const pending = pendingPause();
+    return pending?.id === shift.id ? pending.active : shift.active;
   };
 
   const deleteShift = mutation.create<void, string>({
@@ -1172,9 +1200,9 @@ export function SettingsDialog(props: {
                                   <Tooltip.Anchor content={shift.active ? t().pauseShift : t().resumeShift}>
                                     <Switch
                                       aria-label={t().shiftActiveLabel({ title: shift.title })}
-                                      value={shift.active}
+                                      value={shiftSwitchValue(shift)}
                                       disabled={scheduleBusy()}
-                                      onValueChange={(active) => setShiftActive(shift, active)}
+                                      onValueChange={(active) => void setShiftActive(shift, active)}
                                     />
                                   </Tooltip.Anchor>
                                 </RowActions>
