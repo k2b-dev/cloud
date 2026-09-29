@@ -11,7 +11,7 @@
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
-    "@valentinkolb/filegate": "2.4.0",
+    "@valentinkolb/filegate": "2.5.3",
     "@k2b/stdlib": "catalog:",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
