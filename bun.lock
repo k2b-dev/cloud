@@ -22,7 +22,6 @@
       "name": "@k2b/cloud-docs",
       "version": "0.0.0",
       "dependencies": {
-        "@hono/standard-validator": "0.4.0",
         "@k2b/cloud": "workspace:*",
         "@k2b/fibel": "0.7.6",
         "@k2b/ssr": "catalog:",
@@ -137,7 +136,6 @@
       "version": "0.19.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
-        "@hono/standard-validator": "0.4.0",
         "@k2b/nessi": "0.12.1",
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.26.0",
