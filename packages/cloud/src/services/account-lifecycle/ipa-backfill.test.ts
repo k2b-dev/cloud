@@ -101,14 +101,19 @@ const fixture = async (scenario: string) => {
     setSystemTime(new Date("2026-09-07T12:00:00Z"));
     ${scenario}
   `;
-  const child = Bun.spawn([process.execPath, "--eval", script], {
+  // A closed loopback port catches any query the SQL replacement misses. The environment is
+  // explicit because an inherited BUN_OPTIONS preload of the test fixture (`bun run test`)
+  // would replace DATABASE_URL with a configured test database.
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], {
     cwd: new URL("../../../", import.meta.url).pathname,
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      ...process.env,
+      PATH: process.env.PATH,
       DATABASE_URL: "postgres://fixture:fixture@127.0.0.1:1/fixture",
       POSTGRES_URL: "postgres://fixture:fixture@127.0.0.1:1/fixture",
+      CLOUD_TEST_NATS_SERVERS: process.env.CLOUD_TEST_NATS_SERVERS,
+      CLOUD_TEST_NATS_CREDS_FILE: process.env.CLOUD_TEST_NATS_CREDS_FILE,
     },
   });
   const [exitCode, stdout, stderr] = await Promise.all([
