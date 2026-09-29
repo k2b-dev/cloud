@@ -39,7 +39,15 @@ export async function readDroppedEntries(entries: readonly FileSystemEntry[], si
       const reader = (entry as FileSystemDirectoryEntry).createReader();
       for (;;) {
         signal.throwIfAborted();
-        const batch = await read<FileSystemEntry[]>(signal, (resolve, reject) => reader.readEntries(resolve, reject));
+        let batch: FileSystemEntry[];
+        try {
+          batch = await read<FileSystemEntry[]>(signal, (resolve, reject) => reader.readEntries(resolve, reject));
+        } catch (error) {
+          // An unreadable folder, often a system folder on a volume root, costs only its own contents.
+          signal.throwIfAborted();
+          errors.push(`${path}: ${error instanceof Error ? error.message : "read_failed"}`);
+          break;
+        }
         if (!batch.length) break;
         for (const child of batch) await visit(child, path);
       }

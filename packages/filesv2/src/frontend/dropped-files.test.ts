@@ -43,6 +43,23 @@ test("individual unreadable files are reported while other dropped files remain 
   expect(result.errors).toEqual(["Docs/denied.txt: Permission denied"]);
 });
 
+test("an unreadable folder is reported while the rest of the dropped folder is still read", async () => {
+  // Volume roots carry system folders the person cannot list, such as .Spotlight-V100 on a memory card.
+  const denied = {
+    name: ".Spotlight-V100",
+    isDirectory: true,
+    isFile: false,
+    createReader: () => ({ readEntries: (_: unknown, reject: (error: Error) => void) => reject(new Error("Permission denied")) }),
+  } as unknown as FileSystemDirectoryEntry;
+  const result = await readDroppedEntries(
+    [directory("Card", [[denied, file("photo.jpg")], [directory("DCIM", [[file("one.jpg")]])]])],
+    new AbortController().signal,
+  );
+  expect(result.files.map(uploadRelativePath)).toEqual(["Card/photo.jpg", "Card/DCIM/one.jpg"]);
+  expect(result.directories).toEqual(["Card", "Card/.Spotlight-V100", "Card/DCIM"]);
+  expect(result.errors).toEqual(["Card/.Spotlight-V100: Permission denied"]);
+});
+
 test("cancelling a folder scan settles even if the browser never answers its callback", async () => {
   const never = {
     name: "Never",
