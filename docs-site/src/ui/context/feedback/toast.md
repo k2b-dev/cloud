@@ -39,7 +39,7 @@ The first argument is the description. The default titles follow the document lo
 | `iconClass` | `string` | variant icon | Overrides the Tabler icon class. |
 | `action` | `{ label: string } & ({ href: string } \| { onClick: () => void })`, or `null` | none | Adds one link or callback action; `null` removes it. |
 | `progress` | `number \| "indeterminate" \| null` | none | Progress from 0 to 1; `null` restores ordinary dismissal. |
-| `dismissLabel` | `string` | localized close label | Names the close button. |
+| `dismissLabel` | `string` | "Dismiss notification" / "Benachrichtigung schließen" from the document locale | Names the close button. |
 
 At most five toasts remain visible. Adding another dismisses the oldest.
 
@@ -138,4 +138,4 @@ notice.update("1000 records saved", {
 });
 ```
 
-Callback actions do not dismiss automatically; existing `{ label, href }` actions retain their link behavior. Closing the toast only hides feedback, so cancellation must be explicit. The app owns localized titles, descriptions, action labels and `dismissLabel`. Throttle frequent progress updates to meaningful milestones. Keep any important partial-result state in the application too, since users can dismiss the toast.
+Callback actions do not dismiss automatically; existing `{ label, href }` actions retain their link behavior. Closing the toast only hides feedback, so cancellation must be explicit. The app owns localized descriptions, action labels, and any custom `title` or `dismissLabel`; the defaults follow the document locale. Throttle frequent progress updates to meaningful milestones. Keep any important partial-result state in the application too, since users can dismiss the toast.

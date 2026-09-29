@@ -198,7 +198,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const closeButton = document.createElement("button");
   closeButton.type = "button";
   closeButton.className = "k2b-toast__close";
-  closeButton.setAttribute("aria-label", options?.dismissLabel ?? "Dismiss notification");
+  closeButton.setAttribute("aria-label", options?.dismissLabel ?? resolveUiMessages().dismissNotification);
   const closeIcon = document.createElement("i");
   closeIcon.className = "ti ti-x";
   closeIcon.setAttribute("aria-hidden", "true");

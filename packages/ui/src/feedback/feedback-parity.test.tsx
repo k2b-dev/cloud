@@ -114,13 +114,13 @@ describe("@k2b/ui Cloud feedback parity", () => {
       expect(form.values.name).toBe("");
       expect(form.values.bounded).toBe(5);
       expect(form.validateAll()).toBe(false);
-      expect(form.errors.name).toBe("required");
+      expect(form.errors.name).toBe("Required");
       expect(form.errors.custom).toBe("not ready");
       expect(form.errors.bounded).toBeUndefined();
       expect(form.errors.pin).toBeUndefined();
-      expect(form.errors.constrainedName).toBe("minimum 3 characters");
-      expect(form.errors.tags).toBe("minimum 2 tags");
-      expect(form.errors.consent).toBe("required");
+      expect(form.errors.constrainedName).toBe("At least 3 characters");
+      expect(form.errors.tags).toBe("At least 2 tags");
+      expect(form.errors.consent).toBe("Required");
 
       form.updateField("name", "Ada");
       form.updateField("constrainedName", "valid");
@@ -132,8 +132,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
       form.updateField("constrainedName", "too long");
       form.updateField("tags", ["one", "two", "three", "four"]);
       expect(form.validateAll()).toBe(false);
-      expect(form.errors.constrainedName).toBe("maximum 5 characters");
-      expect(form.errors.tags).toBe("maximum 3 tags");
+      expect(form.errors.constrainedName).toBe("At most 5 characters");
+      expect(form.errors.tags).toBe("At most 3 tags");
 
       form.updateField("name", "changed");
       form.reset();

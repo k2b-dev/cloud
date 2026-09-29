@@ -162,6 +162,8 @@ type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   cancelBehavior?: DialogOptions["cancelBehavior"];
 };
 
+const PHRASE_SLOT = "\u0000";
+
 const isEmpty = (value: unknown): boolean =>
   value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
 
@@ -184,12 +186,12 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
       if (customError) return customError;
     }
     if (field.type === "text" && typeof value === "string" && value.length > 0) {
-      if (field.minLength !== undefined && value.length < field.minLength) return `minimum ${field.minLength} characters`;
-      if (field.maxLength !== undefined && value.length > field.maxLength) return `maximum ${field.maxLength} characters`;
+      if (field.minLength !== undefined && value.length < field.minLength) return messages.minCharacters({ count: field.minLength });
+      if (field.maxLength !== undefined && value.length > field.maxLength) return messages.maxCharacters({ count: field.maxLength });
     }
     if (field.type === "tags" && Array.isArray(value) && value.length > 0) {
-      if (field.minTags !== undefined && value.length < field.minTags) return `minimum ${field.minTags} tags`;
-      if (field.maxTags !== undefined && value.length > field.maxTags) return `maximum ${field.maxTags} tags`;
+      if (field.minTags !== undefined && value.length < field.minTags) return messages.minTags({ count: field.minTags });
+      if (field.maxTags !== undefined && value.length > field.maxTags) return messages.maxTags({ count: field.maxTags });
     }
     return null;
   };
@@ -736,6 +738,8 @@ export const prompts = {
           );
         }
 
+        // The catalog owns word order; the slot marks where the verbatim phrase is rendered as code.
+        const [labelBefore, labelAfter] = resolveUiMessages().typeToConfirm({ phrase: PHRASE_SLOT }).split(PHRASE_SLOT);
         const [confirmationValue, setConfirmationValue] = createSignal("");
         const canConfirm = () => confirmationValue() === confirmationPhrase;
         const submit = (event: SubmitEvent) => {
@@ -754,7 +758,9 @@ export const prompts = {
                 }}
                 label={
                   <>
-                    Type <code class="k2b-confirmation-phrase">{confirmationPhrase}</code> to confirm
+                    {labelBefore}
+                    <code class="k2b-confirmation-phrase">{confirmationPhrase}</code>
+                    {labelAfter}
                   </>
                 }
                 value={confirmationValue}

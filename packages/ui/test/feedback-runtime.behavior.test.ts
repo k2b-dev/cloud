@@ -232,6 +232,31 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("labels the confirmation phrase in the document locale and keeps the phrase verbatim", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+    const label = () => dom.document.querySelector<HTMLInputElement>(".k2b-dialog__body input")?.labels?.[0];
+
+    for (const [lang, text] of [
+      ["en", "Type Sommerfest 2026 to confirm"],
+      ["de", "Gib Sommerfest 2026 zur Bestätigung ein"],
+    ] as const) {
+      dom.document.documentElement.setAttribute("lang", lang);
+      const result = prompts.confirm("Delete this venue?", { confirmationPhrase: "Sommerfest 2026", variant: "danger" });
+      await settle();
+      expect(label()?.textContent, lang).toContain(text);
+      expect(label()?.querySelector("code.k2b-confirmation-phrase")?.textContent, lang).toBe("Sommerfest 2026");
+      dialogCore.close();
+      await result;
+      await settle();
+    }
+
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
   test("preserves plain confirmation results", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
@@ -446,6 +471,34 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("form validation errors follow the document locale", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    dom.document.documentElement.setAttribute("lang", "de");
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+
+    const formResult = prompts.form({
+      fields: {
+        name: { type: "text", label: "Name", required: true },
+        code: { type: "text", label: "Kürzel", minLength: 3, default: "ab" },
+        labels: { type: "tags", label: "Schlagworte", maxTags: 1, default: ["Bühne", "Technik"] },
+      },
+    });
+    await settle();
+
+    dom.document.querySelector(".k2b-dialog__panel")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle();
+
+    const errors = Array.from(dom.document.querySelectorAll(".k2b-dialog__body .k2b-field__error"), (error) => error.textContent);
+    expect(errors).toEqual(["Erforderlich", "Mindestens 3 Zeichen", "Höchstens 1 Tag"]);
+
+    dialogCore.close();
+    expect(await formResult).toBeNull();
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
   test("default toast titles follow the document locale and an explicit title wins", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
@@ -473,6 +526,30 @@ describe("@k2b/ui feedback runtime", () => {
     toast.success("Saved", { title: "Success", duration: 0 });
     toast.error("Failed", { title: "Konnte nicht speichern", duration: 0 });
     expect(titles()).toEqual(["Success", "Konnte nicht speichern"]);
+
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
+  test("the toast close button is named in the document locale unless the app names it", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const closeLabels = () =>
+      Array.from(dom.document.querySelectorAll("[data-k2b-toast]:not([data-closing]) .k2b-toast__close"), (button) =>
+        button.getAttribute("aria-label"),
+      );
+
+    dom.document.documentElement.setAttribute("lang", "en");
+    toast("Note", { duration: 0 });
+    expect(closeLabels()).toEqual(["Dismiss notification"]);
+    toast.dismissAll();
+
+    dom.document.documentElement.setAttribute("lang", "de");
+    toast("Hinweis", { duration: 0 });
+    toast("Hinweis", { duration: 0, dismissLabel: "Meldung ausblenden" });
+    expect(closeLabels()).toEqual(["Benachrichtigung schließen", "Meldung ausblenden"]);
+    toast.dismissAll();
 
     dom.document.documentElement.removeAttribute("lang");
     dom.cleanup();
