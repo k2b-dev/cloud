@@ -81,7 +81,7 @@ Read, staff, and admin permissions serve different jobs:
 | Permission | Sees and does |
 | --- | --- |
 | Read | The shift schedule, your own shifts, and exactly what the public page shows; no visitor feedback and no drafts |
-| Staff (`write`) | Also joins shifts and sees visitor feedback and drafts |
+| Staff (`write`) | Also joins shifts, sees visitor feedback, and gets drafts through the API and `cld` |
 | Admin | Also changes schedules, public content, the public page switch, feedback settings, and access, and removes other people from a shift |
 
 The workspace navigation has a fixed set of entries per role, however many

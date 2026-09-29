@@ -24,7 +24,7 @@ All times use the venue's time zone and a 24-hour clock, wherever you open the v
 - **Public page:** Admins manage everything visitors see in one view. On top, **Public page on** switches the page on or off, **Copy page link** and **Copy monitor link** copy the addresses of the page and of its full display, and **Open** opens the page in a new tab. Staff and read users open **Public page** to copy or open the link.
 - **Sections:** Below the switch, **Sections** lists every section in the order visitors see them, drafts included and marked **Draft**. Each row moves the section up or down with its arrow buttons, which also work from the keyboard; the new order saves at once, for all sections together. The switch in a row decides whether visitors see the section; when it is off, the section is a draft. **Edit** changes a section; saving keeps whatever its switch shows and never moves it. The menu next to it duplicates a section as a draft at the end, titled like **Lunch (copy)**, or deletes it after a confirmation. The dialog names a missing title, an unnamed menu item, or an incomplete link at the field and stays open with your input until the save succeeds.
 - **Preview:** Next to the list, or below it on a phone or narrow window, the **Preview** shows the page as visitors see it, with the public page's own rendering: status, hours, changed hours, and the visible sections in their order. It also works while the page is off. A notice stands out in the same way, and menu items outside their availability dates are left out, counted in the venue's time zone.
-- **Links in sections:** A link leads to a web address with https:// or http://, an email address with mailto:, a phone number with tel:, or a path on this Cloud starting with /; the dialog marks any other address and does not save it. Links to single sections from before this view open **Public page** with that section marked.
+- **Links in sections:** A link leads to a web address with https:// or http://, an email address with mailto:, a phone number with tel:, or a path on this Cloud starting with /; the dialog marks any other address and does not save it. For admins, links to single sections from before this view open **Public page** with that section marked; everyone else gets the schedule.
 :::
 
 ## Public page and monitor {icon="device-tv"}
@@ -63,14 +63,15 @@ All times use the venue's time zone and a 24-hour clock, wherever you open the v
 | Shift schedule and your own shifts | Yes | Yes | Yes |
 | Take shifts | No | Yes | Yes |
 | Leave your own shifts | Yes | Yes | Yes |
-| Public sections | As the public page shows them | All, including drafts | All, including drafts |
 | Public page | Copy or open the link | Copy or open the link | Switch, sections, order, and preview |
 | Visitor feedback: ratings, comments, and counts | No | Yes | Yes |
 | Open venue settings | No | No | Yes |
 | Change settings, access, schedule, or public sections | No | No | Yes |
 | Remove another person from a shift | No | No | Yes |
 
-For public sections, read access shows no more than the public page: when the public page is off, read users see none. The public page lists upcoming staffed openings as **Additionally open** with their times; it never shows the internal names of shifts. The same rules apply to the API, `cld venue`, AI tools, and Venue API keys with the matching permission.
+The public page lists upcoming staffed openings as **Additionally open** with their times; it never shows the internal names of shifts. The same rules apply to the API, `cld venue`, AI tools, and Venue API keys with the matching permission.
+
+In the workspace, only admins see the list of public sections. Through the API, `cld venue sections list`, and Venue API keys, read access lists only the sections the public page shows, and none while the page is off; staff and admin access also list drafts.
 
 :::note Stable links
 Venue links use the venue's immutable short ID. Editing the display slug changes discovery metadata, not the public or staff URL.

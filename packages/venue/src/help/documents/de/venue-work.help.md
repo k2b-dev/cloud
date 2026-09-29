@@ -24,7 +24,7 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 - **Öffentliche Seite:** Admins verwalten alles, was Besucher sehen, in einer Ansicht. Oben schaltet **Öffentliche Seite an** die Seite ein oder aus, **Seitenlink kopieren** und **Monitor-Link kopieren** kopieren die Adressen der Seite und ihrer Vollbildanzeige, und **Öffnen** öffnet die Seite in einem neuen Tab. Mit „Mitarbeit“ oder „Lesen“ öffnet **Öffentliche Seite** den Link zum Kopieren oder Öffnen.
 - **Abschnitte:** Unter dem Schalter listet **Abschnitte** alle Abschnitte in der Reihenfolge, in der Besucher sie sehen, auch Entwürfe mit der Markierung **Entwurf**. Mit den Pfeilen einer Zeile rückt ein Abschnitt nach oben oder unten, auch per Tastatur; die neue Reihenfolge gilt sofort, für alle Abschnitte zusammen. Der Schalter einer Zeile entscheidet, ob Besucher den Abschnitt sehen; ist er aus, ist der Abschnitt ein Entwurf. **Bearbeiten** ändert einen Abschnitt; Speichern übernimmt, was sein Schalter zeigt, und verschiebt ihn nie. Das Menü daneben dupliziert einen Abschnitt als Entwurf ans Ende, etwa als **Mittagstisch (Kopie)**, oder löscht ihn nach einer Rückfrage. Der Dialog nennt einen fehlenden Titel, einen Eintrag der Speisekarte ohne Namen oder einen unvollständigen Link direkt am Feld und bleibt mit deinen Eingaben offen, bis das Speichern gelingt.
 - **Vorschau:** Neben der Liste, auf dem Telefon oder in einem schmalen Fenster darunter, zeigt die **Vorschau** die Seite, wie Besucher sie sehen, mit der Darstellung der öffentlichen Seite selbst: Status, Öffnungszeiten, abweichende Zeiten und die sichtbaren Abschnitte in ihrer Reihenfolge. Sie funktioniert auch, solange die Seite aus ist. Ein Hinweis fällt genauso auf, und Einträge der Speisekarte außerhalb ihres Verfügbarkeitszeitraums fehlen, gerechnet in der Zeitzone des Standorts.
-- **Links in Abschnitten:** Ein Link führt zu einer Webadresse mit https:// oder http://, einer E-Mail-Adresse mit mailto:, einer Telefonnummer mit tel: oder einem Pfad in dieser Cloud, der mit / beginnt; jede andere Adresse markiert der Dialog und speichert sie nicht. Links auf einzelne Abschnitte aus der Zeit vor dieser Ansicht öffnen **Öffentliche Seite** mit dem Abschnitt markiert.
+- **Links in Abschnitten:** Ein Link führt zu einer Webadresse mit https:// oder http://, einer E-Mail-Adresse mit mailto:, einer Telefonnummer mit tel: oder einem Pfad in dieser Cloud, der mit / beginnt; jede andere Adresse markiert der Dialog und speichert sie nicht. Für Admins öffnen Links auf einzelne Abschnitte aus der Zeit vor dieser Ansicht **Öffentliche Seite** mit dem Abschnitt markiert; alle anderen kommen zum Schichtplan.
 :::
 
 ## Öffentliche Seite und Monitor {icon="device-tv"}
@@ -63,14 +63,15 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 | Schichtplan und eigene Schichten | Ja | Ja | Ja |
 | Schichten übernehmen | Nein | Ja | Ja |
 | Aus eigenen Schichten austreten | Ja | Ja | Ja |
-| Öffentliche Abschnitte | So, wie die öffentliche Seite sie zeigt | Alle, auch Entwürfe | Alle, auch Entwürfe |
 | Öffentliche Seite | Link kopieren oder öffnen | Link kopieren oder öffnen | Schalter, Abschnitte, Reihenfolge und Vorschau |
 | Feedback von Besuchern: Bewertungen, Kommentare und Zahlen | Nein | Ja | Ja |
 | Standorteinstellungen öffnen | Nein | Nein | Ja |
 | Einstellungen, Zugriff, Zeitplan oder öffentliche Abschnitte ändern | Nein | Nein | Ja |
 | Andere Personen aus einer Schicht entfernen | Nein | Nein | Ja |
 
-Bei öffentlichen Abschnitten zeigt Zugriff „Lesen“ nicht mehr als die öffentliche Seite: Ist die öffentliche Seite ausgeschaltet, sehen Personen mit „Lesen“ keine. Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
+Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
+
+Im Arbeitsbereich sehen nur Admins die Liste der öffentlichen Abschnitte. Über die API, `cld venue sections list` und Standort-API-Schlüssel listet Zugriff „Lesen“ nur die Abschnitte, die die öffentliche Seite zeigt, und keine, solange die Seite aus ist; mit „Mitarbeit“ oder „Admin“ erscheinen auch Entwürfe.
 
 :::note Stabile Links
 Standortlinks verwenden die unveränderliche Kurz-ID. Eine Änderung des Kurznamens betrifft die Auffindbarkeit, aber nicht die öffentlichen oder internen URLs.
