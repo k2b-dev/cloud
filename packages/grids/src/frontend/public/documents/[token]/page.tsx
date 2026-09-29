@@ -42,13 +42,9 @@ export function PublicDocumentShare(props: {
   const available = () => Boolean(props.filename && props.expiresAt && props.expiresAtLabel && props.downloadHref);
 
   return (
-    <div
-      class="flex flex-1 items-center justify-center px-4 py-8 text-primary sm:py-12"
-      style={{
-        background:
-          "linear-gradient(145deg, color-mix(in srgb, #00a651 12%, var(--ui-canvas)) 0%, color-mix(in srgb, #00a651 4%, var(--ui-canvas)) 48%, var(--ui-canvas) 100%)",
-      }}
-    >
+    // No background of its own: the page body runs behind the card and the
+    // MinimalLayout footer alike, so the two never meet at a visible edge.
+    <div class="flex flex-1 items-center justify-center px-4 py-8 text-primary sm:py-12">
       <main class="w-full max-w-xl">
         <Paper as="article" elevated class="w-full p-6 sm:p-8">
           <Show
