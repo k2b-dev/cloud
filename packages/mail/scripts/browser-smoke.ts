@@ -503,16 +503,16 @@ const runSmoke = async (fixture: Fixture) => {
     }
     await waitForWidth(page, desktopSidebar, 248, "Mail desktop navigation after CSS load");
     const sidebarResizeHandle = page.getByRole("separator", { name: "Resize navigation" });
+    const sidebarWidth = () => desktopSidebar.evaluate((element) => Math.round(element.getBoundingClientRect().width));
     // The page's `load` event does not wait for island modules, and a key press before the workspace controller
-    // attaches is lost. The controller's first act is to report the restored width on the separator.
-    const sidebarResizeElement = await sidebarResizeHandle.elementHandle();
-    if (!sidebarResizeElement) fail("Mail navigation resize handle disappeared before hydration");
-    await page
-      .waitForFunction((handle) => (handle as HTMLElement).getAttribute("aria-valuenow") === "248", sidebarResizeElement)
-      .catch(() => fail("Mail navigation resize handle never reported the restored 248px width"));
-    await sidebarResizeHandle.focus();
-    await page.keyboard.press("Home");
-    await waitForWidth(page, desktopSidebar, 176, "Mail desktop navigation");
+    // listens is lost. Retry on the width itself: the Mail island replaces the server-rendered handle when it renders.
+    const resizeDeadline = Date.now() + TIMEOUT;
+    while ((await sidebarWidth()) !== 176) {
+      if (Date.now() > resizeDeadline)
+        fail(`Home did not resize Mail desktop navigation to 176px; current width is ${await sidebarWidth()}`);
+      await sidebarResizeHandle.press("Home");
+      await page.waitForTimeout(100);
+    }
     await page.reload({ waitUntil: "load" });
     await waitForWidth(page, desktopSidebar, 176, "Mail desktop navigation after reload");
     ok("Mail sidebar stays expanded, keyboard-resizable, and SSR-stable");
