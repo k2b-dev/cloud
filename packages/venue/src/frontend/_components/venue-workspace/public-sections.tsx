@@ -1,9 +1,9 @@
-import { Button, DateRangePicker, ImageInput, prompts, SegmentedControl, Switch, TextInput, useLocale } from "@k2b/ui";
+import { Button, DateRangePicker, ImageInput, SegmentedControl, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { type PublicSection, type PublicSectionInput, publicLinkHref } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
-import { DialogFrame } from "./schedule";
+import { createDialogSave, DialogFrame, type SubmittingDialogProps } from "./schedule";
 
 type MenuItemDraft = {
   id: string;
@@ -92,40 +92,69 @@ const linksContent = (links: LinkDraft[]) => ({
   links: links.map((link) => ({ label: link.label.trim(), href: link.href.trim() })).filter((link) => link.label && link.href),
 });
 
+const hasMenuContent = (item: MenuItemDraft) =>
+  Boolean(item.name.trim() || item.description.trim() || item.info.trim() || item.price.trim() || item.image);
+
+/** Why each field of the draft cannot be saved, keyed by the field it belongs to; empty when the draft is valid. */
+const sectionFieldErrors = (
+  draft: { title: string; kind: PublicSection["kind"]; items: MenuItemDraft[]; links: LinkDraft[] },
+  t: VenueMessages,
+): Record<string, string> => {
+  const errors: Record<string, string> = {};
+  if (!draft.title.trim()) errors.title = t.titleRequired;
+  if (draft.kind === "menu") {
+    for (const item of draft.items) {
+      if (hasMenuContent(item) && !item.name.trim()) errors[`item:${item.id}:name`] = t.menuItemNameRequired;
+      if (item.availableFrom && item.availableUntil && item.availableFrom > item.availableUntil) {
+        errors[`item:${item.id}:availability`] = t.menuAvailabilityInvalid({ name: item.name.trim() || t.item });
+      }
+    }
+    const first = draft.items[0];
+    if (first && !draft.items.some((item) => item.name.trim())) errors[`item:${first.id}:name`] ??= t.addMenuItemRequired;
+  }
+  if (draft.kind === "links") {
+    for (const link of draft.links) {
+      const label = link.label.trim();
+      const href = link.href.trim();
+      if (href && !publicLinkHref(href)) errors[`link:${link.id}:href`] = t.linkUrlInvalid;
+      else if (label && !href) errors[`link:${link.id}:href`] = t.linkRequiredFields;
+      if (href && !label) errors[`link:${link.id}:label`] = t.linkRequiredFields;
+    }
+    const first = draft.links[0];
+    if (first && !draft.links.some((link) => link.label.trim() && link.href.trim())) {
+      errors[`link:${first.id}:href`] ??= t.addLinkRequired;
+    }
+  }
+  return errors;
+};
+
 const buildPublicSectionContent = (
   kind: PublicSection["kind"],
   text: string,
   items: MenuItemDraft[],
   links: LinkDraft[],
-  t: VenueMessages,
-): { content: PublicSectionInput["content"]; error: null } | { content: null; error: string } => {
-  if (kind === "menu") {
-    const invalidRange = items.find((item) => item.availableFrom && item.availableUntil && item.availableFrom > item.availableUntil);
-    if (invalidRange) {
-      return { content: null, error: t.menuAvailabilityInvalid({ name: invalidRange.name.trim() || t.item }) };
-    }
-    const content = menuContent(items);
-    return content.items.length > 0 ? { content, error: null } : { content: null, error: t.addMenuItemRequired };
-  }
-
-  if (kind === "links") {
-    const content = linksContent(links);
-    return content.links.length > 0 ? { content, error: null } : { content: null, error: t.addLinkRequired };
-  }
-
-  return { content: { markdown: text, text }, error: null };
+): PublicSectionInput["content"] => {
+  if (kind === "menu") return menuContent(items);
+  if (kind === "links") return linksContent(links);
+  return { markdown: text, text };
 };
 
-export function PublicSectionDialog(props: {
-  close: (value: PublicSectionInput | null) => void;
-  nextPosition: number;
-  /** Whether the Venue's public page is on, so the switch says who sees the section. */
-  publicPageEnabled: boolean;
-  initial?: PublicSection;
-  title?: string;
-  submitLabel?: string;
-}) {
+/**
+ * Adds or edits one public section and saves it itself: fields say what is missing or wrong after the first
+ * attempt to save, and the dialog stays open with its input until the server confirms the save.
+ */
+export function PublicSectionDialog(
+  props: SubmittingDialogProps<PublicSectionInput> & {
+    nextPosition: number;
+    /** Whether the Venue's public page is on, so the switch says who sees the section. */
+    publicPageEnabled: boolean;
+    initial?: PublicSection;
+    title?: string;
+    submitLabel?: string;
+  },
+) {
   const locale = useLocale();
+  const dialog = createDialogSave(props);
   const t = () => venueMessages.resolve([locale()]).t;
   let nextItemId = 1;
   const newItem = (): MenuItemDraft => ({
@@ -167,10 +196,11 @@ export function PublicSectionDialog(props: {
   const removeItem = (id: string) => {
     if (items.length > 1) setItems(items.filter((item) => item.id !== id));
   };
-  // An address visitors could not follow shows its error under the field once a save was attempted.
+  // Fields say what is wrong only after the first attempt to save, not while someone is still typing.
   const [attempted, setAttempted] = createSignal(false);
-  const linkHrefError = (link: LinkDraft) =>
-    attempted() && link.href.trim() && !publicLinkHref(link.href) ? t().linkUrlInvalid : undefined;
+  const errors = () =>
+    attempted() ? sectionFieldErrors({ title: title(), kind: kind(), items: Array.from(items), links: Array.from(links) }, t()) : {};
+  const fieldError = (key: string) => errors()[key];
 
   const addLink = () => setLinks(links.length, newLink());
   const removeLink = (id: string) => {
@@ -179,22 +209,11 @@ export function PublicSectionDialog(props: {
 
   const submit = () => {
     setAttempted(true);
-    if (!title().trim()) {
-      prompts.error(t().titleRequired);
-      return;
-    }
-
-    if (kind() === "links" && links.some(linkHrefError)) return;
-    const result = buildPublicSectionContent(kind(), contentText(), Array.from(items), Array.from(links), t());
-    if (result.error || !result.content) {
-      prompts.error(result.error ?? t().sectionInvalid);
-      return;
-    }
-
-    props.close({
+    if (Object.keys(errors()).length > 0) return;
+    void dialog.save({
       kind: kind(),
       title: title().trim(),
-      content: result.content,
+      content: buildPublicSectionContent(kind(), contentText(), Array.from(items), Array.from(links)),
       enabled: enabled(),
       position: props.nextPosition,
     });
@@ -205,8 +224,10 @@ export function PublicSectionDialog(props: {
       title={props.title ?? t().addPublicSection}
       icon={sectionKindIcon(kind())}
       submitLabel={props.submitLabel ?? t().addSection}
-      onCancel={() => props.close(null)}
+      onCancel={() => props.close(false)}
       onSubmit={submit}
+      pending={dialog.pending()}
+      error={dialog.error()}
     >
       <div class="grid gap-3">
         <Show
@@ -229,7 +250,14 @@ export function PublicSectionDialog(props: {
             ]}
           />
         </Show>
-        <TextInput label={t().title} description={t().sectionTitleDescription} value={title} onValueChange={setTitle} required />
+        <TextInput
+          label={t().title}
+          description={t().sectionTitleDescription}
+          value={title}
+          onValueChange={setTitle}
+          error={() => fieldError("title")}
+          required
+        />
         <Switch
           label={t().showOnPublicPage}
           description={
@@ -275,6 +303,7 @@ export function PublicSectionDialog(props: {
                           description={t().linkLabelDescription}
                           value={() => link.label}
                           onValueChange={(value) => updateLink(link.id, { label: value })}
+                          error={() => fieldError(`link:${link.id}:label`)}
                           required
                         />
                         <TextInput
@@ -283,7 +312,7 @@ export function PublicSectionDialog(props: {
                           value={() => link.href}
                           onValueChange={(value) => updateLink(link.id, { href: value })}
                           placeholder="https://example.com"
-                          error={() => linkHrefError(link)}
+                          error={() => fieldError(`link:${link.id}:href`)}
                           required
                         />
                       </div>
@@ -321,6 +350,7 @@ export function PublicSectionDialog(props: {
                         description={t().menuNameDescription}
                         value={() => item.name}
                         onValueChange={(value) => updateItem(item.id, { name: value })}
+                        error={() => fieldError(`item:${item.id}:name`)}
                         required
                       />
                       <TextInput
@@ -350,6 +380,7 @@ export function PublicSectionDialog(props: {
                       description={t().availabilityDescription}
                       value={() => ({ start: item.availableFrom, end: item.availableUntil })}
                       onValueChange={(value) => updateItem(item.id, { availableFrom: value.start, availableUntil: value.end })}
+                      error={() => fieldError(`item:${item.id}:availability`)}
                       clearable
                     />
                   </div>

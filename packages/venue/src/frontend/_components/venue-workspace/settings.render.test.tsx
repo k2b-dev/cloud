@@ -87,7 +87,6 @@ const render = (
           accessEntries: [],
           apiKeys: [],
           initialTab: options.tab,
-          onOpenCalendarSubscription: () => {},
           close: () => {},
         });
       },
@@ -95,39 +94,24 @@ const render = (
   );
 
 describe("Venue settings: General", () => {
-  test("shows staff the settings read-only and says who can change them", () => {
-    const html = render("write");
-
-    expect(html).toContain("Only admins of this venue can change these settings.");
-    expect(html).toMatch(/<fieldset[^>]*disabled/);
-    expect(html).not.toContain("No unsaved changes");
+  test("gives admins the save footer", () => {
+    expect(render("admin")).toContain("No unsaved changes");
   });
 
-  test("says the same in German", () => {
-    expect(render("read", { locale: "de" })).toContain("Nur Admins dieses Standorts können diese Einstellungen ändern.");
-  });
-
-  test("gives admins the save footer without the read-only note", () => {
+  test("holds the public page switch, sign-up, time zone, and opening logic", () => {
     const html = render("admin");
-
-    expect(html).not.toContain("Only admins of this venue can change these settings.");
-    expect(html).toContain("No unsaved changes");
-  });
-
-  test("holds the public page switch, sign-up, time zone, and opening logic, which only admins can change", () => {
-    for (const permission of ["admin", "write", "read"] as const) {
-      const html = render(permission);
-      for (const label of ["Public page on", "Sign-up", "Time zone", "Public opening logic", "Europe/Berlin", "Free time"]) {
-        expect({ permission, label, shown: html.includes(label) }).toEqual({ permission, label, shown: true });
-      }
-      // Until the fresh settings arrive the fields stay locked for everyone; only admins get the save footer.
-      expect({ permission, footer: html.includes("No unsaved changes"), readOnlyNote: html.includes("Only admins") }).toEqual({
-        permission,
-        footer: permission === "admin",
-        readOnlyNote: permission !== "admin",
-      });
+    for (const label of ["Public page on", "Sign-up", "Time zone", "Public opening logic", "Europe/Berlin", "Free time"]) {
+      expect({ label, shown: html.includes(label) }).toEqual({ label, shown: true });
     }
     expect(render("admin", { locale: "de" })).toContain("Öffentliche Seite an");
+  });
+
+  test("has no Links tab: the calendar lives in My shifts and the page links in the Public page view", () => {
+    const html = render("admin");
+    for (const tab of ["General", "Access", "Schedule", "Danger zone"]) expect(html).toContain(`>${tab}<`);
+    expect(html).not.toContain(">Links<");
+    expect(html).not.toContain("Connections");
+    expect(html).not.toContain("Subscribe to calendar");
   });
 });
 
@@ -172,13 +156,5 @@ describe("Venue settings: Schedule", () => {
     expect(html.match(/>Paused</g)).toHaveLength(1);
     expect(html.match(/role="switch"/g)).toHaveLength(3);
     expect(html).toContain("“Monday bar” is active");
-  });
-
-  test("shows staff the schedule without switches or row actions", () => {
-    const html = render("write", { tab: "schedule", data: { templates: [template({})] } });
-
-    expect(html).toContain("Morning counter");
-    expect(html).not.toContain('role="switch"');
-    expect(html).not.toContain("Delete shift");
   });
 });

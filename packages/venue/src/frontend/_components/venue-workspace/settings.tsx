@@ -12,7 +12,6 @@ import {
   dialogCore,
   IconInput,
   ImageInput,
-  InlineGuidance,
   NoticeCard,
   Placeholder,
   panelDialogOptions,
@@ -33,27 +32,26 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
-import {
-  type DateOverride,
-  type DateOverrideInput,
-  type OpeningRule,
-  type OpeningRuleInput,
-  type ShiftTemplate,
-  type ShiftTemplateInput,
-  type Venue,
-  type VenueDashboard,
-  type VenueInput,
+import type {
+  DateOverride,
+  DateOverrideInput,
+  OpeningRule,
+  OpeningRuleInput,
+  ShiftTemplate,
+  ShiftTemplateInput,
+  Venue,
+  VenueDashboard,
+  VenueInput,
 } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
 import { formatDateKey } from "../../../time-format";
-import { createVenueSettingsQuery, settingsCloseBlocked, settingsInteractionBlocked, venueSettingsCanAdmin } from "../../settings-contract";
+import { createVenueSettingsQuery, settingsCloseBlocked, settingsInteractionBlocked } from "../../settings-contract";
 import { venueSlugError } from "../../venue-slug";
-import { openVenuePublicDisplayDialog } from "./public-display";
 import { type DialogSubmit, ExceptionDialog, OpeningRuleDialog, ScheduleActionButton, ShiftTemplateDialog } from "./schedule";
 import { bannerTransform, readError, sortOpeningRules, sortOverrides, sortShiftTemplates } from "./utils";
 
 /** The settings tabs another view can open directly. */
-export type VenueSettingsTab = "general" | "access" | "schedule" | "links" | "danger";
+export type VenueSettingsTab = "general" | "access" | "schedule" | "danger";
 
 /** A slug that no other venue has yet is required; the server answers 409 when it is taken. */
 class VenueSlugTakenError extends Error {}
@@ -142,8 +140,6 @@ export function SettingsDialog(props: {
   initialTab?: VenueSettingsTab;
   /** Receives the access list whenever the dialog loads or changes it, so the workspace can follow. */
   onAccessEntriesChange?: (entries: AccessEntry[]) => void;
-  /** Opens the personal calendar subscription, the same dialog as in My shifts. */
-  onOpenCalendarSubscription: () => void;
   close: (changed: boolean) => void;
 }) {
   const locale = useLocale();
@@ -175,7 +171,6 @@ export function SettingsDialog(props: {
   });
   const settings = () => settingsQuery.data() ?? initialContext;
   const currentVenue = () => settings().venue;
-  const canAdmin = () => venueSettingsCanAdmin(settings());
   const [workspaceChanged, setWorkspaceChanged] = createSignal(false);
   const [name, setName] = createSignal(venue.name);
   const [icon, setIcon] = createSignal(venue.icon || "ti ti-building-carousel");
@@ -730,14 +725,6 @@ export function SettingsDialog(props: {
         if (!disposed) setPrompting(false);
       });
   };
-  // Everyone may look at these settings; only admins may change them, and the server enforces that.
-  const AdminOnlyNote = () => (
-    <Show when={!canAdmin()}>
-      <InlineGuidance tone="info" icon="ti ti-lock">
-        {t().adminOnlySettings}
-      </InlineGuidance>
-    </Show>
-  );
   const SettingsReadError = () => (
     <Show when={settingsQuery.error()}>
       <NoticeCard tone="danger" title={t().settingsRefreshTitle} detail={t().lastConfirmedData}>
@@ -756,26 +743,24 @@ export function SettingsDialog(props: {
     onDelete: () => void;
     children?: JSX.Element;
   }) => (
-    <Show when={canAdmin()}>
-      <SettingsCollection.Item.Actions>
-        {rowProps.children}
-        <ScheduleActionButton
-          label={rowProps.editLabel}
-          icon="ti ti-pencil"
-          tone="edit"
-          disabled={scheduleBusy()}
-          onClick={rowProps.onEdit}
-        />
-        <ScheduleActionButton
-          label={rowProps.deleteLabel}
-          icon="ti ti-trash"
-          tone="delete"
-          loading={busyRow() === rowProps.row}
-          disabled={scheduleBusy() && busyRow() !== rowProps.row}
-          onClick={rowProps.onDelete}
-        />
-      </SettingsCollection.Item.Actions>
-    </Show>
+    <SettingsCollection.Item.Actions>
+      {rowProps.children}
+      <ScheduleActionButton
+        label={rowProps.editLabel}
+        icon="ti ti-pencil"
+        tone="edit"
+        disabled={scheduleBusy()}
+        onClick={rowProps.onEdit}
+      />
+      <ScheduleActionButton
+        label={rowProps.deleteLabel}
+        icon="ti ti-trash"
+        tone="delete"
+        loading={busyRow() === rowProps.row}
+        disabled={scheduleBusy() && busyRow() !== rowProps.row}
+        onClick={rowProps.onDelete}
+      />
+    </SettingsCollection.Item.Actions>
   );
   const ExceptionItem = (itemProps: { entry: DateOverride }) => (
     <SettingsCollection.Item
@@ -826,8 +811,7 @@ export function SettingsDialog(props: {
         <SettingsModal.Group title={t().venueGroup}>
           <SettingsModal.Tab id="general" title={t().general} icon="ti ti-id" description={t().generalDescription}>
             <SettingsReadError />
-            <AdminOnlyNote />
-            <fieldset disabled={!canAdmin() || !settingsHydrated() || settingsWriteBlocked()} class="grid gap-6" data-settings-general="">
+            <fieldset disabled={!settingsHydrated() || settingsWriteBlocked()} class="grid gap-6" data-settings-general="">
               <SettingsGroup title={t().identity} description={t().identityDescription}>
                 <div class="grid gap-4 md:grid-cols-2">
                   <SettingsField
@@ -877,7 +861,6 @@ export function SettingsDialog(props: {
                       ariaLabel={t().publicOpeningLogic}
                       value={openMode}
                       onValueChange={edit(setOpenMode)}
-                      disabled={!canAdmin()}
                       options={[
                         { value: "regular", label: t().regular, icon: "ti ti-clock" },
                         { value: "staffed", label: t().staffedMode, icon: "ti ti-users" },
@@ -895,7 +878,6 @@ export function SettingsDialog(props: {
                       ariaLabel={t().signupMode}
                       value={signupMode}
                       onValueChange={edit(setSignupMode)}
-                      disabled={!canAdmin()}
                       options={[
                         { value: "templates", label: t().signupModeShifts, icon: "ti ti-calendar-event" },
                         { value: "free", label: t().freeTime, icon: "ti ti-clock-plus" },
@@ -993,136 +975,129 @@ export function SettingsDialog(props: {
                 />
               </SettingsGroup>
             </fieldset>
-            <Show when={canAdmin()}>
-              <SettingsModal.Footer>
-                <SettingsPanelFooter
-                  changeCount={generalChangeCount}
-                  loading={save.loading}
-                  saveDisabled={() => Boolean(nameError() || slugError())}
-                  onDiscard={discardGeneral}
-                  onSave={() => void saveSettings()}
-                />
-              </SettingsModal.Footer>
-            </Show>
+            <SettingsModal.Footer>
+              <SettingsPanelFooter
+                changeCount={generalChangeCount}
+                loading={save.loading}
+                saveDisabled={() => Boolean(nameError() || slugError())}
+                onDiscard={discardGeneral}
+                onSave={() => void saveSettings()}
+              />
+            </SettingsModal.Footer>
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        {venueSettingsCanAdmin(settings()) && (
-          <SettingsModal.Group title={t().sharing}>
-            <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
-              <SettingsReadError />
-              <Show
-                when={!settingsQuery.refreshing() && !settingsQuery.error()}
-                fallback={<Placeholder align="left" description={<>{t().refreshBeforeAccess}</>} />}
-              >
-                <div class="grid gap-6">
-                  <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
-                    <Show keyed when={settings().accessEntries}>
-                      {(entries) => (
-                        <PermissionEditor
-                          initialEntries={entries.filter((entry) => entry.principal.type !== "service_account")}
-                          canEdit
-                          allowedLevels={[
-                            { level: "read", label: t().read },
-                            { level: "write", label: t().staff },
-                            { level: "admin", label: t().admin },
-                          ]}
-                          grantAccess={async (principal: Principal, permission: Exclude<PermissionLevel, "none">): Promise<AccessEntry> => {
-                            const entry = await runRequest(async (abortSignal) => {
-                              const response = await apiClient.venues[":id"].access.$post(
-                                {
-                                  param: { id: venue.id },
-                                  json: { principal, permission },
-                                },
-                                { init: { signal: abortSignal } },
-                              );
-                              if (!response.ok) throw new Error(await readError(response, t().grantAccessFailed));
-                              return response.json();
-                            });
-                            await finishSettingsChange(t().accessGranted);
-                            return entry;
-                          }}
-                          updateAccess={async (accessId, permission) => {
-                            await runRequest(async (abortSignal) => {
-                              const response = await apiClient.venues[":id"].access[":accessId"].$patch(
-                                {
-                                  param: { id: venue.id, accessId },
-                                  json: { permission },
-                                },
-                                { init: { signal: abortSignal } },
-                              );
-                              if (!response.ok) throw new Error(await readError(response, t().updateAccessFailed));
-                            });
-                            await finishSettingsChange(t().accessUpdated);
-                          }}
-                          revokeAccess={async (accessId) => {
-                            await runRequest(async (abortSignal) => {
-                              const response = await apiClient.venues[":id"].access[":accessId"].$delete(
-                                { param: { id: venue.id, accessId } },
-                                { init: { signal: abortSignal } },
-                              );
-                              if (!response.ok) throw new Error(await readError(response, t().revokeAccessFailed));
-                            });
-                            await finishSettingsChange(t().accessRevoked);
-                          }}
-                        />
-                      )}
-                    </Show>
-                  </SettingsGroup>
-                  <SettingsGroup title={t().integrationAccess} description={t().integrationAccessDescription}>
-                    <ResourceApiKeys
-                      title={t().apiKeys}
-                      description={t().apiKeysDescription}
-                      initialKeys={settings().apiKeys}
-                      createKey={async (input) => {
-                        const created = await runRequest(async (abortSignal) => {
-                          const response = await apiClient.venues[":id"]["api-keys"].$post(
-                            {
-                              param: { id: venue.id },
-                              json: input,
-                            },
-                            { init: { signal: abortSignal } },
-                          );
-                          if (!response.ok) throw new Error(await readError(response, t().createApiKeyFailed));
-                          return (await response.json()) as { credential: ResourceApiKey; token: string };
-                        });
-                        await finishSettingsChange(t().apiKeyCreated);
-                        return created;
-                      }}
-                      revokeKey={async (credentialId) => {
-                        await runRequest(async (abortSignal) => {
-                          const response = await apiClient.venues[":id"]["api-keys"][":credentialId"].$delete(
-                            {
-                              param: { id: venue.id, credentialId },
-                            },
-                            { init: { signal: abortSignal } },
-                          );
-                          if (!response.ok) throw new Error(await readError(response, t().revokeApiKeyFailed));
-                        });
-                        await finishSettingsChange(t().apiKeyRevoked);
-                      }}
-                    />
-                  </SettingsGroup>
-                </div>
-              </Show>
-            </SettingsModal.Tab>
-          </SettingsModal.Group>
-        )}
+        <SettingsModal.Group title={t().sharing}>
+          <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
+            <SettingsReadError />
+            <Show
+              when={!settingsQuery.refreshing() && !settingsQuery.error()}
+              fallback={<Placeholder align="left" description={<>{t().refreshBeforeAccess}</>} />}
+            >
+              <div class="grid gap-6">
+                <SettingsGroup title={t().peopleAndGroups} description={t().peopleAndGroupsDescription}>
+                  <Show keyed when={settings().accessEntries}>
+                    {(entries) => (
+                      <PermissionEditor
+                        initialEntries={entries.filter((entry) => entry.principal.type !== "service_account")}
+                        canEdit
+                        allowedLevels={[
+                          { level: "read", label: t().read },
+                          { level: "write", label: t().staff },
+                          { level: "admin", label: t().admin },
+                        ]}
+                        grantAccess={async (principal: Principal, permission: Exclude<PermissionLevel, "none">): Promise<AccessEntry> => {
+                          const entry = await runRequest(async (abortSignal) => {
+                            const response = await apiClient.venues[":id"].access.$post(
+                              {
+                                param: { id: venue.id },
+                                json: { principal, permission },
+                              },
+                              { init: { signal: abortSignal } },
+                            );
+                            if (!response.ok) throw new Error(await readError(response, t().grantAccessFailed));
+                            return response.json();
+                          });
+                          await finishSettingsChange(t().accessGranted);
+                          return entry;
+                        }}
+                        updateAccess={async (accessId, permission) => {
+                          await runRequest(async (abortSignal) => {
+                            const response = await apiClient.venues[":id"].access[":accessId"].$patch(
+                              {
+                                param: { id: venue.id, accessId },
+                                json: { permission },
+                              },
+                              { init: { signal: abortSignal } },
+                            );
+                            if (!response.ok) throw new Error(await readError(response, t().updateAccessFailed));
+                          });
+                          await finishSettingsChange(t().accessUpdated);
+                        }}
+                        revokeAccess={async (accessId) => {
+                          await runRequest(async (abortSignal) => {
+                            const response = await apiClient.venues[":id"].access[":accessId"].$delete(
+                              { param: { id: venue.id, accessId } },
+                              { init: { signal: abortSignal } },
+                            );
+                            if (!response.ok) throw new Error(await readError(response, t().revokeAccessFailed));
+                          });
+                          await finishSettingsChange(t().accessRevoked);
+                        }}
+                      />
+                    )}
+                  </Show>
+                </SettingsGroup>
+                <SettingsGroup title={t().integrationAccess} description={t().integrationAccessDescription}>
+                  <ResourceApiKeys
+                    title={t().apiKeys}
+                    description={t().apiKeysDescription}
+                    initialKeys={settings().apiKeys}
+                    createKey={async (input) => {
+                      const created = await runRequest(async (abortSignal) => {
+                        const response = await apiClient.venues[":id"]["api-keys"].$post(
+                          {
+                            param: { id: venue.id },
+                            json: input,
+                          },
+                          { init: { signal: abortSignal } },
+                        );
+                        if (!response.ok) throw new Error(await readError(response, t().createApiKeyFailed));
+                        return (await response.json()) as { credential: ResourceApiKey; token: string };
+                      });
+                      await finishSettingsChange(t().apiKeyCreated);
+                      return created;
+                    }}
+                    revokeKey={async (credentialId) => {
+                      await runRequest(async (abortSignal) => {
+                        const response = await apiClient.venues[":id"]["api-keys"][":credentialId"].$delete(
+                          {
+                            param: { id: venue.id, credentialId },
+                          },
+                          { init: { signal: abortSignal } },
+                        );
+                        if (!response.ok) throw new Error(await readError(response, t().revokeApiKeyFailed));
+                      });
+                      await finishSettingsChange(t().apiKeyRevoked);
+                    }}
+                  />
+                </SettingsGroup>
+              </div>
+            </Show>
+          </SettingsModal.Tab>
+        </SettingsModal.Group>
 
         <SettingsModal.Group title={t().operations}>
           {/* Every change in this tab saves at once; the opening logic lives in General with its save bar. */}
           <SettingsModal.Tab id="schedule" title={t().schedule} icon="ti ti-calendar-time" description={t().operationsDescription}>
             <SettingsReadError />
-            <AdminOnlyNote />
             <div class="grid gap-6">
               <SettingsCollection title={t().regularHours} description={t().regularHoursDescription} empty={t().noRegularHours}>
-                <Show when={canAdmin()}>
-                  <SettingsCollection.Action>
-                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateOpening()}>
-                      <i class="ti ti-plus" aria-hidden="true" /> {t().newHours}
-                    </Button>
-                  </SettingsCollection.Action>
-                </Show>
+                <SettingsCollection.Action>
+                  <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateOpening()}>
+                    <i class="ti ti-plus" aria-hidden="true" /> {t().newHours}
+                  </Button>
+                </SettingsCollection.Action>
                 <For each={openingRules()}>
                   {(rule) => (
                     <SettingsCollection.Item
@@ -1144,13 +1119,11 @@ export function SettingsDialog(props: {
 
               <div class="grid gap-2" data-settings-exceptions="">
                 <SettingsCollection title={t().exceptions} description={t().exceptionsDescription} empty={t().noUpcomingExceptions}>
-                  <Show when={canAdmin()}>
-                    <SettingsCollection.Action>
-                      <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openAddException()}>
-                        <i class="ti ti-plus" aria-hidden="true" /> {t().newException}
-                      </Button>
-                    </SettingsCollection.Action>
-                  </Show>
+                  <SettingsCollection.Action>
+                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openAddException()}>
+                      <i class="ti ti-plus" aria-hidden="true" /> {t().newException}
+                    </Button>
+                  </SettingsCollection.Action>
                   <For each={upcomingOverrides()}>{(entry) => <ExceptionItem entry={entry} />}</For>
                 </SettingsCollection>
                 <Show when={pastOverrides().length > 0}>
@@ -1163,13 +1136,11 @@ export function SettingsDialog(props: {
               </div>
 
               <SettingsGroup title={t().shifts} description={t().shiftsDescription}>
-                <Show when={canAdmin()}>
-                  <SettingsGroup.Action>
-                    <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateShift()}>
-                      <i class="ti ti-plus" aria-hidden="true" /> {t().newShift}
-                    </Button>
-                  </SettingsGroup.Action>
-                </Show>
+                <SettingsGroup.Action>
+                  <Button type="button" size="sm" disabled={scheduleBusy()} onClick={() => void openCreateShift()}>
+                    <i class="ti ti-plus" aria-hidden="true" /> {t().newShift}
+                  </Button>
+                </SettingsGroup.Action>
                 <Show
                   when={shiftsByWeekday().length > 0}
                   fallback={<Placeholder variant="compact" align="left" description={<>{t().noShifts}</>} />}
@@ -1219,47 +1190,21 @@ export function SettingsDialog(props: {
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        <SettingsModal.Group title={t().connections}>
-          <SettingsModal.Tab id="links" title={t().links} icon="ti ti-link" description={t().linksDescription}>
-            <SettingsGroup title={t().venueLinks} description={t().venueLinksDescription}>
+        <SettingsModal.Group title={t().lifecycle}>
+          <SettingsModal.Tab
+            id="danger"
+            title={t().dangerZone}
+            icon="ti ti-alert-triangle"
+            description={t().dangerZoneDescription}
+            tone="danger"
+          >
+            <SettingsGroup title={t().deleteVenue} description={t().deleteVenueDescription}>
               <SettingsGroup.Action>
-                <div class="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => openVenuePublicDisplayDialog(currentVenue().id, locale())}
-                  >
-                    <i class="ti ti-device-tv" />
-                    {t().publicPage}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={props.onOpenCalendarSubscription}>
-                    <i class="ti ti-calendar-share" aria-hidden="true" />
-                    {t().subscribeCalendar}
-                  </Button>
-                </div>
+                <VenueDangerZone venue={currentVenue()} onPendingChange={setDangerPending} />
               </SettingsGroup.Action>
             </SettingsGroup>
           </SettingsModal.Tab>
         </SettingsModal.Group>
-
-        {venueSettingsCanAdmin(settings()) && (
-          <SettingsModal.Group title={t().lifecycle}>
-            <SettingsModal.Tab
-              id="danger"
-              title={t().dangerZone}
-              icon="ti ti-alert-triangle"
-              description={t().dangerZoneDescription}
-              tone="danger"
-            >
-              <SettingsGroup title={t().deleteVenue} description={t().deleteVenueDescription}>
-                <SettingsGroup.Action>
-                  <VenueDangerZone venue={currentVenue()} onPendingChange={setDangerPending} />
-                </SettingsGroup.Action>
-              </SettingsGroup>
-            </SettingsModal.Tab>
-          </SettingsModal.Group>
-        )}
       </SettingsModal>
     </div>
   );

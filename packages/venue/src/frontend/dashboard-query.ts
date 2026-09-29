@@ -47,7 +47,7 @@ export const slotWindow = (view: VenueCalendarView, date: string): { startDate: 
 
 export const venueDashboardRouteScope = (input: {
   venueId: string;
-  view: "shifts" | "my-shifts" | "feedback";
+  view: "shifts" | "my-shifts" | "feedback" | "public";
   calendarView: VenueCalendarView;
   calendarDate: string;
   feedbackDays: number;

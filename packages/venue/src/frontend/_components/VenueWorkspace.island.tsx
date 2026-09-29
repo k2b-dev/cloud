@@ -14,7 +14,6 @@ import {
   createNavigation,
   DataTable,
   type DataTableColumn,
-  Dropdown,
   dialogCore,
   FilterChip,
   Pagination,
@@ -23,14 +22,11 @@ import {
   prompts,
   StatCell,
   StatGrid,
-  StatusBadge,
-  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
-import { apiClient } from "../../api/client";
-import type { FeedbackEntry, PublicSection, PublicSectionInput, ShiftAssignment, UpcomingSlot } from "../../contracts";
+import type { FeedbackEntry, ShiftAssignment, UpcomingSlot } from "../../contracts";
 import { venueMessages } from "../../messages";
 import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueTime, formatVenueWeekdayTime } from "../../time-format";
 import { loadVenueDashboard, sameVenueDashboardSource, shiftDate } from "../dashboard-query";
@@ -46,10 +42,9 @@ import {
   WIDE_VIEWPORT_QUERY,
 } from "../schedule-url";
 import { reconcileChangedSettings } from "../settings-contract";
-import { PublicSectionView } from "./public-section-view";
 import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscription";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
-import { PublicSectionDialog, sectionKindIcon } from "./venue-workspace/public-sections";
+import { PublicPageEditor } from "./venue-workspace/public-page-editor";
 import { ProgressBar, SlotStateLabel, slotStaffingLabel, slotState } from "./venue-workspace/schedule";
 import { SettingsDialog, type VenueSettingsTab } from "./venue-workspace/settings";
 import { ScheduleEmptyState, scheduleIsEmpty } from "./venue-workspace/setup-checklist";
@@ -65,7 +60,7 @@ import {
 import { SignupDialog } from "./venue-workspace/signup";
 import { VenueTimeZoneNote } from "./venue-workspace/time-zone-note";
 import type { FeedbackRange, VenueView, VenueWorkspaceProps } from "./venue-workspace/types";
-import { canAdmin, canWrite, dateKey, isSlotActive, parseDateKey, readError, timeZoneDateConfig } from "./venue-workspace/utils";
+import { canAdmin, canWrite, dateKey, isSlotActive, parseDateKey, timeZoneDateConfig } from "./venue-workspace/utils";
 
 function ViewHeader(props: { title: string; description: string; action?: JSX.Element }) {
   return (
@@ -89,6 +84,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     { id: "my-shifts" as const, label: t().myShifts, icon: "ti ti-user-check" },
     // Visitor feedback is for staff and admins; the server leaves it out for read access.
     ...(canWrite(venue()) ? [{ id: "feedback" as const, label: t().feedback, icon: "ti ti-message-star" }] : []),
+    // Admins manage the public page in its own view; everyone else gets its links from a dialog.
+    ...(canAdmin(venue()) ? [{ id: "public" as const, label: t().publicPage, icon: "ti ti-world" }] : []),
   ];
   const feedbackRangeOptions = () => [
     {
@@ -108,7 +105,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const dashboard = () => dashboardQuery.data() ?? props.dashboard;
   const venue = () => dashboard().venue;
   const [view] = createSignal<VenueView>(props.initialView);
-  const [selectedSectionId, setSelectedSectionId] = createSignal(props.initialSectionId ?? null);
   const [calendarView] = createSignal<VenueCalendarView>(props.initialCalendarView);
   const [calendarDate] = createSignal(parseDateKey(props.initialCalendarDate));
   const [gapsOnly, setGapsOnly] = createSignal(props.initialGapsOnly === true);
@@ -196,7 +192,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     { id: "comment", header: t().comment, value: (entry) => entry.comment, cellClass: "min-w-64" },
     { id: "created", header: t().submitted, value: (entry) => entry.createdAt, headerClass: "w-px", cellClass: "w-px whitespace-nowrap" },
   ];
-  const selectedSection = createMemo(() => dashboard().sections.find((section) => section.id === selectedSectionId()) ?? null);
   const slotByKey = createMemo(() => new Map(dashboard().slots.map((slot) => [slotSelectionId(slot.template.id, slot.date), slot])));
   const otherAssignmentByKey = createMemo(
     () => new Map(dashboard().otherAssignments.map((assignment) => [assignmentSelectionId(assignment.id), assignment])),
@@ -232,23 +227,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
           }),
         )),
   ]);
-  const sectionHref = (section: PublicSection) => `/app/venue/${venue().id}/public-sections/${section.id}`;
-  // Only admins manage sections; others see the group only when their view contains a section.
-  const showPublicContent = () => canAdmin(venue()) || dashboard().sections.length > 0;
-  const collapsedPublicContentMenu = () => [
-    {
-      sectionLabel: t().publicContent,
-      items: [
-        ...(canAdmin(venue()) ? [{ icon: "ti ti-plus", label: t().addPublicSection, action: () => void openAddSection() }] : []),
-        ...dashboard().sections.map((section) => ({
-          icon: sectionKindIcon(section.kind),
-          label: section.title,
-          description: section.enabled ? undefined : t().sectionDraft,
-          href: sectionHref(section),
-        })),
-      ],
-    },
-  ];
   const calendarHref = (nextView: VenueCalendarView, nextDate: Date | string, shift: string | null = null, gaps = gapsOnly()) =>
     scheduleHref(venue().id, {
       view: nextView,
@@ -258,9 +236,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     });
 
   // The selected shift lives in the URL (`?shift=`), so reload and Back restore it.
-  const selection = createMemo(() =>
-    view() === "shifts" && !selectedSectionId() ? resolveShiftSelection(dashboard(), selectedShiftId()) : null,
-  );
+  const selection = createMemo(() => (view() === "shifts" ? resolveShiftSelection(dashboard(), selectedShiftId()) : null));
   const selectedEventId = createMemo(() => selection()?.eventId ?? null);
   /** Marks an entry this page pushed for a selection; `gaps` is the filter of the entry below it. */
   type SelectionHistoryState = { venueShiftSelection?: boolean; gaps?: boolean } | null;
@@ -313,7 +289,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       },
     );
   };
-  const openPublicPage = () => openVenuePublicDisplayDialog(venue().id, locale());
+  const openPublicPage = () => openVenuePublicDisplayDialog(venue().id, locale(), venue().publicEnabled);
   // Renewing replaces the token on the server, so every later dialog has to start from the new URL.
   const [calendarUrl, setCalendarUrl] = createSignal(props.calendarUrl);
   const openCalendarSubscription = () =>
@@ -424,7 +400,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
               onAccessEntriesChange={setAccessEntries}
               initialTab={tab}
               apiKeys={props.apiKeys}
-              onOpenCalendarSubscription={openCalendarSubscription}
               close={close}
             />
           ),
@@ -452,112 +427,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       prompts.error(t().savedRefreshFailed);
       return false;
     }
-  };
-
-  const addSection = (venueId: string, input: PublicSectionInput) =>
-    actions.run(["section:add"], async (signal) => {
-      const res = await apiClient.venues[":id"].sections.$post({ param: { id: venueId }, json: input }, { init: { signal } });
-      if (!res.ok) throw new Error(await readError(res, t().addSectionFailed));
-      await reconcileDashboard();
-    });
-
-  const openAddSection = async () => {
-    const intent = { venueId: venue().id, nextPosition: dashboard().sections.length + 1, publicPageEnabled: venue().publicEnabled };
-    await runPromptedAction(
-      () =>
-        dialogCore.open<PublicSectionInput | null>(
-          (close) => <PublicSectionDialog close={close} nextPosition={intent.nextPosition} publicPageEnabled={intent.publicPageEnabled} />,
-          panelDialogOptions,
-        ),
-      async (input) => {
-        if (input) await addSection(intent.venueId, input);
-      },
-    );
-  };
-
-  /** Editing and deleting one section conflict; each shows progress only on its own button. */
-  const sectionKey = (sectionId: string) => `section:${sectionId}`;
-  const editSection = (venueId: string, sectionId: string, input: PublicSectionInput) =>
-    actions.run([sectionKey(sectionId), `${sectionKey(sectionId)}:edit`], async (signal) => {
-      const res = await apiClient.venues[":id"].sections[":resourceId"].$patch(
-        { param: { id: venueId, resourceId: sectionId }, json: input },
-        { init: { signal } },
-      );
-      if (!res.ok) throw new Error(await readError(res, t().updateSectionFailed));
-      await reconcileDashboard(t().sectionUpdated);
-    });
-
-  const openEditSection = async (section: PublicSection) => {
-    const intent = {
-      venueId: venue().id,
-      sectionId: section.id,
-      section: { ...section, content: { ...section.content } },
-      publicPageEnabled: venue().publicEnabled,
-    };
-    await runPromptedAction(
-      () =>
-        dialogCore.open<PublicSectionInput | null>(
-          (close) => (
-            <PublicSectionDialog
-              close={close}
-              initial={intent.section}
-              nextPosition={intent.section.position}
-              publicPageEnabled={intent.publicPageEnabled}
-              title={t().editPublicSection}
-              submitLabel={t().saveSection}
-            />
-          ),
-          panelDialogOptions,
-        ),
-      async (input) => {
-        if (input) await editSection(intent.venueId, intent.sectionId, input);
-      },
-    );
-  };
-
-  /** A copy is a new section, so it conflicts only with another copy of the same section. */
-  const duplicatePublicSection = (section: PublicSection) => {
-    const venueId = venue().id;
-    const input: PublicSectionInput = {
-      kind: section.kind,
-      title: t().sectionCopy({ title: section.title }),
-      content: { ...section.content },
-      enabled: section.enabled,
-      position: dashboard().sections.length + 1,
-    };
-    return actions.run([`${sectionKey(section.id)}:copy`], async (signal) => {
-      const res = await apiClient.venues[":id"].sections.$post({ param: { id: venueId }, json: input }, { init: { signal } });
-      if (!res.ok) throw new Error(await readError(res, t().duplicateSectionFailed));
-      await reconcileDashboard(t().sectionDuplicated);
-    });
-  };
-
-  const deleteSection = (venueId: string, sectionId: string) =>
-    actions.run([sectionKey(sectionId), `${sectionKey(sectionId)}:delete`], async (signal) => {
-      const res = await apiClient.venues[":id"].sections[":resourceId"].$delete(
-        { param: { id: venueId, resourceId: sectionId } },
-        { init: { signal } },
-      );
-      if (!res.ok) throw new Error(await readError(res, t().deleteSectionFailed));
-      if (await reconcileDashboard(t().sectionDeleted)) {
-        setSelectedSectionId(null);
-        window.history.replaceState({}, "", viewHref("shifts"));
-      }
-    });
-
-  const confirmDeleteSection = async (section: PublicSection) => {
-    const intent = { venueId: venue().id, sectionId: section.id, title: section.title };
-    await runPromptedAction(
-      () =>
-        prompts.confirm(t().deletePublicSectionQuestion({ title: intent.title }), {
-          title: t().deletePublicSection,
-          variant: "danger",
-          confirmText: t().delete,
-        }),
-      async (confirmed) => {
-        if (confirmed) await deleteSection(intent.venueId, intent.sectionId);
-      },
-    );
   };
 
   onMount(() => {
@@ -596,42 +465,29 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     closeSheet();
   });
 
+  /**
+   * One fixed set of entries per role, however many sections the Venue has: Take shift for staff who can take
+   * shifts, the views, the public page (a view for admins, its link dialog for everyone else), and Settings for
+   * admins only, last.
+   */
   const navigation = createNavigation({
     items: () => [
-      ...(canWrite(venue()) ? [{ id: "signup", label: t().signUp, icon: "ti ti-user-plus", action: "signup" }] : []),
+      ...(canJoinShifts() ? [{ id: "signup", label: t().signUp, icon: "ti ti-user-plus", action: "signup" }] : []),
       { id: "all", label: t().allVenues, icon: "ti ti-layout-grid", href: "/app/venue" },
-      { id: "public", label: t().publicPage, icon: "ti ti-device-tv", action: "public" },
       ...views().map((item) => ({
         id: item.id,
         label: item.label,
         icon: item.icon,
         href: viewHref(item.id),
-        active: !selectedSectionId() && view() === item.id,
+        active: view() === item.id,
       })),
       ...(canAdmin(venue())
-        ? [
-            {
-              id: "add-section",
-              label: t().addPublicSection,
-              icon: "ti ti-plus",
-              action: "add-section",
-            },
-          ]
-        : []),
-      ...dashboard().sections.map((section) => ({
-        id: `section:${section.id}`,
-        label: section.title,
-        badge: section.enabled ? undefined : t().sectionDraft,
-        icon: sectionKindIcon(section.kind),
-        href: sectionHref(section),
-        active: selectedSectionId() === section.id,
-      })),
-      { id: "settings", label: t().venueSettings, icon: "ti ti-settings", action: "settings" },
+        ? [{ id: "settings", label: t().venueSettings, icon: "ti ti-settings", action: "settings" }]
+        : [{ id: "public", label: t().publicPage, icon: "ti ti-world", action: "public" }]),
     ],
     onAction: async (action) => {
       if (action === "signup") await openSignup();
       if (action === "public") await openPublicPage();
-      if (action === "add-section") await openAddSection();
       if (action === "settings") await openSettings();
     },
   });
@@ -641,35 +497,33 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
           <div class="flex flex-col gap-3">
-            <AppWorkspace.SidebarIconGrid columns={canWrite(venue()) ? 3 : 2} sidebarMode="expanded">
-              <Show when={canWrite(venue())}>
+            <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
+              <Show when={canJoinShifts()}>
                 <AppWorkspace.SidebarIconAction icon="ti ti-user-plus" label={t().signUpForShift} tone="success" onClick={openSignup} />
               </Show>
-              <AppWorkspace.SidebarIconAction icon="ti ti-device-tv" label={t().publicPage} onClick={openPublicPage} />
               <AppWorkspace.SidebarIconAction href="/app/venue" navigation="document" icon="ti ti-layout-grid" label={t().allVenues} />
             </AppWorkspace.SidebarIconGrid>
 
             <AppWorkspace.SidebarSection title={t().workspace} sidebarMode="expanded">
               <For each={views()}>
                 {(item) => (
-                  <AppWorkspace.SidebarItem
-                    href={viewHref(item.id)}
-                    navigation="document"
-                    icon={item.icon}
-                    active={!selectedSectionId() && view() === item.id}
-                  >
+                  <AppWorkspace.SidebarItem href={viewHref(item.id)} navigation="document" icon={item.icon} active={view() === item.id}>
                     {item.label}
                   </AppWorkspace.SidebarItem>
                 )}
               </For>
+              <Show when={!canAdmin(venue())}>
+                <AppWorkspace.SidebarItem icon="ti ti-world" onClick={() => void openPublicPage()}>
+                  {t().publicPage}
+                </AppWorkspace.SidebarItem>
+              </Show>
             </AppWorkspace.SidebarSection>
           </div>
 
           <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
-            <Show when={canWrite(venue())}>
+            <Show when={canJoinShifts()}>
               <AppWorkspace.SidebarIconAction icon="ti ti-user-plus" label={t().signUpForShift} tone="success" onClick={openSignup} />
             </Show>
-            <AppWorkspace.SidebarIconAction icon="ti ti-device-tv" label={t().publicPage} onClick={openPublicPage} />
             <AppWorkspace.SidebarIconAction href="/app/venue" navigation="document" icon="ti ti-layout-grid" label={t().allVenues} />
             <For each={views()}>
               {(item) => (
@@ -678,69 +532,27 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                   navigation="document"
                   icon={item.icon}
                   label={item.label}
-                  active={!selectedSectionId() && view() === item.id}
+                  active={view() === item.id}
                 />
               )}
             </For>
-            <Show when={showPublicContent()}>
-              <Dropdown.Root items={collapsedPublicContentMenu()} position="right-start" width="16rem">
-                <Dropdown.Trigger
-                  appearance="plain"
-                  iconOnly
-                  label={t().publicContent}
-                  class={`k2b-app-workspace__sidebar-icon-action ${selectedSectionId() ? "is-active" : ""}`}
-                >
-                  <i class="ti ti-layout-list" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
+            <Show when={!canAdmin(venue())}>
+              <AppWorkspace.SidebarIconAction icon="ti ti-world" label={t().publicPage} onClick={openPublicPage} />
             </Show>
           </AppWorkspace.SidebarIconGrid>
 
-          <AppWorkspace.SidebarBody scrollPreserveKey={`venue-sidebar-${venue().id}`} sidebarMode="expanded">
-            <Show when={showPublicContent()}>
-              <AppWorkspace.SidebarSection title={t().publicContent}>
-                <Show when={canAdmin(venue())}>
-                  <AppWorkspace.SidebarItem
-                    icon="ti ti-plus"
-                    tone="success"
-                    title={t().addPublicSection}
-                    onClick={() => void openAddSection()}
-                  >
-                    <AppWorkspace.SidebarItemLabel marquee={false}>{t().addPublicSection}</AppWorkspace.SidebarItemLabel>
-                  </AppWorkspace.SidebarItem>
-                </Show>
-                <For
-                  each={dashboard().sections}
-                  fallback={<Placeholder align="left" class="px-2 py-2" description={<>{t().noSections}</>} />}
-                >
-                  {(section) => (
-                    // Only drafts carry a marker; a published section is the normal case.
-                    <AppWorkspace.SidebarItem
-                      href={sectionHref(section)}
-                      navigation="document"
-                      icon={sectionKindIcon(section.kind)}
-                      title={section.enabled ? section.title : `${section.title} · ${t().sectionDraft}`}
-                      meta={section.enabled ? undefined : t().sectionDraft}
-                      active={selectedSectionId() === section.id}
-                    >
-                      <AppWorkspace.SidebarItemLabel marquee={false}>{section.title}</AppWorkspace.SidebarItemLabel>
-                    </AppWorkspace.SidebarItem>
-                  )}
-                </For>
-              </AppWorkspace.SidebarSection>
-            </Show>
-          </AppWorkspace.SidebarBody>
-
-          <AppWorkspace.SidebarFooter sidebarMode="expanded">
-            <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={() => void openSettings()}>
-              {t().venueSettings}
-            </AppWorkspace.SidebarItem>
-          </AppWorkspace.SidebarFooter>
-          <AppWorkspace.SidebarFooter sidebarMode="collapsed">
-            <AppWorkspace.SidebarIconGrid>
-              <AppWorkspace.SidebarIconAction icon="ti ti-settings" label={t().venueSettings} onClick={() => void openSettings()} />
-            </AppWorkspace.SidebarIconGrid>
-          </AppWorkspace.SidebarFooter>
+          <Show when={canAdmin(venue())}>
+            <AppWorkspace.SidebarFooter sidebarMode="expanded">
+              <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={() => void openSettings()}>
+                {t().venueSettings}
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarFooter>
+            <AppWorkspace.SidebarFooter sidebarMode="collapsed">
+              <AppWorkspace.SidebarIconGrid>
+                <AppWorkspace.SidebarIconAction icon="ti ti-settings" label={t().venueSettings} onClick={() => void openSettings()} />
+              </AppWorkspace.SidebarIconGrid>
+            </AppWorkspace.SidebarFooter>
+          </Show>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
 
@@ -762,91 +574,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                   </Button>
                 </div>
               </Show>
-              <Show when={selectedSection()}>
-                {(section) => (
-                  <>
-                    <ViewHeader
-                      title={section().title}
-                      description={t().previewSection}
-                      action={
-                        <>
-                          <Button type="button" variant="secondary" size="sm" onClick={openPublicPage}>
-                            <i class="ti ti-device-tv" /> {t().publicPage}
-                          </Button>
-                          <Show when={canAdmin(venue())}>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              disabled={actions.pending(sectionKey(section().id))}
-                              loading={actions.pending(`${sectionKey(section().id)}:edit`)}
-                              onClick={() => void openEditSection(section())}
-                            >
-                              <i class="ti ti-pencil" aria-hidden="true" /> {t().edit}
-                            </Button>
-                            <Tooltip.Anchor content={t().duplicateSection}>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                loading={actions.pending(`${sectionKey(section().id)}:copy`)}
-                                onClick={() => void duplicatePublicSection(section())}
-                                aria-label={t().duplicateSection}
-                              >
-                                <i class="ti ti-copy" aria-hidden="true" />
-                              </Button>
-                            </Tooltip.Anchor>
-                            <Tooltip.Anchor content={t().deleteSection}>
-                              <Button
-                                type="button"
-                                variant="danger"
-                                size="sm"
-                                disabled={actions.pending(sectionKey(section().id))}
-                                loading={actions.pending(`${sectionKey(section().id)}:delete`)}
-                                onClick={() => void confirmDeleteSection(section())}
-                                aria-label={t().deleteSection}
-                              >
-                                <i class="ti ti-trash" aria-hidden="true" />
-                              </Button>
-                            </Tooltip.Anchor>
-                          </Show>
-                        </>
-                      }
-                    />
-                    <div class="flex flex-wrap items-center gap-2 px-1">
-                      <Show
-                        when={section().enabled}
-                        fallback={
-                          <>
-                            <StatusBadge tone="neutral" icon="ti ti-eye-off" label={t().sectionDraft} />
-                            <span class="text-xs text-dimmed">
-                              {canAdmin(venue()) ? t().sectionDraftDetailAdmin : t().sectionDraftDetailStaff}
-                            </span>
-                          </>
-                        }
-                      >
-                        <Show
-                          when={venue().publicEnabled}
-                          fallback={
-                            <>
-                              <StatusBadge tone="neutral" icon="ti ti-world-off" label={t().sectionPublicPageOff} />
-                              <span class="text-xs text-dimmed">{t().sectionPublicPageOffDetail}</span>
-                            </>
-                          }
-                        >
-                          <StatusBadge tone="ok" icon="ti ti-world" label={t().sectionPublic} />
-                          <span class="text-xs text-dimmed">{t().sectionPublicDetail}</span>
-                        </Show>
-                      </Show>
-                    </div>
-                    <div class="max-w-3xl">
-                      <PublicSectionView section={section()} timeZone={venue().timezone} preview />
-                    </div>
-                  </>
-                )}
-              </Show>
-
-              <Show when={!selectedSection() && view() === "shifts"}>
+              <Show when={view() === "shifts"}>
                 <>
                   <ViewHeader
                     title={t().schedule}
@@ -982,7 +710,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                 </>
               </Show>
 
-              <Show when={!selectedSection() && view() === "my-shifts"}>
+              <Show when={view() === "my-shifts"}>
                 <>
                   <ViewHeader
                     title={t().myShifts}
@@ -1051,7 +779,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                 </>
               </Show>
 
-              <Show when={!selectedSection() && view() === "feedback"}>
+              <Show when={view() === "feedback"}>
                 <section class="flex flex-col gap-2">
                   <ViewHeader
                     title={t().feedback}
@@ -1226,6 +954,16 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     }}
                   </Show>
                 </section>
+              </Show>
+
+              <Show when={view() === "public" && canAdmin(venue())}>
+                <ViewHeader title={t().publicPage} description={t().publicPageViewDescription} />
+                <PublicPageEditor
+                  dashboard={dashboard()}
+                  initialPreview={props.initialPublicPreview ?? null}
+                  initialSectionId={props.initialSectionId ?? null}
+                  reconcile={reconcileDashboard}
+                />
               </Show>
             </div>
           </div>

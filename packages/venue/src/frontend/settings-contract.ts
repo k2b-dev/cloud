@@ -15,9 +15,6 @@ export const createVenueSettingsQuery = <T>(options: {
   return owner;
 };
 
-export const venueSettingsCanAdmin = (settings: { venue: { permission?: "none" | "read" | "write" | "admin" } }): boolean =>
-  settings.venue.permission === "admin";
-
 export const settingsInteractionBlocked = (state: {
   prompting: boolean;
   writePending: boolean;

@@ -12,8 +12,9 @@ order: 120
 - **The public page shows the wrong opening status:** Check regular hours, date overrides, timezone, and whether the venue is enabled for the intended date.
 - **A shift is missing:** Confirm the current week or month, recurring template, and any schedule filters.
 - **A user cannot take a shift:** The user needs staff or admin access, the shift must allow another person, and it must not have ended.
-- **A staff member cannot change settings:** Staff access allows shift work, not venue administration. Grant admin access only when that person should manage configuration.
-- **A public section is missing:** Open the section and check that it is not a draft: **Show on the public page** must be on. Also confirm that you are viewing the current venue's public page. Read users see only the sections the public page shows.
+- **Someone does not see Venue settings or the section list:** Only admins see the settings and manage the public page; staff and read users get the page link only. Staff access allows shift work, not venue administration. Grant admin access only when that person should manage configuration.
+- **An old link to a section opens something else:** Sections no longer have pages of their own. An old section link opens **Public page** with that section marked for admins, and the schedule for everyone else.
+- **A public section is missing:** In **Public page**, check that the section's switch is on and it is not marked **Draft**, and that **Public page on** is on. The preview shows what visitors see. Also confirm that you are viewing the current venue's public page. Read users see only the sections the public page shows.
 - **Times look shifted:** Venue shows every time in the venue's time zone. The workspace names that time zone when your device runs in another one; check the venue's time zone if it looks wrong.
 - **Feedback is absent:** Confirm that feedback is enabled and clear the current search, **Only with comment**, or the date-range filter. Older ratings are on later pages of the list. The Feedback view needs staff or admin access.
 - **A calendar subscription is stale:** Calendar apps choose their own refresh interval. If the calendar stopped updating after someone renewed the link, open **My shifts** > **Subscribe to calendar** and subscribe with the current link.
