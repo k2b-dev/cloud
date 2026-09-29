@@ -152,8 +152,8 @@ gap in the owning primitive and update its UI context and showcase.
 In a standalone application, give each `color-mix()` that references a CSS
 variable or `currentColor` its own rule in `src/styles/app.css`. Until a Bun
 release includes [oven-sh/bun#38589](https://github.com/oven-sh/bun/pull/38589),
-the `@k2b/cloud` build keeps only the first such value in a rule. The others
-show Tailwind's fallback, usually the first color of the mix. Mixes of literal
+the `@k2b/cloud` build keeps only one such value per rule. The others show
+Tailwind's fallback, usually the first color of the mix. Mixes of literal
 colors are computed at build time and are not affected.
 
 ```css
@@ -172,6 +172,12 @@ colors are computed at build time and are not affected.
   border-color: color-mix(in oklab, var(--k2b-action) 40%, var(--k2b-surface));
 }
 ```
+
+The same applies to `@apply`: an opacity modifier on a variable or
+`currentColor` color, such as `bg-(--k2b-action)/12`, compiles to such a
+`color-mix()`. Split `@apply bg-(--k2b-action)/12 border-(--k2b-action)/40`
+into one rule per utility. Used as classes in markup, the same utilities are not
+affected, because each class compiles to its own rule.
 
 A custom property that holds a mixed color counts as such a declaration. To
 reuse a mixed color, declare it in its own rule and read it with `var()`:
