@@ -65,9 +65,10 @@ type Fixture = {
 let createdMailboxId: string | null = null;
 
 const ok = (message: string) => console.log(`✓ ${message}`);
-const fail = (message: string): never => {
+// A declaration, not an arrow, so `if (...) fail(...)` narrows the code after it.
+function fail(message: string): never {
   throw new Error(message);
-};
+}
 
 const assertLocalTarget = () => {
   const url = new URL(BASE_URL);
@@ -660,7 +661,7 @@ const runSmoke = async (fixture: Fixture) => {
       readerState.messageOffset > readerState.summaryBottom + 24
     )
       fail(`long message did not follow its conversation summary: ${JSON.stringify(readerState)}`);
-    if (readerState?.nestedVerticalScroll) fail("long message body introduced a nested vertical scrollbar");
+    if (readerState.nestedVerticalScroll) fail("long message body introduced a nested vertical scrollbar");
     await summary.getByText("The summary intentionally spans several paragraphs", { exact: false }).waitFor();
     await assertWheelScroll(page, readerScroll, summary, "conversation summary");
     await readerScroll.evaluate((element) => {
