@@ -82,10 +82,10 @@ The available A4 presets are `document`, `report`, and `compact`. Optional
 `templateId` to use custom CSS as the complete stylesheet; omit both fields to
 use `document`. CSS is limited to 32 KiB. Raw HTML stays inert. Markdown image
 references become safe links, so the renderer never fetches them. CSS imports,
-URLs, and other external resources are rejected. The generated HTML also
-carries a restrictive Content Security Policy before it goes through the
-same bounded, offline HTML renderer. Markdown has no `<title>`, so pass
-`title`, such as the note or file name, for PDF viewers to show.
+URLs, and other external resources are rejected. The document then goes
+through the same bounded, offline HTML renderer as any other HTML, so a
+Markdown PDF fetches nothing. Markdown has no `<title>`, so pass `title`, such
+as the note or file name, for PDF viewers to show.
 
 ### Render your own Markdown dialect
 
@@ -106,14 +106,18 @@ const html = buildPresetPdfHtml({
 const result = await renderHtmlToPdf({ html, title: note.title });
 ```
 
-It applies the same presets, `customCss` rules, and Content Security Policy
-as `renderMarkdownToPdf()`. That policy loads no images or fonts, not even
-named assets or `data:` URLs, so the document renders only its own text,
-inline styles, and inline SVG shapes. `html` becomes the document body as
-given, so sanitize it in the application renderer. `css` styles the
-application's own elements. It comes after the preset and before
-`customCss`, so a person's custom CSS can still override it. With `customCss`
-but no `templateId`, `css` still applies while the preset is left out.
+It applies the same presets and `customCss` rules as `renderMarkdownToPdf()`.
+`html` becomes the document body as given, so sanitize it in the application
+renderer. `css` styles the application's own elements. It comes after the
+preset and before `customCss`, so a person's custom CSS can still override it.
+With `customCss` but no `templateId`, `css` still applies while the preset is
+left out.
+
+The result renders offline like any other HTML: the offline policy replaces
+the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and
+`css` can therefore embed images and fonts as `data:` URLs or reference files
+passed as `assets` to `renderHtmlToPdf()`. Remote URLs still do not load, and
+`customCss` still cannot load any resource.
 
 The service owns conversion only. Callers still own authentication,
 authorization, request limits, filenames, response headers, and persistence.

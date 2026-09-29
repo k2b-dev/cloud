@@ -1,63 +1,10 @@
 import { beforeAll, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { inflateSync } from "node:zlib";
 import { type GotenbergConfig, renderHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
-import { pdfTitle } from "../../../../scripts/fixtures/pdf-info";
+import { pdfFonts, pdfLigatures, pdfText, pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { buildNotePdfHtml } from "./note-pdf";
 
 const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
-
-/** Output of a Poppler tool for a PDF. A missing tool fails instead of passing vacuously. */
-const poppler = async (tool: "pdftotext" | "pdffonts", pdf: Uint8Array, args: string[]): Promise<string> => {
-  const binary = Bun.which(process.env[tool.toUpperCase()] ?? tool);
-  if (!binary) throw new Error(`Poppler's ${tool} is not on PATH; install Poppler or set ${tool.toUpperCase()}.`);
-  const directory = await mkdtemp(join(tmpdir(), "notebooks-note-pdf-"));
-  try {
-    const path = join(directory, "note.pdf");
-    await Bun.write(path, pdf);
-    const run = Bun.spawn([binary, ...args, path, ...(tool === "pdftotext" ? ["-"] : [])], { stdout: "pipe", stderr: "pipe" });
-    const [output, error, code] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
-    if (code !== 0) throw new Error(`${tool} failed: ${error}`);
-    return output;
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-};
-
-/** Poppler's text layer of a PDF: what copy and search see. */
-const pdfText = (pdf: Uint8Array) => poppler("pdftotext", pdf, ["-enc", "UTF-8"]);
-
-/** Fonts that draw the PDF, without subset prefixes, and whether each is embedded, subset, and mapped to Unicode. */
-const pdfFonts = async (pdf: Uint8Array) =>
-  (await poppler("pdffonts", pdf, []))
-    .split("\n")
-    .slice(2)
-    .filter((line) => line.trim())
-    .map((line) => {
-      const fields = line.trim().split(/\s+/);
-      const [emb, sub, uni] = fields.slice(-5, -2);
-      return { name: fields[0]!.replace(/^[A-Z]{6}\+/, ""), embedded: emb === "yes", subset: sub === "yes", unicode: uni === "yes" };
-    });
-
-/**
- * Letters that Chromium drew as one ligature glyph, such as `ffi`. It marks
- * each ligature glyph with its letters as `ActualText`, which copy and search use.
- */
-const pdfLigatures = (pdf: Uint8Array): string[] => {
-  const raw = Buffer.from(pdf).toString("latin1");
-  return [...raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)].flatMap(([, data = ""]) => {
-    let content = data;
-    try {
-      content = inflateSync(Buffer.from(data, "latin1")).toString("latin1");
-    } catch {
-      // Not Flate-compressed: search the stream as stored.
-    }
-    return [...content.matchAll(/\/ActualText \(([^)]*)\)/g)].map(([, letters = ""]) => letters);
-  });
-};
 
 suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
   let config: GotenbergConfig;
@@ -102,16 +49,12 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       `Body: ${words}. Arrows -> <- <-> => <=> and x != y, a <= b, c >= d (c) 2026 ...`,
       "```ts\nconst office = (fluffy) => fluffy !== affine; // -> => != ffi\n```",
     ].join("\n\n");
-    // In Gotenberg, Noto Sans forms f-ligatures: the document preset throughout and the report's
-    // headings. The report's body font, Liberation Serif, has none.
-    for (const { templateId, ligatures } of [
-      { templateId: "document", ligatures: ["ffi", "ffl", "fi", "fl"] },
-      { templateId: "report", ligatures: ["ffi", "fi", "fl"] },
-    ] as const) {
+    // In Gotenberg, Noto Sans (document) and Noto Serif (report body) form f-ligatures.
+    for (const templateId of ["document", "report"] as const) {
       const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", templateId });
       const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Ligatures" }, config)).pdf;
       // The ligature glyphs are really there, so the plain-letter checks below cover them.
-      expect(pdfLigatures(pdf)).toEqual(expect.arrayContaining([...ligatures]));
+      expect(pdfLigatures(pdf)).toEqual(expect.arrayContaining(["ffi", "ffl", "fi", "fl"]));
       const text = await pdfText(pdf);
       expect(text).toContain("Office flow → finally ≠ done");
       expect(text).toContain(`Body: ${words}.`);
