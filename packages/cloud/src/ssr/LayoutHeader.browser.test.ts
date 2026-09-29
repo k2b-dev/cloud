@@ -49,8 +49,11 @@ const header = (authenticated: boolean) =>
 /**
  * Taps every pixel of every visible header control with the touch hit areas
  * switched off, then again with them on, and lists the pixels a hit area took
- * from another control. The outermost pixel ring is left out because Chromium
- * resolves a point just before an edge to the box behind it.
+ * from another control. Every pixel counts, the outermost ring included: a
+ * browser can resolve a tap on the last pixel before an edge to the box behind
+ * it, so a hit area that merely touches a control takes a strip from it. Also
+ * probes 21 px from the centre of the Home link in each direction, a reach only
+ * a 44 px touch area has.
  */
 const takenPixels = async (markup: string) => {
   const page = await browser.newPage({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
@@ -68,8 +71,8 @@ const takenPixels = async (markup: string) => {
       const owned: [Element, number, number][] = [];
       for (const control of Array.from(document.querySelectorAll(controls))) {
         const box = control.getBoundingClientRect();
-        for (let x = Math.ceil(box.left) + 1; x + 2 <= box.right; x += 1) {
-          for (let y = Math.ceil(box.top) + 1; y + 2 <= box.bottom; y += 1) {
+        for (let x = Math.floor(box.left); x < box.right; x += 1) {
+          for (let y = Math.floor(box.top); y < box.bottom; y += 1) {
             if (tap(x + 0.5, y + 0.5) === control) owned.push([control, x + 0.5, y + 0.5]);
           }
         }
@@ -83,17 +86,29 @@ const takenPixels = async (markup: string) => {
         const key = `${name(control)} -> ${name(hit)}`;
         taken[key] = (taken[key] ?? 0) + 1;
       }
-      return { visible: [...visible], taken };
+      const home = document.querySelector<HTMLAnchorElement>('a[href="/"]')!;
+      const box = home.getBoundingClientRect();
+      const reaches = (x: number, y: number) => tap(x, y) === home;
+      const midX = box.left + box.width / 2;
+      const midY = box.top + box.height / 2;
+      const homeReach = [reaches(midX - 21, midY), reaches(midX + 21, midY), reaches(midX, midY - 21), reaches(midX, midY + 21)];
+      return { visible: [...visible], taken, homeReach };
     });
   } finally {
     await page.close();
   }
 };
 
-test("phone header actions keep every visible pixel when their touch hit areas are on", async () => {
-  expect(await takenPixels(header(true))).toEqual({ visible: ["Home", "Open help", "Open global search", "Open apps"], taken: {} });
+test("phone header actions keep every visible pixel and Home is finger-sized when touch hit areas are on", async () => {
+  const finger = [true, true, true, true];
+  expect(await takenPixels(header(true))).toEqual({
+    visible: ["Home", "Open help", "Open global search", "Open apps"],
+    taken: {},
+    homeReach: finger,
+  });
   expect(await takenPixels(header(false))).toEqual({
     visible: ["Home", "Open help", "Open apps", "Appearance and language", "Sign in"],
     taken: {},
+    homeReach: finger,
   });
 }, 30_000);

@@ -131,12 +131,15 @@ hydrate as their own island keep each other's edges. The gap before the button
 belongs to the control before it.
 
 Above and below, the tap area reaches 8 px past an `sm` button and 10 px past
-an `xs` button. On touch devices, @k2b/ui's own button rows that wrap or stack
-keep 0.5rem between lines: `DetailPanel` primary actions, settings group and
-collection actions, image input actions, and wrapping or vertical toolbars.
-`DetailPanel.Action` rows sit flush, so their tap area keeps the row height.
+an `xs` button. A tap area that only touches the control above still takes a
+one-pixel strip from its edge, so lines need a little more than that reach. On
+touch devices, @k2b/ui's own button rows that wrap or stack keep 0.625rem
+between lines: `DetailPanel` primary actions (also below the header's identity
+row), `PdfPreview` actions, settings group and collection actions, image input
+actions, and wrapping or vertical toolbars. `DetailPanel.Action` rows sit
+flush, so their tap area keeps the row height.
 
-In your own layouts, keep at least 0.5rem (0.625rem next to `xs` buttons)
+In your own layouts, keep at least 0.625rem (0.75rem next to `xs` buttons)
 between lines of compact buttons that wrap or stack, before a field or link
 that follows a compact button, and before a button that sits in your own
 wrapper element after other content. Where you can, place a row's islands
