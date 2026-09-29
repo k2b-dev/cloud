@@ -83,6 +83,9 @@ domTest("disabled automatic previews do not issue a request", async () => {
   try {
     await Bun.sleep(0);
     expect(calls).toBe(0);
+    // It never starts, so it keeps the idle state instead of the loading state an automatic preview begins with.
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+    expect(dom.root.textContent).toContain("Render a PDF preview");
   } finally {
     dispose();
     dom.cleanup();
