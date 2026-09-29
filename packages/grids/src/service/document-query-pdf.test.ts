@@ -109,12 +109,12 @@ test("a missing PDF renderer tells users that an administrator configures it", a
   expect(warn).toHaveBeenCalledWith(
     "[grids:documents]",
     "Document PDF rendering failed",
-    expect.objectContaining({ code: "not_configured" }),
+    expect.objectContaining({ code: "not_configured", error: "Gotenberg URL is not configured." }),
   );
 });
 
 test("other renderer failures keep the generic message", async () => {
-  using _warn = spyOn(console, "warn").mockImplementation(() => {});
+  using warn = spyOn(console, "warn").mockImplementation(() => {});
   const config = { url: "http://renderer.invalid", timeoutMs: 1000, maxHtmlBytes: 10_000, maxPdfBytes: 10_000 };
   const document = await renderDocumentHtmlPdf({ content: { body: "<p>Report</p>" }, data: {}, filename: "report.pdf" }, "en", {
     config,
@@ -122,4 +122,9 @@ test("other renderer failures keep the generic message", async () => {
   });
   expect(document.ok).toBe(false);
   if (!document.ok) expect(document.error.message).toBe("PDF rendering failed.");
+  expect(warn).toHaveBeenCalledWith(
+    "[grids:documents]",
+    "Document PDF rendering failed",
+    expect.objectContaining({ code: "bad_response", error: "Gotenberg returned HTTP 503." }),
+  );
 });

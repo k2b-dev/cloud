@@ -428,11 +428,12 @@ export const renderDocumentSource = async (
 
 /**
  * Template errors are the author's to fix; renderer errors are logged with
- * their code for operators, and a missing renderer tells users who fixes it.
+ * their code and renderer message for operators, and a missing renderer tells
+ * users who fixes it.
  */
 const renderFailureMessage = (error: TemplatePdfPreviewError, t: ReturnType<typeof documentServiceText>): string => {
   if (error.phase === "template") return t.templateRenderFailed;
-  log.warn("Document PDF rendering failed", { code: error.code, status: error.status });
+  log.warn("Document PDF rendering failed", { code: error.code, status: error.status, error: error.message });
   return error.code === "not_configured" ? t.pdfNotConfigured : t.pdfRenderFailed;
 };
 
