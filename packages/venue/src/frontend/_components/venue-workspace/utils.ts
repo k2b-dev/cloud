@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { img } from "@k2b/stdlib/browser";
 import type { DateRangeValue } from "@k2b/ui";
 import type { DateOverride, OpeningRule, ShiftTemplate, UpcomingSlot, Venue } from "../../../contracts";
@@ -24,7 +25,6 @@ export const groupSlotsByDay = (slots: readonly UpcomingSlot[]): { date: string;
   return days;
 };
 export const joinedSlot = (slot: UpcomingSlot, userId: string): boolean => slot.assignments.some((entry) => entry.userId === userId);
-export const todayDateKey = (): string => new Date().toISOString().slice(0, 10);
 
 export const readError = async (res: Pick<Response, "json">, fallback: string): Promise<string> => {
   const body = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -34,7 +34,10 @@ export const readError = async (res: Pick<Response, "json">, fallback: string): 
 export const canWrite = (venue: Venue): boolean => venue.permission === "write" || venue.permission === "admin";
 export const canAdmin = (venue: Venue): boolean => venue.permission === "admin";
 export const isSlotActive = (slot: UpcomingSlot): boolean => new Date(slot.endsAt) >= new Date();
-export const dateKey = (date: Date): string => date.toISOString().slice(0, 10);
+/** The day `date` falls on in the venue's time zone; the calendar's days start at local midnight, not in UTC. */
+export const dateKey = (date: Date, timeZone: string): string => dates.formatDateKey(date, { timeZone });
+/** Local midnight of `value` in the venue's time zone, the date the calendar shows; today for an invalid key. */
+export const calendarDateOf = (value: string, timeZone: string): Date => dates.parseCalendarDate(value, { timeZone });
 export const parseDateKey = (value: string): Date => {
   const parsed = new Date(value + "T12:00:00Z");
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;

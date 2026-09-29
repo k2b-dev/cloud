@@ -768,6 +768,40 @@ describe("Venue shift detail and schedule", () => {
     ).toContain("This week: no free spots Next unstaffed shift: none this week");
   });
 
+  test("links every calendar date to the venue's own day east of UTC", () => {
+    // Berlin is ahead of UTC, so the calendar's day starts at 22:00 or 23:00 UTC of the day before.
+    const hrefOf = (html: string, pattern: RegExp) => html.match(pattern)?.[1]?.replaceAll("&amp;", "&");
+    const week = render("write", [], { calendarDate: "2026-10-05", calendarView: "week" });
+    expect(hrefOf(week, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-09-28");
+    expect(hrefOf(week, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=week&cd=2026-10-12");
+    // A day header opens that day, not the one before.
+    expect(week).toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-07"');
+    expect(week).not.toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-04"');
+    // Today is the venue's today.
+    const today = dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" });
+    expect(hrefOf(week, /k2b-calendar-header__today[^>]*href="([^"]*)"/)).toBe(`/app/venue/Cafe01/shifts?cv=week&cd=${today}`);
+    // The view switch keeps the shown day.
+    expect(week).toContain('href="/app/venue/Cafe01/shifts?cv=day&amp;cd=2026-10-05"');
+
+    // Across the change to winter time, a day forward is still the next day.
+    const day = render("write", [], { calendarDate: "2026-10-24", calendarView: "day" });
+    expect(hrefOf(day, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
+    expect(text(day)).toContain("Saturday, October 24");
+    // Noon UTC is already the next day in Auckland; the calendar still shows the day of the link.
+    const auckland = render("write", [], {
+      calendarDate: "2026-10-24",
+      calendarView: "day",
+      dashboard: { venue: { ...venue("write"), timezone: "Pacific/Auckland" } },
+    });
+    expect(text(auckland)).toContain("Saturday, October 24");
+    expect(hrefOf(auckland, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
+
+    // A tapped day in the phone month selects that day.
+    const month = render("write", [], { calendarDate: "2026-09-29", calendarView: "mobile-month" });
+    expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30"');
+    expect(hrefOf(month, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-10-29");
+  });
+
   test("the phone month view lists the chosen day's shifts with their state in words", () => {
     const html = render("write", [], { calendarDate: day, calendarView: "mobile-month", dashboard: board });
     const agenda = html.match(/k2b-calendar-mobile-month__agenda[\s\S]*$/)?.[0] ?? "";
