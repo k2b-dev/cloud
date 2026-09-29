@@ -34,8 +34,8 @@ start expanded. Later toggles belong to the renderer and do not change the model
 When disclosure must outlive one renderer, for example in a menu that mounts a
 new `Navigation` each time it opens, the owner keeps it: set `expanded` on the
 item and handle `onExpandedChange(id, expanded)` in the controller. The renderer
-then shows `expanded` and reports toggles instead of keeping them. Without a
-handler, `expanded` is only the starting state.
+then shows `expanded` and reports toggles instead of keeping them; without a
+handler the item does not change.
 
 A parent destination and its expansion button are separate controls. Disabled
 parents also disable their descendants. Labels wrap naturally; long lists

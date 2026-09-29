@@ -209,7 +209,7 @@ test("an owner that handles expansion keeps disclosure across renderers and reve
   }
 });
 
-test("without an owner handler, an item's expanded state is only its starting point", async () => {
+test("an item's expanded state stays with its owner even without a handler", async () => {
   const dom = createDomTestHarness();
   const { default: Navigation } = await import("../src/layout/Navigation");
   const navigation = createNavigation({
@@ -222,7 +222,7 @@ test("without an owner handler, an item's expanded state is only its starting po
     const disclosure = dom.root.querySelector<HTMLButtonElement>(".k2b-navigation__disclosure")!;
     expect(disclosure.getAttribute("aria-expanded")).toBe("false");
     disclosure.click();
-    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
   } finally {
     dispose();
     dom.cleanup();

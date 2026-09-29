@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { render } from "solid-js/web";
+import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
 test("SSR links work before hydration while local actions wait for their owner", async () => {
@@ -15,6 +15,41 @@ test("SSR links work before hydration while local actions wait for their owner",
   expect(items[0]?.action).toBeUndefined();
   expect(items[1]?.disabled).toBe(true);
   dom.cleanup();
+});
+
+test("before hydration an owner's folds only set where the menu's disclosure starts", async () => {
+  const dom = createDomTestHarness();
+  // Solid binds delegated clicks to the document of the first import, an earlier test's.
+  delegateEvents(["click"], dom.document);
+  const { Navigation } = await import("@k2b/ui");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const guide = {
+    id: "guide",
+    label: "Guide",
+    href: "/guide",
+    expanded: false,
+    children: [{ id: "setup", label: "Setup", href: "/setup" }],
+  };
+  dom.root.innerHTML = `<script data-cloud-workspace-navigation type="application/json">${JSON.stringify({
+    label: "Book",
+    items: [{ id: "book", label: "Book", expanded: true, children: [guide] }],
+  })}</script>`;
+  const navigation = readWorkspaceNavigation()!.navigation;
+  const [book] = navigation.items();
+  expect([book?.expanded, book?.defaultExpanded]).toEqual([undefined, true]);
+  expect([book?.children?.[0]?.expanded, book?.children?.[0]?.defaultExpanded]).toEqual([undefined, false]);
+  const host = dom.document.createElement("div");
+  dom.root.append(host);
+  const dispose = render(() => <Navigation navigation={navigation} label="Book" />, host);
+  try {
+    const disclosure = host.querySelector<HTMLButtonElement>(".k2b-navigation__disclosure")!;
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    disclosure.click();
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
 });
 
 test("live snapshots update and old owner cleanup cannot remove a newer workspace", async () => {
