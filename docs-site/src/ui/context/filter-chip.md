@@ -76,6 +76,8 @@ With a non-empty `defaultValue`, the trigger hides the count and offers **Reset*
 
 `label` is always the accessible name, including in `iconOnly` mode. Option labels must remain meaningful without relying on their icon or color.
 
+The options are menu items: on touch devices each option is at least 44 px (2.75rem) tall, as described in [menus](/en/ui/actions/menus#touch-menus).
+
 ## Runtime
 
 `FilterChip` is interactive and must run in hydrated Solid client code. The parent page can remain server rendered.

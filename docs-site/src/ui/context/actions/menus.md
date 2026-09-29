@@ -35,7 +35,7 @@ import {
 ## Touch menus
 
 On touch devices, every menu item in `Dropdown`, `ContextMenu`, `SplitButton`,
-and `SelectChip` is at least 44 px (2.75rem) tall, also without
+`SelectChip`, and `FilterChip` is at least 44 px (2.75rem) tall, also without
 `variant="touch"`. Items sit close together, so the item itself grows instead
 of reaching into its neighbour with an invisible tap area. This follows the
 device, not the input in use: a laptop with a touch screen gets the taller

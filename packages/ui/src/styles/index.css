@@ -4102,10 +4102,11 @@
   font-size: 0.625rem;
 }
 
+/* Options are Dropdown items: no own min-height, so they keep the item height,
+   including its 2.75rem on touch devices. */
 .k2b-ui .k2b-filter-chip__option {
   display: flex;
   width: 100%;
-  min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
   padding: 0.4375rem 0.75rem;

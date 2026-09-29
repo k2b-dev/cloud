@@ -45,6 +45,15 @@ describe("@k2b/ui touch targets", () => {
     expect(
       rules.filter((rule) => items.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector)).map((rule) => rule.selector),
     ).toEqual([]);
+    // FilterChip and SelectChip options are Dropdown items with an extra class. A height of their own has the same
+    // specificity as the touch rule and would win by source order, so they must take the item height.
+    const options = /\.k2b-(?:filter-chip|select-chip)__option(?::[\w-]+)*$/;
+    expect(
+      rules
+        .filter((rule) => options.test(rule.selector))
+        .filter((rule) => [...cssDeclarations(rule.body).keys()].some((property) => /^(?:min-|max-)?(?:height|block-size)$/.test(property)))
+        .map((rule) => rule.selector),
+    ).toEqual([]);
   });
 
   test("changes nothing without a coarse pointer and keeps the visible size, except for flush DetailPanel.Action rows", () => {

@@ -16,6 +16,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Button, IconButton } = await import("../actions/Button");
 const { Dropdown } = await import("../actions/Dropdown");
+const { FilterChip } = await import("../actions/FilterChip");
 const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
 const { default: PdfPreview } = await import("../content/PdfPreview");
@@ -362,8 +363,9 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect((await heights({ viewport: { width: 1280, height: 800 } })).map(([, height]) => height)).toEqual([30, 46, 30, 28, 30, 28, 30]);
   });
 
-  test("give stacked Dropdown items and Select options a 44 px row on touch that keeps its neighbours' edges", async () => {
-    // A row menu with every item kind, the language menu of a public page, and a Select with and without descriptions.
+  test("give stacked Dropdown items, FilterChip options, and Select options a 44 px row on touch that keeps its neighbours' edges", async () => {
+    // A row menu with every item kind, the language menu of a public page, an active FilterChip with its
+    // single- and multi-select sections and Clear action, and a Select with and without descriptions.
     const dropdown = html(() =>
       createComponent(Dropdown.Root, {
         label: "Row actions",
@@ -384,6 +386,31 @@ describe("@k2b/ui touch hit areas on a phone", () => {
         get children() {
           return createComponent(Dropdown.Trigger, { children: "Actions" });
         },
+      }),
+    );
+    const filters = html(() =>
+      createComponent(FilterChip, {
+        label: "Filter",
+        icon: "ti ti-filter",
+        value: ["open"],
+        onValueChange: () => {},
+        options: [
+          {
+            label: "Status",
+            options: [
+              { value: "open", label: "Open", icon: "ti ti-circle" },
+              { value: "done", label: "Done", icon: "ti ti-check" },
+            ],
+          },
+          {
+            label: "Tags",
+            multiple: true,
+            options: [
+              { value: "urgent", label: "Urgent", color: "#ef4444" },
+              { value: "ui", label: "UI", color: "#14b8a6" },
+            ],
+          },
+        ],
       }),
     );
     const select = html(() =>
@@ -430,6 +457,13 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       ["Deutsch", 44, true, true],
       ["Delete", 44, true, true],
     ]);
+    expect(await rows(filters, phone)).toEqual([
+      ["Open", 44, true, true],
+      ["Done", 44, true, true],
+      ["Urgent", 44, true, true],
+      ["UI", 44, true, true],
+      ["Clear", 44, true, true],
+    ]);
     expect(await rows(select, phone)).toEqual([
       ["Open", 44, true, true],
       ["DoneClosed and archived", 50, true, true],
@@ -437,6 +471,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     // A device without a touch screen keeps the compact rows.
     const desktop = { viewport: { width: 1280, height: 800 } };
     expect((await rows(dropdown, desktop)).map(([, height]) => height)).toEqual([32, 32, 47, 32, 32, 32, 32]);
+    expect((await rows(filters, desktop)).map(([, height]) => height)).toEqual([32, 32, 32, 32, 32]);
     expect((await rows(select, desktop)).map(([, height]) => height)).toEqual([32, 50]);
   });
 
