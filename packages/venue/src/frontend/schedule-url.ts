@@ -1,6 +1,7 @@
 /**
- * The schedule's URL state: calendar view (`cv`), day (`cd`), the gaps filter (`gaps=1`), and the selected
- * shift (`shift`). Server pages and the workspace island build and read the same links from here.
+ * The schedule's URL state: calendar view (`cv`), day (`cd`), the gaps filter (`gaps=1`), the selected shift
+ * (`shift`), and `focus=day` for a day tapped in the phone month view. Server pages and the workspace island
+ * build and read the same links from here.
  */
 
 export const VENUE_CALENDAR_VIEWS = ["day", "week", "month", "mobile-month"] as const;
@@ -34,6 +35,8 @@ export type ScheduleUrlState = {
   date?: string;
   gaps?: boolean;
   shift?: string | null;
+  /** A day tapped in the phone month view: the page brings that day's shifts below the grid into view. */
+  focusDay?: boolean;
 };
 
 export const scheduleHref = (venueId: string, state: ScheduleUrlState = {}): `/app/venue/${string}` => {
@@ -42,10 +45,13 @@ export const scheduleHref = (venueId: string, state: ScheduleUrlState = {}): `/a
   if (state.date) params.set("cd", state.date);
   if (state.gaps) params.set("gaps", "1");
   if (state.shift) params.set("shift", state.shift);
+  if (state.focusDay) params.set("focus", "day");
   // Colons are valid in a query and keep `shift=Temp01:2026-09-29` readable.
   const query = params.toString().replaceAll("%3A", ":");
   return `/app/venue/${venueId}/shifts${query ? `?${query}` : ""}`;
 };
+
+export const focusesDay = (params: URLSearchParams): boolean => params.get("focus") === "day";
 
 /**
  * The view a calendar link leads to. The phone month view shows one day's agenda below the month, so its day

@@ -153,11 +153,13 @@ const harness = async (dom: DomTestHarness) => {
       initialShiftId?: string | null;
       viewSource?: "url" | "cookie" | "default";
       calendarView?: "week" | "mobile-month";
+      /** Arrive from a day tapped in the phone month view. */
+      focusDay?: boolean;
       dashboard?: VenueDashboard;
     } = {},
   ) => {
     dom.window.happyDOM.setViewport({ width: options.width ?? 1440, height: 900 });
-    const shared = options.initialShiftId ? `&shift=${options.initialShiftId}` : "";
+    const shared = `${options.initialShiftId ? `&shift=${options.initialShiftId}` : ""}${options.focusDay ? "&focus=day" : ""}`;
     dom.window.history.replaceState(null, "", `/app/venue/Cafe01/shifts?cv=${options.calendarView ?? "week"}&cd=${shiftDay}${shared}`);
     return render(
       () => (
@@ -446,7 +448,7 @@ describe("Venue shift detail", () => {
     }
   });
 
-  test("the phone month brings the chosen day's shifts into view below its grid", async () => {
+  test("the phone month brings a tapped day's shifts into view below its grid, and month steps stay at the top", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const scrolled: Array<{ target: string; options: unknown }> = [];
@@ -460,11 +462,19 @@ describe("Venue shift detail", () => {
     });
     try {
       const page = await harness(dom);
-      let dispose = page.mount("write", { width: 390, calendarView: "mobile-month" });
+      let dispose = page.mount("write", { width: 390, calendarView: "mobile-month", focusDay: true });
       await flush();
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(scrolled).toEqual([{ target: "k2b-calendar-mobile-month__agenda", options: { block: "nearest" } }]);
       expect(dom.root.querySelector(".k2b-content-calendar")?.className).not.toContain("min-h-[42rem]");
+      dispose();
+
+      // Opening the view, Previous, Next, and Today only browse: the calendar's header stays in view for the next step.
+      scrolled.length = 0;
+      dispose = page.mount("write", { width: 390, calendarView: "mobile-month" });
+      await flush();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(scrolled).toEqual([]);
       dispose();
 
       // The week and day grids keep their place and their full height.

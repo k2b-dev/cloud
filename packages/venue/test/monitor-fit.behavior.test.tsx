@@ -125,7 +125,7 @@ describe("Venue monitor fitting", () => {
     return;
   }
 
-  const mount = async (column: number) => {
+  const mount = async (column: number, refresh = false) => {
     const dom = createDomTestHarness();
     const layout = layOut(dom, column);
     const { LocaleProvider } = await import("@k2b/ui");
@@ -138,7 +138,7 @@ describe("Venue monitor fitting", () => {
             initialStatus={status}
             displayHeight="full"
             feedbackUrl="https://cloud.example.test/app/venue/public/Cafe01/feedback"
-            refresh={false}
+            refresh={refresh}
           />
         </LocaleProvider>
       ),
@@ -151,6 +151,12 @@ describe("Venue monitor fitting", () => {
       more: () => openings().querySelector("[data-fit-more]")?.textContent ?? null,
       minHeight: () => openings().style.minHeight,
       qrShown: () => !dom.root.querySelector('[data-public-block="feedback-qr"]')?.classList.contains("hidden"),
+      hasBlock: (block: string) => dom.root.querySelector(`[data-public-block="${block}"]`) !== null,
+      /** Refreshes the status now, as when the monitor's tab becomes visible, without any block reporting a new size. */
+      refresh: async () => {
+        dom.document.dispatchEvent(new dom.window.Event("visibilitychange"));
+        await flush();
+      },
       done: () => {
         dispose();
         layout.restore();
@@ -183,6 +189,29 @@ describe("Venue monitor fitting", () => {
       expect(tall.qrShown()).toBeTrue();
     } finally {
       tall.done();
+    }
+  });
+
+  test("a block a refresh adds counts at once, even when the blocks already there keep their size", async () => {
+    const originalFetch = globalThis.fetch;
+    let next: PublicStatus = status;
+    globalThis.fetch = (async () => Response.json(next)) as unknown as typeof fetch;
+    // 500 px hold the openings at their smallest and the feedback code, but not a changed-hours block as well.
+    const monitor = await mount(500, true);
+    try {
+      expect(monitor.qrShown()).toBeTrue();
+      next = { ...status, upcomingExceptions: [{ date: "2099-10-03", kind: "closed", startTime: null, endTime: null, note: null }] };
+      await monitor.refresh();
+      expect(monitor.hasBlock("exceptions")).toBeTrue();
+      expect(monitor.qrShown()).toBeFalse();
+      // Once the changed hours are past, the code has its room again.
+      next = status;
+      await monitor.refresh();
+      expect(monitor.hasBlock("exceptions")).toBeFalse();
+      expect(monitor.qrShown()).toBeTrue();
+    } finally {
+      monitor.done();
+      globalThis.fetch = originalFetch;
     }
   });
 });

@@ -826,10 +826,14 @@ describe("Venue shift detail and schedule", () => {
     expect(text(auckland)).toContain("Saturday, October 24");
     expect(hrefOf(auckland, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
 
-    // A tapped day in the phone month selects that day.
+    // A tapped day in the phone month selects that day and asks for its list; a month step only browses.
     const month = render("write", [], { calendarDate: "2026-09-29", calendarView: "mobile-month" });
-    expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30"');
+    expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30&amp;focus=day"');
     expect(hrefOf(month, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-10-29");
+    expect(hrefOf(month, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-08-29");
+    expect(hrefOf(month, /k2b-calendar-header__today[^"]*"[^>]*href="([^"]*)"/)).toMatch(
+      /^\/app\/venue\/Cafe01\/shifts\?cv=mobile-month&cd=\d{4}-\d{2}-\d{2}$/,
+    );
   });
 
   test("the phone month view lists the chosen day's shifts with their state in words", () => {
@@ -839,7 +843,7 @@ describe("Venue shift detail and schedule", () => {
     expect(text(agenda)).toContain("1 missing");
     expect(text(agenda)).toContain("Target reached");
     // Its day cells pick a day in the same view.
-    expect(html).toContain(`cv=mobile-month&amp;cd=${day}"`);
+    expect(html).toContain(`cv=mobile-month&amp;cd=${day}&amp;focus=day"`);
   });
 });
 

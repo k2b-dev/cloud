@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { calendarLinkView, parseCalendarView, parseShiftSelection, scheduleHref, VENUE_CALENDAR_VIEWS } from "./schedule-url";
+import { calendarLinkView, focusesDay, parseCalendarView, parseShiftSelection, scheduleHref, VENUE_CALENDAR_VIEWS } from "./schedule-url";
 
 describe("Venue schedule URLs", () => {
   test("keep view, day, gaps filter, and selected shift for every calendar view", () => {
@@ -15,6 +15,16 @@ describe("Venue schedule URLs", () => {
     // Without a view, the server uses the view this browser used last.
     expect(scheduleHref("Cafe01", { date: "2026-09-29", shift: "a:Asg001" })).toBe("/app/venue/Cafe01/shifts?cd=2026-09-29&shift=a:Asg001");
     expect(scheduleHref("Cafe01")).toBe("/app/venue/Cafe01/shifts");
+  });
+
+  test("mark a day tapped in the phone month view, so its page brings that day's shifts into view", () => {
+    const tapped = scheduleHref("Cafe01", { view: "mobile-month", date: "2026-09-30", focusDay: true });
+    expect(tapped).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-09-30&focus=day");
+    expect(focusesDay(new URL(tapped, "https://cloud.example.test").searchParams)).toBeTrue();
+    // A month step only browses.
+    const step = scheduleHref("Cafe01", { view: "mobile-month", date: "2026-10-30" });
+    expect(focusesDay(new URL(step, "https://cloud.example.test").searchParams)).toBeFalse();
+    expect(focusesDay(new URLSearchParams("focus=shift"))).toBeFalse();
   });
 
   test("read only known views and well-formed selections", () => {

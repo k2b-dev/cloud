@@ -2,7 +2,7 @@ import { timing } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
 import { query } from "@k2b/stdlib/solid";
 import { Paper, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { type PublicStatus, PublicStatusSchema } from "../../../contracts";
 import { venueMessages } from "../../../messages";
@@ -42,26 +42,35 @@ function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } 
   // Whether the feedback code fits: shown and measured in one go, so it never flashes when it does not.
   const [qrFits, setQrFits] = createSignal(true);
   let layout: HTMLDivElement | undefined;
+  let observer: ResizeObserver | undefined;
   let frame = 0;
   const placeQr = () => {
     if (!layout) return;
     setQrFits(true);
     if (layout.scrollHeight > layout.clientHeight + 1) setQrFits(false);
   };
+  /** Starting to watch a block also measures once it has its place, so a block a refresh adds counts at once. */
+  const observeBlocks = () => {
+    if (!layout || !observer) return;
+    for (const block of Array.from(layout.querySelectorAll("section"))) observer.observe(block);
+  };
   onMount(() => {
     if (!layout || typeof ResizeObserver === "undefined") return;
     // Any block that changes size may change what fits; measuring waits a frame so it never loops within one.
-    const observer = new ResizeObserver(() => {
+    observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(placeQr);
     });
     observer.observe(layout);
-    for (const block of Array.from(layout.querySelectorAll("section"))) observer.observe(block);
+    observeBlocks();
     onCleanup(() => {
       cancelAnimationFrame(frame);
-      observer.disconnect();
+      observer?.disconnect();
     });
   });
+  // A refresh can add a block, such as the first changed hours, or swap the status card when the venue opens.
+  // The blocks already there may keep their size then, so their observers alone would not measure again.
+  createEffect(on(status, observeBlocks, { defer: true }));
   return (
     <main
       class="relative h-dvh overflow-hidden text-primary"

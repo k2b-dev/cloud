@@ -34,6 +34,7 @@ import {
   assignmentSelectionId,
   CALENDAR_VIEW_COOKIE,
   calendarLinkView,
+  focusesDay,
   PHONE_VIEWPORT_QUERY,
   parseShiftSelection,
   scheduleHref,
@@ -474,9 +475,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       return;
     }
     cookies.writeCookie(CALENDAR_VIEW_COOKIE, calendarView());
-    // The phone month lists the chosen day's shifts below its grid; every day tap loads the page anew at the top,
-    // so bring that list into view, scrolling only as far as it needs.
-    if (calendarView() === "mobile-month") {
+    // The phone month lists the chosen day's shifts below its grid, and a day tap loads the page anew at the top,
+    // so bring that list into view, scrolling only as far as it needs. Month steps and Today only browse, so
+    // their page opens at the top with the calendar's Previous and Next in view for the next step.
+    if (calendarView() === "mobile-month" && focusesDay(new URLSearchParams(window.location.search))) {
       requestAnimationFrame(() => {
         if (!disposed) document.querySelector(".k2b-calendar-mobile-month__agenda")?.scrollIntoView({ block: "nearest" });
       });
@@ -693,7 +695,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     visibleEndHour={20}
                     getViewHref={(nextView) => calendarHref(calendarLinkView(calendarView(), nextView, "view", phone()), calendarDate())}
                     getDateHref={(nextDate, nextView) =>
-                      calendarHref(calendarLinkView(calendarView(), nextView, "date", phone()), nextDate)
+                      scheduleHref(venue().id, {
+                        view: calendarLinkView(calendarView(), nextView, "date", phone()),
+                        date: dateKey(nextDate, venue().timezone),
+                        gaps: gapsOnly(),
+                        // A day cell of the phone month picks that day's list; the header's links only browse.
+                        focusDay: calendarView() === "mobile-month" && nextView === "day",
+                      })
                     }
                     // Every shift is a link to its detail, so it opens before hydration too; one tap or click selects it.
                     getEventHref={(event) => calendarHref(calendarView(), calendarDate(), event.id)}
