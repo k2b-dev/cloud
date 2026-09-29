@@ -20,8 +20,16 @@ testFor("database", "nats")(
     const manager = await jetstreamManager(connection);
     let created = false;
     const run = async () => {
-      const child = Bun.spawn([process.execPath, new URL("./snapshot-cutover-preflight.ts", import.meta.url).pathname], {
-        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: natsServers().join(","), SYNC_NAMESPACE: namespace },
+      // Only the variables an operator sets: an inherited BUN_OPTIONS preload of the test fixture
+      // (`bun run test`) would point the script at the shared test database and a new namespace.
+      const child = Bun.spawn([process.execPath, "--no-env-file", new URL("./snapshot-cutover-preflight.ts", import.meta.url).pathname], {
+        env: {
+          PATH: process.env.PATH,
+          DATABASE_URL: target.toString(),
+          NATS_SERVERS: natsServers().join(","),
+          NATS_CREDS_FILE: process.env.NATS_CREDS_FILE,
+          SYNC_NAMESPACE: namespace,
+        },
         stdout: "pipe",
         stderr: "pipe",
       });

@@ -69,14 +69,34 @@ export const dotenvLeak = (cwd: string, execArgv: readonly string[]): string | u
   execArgv.includes(noEnvFile) ? undefined : envFiles.map((name) => join(cwd, name)).find((path) => existsSync(path));
 
 /**
+ * Whether `url` is the test database `target` with its own `application_name`,
+ * the name a test gives a process it starts to find that process's sessions.
+ */
+const namesTestDatabase = (url: string | undefined, target: string): boolean => {
+  const named = url ? URL.parse(url) : null;
+  const plain = URL.parse(target);
+  if (!named || !plain) return false;
+  named.searchParams.delete("application_name");
+  plain.searchParams.delete("application_name");
+  return named.href === plain.href;
+};
+
+/**
  * Runtime variables for the `CLOUD_TEST_*` targets in `env`: every alias gets
  * the target, its fail-fast address, or `undefined` when it must be removed.
+ * A database alias that already names the target database keeps its
+ * `application_name`: a process a test starts inherits `BUN_OPTIONS` from
+ * `bun run test` and with it this mapping.
  */
 export const testRuntimeEnv = (env: Record<string, string | undefined>): Record<string, string | undefined> => {
   const out: Record<string, string | undefined> = {};
   for (const [kind, mapping] of Object.entries(infraMappings) as Array<[InfraKind, InfraMapping]>) {
-    const value = readTestTarget(env, kind) ?? mapping.unset;
-    for (const runtime of mapping.runtime) out[runtime] = value;
+    const target = readTestTarget(env, kind);
+    const value = target ?? mapping.unset;
+    for (const runtime of mapping.runtime) {
+      const inherited = env[runtime];
+      out[runtime] = kind === "database" && target && namesTestDatabase(inherited, target) ? inherited : value;
+    }
   }
   out.NATS_CREDS_FILE = readTestNatsCredsFile(env);
   return out;
