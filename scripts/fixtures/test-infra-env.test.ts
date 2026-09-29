@@ -62,6 +62,18 @@ describe("dotenv leak", () => {
     }
   });
 
+  test("names the mode files Bun loads, not the committed examples", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cloud-dotenv-"));
+    try {
+      await writeFile(join(cwd, ".env.example"), "APP_URL=\n");
+      expect(dotenvLeak(cwd, [])).toBeUndefined();
+      await writeFile(join(cwd, ".env.development.local"), "APP_URL=https://example.invalid\n");
+      expect(dotenvLeak(cwd, [])).toBe(join(cwd, ".env.development.local"));
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("bun run test starts the runner without dotenv files", async () => {
     const manifest = (await Bun.file(join(import.meta.dir, "..", "..", "package.json")).json()) as { scripts: { test: string } };
     expect(manifest.scripts.test).toBe(`bun ${noEnvFile} scripts/run-tests.ts`);

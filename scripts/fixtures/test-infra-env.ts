@@ -52,12 +52,16 @@ export const readTestNatsCredsFile = (env: Record<string, string | undefined>): 
 /** Flag that keeps Bun from loading dotenv files; `bun run test` starts itself and every test process with it. */
 export const noEnvFile = "--no-env-file";
 
-/** Dotenv files Bun loads from its working directory at startup (`.env.test` under `bun test`, `.env.local` elsewhere). */
-const envFiles = [".env", ".env.local", ".env.test"];
+/**
+ * Dotenv files Bun loads from its working directory at startup: `.env`,
+ * `.env.<NODE_ENV>` and `.env.<NODE_ENV>.local` (`development` when unset,
+ * `test` under `bun test`), and `.env.local` outside `bun test`.
+ */
+const envFiles = [".env", ".env.local", ...["development", "production", "test"].flatMap((mode) => [`.env.${mode}`, `.env.${mode}.local`])];
 
 /**
- * The dotenv file a process started in `cwd` without `--no-env-file` picks up,
- * or `undefined`. A checkout's `.env` configures its development stack
+ * A dotenv file a process started in `cwd` without `--no-env-file` may pick up
+ * in any mode, or `undefined`. A checkout's `.env` configures its development stack
  * (`APP_URL`, secrets, internal origins); a test process that loaded it would
  * test that installation instead of the defaults CI and worktrees use.
  */

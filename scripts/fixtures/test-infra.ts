@@ -97,7 +97,7 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
     if (envFile) {
       throw new Error(
         `This integration test process started without --no-env-file next to ${envFile}; development values such as APP_URL would replace the test defaults. ` +
-          "Run integration tests through `bun run test`, or start Bun with --no-env-file.",
+          "Run integration tests through `bun run test`, or set BUN_OPTIONS=--no-env-file for a direct run; unlike `bun --no-env-file`, it also reaches the Bun processes tests start.",
       );
     }
     for (const [key, value] of Object.entries(testOnlyDefaults)) {
