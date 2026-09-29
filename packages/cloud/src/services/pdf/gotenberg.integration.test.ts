@@ -21,6 +21,7 @@ suiteFor("gotenberg")("PDF document title in Gotenberg", () => {
     expect(await render("<p>Quirks mode fragment</p>", TITLE)).toBe(TITLE);
     expect(await render("<!doctype html><title> </title><p>Blank title</p>", TITLE)).toBe(TITLE);
     expect(await render('<!doctype html><svg width="8" height="8"><title>Chart</title><rect/></svg>', TITLE)).toBe(TITLE);
+    expect(await render("<!doctype html><template><title>Draft</title></template><p>Template</p>", TITLE)).toBe(TITLE);
   }, 60_000);
 
   test("the document's own title wins over the caller title", async () => {

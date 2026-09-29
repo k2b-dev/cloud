@@ -18,8 +18,11 @@
  * one it falls back to the random name Gotenberg gives the uploaded file,
  * which PDF viewers then show. A caller title fills that gap: it goes ahead
  * of the document, so it becomes the first title, unless the document names
- * itself with a non-blank HTML `<title>`. SVG titles label graphics and do
- * not count.
+ * itself with a non-blank HTML `<title>`. SVG titles label graphics, template
+ * content stays inert, and removed elements take their titles with them, so
+ * none of them count. A title of only whitespace character references, such
+ * as `&#32;`, still counts and leaves the random name; generated HTML does not
+ * write whitespace that way.
  */
 const POLICY =
   "default-src 'none'; style-src 'unsafe-inline' file: data:; img-src file: data:; font-src file: data:; base-uri 'none'; form-action 'none'";
@@ -60,32 +63,48 @@ const leadingDoctype = (html: string): string => {
 /** An empty comment stands in for a removed element, so the text on either side stays separate. */
 const REMOVED = "<!---->";
 
+// Chromium parses noscript content as markup when JavaScript is disabled.
+// math, foreignObject, and desc: see the module comment.
+const REMOVED_ELEMENTS = [
+  "script",
+  "noscript",
+  "meta",
+  "base",
+  "iframe",
+  "frame",
+  "frameset",
+  "object",
+  "embed",
+  "math",
+  "foreignObject",
+  "desc",
+];
+const INERT_TITLES = ["svg", "template", ...REMOVED_ELEMENTS].map((element) => `${element} title`).join(", ");
+
 const escapeTitle = (title: string): string => title.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 export const offlineHtml = (html: string, title?: string): string => {
   // Only the text of the first HTML title element names the document.
-  let current: { svg: boolean } | undefined;
+  let current: { inert: boolean } | undefined;
   let firstSeen = false;
   let named = false;
   const offline = new HTMLRewriter()
     .on("title", {
       element() {
-        if (current && !current.svg) firstSeen = true;
-        current = { svg: false };
+        if (current && !current.inert) firstSeen = true;
+        current = { inert: false };
       },
       text(chunk) {
-        if (!firstSeen && !current?.svg && chunk.text.trim()) named = true;
+        if (!firstSeen && !current?.inert && chunk.text.trim()) named = true;
       },
     })
     // Runs after the title handler for the same element, in registration order.
-    .on("svg title", {
+    .on(INERT_TITLES, {
       element() {
-        if (current) current.svg = true;
+        if (current) current.inert = true;
       },
     })
-    // Chromium parses noscript content as markup when JavaScript is disabled.
-    // math, foreignObject, and desc: see the module comment.
-    .on("script, noscript, meta, base, iframe, frame, frameset, object, embed, math, foreignObject, desc", {
+    .on(REMOVED_ELEMENTS.join(", "), {
       element(element) {
         element.replace(REMOVED, { html: true });
       },
