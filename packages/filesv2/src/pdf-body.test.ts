@@ -27,13 +27,23 @@ test("a PDF streams through unchanged, even when its signature spans chunks", as
   expect(await new Response(await pdfBody(source.response)).text()).toBe("%PDF-1.7\nrest of the document");
 });
 
-test("content without the PDF signature is refused before anything is sent", async () => {
-  for (const content of [["<html><script>alert(1)</script>"], ["%PD"], [" %PDF-1.7"], []]) {
-    const source = chunked(...content);
-    await expect(pdfBody(source.response)).rejects.toMatchObject({ code: "not_pdf", status: 400 });
-    // A refused read that still has bytes left is cancelled instead of drained.
-    if (content.join("").length > 5) expect(source.cancelled()).toBe(true);
+test("bytes before the signature pass as long as a browser viewer still finds it in the first 1024 bytes", async () => {
+  for (const content of [["\uFEFF%PDF-1.4\n"], ["x".repeat(1019), "%PDF-1.7\n"]]) {
+    const served = await new Response(await pdfBody(chunked(...content).response)).bytes();
+    expect(served).toEqual(new TextEncoder().encode(content.join("")));
   }
+});
+
+test("content without the PDF signature in its first 1024 bytes is refused before anything is sent", async () => {
+  for (const content of [["<html><script>alert(1)</script>"], ["%PD"], ["x".repeat(1020), "%PDF-1.7\n"], []]) {
+    await expect(pdfBody(chunked(...content).response)).rejects.toMatchObject({ code: "not_pdf", status: 400 });
+  }
+});
+
+test("a refused read stops after the first 1024 bytes instead of draining the file", async () => {
+  const source = chunked("<html>".padEnd(1024), "%PDF-1.7\n", "rest of the file");
+  await expect(pdfBody(source.response)).rejects.toMatchObject({ code: "not_pdf" });
+  expect(source.cancelled()).toBe(true);
 });
 
 test("a failed storage read is unavailable, not a PDF error", async () => {
@@ -41,7 +51,7 @@ test("a failed storage read is unavailable, not a PDF error", async () => {
 });
 
 test("cancelling the served body cancels the storage read", async () => {
-  const source = chunked("%PDF-1.7", "more");
+  const source = chunked("%PDF-1.7".padEnd(1024), "more", "and more");
   await (await pdfBody(source.response)).cancel();
   expect(source.cancelled()).toBe(true);
 });
