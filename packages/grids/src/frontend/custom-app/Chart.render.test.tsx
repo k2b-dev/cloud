@@ -180,7 +180,7 @@ const yAxisLayout = (html: string, blockWidth: number) => {
 };
 
 test("y-axis values stay whole and close to the plot on phones and wide pages alike", () => {
-  const cases: { locale: string; values: number[]; valueFormat: NonNullable<ChartProps["valueFormat"]>; shows: string }[] = [
+  const cases: { locale: string; values: number[]; valueFormat: ChartProps["valueFormat"]; shows: string }[] = [
     {
       locale: "de",
       values: [3200.5, 14250, 9870.25, 15100],
