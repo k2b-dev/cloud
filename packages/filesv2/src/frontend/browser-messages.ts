@@ -229,8 +229,8 @@ export const browserMessages = i18n.define({
           failed ? `${failed} failed` : null,
           hidden
             ? hidden === 1
-              ? "1 hidden entry left out by the browser, upload it on its own"
-              : `${hidden} hidden entries left out by the browser, upload them on their own`
+              ? "1 hidden file left out by the browser, upload it on its own"
+              : `${hidden} hidden files left out by the browser, upload them on their own`
             : null,
         ]
           .filter(Boolean)
@@ -538,8 +538,8 @@ export const browserMessages = i18n.define({
           failed ? `${failed} fehlgeschlagen` : null,
           hidden
             ? hidden === 1
-              ? "1 versteckten Eintrag hat der Browser ausgelassen, lade ihn separat hoch"
-              : `${hidden} versteckte Einträge hat der Browser ausgelassen, lade sie separat hoch`
+              ? "1 versteckte Datei hat der Browser ausgelassen, lade sie separat hoch"
+              : `${hidden} versteckte Dateien hat der Browser ausgelassen, lade sie separat hoch`
             : null,
         ]
           .filter(Boolean)

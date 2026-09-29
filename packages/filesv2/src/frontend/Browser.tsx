@@ -624,12 +624,9 @@ export default function Browser(props: {
     },
   });
   onCleanup(() => upload.abort());
-  // `hidden` counts dropped entries the browser refused to hand over; the summary names them instead of an error.
+  // `hidden` counts dropped dot-files the browser refused to hand over; the summary names them instead of an error.
   const startUpload = (files: readonly File[], directories: readonly string[] = [], hidden = 0) => {
-    if (!files.length && !directories.length) {
-      if (hidden) toast(b().uploadSummary({ uploaded: 0, skipped: 0, failed: 0, hidden }));
-      return;
-    }
+    if (!files.length && !directories.length) return;
     if (busy() || searching() || !canCreate()) {
       toast(b().uploadUnavailable);
       return;

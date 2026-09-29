@@ -25,8 +25,9 @@ function read<T>(signal: AbortSignal, start: (resolve: (value: T) => void, rejec
 }
 
 /*
- * WebKit hides every entry whose name starts with a dot: it leaves them out of folder listings and refuses a
- * dropped one with NotFoundError ("Path does not exist"). Such a refusal is a browser limit, not a failure.
+ * WebKit leaves every entry whose name starts with a dot out of folder listings and refuses to read a dropped
+ * dot-file with NotFoundError ("Path does not exist"); a dropped dot-folder is still listed. The refusal is a
+ * browser limit, not a failure.
  */
 const refusedHidden = (entry: FileSystemEntry, error: unknown) =>
   entry.name.startsWith(".") && error instanceof DOMException && error.name === "NotFoundError";
@@ -45,7 +46,7 @@ export async function readDroppedEntries(entries: readonly FileSystemEntry[], si
     if (entry.isDirectory) {
       directories.push(path);
       const reader = (entry as FileSystemDirectoryEntry).createReader();
-      for (let listed = false; ; listed = true) {
+      for (;;) {
         signal.throwIfAborted();
         let batch: FileSystemEntry[];
         try {
@@ -53,11 +54,7 @@ export async function readDroppedEntries(entries: readonly FileSystemEntry[], si
         } catch (error) {
           // An unreadable folder, often a system folder on a volume root, costs only its own contents.
           signal.throwIfAborted();
-          if (!listed && refusedHidden(entry, error)) {
-            // Nothing below it was read yet, so the refused folder is still the last one recorded.
-            directories.pop();
-            hidden.push(path);
-          } else errors.push(`${path}: ${error instanceof Error ? error.message : "read_failed"}`);
+          errors.push(`${path}: ${error instanceof Error ? error.message : "read_failed"}`);
           break;
         }
         if (!batch.length) break;

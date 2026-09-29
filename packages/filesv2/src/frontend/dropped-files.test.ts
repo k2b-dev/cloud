@@ -73,23 +73,17 @@ test("cancelling a folder scan settles even if the browser never answers its cal
   await expect(pending).rejects.toThrow("cancelled");
 });
 
-test("hidden entries WebKit refuses are listed apart from errors, and a refused folder is not recreated", async () => {
-  // WebKit rejects a dropped entry whose name starts with a dot as if it did not exist.
+test("dot-files WebKit refuses are listed apart from errors", async () => {
+  // WebKit hands out a dropped dot-file as an entry but rejects reading it as if it did not exist.
   const refused = new DOMException("Path does not exist", "NotFoundError");
   const env = { name: ".env", isDirectory: false, isFile: true, file: (_: unknown, reject: (error: unknown) => void) => reject(refused) };
-  const config = {
-    name: ".config",
-    isDirectory: true,
-    isFile: false,
-    createReader: () => ({ readEntries: (_: unknown, reject: (error: unknown) => void) => reject(refused) }),
-  };
   const missing = { ...env, name: "gone.txt" };
   const result = await readDroppedEntries(
-    [directory("Docs", [[file("one.txt")]]), env, config, missing] as unknown as FileSystemEntry[],
+    [directory("Docs", [[file("one.txt")]]), env, missing] as unknown as FileSystemEntry[],
     new AbortController().signal,
   );
   expect(result.files.map(uploadRelativePath)).toEqual(["Docs/one.txt"]);
   expect(result.directories).toEqual(["Docs"]);
-  expect(result.hidden).toEqual([".env", ".config"]);
+  expect(result.hidden).toEqual([".env"]);
   expect(result.errors).toEqual(["gone.txt: Path does not exist"]);
 });

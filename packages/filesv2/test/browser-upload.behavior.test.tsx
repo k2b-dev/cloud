@@ -387,7 +387,7 @@ test("a loose dot-file WebKit refuses next to a dropped folder is named in the s
   expect(calls).toEqual(["mkdir Documents/Docs", "open Documents/Docs/report.txt 0 error", "commit"]);
   const toasts = [...dom.document.querySelectorAll("[data-k2b-toast]")];
   expect(toasts.map((toast) => toast.querySelector(".k2b-toast__description")?.textContent)).toEqual([
-    "1 file uploaded · 1 hidden entry left out by the browser, upload it on its own.",
+    "1 file uploaded · 1 hidden file left out by the browser, upload it on its own.",
   ]);
   expect(toasts.some((toast) => toast.querySelector('[role="alert"]'))).toBeFalse();
 });
