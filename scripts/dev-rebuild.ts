@@ -22,7 +22,7 @@ if (inputs.length === 0) {
     "",
     "Examples:",
     "  bun run dev:rebuild notebooks",
-    "  bun run dev:rebuild notebooks files grids",
+    "  bun run dev:rebuild notebooks filesv2 grids",
     "  bun run dev:rebuild --all",
   ]);
   process.exit(0);
