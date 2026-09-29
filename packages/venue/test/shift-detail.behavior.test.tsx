@@ -24,7 +24,6 @@ const venue: Venue = {
   accentColor: "#2563eb",
   logoBase64: null,
   bannerBase64: null,
-  icalToken: "calendar-token",
   permission: "read",
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",

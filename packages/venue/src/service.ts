@@ -74,7 +74,6 @@ type DbVenue = {
   accent_color: string;
   logo_base64: string | null;
   banner_base64: string | null;
-  ical_token: string;
   created_at: Date;
   updated_at: Date;
 };
@@ -241,7 +240,6 @@ const mapVenue = (row: DbVenue, permission?: PermissionLevel): Venue => ({
   accentColor: row.accent_color,
   logoBase64: row.logo_base64,
   bannerBase64: row.banner_base64,
-  icalToken: row.ical_token,
   permission,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -510,7 +508,7 @@ const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, optio
     SELECT DISTINCT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64, ''::text AS ical_token,
+      NULL::text AS logo_base64, NULL::text AS banner_base64,
       v.created_at, v.updated_at
     FROM venue.venues v
     JOIN venue.venue_access va ON va.venue_id = v.id
@@ -538,7 +536,7 @@ const discoverPublicVenues = async (options: VenueDiscoveryOptions = {}): Promis
     SELECT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64, ''::text AS ical_token,
+      NULL::text AS logo_base64, NULL::text AS banner_base64,
       v.created_at, v.updated_at
     FROM venue.venues v
     WHERE v.public_enabled = true
@@ -562,7 +560,7 @@ const getVenueSummary = async (id: string, subject?: UserLike | VenueAccessSubje
     SELECT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64, ''::text AS ical_token,
+      NULL::text AS logo_base64, NULL::text AS banner_base64,
       v.created_at, v.updated_at
     FROM venue.venues v
     WHERE v.id = ${id}::uuid
