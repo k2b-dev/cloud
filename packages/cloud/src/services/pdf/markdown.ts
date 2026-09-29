@@ -69,7 +69,7 @@ hr { border: 0; border-top: 1px solid #cbd5e1; margin: 1.5em 0; }
 `,
   report: `
 @page { size: A4; margin: 24mm 22mm 26mm; }
-:root { color: #263244; font: 10.75pt/1.58 Georgia, "Times New Roman", serif; }
+:root { color: #263244; font: 10.75pt/1.58 Georgia, "Noto Serif", "Times New Roman", serif; }
 body { margin: 0; background: #fff; }
 .markdown-document { max-width: 100%; overflow-wrap: anywhere; }
 h1, h2, h3, h4, h5, h6 { color: #13233a; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.18; break-after: avoid-page; }

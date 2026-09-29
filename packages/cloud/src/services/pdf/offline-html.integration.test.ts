@@ -10,6 +10,7 @@ import {
 } from "../../../../../scripts/fixtures/gotenberg-trap";
 import { requireInfraUrl, suiteFor } from "../../../../../scripts/fixtures/test-infra";
 import { type GotenbergConfig, renderHtmlToPdfWithConfig } from "./gotenberg";
+import { buildPresetPdfHtml } from "./markdown";
 import { renderTemplatePdfPreview } from "./template-preview";
 
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
@@ -114,6 +115,26 @@ suiteFor("gotenberg")("offline HTML in Gotenberg", () => {
     const pdf = await readPdf(result.pdf);
     expect(await trap.takeRequests()).toEqual([]);
     expect(pdf.text).toContain("stylesheet applied");
+    expect(pdf.images).toBe(2);
+  }, 60_000);
+
+  test("preset HTML loads named assets and data URLs under the offline policy, not its own", async () => {
+    const html = buildPresetPdfHtml({
+      html: `<p>Preset</p><img src="logo.png" width="40" height="40"><img src="data:image/png;base64,${PNG}" width="40" height="40">`,
+      templateId: "report",
+    });
+    expect(html).toContain("img-src 'none'");
+
+    const pdf = await readPdf(
+      (
+        await renderHtmlToPdfWithConfig(
+          { html, assets: [{ name: "logo.png", data: new Blob([Buffer.from(PNG, "base64")], { type: "image/png" }) }] },
+          config,
+        )
+      ).pdf,
+    );
+    expect(await trap.takeRequests()).toEqual([]);
+    expect(pdf.text).toContain("Preset");
     expect(pdf.images).toBe(2);
   }, 60_000);
 });

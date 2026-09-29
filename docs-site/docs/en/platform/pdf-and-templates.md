@@ -106,14 +106,18 @@ const html = buildPresetPdfHtml({
 const result = await renderHtmlToPdf({ html, title: note.title });
 ```
 
-It applies the same presets, `customCss` rules, and Content Security Policy
-as `renderMarkdownToPdf()`. That policy loads no images or fonts, not even
-named assets or `data:` URLs, so the document renders only its own text,
-inline styles, and inline SVG shapes. `html` becomes the document body as
-given, so sanitize it in the application renderer. `css` styles the
-application's own elements. It comes after the preset and before
-`customCss`, so a person's custom CSS can still override it. With `customCss`
-but no `templateId`, `css` still applies while the preset is left out.
+It applies the same presets and `customCss` rules as `renderMarkdownToPdf()`.
+`html` becomes the document body as given, so sanitize it in the application
+renderer. `css` styles the application's own elements. It comes after the
+preset and before `customCss`, so a person's custom CSS can still override it.
+With `customCss` but no `templateId`, `css` still applies while the preset is
+left out.
+
+The result renders offline like any other HTML: the offline policy replaces
+the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and
+`css` can therefore embed images and fonts as `data:` URLs or reference files
+passed as `assets` to `renderHtmlToPdf()`. Remote URLs still do not load, and
+`customCss` still cannot load any resource.
 
 The service owns conversion only. Callers still own authentication,
 authorization, request limits, filenames, response headers, and persistence.

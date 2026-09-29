@@ -75,7 +75,7 @@ i.ti { display: none; }
 ${SYMBOL_LIGATURE_CSS}
 `;
 
-// The print preset loads no fonts, so KaTeX's layout rules apply with the fallback serif.
+// Note PDFs ship no KaTeX font files, so KaTeX's layout rules apply with the fallback serif.
 const KATEX_PRINT_CSS = katexCss.replace(/@font-face\s*\{[^}]*\}/g, "");
 
 export type NotePdfHtmlInput = {
