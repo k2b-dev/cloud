@@ -10,6 +10,7 @@ import {
   type Venue,
 } from "./contracts";
 import { venueMessages } from "./messages";
+import { formatVenueDateTime, formatVenueTimeRange } from "./time-format";
 
 type PublicAvailabilityInput = {
   venue: Pick<Venue, "openMode" | "timezone">;
@@ -49,21 +50,9 @@ const dateKeyAfterDays = (date: string, days: number, timezone: string): string 
 
 const weekdayFor = (dateKey: string): number => new Date(`${dateKey}T12:00:00Z`).getUTCDay();
 
-const formatDateTime = (iso: string, timezone: string, locale: string): string =>
-  new Intl.DateTimeFormat(locale, {
-    timeZone: timezone,
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(iso));
-
-const formatTimeRange = (opening: PublicOpening, timezone: string, locale: string): string => {
-  const formatter = new Intl.DateTimeFormat(locale, { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  return `${formatter.format(new Date(opening.startsAt))}-${formatter.format(new Date(opening.endsAt))}`;
-};
+/** The public page's one date and time format: `Tue, Sep 29, 11:00` and `11:00–18:00`, in the venue's time zone. */
+const formatTimeRange = (opening: PublicOpening, timezone: string, locale: string): string =>
+  formatVenueTimeRange(opening.startsAt, opening.endsAt, timezone, locale);
 
 const exactOpeningKey = (opening: PublicOpening): string => `${opening.startsAt}:${opening.endsAt}`;
 
@@ -192,7 +181,7 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
       todayWindows.length > 0
         ? todayWindows.map((opening) => formatTimeRange(opening, timezone, locale)).join(", ")
         : t.noRegularHoursToday,
-    nextOpeningLabel: nextOpening ? formatDateTime(nextOpening.startsAt, timezone, locale) : null,
+    nextOpeningLabel: nextOpening ? formatVenueDateTime(nextOpening.startsAt, timezone, locale) : null,
     activeWindowLabel: open && activeOpening ? formatTimeRange(activeOpening, timezone, locale) : null,
     upcomingOpenings: upcomingDynamicOpenings.filter((opening) => new Date(opening.startsAt) > input.now).slice(0, 8),
     upcomingExceptions: upcomingPublicExceptions(input.overrides, today, timezone),

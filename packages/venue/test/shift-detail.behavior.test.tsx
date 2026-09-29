@@ -152,12 +152,13 @@ const harness = async (dom: DomTestHarness) => {
       width?: number;
       initialShiftId?: string | null;
       viewSource?: "url" | "cookie" | "default";
+      calendarView?: "week" | "mobile-month";
       dashboard?: VenueDashboard;
     } = {},
   ) => {
     dom.window.happyDOM.setViewport({ width: options.width ?? 1440, height: 900 });
     const shared = options.initialShiftId ? `&shift=${options.initialShiftId}` : "";
-    dom.window.history.replaceState(null, "", `/app/venue/Cafe01/shifts?cv=week&cd=${shiftDay}${shared}`);
+    dom.window.history.replaceState(null, "", `/app/venue/Cafe01/shifts?cv=${options.calendarView ?? "week"}&cd=${shiftDay}${shared}`);
     return render(
       () => (
         <LocaleProvider locale="en">
@@ -169,7 +170,7 @@ const harness = async (dom: DomTestHarness) => {
             accessEntries={[]}
             apiKeys={[]}
             initialView="shifts"
-            initialCalendarView="week"
+            initialCalendarView={options.calendarView ?? "week"}
             initialCalendarViewSource={options.viewSource ?? "url"}
             initialCalendarDate={shiftDay}
             initialShiftId={options.initialShiftId ?? null}
@@ -440,6 +441,43 @@ describe("Venue shift detail", () => {
         dispose();
       }
     } finally {
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("the phone month brings the chosen day's shifts into view below its grid", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    const scrolled: Array<{ target: string; options: unknown }> = [];
+    const prototype = dom.window.HTMLElement.prototype as HTMLElement;
+    const previousScroll = Object.getOwnPropertyDescriptor(prototype, "scrollIntoView");
+    Object.defineProperty(prototype, "scrollIntoView", {
+      configurable: true,
+      value(this: HTMLElement, options?: ScrollIntoViewOptions) {
+        scrolled.push({ target: this.className, options });
+      },
+    });
+    try {
+      const page = await harness(dom);
+      let dispose = page.mount("write", { width: 390, calendarView: "mobile-month" });
+      await flush();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(scrolled).toEqual([{ target: "k2b-calendar-mobile-month__agenda", options: { block: "nearest" } }]);
+      expect(dom.root.querySelector(".k2b-content-calendar")?.className).not.toContain("min-h-[42rem]");
+      dispose();
+
+      // The week and day grids keep their place and their full height.
+      scrolled.length = 0;
+      dispose = page.mount("write", { width: 1440 });
+      await flush();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(scrolled).toEqual([]);
+      expect(dom.root.querySelector(".k2b-content-calendar")?.className).toContain("min-h-[42rem]");
+      dispose();
+    } finally {
+      if (previousScroll) Object.defineProperty(prototype, "scrollIntoView", previousScroll);
+      else Reflect.deleteProperty(prototype, "scrollIntoView");
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }

@@ -42,8 +42,10 @@ export const parseDateKey = (value: string): Date => {
   const parsed = new Date(value + "T12:00:00Z");
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
+/** Monday first, Sunday last, the way the calendar, the shift list, and the public page count a week. */
+const mondayFirst = (weekday: number): number => (weekday + 6) % 7;
 export const sortOpeningRules = (rules: OpeningRule[]) =>
-  [...rules].sort((a, b) => a.weekday - b.weekday || a.startTime.localeCompare(b.startTime));
+  [...rules].sort((a, b) => mondayFirst(a.weekday) - mondayFirst(b.weekday) || a.startTime.localeCompare(b.startTime));
 export const sortOverrides = (entries: DateOverride[]) => [...entries].sort((a, b) => a.date.localeCompare(b.date));
 export const sortShiftTemplates = (templates: ShiftTemplate[]) =>
   [...templates].sort((a, b) => a.weekday - b.weekday || a.startTime.localeCompare(b.startTime));

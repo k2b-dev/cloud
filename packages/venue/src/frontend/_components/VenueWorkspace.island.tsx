@@ -176,6 +176,22 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       .filter(({ bucket }) => bucket.averageRating !== null)
       .map(({ bucket, index }) => ({ x: index + 1, y: bucket.averageRating ?? 0 })),
   );
+  /**
+   * One slot per day with ratings, with half a slot of room at both ends so a single day sits in the middle.
+   * Only whole slots are days: a tick between two days stays unlabeled instead of repeating a date.
+   */
+  const feedbackChartXAxis = createMemo(() => {
+    const labels = feedbackChartLabels();
+    return {
+      domain: [0.5, Math.max(1, labels.length) + 0.5] as [number, number],
+      ticks: Math.min(Math.max(1, labels.length), 6),
+      format: (value: number) => {
+        const day = Math.round(value);
+        return Math.abs(value - day) < 1e-6 ? (labels[day - 1] ?? "") : "";
+      },
+    };
+  });
+  const feedbackChartYAxis = { domain: [1, 5] as [number, number], ticks: 5, format: (value: number) => `${value}/5` };
   // Shift sign-up needs staff access and a Venue that takes sign-ups for its shifts; the server enforces both.
   const canJoinShifts = () => canWrite(venue()) && venue().signupMode !== "free";
   /** Midday of the first and last day the calendar grid shows (weeks start on Monday). */
@@ -458,6 +474,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       return;
     }
     cookies.writeCookie(CALENDAR_VIEW_COOKIE, calendarView());
+    // The phone month lists the chosen day's shifts below its grid; every day tap loads the page anew at the top,
+    // so bring that list into view, scrolling only as far as it needs.
+    if (calendarView() === "mobile-month") {
+      requestAnimationFrame(() => {
+        if (!disposed) document.querySelector(".k2b-calendar-mobile-month__agenda")?.scrollIntoView({ block: "nearest" });
+      });
+    }
   });
 
   onCleanup(() => {
@@ -609,13 +632,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                         aria-hidden="true"
                       />
                       {canJoinShifts()
-                        ? t().thisWeekFreeSpots({ count: dashboard().outlook.missingPeople })
-                        : t().thisWeekUnfilledSpots({ count: dashboard().outlook.missingPeople })}
+                        ? t().nextDaysFreeSpots({ count: dashboard().outlook.missingPeople })
+                        : t().nextDaysUnfilledSpots({ count: dashboard().outlook.missingPeople })}
                     </span>
                     <span class="inline-flex min-w-0 flex-wrap items-center gap-x-1.5">
                       <i class="ti ti-calendar-exclamation text-dimmed" aria-hidden="true" />
                       <span class="text-dimmed">{t().nextGapLabel}</span>
-                      <Show when={dashboard().outlook.nextGap} fallback={<span class="text-dimmed">{t().noGapThisWeek}</span>}>
+                      <Show when={dashboard().outlook.nextGap} fallback={<span class="text-dimmed">{t().noGapNextDays}</span>}>
                         {(gap) => {
                           const id = () => slotSelectionId(gap().templateId, gap().date);
                           return (
@@ -656,7 +679,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                     </div>
                   </div>
                   <Calendar
-                    class="min-h-[42rem] flex-1"
+                    // The phone month is a compact picker with the day's list below it; only the grids fill a tall pane.
+                    class={calendarView() === "mobile-month" ? "flex-1" : "min-h-[42rem] flex-1"}
                     date={calendarDate()}
                     view={calendarView()}
                     views={["day", "week", "month"]}
@@ -826,16 +850,30 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                   </StatGrid>
 
                   {/* Straight segments on the full 1–5 scale, so the line neither overshoots nor exaggerates small changes. */}
+                  {/* A line needs two days; a single day's average shows as a point. */}
                   <div class="paper flex h-64 flex-col gap-1 p-3 text-dimmed">
                     <p class="text-xs font-medium">{t().averageRating}</p>
-                    <Chart
-                      kind="line"
-                      class="min-h-0 flex-1"
-                      series={[{ label: t().averageRating, data: feedbackChartData() }]}
-                      xAxis={{ format: (value) => feedbackChartLabels()[Math.max(0, Math.round(value) - 1)] ?? "" }}
-                      yAxis={{ domain: [1, 5], ticks: 5, format: (value) => `${value}/5` }}
-                      smooth={false}
-                    />
+                    <Show
+                      when={feedbackChartData().length > 1}
+                      fallback={
+                        <Chart
+                          kind="scatter"
+                          class="min-h-0 flex-1"
+                          series={[{ label: t().averageRating, data: feedbackChartData() }]}
+                          xAxis={feedbackChartXAxis()}
+                          yAxis={feedbackChartYAxis}
+                        />
+                      }
+                    >
+                      <Chart
+                        kind="line"
+                        class="min-h-0 flex-1"
+                        series={[{ label: t().averageRating, data: feedbackChartData() }]}
+                        xAxis={feedbackChartXAxis()}
+                        yAxis={feedbackChartYAxis}
+                        smooth={false}
+                      />
+                    </Show>
                   </div>
                   <div class="paper flex h-40 flex-col gap-1 p-3 text-dimmed">
                     <p class="text-xs font-medium">{t().ratingsPerDay}</p>

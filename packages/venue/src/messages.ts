@@ -138,12 +138,12 @@ export const venueMessages = i18n.define({
       gapsOnly: "Gaps only",
       noFreeShiftsUntil: ({ date }: { date: string }) => `No free shifts up to ${date}`,
       noFreeShiftsUntilDescription: "Turn off Only free to see full shifts as well, or load more shifts.",
-      thisWeekFreeSpots: ({ count }: { count: number }) =>
-        count === 0 ? "This week: no free spots" : `This week: ${count} ${count === 1 ? "spot" : "spots"} free`,
-      thisWeekUnfilledSpots: ({ count }: { count: number }) =>
-        count === 0 ? "This week: no unfilled spots" : `This week: ${count} unfilled ${count === 1 ? "spot" : "spots"}`,
+      nextDaysFreeSpots: ({ count }: { count: number }) =>
+        count === 0 ? "Next 7 days: no free spots" : `Next 7 days: ${count} ${count === 1 ? "spot" : "spots"} free`,
+      nextDaysUnfilledSpots: ({ count }: { count: number }) =>
+        count === 0 ? "Next 7 days: no unfilled spots" : `Next 7 days: ${count} unfilled ${count === 1 ? "spot" : "spots"}`,
       nextGapLabel: "Next unstaffed shift:",
-      noGapThisWeek: "none this week",
+      noGapNextDays: "none in the next 7 days",
       publicPageLinkCopied: "Public page link copied",
       copyPublicPageFailed: "Could not copy public page link",
       openPublicPageFailed: "Could not open public page",
@@ -691,12 +691,12 @@ export const venueMessages = i18n.define({
       gapsOnly: "Nur Lücken",
       noFreeShiftsUntil: ({ date }) => `Keine freien Schichten bis ${date}`,
       noFreeShiftsUntilDescription: "Schalte „Nur freie“ aus, um auch volle Schichten zu sehen, oder lade weitere Schichten.",
-      thisWeekFreeSpots: ({ count }) =>
-        count === 0 ? "Diese Woche: keine freien Plätze" : `Diese Woche: ${count} ${count === 1 ? "Platz" : "Plätze"} frei`,
-      thisWeekUnfilledSpots: ({ count }) =>
-        count === 0 ? "Diese Woche: keine unbesetzten Plätze" : `Diese Woche: ${count} ${count === 1 ? "Platz" : "Plätze"} unbesetzt`,
+      nextDaysFreeSpots: ({ count }) =>
+        count === 0 ? "Nächste 7 Tage: keine freien Plätze" : `Nächste 7 Tage: ${count} ${count === 1 ? "Platz" : "Plätze"} frei`,
+      nextDaysUnfilledSpots: ({ count }) =>
+        count === 0 ? "Nächste 7 Tage: keine unbesetzten Plätze" : `Nächste 7 Tage: ${count} ${count === 1 ? "Platz" : "Plätze"} unbesetzt`,
       nextGapLabel: "Nächste unbesetzte Schicht:",
-      noGapThisWeek: "keine in dieser Woche",
+      noGapNextDays: "keine in den nächsten 7 Tagen",
       publicPageLinkCopied: "Link zur öffentlichen Seite kopiert",
       copyPublicPageFailed: "Der Link zur öffentlichen Seite konnte nicht kopiert werden",
       openPublicPageFailed: "Die öffentliche Seite konnte nicht geöffnet werden",

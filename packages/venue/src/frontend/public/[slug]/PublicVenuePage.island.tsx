@@ -2,11 +2,11 @@ import { timing } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
 import { query } from "@k2b/stdlib/solid";
 import { Paper, useLocale } from "@k2b/ui";
-import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { type PublicStatus, PublicStatusSchema } from "../../../contracts";
 import { venueMessages } from "../../../messages";
-import { FitList } from "../../_components/fit-list";
+import { FitBlock } from "../../_components/fit-list";
 import PublicFeedbackForm from "../../_components/PublicFeedbackForm.island";
 import {
   ExceptionRow,
@@ -22,34 +22,11 @@ import {
 import { PublicRefreshNotice, type RefreshDiagnostics } from "../../public-refresh-notice";
 import { type VenuePublicDisplayHeight, venuePublicRefreshBackoffMs } from "../../public-runtime";
 
-/** A monitor block whose rows are cut to its height, with a count of what it leaves out. */
-function DisplayBlock<T>(props: {
-  title: string;
-  items: readonly T[];
-  initial: number;
-  empty?: string;
-  block: string;
-  children: (item: T) => JSX.Element;
-}) {
-  const locale = useLocale();
-  const t = () => venueMessages.resolve([locale()]).t;
-  return (
-    // Every block keeps at least its heading and one row, so a short screen still says what it leaves out.
-    <Paper as="section" class="flex min-h-28 flex-[0_1_auto] flex-col gap-2 p-4 lg:gap-3 lg:p-5" data-public-block={props.block}>
-      <h2 class="shrink-0 text-base font-semibold text-primary lg:text-lg">{props.title}</h2>
-      <Show when={props.items.length > 0} fallback={<p class="text-sm text-secondary">{props.empty}</p>}>
-        <FitList items={props.items} initial={props.initial} more={(count) => t().moreItems({ count })}>
-          {props.children}
-        </FitList>
-      </Show>
-    </Paper>
-  );
-}
-
 /**
  * The monitor: one screen without scrolling, always dark. Wide screens show two columns when the second one has
  * something to show; a screen taller than it is wide, such as a portrait kiosk or a phone, shows one. Lists cut
- * to the space they get and say "+N more" for the rest.
+ * to the space they get and say "+N more" for the rest, and each keeps at least one row. The feedback code shows
+ * whenever everything fits with it; otherwise the lists get its room.
  */
 function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } & RefreshDiagnostics) {
   const locale = useLocale();
@@ -60,6 +37,31 @@ function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } 
   const staffedOpenings = () => status().venue.openMode !== "regular";
   const feedbackQr = () => (status().venue.feedbackEnabled ? props.feedbackQr : null);
   const hasSecondColumn = () => status().upcomingExceptions.length > 0 || staffedOpenings() || Boolean(feedbackQr());
+  const moreItems = (count: number) => t().moreItems({ count });
+
+  // Whether the feedback code fits: shown and measured in one go, so it never flashes when it does not.
+  const [qrFits, setQrFits] = createSignal(true);
+  let layout: HTMLDivElement | undefined;
+  let frame = 0;
+  const placeQr = () => {
+    if (!layout) return;
+    setQrFits(true);
+    if (layout.scrollHeight > layout.clientHeight + 1) setQrFits(false);
+  };
+  onMount(() => {
+    if (!layout || typeof ResizeObserver === "undefined") return;
+    // Any block that changes size may change what fits; measuring waits a frame so it never loops within one.
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(placeQr);
+    });
+    observer.observe(layout);
+    for (const block of Array.from(layout.querySelectorAll("section"))) observer.observe(block);
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    });
+  });
   return (
     <main
       class="relative h-dvh overflow-hidden text-primary"
@@ -81,41 +83,49 @@ function FullDisplay(props: { status: PublicStatus; feedbackQr: string | null } 
           exceptions, staffed openings, or a feedback code, a wide screen shows one column instead of an empty half.
         */}
         <div
+          ref={layout}
           class={`flex min-h-0 flex-1 flex-col gap-4 ${hasSecondColumn() ? "landscape:grid landscape:grid-cols-2" : ""}`}
           data-display-layout=""
         >
           <div class="contents landscape:flex landscape:min-h-0 landscape:flex-1 landscape:flex-col landscape:gap-4">
             <StatusCard status={status()} display />
             <Show when={hasRegularHours(status())}>
-              <DisplayBlock title={t().regularHours} block="hours" items={groupedOpeningHours(status().openingRules)} initial={7}>
+              <FitBlock
+                title={t().regularHours}
+                block="hours"
+                items={groupedOpeningHours(status().openingRules)}
+                initial={7}
+                more={moreItems}
+              >
                 {(entry) => <HoursRow entry={entry} today={entry.weekday === todayWeekday()} />}
-              </DisplayBlock>
+              </FitBlock>
             </Show>
           </div>
           <Show when={hasSecondColumn()}>
             <div class="contents landscape:flex landscape:min-h-0 landscape:flex-col landscape:gap-4">
               <Show when={status().upcomingExceptions.length > 0}>
-                <DisplayBlock title={t().changedHours} block="exceptions" items={status().upcomingExceptions} initial={3}>
+                <FitBlock title={t().changedHours} block="exceptions" items={status().upcomingExceptions} initial={3} more={moreItems}>
                   {(exception) => <ExceptionRow exception={exception} today={today()} />}
-                </DisplayBlock>
+                </FitBlock>
               </Show>
               <Show when={staffedOpenings()}>
-                <DisplayBlock
+                <FitBlock
                   title={t().upcomingStaffedOpenings}
                   block="openings"
                   items={status().upcomingOpenings}
                   initial={5}
                   empty={t().noStaffedOpening}
+                  more={moreItems}
                 >
                   {(opening) => <OpeningRow opening={opening} timeZone={status().venue.timezone} />}
-                </DisplayBlock>
+                </FitBlock>
               </Show>
               <Show when={feedbackQr()}>
                 {(svg) => (
-                  // On a short portrait screen, such as a phone, the lists need the room more than a code to scan.
+                  // Where the lists need its room, such as on a phone, the code gives way to them.
                   <Paper
                     as="section"
-                    class="flex shrink-0 items-center gap-5 p-5 [@media(orientation:portrait)_and_(max-height:900px)]:hidden"
+                    class={`flex shrink-0 items-center gap-5 p-5 ${qrFits() ? "" : "hidden"}`}
                     data-public-block="feedback-qr"
                   >
                     {/* A QR code needs a light background to scan, also on the dark monitor. */}

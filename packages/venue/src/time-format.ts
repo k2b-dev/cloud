@@ -13,13 +13,24 @@ const DAY = { weekday: "short", day: "numeric", month: "short" } as const;
 export const formatVenueTime = (iso: string, timeZone: string, locale?: string): string =>
   venueFormat(timeZone, locale, HOUR_MINUTE).format(new Date(iso));
 
+/** `Mon, Sep 28` / `Mo., 28. Sept.`: a day in the Venue's time zone, never with a zero-padded day. */
+export const formatVenueDay = (iso: string, timeZone: string, locale?: string): string =>
+  venueFormat(timeZone, locale, DAY).format(new Date(iso));
+
+/** `14:00–18:00` for two venue clock times, such as opening hours; the one dash every Venue range uses. */
+export const formatClockRange = (start: string, end: string): string => `${start}–${end}`;
+
+/** `14:00–18:00`: the Venue's wall-clock times of a stretch between two instants. */
+export const formatVenueTimeRange = (startsAt: string, endsAt: string, timeZone: string, locale?: string): string =>
+  formatClockRange(formatVenueTime(startsAt, timeZone, locale), formatVenueTime(endsAt, timeZone, locale));
+
 /** `Mon, Sep 28, 14:00` / `Mo., 28. Sept., 14:00` */
 export const formatVenueDateTime = (iso: string, timeZone: string, locale?: string): string =>
   venueFormat(timeZone, locale, { ...DAY, ...HOUR_MINUTE }).format(new Date(iso));
 
 /** `Mon, Sep 28 · 14:00–18:00`: the day a shift starts and its time range. */
 export const formatVenueSpan = (startsAt: string, endsAt: string, timeZone: string, locale?: string): string =>
-  `${venueFormat(timeZone, locale, DAY).format(new Date(startsAt))} · ${formatVenueTime(startsAt, timeZone, locale)}–${formatVenueTime(endsAt, timeZone, locale)}`;
+  `${formatVenueDay(startsAt, timeZone, locale)} · ${formatVenueTimeRange(startsAt, endsAt, timeZone, locale)}`;
 
 /** A date key such as `2026-09-28` as a calendar day. Date keys name a day, so no time zone shifts them. */
 export const formatDateKey = (

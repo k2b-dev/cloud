@@ -112,9 +112,9 @@ const status = (overrides: Partial<PublicStatus> = {}): PublicStatus => ({
   open: true,
   spontaneousOpen: false,
   statusLabel: "Open now",
-  todayLabel: "11:00-18:00",
+  todayLabel: "11:00–18:00",
   nextOpeningLabel: "Tue, 30 Sep, 11:00",
-  activeWindowLabel: "11:00-18:00",
+  activeWindowLabel: "11:00–18:00",
   upcomingOpenings: [],
   upcomingExceptions: [
     { date: "2099-10-03", kind: "closed", startTime: null, endTime: null, note: "Public holiday" },
@@ -231,12 +231,45 @@ describe("Venue public page", () => {
     expect(facts).toContain("Sat, Oct 17 Special opening 18:00–23:00 · Long night");
     // This week's hours start open and fold away natively.
     expect(html).toMatch(/<details[^>]*class="k2b-disclosure public-hours[^"]*"[^>]*open/);
-    expect(facts).toContain("Monday 11:00-18:00");
+    expect(facts).toContain("Monday 11:00–18:00");
+  });
+
+  test("formats every time range with an en dash and every date without a zero-padded day", () => {
+    const html = text(
+      renderPage(
+        status({
+          venue: { ...venue, openMode: "combined" },
+          upcomingOpenings: [opening(3)],
+          // Monday stays closed; Tuesday has two windows.
+          openingRules: [
+            ...everyDay.filter((rule) => rule.weekday !== 1),
+            { ...everyDay[2]!, id: "Rule2b", startTime: "19:00", endTime: "22:00", note: "Bar" },
+          ],
+        }),
+      ),
+    );
+    expect(html).toContain("Monday Closed");
+    expect(html).toContain("Tuesday 11:00–18:00 & 19:00–22:00 (Bar)");
+    expect(html).toContain("Sat, Oct 3 17:00–21:00");
+    expect(html).not.toMatch(/\d{2}:\d{2}-\d{2}:\d{2}/);
+
+    const german = text(renderPage(status({ venue: { ...venue, openMode: "combined" }, upcomingOpenings: [opening(3)] }), "scroll", "de"));
+    expect(german).toContain("Sa., 3. Okt. 17:00–21:00");
+    expect(german).not.toContain("03. Okt.");
+  });
+
+  test("lists all seven weekdays from Monday once regular hours exist, closed days included", () => {
+    const html = text(renderPage(status({ openingRules: everyDay.filter((rule) => rule.weekday === 3) })));
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => html.indexOf(day));
+    expect(days.every((index) => index >= 0)).toBeTrue();
+    expect(days).toEqual(days.toSorted((a, b) => a - b));
+    expect(html.split("Closed").length - 1).toBeGreaterThanOrEqual(6);
+    expect(html).toContain("Wednesday 11:00–18:00");
   });
 
   test("names the current window once and has no separate Today card", () => {
-    const html = text(renderPage(status({ openingRules: [] })));
-    expect(html.split("11:00-18:00").length - 1).toBe(1);
+    const html = text(renderPage(status({ openingRules: [], activeWindowLabel: "11:00–18:00" })));
+    expect(html.split("11:00–18:00").length - 1).toBe(1);
     expect(html).not.toContain("Today");
   });
 
@@ -331,6 +364,11 @@ describe("Venue monitor", () => {
   test("keeps the feedback QR code on a light tile and the surfaces on tokens", () => {
     const html = renderPage(status(), "full");
     expect(html).toContain("rounded-lg bg-white p-2");
+    // Whether the code fits is measured in the browser, not guessed from the screen's shape.
+    const qr = html.match(/<section[^>]*data-public-block="feedback-qr"[^>]*>/)?.[0] ?? "";
+    expect(qr).not.toBe("");
+    expect(qr).not.toContain("hidden");
+    expect(qr).not.toContain("portrait");
     expect(html).not.toMatch(/\bshadow-(?:lg|xl)\b/);
   });
 });
