@@ -114,6 +114,25 @@
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
+/* On a coarse pointer, previous and next take taps in the same 44 px area as a
+   `.k2b-button` (see the touch-target rule in index.css): next does not reach
+   back over previous, and the visible buttons keep their size. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-calendar-header__nav-button {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-calendar-header__nav-button::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - 2.75rem) / 2));
+  }
+
+  .k2b-ui .k2b-calendar-header__nav-button + .k2b-calendar-header__nav-button::after {
+    inset-inline-start: 0;
+  }
+}
+
 .k2b-ui :is(.k2b-calendar-header__today, .k2b-calendar-header__nav-button):hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
@@ -841,6 +860,12 @@
 
 .k2b-ui .k2b-calendar-mobile-month__agenda {
   margin-top: 1rem;
+}
+
+/* A bounded picker: its weeks are finger-sized rows (set on the grid)
+   instead of the month view's full height. */
+.k2b-ui .k2b-calendar-mobile-month .k2b-calendar-month {
+  min-height: 0;
 }
 
 .k2b-ui .k2b-calendar-mobile-month__title {

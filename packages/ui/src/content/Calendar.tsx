@@ -765,6 +765,7 @@ const MonthView = (props: {
   now: Date;
   events: NormalizedEvent[];
   labels: Required<CalendarLabels>;
+  compact?: boolean;
 }): JSX.Element => {
   const messages = useUiMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
@@ -818,7 +819,11 @@ const MonthView = (props: {
   };
   onCleanup(() => cancelInteraction?.());
   return (
-    <div class="k2b-calendar-month" style={{ "grid-template-rows": `auto repeat(${weeks().length}, minmax(5rem, 1fr))` }}>
+    <div
+      class="k2b-calendar-month"
+      // The mobile month is a bounded picker: finger-sized weeks that keep the selected day's agenda close below.
+      style={{ "grid-template-rows": `auto repeat(${weeks().length}, ${props.compact ? "minmax(2.75rem, auto)" : "minmax(5rem, 1fr)"})` }}
+    >
       <div class="k2b-calendar-month__weekdays" data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}>
         <Show when={props.owner.withWeekNumbers}>
           <div class="k2b-calendar-month__weekday">{messages().weekShort}</div>
@@ -1568,6 +1573,7 @@ const MobileMonthView = (props: {
         now={props.now}
         events={props.events}
         labels={props.labels}
+        compact
       />
       <div class="k2b-calendar-mobile-month__agenda">
         <div class="k2b-calendar-mobile-month__title">
