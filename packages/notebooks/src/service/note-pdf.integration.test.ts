@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inflateSync } from "node:zlib";
 import { type GotenbergConfig, renderHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
 import { pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -40,6 +41,23 @@ const pdfFonts = async (pdf: Uint8Array) =>
       const [emb, sub, uni] = fields.slice(-5, -2);
       return { name: fields[0]!.replace(/^[A-Z]{6}\+/, ""), embedded: emb === "yes", subset: sub === "yes", unicode: uni === "yes" };
     });
+
+/**
+ * Letters that Chromium drew as one ligature glyph, such as `ffi`. It marks
+ * each ligature glyph with its letters as `ActualText`, which copy and search use.
+ */
+const pdfLigatures = (pdf: Uint8Array): string[] => {
+  const raw = Buffer.from(pdf).toString("latin1");
+  return [...raw.matchAll(/stream\r?\n([\s\S]*?)endstream/g)].flatMap(([, data = ""]) => {
+    let content = data;
+    try {
+      content = inflateSync(Buffer.from(data, "latin1")).toString("latin1");
+    } catch {
+      // Not Flate-compressed: search the stream as stored.
+    }
+    return [...content.matchAll(/\/ActualText \(([^)]*)\)/g)].map(([, letters = ""]) => letters);
+  });
+};
 
 suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
   let config: GotenbergConfig;
@@ -84,14 +102,16 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       `Body: ${words}. Arrows -> <- <-> => <=> and x != y, a <= b, c >= d (c) 2026 ...`,
       "```ts\nconst office = (fluffy) => fluffy !== affine; // -> => != ffi\n```",
     ].join("\n\n");
-    // The last style names DejaVu Sans, whose `fi`, `ffi` and `ffl` ligatures must still copy as letters.
-    for (const style of [
-      { templateId: "document" },
-      { templateId: "report" },
-      { customCss: ':root { font: 11pt "DejaVu Sans", sans-serif; }' },
+    // In Gotenberg, Noto Sans forms f-ligatures: the document preset throughout and the report's
+    // headings. The report's body font, Liberation Serif, has none.
+    for (const { templateId, ligatures } of [
+      { templateId: "document", ligatures: ["ffi", "ffl", "fi", "fl"] },
+      { templateId: "report", ligatures: ["ffi", "fi", "fl"] },
     ] as const) {
-      const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", ...style });
+      const html = buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", templateId });
       const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Ligatures" }, config)).pdf;
+      // The ligature glyphs are really there, so the plain-letter checks below cover them.
+      expect(pdfLigatures(pdf)).toEqual(expect.arrayContaining([...ligatures]));
       const text = await pdfText(pdf);
       expect(text).toContain("Office flow → finally ≠ done");
       expect(text).toContain(`Body: ${words}.`);
