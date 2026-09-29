@@ -10,19 +10,32 @@ type LocaleContext = {
 };
 
 /**
+ * Languages Cloud ships platform catalogs for and offers in its language
+ * picker. `Accept-Language` negotiation prefers a tag in one of these.
+ */
+const CATALOG_LANGUAGES = new Set(["en", "de"]);
+
+/**
  * The caller's explicit locale preference, or `undefined` when the request
  * carries none. Precedence: `x-cloud-locale` transport metadata, then the
- * `cloud.locale` cookie, then `Accept-Language` in quality order. Every
- * candidate is canonicalized; invalid tags fall through to the next source.
+ * `cloud.locale` cookie, then `Accept-Language`. Every candidate is
+ * canonicalized; invalid tags fall through to the next source.
+ *
+ * `Accept-Language` picks the first tag in quality order whose language has a
+ * catalog, keeping its region (`de-CH`, `en-GB`) for formatting. Without such a
+ * tag, the first valid tag still wins so formatting follows the browser.
  */
 export const preferredLocale = (headers: Headers): string | undefined => {
   const explicit = canonicalLocale(headers.get(LOCALE_HEADER)) ?? canonicalLocale(readCookie(headers, LOCALE_COOKIE));
   if (explicit) return explicit;
+  let firstValid: string | undefined;
   for (const tag of i18n.parseAcceptLanguage(headers.get("Accept-Language"))) {
     const candidate = canonicalLocale(tag);
-    if (candidate) return candidate;
+    if (!candidate) continue;
+    if (CATALOG_LANGUAGES.has(new Intl.Locale(candidate).language)) return candidate;
+    firstValid ??= candidate;
   }
-  return undefined;
+  return firstValid;
 };
 
 /**
