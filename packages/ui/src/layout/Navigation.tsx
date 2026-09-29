@@ -24,8 +24,12 @@ export default function Navigation(props: NavigationProps) {
         {(id) => {
           const item = () => rows.items.find((entry) => entry.id === id)!;
           const disabled = () => rows.disabled || item().disabled;
-          const open = () => expanded()[id] ?? item().defaultExpanded ?? true;
-          const toggle = () => setExpanded((current) => ({ ...current, [id]: !open() }));
+          // `expanded` hands disclosure to the item's owner; every other toggle stays local to this renderer.
+          const open = () => item().expanded ?? expanded()[id] ?? item().defaultExpanded ?? true;
+          const toggle = () => {
+            if (item().expanded !== undefined) props.navigation.onExpandedChange?.(id, !open());
+            else setExpanded((current) => ({ ...current, [id]: !open() }));
+          };
           const content = () => (
             <>
               <Show when={item().icon}>

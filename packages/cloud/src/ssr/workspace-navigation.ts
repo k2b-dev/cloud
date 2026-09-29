@@ -49,12 +49,14 @@ export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined 
   try {
     const value: unknown = JSON.parse(owner.textContent ?? "");
     if (!value || typeof value !== "object" || !("items" in value) || !validItems(value.items)) return;
-    // SSR links work before the app island loads; action handlers are not yet available.
+    // SSR links work before the app island loads; action and disclosure handlers are not yet available,
+    // so the owner's folds only set where the local disclosure starts.
     const links = (items: readonly NavigationItem[]): NavigationItem[] =>
       items.map((item) => ({
         ...item,
         disabled: item.disabled || Boolean(item.action && !item.href),
         ...(item.href ? { action: undefined } : {}),
+        ...(item.expanded !== undefined ? { expanded: undefined, defaultExpanded: item.expanded } : {}),
         ...(item.children ? { children: links(item.children) } : {}),
         ...(item.actions ? { actions: links(item.actions) } : {}),
       }));

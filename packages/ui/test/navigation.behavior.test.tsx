@@ -154,3 +154,77 @@ test("collapsed groups disclose with a chevron without dismissing the host and p
     dom.cleanup();
   }
 });
+
+test("an owner that handles expansion keeps disclosure across renderers and reveals rows itself", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const [open, setOpen] = createSignal<readonly string[]>([]);
+  const changes: Array<[string, boolean]> = [];
+  const navigation = createNavigation({
+    items: () => [
+      {
+        id: "guide",
+        label: "Guide",
+        href: "/guide",
+        expanded: open().includes("guide"),
+        children: [{ id: "setup", label: "Setup", href: "/setup" }],
+      },
+      { id: "section", label: "Section", children: [{ id: "other", label: "Other", href: "/other" }] },
+    ],
+    onExpandedChange: (id, expanded) => {
+      changes.push([id, expanded]);
+      setOpen((current) => (expanded ? [...current, id] : current.filter((entry) => entry !== id)));
+    },
+  });
+  const mount = () => {
+    const host = dom.document.createElement("div");
+    dom.root.append(host);
+    const dispose = render(() => <Navigation navigation={navigation} label="Book" />, host);
+    const disclosure = (label: string) =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")).find(
+        (button) => button.getAttribute("aria-label") === label || button.textContent === label,
+      )!;
+    return { disclosure, dispose };
+  };
+  try {
+    const first = mount();
+    expect(first.disclosure("Guide").getAttribute("aria-expanded")).toBe("false");
+    first.disclosure("Guide").click();
+    expect(changes).toEqual([["guide", true]]);
+    expect(first.disclosure("Guide").getAttribute("aria-expanded")).toBe("true");
+    // Items without an owner-held state keep the renderer-local default.
+    first.disclosure("Section").click();
+    expect(first.disclosure("Section").getAttribute("aria-expanded")).toBe("false");
+    expect(changes).toEqual([["guide", true]]);
+    first.dispose();
+
+    const reopened = mount();
+    expect(reopened.disclosure("Guide").getAttribute("aria-expanded")).toBe("true");
+    expect(reopened.disclosure("Section").getAttribute("aria-expanded")).toBe("true");
+    setOpen([]);
+    expect(reopened.disclosure("Guide").getAttribute("aria-expanded")).toBe("false");
+    reopened.dispose();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("an item's expanded state stays with its owner even without a handler", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const navigation = createNavigation({
+    items: () => [
+      { id: "guide", label: "Guide", href: "/guide", expanded: false, children: [{ id: "setup", label: "Setup", href: "/setup" }] },
+    ],
+  });
+  const dispose = render(() => <Navigation navigation={navigation} label="Book" />, dom.root);
+  try {
+    const disclosure = dom.root.querySelector<HTMLButtonElement>(".k2b-navigation__disclosure")!;
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    disclosure.click();
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

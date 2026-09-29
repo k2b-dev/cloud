@@ -15,7 +15,7 @@ Users with read permission always see **Book**: a reading view with page navigat
 
 In Book, page links, tag filters, search, and pagination update the content without a full reload. Back and Forward return to previous reading locations. Saved changes refresh the page and query results automatically. Without JavaScript, navigation still works through regular page loads.
 
-In the Book sidebar, select a page to open it, or use the arrow next to it to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, it keeps your choices and only unfolds the pages that contain the page you open.
+In the Book sidebar, select a page to open it, or use the arrow next to it to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, it keeps your choices and only unfolds the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages, keeps them when you close and reopen it, and opens pages in place.
 
 Editors and admins can switch between three views:
 

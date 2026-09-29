@@ -5,7 +5,14 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
-import { BOOK_CONTENT_EVENT, BOOK_SNAPSHOT_EVENT, type BookMetadata, type BookSnapshot, bookNavigationTarget } from "./book-state";
+import {
+  BOOK_CONTENT_EVENT,
+  BOOK_SNAPSHOT_EVENT,
+  type BookMetadata,
+  type BookSnapshot,
+  bookNavigationTarget,
+  handleBookNavigationRequests,
+} from "./book-state";
 import { bookMessages } from "./messages";
 
 type Props = { notebookId: string; initial: BookMetadata };
@@ -142,13 +149,27 @@ export default function BookController(props: Props) {
       if (source() === next) void workspace.refresh();
       else setSource(next);
     };
+    // Search results and the phone navigation sheet open reading routes in this shell.
+    const shellTarget = (href: string) => {
+      const target = bookNavigationTarget(href, window.location.href, props.notebookId);
+      return target && target.pathname.replace(/\/$/, "") !== `/app/notebooks/${props.notebookId}` ? target : null;
+    };
+    // Search waits for the article so its dialog can report a failure in place.
     onCleanup(
       registerSearchNavigation(({ href }) => {
-        const target = bookNavigationTarget(href, window.location.href, props.notebookId);
-        if (!target || target.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return false;
+        const target = shellTarget(href);
+        if (!target) return false;
         return new Promise<boolean>((resolve, reject) => {
           navigate(target, "push", undefined, (error) => (error ? reject(error) : resolve(true)));
         });
+      }),
+    );
+    // The sheet is already closed, so its pages load like a link in the page, with the same retry and access fallback.
+    onCleanup(
+      handleBookNavigationRequests((href) => {
+        const target = shellTarget(href);
+        if (target) navigate(target, "push");
+        return target !== null;
       }),
     );
     const onClick = (event: MouseEvent) => {

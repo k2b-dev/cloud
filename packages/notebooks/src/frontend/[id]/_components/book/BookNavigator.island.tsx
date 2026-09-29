@@ -3,7 +3,7 @@ import { AppWorkspace, createNavigation, type NavigationItem, Placeholder, useLo
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
-import { BOOK_SNAPSHOT_EVENT, type BookMetadata } from "./book-state";
+import { BOOK_SNAPSHOT_EVENT, type BookMetadata, requestBookNavigation } from "./book-state";
 import { bookMessages } from "./messages";
 
 export type BookTreeNode = { id: string; title: string; children: BookTreeNode[] };
@@ -108,12 +108,20 @@ export default function BookNavigator(props: BookNavigatorProps) {
       )}
     </>
   );
+  // Reading pages open in the reading shell, so this island and the reader's folds outlive the sheet.
+  // An action keeps that request outside the link's view transition; modified clicks still use the URL.
+  const readingPage = (href: string) => ({ href, action: `open:${href}` });
+  const openReadingPage = (href: string) => {
+    if (!requestBookNavigation(href)) window.location.assign(href);
+  };
   const noteEntry = (node: BookTreeNode): NavigationItem => ({
     id: `note:${node.id}`,
     label: node.title,
     icon: "ti ti-file-text",
-    href: withPresentationMode(buildNoteUrl(props.notebookId, node.id), "book"),
+    ...readingPage(withPresentationMode(buildNoteUrl(props.notebookId, node.id), "book")),
     active: state().selectedNoteId === node.id,
+    // The sheet shows the same folds as the sidebar tree and hands its toggles back to this island.
+    expanded: expanded().includes(node.id),
     children: node.children.map(noteEntry),
   });
   const mobileNavigation = createNavigation({
@@ -144,12 +152,17 @@ export default function BookNavigator(props: BookNavigatorProps) {
                 icon: "ti ti-hash",
                 badge: item.count,
                 active: state().activeTag === item.tag,
-                href: withPresentationMode(buildTagPageUrl(props.notebookId, item.tag), "book"),
+                ...readingPage(withPresentationMode(buildTagPageUrl(props.notebookId, item.tag), "book")),
               })),
             },
           ]
         : []),
     ],
+    onAction: (action) => openReadingPage(action.slice("open:".length)),
+    onExpandedChange: (id, open) => {
+      const noteId = id.slice("note:".length);
+      setExpanded((current) => (open ? [...new Set([...current, noteId])] : current.filter((entry) => entry !== noteId)));
+    },
   });
   return (
     <>
