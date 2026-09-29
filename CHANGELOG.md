@@ -3,6 +3,55 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.24.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.23.0...cloud-v0.24.0) (2026-09-29)
+
+
+### Features
+
+* **accounts:** show the Cloud Login install step before pairing a device ([#386](https://github.com/k2b-dev/cloud/issues/386)) ([3a903f9](https://github.com/k2b-dev/cloud/commit/3a903f9375680cdbbfb84ca717b58139b714c552))
+* **cloud:** give rendered PDFs their document title instead of a random file name ([#431](https://github.com/k2b-dev/cloud/issues/431)) ([325ce15](https://github.com/k2b-dev/cloud/commit/325ce1543eedda32b66eec36e2c43a98867c7255))
+* **files:** open a previewed PDF in a new tab at a stable address ([#415](https://github.com/k2b-dev/cloud/issues/415)) ([6cdb6c9](https://github.com/k2b-dev/cloud/commit/6cdb6c9351a04300f8983c25d77a5827341f0d11))
+* **venue:** clear shift states and wording, a calendar subscription, a comments filter, and no internal shift names in public ([#402](https://github.com/k2b-dev/cloud/issues/402)) ([0958280](https://github.com/k2b-dev/cloud/commit/0958280d328cb73cbd00329ad83288b9daacdb96))
+* **venue:** navigation by role with a Public page view for admins ([#417](https://github.com/k2b-dev/cloud/issues/417)) ([b9f9276](https://github.com/k2b-dev/cloud/commit/b9f92761a5b7cfcb9c13765421ed26d465691478))
+* **venue:** open a shift with one tap to take, leave, or manage it, also on phones ([#407](https://github.com/k2b-dev/cloud/issues/407)) ([7c1b283](https://github.com/k2b-dev/cloud/commit/7c1b283b91a26a7a02f1285a3069c315de890358))
+* **venue:** remind staff before shifts and tell coordinators about cancellations and gaps ([#420](https://github.com/k2b-dev/cloud/issues/420)) ([609a67f](https://github.com/k2b-dev/cloud/commit/609a67f958d22769f7f3e7e0c686cd7a01ad2077))
+* **venue:** set up and run a venue entirely from the interface ([#411](https://github.com/k2b-dev/cloud/issues/411)) ([cc80ba7](https://github.com/k2b-dev/cloud/commit/cc80ba7c2b3737fd3ed6ac8081060ef796d5e55c))
+* **venue:** show upcoming exceptions on a calmer public page that matches its preview ([#414](https://github.com/k2b-dev/cloud/issues/414)) ([3c9bad6](https://github.com/k2b-dev/cloud/commit/3c9bad68f0eaaf31a05b30a4a0e1927c3ef617d0))
+
+
+### Bug Fixes
+
+* **cli:** use the local timezone for day-based filters ([#408](https://github.com/k2b-dev/cloud/issues/408)) ([84b50aa](https://github.com/k2b-dev/cloud/commit/84b50aaa4186e187f94e5c464efc3befab29921a)), closes [#333](https://github.com/k2b-dev/cloud/issues/333)
+* **cloud:** keep Tailwind utilities above the property fallback layer in older browsers ([#426](https://github.com/k2b-dev/cloud/issues/426)) ([6729676](https://github.com/k2b-dev/cloud/commit/672967631f061eaee49ca8f87379801568ece666))
+* **contacts:** let agent and standalone service accounts use their granted address books ([#410](https://github.com/k2b-dev/cloud/issues/410)) ([9f2e730](https://github.com/k2b-dev/cloud/commit/9f2e7306fd0c38517e05834d3a1104f8a8a43dc3)), closes [#289](https://github.com/k2b-dev/cloud/issues/289)
+* **deps:** resolve fast-uri to 3.1.8 for GHSA-qw65-cvwx-89v3 and GHSA-58mr-gqgx-xq4g ([#438](https://github.com/k2b-dev/cloud/issues/438)) ([a1f8b57](https://github.com/k2b-dev/cloud/commit/a1f8b573c8f7b2724a45c53c7e293fb896ae3f7e))
+* **files:** download or open a previewed PDF in a new tab ([#392](https://github.com/k2b-dev/cloud/issues/392)) ([ce978d1](https://github.com/k2b-dev/cloud/commit/ce978d1de3b2b60cc414a30308bc344577c52617))
+* **files:** offer PDF actions only for PDFs and show loading instead of an error before the preview starts ([#434](https://github.com/k2b-dev/cloud/issues/434)) ([08e5c47](https://github.com/k2b-dev/cloud/commit/08e5c478bda33335f324d6f9033a1ba86a1d960f))
+* **files:** open PDFs in a new tab at a Files page that signs in again and shows localized errors ([#423](https://github.com/k2b-dev/cloud/issues/423)) ([19d99a6](https://github.com/k2b-dev/cloud/commit/19d99a6bc43b88f96d8b50aaa6ff67203a4b79df))
+* **grids:** keep chart axis values readable on phones ([#418](https://github.com/k2b-dev/cloud/issues/418)) ([e4c8c6e](https://github.com/k2b-dev/cloud/commit/e4c8c6ed17514613ee320c97008fa72dc6e6dbfb))
+* **grids:** show people and groups in tables and Grids App record blocks ([#397](https://github.com/k2b-dev/cloud/issues/397)) ([c36f909](https://github.com/k2b-dev/cloud/commit/c36f909909b5d9695a18d97bdff322e4b5b58033)), closes [#332](https://github.com/k2b-dev/cloud/issues/332)
+* **grids:** show that a new form is saved and let people finish ([#409](https://github.com/k2b-dev/cloud/issues/409)) ([16d9849](https://github.com/k2b-dev/cloud/commit/16d9849baa4185e9fadff30b5c5a82836c4f0d2a)), closes [#290](https://github.com/k2b-dev/cloud/issues/290)
+* **grids:** size app charts to their block and show axis labels ([#406](https://github.com/k2b-dev/cloud/issues/406)) ([44b272d](https://github.com/k2b-dev/cloud/commit/44b272d1579320360620357524725299a44e2737)), closes [#323](https://github.com/k2b-dev/cloud/issues/323) [#324](https://github.com/k2b-dev/cloud/issues/324)
+* **mail:** explain sync timeouts in Mailbox health, capitalize Conversation sections, and repair the nightly browser smokes ([#405](https://github.com/k2b-dev/cloud/issues/405)) ([4eaa30c](https://github.com/k2b-dev/cloud/commit/4eaa30c512704dedccd275893fb3433ef187b475)), closes [#334](https://github.com/k2b-dev/cloud/issues/334) [#335](https://github.com/k2b-dev/cloud/issues/335)
+* **mail:** insert template placeholders as plain text and send links without brackets ([#394](https://github.com/k2b-dev/cloud/issues/394)) ([61145ab](https://github.com/k2b-dev/cloud/commit/61145abf68fe2c8fce5b927ae2a38562dc70e508))
+* **mail:** search conversations by tag and show the tag name ([#388](https://github.com/k2b-dev/cloud/issues/388)) ([0b04cb5](https://github.com/k2b-dev/cloud/commit/0b04cb5eedbb8521f9d36c2383c2ebc303c7d38f))
+* **mail:** show the remaining Mail interface texts in the reader's language ([#390](https://github.com/k2b-dev/cloud/issues/390)) ([a8bfba0](https://github.com/k2b-dev/cloud/commit/a8bfba0725dffca05296494afbd385f222e41dd0))
+* **notebooks:** keep book view folders open or closed as the reader chose ([#396](https://github.com/k2b-dev/cloud/issues/396)) ([fbdea93](https://github.com/k2b-dev/cloud/commit/fbdea935af32acf37b2c6036050132c3a93c43c5)), closes [#363](https://github.com/k2b-dev/cloud/issues/363)
+* **notebooks:** keep phone menu folds and settings categories usable on narrow screens ([#416](https://github.com/k2b-dev/cloud/issues/416)) ([4bedff0](https://github.com/k2b-dev/cloud/commit/4bedff059361d3f711e60d94a4f4fad5ef85da29))
+* **notebooks:** stop reloading in a loop when live updates need a new sign-in ([#427](https://github.com/k2b-dev/cloud/issues/427)) ([7d4ae28](https://github.com/k2b-dev/cloud/commit/7d4ae283906f2794a5fbec6c067350b288214744))
+* **ui:** give toast actions and close buttons finger-sized touch targets ([#435](https://github.com/k2b-dev/cloud/issues/435)) ([31174a7](https://github.com/k2b-dev/cloud/commit/31174a75b6b640366f5672ec19dde457ab353ae6))
+* **ui:** keep phone header and settings close touch targets finger-sized without overlap ([#424](https://github.com/k2b-dev/cloud/issues/424)) ([9024d79](https://github.com/k2b-dev/cloud/commit/9024d7948687182472381dd1063301a975ae02a3))
+* **ui:** keep phone tap areas clear of neighbouring controls and give the header Home link a finger-sized target ([#433](https://github.com/k2b-dev/cloud/issues/433)) ([b0be346](https://github.com/k2b-dev/cloud/commit/b0be34624d7840f0f4e87a4691958b9a47b899d5))
+* **ui:** make compact controls, toasts and the detail panel work on phones ([#419](https://github.com/k2b-dev/cloud/issues/419)) ([fa92fd0](https://github.com/k2b-dev/cloud/commit/fa92fd081d435764f5247d2675ded32d84b20993))
+* **ui:** make detail panel action rows finger-sized on phones ([#437](https://github.com/k2b-dev/cloud/issues/437)) ([9f68b99](https://github.com/k2b-dev/cloud/commit/9f68b99b0c6007547a66be4d2df99f3774df7219))
+* **ui:** show built-in confirmation, toast and form messages in the reader's language ([#425](https://github.com/k2b-dev/cloud/issues/425)) ([8545490](https://github.com/k2b-dev/cloud/commit/8545490d8868491722bf299fe808336e0f0878d6))
+* **venue:** keep the venue calendar token private and word calendar feeds and assistant text in the workspace language ([#430](https://github.com/k2b-dev/cloud/issues/430)) ([a36b252](https://github.com/k2b-dev/cloud/commit/a36b252fbe35671c5f209323592f16ad48da6814))
+* **venue:** make sections, times, settings, sign-up, and feedback do what they say ([#391](https://github.com/k2b-dev/cloud/issues/391)) ([0615b11](https://github.com/k2b-dev/cloud/commit/0615b116cf262aa5b1e8bb4bda49408886cfa98b))
+* **venue:** only offer sign-up to people who can, and show shifts you already joined ([#395](https://github.com/k2b-dev/cloud/issues/395)) ([e047cc6](https://github.com/k2b-dev/cloud/commit/e047cc67407597c491fb29d048e923cbed520adf))
+* **venue:** open the right day from calendar links and show every feedback rating ([#422](https://github.com/k2b-dev/cloud/issues/422)) ([e381f9c](https://github.com/k2b-dev/cloud/commit/e381f9c978e0ad719461c81bd19c873eb2edc855))
+* **venue:** polish schedule, feedback, monitor and public page details on desktop and phones ([#428](https://github.com/k2b-dev/cloud/issues/428)) ([72c9452](https://github.com/k2b-dev/cloud/commit/72c945262ab3effc4a1b50a0d2dbe0a702cb0629))
+* **venue:** show visitor feedback and hidden sections only to staff and admins ([#387](https://github.com/k2b-dev/cloud/issues/387)) ([4f4391f](https://github.com/k2b-dev/cloud/commit/4f4391f9fe5fcbab415c6bac4968d51aea3f03a0))
+
 ## [0.23.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.22.0...cloud-v0.23.0) (2026-09-28)
 
 

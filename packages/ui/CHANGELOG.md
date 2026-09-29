@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.9.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.8.0...npm-ui-v0.9.0) (2026-09-29)
+
+
+### Features
+
+* **files:** open a previewed PDF in a new tab at a stable address ([#415](https://github.com/k2b-dev/cloud/issues/415)) ([6cdb6c9](https://github.com/k2b-dev/cloud/commit/6cdb6c9351a04300f8983c25d77a5827341f0d11))
+
+
+### Bug Fixes
+
+* **cloud:** keep Tailwind utilities above the property fallback layer in older browsers ([#426](https://github.com/k2b-dev/cloud/issues/426)) ([6729676](https://github.com/k2b-dev/cloud/commit/672967631f061eaee49ca8f87379801568ece666))
+* **files:** download or open a previewed PDF in a new tab ([#392](https://github.com/k2b-dev/cloud/issues/392)) ([ce978d1](https://github.com/k2b-dev/cloud/commit/ce978d1de3b2b60cc414a30308bc344577c52617))
+* **files:** offer PDF actions only for PDFs and show loading instead of an error before the preview starts ([#434](https://github.com/k2b-dev/cloud/issues/434)) ([08e5c47](https://github.com/k2b-dev/cloud/commit/08e5c478bda33335f324d6f9033a1ba86a1d960f))
+* **notebooks:** keep phone menu folds and settings categories usable on narrow screens ([#416](https://github.com/k2b-dev/cloud/issues/416)) ([4bedff0](https://github.com/k2b-dev/cloud/commit/4bedff059361d3f711e60d94a4f4fad5ef85da29))
+* **ui:** give toast actions and close buttons finger-sized touch targets ([#435](https://github.com/k2b-dev/cloud/issues/435)) ([31174a7](https://github.com/k2b-dev/cloud/commit/31174a75b6b640366f5672ec19dde457ab353ae6))
+* **ui:** keep phone header and settings close touch targets finger-sized without overlap ([#424](https://github.com/k2b-dev/cloud/issues/424)) ([9024d79](https://github.com/k2b-dev/cloud/commit/9024d7948687182472381dd1063301a975ae02a3))
+* **ui:** keep phone tap areas clear of neighbouring controls and give the header Home link a finger-sized target ([#433](https://github.com/k2b-dev/cloud/issues/433)) ([b0be346](https://github.com/k2b-dev/cloud/commit/b0be34624d7840f0f4e87a4691958b9a47b899d5))
+* **ui:** make compact controls, toasts and the detail panel work on phones ([#419](https://github.com/k2b-dev/cloud/issues/419)) ([fa92fd0](https://github.com/k2b-dev/cloud/commit/fa92fd081d435764f5247d2675ded32d84b20993))
+* **ui:** make detail panel action rows finger-sized on phones ([#437](https://github.com/k2b-dev/cloud/issues/437)) ([9f68b99](https://github.com/k2b-dev/cloud/commit/9f68b99b0c6007547a66be4d2df99f3774df7219))
+* **ui:** show built-in confirmation, toast and form messages in the reader's language ([#425](https://github.com/k2b-dev/cloud/issues/425)) ([8545490](https://github.com/k2b-dev/cloud/commit/8545490d8868491722bf299fe808336e0f0878d6))
+* **venue:** polish schedule, feedback, monitor and public page details on desktop and phones ([#428](https://github.com/k2b-dev/cloud/issues/428)) ([72c9452](https://github.com/k2b-dev/cloud/commit/72c945262ab3effc4a1b50a0d2dbe0a702cb0629))
+
 ## [0.8.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.7.0...npm-ui-v0.8.0) (2026-09-28)
 
 
