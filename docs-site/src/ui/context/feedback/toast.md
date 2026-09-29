@@ -138,4 +138,4 @@ notice.update("1000 records saved", {
 });
 ```
 
-Callback actions do not dismiss automatically; existing `{ label, href }` actions retain their link behavior. Closing the toast only hides feedback, so cancellation must be explicit. The app owns localized titles, descriptions, action labels and `dismissLabel`. Throttle frequent progress updates to meaningful milestones. Keep any important partial-result state in the application too, since users can dismiss the toast.
+Callback actions do not dismiss automatically; existing `{ label, href }` actions retain their link behavior. Closing the toast only hides feedback, so cancellation must be explicit. The app owns localized descriptions, action labels, and any custom `title` or `dismissLabel`; the defaults follow the document locale. Throttle frequent progress updates to meaningful milestones. Keep any important partial-result state in the application too, since users can dismiss the toast.

@@ -93,7 +93,7 @@ await deleteProject("atlas");
 - `datetime`, with optional date-only mode;
 - `info`, which displays content and is excluded from the result.
 
-Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages.
+Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages. The built-in messages follow the document locale ("At least 3 characters" / "Mindestens 3 Zeichen"); a `validate` result is shown as returned, so the app localizes it.
 
 ```tsx
 const values = await prompts.form({

@@ -471,6 +471,34 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("form validation errors follow the document locale", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    dom.document.documentElement.setAttribute("lang", "de");
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+
+    const formResult = prompts.form({
+      fields: {
+        name: { type: "text", label: "Name", required: true },
+        code: { type: "text", label: "Kürzel", minLength: 3, default: "ab" },
+        labels: { type: "tags", label: "Schlagworte", maxTags: 1, default: ["Bühne", "Technik"] },
+      },
+    });
+    await settle();
+
+    dom.document.querySelector(".k2b-dialog__panel")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle();
+
+    const errors = Array.from(dom.document.querySelectorAll(".k2b-dialog__body .k2b-field__error"), (error) => error.textContent);
+    expect(errors).toEqual(["Erforderlich", "Mindestens 3 Zeichen", "Höchstens 1 Tag"]);
+
+    dialogCore.close();
+    expect(await formResult).toBeNull();
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
   test("default toast titles follow the document locale and an explicit title wins", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

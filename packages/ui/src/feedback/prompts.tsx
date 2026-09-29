@@ -186,12 +186,12 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
       if (customError) return customError;
     }
     if (field.type === "text" && typeof value === "string" && value.length > 0) {
-      if (field.minLength !== undefined && value.length < field.minLength) return `minimum ${field.minLength} characters`;
-      if (field.maxLength !== undefined && value.length > field.maxLength) return `maximum ${field.maxLength} characters`;
+      if (field.minLength !== undefined && value.length < field.minLength) return messages.minCharacters({ count: field.minLength });
+      if (field.maxLength !== undefined && value.length > field.maxLength) return messages.maxCharacters({ count: field.maxLength });
     }
     if (field.type === "tags" && Array.isArray(value) && value.length > 0) {
-      if (field.minTags !== undefined && value.length < field.minTags) return `minimum ${field.minTags} tags`;
-      if (field.maxTags !== undefined && value.length > field.maxTags) return `maximum ${field.maxTags} tags`;
+      if (field.minTags !== undefined && value.length < field.minTags) return messages.minTags({ count: field.minTags });
+      if (field.maxTags !== undefined && value.length > field.maxTags) return messages.maxTags({ count: field.maxTags });
     }
     return null;
   };
