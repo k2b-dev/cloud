@@ -31,9 +31,9 @@ router.get("/api/inventory/report", (c) => {
 });
 ```
 
-`getLocale(c)` resolves with deterministic precedence; the first valid BCP 47
-tag wins and every candidate is canonicalized (`DE-ch` becomes `de-CH`,
-regional tags such as `de-CH` stay intact):
+`getLocale(c)` resolves with deterministic precedence; the first source with a
+valid BCP 47 tag wins and every candidate is canonicalized (`DE-ch` becomes
+`de-CH`, regional tags such as `de-CH` stay intact):
 
 1. `x-cloud-locale` request header — transport metadata set by Cloud-internal
    callers such as the capability dispatcher;
