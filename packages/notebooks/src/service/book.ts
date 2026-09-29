@@ -23,11 +23,13 @@ export const loadBookNote = async (params: {
   return { note, document };
 };
 
-/** Query results for the reader's user, keyed by the query's one-based source line. */
+/** Query results for the reading subject, keyed by the query's one-based source line. */
 export const resolveBookQueries = async (params: {
   notebookId: string;
   noteId: string;
   userId: string | null;
+  serviceAccountId?: string | null;
+  boundNotebookId?: string | null;
   markdown: string;
   bypassAccess?: boolean;
 }): Promise<Map<number, NoteQueryResult>> => {
@@ -40,6 +42,8 @@ export const resolveBookQueries = async (params: {
         notebookId: params.notebookId,
         noteId: params.noteId,
         userId: params.userId,
+        serviceAccountId: params.serviceAccountId,
+        boundNotebookId: params.boundNotebookId,
         bypassAccess: params.bypassAccess,
         query,
       }),

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { renderNotebookBook } from "../lib/book-renderer";
-import { loadBookBlockPreview, loadBookNote } from "./book";
+import { loadBookBlockPreview, loadBookNote, resolveBookQueries } from "./book";
 import * as query from "./note-query";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
@@ -164,6 +164,22 @@ describe("authorized Book documents and server block previews", () => {
     );
     expect(result.preview.blocks[0]?.html).toContain("Keine passenden Notizen");
     expect(result.preview.blocks[0]?.line).toBe(1);
+  });
+
+  test("PDF queries resolve for a service account inside its bound notebook", async () => {
+    const calls = fixture();
+    const serviceAccountId = "55555555-5555-4555-8555-555555555555";
+    await resolveBookQueries({
+      notebookId: params.notebookId,
+      noteId: note.id,
+      userId: null,
+      serviceAccountId,
+      boundNotebookId: params.notebookId,
+      markdown: ":::query\nsource: notes\n:::",
+    });
+    expect(calls.queries).toHaveBeenCalledWith(
+      expect.objectContaining({ notebookId: params.notebookId, userId: null, serviceAccountId, boundNotebookId: params.notebookId }),
+    );
   });
 
   test("invalid directives return localized diagnostics without running a query", async () => {

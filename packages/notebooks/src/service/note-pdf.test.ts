@@ -32,6 +32,7 @@ describe("note PDF HTML", () => {
         "Energy $E = mc^2$ and #team/ops.",
         "![Floor plan](attach://AbC123) ![Logo](https://example.test/logo.png =80x40)",
         "- [x] Booked",
+        "```mermaid\ngraph TD; A-->B\n```",
       ].join("\n\n"),
     );
     expect(html).not.toContain(":::");
@@ -47,6 +48,8 @@ describe("note PDF HTML", () => {
     expect(html).toContain('<span class="notebook-book-image-label">Image: Logo</span>');
     expect(html).not.toContain("<img");
     expect(html).toContain('type="checkbox"');
+    // Only the reader's browser draws diagrams; the PDF labels their source instead.
+    expect(html).toContain('<figcaption>Diagram source</figcaption><pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>');
   });
 
   test("keeps KaTeX styles out of notes without math and follows the note's locale", () => {

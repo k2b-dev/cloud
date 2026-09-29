@@ -924,9 +924,10 @@ const notePdfError = (error: unknown, locale?: string): { message: string; statu
   }
   if (error instanceof GotenbergRenderError) {
     switch (error.code) {
+      // The rendered note, not its Markdown, exceeds the operator's render budget.
       case "html_too_large":
       case "pdf_too_large":
-        return { message: t.pdfFailed, status: 413 };
+        return { message: t.pdfNoteTooLarge, status: 413 };
       case "not_configured":
         return { message: t.pdfNotConfigured, status: 503 };
       case "timeout":
@@ -1993,7 +1994,8 @@ const app = new Hono<AuthContext>()
       activeNotePdfConversions += 1;
       try {
         const filename = notePdfFilename(note.data.title);
-        const actor = getUserBackedActor(c);
+        // Query blocks resolve for the same access subject checkNotebookAccess authorized.
+        const subject = getNotebookAccessSubject(c);
         const rendered = await renderNotePdf({
           markdown: input.markdown,
           title: note.data.title.trim() || filename.slice(0, -".pdf".length),
@@ -2002,8 +2004,11 @@ const app = new Hono<AuthContext>()
           notebookId,
           notebookShortId: notebook!.shortId,
           noteId: note.data.id,
-          userId: actor?.id ?? null,
-          bypassAccess: actor ? hasRole(actor, "admin") : false,
+          userId: subject.userId,
+          serviceAccountId: subject.serviceAccountId,
+          // checkNotebookAccess admitted a resource-bound account only for this notebook.
+          boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
+          bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
           locale: getLocale(c),
         });
         const buffer = rendered.pdf.buffer.slice(rendered.pdf.byteOffset, rendered.pdf.byteOffset + rendered.pdf.byteLength) as ArrayBuffer;

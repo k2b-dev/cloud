@@ -59,7 +59,7 @@ i.ti { display: none; }
 .hl-operator { color: #52525b; }
 `;
 
-// PDFs render offline, so KaTeX's web fonts cannot load; its layout rules still apply with the fallback serif.
+// The print preset loads no fonts, so KaTeX's layout rules apply with the fallback serif.
 const KATEX_PRINT_CSS = katexCss.replace(/@font-face\s*\{[^}]*\}/g, "");
 
 export type NotePdfHtmlInput = {
@@ -85,12 +85,14 @@ export const buildNotePdfHtml = (input: NotePdfHtmlInput): string => {
   return buildPresetPdfHtml({ html, templateId: input.templateId, customCss: input.customCss, css });
 };
 
-/** Render the caller's note snapshot as PDF, with query blocks resolved for the caller like the reader. */
+/** Render the caller's note snapshot as PDF, with query blocks resolved for the caller's access subject. */
 export const renderNotePdf = async (
   params: Omit<NotePdfHtmlInput, "queryResults"> & {
     notebookId: string;
     noteId: string;
     userId: string | null;
+    serviceAccountId: string | null;
+    boundNotebookId: string | null;
     bypassAccess?: boolean;
     title: string;
   },

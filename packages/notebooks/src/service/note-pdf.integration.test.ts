@@ -38,6 +38,8 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       "# Hiking weekend",
       ...NOTICES.map((kind) => `:::${kind}\nPack the ${kind} checklist.\n:::`),
       "@gear\n:::data\ntent: Two-person\n:::",
+      "Pack weight $w = 12$ kg.",
+      "```mermaid\ngraph TD; Tent-->Stakes\n```",
     ].join("\n\n");
     for (const templateId of ["document", "report", "compact", undefined] as const) {
       const html = buildNotePdfHtml({
@@ -53,6 +55,9 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
       expect(text).toContain("Hiking weekend");
       for (const kind of NOTICES) expect(text).toContain(`Pack the ${kind} checklist.`);
       expect(text).toContain("Two-person");
+      expect(text).toMatch(/Pack weight\s*w\s*=\s*12\s*kg\./u);
+      expect(text).toContain("Diagram source");
+      expect(text).toContain("graph TD; Tent-->Stakes");
       expect(await pdfTitle(pdf)).toBe("Hiking weekend");
     }
   }, 120_000);
