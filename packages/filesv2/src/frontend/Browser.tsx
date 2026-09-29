@@ -458,7 +458,7 @@ export default function Browser(props: {
             </p>
             <InlineGuidance icon="ti ti-info-circle">{b().systemFilesHint}</InlineGuidance>
           </div>
-          <div class="flex flex-wrap justify-end gap-2">
+          <div class="filesv2-system-files__actions flex flex-wrap justify-end gap-2">
             <Button variant="ghost" onClick={() => close()}>
               {b().cancel}
             </Button>
