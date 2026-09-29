@@ -1512,8 +1512,14 @@
     row-gap: 0.625rem;
   }
 
-  /* DetailPanel.Action rows sit flush, so a row that grew vertically would
-     take taps from its neighbour. */
+  /* DetailPanel.Action rows sit flush, so a hit area that reached past its
+     row would take taps from the neighbouring row. The row itself grows to
+     2.75rem instead, and the hit area keeps that height. */
+  .k2b-ui .k2b-button.k2b-detail-panel__action,
+  .k2b-ui .k2b-detail-panel__action-row .k2b-button {
+    min-height: 2.75rem;
+  }
+
   .k2b-ui .k2b-button.k2b-detail-panel__action::after,
   .k2b-ui .k2b-detail-panel__action-row .k2b-button::after {
     inset-block: 0;

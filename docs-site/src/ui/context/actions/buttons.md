@@ -138,7 +138,8 @@ touch devices, @k2b/ui's own button rows that wrap or stack keep 0.625rem
 between lines: `DetailPanel` primary actions (also below the header's identity
 row), `PdfPreview` actions, settings group and collection actions, image input
 actions, and wrapping or vertical toolbars. `DetailPanel.Action` rows sit
-flush, so their tap area keeps the row height.
+flush, so on touch devices each row grows to 44 px itself and its tap area
+keeps the row height.
 
 In your own layouts, keep at least 0.625rem (0.75rem next to `xs` buttons)
 between lines of compact buttons that wrap or stack, before a field or link
