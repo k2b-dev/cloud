@@ -47,7 +47,7 @@ import type {
   VenueTemplateCreateInput,
   VenueTemplateSummary,
 } from "./contracts";
-import { FEEDBACK_PAGE_SIZE, PublicSectionInputSchema, SCHEDULE_OUTLOOK_DAYS } from "./contracts";
+import { FEEDBACK_PAGE_SIZE, PUBLIC_EXCEPTION_DAYS, PublicSectionInputSchema, SCHEDULE_OUTLOOK_DAYS } from "./contracts";
 import { withShortIdDb } from "./lib/short-id";
 import { venueMessages } from "./messages";
 import { filterPublicMenuSections } from "./public-menu";
@@ -1504,9 +1504,10 @@ const statusForVenue = async (venue: Venue, now = new Date(), includeSections = 
   const startDate = localDateKey(now, venue.timezone);
   const endDate = dateKeyAfterDays(startDate, days, venue.timezone);
   const rangeEnd = instantFor(endDate, "00:00", venue.timezone);
+  // Exceptions reach further than openings: visitors learn about a closed holiday weeks before it.
   const [openingRules, overrides, templates, assignments, sections] = await Promise.all([
     listOpeningRules(venue.id),
-    listOverridesForDateRange(venue.id, startDate, endDate),
+    listOverridesForDateRange(venue.id, startDate, dateKeyAfterDays(startDate, Math.max(days, PUBLIC_EXCEPTION_DAYS), venue.timezone)),
     listTemplates(venue.id),
     assignmentSummariesForRange(venue.id, new Date(now.getTime() - 1), rangeEnd),
     includeSections ? publicSections(venue, now) : Promise.resolve([]),

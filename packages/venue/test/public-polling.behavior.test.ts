@@ -45,6 +45,7 @@ const status = (name: string): PublicStatus => ({
   nextOpeningLabel: null,
   activeWindowLabel: null,
   upcomingOpenings: [],
+  upcomingExceptions: [],
   openingRules: [],
   sections: [],
 });

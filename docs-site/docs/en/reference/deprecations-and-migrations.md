@@ -5,10 +5,26 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-26
+updated: 2026-09-29
 ---
 
 # Deprecations and migrations
+
+## Venue exception notes are public and link addresses are checked
+
+The Venue public page and `GET /api/venue/public/{id}/status` list the closed
+days and special openings of the next 30 days as `upcomingExceptions`, each
+with its note. This includes notes written before the change, which visitors
+did not see until now. After upgrading, admins should review the notes of
+upcoming exceptions and rewrite any that were meant only for staff.
+
+Links sections accept only `https:`, `http:`, `mailto:`, and `tel:` addresses
+and paths on the same Cloud that start with a single `/`. Creating or updating
+a section with any other address answers 400. A stored link with such an
+address, for example `www.example.org`, no longer appears on the public page;
+the workspace preview says how many links visitors miss, and the section
+saves again once the address is fixed. No data migration is required. See
+[Venues](/en/apps/venue).
 
 ## Service accounts gain standalone and agent kinds
 

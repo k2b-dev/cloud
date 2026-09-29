@@ -283,7 +283,7 @@ export function OpeningRuleDialog(props: SubmittingDialogProps<OpeningRuleInput>
         <TimeInput label={t().startTime} value={startTime()} onValueChange={setStartTime} placeholder="09:00" error={errors().startTime} />
         <TimeInput label={t().endTime} value={endTime()} onValueChange={setEndTime} placeholder="17:00" error={errors().endTime} />
       </div>
-      <TextInput label={t().note} value={note} onValueChange={setNote} placeholder={t().optional} />
+      <TextInput label={t().note} description={t().publicNoteDescription} value={note} onValueChange={setNote} placeholder={t().optional} />
     </DialogFrame>
   );
 }
@@ -376,6 +376,7 @@ export function ExceptionDialog(
       </Show>
       <TextInput
         label={t().note}
+        description={t().publicNoteDescription}
         value={note}
         onValueChange={setNote}
         placeholder={kind() === "open" ? t().specialOpeningNotePlaceholder : t().publicHoliday}

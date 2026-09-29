@@ -1,5 +1,7 @@
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
+import { MinimalLayout } from "@k2b/cloud/ssr";
+import { LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
 import { venueMessages } from "../../../messages";
 import { venueService } from "../../../service";
@@ -25,13 +27,26 @@ export default ssr(async (c) => {
   const appUrl = await coreSettings.get<string>("app.url").catch(() => "");
   const origin = resolveVenuePublicOrigin(appUrl, requestOrigin);
 
-  return () => (
+  const displayHeight = parseVenuePublicDisplayHeight(c.req.query("height"));
+  const page = () => (
     <PublicVenuePage
       venueId={id}
       initialStatus={status}
-      displayHeight={parseVenuePublicDisplayHeight(c.req.query("height"))}
+      displayHeight={displayHeight}
       feedbackUrl={buildPublicVenueFeedbackUrl(origin, id)}
       refresh={parseVenuePublicRefresh(c.req.query("refresh"))}
     />
+  );
+
+  // The monitor hangs in the venue and always renders dark. The scrollable page follows the visitor's Cloud
+  // theme like every Cloud page; a visitor without one gets the light theme.
+  if (displayHeight === "full") {
+    c.get("page").theme = "dark";
+    return () => <LocaleProvider locale={getLocale(c)}>{page()}</LocaleProvider>;
+  }
+  return () => (
+    <MinimalLayout c={c} preferences={false}>
+      {page()}
+    </MinimalLayout>
   );
 });

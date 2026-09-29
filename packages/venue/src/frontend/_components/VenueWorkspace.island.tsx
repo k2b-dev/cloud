@@ -46,9 +46,10 @@ import {
   WIDE_VIEWPORT_QUERY,
 } from "../schedule-url";
 import { reconcileChangedSettings } from "../settings-contract";
+import { PublicSectionView } from "./public-section-view";
 import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscription";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
-import { PublicSectionDialog, PublicSectionPreview, sectionKindIcon, sectionKindLabel } from "./venue-workspace/public-sections";
+import { PublicSectionDialog, sectionKindIcon } from "./venue-workspace/public-sections";
 import { ProgressBar, SlotStateLabel, slotStaffingLabel, slotState } from "./venue-workspace/schedule";
 import { SettingsDialog, type VenueSettingsTab } from "./venue-workspace/settings";
 import { ScheduleEmptyState, scheduleIsEmpty } from "./venue-workspace/setup-checklist";
@@ -813,8 +814,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       }
                     />
                     <div class="flex flex-wrap items-center gap-2 px-1">
-                      <i class={`${sectionKindIcon(section().kind)} text-dimmed`} aria-hidden="true" />
-                      <span class="tag">{sectionKindLabel(section().kind, t())}</span>
                       <Show
                         when={section().enabled}
                         fallback={
@@ -840,9 +839,9 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                         </Show>
                       </Show>
                     </div>
-                    <section class="paper p-4">
-                      <PublicSectionPreview section={section()} />
-                    </section>
+                    <div class="max-w-3xl">
+                      <PublicSectionView section={section()} timeZone={venue().timezone} preview />
+                    </div>
                   </>
                 )}
               </Show>

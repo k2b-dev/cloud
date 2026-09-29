@@ -255,6 +255,28 @@ export const PublicSectionSchema = z.object({
 });
 export type PublicSection = z.infer<typeof PublicSectionSchema>;
 
+/** Link schemes a visitor can follow safely; anything else, such as `javascript:`, never becomes a link. */
+const PUBLIC_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+
+const PUBLIC_LINK_HREF_ERROR = "Use a full address starting with https://, http://, mailto:, or tel:, or a path starting with /";
+
+/**
+ * Where a link of a links section leads, or `null` when visitors cannot follow it: a full web, mail, or phone
+ * address, or a path on this Cloud such as `/app/venue`. Saving a section and rendering it apply this one rule,
+ * so the editor never keeps a link that the public page leaves out.
+ */
+export const publicLinkHref = (value: string): string | null => {
+  const href = value.trim();
+  // A path stays on this Cloud; `//host` and `/\host` would leave it for another host.
+  if (href.startsWith("/")) return /^\/[/\\]/.test(href) ? null : href;
+  try {
+    const url = new URL(href);
+    return PUBLIC_LINK_PROTOCOLS.has(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+};
+
 export const PublicSectionInputSchema = z
   .object({
     kind: PublicSectionKindSchema,
@@ -264,6 +286,21 @@ export const PublicSectionInputSchema = z
     position: z.number().int().default(0),
   })
   .superRefine((input, ctx) => {
+    if (input.kind === "links") {
+      // Without links, a links section shows its text; with them, every address must be one visitors can follow.
+      const links = input.content.links;
+      if (links === undefined) return;
+      if (!Array.isArray(links)) {
+        ctx.addIssue({ code: "custom", path: ["content", "links"], message: "Links must be an array" });
+        return;
+      }
+      links.forEach((link, index) => {
+        const href = link && typeof link === "object" && "href" in link ? link.href : undefined;
+        if (typeof href === "string" && publicLinkHref(href)) return;
+        ctx.addIssue({ code: "custom", path: ["content", "links", index, "href"], message: PUBLIC_LINK_HREF_ERROR });
+      });
+      return;
+    }
     if (input.kind !== "menu") return;
     const items = input.content.items;
     if (!Array.isArray(items)) {
@@ -329,6 +366,22 @@ export const PublicOpeningSchema = z.object({
 });
 export type PublicOpening = z.infer<typeof PublicOpeningSchema>;
 
+/** Days of exceptions the public status lists in advance: today and the 29 following days in the Venue's time zone. */
+export const PUBLIC_EXCEPTION_DAYS = 30;
+
+/**
+ * A closed day or a special opening on the public page. Times are Venue clock times; the note is the one the
+ * admin wrote for visitors, such as "Public holiday".
+ */
+export const PublicExceptionSchema = z.object({
+  date: DateKeySchema,
+  kind: z.enum(["closed", "open"]),
+  startTime: TimeSchema.nullable(),
+  endTime: TimeSchema.nullable(),
+  note: z.string().nullable(),
+});
+export type PublicException = z.infer<typeof PublicExceptionSchema>;
+
 export const PublicStatusSchema = z.object({
   venue: VenueSchema,
   open: z.boolean(),
@@ -338,6 +391,8 @@ export const PublicStatusSchema = z.object({
   nextOpeningLabel: z.string().nullable(),
   activeWindowLabel: z.string().nullable(),
   upcomingOpenings: z.array(PublicOpeningSchema),
+  /** Closed days and special openings of the next {@link PUBLIC_EXCEPTION_DAYS} days, today included, by date. */
+  upcomingExceptions: z.array(PublicExceptionSchema),
   openingRules: z.array(OpeningRuleSchema),
   sections: z.array(PublicSectionSchema),
 });

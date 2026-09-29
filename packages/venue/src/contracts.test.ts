@@ -2,7 +2,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   FeedbackEntrySchema,
+  PublicExceptionSchema,
   PublicSectionInputSchema,
+  PublicStatusSchema,
+  publicLinkHref,
   ShiftTemplateInputSchema,
   UpcomingSlotSchema,
   VenueResourceIdSchema,
@@ -110,5 +113,58 @@ describe("PublicSectionInputSchema", () => {
   test("rejects reversed or malformed menu availability dates", () => {
     expect(PublicSectionInputSchema.safeParse(menu({ availableFrom: "2026-07-15", availableUntil: "2026-07-13" })).success).toBe(false);
     expect(PublicSectionInputSchema.safeParse(menu({ availableFrom: "tomorrow" })).success).toBe(false);
+  });
+
+  const links = (...hrefs: unknown[]) => ({
+    kind: "links",
+    title: "Useful links",
+    content: { links: hrefs.map((href, index) => ({ label: `Link ${index + 1}`, href })) },
+  });
+
+  test("accepts only link addresses the public page shows", () => {
+    const accepted = [
+      "https://union.example.org/cafe",
+      " http://example.org ",
+      "mailto:cafe@example.org",
+      "tel:+49301234567",
+      "/app/grids/forms/Form01",
+    ];
+    expect(accepted.map((href) => [href, publicLinkHref(href) !== null])).toEqual(accepted.map((href) => [href, true]));
+    expect(PublicSectionInputSchema.safeParse(links(...accepted)).success).toBe(true);
+    // A links section without links shows its text.
+    expect(PublicSectionInputSchema.safeParse({ kind: "links", title: "Links", content: { text: "Soon" } }).success).toBe(true);
+  });
+
+  test("rejects a link address the public page would leave out, and names the link", () => {
+    for (const href of [
+      "www.cafe.example.org",
+      "example.org/menu",
+      "javascript:alert(1)",
+      "//other.example.org",
+      "/\\other.example.org",
+      "",
+      42,
+    ]) {
+      const result = PublicSectionInputSchema.safeParse(links("https://example.org", href));
+      expect({ href, success: result.success }).toEqual({ href, success: false });
+      if (!result.success) expect(result.error.issues.map((issue) => issue.path)).toEqual([["content", "links", 1, "href"]]);
+    }
+    expect(PublicSectionInputSchema.safeParse({ kind: "links", title: "Links", content: { links: "https://example.org" } }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe("PublicStatusSchema", () => {
+  test("lists upcoming exceptions by date, kind, times, and note, without internal IDs", () => {
+    expect(PublicStatusSchema.keyof().options).toContain("upcomingExceptions");
+    expect(PublicExceptionSchema.keyof().options.toSorted()).toEqual(["date", "endTime", "kind", "note", "startTime"]);
+    expect(
+      PublicExceptionSchema.safeParse({ date: "2026-10-17", kind: "open", startTime: "18:00", endTime: "24:00", note: "Long night" })
+        .success,
+    ).toBeTrue();
+    expect(
+      PublicExceptionSchema.safeParse({ date: "2026-10-03", kind: "holiday", startTime: null, endTime: null, note: null }).success,
+    ).toBeFalse();
   });
 });

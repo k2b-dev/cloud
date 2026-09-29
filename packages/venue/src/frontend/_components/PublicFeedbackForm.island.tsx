@@ -43,9 +43,9 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
         {t().anonymousFeedbackPrivacy}
       </NoticeCard>
       <fieldset class="grid gap-2">
-        <legend class="mb-2 flex w-full items-baseline justify-between gap-3 text-sm font-medium text-zinc-950">
+        <legend class="mb-2 flex w-full items-baseline justify-between gap-3 text-sm font-medium text-primary">
           <span>{t().rating}</span>
-          <span class="text-xs font-normal text-zinc-600">
+          <span class="text-xs font-normal text-secondary">
             {rating() === null ? t().ratingRequired : t().ratingValue({ count: rating()! })}
           </span>
         </legend>
@@ -57,8 +57,10 @@ function FeedbackForm(props: { venueId: string; accentColor: string; onSubmitted
                 <label
                   class="flex h-12 cursor-pointer items-center justify-center rounded-xl border text-3xl transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-amber-400"
                   classList={{
-                    "border-amber-300 bg-amber-50 text-amber-600": active(),
-                    "border-zinc-200 bg-zinc-50 text-zinc-400 hover:border-amber-200 hover:text-amber-500": !active(),
+                    "border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-400":
+                      active(),
+                    "border-zinc-200 bg-zinc-50 text-zinc-400 hover:border-amber-200 hover:text-amber-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500 dark:hover:border-amber-500/40 dark:hover:text-amber-400":
+                      !active(),
                   }}
                   onMouseEnter={() => setHoverRating(value)}
                   onMouseLeave={() => setHoverRating(null)}
@@ -133,8 +135,8 @@ export default function PublicFeedbackForm(props: { venueId: string; accentColor
               <i class="ti ti-check" aria-hidden="true" />
             </span>
             <div>
-              <h2 class="text-xl font-semibold text-zinc-950">{t().thankYou}</h2>
-              <p class="mt-1 text-sm text-zinc-600">{t().feedbackSubmitted}</p>
+              <h2 class="text-xl font-semibold text-primary">{t().thankYou}</h2>
+              <p class="mt-1 text-sm text-secondary">{t().feedbackSubmitted}</p>
             </div>
           </div>
         }
@@ -147,7 +149,7 @@ export default function PublicFeedbackForm(props: { venueId: string; accentColor
   return (
     <button
       type="button"
-      class="flex w-full items-center justify-between gap-3 rounded-2xl bg-white/90 px-4 py-3 text-left shadow-sm ring-1 ring-black/5 transition-colors hover:bg-zinc-50"
+      class="paper flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:paper-highlighted"
       style={accentTokens(props.accentColor)}
       onClick={openFeedback}
     >
@@ -159,11 +161,11 @@ export default function PublicFeedbackForm(props: { venueId: string; accentColor
           <i class="ti ti-star" />
         </span>
         <span>
-          <span class="block text-base font-semibold text-zinc-950">{t().feedback}</span>
-          <span class="block text-xs text-zinc-500">{t().anonymousRating}</span>
+          <span class="block text-base font-semibold text-primary">{t().feedback}</span>
+          <span class="block text-xs text-dimmed">{t().anonymousRating}</span>
         </span>
       </span>
-      <i class="ti ti-message-star text-xl text-zinc-500" aria-hidden="true" />
+      <i class="ti ti-message-star text-xl text-dimmed" aria-hidden="true" />
     </button>
   );
 }

@@ -578,6 +578,58 @@ describe("Venue clarity behavior", () => {
     }
   });
 
+  test("a link address visitors cannot follow shows its error at the field and is not saved", async () => {
+    const dom = createDomTestHarness();
+    const section: PublicSection = {
+      id: "Links1",
+      venueId: "Cafe01",
+      kind: "links",
+      title: "Useful links",
+      content: { links: [{ label: "Our site", href: "www.cafe.example.org" }] },
+      enabled: true,
+      position: 2,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    const saved: Array<PublicSectionInput | null> = [];
+    const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
+    const dispose = render(
+      () => (
+        <PublicSectionDialog close={(value) => saved.push(value)} initial={section} nextPosition={2} publicPageEnabled submitLabel="Save" />
+      ),
+      dom.root,
+    );
+    try {
+      const address = dom.root.querySelector<HTMLInputElement>('input[placeholder="https://example.com"]')!;
+      expect(address.value).toBe("www.cafe.example.org");
+      expect(address.getAttribute("aria-invalid")).not.toBe("true");
+
+      buttonNamed(dom.root, "Save").click();
+      await flush();
+      expect(saved).toEqual([]);
+      expect(address.getAttribute("aria-invalid")).toBe("true");
+      expect(descriptionOf(address)).toContain("Use a full address starting with https://, mailto:, or tel:, or a path starting with /.");
+
+      address.value = "https://www.cafe.example.org";
+      address.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      expect(address.getAttribute("aria-invalid")).not.toBe("true");
+      buttonNamed(dom.root, "Save").click();
+      expect(saved).toEqual([
+        {
+          kind: "links",
+          title: "Useful links",
+          content: { links: [{ label: "Our site", href: "https://www.cafe.example.org" }] },
+          enabled: true,
+          position: 2,
+        },
+      ]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("the public-page switch does not promise visitors while the Venue's public page is off", async () => {
     const dom = createDomTestHarness();
     const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
