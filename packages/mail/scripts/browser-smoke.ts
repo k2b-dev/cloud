@@ -359,12 +359,14 @@ const expectUrl = async (page: Page, predicate: (url: URL) => boolean, label: st
   fail(`timed out waiting for ${label}; current URL is ${page.url()}`);
 };
 
+/** SSR already renders the trigger's menu attributes, and a click before hydration is lost, so retry until the menu opens. */
 const clickHydratedDropdownTrigger = async (page: Page, locator: Locator) => {
-  await locator.waitFor();
-  const element = await locator.elementHandle();
-  if (!element) fail("interactive control disappeared before hydration");
-  await page.waitForFunction((control) => (control as HTMLElement).getAttribute("aria-haspopup") === "menu", element);
-  await locator.click();
+  const deadline = Date.now() + TIMEOUT;
+  while ((await locator.getAttribute("aria-expanded")) !== "true") {
+    if (Date.now() > deadline) fail("dropdown menu did not open");
+    await locator.click();
+    await page.waitForTimeout(100);
+  }
 };
 
 /** A click while the surrounding dialog is still opening leaves the list closed, so retry until it opens. */
@@ -501,9 +503,16 @@ const runSmoke = async (fixture: Fixture) => {
     }
     await waitForWidth(page, desktopSidebar, 248, "Mail desktop navigation after CSS load");
     const sidebarResizeHandle = page.getByRole("separator", { name: "Resize navigation" });
-    await sidebarResizeHandle.focus();
-    await page.keyboard.press("Home");
-    await waitForWidth(page, desktopSidebar, 176, "Mail desktop navigation");
+    const sidebarWidth = () => desktopSidebar.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+    // The page's `load` event does not wait for island modules, and a key press before the workspace controller
+    // listens is lost. Retry on the width itself: the Mail island replaces the server-rendered handle when it renders.
+    const resizeDeadline = Date.now() + TIMEOUT;
+    while ((await sidebarWidth()) !== 176) {
+      if (Date.now() > resizeDeadline)
+        fail(`Home did not resize Mail desktop navigation to 176px; current width is ${await sidebarWidth()}`);
+      await sidebarResizeHandle.press("Home");
+      await page.waitForTimeout(100);
+    }
     await page.reload({ waitUntil: "load" });
     await waitForWidth(page, desktopSidebar, 176, "Mail desktop navigation after reload");
     ok("Mail sidebar stays expanded, keyboard-resizable, and SSR-stable");
@@ -535,8 +544,9 @@ const runSmoke = async (fixture: Fixture) => {
       fail(`desktop sidebar still exposes standalone mailbox tools: ${JSON.stringify(desktopDirectActions)}`);
     }
     if (!desktopDirectActions.includes("Settings")) fail("desktop sidebar lost its direct Settings action");
-    await desktopSidebar.getByRole("button", { name: "Mailbox tools", exact: true }).click();
+    await clickHydratedDropdownTrigger(page, desktopSidebar.getByRole("button", { name: "Mailbox tools", exact: true }));
     const desktopToolsMenu = page.locator('[role="menu"]:popover-open');
+    await desktopToolsMenu.waitFor();
     await assertMailboxTools(desktopToolsMenu, await menuSectionLabels(desktopToolsMenu));
     await desktopToolsMenu.getByText("Automations", { exact: true }).click();
     await expectUrl(
