@@ -44,8 +44,11 @@ removes them after verifying Files:
 - the offline `files` registration: in `/admin/gateway/apps`, choose
   **Remove offline app** for Files (legacy).
 
-Stop the Filegate v2 daemon and archive or delete its storage separately, once
-Files serves every directory you still need.
+Once Files serves every directory you still need, stop the Filegate v2 daemon
+and remove its configuration and token. Keep its storage: the home and group
+directories in its `ALLOWED_BASE_PATHS` are the directories that Files roots
+now point at. Remove a directory or volume only when no Files root references
+it, and only after a backup.
 
 ## Venue objects no longer carry a calendar token
 
