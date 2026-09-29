@@ -6,6 +6,7 @@ import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
 import { venueHelp } from "./help";
 import { migrate } from "./migrate";
+import { shiftNoticeScheduler } from "./shift-notices";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -25,6 +26,8 @@ export default await app.start({
     setup: async () => {
       await migrate();
     },
+    start: shiftNoticeScheduler.start,
+    stop: shiftNoticeScheduler.stop,
   },
 });
 

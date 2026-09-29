@@ -1312,15 +1312,55 @@ const signupFree = async (
   return row ? ok(mapAssignment(row)) : fail(err.badInput("You are already signed up for this time range"));
 };
 
-const cancelAssignment = async (venueId: string, assignmentId: string, user: UserLike, canAdmin: boolean): Promise<Result<void>> => {
-  const rows = await sql<{ user_id: string }[]>`
-    DELETE FROM venue.shift_assignments
-    WHERE venue_id = ${venueId}::uuid
-      AND id = ${assignmentId}::uuid
-      AND (${canAdmin} OR user_id = ${user.id}::uuid)
-    RETURNING user_id
+/** A sign-up as it was when it was cancelled, for the notice to the venue's admins. */
+export type CancelledAssignment = {
+  id: string;
+  userId: string;
+  /** The display name, or the user name when the display name is empty, as the platform names people. */
+  userDisplayName: string;
+  /** The shift's public template ID; `null` for free time. */
+  templateId: string | null;
+  templateTitle: string | null;
+  startsAt: string;
+  endsAt: string;
+};
+
+const cancelAssignment = async (
+  venueId: string,
+  assignmentId: string,
+  user: UserLike,
+  canAdmin: boolean,
+): Promise<Result<CancelledAssignment>> => {
+  const [row] = await sql<
+    {
+      id: string;
+      user_id: string;
+      user_display_name: string;
+      template_short_id: string | null;
+      template_title: string | null;
+      starts_at: Date;
+      ends_at: Date;
+    }[]
+  >`
+    DELETE FROM venue.shift_assignments sa
+    WHERE sa.venue_id = ${venueId}::uuid
+      AND sa.id = ${assignmentId}::uuid
+      AND (${canAdmin} OR sa.user_id = ${user.id}::uuid)
+    RETURNING sa.id, sa.user_id, sa.starts_at, sa.ends_at,
+      (SELECT COALESCE(NULLIF(u.display_name, ''), u.uid) FROM auth.users u WHERE u.id = sa.user_id) AS user_display_name,
+      (SELECT st.short_id FROM venue.shift_templates st WHERE st.id = sa.template_id) AS template_short_id,
+      (SELECT st.title FROM venue.shift_templates st WHERE st.id = sa.template_id) AS template_title
   `;
-  return rows.length > 0 ? ok() : fail(err.notFound("Shift assignment"));
+  if (!row) return fail(err.notFound("Shift assignment"));
+  return ok({
+    id: row.id,
+    userId: row.user_id,
+    userDisplayName: row.user_display_name,
+    templateId: row.template_short_id,
+    templateTitle: row.template_title,
+    startsAt: row.starts_at.toISOString(),
+    endsAt: row.ends_at.toISOString(),
+  });
 };
 
 const getPersonalAssignment = async (venueId: string, assignmentId: string, userId: string): Promise<ShiftAssignment | null> => {
@@ -1727,7 +1767,13 @@ export const venueService = {
   },
   venueTemplates: { list: listVenueTemplates, instantiate: instantiateVenueTemplate },
   openingRules: { list: listOpeningRules, create: createOpeningRule, update: updateOpeningRule, delete: deleteOpeningRule },
-  overrides: { list: listOverrides, upsert: upsertOverride, update: updateOverride, delete: deleteOverride },
+  overrides: {
+    list: listOverrides,
+    listRange: listOverridesForDateRange,
+    upsert: upsertOverride,
+    update: updateOverride,
+    delete: deleteOverride,
+  },
   templates: {
     list: listTemplates,
     get: getTemplate,

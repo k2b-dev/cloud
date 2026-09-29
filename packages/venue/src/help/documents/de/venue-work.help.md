@@ -56,6 +56,22 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 - **Gefahrenbereich:** **Standort löschen** entfernt den Standort mit Schichten, Einträgen, Feedback und öffentlicher Seite. Vorher musst du den Namen des Standorts eintippen.
 :::
 
+## Benachrichtigungen {icon="bell"}
+
+Standorte sendet drei Arten von Benachrichtigungen. Jede kommt als Browser-Benachrichtigung; wenn du Browser-Benachrichtigungen nicht eingeschaltet hast oder die Zustellung im Browser fehlschlägt, kommt sie stattdessen per E-Mail. Benachrichtigungen verwenden die Zeitzone des Standorts und die Standardsprache dieser Cloud.
+
+:::reference
+- **Schicht-Erinnerungen:** Etwa 24 Stunden vor einer Schicht, die du übernommen hast, bekommst du eine Erinnerung mit Uhrzeit und Standort, zum Beispiel **Deine Schicht Mi., 18:00 · Harbor Cafe**. Für eine Schicht, die du weniger als 24 Stunden vor Beginn übernimmst, kommt keine Erinnerung, ebenso wenig für einen geschlossenen Tag, für eine Schicht, die ein Admin pausiert oder gelöscht hat, oder nachdem dein Zugriff „Mitarbeit“ endet.
+- **Schicht-Absagen:** Admins erfahren, wenn jemand aus einer anstehenden Schicht austritt oder ein Admin die Person entfernt. Der Admin, der die Person entfernt hat, bekommt keine Benachrichtigung.
+- **Unterbesetzte Schichten:** Admins bekommen eine Benachrichtigung für jede Schicht, die in den nächsten 24 Stunden beginnt und noch Leute braucht, zum Beispiel **1 fehlt · Mi., 18:00 · Harbor Cafe**. Öffnet der Standort für die Schicht erst, wenn sie besetzt ist, und hat er während der Schicht weder regelmäßige Öffnungszeiten noch eine Sonderöffnung, beginnt die Benachrichtigung mit **Bleibt ohne Besetzung zu**. Pausierte Schichten und geschlossene Tage lösen nichts aus.
+- **Schicht öffnen:** Eine Benachrichtigung öffnet den Plan am Tag der Schicht mit ihren Details; auf dem Telefon öffnen sich die Details von unten. E-Mails enden mit demselben Link. Die Seite prüft deinen Zugriff wie immer.
+- **Ausschalten:** Öffne in deinem Profil **Benachrichtigungen** und schalte Kanäle für **Schicht-Erinnerungen**, **Schicht-Absagen** oder **Unterbesetzte Schichten** aus.
+:::
+
+:::note iPhone und iPad
+Auf einem iPhone oder iPad kommen Browser-Benachrichtigungen nur an, wenn Cloud zum Home-Bildschirm hinzugefügt ist und von dort geöffnet wird. Sonst kommen sie per E-Mail.
+:::
+
 ## Wer was sieht {icon="eye"}
 
 | Im Arbeitsbereich | Lesen | Mitarbeit | Admin |

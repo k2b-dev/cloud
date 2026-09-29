@@ -1,4 +1,5 @@
 import { defineApp } from "@k2b/cloud";
+import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "venue",
@@ -26,6 +27,7 @@ export const app = defineApp({
     requiresRoles: ["user"],
   },
   widgets: [{ id: "today", path: "/api/venue/widget/today" }],
+  notifications: NOTIFICATIONS,
   openapi: "/api/venue/openapi.json",
   routes: ["/api/venue", "/app/venue", "/public/venue"],
 });

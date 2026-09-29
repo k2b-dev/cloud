@@ -37,6 +37,7 @@ import { venueCapabilityPresentation } from "./capability-presentation";
 import type { ShiftAssignment, Venue } from "./contracts";
 import { venueMessages } from "./messages";
 import { type UpcomingSlotSummary, venueService } from "./service";
+import { notifyShiftCancelled } from "./shift-notices";
 
 const messagesFor = (context: CapabilityExecutionContext) => venueMessages.resolve(context.locale ? [context.locale] : []).t;
 
@@ -456,6 +457,7 @@ const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSc
   if (!assignmentId) return fail(err.notFound("Shift assignment"));
   const result = await venueService.assignments.cancel(actor.data.venue.id, assignmentId, actor.data.user, false);
   if (!result.ok) return result;
+  await notifyShiftCancelled({ venue: actor.data.venue, cancelled: result.data, actor: actor.data.user });
   return ok({
     data: { assignmentId: input.assignmentId, cancelled: true as const },
     summary: t.capabilityCancelled({ venue: actor.data.venue.name }),

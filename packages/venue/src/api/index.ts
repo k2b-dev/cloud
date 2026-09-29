@@ -54,6 +54,7 @@ import {
 } from "../contracts";
 import { venueMessages } from "../messages";
 import { venueService } from "../service";
+import { notifyShiftCancelled } from "../shift-notices";
 import { formatVenueDateTime } from "../time-format";
 
 const VenueIdParamSchema = z.object({ id: VenueResourceIdSchema });
@@ -757,7 +758,10 @@ const venueRoutes = new Hono<AuthContext>()
     const assignment = await resolveOwned("assignments", venue.data.id, param.assignmentId);
     if (!assignment.ok) return respond(c, assignment);
     const canAdmin = hasAdminPermission(venue.data.permission);
-    return respond(c, () => venueService.assignments.cancel(venue.data.id, assignment.data, user.data, canAdmin));
+    const cancelled = await venueService.assignments.cancel(venue.data.id, assignment.data, user.data, canAdmin);
+    if (!cancelled.ok) return respond(c, cancelled);
+    await notifyShiftCancelled({ venue: venue.data, cancelled: cancelled.data, actor: user.data });
+    return respond(c, ok());
   })
   .post("/:id/sections", v("param", VenueIdParamSchema), v("json", PublicSectionInputSchema), async (c) => {
     const venue = await adminVenue(c, c.req.valid("param").id);
