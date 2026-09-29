@@ -14,7 +14,7 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { coreSettings, isUniqueViolation, logger, serviceAccounts } from "@k2b/cloud/services";
+import { coreSettings, isUniqueViolation, logger, serviceAccounts, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
@@ -1398,7 +1398,8 @@ const updateSection = async (venueId: string, id: string, patch: PublicSectionPa
 /**
  * Puts every section of the Venue in the order of `ids`, all or nothing. The list must name each section of this
  * Venue exactly once: a section of another Venue is not found, and a list that misses one, for example because
- * someone added a section meanwhile, changes nothing.
+ * someone added a section meanwhile, changes nothing. One statement writes every position, however many sections
+ * the Venue has.
  */
 const reorderSections = async (venueId: string, ids: string[]): Promise<Result<PublicSection[]>> =>
   sql.begin(async (tx) => {
@@ -1410,9 +1411,12 @@ const reorderSections = async (venueId: string, ids: string[]): Promise<Result<P
     if (new Set(ids).size !== ids.length || ids.length !== current.size) {
       return fail(err.badInput("List every section of the venue exactly once"));
     }
-    for (const [index, id] of ids.entries()) {
-      await tx`UPDATE venue.public_sections SET position = ${index + 1}, updated_at = now() WHERE id = ${id}::uuid`;
-    }
+    await tx`
+      UPDATE venue.public_sections AS section
+      SET position = ordered.position, updated_at = now()
+      FROM unnest(${toPgUuidArray(ids)}::uuid[]) WITH ORDINALITY AS ordered(id, position)
+      WHERE section.venue_id = ${venueId}::uuid AND section.id = ordered.id
+    `;
     const updated = await tx<DbPublicSection[]>`
       SELECT * FROM venue.public_sections WHERE venue_id = ${venueId}::uuid ORDER BY position, created_at
     `;
