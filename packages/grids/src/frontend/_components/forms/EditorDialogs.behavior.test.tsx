@@ -215,6 +215,13 @@ domTest("a new form says it is already saved and closes with Done until it is ed
     expect(dom.document.querySelector("dialog")).toBeNull();
     expect(methods).toEqual(["POST"]);
 
+    // The row names the form by what it shows; only the pencil says "Edit".
+    const rowButtons = Array.from(dom.document.querySelectorAll("li button"));
+    expect(rowButtons.map((node) => node.getAttribute("aria-label") ?? node.textContent?.replace(/\s+/g, " ").trim())).toEqual([
+      "Request 1 field · private",
+      "Edit form Request",
+    ]);
+
     dom.document.querySelector<HTMLButtonElement>('button[aria-label="Edit form Request"]')!.click();
     await Bun.sleep(10);
     expect(dom.document.body.textContent).not.toContain("Form created");

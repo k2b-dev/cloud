@@ -175,11 +175,12 @@ export default function FormsManager(props: Props) {
                     type="button"
                     class="flex min-h-8 min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
                     onClick={() => openFormEditor(form)}
-                    aria-label={t().editFormNamed({ name: form.name })}
                   >
+                    {/* The visible text names the button, so the pencil's "Edit form" name stays unique.
+                        The spaces keep its words apart; a flex container does not render them. */}
                     <span class="flex min-w-0 flex-1 items-baseline gap-2">
-                      <span class="text-sm font-semibold text-primary truncate">{form.name}</span>
-                      <span class="text-[10px] text-dimmed">{t().fieldCount({ count: form.config.fields.length })}</span>
+                      <span class="text-sm font-semibold text-primary truncate">{form.name}</span>{" "}
+                      <span class="text-[10px] text-dimmed">{t().fieldCount({ count: form.config.fields.length })}</span>{" "}
                       <span class="text-[10px] text-dimmed">· {form.publicToken ? t().publicStatus : t().privateStatus}</span>
                     </span>
                   </button>
