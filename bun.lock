@@ -145,6 +145,7 @@
         "@k2b/ui": "0.8.0",
         "@modelcontextprotocol/sdk": "1.30.0",
         "@napi-rs/canvas": "1.0.9",
+        "@nats-io/jetstream": "3.4.0",
         "@nats-io/transport-node": "3.4.0",
         "@simplewebauthn/server": "14.0.2",
         "@tabler/icons": "3.47.0",
