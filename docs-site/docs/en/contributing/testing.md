@@ -133,6 +133,15 @@ with the rest of the environment. Tests see the same configuration as in CI
 and in worktrees, which have no `.env`; variables you export in the shell
 still reach them.
 
+Package scripts receive the fixture preload through the same `BUN_OPTIONS`,
+so a Bun process that such a test starts maps the `CLOUD_TEST_*` targets
+again. Give that process another database through `CLOUD_TEST_DATABASE_URL`,
+not only `DATABASE_URL`. A `DATABASE_URL` that names the test database with
+its own `application_name` stays unchanged, so a test can find the sessions
+of the process it started. To run a production script with exactly the
+variables an operator would set, pass that environment without
+`...process.env` and start the script with `--no-env-file`.
+
 A direct `bun test` loads the dotenv files of its working directory. With a
 `CLOUD_TEST_*` variable set, the fixture refuses such a process when a file
 like `.env` exists there. Start a direct run from that directory with
@@ -142,6 +151,11 @@ variable also reaches the Bun processes that tests and package scripts start.
 The database name must end in `_test`. Integration tests create and delete
 rows; the fixture refuses any other name. Never point them at the development
 database.
+
+Every suite shares the test database, and it keeps what earlier runs left
+behind. A test that asserts on a database-wide listing with a limit, such as
+the oldest candidates of a background job, runs in a private database from
+`useFreshDatabase()` in `scripts/fixtures/test-infra`.
 
 The same rule holds for NATS. The development broker keeps the application
 streams in the `DEV` account, which accepts connections without credentials,

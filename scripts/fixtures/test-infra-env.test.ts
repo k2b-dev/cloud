@@ -23,6 +23,22 @@ describe("test runtime aliases", () => {
     expect(env.VALKEY_URL).toBe("redis://127.0.0.1:1");
   });
 
+  test("keep the application_name a test gives a process it starts against the test database", () => {
+    const target = "postgres://cloud:secret@127.0.0.1:5432/cloud_test";
+    const named = `${target}?application_name=grids-crash%3Arun`;
+    const env = testRuntimeEnv({ CLOUD_TEST_DATABASE_URL: target, DATABASE_URL: named, POSTGRES_URL: target });
+    expect(env.DATABASE_URL).toBe(named);
+    expect(env.POSTGRES_URL).toBe(target);
+    expect(env.PGURL).toBe(target);
+    for (const other of [
+      "postgres://cloud:secret@127.0.0.1:5432/cloud?application_name=grids-crash%3Arun",
+      "postgres://cloud:secret@127.0.0.1:5433/cloud_test?application_name=grids-crash%3Arun",
+      `${named}&options=-c%20search_path%3Dother`,
+    ]) {
+      expect(testRuntimeEnv({ CLOUD_TEST_DATABASE_URL: target, DATABASE_URL: other }).DATABASE_URL).toBe(target);
+    }
+  });
+
   test("remove every other alias whose target is missing, because unset means off", () => {
     const env: Record<string, string | undefined> = {
       CLOUD_TEST_VALKEY_URL: "redis://127.0.0.1:57001",

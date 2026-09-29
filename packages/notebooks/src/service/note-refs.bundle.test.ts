@@ -31,10 +31,12 @@ describe("minified notebooks bundle", () => {
     const script = `const { reindexAll } = await import(${JSON.stringify(entry)});
 const error = await reindexAll().then(() => null, (error) => error);
 console.log(error?.name ?? "none");`;
-    // A closed loopback port: the first query must fail to connect, not before it.
-    const run = Bun.spawn([process.execPath, "-e", script], {
+    // A closed loopback port: the first query must fail to connect, not before it. The environment
+    // is explicit because an inherited BUN_OPTIONS preload of the test fixture (`bun run test`)
+    // would replace DATABASE_URL with a configured test database.
+    const run = Bun.spawn([process.execPath, "--no-env-file", "-e", script], {
       cwd: root,
-      env: { ...process.env, DATABASE_URL: "postgres://cloud:cloud@127.0.0.1:1/notebooks_bundle_test" },
+      env: { PATH: process.env.PATH, DATABASE_URL: "postgres://cloud:cloud@127.0.0.1:1/notebooks_bundle_test" },
       stdout: "pipe",
       stderr: "pipe",
     });

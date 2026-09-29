@@ -1,7 +1,8 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
 import { sql } from "bun";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 
@@ -39,8 +40,20 @@ const seedUserMessage = async (conversationId: string, text: string) => {
 
 const candidateIds = async () => (await aiConversations.listEnrichmentCandidates({ limit: 100 })).map((candidate) => candidate.id);
 
+// Candidates are database-wide, oldest first and capped at 100, so any
+// conversation another suite leaves behind in the shared test database would
+// crowd this suite's fresh conversations out.
 databaseSuite()("enrichment store (integration)", () => {
+  let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
+  afterAll(async () => {
+    await sql.close();
+    await fresh?.drop();
+  });
   beforeAll(async () => {
+    fresh = await useFreshDatabase("ai_enrich");
+    await migrateAuth();
+    await sql`CREATE SCHEMA settings`;
+    await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text)`;
     await migrateCloudAi();
   });
   test("applyEnrichment with exact dirtyAsOf makes an unchanged conversation exactly clean", async () => {
