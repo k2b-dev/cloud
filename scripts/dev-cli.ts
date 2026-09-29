@@ -40,7 +40,8 @@ export const INFRA_COMPOSE_FILE = "compose.yml";
 /** Prepare local credentials and start the infrastructure stack (Postgres, Valkey, NATS, Geo, Filegate, Collabora, Gotenberg, rsql). */
 export const ensureInfra = async (): Promise<void> => {
   await prepareDevRsql();
-  await prepareDevFilegate();
+  // Compose does not track config file contents, and Filegate reads its configuration only on start.
+  if (await prepareDevFilegate()) await $`docker compose -f ${INFRA_COMPOSE_FILE} up -d --wait --wait-timeout 60 --force-recreate filegate`;
   await $`bun packages/gateway-ops/scripts/dev-nats.ts`;
   await $`docker compose -f ${INFRA_COMPOSE_FILE} up -d --wait --wait-timeout 60`;
 };

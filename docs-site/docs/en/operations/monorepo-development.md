@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-09-26
+updated: 2026-09-29
 ---
 
 # Monorepo development
@@ -76,7 +76,8 @@ When the stack is reached through a reverse proxy or tunnel, for example
 `https://cloud.dev.example`, set that address as `APP_URL` in the checkout's
 `.env` before `bun run dev`. Cloud uses it for links, OAuth redirects, and the
 same-origin checks on sign-in; with the default `localhost:3000`, signing in
-through the other address fails when the terms are accepted.
+through the other address fails when the terms are accepted. Development
+Filegate also accepts browser requests from this origin.
 
 ```bash
 APP_URL=https://cloud.dev.example
@@ -85,7 +86,7 @@ APP_URL=https://cloud.dev.example
 ## Test Filegate locally
 
 Development infrastructure includes Filegate 6.1.0 for Files (`filesv2`) development.
-To prepare its backend token and start only Filegate:
+To prepare its backend token and configuration and start only Filegate:
 
 ```bash
 bun scripts/dev-filegate.ts
@@ -96,8 +97,14 @@ docker compose -f compose.yml exec filegate /app/filegate status
 Use `http://filegate:4000` from Cloud containers and `http://127.0.0.1:4000`
 from the host. Direct transfer leases use the latter address. Open Cloud at
 `http://localhost:3000` so its cookies do not share Filegate's host; ports alone
-do not isolate cookies. Browser CORS permits the configured local Cloud origins.
-Only the loopback interface publishes Filegate's port.
+do not isolate cookies. Browser CORS permits `http://localhost:3000`,
+`http://127.0.0.1:3000`, and the origin of `APP_URL`. Only the loopback
+interface publishes Filegate's port, so previews and transfers work only in a
+browser on the development machine.
+
+The configuration is generated in the Git-ignored `.local/filegate/conf.yaml`.
+Filegate reads it only on start; `bun run dev` recreates the container when
+`APP_URL` changes the file.
 
 The backend token is stored in the Git-ignored `.local/filegate/token` file
 with mode `0600`. Repeated setup retains it. Supply it only to the application
