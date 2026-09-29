@@ -5,7 +5,7 @@ section: Server
 order: 240
 description: Resolve the request locale and timezone once and reuse them for formatting, SSR, and capability metadata.
 tags: [server, locale, timezone, i18n, formatting]
-updated: 2026-09-28
+updated: 2026-09-29
 ---
 
 # Locale and time
@@ -38,7 +38,10 @@ regional tags such as `de-CH` stay intact):
 1. `x-cloud-locale` request header — transport metadata set by Cloud-internal
    callers such as the capability dispatcher;
 2. `cloud.locale` cookie — an explicit preference (`LOCALE_COOKIE`);
-3. `Accept-Language`, in quality order;
+3. `Accept-Language`: the first tag in quality order whose language Cloud
+   ships catalogs for (English or German), with its region kept, so
+   `fr-FR,de-CH;q=0.8` resolves to `de-CH`. If no tag matches, the first
+   valid tag still applies so formatting follows the browser;
 4. the operator's `app.locale` setting;
 5. `"en"` (`DEFAULT_LOCALE`).
 

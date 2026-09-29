@@ -27,6 +27,22 @@ describe("preferredLocale", () => {
     expect(preferredLocale(headers)).toBe("de-AT");
   });
 
+  it("picks the first Accept-Language tag with a supported language", () => {
+    expect(preferredLocale(new Headers({ "Accept-Language": "fr-FR,de;q=0.8" }))).toBe("de");
+    expect(preferredLocale(new Headers({ "Accept-Language": "fr-FR, it;q=0.9, en-GB;q=0.7, de-CH;q=0.8" }))).toBe("de-CH");
+    expect(preferredLocale(new Headers({ "Accept-Language": "es, EN-gb;q=0.5" }))).toBe("en-GB");
+  });
+
+  it("falls back to the first valid Accept-Language tag without a supported language", () => {
+    expect(preferredLocale(new Headers({ "Accept-Language": "fr-FR, it;q=0.9" }))).toBe("fr-FR");
+  });
+
+  it("keeps explicit preferences outside the supported languages", () => {
+    const headers = new Headers({ Cookie: "cloud.locale=fr", "Accept-Language": "de" });
+    expect(preferredLocale(headers)).toBe("fr");
+    expect(preferredLocale(new Headers({ "x-cloud-locale": "it-CH", "Accept-Language": "en" }))).toBe("it-CH");
+  });
+
   it("returns undefined without any preference", () => {
     expect(preferredLocale(new Headers())).toBeUndefined();
     expect(preferredLocale(new Headers({ "Accept-Language": "*" }))).toBeUndefined();
