@@ -2125,6 +2125,14 @@
   color: var(--k2b-text);
 }
 
+/* Touch devices draw overlay scrollbars that reserve no gutter, so absorbing
+   the host inset would leave the panel flush with the trailing edge. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-detail-panel {
+    --k2b-detail-panel-scroll-inset: 0rem;
+  }
+}
+
 .k2b-ui .k2b-detail-panel__header {
   display: flex;
   min-width: 0;
