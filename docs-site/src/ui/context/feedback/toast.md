@@ -102,6 +102,10 @@ Messages must identify the affected operation. Avoid “Success” as the descri
 
 The toast rail uses the browser top layer when available so feedback remains visible above dialogs. A toast displayed over a modal is read-only until the modal closes because the browser makes content outside the modal inert.
 
+The rail sits in the bottom-right corner. Below a viewport width of 48rem it
+moves to the top edge, because on phones the bottom edge holds dialog footers,
+bottom sheets, and primary actions that a toast must not cover.
+
 ## Example
 
 ```ts

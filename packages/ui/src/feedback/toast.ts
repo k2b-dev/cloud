@@ -96,8 +96,11 @@ const ensureContainer = (): HTMLElement | null => {
   container.setAttribute("popover", "manual");
   // Keep the source rail geometry inline: it must defeat UA popover defaults
   // even when a consumer has not loaded the optional package stylesheet yet.
+  // The stylesheet only moves the rail to the top edge on narrow viewports
+  // through the two edge variables.
   container.style.cssText =
-    "position:fixed;top:auto;left:auto;bottom:env(safe-area-inset-bottom,0px);right:env(safe-area-inset-right,0px);" +
+    "position:fixed;left:auto;right:env(safe-area-inset-right,0px);" +
+    "top:var(--k2b-toast-rail-top,auto);bottom:var(--k2b-toast-rail-bottom,env(safe-area-inset-bottom,0px));" +
     "z-index:50;box-sizing:border-box;display:flex;flex-direction:column;gap:0.5rem;" +
     "width:min(22rem,calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)));" +
     "height:auto;max-width:100vw;" +
