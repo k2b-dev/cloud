@@ -24,16 +24,24 @@ const app = defineApp({
 
 const server = new Hono().get("/", ...app.ssr(() => () => "layer probe"));
 
-/** Builds a stylesheet the way `scripts/build.ts` builds an app's `app.css`. */
-const buildAppCss = async (): Promise<string> => {
+/** Builds a stylesheet with Tailwind, as the app and core builds do. */
+const buildCss = async (entry: string, naming: string): Promise<string> => {
+  const result = await Bun.build({ entrypoints: [entry], outdir: resolve(root, "out"), naming, plugins: [tailwind] });
+  const [output] = result.outputs;
+  if (!result.success || !output) throw new AggregateError(result.logs, `${naming} build failed`);
+  return await output.text();
+};
+
+/** An app's `app.css` in its usual shape: Tailwind utilities only. */
+const buildAppCss = (): Promise<string> => {
   const entry = resolve(root, "app.css");
   const utilities = Bun.resolveSync("tailwindcss/utilities.css", import.meta.dir);
   writeFileSync(entry, `@import ${JSON.stringify(utilities)} layer(utilities) source(none);\n@source inline("translate-x-[3px]");\n`);
-  const result = await Bun.build({ entrypoints: [entry], outdir: resolve(root, "out"), naming: "app.css", plugins: [tailwind] });
-  const [output] = result.outputs;
-  if (!result.success || !output) throw new AggregateError(result.logs, "app.css build failed");
-  return await output.text();
+  return buildCss(entry, "app.css");
 };
+
+/** The real `global.css`: full Tailwind output, @k2b/ui and the Cloud shell. */
+const buildGlobalCss = (): Promise<string> => buildCss(resolve(import.meta.dir, "../styles/global.css"), "global.css");
 
 /** Cascade layer order as the browser settles it: first mention wins. */
 const layerOrder = (css: string): string[] => {
@@ -60,6 +68,9 @@ describe("document CSS layer order", () => {
     expect(appCss).toContain("@layer properties");
     expect(appCss).toContain("--tw-translate-x: 0");
 
-    expect(layerOrder(`${declaration}\n${appCss}`)).toEqual(["properties", "theme", "base", "components", "utilities"]);
+    // Stylesheets in the head's link order. A layer name the declaration does
+    // not list lands after `utilities` and beats it, so none may appear.
+    const globalCss = await buildGlobalCss();
+    expect(layerOrder(`${declaration}\n${appCss}\n${globalCss}`)).toEqual(["properties", "theme", "base", "components", "utilities"]);
   });
 });
