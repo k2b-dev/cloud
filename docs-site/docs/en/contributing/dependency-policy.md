@@ -21,9 +21,21 @@ use a new release immediately. Lifecycle scripts are denied by default; add a
 trusted dependency only after verifying why its install script is required.
 
 Update `bun.lock` together with the manifest. `bun run check` verifies that
-manifests, catalog, lockfile, and published-package constraints agree.
+manifests, catalog, lockfile, and published-package constraints agree. A
+concrete pin of a catalog dependency, in a published package, in the root
+`devDependencies`, or in the root `overrides`, must equal the catalog
+version, and `bun.lock` must resolve that dependency to the catalog version
+for every workspace package. Otherwise the workspace installs two copies,
+and types, `instanceof` checks, and browser builds stop matching.
+
 Dependabot opens weekly grouped pull requests for the workspace and for GitHub
-Actions.
+Actions. It does not read Bun catalogs yet
+([dependabot-core#14320](https://github.com/dependabot/dependabot-core/issues/14320)):
+it bumps the concrete pins and leaves the catalog behind, and it proposes no
+update for a catalog entry that no concrete pin mirrors. When
+`bun run check dependencies` fails on a Dependabot pull request, set each
+reported catalog entry to the bumped version in the root `package.json`, run
+`bun install`, and push the result to the pull request branch.
 
 ## Root overrides
 
