@@ -343,10 +343,13 @@ jobs:
       - if: always()
         run: docker rm --force app-core app-faq gateway postgres nats valkey || true
 
+  # @k2b/cloud pins an exact @k2b/ui version, so it publishes only after npm-ui
+  # finished (or was not part of this release) and that version is installable.
   npm-cloud:
-    if: inputs.npm_cloud_released
+    needs: npm-ui
+    if: ${{ !cancelled() && inputs.npm_cloud_released && (needs.npm-ui.result == 'success' || needs.npm-ui.result == 'skipped') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     permissions:
       contents: read
       id-token: write
@@ -375,6 +378,39 @@ jobs:
           git fetch --quiet origin "refs/tags/npm-cloud-v$version:refs/tags/npm-cloud-v$version"
           [[ "$(git rev-list -n1 "npm-cloud-v$version")" == "$SHA" ]] || { echo "npm-cloud-v$version is not at $SHA." >&2; exit 1; }
           echo "NPM_TAG=$([[ "$version" == *-* ]] && echo next || echo latest)" >> "$GITHUB_ENV"
+      - name: Wait until the pinned @k2b/ui is installable from npm
+        env:
+          UI_RELEASED: ${{ inputs.npm_ui_released }}
+        run: |
+          set -euo pipefail
+          cloud=$(jq -r .version packages/cloud/package.json)
+          ui=$(jq -r '.dependencies["@k2b/ui"]' packages/cloud/package.json)
+          [[ "$ui" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "@k2b/cloud must pin an exact @k2b/ui version, found '$ui'." >&2; exit 1; }
+          # A new version reaches npm's full metadata, the install metadata, and the tarball download at different times.
+          installable() {
+            local tarball
+            tarball=$(npm view "@k2b/ui@$ui" dist.tarball --prefer-online 2>/dev/null || true)
+            [[ "$(npm view "@k2b/ui@$ui" version --prefer-online 2>/dev/null || true)" == "$ui" && -n "$tarball" ]] &&
+              curl -fsS --max-time 60 -H 'Accept: application/vnd.npm.install-v1+json' https://registry.npmjs.org/@k2b%2fui | jq -e --arg v "$ui" '.versions[$v]' >/dev/null &&
+              curl -fsS --max-time 120 -o /dev/null "$tarball"
+          }
+          # @k2b/ui published by this run may take minutes to become installable; an older pin must be installable already.
+          budget=$([[ "$UI_RELEASED" == "true" ]] && echo 1200 || echo 60)
+          deadline=$((SECONDS + budget))
+          delay=10
+          until installable; do
+            remaining=$((deadline - SECONDS))
+            if ((remaining <= 0)); then
+              echo "@k2b/ui@$ui, pinned by @k2b/cloud@$cloud, is not installable from npm after ${SECONDS}s. Publish @k2b/ui@$ui first, then run the release again." >&2
+              exit 1
+            fi
+            # The last pause ends at the deadline, so the final check uses the whole budget.
+            pause=$((delay < remaining ? delay : remaining))
+            echo "@k2b/ui@$ui is not installable yet; checking again in ${pause}s."
+            sleep "$pause"
+            delay=$((delay * 2 > 120 ? 120 : delay * 2))
+          done
+          echo "@k2b/ui@$ui is installable from npm."
       - name: Publish unless this version is already on npm (a finished release may run again)
         working-directory: packages/cloud
         run: |

@@ -58,6 +58,11 @@ release-please runs on every push to `main`:
 4. The `npm-cloud-v*` and `npm-ui-v*` tags publish `@k2b/cloud` and `@k2b/ui`
    with npm provenance. A prerelease version such as `0.8.0-rc.1` publishes
    under the `next` dist-tag; a stable version publishes under `latest`.
+   `@k2b/cloud` pins an exact `@k2b/ui` version, so it publishes only after
+   that version is installable from npm. When the same release publishes
+   `@k2b/ui`, the workflow waits up to 20 minutes for it; otherwise the pinned
+   version must already be on npm, or `@k2b/cloud` stays unpublished and the
+   release fails.
 
 `release.json` lists every image with its tag and digest. Deployments pin the
 `vX.Y.Z` tag or the digest from that file; see
