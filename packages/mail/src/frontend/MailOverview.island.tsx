@@ -126,16 +126,15 @@ function MailOverviewView(props: {
   });
   const mailboxIsPinned = (mailboxId: string) => pinnedMailboxIds().includes(mailboxId);
   const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
-    setPinnedMailboxIds((current) => {
-      const pinned = current.includes(mailbox.id);
-      const next = pinned ? current.filter((id) => id !== mailbox.id) : [mailbox.id, ...current];
-      writeMailWorkspacePreferences({
-        ...readMailWorkspacePreferences(document.cookie),
-        pinnedMailboxIds: next,
-      });
-      setPinAnnouncement(pinned ? messages().unpinned({ name: mailbox.name }) : messages().pinned({ name: mailbox.name }));
-      return next;
-    });
+    // This document may come from history or run beside another tab: apply the
+    // shown pin or unpin to the stored list so newer pins survive.
+    const pin = !mailboxIsPinned(mailbox.id);
+    const stored = readMailWorkspacePreferences(document.cookie);
+    const others = stored.pinnedMailboxIds.filter((id) => id !== mailbox.id);
+    const next = pin ? [mailbox.id, ...others] : others;
+    writeMailWorkspacePreferences({ ...stored, pinnedMailboxIds: next });
+    setPinnedMailboxIds(next);
+    setPinAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
   };
   const canWriteMailbox = (mailboxId: string) => {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;

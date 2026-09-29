@@ -28,6 +28,9 @@ type SsrHandler<E extends Env, T extends object> = (context: Context<E & PageEnv
  * (such as the request locale for `<html lang>`) are present on every SSR
  * page without per-route plumbing. Redirects and other passthrough Responses
  * skip it.
+ *
+ * Rendered documents default to `Cache-Control: private, no-store` unless the
+ * handler or a middleware already chose a policy.
  */
 export const createStatusPreservingSsrHandler = <T extends object>(
   html: HtmlFn<T>,
@@ -55,7 +58,12 @@ export const createStatusPreservingSsrHandler = <T extends object>(
       response.headers.forEach((value, key) => {
         headers[key] = value;
       });
-      return context.newResponse(response.body, status as StatusCode, headers);
+      const document = context.newResponse(response.body, status as StatusCode, headers);
+      // A rendered document carries the signed-in user's state. Without an
+      // explicit policy, a browser may show it again on Back from its HTTP
+      // cache, even after sign-out. Handlers that set their own policy keep it.
+      if (!document.headers.has("Cache-Control")) document.headers.set("Cache-Control", "private, no-store");
+      return document;
     });
   };
 };

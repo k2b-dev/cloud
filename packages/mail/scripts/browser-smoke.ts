@@ -531,10 +531,6 @@ const runSmoke = async (fixture: Fixture) => {
     await clickHydratedDropdownTrigger(page, page.getByRole("button", { name: "Choose list view", exact: true }));
     await page.locator('[role="menu"]:popover-open').getByText("Conversation view", { exact: true }).click();
     await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
-    // Workaround for #403: without this reload, browser Back below replays the cached message-view document,
-    // which saves Message view again. Remove it with the fix.
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await page.locator('[role="list"][aria-label$=" conversations"]').waitFor();
     ok("message list mode survives SSR reload and returns to conversation view");
 
     const desktopDirectActions = (await desktopSidebar.locator("footer > button, footer > a").allTextContents()).map((label) =>
@@ -556,6 +552,10 @@ const runSmoke = async (fixture: Fixture) => {
     );
     await page.goBack({ waitUntil: "domcontentloaded" });
     await expectUrl(page, (url) => url.pathname === mailboxPath, "browser back returns to the mailbox");
+    await page
+      .locator('[role="list"][aria-label$=" conversations"]')
+      .waitFor()
+      .catch(() => fail("browser back restored the older message view instead of conversation view"));
     if (Math.round(await desktopSidebar.evaluate((element) => element.getBoundingClientRect().width)) !== 176) {
       fail("Mail sidebar width changed after browser back");
     }

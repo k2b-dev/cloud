@@ -67,3 +67,20 @@ test("awaits async page preparation before rendering and skips redirects", async
   expect((await app.request("/redirect")).status).toBe(302);
   expect(preparations).toBe(1);
 });
+
+test("rendered documents default to private, no-store so Back revalidates signed-in state", async () => {
+  const app = new Hono()
+    .get("/page", ...ssr(() => () => "Page"))
+    .get(
+      "/own",
+      ...ssr((context) => {
+        context.header("Cache-Control", "public, max-age=60");
+        return () => "Public page";
+      }),
+    )
+    .get("/old", ...ssr((context) => context.redirect("/page")));
+
+  expect((await app.request("/page")).headers.get("cache-control")).toBe("private, no-store");
+  expect((await app.request("/own")).headers.get("cache-control")).toBe("public, max-age=60");
+  expect((await app.request("/old")).headers.get("cache-control")).toBeNull();
+});

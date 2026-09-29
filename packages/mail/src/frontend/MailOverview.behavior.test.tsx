@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 
@@ -61,6 +61,86 @@ test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and
     await settle();
     expect(dom.root.querySelector("#mail-deleted-mailboxes")).toBeNull();
     expect(requests).toHaveLength(3);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("pinning from an older overview keeps pins a newer document saved", async () => {
+  const dom = createDomTestHarness();
+  dom.window.happyDOM.setURL("http://localhost/app/mail");
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return Response.json({ message: "Unexpected request" }, { status: 500 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const [{ default: MailOverview }, { readMailWorkspacePreferences }] = await Promise.all([
+    import("./MailOverview.island"),
+    import("./_components/mail-workspace-preferences"),
+  ]);
+  delegateEvents(["click"], dom.document);
+  const mailbox = (id: string, name: string) => ({
+    id,
+    name,
+    description: null,
+    health: "active" as const,
+    healthReason: null,
+    syncEnabled: true,
+    searchBackend: "auto" as const,
+    automaticReplyManagementPermission: "admin" as const,
+    composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
+    createdAt: "2026-08-19T10:00:00.000Z",
+    updatedAt: "2026-08-19T10:00:00.000Z",
+    permission: "admin" as const,
+    receivingAddress: `${name.toLowerCase()}@example.test`,
+  });
+  const storeCookie = (preferences: object) => {
+    document.cookie = `cloud_mail_workspace=${encodeURIComponent(JSON.stringify(preferences))}; Path=/app/mail`;
+  };
+  // A newer document pinned Sales after this overview rendered without pins.
+  storeCookie({ listMode: "messages", pinnedMailboxIds: ["Mail02"] });
+  const dispose = render(
+    () =>
+      createComponent(MailOverview, {
+        mailboxes: [mailbox("Mail01", "Support"), mailbox("Mail02", "Sales")],
+        initialView: "mine",
+        initialSelection: null,
+        initialDetail: null,
+        initialPinnedMailboxIds: [],
+        currentUserEmail: null,
+        contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+        dateConfig: { locale: "en", timeZone: "UTC" },
+        initialFocusError: null,
+        initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+      }),
+    dom.root,
+  );
+  const settle = () => Bun.sleep(30);
+  const button = (label: string) => {
+    const element = dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(element).not.toBeNull();
+    return element!;
+  };
+  try {
+    await settle();
+    button("Pin Support").click();
+    await settle();
+    expect(readMailWorkspacePreferences(document.cookie)).toMatchObject({ listMode: "messages", pinnedMailboxIds: ["Mail01", "Mail02"] });
+    button("Unpin Sales");
+
+    // Another tab unpinned Sales; this overview still shows it pinned.
+    storeCookie({ listMode: "messages", pinnedMailboxIds: ["Mail01"] });
+    button("Unpin Sales").click();
+    await settle();
+    expect(readMailWorkspacePreferences(document.cookie).pinnedMailboxIds).toEqual(["Mail01"]);
+    button("Pin Sales");
+    expect(requests).toHaveLength(0);
   } finally {
     dispose();
     globalThis.fetch = originalFetch;

@@ -51,3 +51,12 @@ export const writeMailWorkspacePreferences = (preferences: MailWorkspacePreferen
     JSON.stringify(normalized),
   )}; Path=/app/mail; Max-Age=31536000; SameSite=Lax`;
 };
+
+/**
+ * Changes only the given preferences on top of the stored cookie. A document
+ * restored from history may render older preferences; writing them back whole
+ * would overwrite what a newer document has saved since.
+ */
+export const updateMailWorkspacePreferences = (patch: Partial<MailWorkspacePreferences>): void => {
+  writeMailWorkspacePreferences({ ...readMailWorkspacePreferences(document.cookie), ...patch });
+};
