@@ -14,26 +14,27 @@ const inlineDisposition = (name: string) => {
   return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 };
 
+/** The browser's own PDF viewer shows the stream inline under the file name; nothing else may use it. */
+export function inlinePdfResponse(pdf: { name: string; length: string | null; body: ReadableStream<Uint8Array> }) {
+  const headers = new Headers({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": inlineDisposition(pdf.name),
+    "Content-Security-Policy": POLICY,
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private, no-store",
+    "Cross-Origin-Resource-Policy": "same-origin",
+  });
+  if (pdf.length) headers.set("Content-Length", pdf.length);
+  return new Response(pdf.body, { headers });
+}
+
 /**
- * A stable same-origin address for a stored PDF in the browser's viewer. The file name
- * is the last path segment, which viewers show as the title; each request is authorized
- * with the session, so a reload reads the current file with current rights.
+ * A stored PDF for API clients, with JSON errors. Browsers open the same file at the Files page address
+ * (`/app/filesv2/pdf/...`), which signs an expired session in again and shows localized error pages.
  */
 export const inlinePdfApi = new Hono<AuthContext>().get(
   "/bases/:baseId/pdf/:path{.+}",
   middleware.openapi({ summary: "Open a stored PDF in the browser's PDF viewer", ...requiresAuth }),
   v("param", z.object({ baseId: z.string().min(1), path: DownloadInputSchema.shape.path })),
-  async (c) => {
-    const pdf = await filesService.inlinePdf(c.get("actor"), c.req.valid("param"), c.req.raw.signal);
-    const headers = new Headers({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": inlineDisposition(pdf.name),
-      "Content-Security-Policy": POLICY,
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "private, no-store",
-      "Cross-Origin-Resource-Policy": "same-origin",
-    });
-    if (pdf.length) headers.set("Content-Length", pdf.length);
-    return new Response(pdf.body, { headers });
-  },
+  async (c) => inlinePdfResponse(await filesService.inlinePdf(c.get("actor"), c.req.valid("param"), c.req.raw.signal)),
 );

@@ -43,9 +43,9 @@ export async function contentLease(baseId: string, path: string, signal: AbortSi
   return lease;
 }
 
-/** The stable address of a stored PDF in the browser's viewer; its last segment is the file name the viewer shows. */
+/** The stable page address of a stored PDF in the browser's viewer; its last segment is the file name the viewer shows. */
 export const inlinePdfHref = (baseId: string, path: string) =>
-  `/api/filesv2/bases/${encodeURIComponent(baseId)}/pdf/${path.split("/").map(encodeURIComponent).join("/")}`;
+  `/app/filesv2/pdf/${encodeURIComponent(baseId)}/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 /** Byte bound is enforced while reading, even if a file changed after stat. No Cloud cookies or token reach Filegate. */
 export async function readPreview(baseId: string, entry: FileEntry, signal: AbortSignal, fallback: string) {

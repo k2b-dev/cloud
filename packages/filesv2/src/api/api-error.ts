@@ -19,7 +19,7 @@ const CONFLICTS = [
  * carry their own; Filegate failures describe storage; anything else is a
  * Cloud defect (`internal`), not a storage outage, and belongs in the log.
  */
-export function apiError(error: unknown): { code: string; status: number } {
+export function apiError(error: unknown): { code: string; status: FilesError["status"] | AccountIdentityError["status"] | 500 } {
   if (error instanceof FilesError || error instanceof AccountIdentityError) return { code: error.code, status: error.status };
   if (!(error instanceof FilegateError)) return { code: "internal", status: 500 };
   const code = filegateErrorCode(error);
