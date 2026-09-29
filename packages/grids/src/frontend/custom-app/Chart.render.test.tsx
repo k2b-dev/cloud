@@ -49,7 +49,7 @@ test("every chart type fills a fixed-height box instead of sizing itself by its 
   expect(chart(statuses, { chartType: "donut" })).toMatch(/^<div class="flex h-72 flex-col"><div class="k2b-chart min-h-0 flex-1"/);
   for (const chartType of ["bar", "line"] as const) {
     expect(chart(statuses, { chartType })).toMatch(
-      /^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1"><div class="k2b-chart min-w-0 flex-1"/,
+      /^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1"><span [^>]*data-chart-y-tick-gutter><\/span><div class="k2b-chart min-w-0 flex-1 /,
     );
   }
 });
@@ -62,15 +62,17 @@ test("bar and line charts show the y-axis label beside the plot and the x-axis l
     // the chart's fixed height and over wide value labels, and its bar chart has no x-axis label.
     expect(html).not.toContain(`<text class="stdlib-chart-axis-label"`);
     const side = html.match(
-      /^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1">(<p[^>]*>[^<]*<\/p>)<div class="k2b-chart /,
-    )?.[1];
-    expect(side).toMatch(/^<p class="w-4 [^"]*\brotate-180\b[^"]*\btruncate\b[^"]*" style="writing-mode:vertical-rl;/);
-    expect(side).toContain(`title="${yAxisLabel}" data-chart-y-axis-label>${yAxisLabel}</p>`);
-    // The axis below is indented by the label's width, so its percentages refer to the chart's own width.
+      /^<div class="flex h-72 flex-col"><div class="flex min-h-0 flex-1">(<p[^>]*>[^<]*<\/p>)(<span [^>]*data-chart-y-tick-gutter><\/span>)<div class="k2b-chart /,
+    );
+    expect(side?.[1]).toMatch(/^<p class="w-4 [^"]*\brotate-180\b[^"]*\btruncate\b[^"]*" style="writing-mode:vertical-rl;/);
+    expect(side?.[1]).toContain(`title="${yAxisLabel}" data-chart-y-axis-label>${yAxisLabel}</p>`);
+    // The axis below is indented by the label's width and the same tick gutter, so its percentages refer to the chart's own width.
     const { width, start, end } = plotArea(html);
-    const below = html.match(
-      /<\/div><div class="shrink-0 pl-4"><div class="relative[^"]*">.*<\/div>(<p[^>]*>Ticket status<\/p>)<\/div><\/div>$/,
-    )?.[1];
+    const bottom = html.match(
+      /<\/div><div class="flex shrink-0"><span class="w-4 shrink-0"><\/span>(<span [^>]*><\/span>)<div class="min-w-0 flex-1"><div class="relative[^"]*">.*<\/div>(<p[^>]*>Ticket status<\/p>)<\/div><\/div><\/div>$/,
+    );
+    expect(bottom?.[1]).toBe(side?.[2]);
+    const below = bottom?.[2];
     expect(below).toContain("data-chart-x-axis-label");
     expect(below).toContain(`padding-left:${(start / width) * 100}%`);
     expect(below).toContain(`padding-right:${((width - end) / width) * 100}%`);
@@ -140,5 +142,88 @@ test("charts without renderable values keep the chart's empty state without an a
     expect(html).not.toContain("data-chart-x-axis-label");
     expect(html).not.toContain("data-chart-y-axis-label");
     expect(html).not.toContain("data-chart-category");
+  }
+});
+
+const amounts = (values: number[], props: Partial<ChartProps> = {}): string =>
+  chart([], {
+    data: {
+      kind: "chart",
+      buckets: values.map((value, index) => ({ keys: [`Category ${index + 1}`], values: { amount__sum: String(value) } })),
+      fields: [],
+      viewQuery: { groupBy: [{ fieldId: "category" }], aggregations: [{ fieldId: "amount", agg: "sum" }] },
+      relationLabels: {},
+    },
+    ...props,
+  });
+
+// Axis text is a 10px monospace font, so every character is 1ch wide; 6px is typical.
+const CHAR_PX = 6;
+
+/**
+ * Where the y tick labels and the plot start, in CSS pixels, when the chart block is
+ * `blockWidth` pixels wide. The plot stretches with the block; text keeps its pixel size.
+ */
+const yAxisLayout = (html: string, blockWidth: number) => {
+  const { width, start } = plotArea(html);
+  const yAxisLabelPx = html.includes("data-chart-y-axis-label") ? 16 : 0;
+  const gutterPx = Number(html.match(/<span[^>]*data-chart-y-tick-gutter[^>]*>/)?.[0].match(/width:\s*([\d.]+)ch/)?.[1] ?? 0) * CHAR_PX;
+  const svgLeft = yAxisLabelPx + gutterPx;
+  const scale = (blockWidth - svgLeft) / width;
+  const labels = [...html.matchAll(/<text class="stdlib-chart-tick-label" x="(-?[\d.]+)"[^>]*text-anchor="end"[^>]*>([^<]*)<\/text>/g)].map(
+    ([, x, text]) => {
+      const end = svgLeft + Number(x) * scale;
+      return { text: text!, left: end - [...text!].length * CHAR_PX, end };
+    },
+  );
+  return { yAxisLabelPx, labels, plotStart: svgLeft + start * scale };
+};
+
+test("y-axis values stay whole and close to the plot on phones and wide pages alike", () => {
+  const cases: { locale: string; values: number[]; valueFormat: NonNullable<ChartProps["valueFormat"]>; shows: string }[] = [
+    {
+      locale: "de",
+      values: [3200.5, 14250, 9870.25, 15100],
+      valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" },
+      shows: "10.000,00 EUR",
+    },
+    {
+      locale: "en",
+      values: [3200.5, 14250, 9870.25, 15100],
+      valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR", unitPosition: "prefix" },
+      shows: "EUR 10,000.00",
+    },
+    {
+      locale: "de",
+      values: [-4200, 1250.75, 980],
+      valueFormat: { style: "number", decimalPlaces: 2, unit: "kWh" },
+      shows: "-5.000,00 kWh",
+    },
+    { locale: "en", values: [0.25, 0.5, 0.125], valueFormat: { style: "percent" }, shows: "50%" },
+    { locale: "en", values: [3, 7, 12], valueFormat: undefined, shows: "12" },
+  ];
+  for (const { locale, values, valueFormat, shows } of cases) {
+    for (const chartType of ["bar", "line"] as const) {
+      for (const yAxisLabel of [undefined, "Amount"]) {
+        const html = amounts(values, { chartType, valueFormat, yAxisLabel, dateConfig: { timeZone: "UTC", locale } });
+        // A 390px phone, a tablet, and a full-width block on a 1440px page.
+        for (const blockWidth of [342, 600, 1140]) {
+          const { yAxisLabelPx, labels, plotStart } = yAxisLayout(html, blockWidth);
+          expect(labels.map((label) => label.text)).toContain(shows);
+          const context = `${chartType} ${locale} ${shows} at ${blockWidth}px`;
+          for (const label of labels) {
+            expect({ context, text: label.text, clipped: label.left < yAxisLabelPx }).toEqual({
+              context,
+              text: label.text,
+              clipped: false,
+            });
+            expect(label.end).toBeLessThanOrEqual(plotStart);
+          }
+          // The gutter fits the widest label instead of a fixed share of the width.
+          const widestPx = Math.max(...labels.map((label) => label.end - label.left));
+          expect(plotStart - yAxisLabelPx - widestPx).toBeLessThanOrEqual(16);
+        }
+      }
+    }
   }
 });
