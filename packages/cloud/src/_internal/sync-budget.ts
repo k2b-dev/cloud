@@ -9,7 +9,8 @@
  *
  * Cloud therefore declares jobs and queues without `retention` with a budget
  * derived from the primitive's payload limit: `SYNC_BACKLOG_MESSAGES` pending
- * messages at that limit. An explicit `retention` still wins.
+ * messages at that limit, never more than Sync's own 1 GiB. An explicit
+ * `retention` still wins.
  *
  * Sync refuses a declaration whose byte limit differs from the existing
  * stream (`ResourceDriftError`), so before a job or queue is first used this
@@ -17,8 +18,17 @@
  * that already holds more than the new limit would lose its oldest messages;
  * it keeps its current limit instead, and a later start applies the new one.
  */
-import type { DeadLetterStore, Job, JobConfig, Queue, QueueConfig, RetentionConfig, Sync } from "@k2b/sync";
-import { type JetStreamManager, jetstreamManager, type StreamInfo } from "@nats-io/jetstream";
+import {
+  type DeadLetterStore,
+  type Job,
+  type JobConfig,
+  type Queue,
+  type QueueConfig,
+  ResourceDriftError,
+  type RetentionConfig,
+  type Sync,
+} from "@k2b/sync";
+import { jetstreamManager, type StreamInfo } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { logger } from "../services/logging";
 
@@ -26,6 +36,7 @@ import { logger } from "../services/logging";
 const SYNC_PAYLOAD_BYTES = 128 * 1024;
 const SYNC_DEAD_LETTER_HEADROOM_BYTES = 4096;
 const SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const SYNC_MAX_BYTES = 1024 ** 3;
 
 /**
  * Pending messages at the payload limit a job or queue without declared
@@ -35,14 +46,15 @@ const SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  */
 const SYNC_BACKLOG_MESSAGES = 256;
 
-/** Retention for a job or queue declared without one. */
-const syncBudgetRetention = (maxPayloadBytes = SYNC_PAYLOAD_BYTES): RetentionConfig => ({
+/**
+ * Retention for a job or queue declared without one: 33 MiB per stream at
+ * Sync's 128 KiB payload limit. Above about 4 MiB per message the budget stops
+ * at Sync's own 1 GiB, so no declaration reserves more than it did before.
+ */
+export const syncBudgetRetention = (maxPayloadBytes = SYNC_PAYLOAD_BYTES): RetentionConfig => ({
   maxAgeMs: SYNC_MAX_AGE_MS,
-  maxBytes: SYNC_BACKLOG_MESSAGES * (maxPayloadBytes + SYNC_DEAD_LETTER_HEADROOM_BYTES),
+  maxBytes: Math.min(SYNC_MAX_BYTES, SYNC_BACKLOG_MESSAGES * (maxPayloadBytes + SYNC_DEAD_LETTER_HEADROOM_BYTES)),
 });
-
-/** 33 MiB per stream at Sync's 128 KiB payload limit. */
-export const SYNC_DEFAULT_RETENTION = syncBudgetRetention();
 
 const log = logger("sync:budget");
 
@@ -58,68 +70,61 @@ const once = <T>(create: () => Promise<T>): (() => Promise<T>) => {
     }));
 };
 
-const isStreamNotFound = (error: unknown): boolean =>
-  error instanceof Error && "code" in error && (error.code === 10059 || /stream not found/i.test(error.message));
+/** Sync refused a declaration only because an existing stream has another byte limit. */
+const isByteLimitDrift = (error: unknown): boolean =>
+  error instanceof ResourceDriftError &&
+  error.differences.length > 0 &&
+  error.differences.every((difference) => difference.field === "max_bytes");
 
 const createStreamLimits = (connection: NatsConnection, namespace: string) => {
   const manager = once(() => jetstreamManager(connection));
-  /** Work and dead-letter stream names per job and queue of this namespace, listed once per process. */
-  const inventory = once(async () => {
-    const jsm = await manager();
-    const names = new Map<string, string[]>();
-    for await (const info of jsm.streams.list()) {
-      const metadata = info.config.metadata;
-      const kind = metadata?.["sync.kind"];
-      if (metadata?.["sync.namespace"] !== namespace || metadata["sync.managed"] !== "true") continue;
-      // A job's coalescing claims live in a KV bucket without a byte limit.
-      if ((kind !== "job" && kind !== "queue") || info.config.name.startsWith("KV_")) continue;
-      const key = `${kind}:${metadata["sync.id"]}`;
-      names.set(key, [...(names.get(key) ?? []), info.config.name]);
-    }
-    return names;
-  });
 
-  const current = async (jsm: JetStreamManager, name: string): Promise<StreamInfo | null> =>
-    jsm.streams.info(name).catch((error: unknown) => {
-      if (isStreamNotFound(error)) return null;
-      throw error;
-    });
+  /**
+   * Work and dead-letter streams per job and queue of this namespace as they
+   * are now. Concurrent callers share one listing; a later call lists again,
+   * so streams that another process created or changed since are seen.
+   */
+  let listing: Promise<Map<string, StreamInfo[]>> | undefined;
+  const list = () =>
+    (listing ??= (async () => {
+      const jsm = await manager();
+      const streams = new Map<string, StreamInfo[]>();
+      for await (const info of jsm.streams.list()) {
+        const metadata = info.config.metadata;
+        const kind = metadata?.["sync.kind"];
+        if (metadata?.["sync.namespace"] !== namespace || metadata["sync.managed"] !== "true") continue;
+        // A job's coalescing claims live in a KV bucket without a byte limit.
+        if ((kind !== "job" && kind !== "queue") || info.config.name.startsWith("KV_")) continue;
+        const key = `${kind}:${metadata["sync.id"]}`;
+        streams.set(key, [...(streams.get(key) ?? []), info]);
+      }
+      return streams;
+    })().finally(() => {
+      listing = undefined;
+    }));
 
-  /** Brings existing streams to `target.maxBytes` and returns the retention to declare. */
-  const apply = async (kind: Kind, id: string, target: RetentionConfig): Promise<RetentionConfig> => {
-    const jsm = await manager();
-    const names = (await inventory()).get(`${kind}:${id}`) ?? [];
-    const streams = (await Promise.all(names.map((name) => current(jsm, name)))).filter((info) => info !== null);
+  /**
+   * Brings the existing streams of a job or queue to `maxBytes` and returns
+   * the byte limit to declare. A stream that holds more than `maxBytes` is
+   * left alone: with `keep`, its current limit is returned so the declaration
+   * matches it; without, Sync's drift check reports it.
+   */
+  return async (kind: Kind, id: string, maxBytes: number, keep: boolean): Promise<number> => {
+    const streams = (await list()).get(`${kind}:${id}`) ?? [];
+    const differing = streams.filter((info) => info.config.max_bytes !== maxBytes);
+    if (differing.length === 0) return maxBytes;
     const limits = new Set(streams.map((info) => info.config.max_bytes));
-    if (streams.length === 0 || (limits.size === 1 && limits.has(target.maxBytes))) return target;
-    // Unequal limits did not come from Sync; its drift check reports them.
-    if (limits.size > 1) return target;
-    const [limit = target.maxBytes] = limits;
     const held = Math.max(...streams.map((info) => info.state.bytes));
-    if (held > target.maxBytes) {
-      log.warn("Kept the byte limit of a Sync stream that holds more than its new limit", {
-        kind,
-        id,
-        limit,
-        target: target.maxBytes,
-        held,
-      });
-      return { ...target, maxBytes: limit };
+    if (held > maxBytes) {
+      const [limit = maxBytes] = limits;
+      if (!keep || limits.size > 1) return maxBytes;
+      log.warn("Kept the byte limit of a Sync stream that holds more than its new limit", { kind, id, limit, target: maxBytes, held });
+      return limit;
     }
-    for (const info of streams) await jsm.streams.update(info.config.name, { max_bytes: target.maxBytes });
-    log.info("Changed the byte limit of Sync streams", { kind, id, from: limit, to: target.maxBytes });
-    return target;
-  };
-
-  const applied = new Map<string, () => Promise<RetentionConfig>>();
-  return (kind: Kind, id: string, target: RetentionConfig): Promise<RetentionConfig> => {
-    const key = `${kind}:${id}:${target.maxBytes}`;
-    let run = applied.get(key);
-    if (!run) {
-      run = once(() => apply(kind, id, target));
-      applied.set(key, run);
-    }
-    return run();
+    const jsm = await manager();
+    for (const info of differing) await jsm.streams.update(info.config.name, { max_bytes: maxBytes });
+    log.info("Changed the byte limit of Sync streams", { kind, id, from: [...limits], to: maxBytes });
+    return maxBytes;
   };
 };
 
@@ -155,18 +160,48 @@ const deferQueue = <T>(resolve: () => Promise<Queue<T>>): Queue<T> => ({
 
 /**
  * The process Sync with Cloud's job and queue budgets. A job or queue is
- * declared to Sync on its first use, after its existing streams carry the
- * limit it declares; every other primitive is Sync's own.
+ * declared to Sync and provisioned on its first use or on `ready()`, after its
+ * existing streams carry the limit it declares; every other primitive is
+ * Sync's own.
  */
 export const withSyncBudgets = (sync: Sync, { connection, namespace }: { connection: NatsConnection; namespace: string }): Sync => {
-  const limits = createStreamLimits(connection, namespace);
-  const retention = (kind: Kind, config: QueueConfig) =>
-    limits(kind, config.id, config.retention ?? syncBudgetRetention(config.maxPayloadBytes));
+  const fit = createStreamLimits(connection, namespace);
+  /** Every job and queue declared so far, so `ready()` provisions them like Sync does. */
+  const declared = new Map<string, () => Promise<unknown>>();
+
+  const declare = <Handle extends { ready(): Promise<void> }>(
+    kind: Kind,
+    config: QueueConfig,
+    create: (retention: RetentionConfig) => Handle,
+  ): (() => Promise<Handle>) => {
+    const target = config.retention ?? syncBudgetRetention(config.maxPayloadBytes);
+    const declaration = once(async () => {
+      const maxBytes = await fit(kind, config.id, target.maxBytes, true);
+      return { handle: create({ ...target, maxBytes }), maxBytes };
+    });
+    const resolve = once(async () => {
+      const { handle, maxBytes } = await declaration();
+      try {
+        await handle.ready();
+      } catch (error) {
+        if (!isByteLimitDrift(error)) throw error;
+        // Another process created or changed the streams between the check and the declaration.
+        await fit(kind, config.id, maxBytes, false);
+        await handle.ready();
+      }
+      return handle;
+    });
+    declared.set(`${kind}:${config.id}`, resolve);
+    return resolve;
+  };
+
   return {
     ...sync,
-    job: <Input>(config: JobConfig) =>
-      deferJob(once(async () => sync.job<Input>({ ...config, retention: await retention("job", config) }))),
-    queue: <T>(config: QueueConfig) =>
-      deferQueue(once(async () => sync.queue<T>({ ...config, retention: await retention("queue", config) }))),
+    ready: async () => {
+      await Promise.all([...declared.values()].map((resolve) => resolve()));
+      await sync.ready();
+    },
+    job: <Input>(config: JobConfig) => deferJob(declare("job", config, (retention) => sync.job<Input>({ ...config, retention }))),
+    queue: <T>(config: QueueConfig) => deferQueue(declare("queue", config, (retention) => sync.queue<T>({ ...config, retention }))),
   };
 };

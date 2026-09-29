@@ -79,11 +79,12 @@ Each Sync job, queue, and topic has a work or event stream and a dead-letter
 stream. Their byte limits come from the declaration:
 
 - A job or queue declared without `retention` holds 256 messages at its payload
-  limit: 33 MiB at the default 128 KiB. Its dead-letter stream gets the same
-  limit, so it reserves 66 MiB per replica. A typical Cloud job message stores
-  about 500 bytes, so the budget holds tens of thousands of pending jobs. Past
-  it, Sync discards the oldest pending messages, which is why durable state
-  belongs in Postgres, from where recovery submits unfinished work again.
+  limit, at most 1 GiB: 33 MiB at the default 128 KiB. Its dead-letter stream
+  gets the same limit, so it reserves 66 MiB per replica. A typical Cloud job
+  message stores about 500 bytes, so the budget holds tens of thousands of
+  pending jobs. Past it, Sync discards the oldest pending messages, which is
+  why durable state belongs in Postgres, from where recovery submits unfinished
+  work again.
 - A job, queue, or topic declared with `retention` reserves its declared
   `maxBytes` twice, unless a topic sets a smaller `deadLetterRetention`.
 - A pump reserves 64 MiB.
@@ -114,15 +115,32 @@ curl -s 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' \
 ```
 
 Releases up to 0.24.0 gave every job and queue without `retention` 1 GiB per
-stream, about 97 GiB per replica for the same applications. The first start of
-a later release lowers the byte limit of these streams in place before it uses
+stream, about 97 GiB per replica for the same applications. A later release
+lowers the byte limit of these streams in place when it starts or first uses
 them, and keeps their pending messages. A stream that already holds more than
 the new limit keeps its old limit, and the application logs
 `Kept the byte limit of a Sync stream that holds more than its new limit`; a
-later start lowers it once the stream holds less. An older release started
-against the lowered streams, or an older process that first uses such a job
-during a rolling upgrade, fails with a `ResourceDriftError` on `max_bytes`. To roll back, first raise the named streams to 1 GiB, for example
-with `nats stream edit <stream> --max-bytes 1073741824`.
+later start lowers it once the stream holds less.
+
+The change is one-way. A 0.24.0 or older process refuses a lowered stream with a
+`ResourceDriftError` on `max_bytes`: during a rolling upgrade, an older process
+that restarts or first uses such a job or queue fails, and after a rollback the
+applications do not start. Before you roll back, make sure `max_file_store` on
+every node fits the old reservation again, then raise every lowered job and
+queue stream of the namespace with a `nats` context for the Cloud account:
+
+```sh
+curl -s 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' \
+  | jq -r --arg ns "$SYNC_NAMESPACE" '.account_details[].stream_detail[]?
+      | select(.config.metadata["sync.namespace"] == $ns)
+      | select(.config.metadata["sync.kind"] == "job" or .config.metadata["sync.kind"] == "queue")
+      | select(.config.max_bytes > 0 and .config.max_bytes < 1073741824) | .name' \
+  | while read -r stream; do nats stream edit "$stream" --max-bytes 1073741824 -f; done
+```
+
+The query also selects jobs and queues that declare a `retention` below 1 GiB
+themselves. No built-in application does; leave out such streams of your own
+applications, which `sync.owner` names.
 
 ## Assign configuration to the correct service
 
