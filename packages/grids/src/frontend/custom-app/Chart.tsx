@@ -12,7 +12,7 @@ type ChartType = "bar" | "line" | "donut";
 // @k2b/ui draws every chart in a 480-unit wide space and stretches it to the box.
 const CHART_WIDTH = 480;
 // stdlib ends each y tick label 6 units left of the plot, so with this padding the
-// labels end at the SVG's left edge and extend into a gutter sized in characters.
+// labels end at the SVG's left edge and extend into a gutter as wide as the widest label.
 const PADDING_LEFT = 6;
 const Y_TICKS = 5;
 const PADDING_RIGHT = 16;
@@ -22,8 +22,13 @@ const PADDING_BOTTOM = 8;
 const MAX_CATEGORY_LABELS = 12;
 
 const percent = (units: number) => `${(units / CHART_WIDTH) * 100}%`;
-// Match the chart's own axis text; the global font rule would override a font utility class.
+// The font @k2b/ui gives the chart's tick labels, which the gutter measures in; the
+// global font rule would override a font utility class.
 const axisFont = "var(--k2b-font-mono)";
+// Very wide tick labels overflow the block instead of squeezing the plot to zero width,
+// where @k2b/ui can no longer keep the chart's text at its pixel size. A style, because
+// @k2b/ui's own min-width rule on the chart outranks a utility class.
+const plotStyle = { "min-width": "6rem" };
 
 /**
  * The y tick labels stdlib draws for these values, from the helpers and tick
@@ -46,8 +51,9 @@ const yTickLabels = (values: number[], format: (value: number) => string) => {
  *
  * The y tick labels keep their pixel size too, so a gutter that is a share of
  * the stretched width cuts them off on phones and wastes room on wide pages.
- * They extend out of the SVG instead, into a gutter as many monospace
- * characters wide as the longest label.
+ * They extend out of the SVG instead, into a gutter that holds the same labels
+ * invisibly, so the browser sizes it with the real glyphs, emoji and CJK units
+ * included.
  */
 const CartesianChart = (props: {
   categories: string[];
@@ -60,16 +66,13 @@ const CartesianChart = (props: {
   const slot = (CHART_WIDTH - PADDING_RIGHT - PADDING_LEFT) / props.categories.length;
   const every = Math.ceil(props.categories.length / MAX_CATEGORY_LABELS);
   const yAxisLabel = () => (props.showAxes ? props.yAxisLabel : undefined);
-  const gutterWidth = Math.max(0, ...props.tickLabels.map((label) => [...label].length));
-  // `ch` resolves against the gutter's own font, which matches the tick labels.
   const gutter = () =>
     props.showAxes ? (
-      <span
-        class="shrink-0"
-        style={{ width: `${gutterWidth}ch`, "font-size": "10px", "font-family": axisFont }}
-        aria-hidden="true"
-        data-chart-y-tick-gutter
-      />
+      <span class="shrink-0" style={{ "font-size": "10px", "font-family": axisFont }} aria-hidden="true" data-chart-y-tick-gutter>
+        {props.tickLabels.map((label) => (
+          <span class="invisible block h-0 whitespace-pre">{label}</span>
+        ))}
+      </span>
     ) : null;
   return (
     <div class="flex h-72 flex-col">
@@ -92,7 +95,7 @@ const CartesianChart = (props: {
         <div class="flex shrink-0">
           {yAxisLabel() ? <span class="w-4 shrink-0" /> : null}
           {gutter()}
-          <div class="min-w-0 flex-1">
+          <div class="flex-1" style={plotStyle}>
             <div class="relative h-4 overflow-hidden text-[10px] leading-4 text-dimmed">
               {props.categories.map((category, index) =>
                 index % every === 0 ? (
@@ -154,7 +157,7 @@ export default function CustomAppChart(props: {
   const padding = { left: PADDING_LEFT, right: PADDING_RIGHT, bottom: PADDING_BOTTOM };
   const yAxis = { format, ticks: Y_TICKS };
   // The tick labels end at the SVG's edge and must not be clipped by it.
-  const chartClass = "min-w-0 flex-1 [&_svg]:overflow-visible";
+  const chartClass = "flex-1 [&_svg]:overflow-visible";
   if (renderData.kind === "donut") {
     // The box fixes the chart height; without it the SVG keeps its aspect ratio
     // and outgrows its block on wide pages.
@@ -174,7 +177,14 @@ export default function CustomAppChart(props: {
         xAxisLabel={props.xAxisLabel}
         yAxisLabel={props.yAxisLabel}
       >
-        <Chart kind="bar" class={chartClass} data={renderData.data.map((bar) => ({ ...bar, label: "" }))} padding={padding} yAxis={yAxis} />
+        <Chart
+          kind="bar"
+          class={chartClass}
+          style={plotStyle}
+          data={renderData.data.map((bar) => ({ ...bar, label: "" }))}
+          padding={padding}
+          yAxis={yAxis}
+        />
       </CartesianChart>
     );
   }
@@ -194,6 +204,7 @@ export default function CustomAppChart(props: {
         <Chart
           kind="line"
           class={chartClass}
+          style={plotStyle}
           series={renderData.series}
           padding={padding}
           // Centre each point in its category slot, as bars are, so both share the axis below.
