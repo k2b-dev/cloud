@@ -341,6 +341,9 @@ export const defineApp = <
     basePath: opts.basePath,
     template: ({ body, scripts, title, description, theme, lang, performanceRoute }) => {
       const themeFixed = theme !== undefined;
+      // The inline layer statement fixes the cascade order before any
+      // stylesheet declares a layer. Tailwind's `properties` layer resets
+      // `--tw-*` in browsers without `@property` and must stay lowest.
       return `<!DOCTYPE html>
 <html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}>
   <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -350,7 +353,7 @@ export const defineApp = <
     <meta name="theme-color" content="#09090b">
     <meta name="mobile-web-app-capable" content="yes">
     <link rel="icon" href="${appFaviconHref(opts.id, v)}">
-    <style data-cloud-css-layers>@layer theme, base, components, utilities;</style>
+    <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css?v=${v}">
     <link rel="stylesheet" href="/public/tabler-icons.css?v=${v}">
