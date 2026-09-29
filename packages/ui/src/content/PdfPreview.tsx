@@ -37,7 +37,9 @@ const readErrorMessage = async (response: Response): Promise<string> => {
 export default function PdfPreview(props: PdfPreviewProps) {
   const messages = useUiMessages();
   const [url, setUrl] = createSignal<string | null>(null);
-  const [loading, setLoading] = createSignal(false);
+  // An automatic preview starts loading once mounted. The server and the page before hydration already show that
+  // state, so they offer neither a retry nor an invitation to render while nothing has failed.
+  const [loading, setLoading] = createSignal(Boolean(props.autoLoad) && !props.disabled?.());
   const [opening, setOpening] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal(false);
@@ -103,6 +105,8 @@ export default function PdfPreview(props: PdfPreviewProps) {
   };
 
   onMount(() => {
+    // Hand the initial loading state to the request itself, which also covers a preview disabled by now.
+    setLoading(false);
     if (props.autoLoad) void load();
   });
 

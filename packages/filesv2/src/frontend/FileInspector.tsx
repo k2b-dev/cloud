@@ -93,6 +93,9 @@ export default function FileInspector(props: {
     },
   });
   const entry = () => (details.data()?.key === source() && !details.error() ? details.data()?.result.entry : null);
+  const revision = (file: FileEntry) => JSON.stringify([props.base.id, props.base.locationKey, file.path, file.modified]);
+  // The preview reads a `.pdf` anyway; once its bytes show it is no PDF, the viewer tab would only open an error page.
+  const [notPdf, setNotPdf] = createSignal<string | null>(null);
   const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
   const copyReference = (item: FileEntry) => {
     const id = details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
@@ -139,7 +142,13 @@ export default function FileInspector(props: {
   const expand = (item: FileEntry) =>
     prompts.dialog(
       () => (
-        <FilePreview baseId={props.base.id} locationKey={props.base.locationKey} entry={item} onDownload={() => props.onDownload([item])} />
+        <FilePreview
+          baseId={props.base.id}
+          locationKey={props.base.locationKey}
+          entry={item}
+          onDownload={() => props.onDownload([item])}
+          onNotPdf={() => setNotPdf(revision(item))}
+        />
       ),
       { title: item.name, size: "large" },
     );
@@ -270,15 +279,18 @@ export default function FileInspector(props: {
                               : null
                           }
                           fallback={
-                            <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])}>
-                              <FilePreview
-                                previewLines={5}
-                                onExpandPreview={() => void expand(item())}
-                                baseId={props.base.id}
-                                locationKey={props.base.locationKey}
-                                entry={item()}
-                                onDownload={() => props.onDownload([item()])}
-                              />
+                            <Show keyed when={revision(item())}>
+                              {(key) => (
+                                <FilePreview
+                                  previewLines={5}
+                                  onExpandPreview={() => void expand(item())}
+                                  baseId={props.base.id}
+                                  locationKey={props.base.locationKey}
+                                  entry={item()}
+                                  onDownload={() => props.onDownload([item()])}
+                                  onNotPdf={() => setNotPdf(key)}
+                                />
+                              )}
                             </Show>
                           }
                         >
@@ -312,7 +324,7 @@ export default function FileInspector(props: {
                   <DetailPanel.Group label={t().actions}>
                     <DetailPanel.Section title={t().actions}>
                       <div class="flex flex-col gap-1">
-                        <Show when={!item().directory}>
+                        <Show when={!item().directory && notPdf() !== revision(item())}>
                           {actionRow(t().openInTab, "ti ti-external-link", () => void openInTab(item()))}
                         </Show>
                         {actionRow(t().rename, "ti ti-pencil", () => props.onRename(item()), { disabled: item().actions?.move === false })}

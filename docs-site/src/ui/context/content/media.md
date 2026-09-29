@@ -42,7 +42,7 @@ By default, the open action shows a temporary local copy of the document in a ne
 
 Pass `onDownload` to add a **Download** action. The caller owns the download, for example issuing a fresh attachment URL with the right file name; `disabled` also disables it.
 
-Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows a loading state. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
+Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows a loading state. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
 
 An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request, and the render action only appears until a document is shown, for example to retry a failed request. A retry keeps the action in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
 

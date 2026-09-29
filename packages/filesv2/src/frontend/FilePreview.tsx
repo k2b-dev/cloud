@@ -17,6 +17,8 @@ type PreviewProps = {
   locationKey?: string;
   entry: FileEntry;
   onDownload: () => void;
+  /** Called once the bytes of a `.pdf` show it is no PDF, so the host can withdraw its own viewer actions too. */
+  onNotPdf?: () => void;
 };
 export default function FilePreview(props: PreviewProps) {
   return (
@@ -53,6 +55,7 @@ function RevisionPreview(props: PreviewProps) {
     const blob = await readPreview(props.baseId, props.entry, abort.signal, t().previewFailed);
     if (hasPdfSignature(new Uint8Array(await blob.slice(0, PDF_HEADER_WINDOW).arrayBuffer()))) return blob;
     setNotPdf(true);
+    props.onNotPdf?.();
     throw new Error(t().notPdf);
   };
   const download = (
