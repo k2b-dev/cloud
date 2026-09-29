@@ -1,10 +1,12 @@
 import { afterEach, expect, mock, test } from "bun:test";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult } from "../src/contracts";
 
 const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 const calls: string[] = [];
+const targetBases = new Set<string>();
 let openStatus = 200;
 mock.module("../src/api/client", () => ({
   apiClient: {
@@ -12,13 +14,15 @@ mock.module("../src/api/client", () => ({
       ":baseId": {
         entry: { $get: () => new Promise(() => {}) },
         directories: {
-          $post: async (input: { json: { path: string } }) => {
+          $post: async (input: { param: { baseId: string }; json: { path: string } }) => {
+            targetBases.add(input.param.baseId);
             calls.push(`mkdir ${input.json.path}`);
             return Response.json({ base: initial.base, entry: { name: "", path: input.json.path, directory: true } });
           },
         },
         uploads: {
-          $post: async (input: { json: { path: string; size: number; onConflict: string } }) => {
+          $post: async (input: { param: { baseId: string }; json: { path: string; size: number; onConflict: string } }) => {
+            targetBases.add(input.param.baseId);
             calls.push(`open ${input.json.path} ${input.json.size} ${input.json.onConflict}`);
             if (openStatus !== 200) return Response.json({ code: "path_conflict", message: "exists" }, { status: openStatus });
             return Response.json({
@@ -78,6 +82,7 @@ afterEach(() => {
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
   else Reflect.deleteProperty(globalThis, "localStorage");
   calls.length = 0;
+  targetBases.clear();
   received = 0;
   openStatus = 200;
   globalThis.fetch = originalFetch;
@@ -197,14 +202,20 @@ const emptySession = (async () =>
     uploadedSegments: 0,
     received: 0,
   })) as unknown as typeof fetch;
-async function mountBrowser() {
+async function mountBrowser(directory: () => DirectoryResult = () => initial) {
   globalThis.fetch = emptySession;
   const dom = createDomTestHarness();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
   const { default: Browser } = await import("../src/frontend/Browser");
   const dispose = render(
     () => (
-      <Browser directory={initial} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} onChanged={() => {}} />
+      <Browser
+        directory={directory()}
+        bases={[initial.base]}
+        cloudUrl="https://cloud.test"
+        onNavigate={async () => {}}
+        onChanged={() => {}}
+      />
     ),
     dom.root,
   );
@@ -245,6 +256,24 @@ test("a picked folder with system files asks once and skipping them never create
   answer(dom, "Upload without system files");
   await flush();
   expect(dom.document.querySelector("dialog")).toBeNull();
+  expect(calls.filter((call) => call.startsWith("mkdir"))).toEqual(["mkdir Documents/Photos", "mkdir Documents/Photos/2026"]);
+  expect(calls.filter((call) => call.startsWith("open"))).toEqual([
+    "open Documents/Photos/beach.jpg 0 error",
+    "open Documents/Photos/.gitignore 0 error",
+  ]);
+});
+
+test("navigating while the system-files question is open still uploads into the folder the upload started in", async () => {
+  const [directory, setDirectory] = createSignal(initial);
+  const dom = await mountBrowser(directory);
+  pickFolder(dom, pickedFolder);
+  await flush();
+  // Browser history moves the same mounted browser to a group base behind the open dialog.
+  setDirectory({ ...initial, base: { ...initial.base, id: "team", name: "Team", kind: "groups" }, path: "Shared" });
+  await flush();
+  answer(dom, "Upload without system files");
+  await flush();
+  expect([...targetBases]).toEqual(["home"]);
   expect(calls.filter((call) => call.startsWith("mkdir"))).toEqual(["mkdir Documents/Photos", "mkdir Documents/Photos/2026"]);
   expect(calls.filter((call) => call.startsWith("open"))).toEqual([
     "open Documents/Photos/beach.jpg 0 error",

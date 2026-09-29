@@ -481,6 +481,11 @@ export default function Browser(props: {
   const upload = mutation.create({
     onError: (error) => toast.error(error.message),
     mutation: async (input: { files: readonly File[]; directories?: readonly string[] }, { abortSignal }) => {
+      // The target is where the files were dropped or picked; navigating while a question is open does not move it.
+      const base = baseId();
+      const root = folder();
+      const uploadLocation = locationKey();
+      const known = new Set(props.directory.items.filter((item) => !item.directory).map((item) => item.name));
       let { files, directories = [] } = input;
       const system = new Set<string>();
       for (const path of [...files.map(relativeName), ...directories]) {
@@ -497,10 +502,6 @@ export default function Browser(props: {
           directories = [...directories.filter((path) => !systemEntry(path)), ...[...system].map(parentPath)];
         }
       }
-      const base = baseId();
-      const root = folder();
-      const uploadLocation = locationKey();
-      const known = new Set(props.directory.items.filter((item) => !item.directory).map((item) => item.name));
       const conflicts = files.filter((file) => !relativeName(file).includes("/") && known.has(file.name)).length;
       let policy: "ask" | "overwrite" | "skip" = "ask";
       const decide = async (name: string, count: number) => {
