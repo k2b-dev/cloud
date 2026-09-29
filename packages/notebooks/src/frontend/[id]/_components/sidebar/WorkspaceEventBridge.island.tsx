@@ -2,7 +2,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { notebooksWorkspace, type PublicNotebookWorkspaceEvent } from "../../../../lib/workspace-events";
-import { reconnectDelayMs } from "../../../lib/reconnect";
+import { RECONNECT_HEALTHY_AFTER_MS, reconnectDelayMs } from "../../../lib/reconnect";
 import { notebookWorkspaceMessages } from "../../messages";
 import { dispatchWorkspaceEvent } from "./workspace-events";
 
@@ -67,6 +67,9 @@ export default function WorkspaceEventBridge(props: Props) {
       wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(wsUrl.href);
       socket = ws;
+      // The server confirms a subscription before it reads the event stream,
+      // so only a subscription that stayed up resets the backoff.
+      let readyAt: number | undefined;
 
       ws.onopen = () => {
         ws.send(
@@ -100,7 +103,7 @@ export default function WorkspaceEventBridge(props: Props) {
           return;
         }
         if (value.type === notebooksWorkspace.wsType.ready) {
-          failedConnects = 0;
+          readyAt = Date.now();
           if (typeof value.payload?.notebookId === "string") activeWorkspaceId = value.payload.notebookId;
           return;
         }
@@ -127,6 +130,7 @@ export default function WorkspaceEventBridge(props: Props) {
           terminateAndRefresh(event.reason);
           return;
         }
+        if (readyAt !== undefined && Date.now() - readyAt >= RECONNECT_HEALTHY_AFTER_MS) failedConnects = 0;
         reconnectTimer = setTimeout(connect, reconnectDelayMs(failedConnects));
         failedConnects += 1;
       };

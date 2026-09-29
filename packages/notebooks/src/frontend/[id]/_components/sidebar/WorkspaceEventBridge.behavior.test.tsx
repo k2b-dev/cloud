@@ -57,6 +57,8 @@ describe("WorkspaceEventBridge", () => {
   let timers: Array<{ run: () => void; delay: number } | null>;
   let reload: ReturnType<typeof spyOn>;
   let random: ReturnType<typeof spyOn>;
+  let clock: ReturnType<typeof spyOn>;
+  let now: number;
   const disposers: Array<() => void> = [];
 
   beforeEach(() => {
@@ -64,6 +66,8 @@ describe("WorkspaceEventBridge", () => {
     dom.window.sessionStorage.clear();
     reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
     random = spyOn(Math, "random").mockReturnValue(0);
+    now = 1_000_000;
+    clock = spyOn(Date, "now").mockImplementation(() => now);
     FakeWebSocket.instances = [];
     timers = [];
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
@@ -80,6 +84,7 @@ describe("WorkspaceEventBridge", () => {
     for (const dispose of disposers.splice(0)) dispose();
     reload.mockRestore();
     random.mockRestore();
+    clock.mockRestore();
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
@@ -152,11 +157,13 @@ describe("WorkspaceEventBridge", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  test("a non-terminal server error reconnects with backoff instead of reloading", async () => {
+  test("a stream that fails right after the server accepts it reconnects with backoff instead of reloading", async () => {
     await mount();
     const delays: number[] = [];
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      // The server confirms the subscription before it reads the event stream.
       latestSocket().open();
+      latestSocket().message(WS.ready, { notebookId: NOTEBOOK_ID });
       latestSocket().message(WS.error, { notebookId: NOTEBOOK_ID, code: "INTERNAL_ERROR", message: "Stream failed" });
       delays.push(runReconnect());
     }
@@ -165,7 +172,7 @@ describe("WorkspaceEventBridge", () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  test("a successful subscription resets the backoff", async () => {
+  test("a subscription that stayed up resets the backoff", async () => {
     await mount();
     latestSocket().close(1006);
     runReconnect();
@@ -174,6 +181,7 @@ describe("WorkspaceEventBridge", () => {
 
     latestSocket().open();
     latestSocket().message(WS.ready, { notebookId: NOTEBOOK_ID });
+    now += 30_000;
     latestSocket().close(1006);
 
     expect(runReconnect()).toBe(2_000);
