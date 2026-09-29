@@ -25,14 +25,21 @@ mutations, and which sections are present.
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
 or another custom identity; they are mutually exclusive. Pass `actions` for
 compact utilities such as more and close, and `primaryActions` for the small
-set of prominent commands below the identity row. Optional metadata sits
-beside the subtitle instead of competing with the title.
+set of prominent commands below the identity row. On touch devices, primary
+actions that wrap keep 0.5rem between lines so their
+[tap areas](/en/ui/actions/buttons#touch-targets) do not overlap. Optional
+metadata sits beside the subtitle instead of competing with the title.
 `DetailPanel.Body` is the single scrolling element and accepts a
 `scrollPreserveKey`. Its stable scrollbar gutter prevents content from shifting
 when expanding content first makes the panel overflow. Inside
 `AppWorkspace.Detail`, that gutter occupies the host's existing trailing inset
-instead of adding a second gap. Do not add a second full-height scroller inside
-it.
+instead of adding a second gap. On a device whose primary pointer is coarse,
+which usually draws overlay scrollbars that reserve no gutter, the panel keeps
+the host inset instead, so its content has the same margin on both sides. The
+pointer only stands in for the scrollbar style: a touch device with classic
+scrollbars shows the gutter next to the inset, and a desktop with overlay
+scrollbars keeps the panel at the trailing edge. Do not add a second
+full-height scroller inside it.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
 item has a primary set of facts or controls. Summary and grouped sections share
@@ -92,7 +99,9 @@ and the Dots trigger render as sibling controls, so the whole main row remains
 a native destination without nesting a button inside the link. On fine-pointer
 devices the Dots trigger appears on row hover, keyboard focus, or while its menu
 is open; it remains visible on touch devices. Do not use it for static key-value
-data, comments, history, or form fields.
+data, comments, history, or form fields. Stacked action rows sit flush, so on
+touch devices their tap areas keep the row height instead of reaching into the
+neighbouring row.
 
 When one secondary command is frequent enough to deserve a direct control, such
 as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible

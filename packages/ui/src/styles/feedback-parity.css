@@ -248,6 +248,20 @@
   outline-offset: 2px;
 }
 
+/* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
+   2rem close control on coarse pointers, without changing the header. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-dialog__close {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-dialog__close::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - 2.75rem) / 2));
+  }
+}
+
 .k2b-ui .k2b-dialog__body {
   padding: 1rem 0;
   font-size: 0.875rem;
@@ -515,6 +529,15 @@
   display: inline-flex;
 }
 
+/* A button in a Tooltip.Anchor that follows other content must not reach back
+   over it with its touch hit area; see the `.k2b-button` touch-target rule in
+   index.css. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-tooltip-wrapper:not(:first-child) > .k2b-button::after {
+    inset-inline-start: 0;
+  }
+}
+
 /* Only the `k2b-`-prefixed class is owned here. The unprefixed Cloud-era
  * surface name is deliberately not styled: it would restyle any consumer
  * element that happens to carry it. */
@@ -570,6 +593,17 @@
 }
 
 /* ----------------------------------------------------------------- toast */
+
+/* The rail sits above modal dialogs. On narrow or short viewports, such as a
+   phone in portrait or landscape, the bottom edge belongs to dialog footers,
+   bottom sheets and primary actions, so toasts move to the top edge there
+   instead of covering them. */
+@media (max-width: 47.999rem), (max-height: 29.999rem) {
+  .k2b-ui [data-k2b-toast-container] {
+    --k2b-toast-rail-top: env(safe-area-inset-top, 0px);
+    --k2b-toast-rail-bottom: auto;
+  }
+}
 
 .k2b-ui [data-k2b-toast-container] > .k2b-toast {
   display: flex;

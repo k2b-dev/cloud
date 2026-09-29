@@ -1467,6 +1467,45 @@
   }
 }
 
+/* Touch targets: on a coarse pointer every button gets an invisible hit area
+   of at least 2.75rem (44 px) in both axes, while its visible box stays the
+   same. A later element paints over an earlier one, so a hit area must never
+   reach back over what precedes it: a button that follows anything in its
+   row, directly or as the first control of a Dropdown or toolbar group, does
+   not extend backwards, and the gap before it belongs to the control before
+   it (feedback-parity.css does the same for Tooltip.Anchor). Wrapped or
+   stacked rows need 0.5rem between them, which @k2b/ui's own compact button
+   rows keep on touch. The zero-specificity `position` keeps component rules
+   that already place a button in charge. */
+@media (any-pointer: coarse) {
+  :where(.k2b-ui .k2b-button) {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-button::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+  }
+
+  .k2b-ui .k2b-button:not(:first-child)::after,
+  .k2b-ui :is(.k2b-dropdown, .k2b-toolbar__group):not(:first-child) > .k2b-button::after {
+    inset-inline-start: 0;
+  }
+
+  .k2b-ui :is(.k2b-detail-panel__primary-actions, .k2b-image-input__actions, .k2b-toolbar[data-wrap="true"], .k2b-toolbar[data-orientation="vertical"]) {
+    row-gap: 0.5rem;
+  }
+
+  /* DetailPanel.Action rows sit flush, so a row that grew vertically would
+     take taps from its neighbour. */
+  .k2b-ui .k2b-button.k2b-detail-panel__action::after,
+  .k2b-ui .k2b-detail-panel__action-row .k2b-button::after {
+    inset-block: 0;
+  }
+}
+
 .k2b-ui .k2b-spin {
   animation: k2b-spin 900ms linear infinite;
 }
@@ -2100,6 +2139,17 @@
   flex-direction: column;
   overflow: hidden;
   color: var(--k2b-text);
+}
+
+/* Touch-first devices usually draw overlay scrollbars that reserve no gutter,
+   so absorbing the host inset would leave the panel flush with the trailing
+   edge. CSS cannot query the scrollbar style, so the primary pointer stands in
+   for it: a touch device with classic scrollbars shows the gutter next to the
+   inset, and a desktop with overlay scrollbars stays flush. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-detail-panel {
+    --k2b-detail-panel-scroll-inset: 0rem;
+  }
 }
 
 .k2b-ui .k2b-detail-panel__header {

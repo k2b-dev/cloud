@@ -114,6 +114,32 @@ uses the [navigation event contract](/en/ui/getting-started#icons-tones-and-navi
 
 All matching native button or anchor attributes pass through. The default button `type` is `button`, so form submission stays explicit. `IconButton` and `IconButtonLink` require `label`; `SplitButton` requires `menuLabel`. These labels supply the icon-only control's accessible name and title.
 
+### Touch targets
+
+On a device with a coarse pointer, such as a phone or tablet, every button and
+the dialog close control accept taps in an invisible area at least 44 px
+(2.75rem) tall and wide, centered on the control. The visible size stays the
+same, so `xs`, `sm`, and icon-only buttons keep their compact look. Tap areas
+end at the edge of a clipping container (`overflow: hidden` or a scroll area).
+
+A tap area never reaches back over the control before it. A button that
+follows anything in its row, such as another button or a field, does not extend
+backwards. The same applies to a button in a `Dropdown`, a `Tooltip.Anchor`,
+or a `Toolbar.Group` that follows other content. The gap before the button
+belongs to the control before it.
+
+Above and below, the tap area reaches 8 px past an `sm` button and 10 px past
+an `xs` button. On touch devices, @k2b/ui's own button rows that wrap or stack
+keep 0.5rem between lines: `DetailPanel` primary actions, settings group and
+collection actions, image input actions, and wrapping or vertical toolbars.
+`DetailPanel.Action` rows sit flush, so their tap area keeps the row height.
+
+In your own layouts, keep at least 0.5rem (0.625rem next to `xs` buttons)
+between lines of compact buttons that wrap or stack, before a field or link
+that follows a compact button, and before a button that sits in your own
+wrapper element after other content. Do not set `position: static` on a
+button: the tap area is positioned against the button itself.
+
 ## Runtime
 
 Buttons render complete server HTML. Click and reactive loading behavior require hydration only when their state or handlers are client-owned.

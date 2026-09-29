@@ -278,6 +278,8 @@ jobs:
       - run: bun ci
       - run: bun run --cwd packages/ui build
       - run: bun run --cwd packages/ui typecheck
+      - name: Install the Playwright browser used by the touch-target test
+        run: ./packages/ui/node_modules/.bin/playwright install --with-deps chromium
       - run: bun run --cwd packages/ui test
       - run: bun run --cwd packages/ui fixture:typecheck
       - run: bun run --cwd packages/ui fixture:build

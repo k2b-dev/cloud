@@ -331,6 +331,7 @@ const EventChip = (props: {
   moving?: boolean;
   onMovePointerDown?: (event: PointerEvent, onActivate: () => void) => void;
 }): JSX.Element => {
+  const messages = useUiMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const color = () => props.event.color ?? "blue";
   const selected = () => Boolean(props.owner.selectedEventId) && props.owner.selectedEventId === props.event.id;
@@ -343,6 +344,14 @@ const EventChip = (props: {
   const showDescription = () =>
     Boolean(props.event.description?.trim() && props.fill && !props.event.allDay && !props.compact && durationHours() >= 1.5);
   const timeLabel = () => `${formatTime(props.event.startDate, dateConfig())} - ${formatTime(props.event.endDate, dateConfig())}`;
+  const ariaLabel = () =>
+    props.event.allDay
+      ? props.event.title
+      : messages().calendarEventTime({
+          title: props.event.title,
+          start: formatTime(props.event.startDate, dateConfig()),
+          end: formatTime(props.event.endDate, dateConfig()),
+        });
   const renderedEvent = () =>
     props.owner.renderEvent?.(props.event, {
       compact: props.compact ?? false,
@@ -420,7 +429,7 @@ const EventChip = (props: {
       onDblClick={onDoubleClick}
       onDragStart={props.onMovePointerDown ? (event) => event.preventDefault() : undefined}
       onPointerDown={onPointerDown}
-      aria-label={`${props.event.title}${props.event.allDay ? "" : `, ${formatTime(props.event.startDate, dateConfig())} to ${formatTime(props.event.endDate, dateConfig())}`}`}
+      aria-label={ariaLabel()}
     >
       {content()}
     </a>
@@ -442,7 +451,7 @@ const EventChip = (props: {
       onDblClick={onDoubleClick}
       onPointerDown={onPointerDown}
       onKeyDown={onButtonKeyDown}
-      aria-label={`${props.event.title}${props.event.allDay ? "" : `, ${formatTime(props.event.startDate, dateConfig())} to ${formatTime(props.event.endDate, dateConfig())}`}`}
+      aria-label={ariaLabel()}
     >
       {content()}
     </button>
@@ -460,7 +469,7 @@ const EventChip = (props: {
       data-interactive={undefined}
       data-display={props.event.display}
       style={style()}
-      aria-label={`${props.event.title}${props.event.allDay ? "" : `, ${formatTime(props.event.startDate, dateConfig())} to ${formatTime(props.event.endDate, dateConfig())}`}`}
+      aria-label={ariaLabel()}
     >
       {content()}
     </div>

@@ -192,6 +192,9 @@ Defaults: `view="month"`, week starts Monday unless overridden, `visibleStartHou
 Canonical links remain available before hydration. Date cells, navigation,
 events, and interaction handles have text or accessible labels. Color is
 supplementary to event title, time, and metadata.
+A timed event's accessible name combines its title and time range in the
+render locale, for example “Review, 09:00 to 10:00” or “Review, 09:00 bis
+10:00”; an all-day event uses its title alone.
 
 ## Runtime
 

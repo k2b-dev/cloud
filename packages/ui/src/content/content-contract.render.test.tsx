@@ -267,6 +267,28 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain("Total");
   });
 
+  test("names calendar event times in the inherited locale", () => {
+    const events: CalendarEvent[] = [
+      { id: "shift", title: "Frühschicht", start: "2026-07-15T09:30:00Z", end: "2026-07-15T13:30:00Z" },
+      { id: "fest", title: "Sommerfest", start: "2026-07-15T00:00:00Z", end: "2026-07-16T00:00:00Z", allDay: true },
+    ];
+    const render = (onEventActivate?: (event: CalendarEvent) => void) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(Calendar, { date: "2026-07-15T12:00:00Z", events, view: "week", timeZone: "UTC", onEventActivate });
+          },
+        }),
+      );
+
+    for (const html of [render(), render(() => undefined)]) {
+      expect(html).toContain('aria-label="Frühschicht, 09:30 bis 13:30"');
+      expect(html).toContain('aria-label="Sommerfest"');
+      expect(html).not.toContain(" to ");
+    }
+  });
+
   test("renders default boolean and date cells with the inherited locale", () => {
     const date = new Date("2026-01-02T03:04:05Z");
     const html = renderToString(() =>

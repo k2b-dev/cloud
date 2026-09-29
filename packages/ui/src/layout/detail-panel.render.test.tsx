@@ -110,6 +110,13 @@ describe("DetailPanel", () => {
     expect(bodyRule).toContain("scrollbar-gutter: stable");
   });
 
+  test("keeps the host inset on touch devices whose overlay scrollbars reserve no gutter", async () => {
+    const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
+    const coarseRule = css.match(/@media \(pointer: coarse\) \{\s*\.k2b-ui \.k2b-detail-panel \{([^}]*)\}/)?.[1];
+
+    expect(coarseRule).toContain("--k2b-detail-panel-scroll-inset: 0rem");
+  });
+
   test("groups related sections and keeps semantic section icons color-only", async () => {
     const html = renderToString(() =>
       createComponent(DetailPanel, {
