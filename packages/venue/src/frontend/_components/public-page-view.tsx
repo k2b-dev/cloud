@@ -4,43 +4,38 @@ import { For, type JSX, Show } from "solid-js";
 import { accentTokens } from "../../accent";
 import type { PublicException, PublicOpening, PublicStatus } from "../../contracts";
 import { type VenueMessages, venueMessages } from "../../messages";
-import { formatDateKey } from "../../time-format";
+import { formatClockRange, formatDateKey, formatVenueDay, formatVenueTimeRange } from "../../time-format";
 import { PublicSectionView } from "./public-section-view";
 
 /** Weekdays in visitor order: Monday first, Sunday last. */
 const WEEK = [1, 2, 3, 4, 5, 6, 0] as const;
 
+/**
+ * The regular week from Monday to Sunday, one entry per weekday; `windows` is `null` on a day without regular
+ * hours, which the page shows as closed. Without any rule there are no regular hours to list at all.
+ */
 export const groupedOpeningHours = (
   rules: Array<{ weekday: number; startTime: string; endTime: string; note: string | null }>,
-): Array<{ weekday: number; windows: string }> =>
-  WEEK.map((weekday) => {
-    const windows = rules
-      .filter((rule) => rule.weekday === weekday)
-      .map((rule) => `${rule.startTime}-${rule.endTime}${rule.note ? ` (${rule.note})` : ""}`);
-    return { weekday, windows: windows.join(" & ") };
-  }).filter((entry) => entry.windows);
+): Array<{ weekday: number; windows: string | null }> =>
+  rules.length === 0
+    ? []
+    : WEEK.map((weekday) => {
+        const windows = rules
+          .filter((rule) => rule.weekday === weekday)
+          .map((rule) => `${formatClockRange(rule.startTime, rule.endTime)}${rule.note ? ` (${rule.note})` : ""}`);
+        return { weekday, windows: windows.length > 0 ? windows.join(" & ") : null };
+      });
 
 /** Today's date key in the Venue's time zone. */
 export const venueToday = (timeZone: string): string => dates.formatDateKey(new Date(), { timeZone });
 
-export const hasRegularHours = (status: PublicStatus): boolean =>
-  status.venue.openMode !== "staffed" && groupedOpeningHours(status.openingRules).length > 0;
-
-const formatOpeningDate = (opening: PublicOpening, timezone: string, locale: string): string =>
-  new Intl.DateTimeFormat(locale, { timeZone: timezone, weekday: "short", day: "2-digit", month: "short" }).format(
-    new Date(opening.startsAt),
-  );
-
-const formatOpeningTime = (opening: PublicOpening, timezone: string, locale: string): string => {
-  const formatter = new Intl.DateTimeFormat(locale, { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  return `${formatter.format(new Date(opening.startsAt))}-${formatter.format(new Date(opening.endsAt))}`;
-};
+export const hasRegularHours = (status: PublicStatus): boolean => status.venue.openMode !== "staffed" && status.openingRules.length > 0;
 
 /** `Closed · Public holiday` or `Special opening 18:00–23:00 · Long night`. */
 const describeException = (exception: PublicException, t: VenueMessages): string =>
   [
     exception.kind === "open" && exception.startTime && exception.endTime
-      ? t.specialOpening({ window: `${exception.startTime}–${exception.endTime}` })
+      ? t.specialOpening({ window: formatClockRange(exception.startTime, exception.endTime) })
       : t.closed,
     exception.note,
   ]
@@ -135,8 +130,9 @@ export function StatusCard(props: { status: PublicStatus; display?: boolean }) {
   );
 }
 
-export function HoursRow(props: { entry: { weekday: number; windows: string }; today: boolean }) {
+export function HoursRow(props: { entry: { weekday: number; windows: string | null }; today: boolean }) {
   const locale = useLocale();
+  const t = () => venueMessages.resolve([locale()]).t;
   const weekday = () =>
     new Intl.DateTimeFormat(locale(), { weekday: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2026, 0, 4 + props.entry.weekday)));
   return (
@@ -145,7 +141,7 @@ export function HoursRow(props: { entry: { weekday: number; windows: string }; t
       aria-current={props.today ? "date" : undefined}
     >
       <span class={props.today ? "" : "font-medium text-primary"}>{weekday()}</span>
-      <span class={`text-right ${props.today ? "" : "text-secondary"}`}>{props.entry.windows}</span>
+      <span class={`text-right ${props.today ? "" : "text-secondary"}`}>{props.entry.windows ?? t().closed}</span>
     </div>
   );
 }
@@ -171,9 +167,11 @@ export function OpeningRow(props: { opening: PublicOpening; timeZone: string }) 
     <div class="flex items-center justify-between gap-4 text-sm">
       <div class="min-w-0">
         <p class="truncate font-medium text-primary">{props.opening.title}</p>
-        <p class="text-xs text-dimmed">{formatOpeningDate(props.opening, props.timeZone, locale())}</p>
+        <p class="text-xs text-dimmed">{formatVenueDay(props.opening.startsAt, props.timeZone, locale())}</p>
       </div>
-      <span class="shrink-0 font-medium text-secondary">{formatOpeningTime(props.opening, props.timeZone, locale())}</span>
+      <span class="shrink-0 font-medium text-secondary">
+        {formatVenueTimeRange(props.opening.startsAt, props.opening.endsAt, props.timeZone, locale())}
+      </span>
     </div>
   );
 }

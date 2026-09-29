@@ -13,7 +13,6 @@ import {
   prompts,
   SettingsCollection,
   Switch,
-  Tag,
   Tooltip,
   toast,
   useLocale,
@@ -386,20 +385,20 @@ export function PublicPageEditor(props: {
   const SectionRow = (row: { section: PublicSection; index: number }): JSX.Element => (
     <SettingsCollection.Item
       title={
-        <span data-section-row={row.section.id} data-selected={selectedSectionId() === row.section.id ? "" : undefined}>
+        <span
+          data-section-row={row.section.id}
+          data-selected={selectedSectionId() === row.section.id ? "" : undefined}
+          title={row.section.title}
+        >
           {row.section.title}
         </span>
       }
-      description={sectionKindLabel(row.section.kind, t())}
+      // The draft state reads below the title, so the title keeps the width the row's five controls leave.
+      description={
+        row.section.enabled ? sectionKindLabel(row.section.kind, t()) : `${sectionKindLabel(row.section.kind, t())} · ${t().sectionDraft}`
+      }
       icon={<i class={sectionKindIcon(row.section.kind)} aria-hidden="true" />}
     >
-      <Show when={!row.section.enabled}>
-        <SettingsCollection.Item.Status>
-          <Tag size="sm" icon="ti ti-eye-off">
-            {t().sectionDraft}
-          </Tag>
-        </SettingsCollection.Item.Status>
-      </Show>
       <SettingsCollection.Item.Actions>
         <SettingsCollection.Item.Reorder
           label={row.section.title}
@@ -488,8 +487,8 @@ export function PublicPageEditor(props: {
         </InlineGuidance>
       </Show>
 
-      {/* Below 1024 px the list stacks above the preview. */}
-      <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      {/* Below 1024 px the list stacks above the preview; from 1280 px its rows give titles more room. */}
+      <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]">
         <div class="paper p-3" ref={list} data-public-sections="">
           <SettingsCollection
             title={t().sections}

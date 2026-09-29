@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { DateOverride, ShiftTemplate, Venue, VenueDashboard } from "../../../contracts";
+import type { DateOverride, OpeningRule, ShiftTemplate, Venue, VenueDashboard } from "../../../contracts";
 import "../../ssr-test-plugin";
 
 const { SettingsDialog } = await import("./settings");
@@ -139,6 +139,31 @@ describe("Venue settings: Schedule", () => {
     const german = render("admin", { locale: "de", tab: "schedule", data: { overrides } });
     expect(german).toContain("Sa., 19.10.2030");
     expect(german).toContain("Sonderöffnung 18:00–23:00 · Long night");
+  });
+
+  test("lists regular hours from Monday to Sunday, like the shifts below them", () => {
+    const rule = (id: string, weekday: number): OpeningRule => ({
+      id,
+      venueId: "Cafe01",
+      weekday,
+      startTime: "10:00",
+      endTime: "18:00",
+      note: null,
+      position: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    const html = render("admin", { tab: "schedule", data: { openingRules: [rule("Rule00", 0), rule("Rule02", 2), rule("Rule01", 1)] } });
+    const order = ["Monday", "Tuesday", "Sunday"].map((day) => html.indexOf(`>${day}<`));
+    expect(order.every((index) => index >= 0)).toBeTrue();
+    expect(order).toEqual([...order].sort((left, right) => left - right));
+  });
+
+  test("gives row edit and delete the compact size @k2b/ui uses for collection actions", () => {
+    const html = render("admin", { tab: "schedule", data: { templates: [template({})] } });
+    const actions = html.match(/<button[^>]*aria-label="(?:Edit|Delete) shift"[^>]*>/g) ?? [];
+    expect(actions).toHaveLength(2);
+    for (const action of actions) expect(action).toContain('data-size="sm"');
   });
 
   test("groups shifts by weekday and marks paused ones", () => {

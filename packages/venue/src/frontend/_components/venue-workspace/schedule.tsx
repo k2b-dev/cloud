@@ -114,7 +114,7 @@ export function ScheduleActionButton(props: {
     <Tooltip.Anchor content={props.label}>
       <IconButton
         label={props.label}
-        size="xs"
+        size="sm"
         variant="ghost"
         class={props.tone === "edit" ? "text-blue-600 dark:text-blue-400" : "text-red-600 dark:text-red-400"}
         loading={props.loading}

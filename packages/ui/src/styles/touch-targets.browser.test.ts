@@ -374,3 +374,68 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     }
   });
 });
+
+describe("@k2b/ui Calendar on a phone", () => {
+  const phoneCalendar = async (view: "month" | "mobile-month") => {
+    const { default: Calendar } = await import("../content/Calendar");
+    return html(() =>
+      createComponent(Calendar, {
+        date: "2026-09-29",
+        view,
+        views: ["day", "week", "month"],
+        dateConfig: { timeZone: "Europe/Berlin", weekStartsOn: 1 },
+        events: [{ id: "shift", title: "Counter", start: "2026-09-29T08:00:00Z", end: "2026-09-29T12:00:00Z" }],
+        getDateHref: (date: Date) => `/calendar?date=${date.toISOString().slice(0, 10)}`,
+        getViewHref: (next: string) => `/calendar?view=${next}`,
+        getEventHref: () => "/calendar?event=shift",
+      }),
+    );
+  };
+
+  test("give previous and next a 44 px tall hit area without taking each other's pixels", async () => {
+    const markup = await phoneCalendar("month");
+    // The header alone: scanning every day link of the grid pixel by pixel would take far longer.
+    const header = markup.match(/<header class="k2b-calendar-header"[\s\S]*?<\/header>/)?.[0] ?? "";
+    expect(await takenPixels(`<section class="k2b-content-calendar">${header}</section>`, "22rem")).toEqual({});
+
+    const page = await browser.newPage(phone);
+    try {
+      await page.setContent(phonePage(`<main style="width:22rem;padding:2rem">${markup}</main>`));
+      const reach = await page.evaluate(() => {
+        const [previous, next] = Array.from(document.querySelectorAll<HTMLElement>(".k2b-calendar-header__nav-button"));
+        const reaches = (control: HTMLElement, x: number, y: number) => document.elementFromPoint(x, y)?.closest("a, button") === control;
+        const around = (control: HTMLElement) => {
+          const box = control.getBoundingClientRect();
+          const midX = box.left + box.width / 2;
+          const midY = box.top + box.height / 2;
+          // 21 px up and down, which only the 2.75rem hit area reaches from a 1.75rem button.
+          return [reaches(control, midX, midY - 21), reaches(control, midX, midY + 21), reaches(control, box.right + 7, midY)];
+        };
+        return { previous: around(previous!), next: around(next!) };
+      });
+      expect(reach).toEqual({ previous: [true, true, false], next: [true, true, true] });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("keep the mobile month grid compact with finger-sized days, so the agenda follows close below", async () => {
+    const page = await browser.newPage(phone);
+    try {
+      await page.setContent(phonePage(`<main style="width:24.375rem">${await phoneCalendar("mobile-month")}</main>`));
+      const layout = await page.evaluate(() => {
+        const days = Array.from(document.querySelectorAll(".k2b-calendar-month__week")).map((week) => week.getBoundingClientRect().height);
+        const grid = document.querySelector(".k2b-calendar-month")!.getBoundingClientRect();
+        const agenda = document.querySelector(".k2b-calendar-mobile-month__agenda")!.getBoundingClientRect();
+        return { shortest: Math.min(...days), tallest: Math.max(...days), grid: grid.height, gap: agenda.top - grid.bottom };
+      });
+      expect(layout.shortest).toBeGreaterThanOrEqual(44);
+      expect(layout.tallest).toBeLessThanOrEqual(52);
+      // Six weeks and the weekday row, instead of the month view's 36rem.
+      expect(layout.grid).toBeLessThan(360);
+      expect(layout.gap).toBeLessThanOrEqual(24);
+    } finally {
+      await page.close();
+    }
+  });
+});

@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import type { UpcomingSlot } from "../../../contracts";
-import { defaultShiftRange, groupSlotsByDay, nextQuarterHour } from "./utils";
+import type { OpeningRule, UpcomingSlot } from "../../../contracts";
+import { defaultShiftRange, groupSlotsByDay, nextQuarterHour, sortOpeningRules } from "./utils";
 
 describe("Venue workspace helpers", () => {
+  test("lists opening hours from Monday to Sunday, like shifts and the public page", () => {
+    const rule = (weekday: number, startTime: string) => ({ weekday, startTime }) as OpeningRule;
+    const sorted = sortOpeningRules([rule(0, "12:00"), rule(2, "09:00"), rule(1, "14:00"), rule(1, "08:00"), rule(6, "10:00")]);
+    expect(sorted.map((entry) => `${entry.weekday} ${entry.startTime}`)).toEqual(["1 08:00", "1 14:00", "2 09:00", "6 10:00", "0 12:00"]);
+  });
+
   test("free time starts at the next quarter hour and lasts two hours", () => {
     expect(nextQuarterHour(new Date("2026-09-28T13:29:12.000Z")).toISOString()).toBe("2026-09-28T13:30:00.000Z");
     expect(nextQuarterHour(new Date("2026-09-28T13:30:00.000Z")).toISOString()).toBe("2026-09-28T13:30:00.000Z");

@@ -58,6 +58,8 @@ Custom output must retain useful visible event text.
 - `month` for the standard month grid;
 - `year` for a compact twelve-month overview;
 - `mobile-month` for a bounded month picker with the selected day's agenda.
+  Its weeks are compact rows at least 44 px (2.75rem) tall instead of the
+  month view's full height, so the agenda follows close below the grid.
 
 Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
@@ -67,6 +69,11 @@ In the month view, the empty day surface follows `getDateHref` to the day view
 when `onSlotActivate` is absent. Passing `onSlotActivate` deliberately turns
 that surface into an empty-slot action instead; the day number remains a
 separate navigation link when both contracts are available.
+
+On a device with a coarse pointer, the previous and next buttons accept taps
+in the same invisible 44 px area as other buttons, following the
+[touch target contract](/en/ui/actions/buttons#touch-targets); their visible
+size stays the same.
 
 Use `onDateChange`, `onViewChange`, and `onEventActivate` only when client state
 is appropriate. `navigationPending` exposes loading state without replacing

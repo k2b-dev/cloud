@@ -215,7 +215,10 @@ describe("Venue public page view", () => {
     const preview = html.slice(html.indexOf("data-public-preview"));
 
     expect(text(list)).toContain("Autumn menu Menu");
-    expect(text(list)).toContain("Winter hours Notice Draft");
+    expect(text(list)).toContain("Winter hours Notice · Draft");
+    // The draft state reads below the title, so a narrow list column leaves the title its room; hover names it in full.
+    expect(list).not.toContain("k2b-settings-collection__item-status");
+    expect(list).toContain('title="Winter hours"');
     expect(list).toContain('aria-label="Show “Winter hours” on the public page"');
     expect(list).toContain('aria-label="Move Autumn menu down"');
     expect(list).toContain('aria-label="Edit “Autumn menu”"');
@@ -267,11 +270,11 @@ describe("Venue public page view", () => {
     expect(text(html.slice(html.indexOf("data-public-preview")))).toContain("Pumpkin soup");
   });
 
-  test("stacks the list above the preview below 1024 px and gives every switch a 44 px target", () => {
+  test("stacks the list above the preview below 1024 px, widens it from 1280 px, and gives every switch a 44 px target", () => {
     const html = render("admin", [published, draft], on);
     const grid = html.match(/<div class="grid items-start gap-4 ([^"]*)">/)?.[1] ?? "";
     // One column until `lg`, with the list first in the DOM, so a phone shows it above the preview.
-    expect(grid).toBe("lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]");
+    expect(grid).toBe("lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,32rem)_minmax(0,1fr)]");
     expect(html.indexOf("data-public-sections")).toBeLessThan(html.indexOf("data-public-preview"));
     const switches = html.match(/k2b-switch-field [^"]*/g) ?? [];
     expect(switches).toHaveLength(3);
@@ -582,6 +585,23 @@ describe("Venue feedback evaluation", () => {
     expect(text(html)).toContain("Ratings per day");
   });
 
+  test("marks a single day's average as a point and names each day once on the axis", () => {
+    const html = render("admin", [], {
+      view: "feedback",
+      dashboard: {
+        feedback: { count: 1, averageRating: 5, commentCount: 0, buckets: [{ date: "2026-09-28", count: 1, averageRating: 5 }] },
+      },
+    });
+    const average = html.match(/data-chart-kind="(?:line|scatter)"[\s\S]*?<\/svg>/)?.[0] ?? "";
+    expect(average).toMatch(/class="stdlib-chart-point/);
+    expect(text(average).match(/Sep 28/g)).toHaveLength(1);
+
+    const twoDays = render("admin", [], { view: "feedback", dashboard: { feedback } });
+    const line = twoDays.match(/data-chart-kind="line"[\s\S]*?<\/svg>/)?.[0] ?? "";
+    expect(text(line).match(/Sep 26/g)).toHaveLength(1);
+    expect(text(line).match(/Sep 27/g)).toHaveLength(1);
+  });
+
   test("shows each rating as stars and as a value, with glyphs the icon font has", () => {
     const html = render("admin", [], {
       view: "feedback",
@@ -754,7 +774,7 @@ describe("Venue shift detail and schedule", () => {
     expect(text(render("write", [], { calendarDate: day, dashboard: board }))).toContain("Evening bar");
   });
 
-  test("shows the week's figures in one row that does not change with the calendar view", () => {
+  test("shows the next 7 days' figures in one row that does not change with the calendar view", () => {
     const outlook = (options: RenderOptions, permission: Venue["permission"] = "write") =>
       text(
         render(permission, [], { calendarDate: day, dashboard: board, ...options }).match(
@@ -762,11 +782,11 @@ describe("Venue shift detail and schedule", () => {
         )?.[0] ?? "",
       );
     const week = outlook({});
-    expect(week).toContain("This week: 3 spots free");
+    expect(week).toContain("Next 7 days: 3 spots free");
     expect(week).toContain("Next unstaffed shift: Tue 11:00 · Theke");
     expect(outlook({ calendarView: "month" })).toBe(week);
     expect(outlook({ calendarView: "day", calendarDate: "2030-02-01" })).toBe(week);
-    expect(outlook({}, "read")).toContain("This week: 3 unfilled spots");
+    expect(outlook({}, "read")).toContain("Next 7 days: 3 unfilled spots");
     expect(
       text(
         render("write", [], {
@@ -774,7 +794,7 @@ describe("Venue shift detail and schedule", () => {
           dashboard: { ...board, outlook: { ...board.outlook!, missingPeople: 0, nextGap: null } },
         }),
       ),
-    ).toContain("This week: no free spots Next unstaffed shift: none this week");
+    ).toContain("Next 7 days: no free spots Next unstaffed shift: none in the next 7 days");
   });
 
   test("links every calendar date to the venue's own day east of UTC", () => {
@@ -805,10 +825,14 @@ describe("Venue shift detail and schedule", () => {
     expect(text(auckland)).toContain("Saturday, October 24");
     expect(hrefOf(auckland, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=day&cd=2026-10-25");
 
-    // A tapped day in the phone month selects that day.
+    // A tapped day in the phone month selects that day and asks for its list; a month step only browses.
     const month = render("write", [], { calendarDate: "2026-09-29", calendarView: "mobile-month" });
-    expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30"');
+    expect(month).toContain('href="/app/venue/Cafe01/shifts?cv=mobile-month&amp;cd=2026-09-30&amp;focus=day"');
     expect(hrefOf(month, /aria-label="Next"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-10-29");
+    expect(hrefOf(month, /aria-label="Previous"[^>]*href="([^"]*)"/)).toBe("/app/venue/Cafe01/shifts?cv=mobile-month&cd=2026-08-29");
+    expect(hrefOf(month, /k2b-calendar-header__today[^"]*"[^>]*href="([^"]*)"/)).toMatch(
+      /^\/app\/venue\/Cafe01\/shifts\?cv=mobile-month&cd=\d{4}-\d{2}-\d{2}$/,
+    );
   });
 
   test("the phone month view lists the chosen day's shifts with their state in words", () => {
@@ -818,7 +842,7 @@ describe("Venue shift detail and schedule", () => {
     expect(text(agenda)).toContain("1 missing");
     expect(text(agenda)).toContain("Target reached");
     // Its day cells pick a day in the same view.
-    expect(html).toContain(`cv=mobile-month&amp;cd=${day}"`);
+    expect(html).toContain(`cv=mobile-month&amp;cd=${day}&amp;focus=day"`);
   });
 });
 

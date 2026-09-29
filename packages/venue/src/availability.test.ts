@@ -79,13 +79,13 @@ describe("buildPublicAvailability", () => {
 
     expect(result.open).toBe(true);
     expect(result.spontaneousOpen).toBe(false);
-    expect(result.todayLabel).toBe("09:00-17:00");
+    expect(result.todayLabel).toBe("09:00–17:00");
   });
 
   test("reads an end time of 24:00 as midnight, for opening hours and for shifts", () => {
     const lateEvening = new Date("2026-07-13T21:30:00.000Z");
     const hours = project({ openingRules: [openingRule({ startTime: "18:00", endTime: "24:00" })], now: lateEvening });
-    expect([hours.open, hours.todayLabel, hours.activeWindowLabel]).toEqual([true, "18:00-00:00", "18:00-00:00"]);
+    expect([hours.open, hours.todayLabel, hours.activeWindowLabel]).toEqual([true, "18:00–00:00", "18:00–00:00"]);
 
     const shift = project({
       venue: { openMode: "staffed", timezone: "Europe/Berlin" },
@@ -93,7 +93,7 @@ describe("buildPublicAvailability", () => {
       assignments: [assignment({ startsAt: "2026-07-13T16:00:00.000Z", endsAt: "2026-07-13T22:00:00.000Z" })],
       now: lateEvening,
     });
-    expect([shift.open, shift.activeWindowLabel]).toEqual([true, "18:00-00:00"]);
+    expect([shift.open, shift.activeWindowLabel]).toEqual([true, "18:00–00:00"]);
   });
 
   test("keeps first-signup shift behavior when no target threshold is configured", () => {
@@ -219,6 +219,18 @@ describe("buildPublicAvailability", () => {
 
     expect(result.nextOpeningLabel).toContain("Tue");
     expect(result.upcomingOpenings).toHaveLength(0);
+    // The public page's one date format: no zero-padded day.
+    const early = project({
+      openingRules: [openingRule({ weekday: 2, startTime: "09:00", endTime: "11:00" })],
+      now: new Date("2026-09-28T08:30:00.000Z"),
+    });
+    expect(early.nextOpeningLabel).toBe("Tue, Sep 29, 09:00");
+    const german = project({
+      openingRules: [openingRule({ weekday: 5, startTime: "09:00", endTime: "11:00" })],
+      now: new Date("2026-09-28T08:30:00.000Z"),
+      locale: "de",
+    });
+    expect(german.nextOpeningLabel).toBe("Fr., 2. Okt., 09:00");
   });
 
   test("formats public availability in the requested locale", () => {
@@ -253,7 +265,7 @@ describe("buildPublicAvailability", () => {
         overrides: [specialOpening],
         now: new Date("2026-07-13T08:30:00.000Z"),
       });
-      expect({ openMode, open: during.open, today: during.todayLabel }).toEqual({ openMode, open: true, today: "10:00-12:00" });
+      expect({ openMode, open: during.open, today: during.todayLabel }).toEqual({ openMode, open: true, today: "10:00–12:00" });
 
       const after = project({
         venue: { openMode, timezone: "Europe/Berlin" },
