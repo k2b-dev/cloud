@@ -230,9 +230,11 @@ const EditNoteContentResponseSchema = z.object({
   blocks: z.array(NoteEditBlockSummarySchema),
 });
 
+// Recursive schemas carry an id so each gets its own OpenAPI component. Without
+// one, every recursive schema is named __schema0 and they overwrite each other.
 const NoteTreeNodeSchema: z.ZodType<unknown> = NoteSchema.extend({
   children: z.lazy(() => z.array(NoteTreeNodeSchema)),
-});
+}).meta({ id: "NoteTreeNode" });
 
 const TagSummarySchema = z.object({
   tag: z.string(),
@@ -494,9 +496,9 @@ const RouteStateQuerySchema = z.object({
   href: z.string().min(1).max(500),
 });
 
-const BookTreeSchema: z.ZodType<{ id: string; title: string; children: z.infer<typeof BookTreeSchema>[] }> = z.lazy(() =>
-  z.object({ id: ResourceShortIdSchema, title: z.string(), children: z.array(BookTreeSchema) }),
-);
+const BookTreeSchema: z.ZodType<{ id: string; title: string; children: z.infer<typeof BookTreeSchema>[] }> = z
+  .lazy(() => z.object({ id: ResourceShortIdSchema, title: z.string(), children: z.array(BookTreeSchema) }))
+  .meta({ id: "BookTreeNode" });
 const BookSnapshotSchema = z.object({
   href: z.string(),
   html: z.string().nullable(),
