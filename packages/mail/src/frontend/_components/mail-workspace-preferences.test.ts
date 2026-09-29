@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS } from "./mail-conversation-toolbar";
-import { readMailWorkspacePreferences } from "./mail-workspace-preferences";
+import { readMailWorkspacePreferences, updateMailWorkspacePreferences } from "./mail-workspace-preferences";
 
 describe("Mail workspace preferences", () => {
   test("reads the list layout preference", () => {
@@ -62,5 +62,27 @@ describe("Mail workspace preferences", () => {
       JSON.stringify({ pinnedMailboxIds: ["Box002", "invalid", "Box001", "Box002", "00000000-0000-4000-8000-000000000002"] }),
     );
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).pinnedMailboxIds).toEqual(["Box002", "Box001"]);
+  });
+
+  test("an older document changes only the preference it writes", () => {
+    const previousDocument = globalThis.document;
+    // The browser keeps one cookie value per name; a stub is enough to model it.
+    const cookieJar = { cookie: "" };
+    Object.defineProperty(globalThis, "document", { value: cookieJar, configurable: true });
+    try {
+      // A newer document already switched back to conversations and pinned a mailbox.
+      cookieJar.cookie = `cloud_mail_workspace=${encodeURIComponent(
+        JSON.stringify({ listMode: "conversations", pinnedMailboxIds: ["Box002"], lastMailboxId: "Box002" }),
+      )}`;
+      // The old document rendered with message view and no pins records only its mailbox.
+      updateMailWorkspacePreferences({ lastMailboxId: "Box001" });
+      expect(readMailWorkspacePreferences(cookieJar.cookie)).toMatchObject({
+        listMode: "conversations",
+        pinnedMailboxIds: ["Box002"],
+        lastMailboxId: "Box001",
+      });
+    } finally {
+      Object.defineProperty(globalThis, "document", { value: previousDocument, configurable: true });
+    }
   });
 });

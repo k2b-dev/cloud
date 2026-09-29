@@ -62,7 +62,7 @@ import {
   type MailWorkspaceActionRunnerHost,
   runMailWorkspaceAction,
 } from "./_components/mail-workspace-action-runner";
-import { type MailWorkspacePreferences, writeMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
+import { type MailWorkspacePreferences, updateMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import {
   captureMailWorkspaceRefreshError,
   type MailWorkspaceRefreshResult,
@@ -122,6 +122,7 @@ function MailWorkspaceView(props: {
   const mailboxId = props.data.mailbox.id;
   const userPreferences = createMemo(() => observeMailUserPreferences(mailboxId, props.initialUserPreferences));
   let preferenceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingPreferences: Partial<MailWorkspacePreferences> = {};
   let liveTransportTimer: ReturnType<typeof setTimeout> | null = null;
   let markLiveApplied: (cursor: string | null | undefined) => void = () => undefined;
   let actionMutationLoading = () => false;
@@ -138,10 +139,8 @@ function MailWorkspaceView(props: {
   const workspaceRefreshBlocked = () => settingsOpening() || managementOpening() !== null;
 
   onMount(() => {
-    writeMailWorkspacePreferences({
-      ...props.initialPreferences,
-      lastMailboxId: mailboxId,
-    });
+    // This document may come from history; record only the opened mailbox.
+    updateMailWorkspacePreferences({ lastMailboxId: mailboxId });
     const root = document.documentElement;
     const syncTheme = () => setTheme(getCurrentThemePreference());
     syncTheme();
@@ -396,43 +395,29 @@ function MailWorkspaceView(props: {
     return !error;
   };
 
-  const persistPreferences = () => {
+  const persistPreferences = (patch: Partial<MailWorkspacePreferences>) => {
+    pendingPreferences = { ...pendingPreferences, ...patch };
     if (preferenceTimer) clearTimeout(preferenceTimer);
-    preferenceTimer = setTimeout(
-      () =>
-        writeMailWorkspacePreferences({
-          listCollapsed: listCollapsed(),
-          detailsOpen: detailsOpen(),
-          toolbarActions: toolbarActions(),
-          listMode: data.listMode,
-          lastMailboxId: mailboxId,
-          pinnedMailboxIds: props.initialPreferences.pinnedMailboxIds,
-        }),
-      120,
-    );
+    preferenceTimer = setTimeout(() => {
+      updateMailWorkspacePreferences(pendingPreferences);
+      pendingPreferences = {};
+    }, 120);
   };
 
   const setCollapsed = (collapsed: boolean) => {
     setListCollapsed(collapsed);
-    persistPreferences();
+    persistPreferences({ listCollapsed: collapsed });
   };
 
   const updateToolbarActions = (actions: MailConversationToolbarActionId[]) => {
     setToolbarActions(actions);
-    persistPreferences();
+    persistPreferences({ toolbarActions: actions });
   };
 
   const updateListMode = (listMode: MailboxPageData["listMode"]) => {
     if (listMode === data.listMode) return;
     const previousListMode = data.listMode;
-    writeMailWorkspacePreferences({
-      listCollapsed: listCollapsed(),
-      detailsOpen: detailsOpen(),
-      toolbarActions: toolbarActions(),
-      listMode,
-      lastMailboxId: mailboxId,
-      pinnedMailboxIds: props.initialPreferences.pinnedMailboxIds,
-    });
+    updateMailWorkspacePreferences({ listMode });
     setConversationSelection(emptyMailConversationSelection());
     setSelectionMode(false);
     void (async () => {
@@ -442,14 +427,7 @@ function MailWorkspaceView(props: {
         navigate(href, { replace: true, scroll: "preserve" });
         return;
       }
-      writeMailWorkspacePreferences({
-        listCollapsed: listCollapsed(),
-        detailsOpen: detailsOpen(),
-        toolbarActions: toolbarActions(),
-        listMode: previousListMode,
-        lastMailboxId: mailboxId,
-        pinnedMailboxIds: props.initialPreferences.pinnedMailboxIds,
-      });
+      updateMailWorkspacePreferences({ listMode: previousListMode });
       if (result === "failed") toast.error(t().changeListViewFailed);
     })();
   };
@@ -1422,7 +1400,7 @@ function MailWorkspaceView(props: {
 
   const setDetailsVisible = (open: boolean) => {
     setDetailsOpen(open);
-    persistPreferences();
+    persistPreferences({ detailsOpen: open });
     const frame = requestAnimationFrame(() => {
       focusFrames.delete(frame);
       if (disposed) return;
