@@ -60,6 +60,8 @@ Use `surface: "bare"` with `header: false` only when the custom content supplies
 
 Use a non-empty, single-line `confirmationPhrase` for unusually consequential actions where an ordinary confirm-or-cancel decision does not provide enough friction. Empty, whitespace-only, multiline, and tab-containing phrases are rejected. The confirmation input receives focus, and the primary action remains disabled until the value matches the configured phrase exactly, including capitalization and spaces. Cancellation does not require entering the phrase.
 
+The input label follows the document locale (`<html lang>`), like other `@k2b/ui` built-in strings: "Type Project Atlas to confirm" in English, "Gib Project Atlas zur Bestätigung ein" in German. The phrase itself is shown verbatim, so pass the value the user must type, not a translated word.
+
 `confirmText` continues to label the action button; it does not configure the phrase.
 
 ```tsx

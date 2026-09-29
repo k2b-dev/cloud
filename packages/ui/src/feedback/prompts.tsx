@@ -162,6 +162,8 @@ type PromptFormOptions<T extends Record<string, FieldSchema>> = {
   cancelBehavior?: DialogOptions["cancelBehavior"];
 };
 
+const PHRASE_SLOT = "\u0000";
+
 const isEmpty = (value: unknown): boolean =>
   value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
 
@@ -736,6 +738,8 @@ export const prompts = {
           );
         }
 
+        // The catalog owns word order; the slot marks where the verbatim phrase is rendered as code.
+        const [labelBefore, labelAfter] = resolveUiMessages().typeToConfirm({ phrase: PHRASE_SLOT }).split(PHRASE_SLOT);
         const [confirmationValue, setConfirmationValue] = createSignal("");
         const canConfirm = () => confirmationValue() === confirmationPhrase;
         const submit = (event: SubmitEvent) => {
@@ -754,7 +758,9 @@ export const prompts = {
                 }}
                 label={
                   <>
-                    Type <code class="k2b-confirmation-phrase">{confirmationPhrase}</code> to confirm
+                    {labelBefore}
+                    <code class="k2b-confirmation-phrase">{confirmationPhrase}</code>
+                    {labelAfter}
                   </>
                 }
                 value={confirmationValue}

@@ -39,7 +39,7 @@ The first argument is the description. The default titles follow the document lo
 | `iconClass` | `string` | variant icon | Overrides the Tabler icon class. |
 | `action` | `{ label: string } & ({ href: string } \| { onClick: () => void })`, or `null` | none | Adds one link or callback action; `null` removes it. |
 | `progress` | `number \| "indeterminate" \| null` | none | Progress from 0 to 1; `null` restores ordinary dismissal. |
-| `dismissLabel` | `string` | localized close label | Names the close button. |
+| `dismissLabel` | `string` | "Dismiss notification" / "Benachrichtigung schließen" from the document locale | Names the close button. |
 
 At most five toasts remain visible. Adding another dismisses the oldest.
 

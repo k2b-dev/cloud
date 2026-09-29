@@ -232,6 +232,31 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("labels the confirmation phrase in the document locale and keeps the phrase verbatim", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+    const label = () => dom.document.querySelector<HTMLInputElement>(".k2b-dialog__body input")?.labels?.[0];
+
+    for (const [lang, text] of [
+      ["en", "Type Sommerfest 2026 to confirm"],
+      ["de", "Gib Sommerfest 2026 zur Bestätigung ein"],
+    ] as const) {
+      dom.document.documentElement.setAttribute("lang", lang);
+      const result = prompts.confirm("Delete this venue?", { confirmationPhrase: "Sommerfest 2026", variant: "danger" });
+      await settle();
+      expect(label()?.textContent, lang).toContain(text);
+      expect(label()?.querySelector("code.k2b-confirmation-phrase")?.textContent, lang).toBe("Sommerfest 2026");
+      dialogCore.close();
+      await result;
+      await settle();
+    }
+
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
   test("preserves plain confirmation results", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
@@ -473,6 +498,30 @@ describe("@k2b/ui feedback runtime", () => {
     toast.success("Saved", { title: "Success", duration: 0 });
     toast.error("Failed", { title: "Konnte nicht speichern", duration: 0 });
     expect(titles()).toEqual(["Success", "Konnte nicht speichern"]);
+
+    dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
+  test("the toast close button is named in the document locale unless the app names it", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const closeLabels = () =>
+      Array.from(dom.document.querySelectorAll("[data-k2b-toast]:not([data-closing]) .k2b-toast__close"), (button) =>
+        button.getAttribute("aria-label"),
+      );
+
+    dom.document.documentElement.setAttribute("lang", "en");
+    toast("Note", { duration: 0 });
+    expect(closeLabels()).toEqual(["Dismiss notification"]);
+    toast.dismissAll();
+
+    dom.document.documentElement.setAttribute("lang", "de");
+    toast("Hinweis", { duration: 0 });
+    toast("Hinweis", { duration: 0, dismissLabel: "Meldung ausblenden" });
+    expect(closeLabels()).toEqual(["Benachrichtigung schließen", "Meldung ausblenden"]);
+    toast.dismissAll();
 
     dom.document.documentElement.removeAttribute("lang");
     dom.cleanup();

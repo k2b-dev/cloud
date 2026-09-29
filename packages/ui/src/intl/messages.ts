@@ -205,6 +205,7 @@ const uiMessages = i18n.define({
       messageComposer: "Message composer",
       messageInput: "Message input",
       confirmation: "Confirmation",
+      typeToConfirm: ({ phrase }: { phrase: string }) => `Type ${phrase} to confirm`,
       confirm: "Confirm",
       dialog: "Dialog",
       discard: "Discard",
@@ -212,6 +213,7 @@ const uiMessages = i18n.define({
       form: "Form",
       filterActions: "Filter actions",
       info: "Info",
+      dismissNotification: "Dismiss notification",
       interactiveLineChart: "Interactive line chart",
       interactiveChart:
         "Interactive chart. Use arrow keys to inspect, Enter to select, Escape to dismiss. On maps and timelines use Alt with arrow keys to inspect.",
@@ -580,6 +582,7 @@ const uiMessages = i18n.define({
       messageComposer: "Nachricht verfassen",
       messageInput: "Nachrichteneingabe",
       confirmation: "Bestätigung",
+      typeToConfirm: ({ phrase }: { phrase: string }) => `Gib ${phrase} zur Bestätigung ein`,
       confirm: "Bestätigen",
       dialog: "Dialog",
       discard: "Verwerfen",
@@ -587,6 +590,7 @@ const uiMessages = i18n.define({
       form: "Formular",
       filterActions: "Filteraktionen",
       info: "Information",
+      dismissNotification: "Benachrichtigung schließen",
       interactiveLineChart: "Interaktives Liniendiagramm",
       interactiveChart:
         "Interaktives Diagramm. Pfeiltasten zum Erkunden, Enter zum Auswählen, Escape zum Schließen. In Karten und Zeitleisten Alt mit Pfeiltasten zum Erkunden.",

@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { getK2bPortalRoot } from "../internal/portal";
+import { resolveUiMessages } from "../intl/messages";
 import { isPointInsideToast } from "./toast";
 
 export type DialogClose<T> = (result?: T) => void;
@@ -90,7 +91,7 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
   }
   const heading = entry.container.querySelector<HTMLElement>("h1, h2, h3");
   if (!heading) {
-    dialog.setAttribute("aria-label", "Dialog");
+    dialog.setAttribute("aria-label", resolveUiMessages().dialog);
     return;
   }
   heading.id ||= `k2b-dialog-title-${++nextDialogTitleId}`;
