@@ -60,7 +60,9 @@ type ComboboxProps = FieldProps & {
 ## Accessibility
 
 The input exposes combobox, expanded, controlled-list, and active-option state.
-The results use listbox and option semantics with keyboard navigation.
+The results use listbox and option semantics with keyboard navigation. On
+touch devices each result is at least 44 px (2.75rem) tall, without reaching
+into its neighbour; devices without a touch screen keep the compact results.
 
 Use the shared `label`, `description`, reactive `error`, `required`, and
 `disabled` properties for field semantics. When surrounding UI already names

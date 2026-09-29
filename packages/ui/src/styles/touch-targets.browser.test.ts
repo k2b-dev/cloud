@@ -20,6 +20,7 @@ const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
 const { default: PdfPreview } = await import("../content/PdfPreview");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
+const { default: Select } = await import("../inputs/Select");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
 
@@ -359,6 +360,84 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     ]);
     // A device without a touch screen keeps the compact rows.
     expect((await heights({ viewport: { width: 1280, height: 800 } })).map(([, height]) => height)).toEqual([30, 46, 30, 28, 30, 28, 30]);
+  });
+
+  test("give stacked Dropdown items and Select options a 44 px row on touch that keeps its neighbours' edges", async () => {
+    // A row menu with every item kind, the language menu of a public page, and a Select with and without descriptions.
+    const dropdown = html(() =>
+      createComponent(Dropdown.Root, {
+        label: "Row actions",
+        items: [
+          { label: "Rename", icon: "ti ti-pencil", action: () => {} },
+          { label: "Open", href: "/files/flyer.pdf" },
+          { label: "Share", description: "Anyone with the link", action: () => {} },
+          { label: "Show archived", choice: "checkbox", checked: false, action: () => {} },
+          {
+            sectionLabel: "Language",
+            items: [
+              { label: "English", choice: "radio", checked: true, action: () => {} },
+              { label: "Deutsch", choice: "radio", checked: false, action: () => {} },
+            ],
+          },
+          { label: "Delete", variant: "danger", action: () => {} },
+        ],
+        get children() {
+          return createComponent(Dropdown.Trigger, { children: "Actions" });
+        },
+      }),
+    );
+    const select = html(() =>
+      createComponent(Select, {
+        label: "Status",
+        value: null,
+        options: [
+          { value: "open", label: "Open" },
+          { value: "done", label: "Done", description: "Closed and archived" },
+        ],
+      }),
+    );
+
+    const rows = async (markup: string, options: typeof phone | { viewport: { width: number; height: number } }) => {
+      const page = await browser.newPage(options);
+      try {
+        await page.setContent(phonePage(`<main style="width:22rem;padding:2rem">${markup}</main>`));
+        return await page.evaluate(() => {
+          document.querySelector<HTMLElement>("[popover]")!.showPopover();
+          const items = Array.from(document.querySelectorAll<HTMLElement>(".k2b-dropdown__item, .k2b-choice-option"));
+          return items.map((item, index) => {
+            const box = item.getBoundingClientRect();
+            const reaches = (y: number) => document.elementFromPoint(box.left + box.width / 2, y)?.closest("a, button") === item;
+            const previous = items[index - 1]?.getBoundingClientRect();
+            // A tap on the item's own first and last pixel row reaches it, and no item reaches into the one before it.
+            return [
+              item.textContent?.trim(),
+              Math.round(box.height),
+              reaches(box.top + 1) && reaches(box.bottom - 1),
+              !previous || previous.bottom <= box.top,
+            ];
+          });
+        });
+      } finally {
+        await page.close();
+      }
+    };
+    expect(await rows(dropdown, phone)).toEqual([
+      ["Rename", 44, true, true],
+      ["Open", 44, true, true],
+      ["ShareAnyone with the link", 47, true, true],
+      ["Show archived", 44, true, true],
+      ["English", 44, true, true],
+      ["Deutsch", 44, true, true],
+      ["Delete", 44, true, true],
+    ]);
+    expect(await rows(select, phone)).toEqual([
+      ["Open", 44, true, true],
+      ["DoneClosed and archived", 50, true, true],
+    ]);
+    // A device without a touch screen keeps the compact rows.
+    const desktop = { viewport: { width: 1280, height: 800 } };
+    expect((await rows(dropdown, desktop)).map(([, height]) => height)).toEqual([32, 32, 47, 32, 32, 32, 32]);
+    expect((await rows(select, desktop)).map(([, height]) => height)).toEqual([32, 50]);
   });
 
   test("keep a field's edge before a compact button, and after one at the documented 0.625rem", async () => {

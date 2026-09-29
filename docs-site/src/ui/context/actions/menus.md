@@ -34,8 +34,17 @@ import {
 
 ## Touch menus
 
-Set `variant="touch"` on `Dropdown.Root` for larger touch targets. It uses rows
-at least 52 px high, 16 px labels, larger icons, and an 18rem default width.
+On touch devices, every menu item in `Dropdown`, `ContextMenu`, `SplitButton`,
+and `SelectChip` is at least 44 px (2.75rem) tall, also without
+`variant="touch"`. Items sit close together, so the item itself grows instead
+of reaching into its neighbour with an invisible tap area. This follows the
+device, not the input in use: a laptop with a touch screen gets the taller
+items with a mouse too, and devices without a touch screen keep the compact
+32 px items.
+
+Set `variant="touch"` on `Dropdown.Root` for larger touch targets on every
+device. It uses rows at least 52 px high, 16 px labels, larger icons, and an
+18rem default width.
 An explicit `width` still takes precedence; the menu stays within the viewport
 and scrolls when necessary. Keyboard navigation and selection behave the same.
 Omitting `variant` (or using `variant="default"`) keeps the compact appearance

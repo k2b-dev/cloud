@@ -306,6 +306,12 @@ type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & 
 
 Use visible labels on `Select` and `MultiSelectInput`. When the surrounding layout already shows the field name, such as a description list term, pass `"aria-label"` instead; the trigger and the options popover both use it. Their triggers expose combobox, listbox, expanded, selected, required, disabled, description, and error state. Select groups use a labelled radio group; arrow keys, Home, and End change the active group. The optional layout button names the view it will open and does not change the listbox semantics.
 
+On touch devices, each option in the `Select` and `MultiSelectInput` list is
+at least 44 px (2.75rem) tall. Options sit close together, so the option
+itself grows instead of reaching into its neighbour; devices without a touch
+screen keep the compact options, and grid tiles are already larger.
+`SelectChip` uses menu items, which follow the same rule.
+
 Option labels must remain clear without icons or colors. If the surrounding
 toolbar already names a `SelectChip`, use the native `"aria-label"` property
 instead of repeating a visible label.

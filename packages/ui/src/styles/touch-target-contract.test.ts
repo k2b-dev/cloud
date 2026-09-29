@@ -37,6 +37,16 @@ describe("@k2b/ui touch targets", () => {
     }
   });
 
+  test("grows stacked Dropdown items and Select list options to 2.75rem on coarse pointers, with no tap area beyond them", () => {
+    // Menu items and list options sit 0.125rem apart, so only the item itself can grow without taking taps from a neighbour.
+    expect([...declarations(".k2b-ui .k2b-dropdown__item").entries()]).toEqual([["min-height", ["2.75rem"]]]);
+    expect([...declarations(".k2b-ui .k2b-choice-option").entries()]).toEqual([["min-height", ["2.75rem"]]]);
+    const items = /\.k2b-(?:dropdown__item|choice-option)\b/;
+    expect(
+      rules.filter((rule) => items.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector)).map((rule) => rule.selector),
+    ).toEqual([]);
+  });
+
   test("changes nothing without a coarse pointer and keeps the visible size, except for flush DetailPanel.Action rows", () => {
     const controls = /\.k2b-(?:button|dialog__close|toast__(?:action|close))\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));
