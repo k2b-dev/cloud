@@ -118,6 +118,22 @@ them from the preload, too late for that handle; export `REDIS_URL` yourself
 before running it. `tests/integration/test-infra-redis-binding.integration.test.ts`
 proves the binding against a disposable Valkey on a non-default port.
 
+`bun run test` keeps the checkout's `.env` away from tests. The file
+configures the development stack, for example `APP_URL` for a stack served
+under another address, and its values would replace the defaults the tests
+expect: the OAuth issuer would become the stack's public address. The runner
+therefore starts itself with `--no-env-file` and hands the flag to every test
+process through `BUN_OPTIONS`, which a Bun process started by a test inherits
+with the rest of the environment. Tests see the same configuration as in CI
+and in worktrees, which have no `.env`; variables you export in the shell
+still reach them.
+
+A direct `bun test` loads the dotenv files of its working directory. With a
+`CLOUD_TEST_*` variable set, the fixture refuses such a process when a file
+like `.env` exists there. Start a direct run from that directory with
+`BUN_OPTIONS=--no-env-file bun test …`: unlike `bun --no-env-file test`, the
+variable also reaches the Bun processes that tests and package scripts start.
+
 The database name must end in `_test`. Integration tests create and delete
 rows; the fixture refuses any other name. Never point them at the development
 database.

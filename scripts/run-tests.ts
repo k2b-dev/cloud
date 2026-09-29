@@ -1,17 +1,22 @@
 /**
  * Workspace test runner.
  *
- *   bun scripts/run-tests.ts                    every suite (integration files skip without CLOUD_TEST_*)
- *   bun scripts/run-tests.ts --integration      bootstrap the CLOUD_TEST_ database, then only files that import scripts/fixtures/test-infra
- *   bun scripts/run-tests.ts --filter gateway   suites whose name or path contains "gateway"
- *   bun scripts/run-tests.ts --exclude grids    everything except suites matching "grids"
- *   bun scripts/run-tests.ts --shard 2/4        deterministic slice of the suite list
+ *   bun run test                    every suite (integration files skip without CLOUD_TEST_*)
+ *   bun run test --integration      bootstrap the CLOUD_TEST_ database, then only files that import scripts/fixtures/test-infra
+ *   bun run test --filter gateway   suites whose name or path contains "gateway"
+ *   bun run test --exclude grids    everything except suites matching "grids"
+ *   bun run test --shard 2/4        deterministic slice of the suite list
  *
  * Browser behavior tests (`*.behavior.test.{ts,tsx}`) belong to this runner:
  * each workspace gets one extra suite that runs them with browser conditions
  * and the Solid DOM preload, started from the repository root so a package's
  * own server-rendering preload in `bunfig.toml` does not apply. Package `test`
  * scripts and the default package run leave those files out.
+ *
+ * `bun run test` starts this runner with `--no-env-file` and passes the flag to
+ * every process it spawns through `BUN_OPTIONS`, so no test reads a checkout's
+ * `.env`: tests see the same configuration as in CI and worktrees, not the
+ * development stack's `APP_URL`, secrets, or origins.
  *
  * Every `bun test` this runner spawns loads `scripts/fixtures/test-infra.ts`
  * first. Package-owned `test` scripts receive it through `BUN_OPTIONS`. The
@@ -25,7 +30,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { applyTestRuntimeEnv, readTestTarget } from "./fixtures/test-infra-env";
+import { applyTestRuntimeEnv, dotenvLeak, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { sweepStaleTestNamespaces } from "./fixtures/test-sync";
 
 type PackageJson = {
@@ -171,7 +176,14 @@ const run = async (): Promise<void> => {
 
   const suites = await discoverTestSuites(workspaceRoot, options);
   const preload = `--preload=${join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")}`;
-  const env: Record<string, string | undefined> = { ...Bun.env };
+  const envFile = dotenvLeak(process.cwd(), process.execArgv);
+  if (envFile) {
+    console.error(
+      `The test runner started without --no-env-file next to ${envFile}; start it with \`bun run test\` so tests never see development values.`,
+    );
+    process.exit(2);
+  }
+  const env: Record<string, string | undefined> = { ...Bun.env, BUN_OPTIONS: [Bun.env.BUN_OPTIONS, noEnvFile].filter(Boolean).join(" ") };
   applyTestRuntimeEnv(env);
   const failed: string[] = [];
 

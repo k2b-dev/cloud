@@ -78,7 +78,8 @@ When the stack is reached through a reverse proxy or tunnel, for example
 `.env` before `bun run dev`. Cloud uses it for links, OAuth redirects, and the
 same-origin checks on sign-in; with the default `localhost:3000`, signing in
 through the other address fails when the terms are accepted. Development
-Filegate also accepts browser requests from this origin.
+Filegate also accepts browser requests from this origin. `bun run test` keeps
+`.env` away from tests; see [Testing](/en/docs/contributing/testing#run-integration-tests).
 
 ```bash
 APP_URL=https://cloud.dev.example

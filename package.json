@@ -99,7 +99,7 @@
     "dev:cld": "bun scripts/dev-cld.ts",
     "check": "bun scripts/check.ts",
     "format": "biome format --write .",
-    "test": "bun scripts/run-tests.ts",
+    "test": "bun --no-env-file scripts/run-tests.ts",
     "release:preflight": "bun scripts/prod-upgrade-preflight.ts"
   },
   "devDependencies": {

@@ -9,6 +9,11 @@
  * and `redis` handles would otherwise dial `localhost` and reach the stack
  * configured in `.env`.
  *
+ * With a target configured, the fixture refuses a process that may have loaded
+ * a checkout's `.env` (`dotenvLeak` in `test-infra-env.ts`): its development
+ * values, such as `APP_URL`, would otherwise become the tests' configuration.
+ * `bun run test` starts every test process with `--no-env-file`.
+ *
  * Import this module first in every integration test file. It is also loaded
  * as a `bun test` preload from `bunfig.toml` and by `scripts/run-tests.ts`.
  *
@@ -35,7 +40,7 @@
  */
 import { afterAll, beforeAll, describe, test } from "bun:test";
 import { SQL, sql } from "bun";
-import { applyTestRuntimeEnv, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
+import { applyTestRuntimeEnv, dotenvLeak, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
 import { connectTestNats } from "./test-nats";
 
 export type { InfraKind } from "./test-infra-env";
@@ -88,6 +93,13 @@ const applyMappings = (): Record<InfraKind, string | undefined> => {
   }
   applyTestRuntimeEnv(process.env);
   if (Object.values(resolved).some(Boolean)) {
+    const envFile = dotenvLeak(process.cwd(), process.execArgv);
+    if (envFile) {
+      throw new Error(
+        `This integration test process started without --no-env-file next to ${envFile}; development values such as APP_URL would replace the test defaults. ` +
+          "Run integration tests through `bun run test`, or set BUN_OPTIONS=--no-env-file for a direct run; unlike `bun --no-env-file`, it also reaches the Bun processes tests start.",
+      );
+    }
     for (const [key, value] of Object.entries(testOnlyDefaults)) {
       if (!read(key)) process.env[key] = value;
     }
