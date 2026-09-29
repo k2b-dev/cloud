@@ -24,7 +24,6 @@ export const VenueSchema = z.object({
   accentColor: HexColorSchema,
   logoBase64: z.string().nullable(),
   bannerBase64: z.string().nullable(),
-  icalToken: z.string(),
   permission: z.enum(["none", "read", "write", "admin"]).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),

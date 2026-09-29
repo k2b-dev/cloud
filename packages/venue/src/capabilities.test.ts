@@ -414,7 +414,7 @@ describe("Venue capabilities", () => {
           expect(feedback.data.summary).toBe("Read feedback for “Agent Venue”: 5 from 1 rating.");
         }
 
-        const calendar = await venueService.ical.generateUser(user.id, "https://cloud.example");
+        const calendar = await venueService.ical.generateUser(user.id, "https://cloud.example", "en");
         expect(calendar).toContain(`URL:https://cloud.example/app/venue/${venueShortId}`);
         expect(calendar).toContain(`UID:venue-${signup.data.data.id}@stuve.cloud`);
         expect(calendar).not.toContain(venueId);

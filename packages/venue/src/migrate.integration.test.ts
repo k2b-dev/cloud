@@ -108,3 +108,34 @@ testFor("database")(
   },
   30_000,
 );
+
+testFor("database")(
+  "drops the unused venue-wide calendar token again after the documented rollback and keeps the venues",
+  async () => {
+    await migrate();
+    // The rollback step from the deprecation note, then the index an older image's startup adds on top.
+    await sql`ALTER TABLE venue.venues ADD COLUMN IF NOT EXISTS ical_token TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(24), 'hex')`.simple();
+    await sql`CREATE INDEX IF NOT EXISTS idx_venue_venues_ical_token ON venue.venues(ical_token)`.simple();
+    const venue = crypto.randomUUID();
+    await sql`INSERT INTO venue.venues(id,short_id,slug,name) VALUES (${venue}::uuid,'TestV3',${venue},'calendar fixture')`;
+    try {
+      const leftovers = () => sql<{ name: string }[]>`
+        SELECT column_name::text AS name FROM information_schema.columns
+        WHERE table_schema = 'venue' AND table_name = 'venues' AND column_name = 'ical_token'
+        UNION ALL
+        SELECT indexname::text FROM pg_indexes WHERE schemaname = 'venue' AND indexname = 'idx_venue_venues_ical_token'
+      `;
+      expect((await leftovers()).length).toBe(2);
+      await migrate();
+      await migrate();
+      expect(await leftovers()).toEqual([]);
+      const { venueService } = await import("./service");
+      const kept = await venueService.venues.get(venue);
+      expect(kept).toMatchObject({ slug: venue, name: "calendar fixture" });
+      expect(kept).not.toHaveProperty("icalToken");
+    } finally {
+      await sql`DELETE FROM venue.venues WHERE id=${venue}::uuid`;
+    }
+  },
+  30_000,
+);

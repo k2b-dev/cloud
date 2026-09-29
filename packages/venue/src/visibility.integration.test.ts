@@ -144,7 +144,8 @@ suite("Venue feedback and hidden sections", () => {
 
     try {
       const created = await send("POST", "/api/venue/venues", owner, { name: "Harbor Cafe", slug });
-      const venueId = (JSON.parse(await expectStatus(created, 201, "create venue")) as { id: string }).id;
+      const createdText = await expectStatus(created, 201, "create venue");
+      const venueId = (JSON.parse(createdText) as { id: string }).id;
       const createSection = async (title: string, enabled: boolean) => {
         const response = await send("POST", `/api/venue/venues/${venueId}/sections`, owner, {
           kind: "notice",
@@ -198,6 +199,18 @@ suite("Venue feedback and hidden sections", () => {
           internal: false,
         },
       };
+
+      // No caller gets a venue-wide calendar token: calendar links are personal (`/api/venue/calendar/my`).
+      expect(createdText).not.toMatch(/ical_?token/i);
+      for (const [name, { caller }] of Object.entries(callers)) {
+        // API keys use the API only; people also get the workspace page.
+        const paths = ["/api/venue/venues", `/api/venue/venues/${venueId}/dashboard`];
+        if (!name.endsWith("key")) paths.push(`/app/venue/${venueId}/shifts`);
+        for (const path of paths) {
+          const text = await expectStatus(await send("GET", path, caller), 200, `${name} GET ${path}`);
+          expect({ name, path, token: /ical_?token/i.test(text) }).toEqual({ name, path, token: false });
+        }
+      }
 
       // API and CLI: `cld venue get` and `cld venue sections list` print this dashboard.
       for (const [name, { caller, internal }] of Object.entries(callers)) {

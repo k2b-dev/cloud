@@ -1,145 +1,149 @@
 import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
+const venueIdInput = "Standort-ID aus „Standorte suchen“, „Zugängliche Standorte auflisten“ oder einem venue.venue-Ref.";
+const cursorInput = "Cursor, den die vorherige Seite zurückgegeben hat.";
+const limitInput = "Höchstzahl der Ergebnisse.";
+const templateIdInput = "Schichtvorlagen-ID aus shift.list.";
+const dateInput = "Datum der Schicht in der Zeitzone des Standorts, aus shift.list.";
+
 export const venueCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   translations: {
     de: {
       types: {
         assignment: {
-          title: "Schichtzuordnung",
-          description: "Der Platz einer Person in einer datierten Venue-Schicht.",
+          title: "Schichteinsatz",
+          description: "Dein Platz in einer Schicht eines Standorts an einem bestimmten Tag.",
         },
         venue: {
-          title: "Venue",
-          description: "Ein öffentlicher oder erlaubnispflichtiger Ort mit Öffnungs- und Personalregeln.",
+          title: "Standort",
+          description: "Ein öffentlicher oder zugriffsgeschützter Ort mit Öffnungszeiten und Schichtregeln.",
         },
       },
       queries: {
         "assignment.mine": {
-          title: "Meine Aufgaben auflisten",
+          title: "Meine Schichteinsätze auflisten",
           description:
-            "Listen Sie die Zuweisungen des aktuellen Benutzers auf, optional für eine VenueId von venue.list oder venue.search. Verwenden Sie zurückgegebenes venue.assignment refs mit assignment.read oder assignment.cancel.",
+            "Listet deine Schichteinsätze auf, optional nur für eine venueId aus venue.list oder venue.search. Nutze die zurückgegebenen venue.assignment-Refs mit assignment.read oder assignment.cancel.",
           input: {
-            venueId: "Optionaler Venue ID-Filter.",
-            from: "Bereichsanfang; Die Standardeinstellung ist „jetzt“.",
-            days: "Anzahl der 24-Stunden-Zeiträume nach von bis einschließlich.",
-            cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
-            limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
+            venueId: "Optional: nur Einsätze an diesem Standort.",
+            from: "Beginn des Zeitraums; standardmäßig jetzt.",
+            days: "Anzahl der 24-Stunden-Zeiträume ab from.",
+            cursor: cursorInput,
+            limit: limitInput,
           },
         },
         "assignment.read": {
-          title: "Meine Aufgabe lesen",
-          description:
-            "Lesen Sie einen eigenen venue.assignment ref, der von assignment.mine zurückgegeben wurde, oder eine Zuweisungsanmeldung Action.",
+          title: "Meinen Schichteinsatz lesen",
+          description: "Liest einen eigenen venue.assignment-Ref, den assignment.mine oder das Übernehmen einer Schicht zurückgegeben hat.",
           input: {
-            id: "Persönliche Aufgabe ID zurückgegeben von Meine Aufgaben auflisten oder venue.assignment ref.",
+            id: "ID deines Schichteinsatzes aus „Meine Schichteinsätze auflisten“ oder einem venue.assignment-Ref.",
           },
         },
         "feedback.summary": {
-          title: "Die Zusammenfassung des Venue-Feedbacks abrufen",
+          title: "Feedback-Übersicht eines Standorts abrufen",
           description:
-            "Lesen Sie 30-Tage-Bewertungsaggregate für einen bekannten Venue, ohne anonyme Kommentare zu laden. Erfordert die Berechtigung write oder admin, wie venue.list sie zurückgibt; die Veranstaltungsort-ID kommt von venue.list oder venue.search.",
+            "Liest die Bewertungen der letzten 30 Tage als Übersicht, ohne die anonymen Kommentare zu laden. Braucht die Berechtigung write oder admin, wie venue.list sie angibt; die venueId kommt aus venue.list oder venue.search.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
+            venueId: venueIdInput,
           },
         },
         "shift.list": {
-          title: "Liste der Venue-Schichten",
+          title: "Schichten eines Standorts auflisten",
           description:
-            "Listen Sie datierte Schichten für einen bekannten Venue ohne Teilnehmeridentitäten auf. Holen Sie sich die Veranstaltungsort-ID von venue.list oder venue.search. Verwenden Sie jede zurückgegebene Veranstaltungsort-ID, Vorlagen-ID und jedes Datum mit shift.read oder assignment.signup.",
+            "Listet die Schichten eines bekannten Standorts nach Datum auf, ohne zu zeigen, wer sie übernommen hat. Die venueId kommt aus venue.list oder venue.search; nutze venueId, templateId und Datum jeder Schicht mit shift.read oder assignment.signup.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
-            startDate: "Erstes Datum in der Zeitzone Venue; Die Standardeinstellung ist „heute“.",
-            days: "Anzahl der einzubeziehenden Venue-lokalen Kalendertage.",
-            cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
-            limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
+            venueId: venueIdInput,
+            startDate: "Erster Tag in der Zeitzone des Standorts; standardmäßig heute.",
+            days: "Anzahl der Kalendertage in der Zeitzone des Standorts.",
+            cursor: cursorInput,
+            limit: limitInput,
           },
         },
         "shift.read": {
-          title: "Die Venue-Schicht lesen",
+          title: "Schicht eines Standorts lesen",
           description:
-            "Spezialisierte Ereignissuche: Lesen Sie eine datierte Venue-Schicht unter Verwendung der Veranstaltungsort-ID, der Vorlagen-ID und des Datums, die zusammen von der Liste der Venue-Schichten zurückgegeben werden.",
+            "Gezielte Abfrage einer einzelnen Schicht: Liest sie mit venueId, templateId und Datum, die „Schichten eines Standorts auflisten“ gemeinsam zurückgibt.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
-            templateId: "Schichtvorlage ID zurückgegeben von shift.list.",
-            date: "Venue – lokales Vorkommensdatum, zurückgegeben von shift.list.",
+            venueId: venueIdInput,
+            templateId: templateIdInput,
+            date: dateInput,
           },
         },
         "venue.list": {
-          title: "Liste zugänglich Venues",
+          title: "Zugängliche Standorte auflisten",
           description:
-            "Normaler Eintrag für berechtigungsbezogene Venue-Arbeiten. Listen Sie zugängliches Venues auf und verwenden Sie zurückgegebenes venue.venue refs oder IDs mit venue.read, venue.status, shift.list, assignment.mine oder, bei Venues mit der Berechtigung write oder admin, feedback.summary.",
+            "Der normale Einstieg für Arbeit an Standorten, auf die du Zugriff hast. Listet sie auf; nutze die zurückgegebenen venue.venue-Refs oder IDs mit venue.read, venue.status, shift.list, assignment.mine oder, bei Berechtigung write oder admin, feedback.summary.",
           input: {
-            query: "Optionale Venue-Namens-, Slug- oder Beschreibungssuche.",
-            cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
-            limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
+            query: "Optionale Suche in Name, Kurzname oder Beschreibung des Standorts.",
+            cursor: cursorInput,
+            limit: limitInput,
           },
         },
         "venue.read": {
-          title: "Venue lesen",
-          description:
-            "Lesen Sie einen von venue.list oder venue.search zurückgegebenen venue.venue ref ohne Medien oder geheime Kalendertoken.",
+          title: "Standort lesen",
+          description: "Liest einen venue.venue-Ref aus venue.list oder venue.search, ohne Bilder.",
           input: {
-            id: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
+            id: venueIdInput,
           },
         },
         "venue.search": {
-          title: "Suche Venues",
+          title: "Standorte suchen",
           description:
-            "Suchen Sie einen öffentlichen oder zugänglichen Venue anhand des Namens, des Slugs oder der Beschreibung, wenn sein ID unbekannt ist. Verwenden Sie das zurückgegebene venue.venue refs mit venue.read, venue.status, shift.list oder, bei Venues mit der Berechtigung write oder admin, feedback.summary.",
+            "Findet einen öffentlichen oder zugänglichen Standort über Name, Kurzname oder Beschreibung, wenn seine ID unbekannt ist. Nutze die zurückgegebenen venue.venue-Refs mit venue.read, venue.status, shift.list oder, bei Berechtigung write oder admin, feedback.summary.",
           input: {
-            scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
-            "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
-            "scope.id": "Stabile Ressourcen-ID des Suchkontexts.",
-            query: "Vom Benutzer eingegebener Suchtext. Leerer Text ist zulässig, wenn eine Facette die Abfrage einschränkt.",
-            tags: "Von dieser Abfrage unterstützte kanonische Suchfacetten.",
-            limit: "Maximale Anzahl der zurückzugebenden Ergebnisse.",
+            scope: "Optionaler Kontext, der die Suche eingrenzt.",
+            "scope.type": "Ressourcentyp des Suchkontexts.",
+            "scope.id": "Feste Ressourcen-ID des Suchkontexts.",
+            query: "Eingegebener Suchtext. Er darf leer sein, wenn ein Filter die Suche eingrenzt.",
+            tags: "Suchfilter, die diese Abfrage unterstützt.",
+            limit: limitInput,
           },
           searchTags: {
             venue: {
-              title: "Venues",
-              description: "Nur Venues anzeigen.",
+              title: "Standorte",
+              description: "Nur Standorte anzeigen.",
             },
           },
         },
         "venue.status": {
-          title: "Den Venue-Status abrufen",
+          title: "Status eines Standorts abrufen",
           description:
-            "Erhalten Sie den aktuellen Öffnungsstatus, die heutigen Öffnungszeiten und bevorstehende Öffnungen für einen bekannten Venue. Rufen Sie die Veranstaltungsort-ID von venue.list oder venue.search ab.",
+            "Ruft ab, ob ein bekannter Standort gerade geöffnet ist, seine heutigen Öffnungszeiten und die nächsten Öffnungen. Die venueId kommt aus venue.list oder venue.search.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
+            venueId: venueIdInput,
           },
         },
       },
       actions: {
         "assignment.cancel": {
-          title: "Aus meiner Venue-Schicht austreten",
+          title: "Aus meiner Schicht austreten",
           description:
-            "Löschen Sie nur die eigene Zuweisung des aktuellen vom Benutzer unterstützten Akteurs. Geben Sie einen Idempotenzschlüssel an, damit ein unsicherer Versuch sicher wiederholt werden kann.",
+            "Löscht nur deinen eigenen Schichteinsatz. Gib einen Idempotenzschlüssel mit, damit du einen Versuch mit unklarem Ausgang sicher wiederholen kannst.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
-            assignmentId: "Eigene Zuweisung ID zurückgegeben von Meine Zuweisungen auflisten oder venue.assignment ref.",
+            venueId: venueIdInput,
+            assignmentId: "ID deines Schichteinsatzes aus „Meine Schichteinsätze auflisten“ oder einem venue.assignment-Ref.",
           },
         },
         "assignment.signup": {
-          title: "Venue-Schicht übernehmen",
+          title: "Schicht übernehmen",
           description:
-            "Erstellen Sie eine nicht idempotente Zuweisung für ein datiertes Vorlagenvorkommen, das von shift.list zurückgegeben wird.",
+            "Legt einen Schichteinsatz für eine Schicht an einem Tag an, den shift.list zurückgegeben hat. Der Aufruf ist nicht idempotent.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
-            templateId: "Schichtvorlage ID zurückgegeben von shift.list.",
-            date: "Venue – lokales Vorkommensdatum, zurückgegeben von shift.list.",
+            venueId: venueIdInput,
+            templateId: templateIdInput,
+            date: dateInput,
           },
         },
         "assignment.signup_free": {
-          title: "Freie Venue-Schicht hinzufügen",
+          title: "Freien Zeitraum eintragen",
           description:
-            "Erstellen Sie innerhalb des nächsten Jahres eine nicht idempotente kostenlose Aufgabe mit genauen Zeitpunkten für höchstens 24 Stunden.",
+            "Trägt dich für einen freien Zeitraum mit genauem Beginn und Ende ein, höchstens 24 Stunden lang und innerhalb des nächsten Jahres. Der Aufruf ist nicht idempotent.",
           input: {
-            venueId: "Venue ID zurückgegeben von Search/List Venues oder einem venue.venue ref.",
-            startsAt: "Exakter RFC 3339-Start sofort mit Zeitzonenversatz.",
-            endsAt: "Exakter Endzeitpunkt RFC 3339 mit Zeitzonenversatz.",
-            note: "Optionale private Notiz für diese Aufgabe.",
+            venueId: venueIdInput,
+            startsAt: "Genauer Beginn nach RFC 3339 mit Zeitzonenabstand.",
+            endsAt: "Genaues Ende nach RFC 3339 mit Zeitzonenabstand.",
+            note: "Optionale private Notiz zu diesem Einsatz.",
           },
         },
       },

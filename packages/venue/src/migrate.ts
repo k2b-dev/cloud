@@ -21,7 +21,6 @@ export const migrate = async (): Promise<void> => {
       accent_color TEXT NOT NULL DEFAULT '#2563eb',
       logo_base64 TEXT,
       banner_base64 TEXT,
-      ical_token TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(24), 'hex'),
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
@@ -30,7 +29,8 @@ export const migrate = async (): Promise<void> => {
   await sql`ALTER TABLE venue.venues ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_venue_venues_short_id ON venue.venues(short_id)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS idx_venue_venues_slug ON venue.venues(slug)`.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_venue_venues_ical_token ON venue.venues(ical_token)`.simple();
+  // Calendar links are personal (venue.user_ical_tokens); the venue-wide token had no route and only leaked to readers.
+  await sql`ALTER TABLE venue.venues DROP COLUMN IF EXISTS ical_token`.simple();
   console.log("  ✓ venue.venues table");
 
   await sql`
