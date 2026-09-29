@@ -72,3 +72,18 @@ test("cancelling a folder scan settles even if the browser never answers its cal
   controller.abort(new Error("cancelled"));
   await expect(pending).rejects.toThrow("cancelled");
 });
+
+test("dot-files WebKit refuses are listed apart from errors", async () => {
+  // WebKit hands out a dropped dot-file as an entry but rejects reading it as if it did not exist.
+  const refused = new DOMException("Path does not exist", "NotFoundError");
+  const env = { name: ".env", isDirectory: false, isFile: true, file: (_: unknown, reject: (error: unknown) => void) => reject(refused) };
+  const missing = { ...env, name: "gone.txt" };
+  const result = await readDroppedEntries(
+    [directory("Docs", [[file("one.txt")]]), env, missing] as unknown as FileSystemEntry[],
+    new AbortController().signal,
+  );
+  expect(result.files.map(uploadRelativePath)).toEqual(["Docs/one.txt"]);
+  expect(result.directories).toEqual(["Docs"]);
+  expect(result.hidden).toEqual([".env"]);
+  expect(result.errors).toEqual(["gone.txt: Path does not exist"]);
+});

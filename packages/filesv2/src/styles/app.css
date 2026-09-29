@@ -499,3 +499,11 @@
 .filesv2-folder-readme__expand button {
   color: var(--k2b-text-secondary);
 }
+
+/* The system-files dialog's three buttons wrap onto separate lines on phones. @k2b/ui stretches a button's tap area
+   to 2.75rem above and below it on touch, so the lines keep 0.75rem apart there and no line takes another's taps. */
+@media (any-pointer: coarse) {
+  .filesv2-system-files__actions {
+    row-gap: 0.75rem;
+  }
+}

@@ -24,11 +24,20 @@ function read<T>(signal: AbortSignal, start: (resolve: (value: T) => void, rejec
   });
 }
 
+/*
+ * WebKit leaves every entry whose name starts with a dot out of folder listings and refuses to read a dropped
+ * dot-file with NotFoundError ("Path does not exist"); a dropped dot-folder is still listed. The refusal is a
+ * browser limit, not a failure.
+ */
+const refusedHidden = (entry: FileSystemEntry, error: unknown) =>
+  entry.name.startsWith(".") && error instanceof DOMException && error.name === "NotFoundError";
+
 export async function readDroppedEntries(entries: readonly FileSystemEntry[], signal: AbortSignal) {
   signal.throwIfAborted();
   const files: File[] = [];
   const directories: string[] = [];
   const errors: string[] = [];
+  const hidden: string[] = [];
   let visited = 0;
   const visit = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
     signal.throwIfAborted();
@@ -59,7 +68,8 @@ export async function readDroppedEntries(entries: readonly FileSystemEntry[], si
         files.push(file);
       } catch (error) {
         signal.throwIfAborted();
-        errors.push(`${path}: ${error instanceof Error ? error.message : "read_failed"}`);
+        if (refusedHidden(entry, error)) hidden.push(path);
+        else errors.push(`${path}: ${error instanceof Error ? error.message : "read_failed"}`);
       }
     }
   };
@@ -72,5 +82,5 @@ export async function readDroppedEntries(entries: readonly FileSystemEntry[], si
       errors.push(`${entry.name}: ${error instanceof Error ? error.message : "read_failed"}`);
     }
   }
-  return { files, directories, errors };
+  return { files, directories, errors, hidden };
 }

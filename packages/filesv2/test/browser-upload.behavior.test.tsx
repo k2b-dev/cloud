@@ -251,7 +251,7 @@ test("a picked folder with system files asks once and skipping them never create
   await flush();
   const dialog = dom.document.querySelector("dialog")!;
   expect(dialog.textContent).toContain("This upload contains 3 hidden system files (e.g. .DS_Store, Thumbs.db). Include them?");
-  expect(dialog.textContent).toContain(".gitignore or .env, are your content");
+  expect(dialog.textContent).toContain(".gitignore or .env, are not affected by this choice");
   expect(calls).toEqual([]);
   answer(dom, "Upload without system files");
   await flush();
@@ -366,4 +366,28 @@ test("a dropped folder skips Windows and macOS system entries, including everyth
   answer(dom, "Upload without system files");
   await flush();
   expect(calls).toEqual(["mkdir Documents/Docs", "mkdir Documents/Docs/Empty", "open Documents/Docs/report.txt 0 error", "commit"]);
+});
+
+test("a loose dot-file WebKit refuses next to a dropped folder is named in the summary, not reported as an error", async () => {
+  const dom = await mountBrowser();
+  // WebKit hands out the loose .env as an entry but rejects reading it, as it does for every name starting with a dot.
+  const refused = {
+    name: ".env",
+    isDirectory: false,
+    isFile: true,
+    file: (_: unknown, reject: (error: unknown) => void) => reject(new DOMException("Path does not exist", "NotFoundError")),
+  } as unknown as FileSystemFileEntry;
+  const entries = [directoryEntry("Docs", [fileEntry("report.txt")]), refused];
+  const event = new dom.window.Event("drop", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", {
+    value: { items: entries.map((entry) => ({ webkitGetAsEntry: () => entry })), files: [], types: ["Files"] },
+  });
+  dom.root.querySelector(".filesv2-browser__surface")!.dispatchEvent(event);
+  await flush();
+  expect(calls).toEqual(["mkdir Documents/Docs", "open Documents/Docs/report.txt 0 error", "commit"]);
+  const toasts = [...dom.document.querySelectorAll("[data-k2b-toast]")];
+  expect(toasts.map((toast) => toast.querySelector(".k2b-toast__description")?.textContent)).toEqual([
+    "1 file uploaded · 1 hidden file left out by the browser, upload it on its own.",
+  ]);
+  expect(toasts.some((toast) => toast.querySelector('[role="alert"]'))).toBeFalse();
 });

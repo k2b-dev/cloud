@@ -222,11 +222,16 @@ export const browserMessages = i18n.define({
             : `All ${count} files already exist in this folder.`
           : `${count} of ${total} files already exist in this folder.`,
       uploadingTitle: "Preparing upload…",
-      uploadSummary: ({ uploaded, skipped, failed }: { uploaded: number; skipped: number; failed: number }) =>
+      uploadSummary: ({ uploaded, skipped, failed, hidden }: { uploaded: number; skipped: number; failed: number; hidden: number }) =>
         [
           uploaded === 1 ? "1 file uploaded" : `${uploaded} files uploaded`,
           skipped ? `${skipped} skipped` : null,
           failed ? `${failed} failed` : null,
+          hidden
+            ? hidden === 1
+              ? "1 hidden file left out by the browser, upload it on its own"
+              : `${hidden} hidden files left out by the browser, upload them on their own`
+            : null,
         ]
           .filter(Boolean)
           .join(" · ") + ".",
@@ -269,7 +274,7 @@ export const browserMessages = i18n.define({
           ? `This upload contains 1 hidden system file (${examples}). Include it?`
           : `This upload contains ${count} hidden system files (e.g. ${examples}). Include them?`,
       systemFilesHint:
-        "macOS, Windows and Linux create these files themselves, for example for thumbnails or folder views. Ordinary files starting with a dot, such as .gitignore or .env, are your content and are always uploaded.",
+        "macOS, Windows and Linux create these files themselves, for example for thumbnails or folder views. Your own files starting with a dot, such as .gitignore or .env, are not affected by this choice.",
       uploadWithoutSystemFiles: "Upload without system files",
       uploadAll: "Upload all",
       dropTooLarge: "Select at most 10,000 files and folders per upload.",
@@ -526,11 +531,16 @@ export const browserMessages = i18n.define({
             : `Alle ${count} Dateien existieren bereits in diesem Ordner.`
           : `${count} von ${total} Dateien existieren bereits in diesem Ordner.`,
       uploadingTitle: "Upload wird vorbereitet …",
-      uploadSummary: ({ uploaded, skipped, failed }: { uploaded: number; skipped: number; failed: number }) =>
+      uploadSummary: ({ uploaded, skipped, failed, hidden }: { uploaded: number; skipped: number; failed: number; hidden: number }) =>
         [
           uploaded === 1 ? "1 Datei hochgeladen" : `${uploaded} Dateien hochgeladen`,
           skipped ? `${skipped} übersprungen` : null,
           failed ? `${failed} fehlgeschlagen` : null,
+          hidden
+            ? hidden === 1
+              ? "1 versteckte Datei hat der Browser ausgelassen, lade sie separat hoch"
+              : `${hidden} versteckte Dateien hat der Browser ausgelassen, lade sie separat hoch`
+            : null,
         ]
           .filter(Boolean)
           .join(" · ") + ".",
@@ -573,7 +583,7 @@ export const browserMessages = i18n.define({
           ? `Dieser Upload enthält 1 versteckte Systemdatei (${examples}). Mitnehmen?`
           : `Dieser Upload enthält ${count} versteckte Systemdateien (z. B. ${examples}). Mitnehmen?`,
       systemFilesHint:
-        "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Normale Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, gehören zu deinem Inhalt und werden immer hochgeladen.",
+        "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Eigene Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, betrifft diese Auswahl nicht.",
       uploadWithoutSystemFiles: "Ohne Systemdateien hochladen",
       uploadAll: "Alle hochladen",
       dropTooLarge: "Bitte höchstens 10.000 Dateien und Ordner pro Upload auswählen.",
