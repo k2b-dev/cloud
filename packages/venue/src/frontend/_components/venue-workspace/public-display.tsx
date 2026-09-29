@@ -1,10 +1,11 @@
 import { clipboard } from "@k2b/stdlib/browser";
-import { Button, prompts, SegmentedControl, Switch, toast } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { Button, InlineGuidance, prompts, SegmentedControl, Switch, toast } from "@k2b/ui";
+import { createSignal, Show } from "solid-js";
 import { venueMessages } from "../../../messages";
 import { buildPublicVenueUrl, VENUE_PUBLIC_REFRESH_SECONDS, type VenuePublicDisplayHeight } from "../../public-runtime";
 
-export const openVenuePublicDisplayDialog = async (venueId: string, locale: string): Promise<void> => {
+/** The public page's link options; `publicEnabled: false` says that the link shows visitors nothing right now. */
+export const openVenuePublicDisplayDialog = async (venueId: string, locale: string, publicEnabled: boolean): Promise<void> => {
   const { t } = venueMessages.resolve([locale]);
   try {
     await prompts.dialog<void>(
@@ -45,6 +46,11 @@ export const openVenuePublicDisplayDialog = async (venueId: string, locale: stri
         return (
           <div class="flex w-full min-w-0 max-w-xl flex-col gap-4 overflow-hidden">
             <p class="text-sm leading-relaxed text-dimmed">{t.displayIntro}</p>
+            <Show when={!publicEnabled}>
+              <InlineGuidance tone="info" icon="ti ti-world-off">
+                {t.publicPageOffForStaff}
+              </InlineGuidance>
+            </Show>
             <div class="flex min-w-0 flex-col gap-2">
               <p class="text-sm font-medium text-primary">{t.pageLayout}</p>
               <SegmentedControl<VenuePublicDisplayHeight>

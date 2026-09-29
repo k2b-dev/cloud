@@ -3,7 +3,7 @@ import { dates } from "@k2b/stdlib";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { PublicSection, ShiftAssignment, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard } from "../../contracts";
+import type { PublicSection, PublicStatus, ShiftAssignment, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard } from "../../contracts";
 import { venueMessages } from "../../messages";
 import "../ssr-test-plugin";
 
@@ -42,8 +42,10 @@ const section: PublicSection = {
 };
 
 type RenderOptions = {
-  view?: "shifts" | "my-shifts" | "feedback";
+  view?: "shifts" | "my-shifts" | "feedback" | "public";
   sectionId?: string;
+  /** The Public page view's preview; `null` when the server could not build it. Defaults to one from the dashboard. */
+  preview?: PublicStatus | null;
   dashboard?: Partial<VenueDashboard>;
   feedbackSearch?: string;
   feedbackComments?: boolean;
@@ -53,6 +55,21 @@ type RenderOptions = {
   gaps?: boolean;
   locale?: string;
 };
+
+/** The public page as the server previews it: closed, without hours, with the given sections. */
+const previewOf = (previewVenue: Venue, sections: PublicSection[]): PublicStatus => ({
+  venue: previewVenue,
+  open: false,
+  spontaneousOpen: false,
+  statusLabel: "Closed",
+  todayLabel: "Closed today",
+  nextOpeningLabel: null,
+  activeWindowLabel: null,
+  upcomingOpenings: [],
+  upcomingExceptions: [],
+  openingRules: [],
+  sections,
+});
 
 const render = (permission: Venue["permission"], sections: PublicSection[], options: RenderOptions = {}) => {
   const dashboard: VenueDashboard = {
@@ -85,6 +102,13 @@ const render = (permission: Venue["permission"], sections: PublicSection[], opti
           apiKeys: [],
           initialView: options.view ?? "shifts",
           initialSectionId: options.sectionId ?? null,
+          initialPublicPreview:
+            options.preview === undefined
+              ? previewOf(
+                  dashboard.venue,
+                  dashboard.sections.filter((entry) => entry.enabled),
+                )
+              : options.preview,
           initialCalendarView: options.calendarView ?? "week",
           initialCalendarDate: options.calendarDate ?? "2026-09-28",
           initialShiftId: options.shift ?? null,
@@ -101,115 +125,181 @@ const render = (permission: Venue["permission"], sections: PublicSection[], opti
 /** Visible text without markup, so assertions do not depend on element structure. */
 const text = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
 
-describe("Venue workspace sidebar", () => {
-  test("shows a reader without visible sections neither feedback nor an empty public content group", () => {
-    const html = render("read", []);
+/** The mobile navigation the host renders: the serialized entries of the workspace navigation. */
+const mobileNavigation = (html: string) => {
+  const json = html.match(/<script type="application\/json" data-cloud-workspace-navigation>(.*?)<\/script>/)?.[1] ?? "{}";
+  return (JSON.parse(json) as { items: { id: string; label: string; href?: string; action?: string }[] }).items;
+};
+/** The desktop sidebar, expanded and collapsed, without the IDs a render generates. */
+const sidebar = (html: string) => html.slice(html.indexOf("<aside"), html.indexOf("</aside>")).replace(/ id="[^"]*"/g, "");
+const manySections = Array.from({ length: 12 }, (_, index) => ({
+  ...section,
+  id: `Sect${String(index).padStart(2, "0")}`,
+  title: `Section number ${index}`,
+  enabled: index % 2 === 0,
+}));
 
-    expect(html).toContain('href="/app/venue/Cafe01/shifts"');
-    expect(html).not.toContain('href="/app/venue/Cafe01/feedback"');
-    expect(html).not.toContain("Public content");
-    expect(html).not.toContain("No sections yet.");
+describe("Venue workspace navigation by role", () => {
+  const roles: { permission: "read" | "write" | "admin"; mobile: string[]; desktopItems: number; settings: boolean }[] = [
+    { permission: "read", mobile: ["all", "shifts", "my-shifts", "public"], desktopItems: 3, settings: false },
+    { permission: "write", mobile: ["signup", "all", "shifts", "my-shifts", "feedback", "public"], desktopItems: 4, settings: false },
+    {
+      permission: "admin",
+      mobile: ["signup", "all", "shifts", "my-shifts", "feedback", "public", "settings"],
+      desktopItems: 5,
+      settings: true,
+    },
+  ];
+
+  test.each(roles)("gives $permission a fixed set of entries, however many sections exist", ({ permission, mobile, desktopItems }) => {
+    const empty = render(permission, []);
+    const full = render(permission, manySections);
+
+    expect(mobileNavigation(empty).map((item) => item.id)).toEqual(mobile);
+    expect(mobileNavigation(full).map((item) => item.id)).toEqual(mobile);
+    expect(sidebar(full)).toBe(sidebar(empty));
+    expect(sidebar(full)).not.toContain("Section number");
+    expect(JSON.stringify(mobileNavigation(full))).not.toContain("Section number");
+    // Views and the public page in the expanded sidebar, plus Settings for admins.
+    expect(sidebar(full).match(/class="k2b-app-workspace__sidebar-item /g)).toHaveLength(desktopItems);
   });
 
-  test("lists the sections a reader's view contains", () => {
-    const html = render("read", [{ ...section, enabled: true }]);
-
-    expect(html).toContain("Public content");
-    expect(html).toContain('href="/app/venue/Cafe01/public-sections/Menu01"');
+  test.each(roles)("shows the settings entry to $permission only when admin", ({ permission, settings }) => {
+    const html = render(permission, []);
+    expect(sidebar(html).includes("Venue settings")).toBe(settings);
+    expect(mobileNavigation(html).some((item) => item.id === "settings")).toBe(settings);
   });
 
-  test("gives staff the feedback view and hides an empty public content group", () => {
-    const html = render("write", []);
-
-    expect(html).toContain('href="/app/venue/Cafe01/feedback"');
-    expect(html).not.toContain("Public content");
+  test("opens the public page view for admins and the link dialog for everyone else", () => {
+    const admin = mobileNavigation(render("admin", [])).find((item) => item.id === "public");
+    expect(admin).toMatchObject({ label: "Public page", href: "/app/venue/Cafe01/public" });
+    for (const permission of ["read", "write"] as const) {
+      const html = render(permission, []);
+      expect(mobileNavigation(html).find((item) => item.id === "public")).toMatchObject({ label: "Public page", action: "public" });
+      expect(sidebar(html)).not.toContain('href="/app/venue/Cafe01/public"');
+      expect(text(sidebar(html))).toContain("Public page");
+    }
   });
 
-  test("keeps the public content group with its empty state for admins", () => {
-    const html = render("admin", []);
-
-    expect(html).toContain('href="/app/venue/Cafe01/feedback"');
-    expect(html).toContain("Public content");
-    expect(html).toContain("Add public section");
-    expect(html).toContain("No sections yet.");
+  test("offers Take shift only where staff take shifts, and feedback only to staff and admins", () => {
+    const freeOnly = { dashboard: { venue: { ...venue("write"), signupMode: "free" as const } } };
+    expect(mobileNavigation(render("write", [], freeOnly)).map((item) => item.id)).not.toContain("signup");
+    expect(sidebar(render("write", [], freeOnly))).not.toContain("Take a shift");
+    expect(sidebar(render("read", []))).not.toContain('href="/app/venue/Cafe01/feedback"');
+    expect(sidebar(render("write", []))).toContain('href="/app/venue/Cafe01/feedback"');
   });
 });
 
-describe("Venue public sections show whether visitors see them", () => {
-  const draft: PublicSection = { ...section, id: "Draft1", title: "Winter hours", enabled: false };
-  const published: PublicSection = { ...section, id: "Menu01", title: "Autumn menu", enabled: true };
+describe("Venue public page view", () => {
+  const draft: PublicSection = {
+    ...section,
+    id: "Draft1",
+    title: "Winter hours",
+    kind: "notice",
+    content: { text: "Soon" },
+    enabled: false,
+  };
+  const published: PublicSection = {
+    ...section,
+    id: "Menu01",
+    title: "Autumn menu",
+    enabled: true,
+    content: { items: [{ name: "Pumpkin soup", price: "4.50" }] },
+  };
+  const on = { view: "public" as const, dashboard: { venue: { ...venue("admin"), publicEnabled: true } } };
 
-  test("marks drafts in the sidebar and leaves public sections unmarked", () => {
-    const html = render("admin", [published, draft]);
+  test("lists every section with its visibility and previews only what visitors see", () => {
+    const html = render("admin", [published, draft], on);
+    const list = html.slice(html.indexOf("data-public-sections"), html.indexOf("data-public-preview"));
+    const preview = html.slice(html.indexOf("data-public-preview"));
 
-    expect(text(html)).toContain("Winter hours Draft");
-    expect(text(html)).not.toContain("Autumn menu Draft");
+    expect(text(list)).toContain("Autumn menu Menu");
+    expect(text(list)).toContain("Winter hours Notice Draft");
+    expect(list).toContain('aria-label="Show “Winter hours” on the public page"');
+    expect(list).toContain('aria-label="Move Autumn menu down"');
+    expect(list).toContain('aria-label="Edit “Autumn menu”"');
+    expect(list).toContain('aria-label="More actions for “Winter hours”"');
+    expect(preview).toContain('data-public-layout="preview"');
+    expect(text(preview)).toContain("Pumpkin soup");
+    expect(text(preview)).not.toContain("Winter hours");
+    expect(text(preview)).toContain("Visitors see the page like this right now.");
   });
 
-  test("cuts long section titles and the add action with an ellipsis and keeps the full text in a tooltip", () => {
-    const long = { ...draft, title: "Winter hours for the terrace and the reading room" };
-    const html = render("admin", [published, long], { locale: "de" });
-    const row = (label: string) => html.match(new RegExp(`<a[^>]*title="${label}"[^>]*>.*?</a>`))?.[0] ?? "";
-    const addRow = html.match(/<button[^>]*title="Öffentlichen Abschnitt hinzufügen"[^>]*>.*?<\/button>/)?.[0] ?? "";
-
-    // `data-marquee="false"` is the sidebar label's ellipsis mode.
-    expect(row("Winter hours for the terrace and the reading room · Entwurf")).toContain('data-marquee="false"');
-    expect(row("Autumn menu")).toContain('data-marquee="false"');
-    expect(row("Autumn menu")).not.toContain("Entwurf");
-    expect(addRow).toContain('data-marquee="false"');
-  });
-
-  test("states the section's visibility above its preview", () => {
-    const admin = text(render("admin", [draft], { sectionId: "Draft1" }));
-    expect(admin).toContain("Visitors see this section exactly like this on the public page.");
-    expect(admin).toContain("Draft Not on the public page. Only staff and admins see this draft. Choose Edit to publish it.");
-    expect(admin).toContain(" Edit ");
-
-    // A published section on a Venue whose public page is on.
-    const live = { dashboard: { venue: { ...venue("admin"), publicEnabled: true } } };
-    expect(text(render("admin", [published], { sectionId: "Menu01", ...live }))).toContain(
-      "Public Visitors see this section on the public page.",
-    );
-  });
-
-  test("previews a section with the public page's renderer and without a raw kind tag", () => {
-    const notice: PublicSection = { ...section, id: "Note01", kind: "notice", title: "Closed on Friday", content: { text: "Team day" } };
-    const html = render("admin", [notice], { sectionId: "Note01" });
-    expect(html).toContain('data-section-kind="notice"');
-    expect(html).toContain("k2b-notice-card");
-    expect(html).not.toMatch(/class="tag"[^>]*>\s*(?:Notice|Menu|Markdown|Links)\s*</);
-
-    const menu: PublicSection = {
+  test("says in the preview how many stored links visitors cannot follow", () => {
+    const links: PublicSection = {
       ...section,
-      id: "Menu02",
-      title: "Lunch",
-      content: { items: [{ name: "Old soup", availableUntil: "2000-01-31" }, { name: "Fresh bread" }] },
+      id: "Links1",
+      kind: "links",
+      title: "Useful links",
+      enabled: true,
+      content: {
+        links: [
+          { label: "Our site", href: "https://cafe.example.org" },
+          { label: "Old", href: "www.cafe.example.org" },
+        ],
+      },
     };
-    const preview = text(render("admin", [menu], { sectionId: "Menu02" }));
-    expect(preview).toContain("Fresh bread");
-    expect(preview).not.toContain("Old soup");
+    const preview = text(render("admin", [links], on).split("data-public-preview")[1] ?? "");
+    expect(preview).toContain("Our site");
+    expect(preview).toContain("Visitors don't see 1 link because its address");
   });
 
-  test("points staff, who have no Edit action, to admins for publishing", () => {
-    const staff = text(render("write", [draft], { sectionId: "Draft1" }));
-    expect(staff).toContain("Draft Not on the public page. Only staff and admins see this draft. Only admins can publish it.");
-    expect(staff).not.toContain("Choose Edit");
-    expect(staff).not.toContain(" Edit ");
+  test("puts the switch and the page, monitor, and open links on top while the page is on", () => {
+    const html = render("admin", [published], on);
+    const bar = html.slice(html.indexOf("data-public-page-bar"), html.indexOf("data-public-sections"));
 
-    expect(text(render("write", [draft], { sectionId: "Draft1", locale: "de" }))).toContain(
-      "Entwurf Nicht auf der öffentlichen Seite. Nur Personen mit Zugriff „Mitarbeit“ oder „Admin“ sehen diesen Entwurf. Veröffentlichen können nur Admins.",
-    );
+    expect(bar).toMatch(/role="switch"[^>]*checked/);
+    expect(text(bar)).toContain("Public page on");
+    expect(text(bar)).toContain("Copy page link");
+    expect(text(bar)).toContain("Copy monitor link");
+    expect(bar).toContain('href="/app/venue/public/Cafe01"');
+    expect(text(html)).not.toContain("The public page is off.");
   });
 
-  test("does not call a section public while the public page is switched off", () => {
-    // The fixture Venue has its public page switched off.
-    const html = text(render("admin", [published], { sectionId: "Menu01" }));
-    expect(html).toContain("Public page off The public page is switched off, so visitors see nothing right now.");
-    expect(html).not.toContain(" Public The public page");
+  test("still previews the page while it is off and says what visitors see", () => {
+    const html = render("admin", [published], { view: "public" });
+    const bar = html.slice(html.indexOf("data-public-page-bar"), html.indexOf("data-public-sections"));
 
-    expect(text(render("admin", [published], { sectionId: "Menu01", locale: "de" }))).toContain(
-      "Öffentliche Seite aus Die öffentliche Seite ist ausgeschaltet. Besucher sehen gerade nichts.",
-    );
+    expect(bar).not.toMatch(/role="switch"[^>]*checked/);
+    expect(text(html)).toContain("The public page is off. Its link shows only that the venue is not available.");
+    expect(text(html)).toContain("Visitors see the page like this once you switch it on.");
+    expect(text(html.slice(html.indexOf("data-public-preview")))).toContain("Pumpkin soup");
+  });
+
+  test("stacks the list above the preview below 1024 px and gives every switch a 44 px target", () => {
+    const html = render("admin", [published, draft], on);
+    const grid = html.match(/<div class="grid items-start gap-4 ([^"]*)">/)?.[1] ?? "";
+    // One column until `lg`, with the list first in the DOM, so a phone shows it above the preview.
+    expect(grid).toBe("lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]");
+    expect(html.indexOf("data-public-sections")).toBeLessThan(html.indexOf("data-public-preview"));
+    const switches = html.match(/k2b-switch-field [^"]*/g) ?? [];
+    expect(switches).toHaveLength(3);
+    for (const field of switches) expect(field).toContain("[&amp;_.k2b-switch]:min-h-11");
+  });
+
+  test("offers the first section when there is none", () => {
+    const html = render("admin", [], on);
+    expect(text(html)).toContain("No sections yet.");
+    expect(text(html)).toContain("Add section");
+    expect(html).toContain('data-public-layout="preview"');
+  });
+
+  test("keeps the list usable when the preview could not be built", () => {
+    const html = render("admin", [published], { ...on, preview: null });
+    expect(text(html)).toContain("The preview could not be loaded. Retry");
+    expect(html).not.toContain('data-public-layout="preview"');
+    expect(text(html)).toContain("Autumn menu");
+  });
+
+  test("marks the section an old section link named, in the list and in the preview", () => {
+    const html = render("admin", [published, draft], { ...on, sectionId: "Menu01" });
+    expect(html).toMatch(/data-section-row="Menu01" data-selected=""/);
+    expect(html).toMatch(/data-public-section="Menu01" data-selected=""/);
+    expect(html).not.toMatch(/data-section-row="Draft1" data-selected/);
+  });
+
+  test("shows nothing of the editor to staff, whom the server sends to the schedule", () => {
+    expect(render("write", [published], { view: "public" })).not.toContain("data-public-page-editor");
   });
 });
 
@@ -423,7 +513,7 @@ describe("Venue German workspace", () => {
   // A fixed future Monday, so the open shift never reads as ended at some time of day.
   const shiftDay = "2030-01-07";
 
-  test.each(["shifts", "my-shifts", "feedback"] as const)("shows no English catalog text in the %s view", (view) => {
+  test.each(["shifts", "my-shifts", "feedback", "public"] as const)("shows no English catalog text in the %s view", (view) => {
     const html = text(
       render("admin", [], {
         view,

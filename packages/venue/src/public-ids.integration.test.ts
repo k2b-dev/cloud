@@ -25,7 +25,7 @@ const venueApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }
   .route("/api/venue", apiRoutes)
   .route("/app/venue", pageRoutes);
 
-type Method = "GET" | "POST" | "PATCH" | "DELETE";
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type Caller = { cookie?: string; authorization?: string };
 
 /** One request against a declared route pattern; `params` names the saved ID that fills each path parameter, `onBody` saves or checks the response. */
@@ -69,6 +69,12 @@ const fill = (route: string, values: (param: string) => string | undefined): str
     if (!value) throw new Error(`Missing ${param} for ${route}`);
     return encodeURIComponent(value);
   });
+
+/** A step body whose `sectionIds` name saved IDs; `value` maps each name to the ID to send. */
+const resolveBody = (body: unknown, value: (name: string) => string | undefined): unknown => {
+  if (!body || typeof body !== "object" || !("sectionIds" in body) || !Array.isArray(body.sectionIds)) return body;
+  return { ...body, sectionIds: body.sectionIds.map((name: string) => value(name) ?? name) };
+};
 
 /** Internal UUIDs of every Venue row the user administers, keyed by the public ID of the same row. */
 const internalIdsOwnedBy = async (userId: string): Promise<Map<string, string>> => {
@@ -131,6 +137,7 @@ suite("Venue routes with public IDs", () => {
 
     try {
       ids.feedbackView = "feedback";
+      ids.publicView = "public";
 
       const venue = { id: "venue" };
       const steps: Step[] = [
@@ -292,6 +299,35 @@ suite("Venue routes with public IDs", () => {
         },
         {
           method: "POST",
+          route: "/api/venue/venues/:id/sections",
+          params: venue,
+          body: { kind: "markdown", title: "About us", content: { markdown: "A cafe by the water." } },
+          status: 201,
+          onBody: saveId("secondSection"),
+        },
+        // The order names sections by public ID in its body; an internal UUID there fails validation as well.
+        {
+          method: "PUT",
+          route: "/api/venue/venues/:id/sections/order",
+          params: venue,
+          body: { sectionIds: ["secondSection", "section"] },
+          status: 200,
+          onBody: (body) =>
+            expect((body as { id: string }[]).map((section) => section.id)).toEqual([ids.secondSection ?? "", ids.section ?? ""]),
+        },
+        {
+          method: "GET",
+          route: "/api/venue/venues/:id/public-preview",
+          params: venue,
+          status: 200,
+          onBody: (body) =>
+            expect((body as { sections: { id: string }[] }).sections.map((section) => section.id)).toEqual([
+              ids.secondSection ?? "",
+              ids.section ?? "",
+            ]),
+        },
+        {
+          method: "POST",
           route: "/api/venue/public/:id/feedback",
           params: venue,
           body: { rating: 4, comment: "Great coffee" },
@@ -330,7 +366,9 @@ suite("Venue routes with public IDs", () => {
         // Pages render while the Venue has hours, shifts, assignments, sections, feedback, and an API key.
         { method: "GET", route: "/app/venue/:id", params: venue, status: 302 },
         { method: "GET", route: "/app/venue/:id/:view", params: { id: "venue", view: "feedbackView" }, status: 200 },
-        { method: "GET", route: "/app/venue/:id/public-sections/:sectionId", params: { id: "venue", sectionId: "section" }, status: 200 },
+        { method: "GET", route: "/app/venue/:id/:view", params: { id: "venue", view: "publicView" }, status: 200 },
+        // Links from before the Public page view lead there, with the section marked.
+        { method: "GET", route: "/app/venue/:id/public-sections/:sectionId", params: { id: "venue", sectionId: "section" }, status: 302 },
         { method: "GET", route: "/app/venue/public/:id", params: venue, as: "anonymous", status: 200 },
         { method: "GET", route: "/app/venue/public/:id/feedback", params: venue, as: "anonymous", status: 200 },
         { method: "GET", route: "/api/venue/public/:id/status", params: venue, as: "anonymous", status: 200 },
@@ -413,11 +451,28 @@ suite("Venue routes with public IDs", () => {
         // validation (400); pages resolve the ID and do not find a UUID (404).
         for (const param of Object.keys(step.params ?? {}).filter((name) => takesVenueResourceId(step.route, name))) {
           const path = fill(step.route, (name) => (name === param ? internal.get(publicValue(name) ?? "") : publicValue(name)));
-          const rejected = await send(step.method, `${path}${step.query ?? ""}`, caller, step.body);
+          const rejected = await send(
+            step.method,
+            `${path}${step.query ?? ""}`,
+            caller,
+            resolveBody(step.body, (name) => ids[name]),
+          );
           expect({ label, param, status: rejected.status }).toEqual({ label, param, status: step.route.startsWith("/app/") ? 404 : 400 });
         }
 
-        const response = await send(step.method, `${fill(step.route, publicValue)}${step.query ?? ""}`, caller, step.body);
+        if (step.body && typeof step.body === "object" && "sectionIds" in step.body) {
+          const path = `${fill(step.route, publicValue)}${step.query ?? ""}`;
+          const rejected = await send(
+            step.method,
+            path,
+            caller,
+            resolveBody(step.body, (name) => internal.get(ids[name] ?? "")),
+          );
+          expect({ label, param: "sectionIds", status: rejected.status }).toEqual({ label, param: "sectionIds", status: 400 });
+        }
+
+        const body = resolveBody(step.body, (name) => ids[name]);
+        const response = await send(step.method, `${fill(step.route, publicValue)}${step.query ?? ""}`, caller, body);
         const text = await response.text();
         expect({ label, status: response.status, body: response.status === step.status ? "" : text.slice(0, 2_000) }).toEqual({
           label,
@@ -478,6 +533,10 @@ suite("Venue routes with public IDs", () => {
         ["reader", "POST", `/api/venue/venues/${cafe}/free-signup`, freeSlot, 403],
         ["reader", "PATCH", `/api/venue/venues/${cafe}`, venueInput, 403],
         ["reader", "POST", `/api/venue/venues/${cafe}/sections`, notice, 403],
+        ["reader", "PUT", `/api/venue/venues/${cafe}/sections/order`, { sectionIds: [newShortId()] }, 403],
+        ["reader", "GET", `/api/venue/venues/${cafe}/public-preview`, undefined, 403],
+        ["reader", "GET", `/app/venue/${cafe}/public`, undefined, 302],
+        ["cafe key", "GET", `/api/venue/venues/${cafe}/public-preview`, undefined, 403],
         [
           "reader",
           "POST",

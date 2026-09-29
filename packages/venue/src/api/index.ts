@@ -34,6 +34,7 @@ import {
   FreeSignupInputSchema,
   OpeningRuleInputSchema,
   PublicSectionInputSchema,
+  PublicSectionOrderSchema,
   PublicSectionPatchSchema,
   PublicSectionSchema,
   PublicStatusSchema,
@@ -417,6 +418,28 @@ const venueRoutes = new Hono<AuthContext>()
       );
     },
   )
+  .get(
+    "/:id/public-preview",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Preview the public page",
+      description:
+        "What the public status route would return for this venue, also while its public page is switched off: status, hours, changed hours, staffed openings, and the sections visitors see. Requires admin permission.",
+      responses: {
+        200: jsonResponse(PublicStatusSchema, "The public page as visitors would see it"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Venue not found"),
+      },
+    }),
+    v("param", VenueIdParamSchema),
+    async (c) => {
+      c.header("Cache-Control", "no-store");
+      const venue = await adminVenue(c, c.req.valid("param").id);
+      if (!venue.ok) return respond(c, venue);
+      const status = await venueService.status(venue.data, new Date(), true, getLocale(c));
+      return respond(c, ok(await venueService.publicResources.projectPublicStatus(status)));
+    },
+  )
   .patch("/:id", v("param", VenueIdParamSchema), v("json", VenueInputSchema), async (c) => {
     const venue = await adminVenue(c, c.req.valid("param").id);
     if (!venue.ok) return respond(c, venue);
@@ -746,6 +769,31 @@ const venueRoutes = new Hono<AuthContext>()
       201,
     );
   })
+  .put(
+    "/:id/sections/order",
+    describeRoute({
+      tags: ["Venues"],
+      summary: "Reorder public sections",
+      description:
+        "Set the order of the venue's public sections in one transaction. `sectionIds` lists every section of the venue exactly once, first to last. A list that misses a section or repeats one changes nothing and answers 400; a section of another venue answers 404. Requires admin permission.",
+      responses: {
+        200: jsonResponse(z.array(PublicSectionSchema), "Every section of the venue in its new order"),
+        400: jsonResponse(ErrorResponseSchema, "The list does not name every section exactly once"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Venue or section not found"),
+      },
+    }),
+    v("param", VenueIdParamSchema),
+    v("json", PublicSectionOrderSchema),
+    async (c) => {
+      const venue = await adminVenue(c, c.req.valid("param").id);
+      if (!venue.ok) return respond(c, venue);
+      const ids = await venueService.publicResources.resolveMany("sections", c.req.valid("json").sectionIds);
+      if (!ids) return respond(c, fail(err.notFound("Public section")));
+      const reordered = await venueService.sections.reorder(venue.data.id, ids);
+      return respond(c, await projectResult(reordered, (values) => venueService.publicResources.projectSections(values)));
+    },
+  )
   .patch(
     "/:id/sections/:resourceId",
     describeRoute({

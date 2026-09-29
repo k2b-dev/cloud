@@ -26,8 +26,10 @@ across different places.
 - Publish staffing slots and let staff take upcoming shifts. One click or tap
   on a shift opens its details with the people on it; on a phone they open as
   a sheet from the bottom.
-- Add notices, Markdown, links, or menu sections to the public page, or keep
-  them as drafts until they are ready.
+- Manage the public page in one view: switch it on or off, copy its page and
+  monitor links, add notices, Markdown, links, or menu sections, keep them as
+  drafts until they are ready, put them in order, and check a preview of the
+  page, also while it is off.
 - Review visitor feedback, optionally only ratings with a comment, and
   subscribe to your own shifts in a calendar app.
 
@@ -49,7 +51,7 @@ next 29 days, with the note the admin wrote for visitors. Public sections and
 the feedback form follow. The status API returns the same list as
 `upcomingExceptions`. The page follows the Cloud theme of whoever opens it, so
 visitors without an account see it light. The workspace previews each section
-with the same renderer, so a preview matches the public page. The full monitor
+with the same renderer, so the preview matches the public page. The full monitor
 display is always dark, never scrolls, and shows "+N more" where a list does
 not fit. It uses one column on screens taller than wide, and on wide screens
 when there are no exceptions, staffed openings, or feedback code to show next
@@ -79,10 +81,28 @@ Read, staff, and admin permissions serve different jobs:
 | Permission | Sees and does |
 | --- | --- |
 | Read | The shift schedule, your own shifts, and exactly what the public page shows; no visitor feedback and no drafts |
-| Staff (`write`) | Also joins shifts and sees visitor feedback and drafts |
+| Staff (`write`) | Also joins shifts, sees visitor feedback, and gets drafts through the API and `cld` |
 | Admin | Also changes schedules, public content, the public page switch, feedback settings, and access, and removes other people from a shift |
 
-Read and staff users can open the venue settings, but only read them.
+The workspace navigation has a fixed set of entries per role, however many
+sections a venue has: Take shift for staff where shifts take sign-ups,
+Schedule, My shifts, Feedback for staff and admins, Public page, and Venue
+settings for admins only. Admins manage the public page in its own view:
+the public page switch, links to the page and its monitor display, the
+sections in their public order with a visibility switch each, and a preview
+built from the public page's own components that also works while the page
+is off. Staff and read users open Public page for its link only and do not
+see the venue settings. Links to single sections from before this view,
+`/app/venue/{id}/public-sections/{sectionId}`, redirect admins to
+`/app/venue/{id}/public?section={sectionId}` and everyone else to the
+schedule.
+
+`PUT /api/venue/venues/{id}/sections/order` takes `sectionIds`, every section
+of the venue exactly once, and saves the order in one transaction: a list
+that misses or repeats a section answers 400, a section of another venue 404,
+and neither changes anything. `GET /api/venue/venues/{id}/public-preview`
+returns what the public status route would return, also while the public page
+is off. Both require admin permission.
 
 The same rules apply in the workspace, the API, `cld venue`, capabilities, and
 Venue API keys with the matching permission.
@@ -119,10 +139,12 @@ public content. `cld venue sections update` changes only the flags you pass,
 so editing a draft never publishes it.
 
 The feedback filter for ratings with a comment, the renewal of the personal
-calendar link, and shift templates on several weekdays at once are available
-in the workspace and the API (`feedbackComments=true` on the dashboard,
-`POST /api/venue/calendar/my/renew`, `POST /api/venue/venues/{id}/templates/batch`),
-not in `cld venue`.
+calendar link, shift templates on several weekdays at once, the section order,
+and the public page preview are available in the workspace and the API
+(`feedbackComments=true` on the dashboard, `POST /api/venue/calendar/my/renew`,
+`POST /api/venue/venues/{id}/templates/batch`,
+`PUT /api/venue/venues/{id}/sections/order`,
+`GET /api/venue/venues/{id}/public-preview`), not in `cld venue`.
 
 ## Deployment requirements
 

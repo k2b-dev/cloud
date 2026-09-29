@@ -225,38 +225,53 @@ suite("Venue feedback and hidden sections", () => {
         }
       }
 
-      // SSR: readers reach neither view from normal navigation, and a direct URL returns them to the schedule.
+      // SSR: readers reach neither feedback nor drafts, and a direct URL returns them to the schedule. Only admins open the Public page view, where drafts are listed;
+      // old section links lead admins there with the section marked and everyone else to the schedule.
       const feedbackHref = `/app/venue/${venueId}/feedback`;
       const scheduleHref = `/app/venue/${venueId}/shifts`;
+      const publicViewHref = `/app/venue/${venueId}/public`;
       for (const name of ["admin", "staff", "reader"] as const) {
         const { caller, internal } = callers[name];
         const schedule = await expectStatus(await send("GET", scheduleHref, caller), 200, `${name} schedule page`);
-        expect({ name, feedbackLink: schedule.includes(`href="${feedbackHref}"`), draft: schedule.includes(draftTitle) }).toEqual({
+        expect({
           name,
-          feedbackLink: internal,
-          draft: internal,
-        });
+          feedbackLink: schedule.includes(`href="${feedbackHref}"`),
+          publicView: schedule.includes(`href="${publicViewHref}"`),
+        }).toEqual({ name, feedbackLink: internal, publicView: name === "admin" });
+        // The page carries the caller's workspace data: drafts only for staff and admins.
+        expect({ name, draft: schedule.includes(draftTitle) }).toEqual({ name, draft: internal });
         expect(schedule).not.toContain(comment);
 
         const feedbackPage = await send("GET", feedbackHref, caller);
-        const draftPage = await send("GET", `/app/venue/${venueId}/public-sections/${draftSectionId}`, caller);
-        if (internal) {
-          expect(await expectStatus(feedbackPage, 200, `${name} feedback page`)).toContain(comment);
-          expect(await expectStatus(draftPage, 200, `${name} hidden section page`)).toContain(draftTitle);
+        if (internal) expect(await expectStatus(feedbackPage, 200, `${name} feedback page`)).toContain(comment);
+        else
+          expect({ status: feedbackPage.status, location: feedbackPage.headers.get("location") }).toEqual({
+            status: 302,
+            location: scheduleHref,
+          });
+
+        const publicView = await send("GET", publicViewHref, caller);
+        if (name === "admin") {
+          const html = await expectStatus(publicView, 200, "admin public page view");
+          expect(html).toContain(draftTitle);
+          expect(html).toContain('data-public-layout="preview"');
+          expect(html).toContain("Opening week text");
         } else {
-          for (const [label, page] of [
-            ["feedback page", feedbackPage],
-            ["hidden section page", draftPage],
-          ] as const) {
-            expect({ label, status: page.status, location: page.headers.get("location") }).toEqual({
-              label,
-              status: 302,
-              location: scheduleHref,
-            });
-          }
+          expect({ name, status: publicView.status, location: publicView.headers.get("location") }).toEqual({
+            name,
+            status: 302,
+            location: scheduleHref,
+          });
         }
-        const publicPage = await send("GET", `/app/venue/${venueId}/public-sections/${publicSectionId}`, caller);
-        expect(await expectStatus(publicPage, 200, `${name} public section page`)).toContain("Opening week text");
+
+        for (const sectionId of [draftSectionId, publicSectionId]) {
+          const old = await send("GET", `/app/venue/${venueId}/public-sections/${sectionId}`, caller);
+          expect({ name, status: old.status, location: old.headers.get("location") }).toEqual({
+            name,
+            status: 302,
+            location: name === "admin" ? `${publicViewHref}?section=${sectionId}` : scheduleHref,
+          });
+        }
       }
 
       // Capabilities: the aggregate summary follows the same rule as the dashboard.

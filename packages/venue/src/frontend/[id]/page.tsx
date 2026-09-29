@@ -1,15 +1,20 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { logger, serviceAccountCredentials } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
 import { ssr } from "../../config";
+import type { PublicStatus } from "../../contracts";
+import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { venueMessages } from "../../messages";
 import { venueService } from "../../service";
 import VenueWorkspace from "../_components/VenueWorkspace.island";
+import type { VenueView } from "../_components/venue-workspace/types";
 import { venueDashboardRouteScope } from "../dashboard-query";
 import { CALENDAR_VIEW_COOKIE, parseCalendarView, parseShiftSelection } from "../schedule-url";
+
+const log = logger("venue:workspace");
 
 const feedbackDaysOptions = [7, 14, 30] as const;
 type FeedbackDays = (typeof feedbackDaysOptions)[number];
@@ -19,7 +24,7 @@ const parseCalendarDate = (value: string | null): string => {
   return value;
 };
 
-const viewPath = (id: string, view: "shifts" | "my-shifts" | "feedback") => `/app/venue/${id}/${view}`;
+const viewPath = (id: string, view: VenueView) => `/app/venue/${id}/${view}`;
 const parseFeedbackDays = (value: string | null): FeedbackDays => {
   const parsed = Number(value);
   return feedbackDaysOptions.includes(parsed as FeedbackDays) ? (parsed as FeedbackDays) : 30;
@@ -30,27 +35,31 @@ const parsePage = (value: string | null): number => {
   return Number.isSafeInteger(parsed) && parsed > 1 ? parsed : 1;
 };
 
-type ResolvedView = {
-  initialView: "shifts" | "my-shifts" | "feedback";
-  initialSectionId: string | null;
-  redirectTo?: string;
-};
+type ResolvedView = { initialView: VenueView; redirectTo?: string };
 
+/**
+ * The view a URL shows the caller, or where it sends them. Feedback is for staff and admins, the Public page view
+ * for admins; anyone else lands on the schedule. Section links from before the Public page view lead admins to
+ * that view with the section marked.
+ */
 const resolveView = (
   venueId: string,
   pathView: string | undefined,
   sectionId: string | undefined,
   search: string,
-  canSeeFeedback: boolean,
+  permission: { internal: boolean; admin: boolean },
 ): ResolvedView => {
-  const initialSectionId = sectionId ?? null;
-  if (!pathView && !initialSectionId)
-    return { initialView: "shifts", initialSectionId, redirectTo: `${viewPath(venueId, "shifts")}${search}` };
-  if (pathView === "my-shifts" || pathView === "shifts" || (pathView === "feedback" && canSeeFeedback)) {
-    return { initialView: pathView, initialSectionId };
+  if (sectionId) {
+    const target = permission.admin
+      ? `${viewPath(venueId, "public")}?section=${encodeURIComponent(sectionId)}`
+      : viewPath(venueId, "shifts");
+    return { initialView: "shifts", redirectTo: target };
   }
-  if (pathView) return { initialView: "shifts", initialSectionId, redirectTo: viewPath(venueId, "shifts") };
-  return { initialView: "shifts", initialSectionId };
+  if (!pathView) return { initialView: "shifts", redirectTo: `${viewPath(venueId, "shifts")}${search}` };
+  if (pathView === "shifts" || pathView === "my-shifts") return { initialView: pathView };
+  if (pathView === "feedback" && permission.internal) return { initialView: pathView };
+  if (pathView === "public" && permission.admin) return { initialView: pathView };
+  return { initialView: "shifts", redirectTo: viewPath(venueId, "shifts") };
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -64,7 +73,11 @@ export default ssr<AuthContext>(async (c) => {
   const venue = venueResult.data;
 
   const pathView = c.req.param("view");
-  const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search, venueService.canSeeInternal(venue));
+  const isAdmin = venue.permission === "admin";
+  const resolved = resolveView(id, pathView, c.req.param("sectionId"), url.search, {
+    internal: venueService.canSeeInternal(venue),
+    admin: isAdmin,
+  });
   if (resolved.redirectTo) return c.redirect(resolved.redirectTo);
   // The URL wins; without one, the view this browser used last; a first visit starts with the week.
   const urlCalendarView = parseCalendarView(url.searchParams.get("cv"));
@@ -85,7 +98,17 @@ export default ssr<AuthContext>(async (c) => {
     feedbackComments: initialFeedbackComments,
     feedbackPage: parsePage(url.searchParams.get("page")),
   });
-  const [internalDashboard, calendarUrl, accessEntries, apiKeyOverview] = await Promise.all([
+  // The Public page view previews the page as visitors would see it, also while it is off. A failed preview
+  // leaves the rest of the view usable; the view says so and offers to retry.
+  const loadPreview = async (): Promise<PublicStatus | null> => {
+    try {
+      return await venueService.publicResources.projectPublicStatus(await venueService.status(venue, new Date(), true, getLocale(c)));
+    } catch (error) {
+      log.error("Venue public page preview failed", { venueId: venue.id, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
+  };
+  const [internalDashboard, calendarUrl, accessEntries, apiKeyOverview, publicPreview] = await Promise.all([
     venueService.dashboard(venue, user, dashboardScope.options),
     venueService.ical.getOrCreateToken(user.id).then(venueService.ical.url),
     venue.permission === "admin" ? venueService.access.list(venue.id) : Promise.resolve([]),
@@ -101,12 +124,17 @@ export default ssr<AuthContext>(async (c) => {
           },
         })
       : Promise.resolve({ items: [] }),
+    resolved.initialView === "public" ? loadPreview() : Promise.resolve(null),
   ]);
   const dashboard = await venueService.publicResources.projectDashboard(internalDashboard);
-  // A hidden, deleted, or unknown section is not part of this caller's view.
-  if (resolved.initialSectionId && !dashboard.sections.some((section) => section.id === resolved.initialSectionId)) {
-    return c.redirect(viewPath(id, "shifts"));
-  }
+  // `?section=` marks one section in the Public page view; a deleted or unknown one marks nothing.
+  const sectionParam = url.searchParams.get("section") ?? "";
+  const initialSectionId =
+    resolved.initialView === "public" &&
+    SHORT_ID_REGEX.test(sectionParam) &&
+    dashboard.sections.some((section) => section.id === sectionParam)
+      ? sectionParam
+      : null;
   const permissionByServiceAccountId = new Map(
     accessEntries
       .filter((entry) => entry.principal.type === "service_account")
@@ -133,7 +161,8 @@ export default ssr<AuthContext>(async (c) => {
         accessEntries={accessEntries}
         apiKeys={apiKeys}
         initialView={resolved.initialView}
-        initialSectionId={resolved.initialSectionId}
+        initialSectionId={initialSectionId}
+        initialPublicPreview={publicPreview}
         initialCalendarView={initialCalendarView}
         initialCalendarViewSource={initialCalendarViewSource}
         initialGapsOnly={url.searchParams.get("gaps") === "1"}

@@ -191,7 +191,7 @@ export function DialogFrame(props: {
 export type DialogSubmit<T> = (value: T) => Promise<string | null>;
 
 /** A dialog that saves through {@link DialogSubmit}: it closes with `true` after a confirmed save. */
-type SubmittingDialogProps<T> = {
+export type SubmittingDialogProps<T> = {
   submit: DialogSubmit<T>;
   close: (saved: boolean) => void;
   /** Receives the dialog's Escape and backdrop handler, which does nothing while a save runs. */
@@ -199,7 +199,7 @@ type SubmittingDialogProps<T> = {
 };
 
 /** Runs `submit` once at a time and keeps its outcome for the dialog. */
-const createDialogSave = <T,>(props: SubmittingDialogProps<T>) => {
+export const createDialogSave = <T,>(props: SubmittingDialogProps<T>) => {
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   props.guardDismiss?.(() => {

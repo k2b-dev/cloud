@@ -1,10 +1,10 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import type { VenueDashboard } from "../../../contracts";
+import type { PublicStatus, VenueDashboard } from "../../../contracts";
 import type { VenueDashboardSource } from "../../dashboard-query";
 import type { VenueCalendarView } from "../../schedule-url";
 
-export type VenueView = "shifts" | "my-shifts" | "feedback";
+export type VenueView = "shifts" | "my-shifts" | "feedback" | "public";
 export type FeedbackRange = 7 | 14 | 30;
 
 export type VenueWorkspaceProps = {
@@ -16,7 +16,10 @@ export type VenueWorkspaceProps = {
   accessEntries: AccessEntry[];
   apiKeys: ResourceApiKey[];
   initialView: VenueView;
+  /** `?section=` in the Public page view: the section an old section link named. */
   initialSectionId?: string | null;
+  /** The public page as the Public page view previews it; `null` when the server could not build it. */
+  initialPublicPreview?: PublicStatus | null;
   initialCalendarView: VenueCalendarView;
   /** Where the view came from; only a first visit (`default`) may switch a phone to its month view. */
   initialCalendarViewSource?: "url" | "cookie" | "default";

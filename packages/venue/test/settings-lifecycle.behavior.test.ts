@@ -8,7 +8,6 @@ import {
   reconcileChangedSettings,
   settingsCloseBlocked,
   settingsInteractionBlocked,
-  venueSettingsCanAdmin,
 } from "../src/frontend/settings-contract";
 
 const flush = async () => {
@@ -112,7 +111,7 @@ describe("Venue settings lifecycle behavior", () => {
     return;
   }
 
-  test("refreshes every open and replaces a stale admin seed with a read permission", async () => {
+  test("refreshes every open, so a fresh read replaces a stale seed", async () => {
     const dom = createDomTestHarness();
     const responses = ["admin", "read"] as const;
     let reads = 0;
@@ -127,21 +126,21 @@ describe("Venue settings lifecycle behavior", () => {
         const output = dom.document.createElement("output");
         createEffect(() => {
           const current = settings.data();
-          output.textContent = current && venueSettingsCanAdmin(current) ? "admin controls" : "read only";
+          output.textContent = current?.venue.permission ?? "";
         });
         return output;
       }, dom.root);
 
     const firstDispose = mountSettings();
     await flush();
-    expect(dom.root.textContent).toBe("admin controls");
+    expect(dom.root.textContent).toBe("admin");
     firstDispose();
     dom.root.replaceChildren();
 
     const reopenedDispose = mountSettings();
     await flush();
     expect(reads).toBe(2);
-    expect(dom.root.textContent).toBe("read only");
+    expect(dom.root.textContent).toBe("read");
 
     reopenedDispose();
     dom.cleanup();
@@ -160,7 +159,6 @@ describe("Venue settings lifecycle behavior", () => {
           dashboard,
           accessEntries: [],
           apiKeys: [],
-          onOpenCalendarSubscription: () => {},
           close: () => {},
         }),
       dom.root,
@@ -199,7 +197,6 @@ describe("Venue settings lifecycle behavior", () => {
           dashboard,
           accessEntries: [],
           apiKeys: [],
-          onOpenCalendarSubscription: () => {},
           close: (changed) => {
             closeResult = changed;
           },

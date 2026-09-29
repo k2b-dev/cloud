@@ -330,6 +330,15 @@ export const PublicSectionPatchSchema = z.object({
 });
 export type PublicSectionPatch = z.infer<typeof PublicSectionPatchSchema>;
 
+/** The new order of a Venue's sections: every section ID exactly once, first to last. */
+export const PublicSectionOrderSchema = z.object({
+  sectionIds: z
+    .array(VenueResourceIdSchema)
+    .min(1)
+    .refine((ids) => new Set(ids).size === ids.length, "List each section only once"),
+});
+export type PublicSectionOrder = z.infer<typeof PublicSectionOrderSchema>;
+
 export const FeedbackEntrySchema = z.object({
   venueId: VenueResourceIdSchema,
   rating: z.number().int().min(1).max(5),

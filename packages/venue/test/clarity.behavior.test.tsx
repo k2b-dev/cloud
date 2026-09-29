@@ -371,12 +371,17 @@ describe("Venue clarity behavior", () => {
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     };
-    const saved: Array<PublicSectionInput | null> = [];
+    const saved: PublicSectionInput[] = [];
     const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
     const dispose = render(
       () => (
         <PublicSectionDialog
-          close={(value) => saved.push(value)}
+          submit={async (value) => {
+            saved.push(value);
+            // Keeps the dialog open, so the test can save again.
+            return "Saved for the test";
+          }}
+          close={() => {}}
           initial={draft}
           nextPosition={draft.position}
           publicPageEnabled
@@ -395,6 +400,7 @@ describe("Venue clarity behavior", () => {
       expect(note()).toContain("Draft: only staff and admins see this section.");
 
       buttonNamed(dom.root, "Save section").click();
+      await flush();
       expect(saved.at(-1)).toMatchObject({ title: "Winter hours", enabled: false, position: 4 });
 
       visibility!.click();
@@ -402,6 +408,7 @@ describe("Venue clarity behavior", () => {
       expect(note()).toContain("Visitors see this section on the public page.");
       expect(note()).not.toContain("Draft");
       buttonNamed(dom.root, "Save section").click();
+      await flush();
       expect(saved.at(-1)).toMatchObject({ enabled: true, position: 4 });
     } finally {
       dispose();
@@ -555,7 +562,7 @@ describe("Venue clarity behavior", () => {
       },
     });
     const { openVenuePublicDisplayDialog } = await import("../src/frontend/_components/venue-workspace/public-display");
-    const closed = openVenuePublicDisplayDialog("Cafe01", "en");
+    const closed = openVenuePublicDisplayDialog("Cafe01", "en", true);
     try {
       await flush();
       const dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog__panel")!;
@@ -591,11 +598,22 @@ describe("Venue clarity behavior", () => {
       createdAt: "2026-09-01T00:00:00.000Z",
       updatedAt: "2026-09-01T00:00:00.000Z",
     };
-    const saved: Array<PublicSectionInput | null> = [];
+    const saved: PublicSectionInput[] = [];
+    const closed: boolean[] = [];
     const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
     const dispose = render(
       () => (
-        <PublicSectionDialog close={(value) => saved.push(value)} initial={section} nextPosition={2} publicPageEnabled submitLabel="Save" />
+        <PublicSectionDialog
+          submit={async (value) => {
+            saved.push(value);
+            return null;
+          }}
+          close={(value) => closed.push(value)}
+          initial={section}
+          nextPosition={2}
+          publicPageEnabled
+          submitLabel="Save"
+        />
       ),
       dom.root,
     );
@@ -615,6 +633,8 @@ describe("Venue clarity behavior", () => {
       await flush();
       expect(address.getAttribute("aria-invalid")).not.toBe("true");
       buttonNamed(dom.root, "Save").click();
+      await flush();
+      expect(closed).toEqual([true]);
       expect(saved).toEqual([
         {
           kind: "links",
@@ -633,7 +653,10 @@ describe("Venue clarity behavior", () => {
   test("the public-page switch does not promise visitors while the Venue's public page is off", async () => {
     const dom = createDomTestHarness();
     const { PublicSectionDialog } = await import("../src/frontend/_components/venue-workspace/public-sections");
-    const dispose = render(() => <PublicSectionDialog close={() => {}} nextPosition={1} publicPageEnabled={false} />, dom.root);
+    const dispose = render(
+      () => <PublicSectionDialog submit={async () => null} close={() => {}} nextPosition={1} publicPageEnabled={false} />,
+      dom.root,
+    );
     try {
       const visibility = dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
       expect(visibility.checked).toBe(true);

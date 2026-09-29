@@ -2,11 +2,11 @@
 id: venue-work
 title: Schichten und öffentliche Seite
 icon: ti ti-calendar-event
-description: Arbeitsbereich, öffentliche Abschnitte, Feedback und Zugriff.
+description: Arbeitsbereich, öffentliche Seite, Feedback und Zugriff.
 order: 110
 ---
 
-Der Standort-Arbeitsbereich trennt die tägliche Personalplanung, persönliche Zuweisungen, öffentliche Inhalte, Feedback und administrative Einstellungen.
+Der Standort-Arbeitsbereich trennt die tägliche Personalplanung, persönliche Zuweisungen, Feedback, die öffentliche Seite und administrative Einstellungen. Seine Seitenleiste und das Menü auf dem Telefon haben für jede Rolle feste Einträge, egal wie viele Abschnitte der Standort hat: **Schicht übernehmen** für Mitarbeitende, wo Schichten Einträge annehmen, **Schichtplan**, **Meine Schichten**, **Feedback** für „Mitarbeit“ und „Admin“, **Öffentliche Seite** und, nur für Admins, zuletzt **Standorteinstellungen**.
 
 Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal wo du den Standort öffnest. Läuft dein Gerät in einer anderen Zeitzone, nennt der Arbeitsbereich die Zeitzone des Standorts über den Zeiten, als Sommer- oder Normalzeit für die gezeigten Tage.
 
@@ -21,7 +21,10 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 - **Meine Schichten:** Listet deine kommenden Schichten mit Wochentag, Datum, Beginn und Ende und dem Namen der Schicht; freie Zeiten heißen **Freier Zeitraum** und zeigen ihre Notiz. **Austreten** gibt eine Schicht nach einer Rückfrage ab, und dein Platz wird für andere frei.
 - **Kalender abonnieren:** In **Meine Schichten** zeigt **Kalender abonnieren** deinen persönlichen Kalender-Link für deine Schichten an allen Standorten. **In Kalender-App öffnen** abonniert ihn auf deinem Gerät, **Link kopieren** kopiert ihn für Kalender-Apps, die nach einer URL fragen. Der Link ist persönlich: Wer ihn hat, sieht deine Schichten. **Link erneuern** ersetzt ihn, und der alte Link funktioniert sofort nicht mehr. Kalender mit dem alten Link brauchen den neuen.
 - **Feedback:** Zeigt die durchschnittliche Bewertung pro Tag auf einer Skala von 1 bis 5, die Zahl der Bewertungen pro Tag, eine Kommentarsuche, den Filter **Nur mit Kommentar** und Zeitraumfilter für 7, 14 oder 30 Tage. Ein Zeitraum zählt Kalendertage in der Zeitzone des Standorts, heute eingeschlossen. Kennzahlen und Liste umfassen denselben Zeitraum. Die Liste zeigt 50 Bewertungen pro Seite. Suche und **Nur mit Kommentar** grenzen die Liste und ihre Anzahl ein, nicht die Kennzahlen. Diese Ansicht sehen nur Personen mit Zugriff „Mitarbeit“ oder „Admin“.
-- **Öffentliche Abschnitte:** Administratoren können Abschnitte für Markdown, Speisekarte, Hinweise und Links erstellen, bearbeiten, duplizieren oder löschen. Der Schalter **Auf der öffentlichen Seite zeigen** entscheidet, ob Besucher einen Abschnitt sehen. Ist er aus, ist der Abschnitt ein Entwurf. Speichern übernimmt immer, was der Schalter zeigt. Entwürfe tragen in der Seitenleiste die Markierung **Entwurf**, und über jeder Vorschau steht, ob Besucher den Abschnitt sehen. Die Vorschau ist die Darstellung der öffentlichen Seite selbst: Ein Hinweis fällt genauso auf, und Einträge der Speisekarte außerhalb ihres Verfügbarkeitszeitraums fehlen, gerechnet in der Zeitzone des Standorts. Ein Link führt zu einer Webadresse mit https:// oder http://, einer E-Mail-Adresse mit mailto:, einer Telefonnummer mit tel: oder einem Pfad in dieser Cloud, der mit / beginnt; jede andere Adresse markiert der Dialog und speichert sie nicht. Personen mit Zugriff „Mitarbeit“ oder „Admin“ sehen auch Entwürfe; mit „Lesen“ ist nur zu sehen, was die öffentliche Seite zeigt.
+- **Öffentliche Seite:** Admins verwalten alles, was Besucher sehen, in einer Ansicht. Oben schaltet **Öffentliche Seite an** die Seite ein oder aus, **Seitenlink kopieren** und **Monitor-Link kopieren** kopieren die Adressen der Seite und ihrer Vollbildanzeige, und **Öffnen** öffnet die Seite in einem neuen Tab. Mit „Mitarbeit“ oder „Lesen“ öffnet **Öffentliche Seite** den Link zum Kopieren oder Öffnen.
+- **Abschnitte:** Unter dem Schalter listet **Abschnitte** alle Abschnitte in der Reihenfolge, in der Besucher sie sehen, auch Entwürfe mit der Markierung **Entwurf**. Mit den Pfeilen einer Zeile rückt ein Abschnitt nach oben oder unten, auch per Tastatur; die neue Reihenfolge gilt sofort, für alle Abschnitte zusammen. Der Schalter einer Zeile entscheidet, ob Besucher den Abschnitt sehen; ist er aus, ist der Abschnitt ein Entwurf. **Bearbeiten** ändert einen Abschnitt; Speichern übernimmt, was sein Schalter zeigt, und verschiebt ihn nie. Das Menü daneben dupliziert einen Abschnitt als Entwurf ans Ende, etwa als **Mittagstisch (Kopie)**, oder löscht ihn nach einer Rückfrage. Der Dialog nennt einen fehlenden Titel, einen Eintrag der Speisekarte ohne Namen oder einen unvollständigen Link direkt am Feld und bleibt mit deinen Eingaben offen, bis das Speichern gelingt.
+- **Vorschau:** Neben der Liste, auf dem Telefon oder in einem schmalen Fenster darunter, zeigt die **Vorschau** die Seite, wie Besucher sie sehen, mit der Darstellung der öffentlichen Seite selbst: Status, Öffnungszeiten, abweichende Zeiten und die sichtbaren Abschnitte in ihrer Reihenfolge. Sie funktioniert auch, solange die Seite aus ist. Ein Hinweis fällt genauso auf, und Einträge der Speisekarte außerhalb ihres Verfügbarkeitszeitraums fehlen, gerechnet in der Zeitzone des Standorts.
+- **Links in Abschnitten:** Ein Link führt zu einer Webadresse mit https:// oder http://, einer E-Mail-Adresse mit mailto:, einer Telefonnummer mit tel: oder einem Pfad in dieser Cloud, der mit / beginnt; jede andere Adresse markiert der Dialog und speichert sie nicht. Für Admins öffnen Links auf einzelne Abschnitte aus der Zeit vor dieser Ansicht **Öffentliche Seite** mit dem Abschnitt markiert; alle anderen kommen zum Schichtplan.
 :::
 
 ## Öffentliche Seite und Monitor {icon="device-tv"}
@@ -42,14 +45,13 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
   - **Zeitzone** bestimmt die Zeitzone aller Zeiten des Standorts. Bestehende Öffnungszeiten, Ausnahmen und Schichten behalten ihre Uhrzeit: 09:00 bleibt 09:00 in der neuen Zeitzone.
   - **Öffentliche Seite an** schaltet die öffentliche Seite samt Monitor-Anzeige ein oder aus. Solange sie aus ist, zeigt der Link nur, dass der Standort nicht verfügbar ist.
 
-  Änderungen in **Allgemein** warten auf **Speichern**. Mit „Lesen“ oder „Mitarbeit“ sind diese Einstellungen nur lesbar; ändern können sie nur Admins.
+  Änderungen in **Allgemein** warten auf **Speichern**. Nur Admins sehen und öffnen die Einstellungen.
 - **Schichtplan:** Reguläre Öffnungszeiten, Ausnahmen und wiederkehrende Schichten verwalten. Jede Änderung hier gilt sofort.
   - **Neue Ausnahme** wählt zwischen **Geschlossen** für den ganzen Tag und **Sonderöffnung** mit Beginn und Ende; eine Sonderöffnung ersetzt an diesem Tag die regelmäßigen Öffnungszeiten und zeigt den Standort zu ihren Zeiten als geöffnet, egal nach welcher Logik er sonst öffnet. Ausnahmen lauten etwa **Sa., 17.10.2026 · Sonderöffnung 18:00–23:00 · Lange Nacht**; vergangene stehen eingeklappt unter **Vergangene Ausnahmen**.
   - **Schicht hinzufügen** kann mehrere Wochentage auf einmal wählen und legt in einem Schritt eine Schicht pro Wochentag an: alle oder, wenn etwas nicht stimmt, keine. Die Liste gruppiert Schichten nach Wochentag, und jede Schicht wird einzeln bearbeitet.
   - Der Schalter neben einer Schicht pausiert sie oder setzt sie sofort fort. Eine pausierte Schicht behält ihre Einstellungen und trägt **Pausiert**, aber der Schichtplan plant sie nicht mehr ein, niemand kann sie übernehmen, und sie öffnet den Standort nicht. Löschen entfernt eine Schicht endgültig; vergangene Einträge behalten ihren Namen.
   - Zeiten nehmen eine Uhrzeit im 24-Stunden-Format wie 09:30; aus `9` wird 09:00. Ein Ende um 24:00 bedeutet bis Mitternacht. Felder sagen, was fehlt oder nicht stimmt, und ein Dialog bleibt mit deinen Eingaben offen, bis das Speichern gelingt.
 - **Zugriff:** Administratoren vergeben Zugriff „Lesen“, „Mitarbeit“ oder „Admin“ an Personen, Gruppen, die Öffentlichkeit oder angemeldete Personen.
-- **Links:** Öffentliche Seite öffnen oder **Kalender abonnieren** öffnen, denselben Dialog wie in **Meine Schichten**.
 - **API-Schlüssel:** Administratoren erstellen ressourcengebundene Schlüssel für Integrationen, die Zugriff auf diesen Standort benötigen.
 - **Gefahrenbereich:** **Standort löschen** entfernt den Standort mit Schichten, Einträgen, Feedback und öffentlicher Seite. Vorher musst du den Namen des Standorts eintippen.
 :::
@@ -61,13 +63,15 @@ Alle Zeiten gelten in der Zeitzone des Standorts und im 24-Stunden-Format, egal 
 | Schichtplan und eigene Schichten | Ja | Ja | Ja |
 | Schichten übernehmen | Nein | Ja | Ja |
 | Aus eigenen Schichten austreten | Ja | Ja | Ja |
-| Öffentliche Abschnitte | So, wie die öffentliche Seite sie zeigt | Alle, auch Entwürfe | Alle, auch Entwürfe |
+| Öffentliche Seite | Link kopieren oder öffnen | Link kopieren oder öffnen | Schalter, Abschnitte, Reihenfolge und Vorschau |
 | Feedback von Besuchern: Bewertungen, Kommentare und Zahlen | Nein | Ja | Ja |
-| Standorteinstellungen öffnen | Nur lesen | Nur lesen | Ja |
+| Standorteinstellungen öffnen | Nein | Nein | Ja |
 | Einstellungen, Zugriff, Zeitplan oder öffentliche Abschnitte ändern | Nein | Nein | Ja |
 | Andere Personen aus einer Schicht entfernen | Nein | Nein | Ja |
 
-Bei öffentlichen Abschnitten zeigt Zugriff „Lesen“ nicht mehr als die öffentliche Seite: Ist die öffentliche Seite ausgeschaltet, sehen Personen mit „Lesen“ keine. Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
+Die öffentliche Seite listet anstehende betreute Öffnungen als **Zusätzlich geöffnet** mit ihren Zeiten; interne Schichtnamen zeigt sie nie. Dieselben Regeln gelten für die API, `cld venue`, KI-Werkzeuge und Standort-API-Schlüssel mit der entsprechenden Berechtigung.
+
+Im Arbeitsbereich sehen nur Admins die Liste der öffentlichen Abschnitte. Über die API, `cld venue sections list` und Standort-API-Schlüssel listet Zugriff „Lesen“ nur die Abschnitte, die die öffentliche Seite zeigt, und keine, solange die Seite aus ist; mit „Mitarbeit“ oder „Admin“ erscheinen auch Entwürfe.
 
 :::note Stabile Links
 Standortlinks verwenden die unveränderliche Kurz-ID. Eine Änderung des Kurznamens betrifft die Auffindbarkeit, aber nicht die öffentlichen oder internen URLs.

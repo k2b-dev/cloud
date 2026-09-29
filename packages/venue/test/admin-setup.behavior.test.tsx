@@ -328,14 +328,7 @@ describe("Venue setup behavior", () => {
     const dispose = render(
       () => (
         <LocaleProvider locale="en">
-          <SettingsDialog
-            dashboard={dashboard}
-            accessEntries={[]}
-            apiKeys={[]}
-            initialTab="schedule"
-            onOpenCalendarSubscription={() => {}}
-            close={() => {}}
-          />
+          <SettingsDialog dashboard={dashboard} accessEntries={[]} apiKeys={[]} initialTab="schedule" close={() => {}} />
         </LocaleProvider>
       ),
       dom.root,
@@ -413,14 +406,7 @@ describe("Venue setup behavior", () => {
     const dispose = render(
       () => (
         <LocaleProvider locale="en">
-          <SettingsDialog
-            dashboard={dashboard}
-            accessEntries={[]}
-            apiKeys={[]}
-            initialTab="schedule"
-            onOpenCalendarSubscription={() => {}}
-            close={() => {}}
-          />
+          <SettingsDialog dashboard={dashboard} accessEntries={[]} apiKeys={[]} initialTab="schedule" close={() => {}} />
         </LocaleProvider>
       ),
       dom.root,
