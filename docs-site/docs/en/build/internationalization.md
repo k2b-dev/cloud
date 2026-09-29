@@ -24,9 +24,11 @@ duplicate a component per language. On the server, call `getLocale(c)`. In
 Solid UI, use the inherited `@k2b/ui` locale. At transport boundaries, use the
 locale Cloud already provides.
 
-Cloud's shared profile menu currently lets authenticated users choose English
-or German. It persists the choice in the `cloud.locale` cookie and reloads the
-current page so SSR remains authoritative. Applications consume the resolved
+Cloud's shared profile menu, the anonymous `Layout` header, and the
+`MinimalLayout` footer let people choose English or German. The choice is
+stored in the `cloud.locale` cookie for the whole host, and the page reloads so
+SSR remains authoritative. Until someone changes it, that choice outranks the
+browser language on every page of the host, signed in or not. Applications consume the resolved
 locale; they do not add their own picker or browser locale state. The request
 sources and precedence are documented in [Locale and time](/en/docs/server/locale-and-time).
 

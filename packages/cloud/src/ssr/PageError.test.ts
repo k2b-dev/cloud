@@ -235,7 +235,7 @@ describe("shared page access and error responses", () => {
     const minimal = await server.request("/minimal");
     const body = await minimal.text();
     expect(minimal.status).toBe(404);
-    expect(body).toContain("minimal-layout-preferences");
+    expect(body).toContain("minimal-layout-footer");
     expect(body).not.toContain("layout-header");
   });
   test("error responses returned inside SSR retain security headers", async () => {

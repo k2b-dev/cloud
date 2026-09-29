@@ -21,7 +21,7 @@ export default function PublicAttachmentUnlockPage(props: PublicAttachmentUnlock
 
   return (
     <MinimalLayout c={props.c}>
-      <main class="flex min-h-screen items-center justify-center bg-[var(--ui-canvas)] px-4 py-8 text-primary">
+      <main class="flex flex-1 items-center justify-center bg-[var(--ui-canvas)] px-4 py-8 text-primary">
         <Paper as="section" elevated class="w-full max-w-md p-6" aria-labelledby="attachment-unlock-title">
           <header>
             <h1 id="attachment-unlock-title" class="break-words text-xl font-semibold">

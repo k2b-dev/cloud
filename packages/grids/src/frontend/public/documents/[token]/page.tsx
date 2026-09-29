@@ -43,7 +43,7 @@ export function PublicDocumentShare(props: {
 
   return (
     <div
-      class="flex min-h-screen items-center justify-center px-4 py-8 text-primary sm:py-12"
+      class="flex flex-1 items-center justify-center px-4 py-8 text-primary sm:py-12"
       style={{
         background:
           "linear-gradient(145deg, color-mix(in srgb, #00a651 12%, var(--ui-canvas)) 0%, color-mix(in srgb, #00a651 4%, var(--ui-canvas)) 48%, var(--ui-canvas) 100%)",

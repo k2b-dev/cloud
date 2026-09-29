@@ -278,7 +278,7 @@ suite("public attachment links", () => {
     });
     expect(locked.status).toBe(200);
     const lockedHtml = await locked.text();
-    expect(lockedHtml).toContain("minimal-layout-preferences--bottom-right");
+    expect(lockedHtml).toContain('<footer class="minimal-layout-footer">');
     expect(lockedHtml).toContain('name="password"');
     expect(lockedHtml).not.toContain("private-name.txt");
 
