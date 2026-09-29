@@ -35,4 +35,14 @@ suiteFor("gotenberg")("Markdown PDF presets in Gotenberg", () => {
     // Liberation Serif, the Times New Roman substitute, has no f-ligatures.
     expect(names.filter((name) => name.startsWith("LiberationSerif"))).toEqual([]);
   }, 60_000);
+
+  test("the report body draws ≠ whole instead of composing it in Noto Serif", async () => {
+    // Noto Serif has "=" and the combining overlay U+0338 but no "≠", and would draw "=/".
+    const pdf = (await renderMarkdownToPdfWithConfig({ markdown: "≠\n\n**≠**\n\n*≠*", templateId: "report" }, config)).pdf;
+
+    expect((await pdfText(pdf)).match(/≠/gu)).toHaveLength(3);
+    const names = (await pdfFonts(pdf)).map((font) => font.name);
+    expect(names.filter((name) => name.startsWith("NotoSerif"))).toEqual([]);
+    expect(names).toEqual(expect.arrayContaining(["LiberationSerif", "LiberationSerif-Bold", "LiberationSerif-Italic"]));
+  }, 60_000);
 });

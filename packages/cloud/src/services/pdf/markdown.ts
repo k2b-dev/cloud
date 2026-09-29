@@ -47,6 +47,18 @@ export type BuildPresetPdfHtmlInput = {
   css?: string;
 };
 
+// Noto Serif, which Gotenberg ships, forms f-ligatures for the report body. It
+// has no "≠" but has "=" and the combining overlay U+0338, so Chromium would
+// build "≠" from both and draw "=/". Without U+0338 in the range, such
+// characters fall back whole to the next font. local() takes the PostScript
+// name and fetches nothing.
+const REPORT_SERIF_RANGE = "U+0-337, U+339-10FFFF";
+const REPORT_SERIF_FACES = `
+@font-face { font-family: "Report Noto Serif"; src: local("NotoSerif-Regular"); unicode-range: ${REPORT_SERIF_RANGE}; }
+@font-face { font-family: "Report Noto Serif"; src: local("NotoSerif-Bold"); font-weight: bold; unicode-range: ${REPORT_SERIF_RANGE}; }
+@font-face { font-family: "Report Noto Serif"; src: local("NotoSerif-Italic"); font-style: italic; unicode-range: ${REPORT_SERIF_RANGE}; }
+@font-face { font-family: "Report Noto Serif"; src: local("NotoSerif-BoldItalic"); font-weight: bold; font-style: italic; unicode-range: ${REPORT_SERIF_RANGE}; }`;
+
 const TEMPLATE_CSS: Record<MarkdownPdfTemplateId, string> = {
   document: `
 @page { size: A4; margin: 22mm 20mm 24mm; }
@@ -67,9 +79,9 @@ th { background: #f1f5f9; font-weight: 650; }
 thead { display: table-header-group; } tr { break-inside: avoid; }
 hr { border: 0; border-top: 1px solid #cbd5e1; margin: 1.5em 0; }
 `,
-  report: `
+  report: `${REPORT_SERIF_FACES}
 @page { size: A4; margin: 24mm 22mm 26mm; }
-:root { color: #263244; font: 10.75pt/1.58 Georgia, "Noto Serif", "Times New Roman", serif; }
+:root { color: #263244; font: 10.75pt/1.58 Georgia, "Report Noto Serif", "Times New Roman", serif; }
 body { margin: 0; background: #fff; }
 .markdown-document { max-width: 100%; overflow-wrap: anywhere; }
 h1, h2, h3, h4, h5, h6 { color: #13233a; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.18; break-after: avoid-page; }
