@@ -22,6 +22,26 @@ describe("public document share page", () => {
     expect(source).not.toContain("<LocaleProvider");
   });
 
+  test("paints no page background that would end above the MinimalLayout footer", () => {
+    const html = renderToString(() =>
+      createComponent(PublicDocumentShare, {
+        filename: "charge-statement.pdf",
+        mimeType: "application/pdf",
+        expiresAt: "2026-08-20T18:00:00.000Z",
+        expiresAtLabel: "August 20, 2026 at 8:00 PM",
+        downloadHref: "/share/grids/documents/gdl_test/download",
+      }),
+    );
+    // MinimalLayout places the page directly above its in-flow footer. The
+    // wrapper only fills that space; a background on it would stop at the
+    // footer and leave an edge. Backgrounds inside the card are fine.
+    const wrapper = html.match(/^<div[^>]*>/)?.[0] ?? "";
+
+    expect(wrapper).toContain('class="flex flex-1 ');
+    expect(wrapper).not.toContain("style=");
+    expect(wrapper).not.toMatch(/\bbg-/);
+  });
+
   test("uses shared UI without application chrome and explains expiry", () => {
     const html = renderToString(() =>
       createComponent(PublicDocumentShare, {
