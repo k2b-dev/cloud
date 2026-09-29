@@ -41,11 +41,15 @@ export default ssr<AuthContext>(async (c) => {
 Load data, redirect, and set metadata before the returned function.
 
 Every rendered page is sent with `Cache-Control: private, no-store`, so the
-browser asks the server again on Back instead of showing a cached copy of a
-signed-in page. A page that should be cached sets its own header with
-`c.header("Cache-Control", ...)` before returning; the framework keeps it.
-Redirects and other `Response` values returned by the handler are sent as they
-are.
+browser does not show a signed-in page from its HTTP cache on Back. A page that
+should be cached sets its own header with `c.header("Cache-Control", ...)`
+before returning; the framework keeps it. Redirects and other `Response` values
+returned by the handler are sent as they are.
+
+Browsers can still restore a page from their back/forward cache with its
+in-memory state. An island that saves state in the browser, such as a
+preference cookie, should write only the values the user changed, so a restored
+page or a second tab does not overwrite newer choices.
 
 The returned function must be synchronous. Solid SSR creates JSX inside
 `renderToString()`.
