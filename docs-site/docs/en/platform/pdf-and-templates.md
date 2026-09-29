@@ -13,7 +13,9 @@ updated: 2026-09-29
 Cloud can render HTML as PDF through the deployment's Gotenberg service.
 
 The application owns the document data and HTML. Cloud owns connection
-settings, authentication, timeouts, and size limits.
+settings, authentication, timeouts, and size limits. Operators set the
+Gotenberg URL in the `gotenberg.url` setting or bootstrap it with
+`GOTENBERG_URL`; without it, rendering fails with the `not_configured` code.
 
 ## Render HTML
 

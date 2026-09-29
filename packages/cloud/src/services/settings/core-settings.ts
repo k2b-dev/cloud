@@ -317,6 +317,8 @@ export const CORE_SETTINGS = {
     default: "",
     description: "Internal base URL of the Gotenberg service used for HTML-to-PDF rendering.",
     placeholder: "e.g. http://gotenberg:3000",
+    envFallback: () => env.GOTENBERG_URL,
+    envBootstrap: () => env.GOTENBERG_URL,
   },
   "gotenberg.username": {
     kind: "string",

@@ -5,6 +5,7 @@ import {
   type RenderHtmlToPdfResult,
   type RenderTemplatePdfPreviewOptions,
   renderTemplatePdfPreview,
+  type TemplatePdfPreviewError,
   type TemplatePdfPreviewResult,
 } from "@k2b/cloud/services";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
@@ -425,6 +426,17 @@ export const renderDocumentSource = async (
   locale?: string,
 ): Promise<Result<string>> => renderLiquidText(template.source, data, SOURCE_MAX_BYTES, locale);
 
+/**
+ * Template errors are the author's to fix; renderer errors are logged with
+ * their code and renderer message for operators, and a missing renderer tells
+ * users who fixes it.
+ */
+const renderFailureMessage = (error: TemplatePdfPreviewError, t: ReturnType<typeof documentServiceText>): string => {
+  if (error.phase === "template") return t.templateRenderFailed;
+  log.warn("Document PDF rendering failed", { code: error.code, status: error.status, error: error.message });
+  return error.code === "not_configured" ? t.pdfNotConfigured : t.pdfRenderFailed;
+};
+
 export const renderDocumentPdfPreview = async (
   template: Pick<DocumentTemplate, "renderer"> & { name?: string },
   data: Record<string, unknown>,
@@ -455,7 +467,7 @@ export const renderDocumentPdfPreview = async (
     ok: false,
     error: {
       ...rendered.error,
-      message: rendered.error.phase === "template" ? t.templateRenderFailed : t.pdfRenderFailed,
+      message: renderFailureMessage(rendered.error, t),
     },
   };
 };
@@ -590,6 +602,6 @@ export const renderDocumentHtmlPdf = async (
     options,
   );
   if (rendered.ok) return ok(rendered.pdf);
-  const message = rendered.error.phase === "template" ? t.templateRenderFailed : t.pdfRenderFailed;
+  const message = renderFailureMessage(rendered.error, t);
   return fail(rendered.error.status === 400 ? err.badInput(message) : err.internal(message));
 };

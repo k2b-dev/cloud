@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-09-26
+updated: 2026-09-29
 ---
 
 # Runtime configuration
@@ -197,7 +197,9 @@ Applications may declare settings for services such as:
 - AI providers;
 - PDF rendering.
 
-FreeIPA and Files use administration settings only. Mailbox credentials belong
+`GOTENBERG_URL` can bootstrap the PDF rendering setting `gotenberg.url`; the
+development stack sets it to its Gotenberg container. FreeIPA and Files use
+administration settings only. Mailbox credentials belong
 to user-created IMAP/SMTP connections, not global provider settings. Grids query
 limits are configured in Grids administration and require restarting every Grids replica.
 

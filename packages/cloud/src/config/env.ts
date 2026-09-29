@@ -72,6 +72,11 @@ const registry = defineEnv({
     example: "localhost:3000",
     doc: "Public Cloud URL used to bootstrap the `app.url` setting; the stored setting wins once written.",
   },
+  GOTENBERG_URL: {
+    schema: z.string(),
+    example: "http://localhost:3001",
+    doc: "Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written.",
+  },
   APP_SECRET: {
     schema: z.string(),
     default: "",
