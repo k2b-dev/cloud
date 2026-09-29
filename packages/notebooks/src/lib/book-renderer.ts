@@ -19,6 +19,8 @@ export type NotebookBookInput = {
   notebookId: string;
   locale: string;
   linkMode?: "book" | "write" | "readonly";
+  /** A printed document loads nothing, so each image appears as its label. */
+  print?: boolean;
   /** Authorized results from the service, keyed by the query's one-based source line. */
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
 };
@@ -202,8 +204,10 @@ export const renderNotebookBook = (
       return `<a class="notebook-book-note-link" href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}><i class="ti ti-connection" aria-hidden="true"></i>${body}</a>`;
     return `<a href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}${/^https?:/i.test(url) ? ' rel="noopener noreferrer"' : ""}>${body}</a>`;
   };
+  const imageLabel = (alt: string) => `<span class="notebook-book-image-label">${escape(t.image({ alt }))}</span>`;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
+    if (input.print) return imageLabel(alt);
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
     return `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${title ? ` title="${escape(title)}"` : ""}>`;
@@ -304,8 +308,9 @@ export const renderNotebookBook = (
             : undefined;
         },
         renderer(token) {
-          const url = resolveUrl(String(token.href), true);
           const alt = plainText(this.parser.parseInline(token.tokens ?? []));
+          if (input.print) return imageLabel(alt);
+          const url = resolveUrl(String(token.href), true);
           return url
             ? `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`
             : escape(alt);

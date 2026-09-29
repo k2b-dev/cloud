@@ -31,7 +31,6 @@ import {
   MARKDOWN_PDF_MAX_MARKDOWN_BYTES,
   MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
-  renderMarkdownToPdf,
 } from "@k2b/cloud/services/pdf";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
@@ -47,6 +46,7 @@ import { loadBookBlockPreview } from "../service/book";
 import { loadBookRoute } from "../service/book-route";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
 import type { NotePathCandidate, NotePathProblem } from "../service/note-paths";
+import { renderNotePdf } from "../service/note-pdf";
 import { loadEditableNoteRouteData } from "../service/route-state";
 import { notebookApiMessages } from "./messages";
 import {
@@ -1946,7 +1946,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Download note as PDF",
-      description: "Render a bounded Markdown snapshot as PDF without storing the input or generated file.",
+      description:
+        "Render a bounded Markdown snapshot of the note as PDF, with the reader's note blocks and the caller's query results, without storing the input or generated file.",
       ...requiresAuth,
       responses: {
         200: {
@@ -1992,11 +1993,18 @@ const app = new Hono<AuthContext>()
       activeNotePdfConversions += 1;
       try {
         const filename = notePdfFilename(note.data.title);
-        const rendered = await renderMarkdownToPdf({
+        const actor = getUserBackedActor(c);
+        const rendered = await renderNotePdf({
           markdown: input.markdown,
           title: note.data.title.trim() || filename.slice(0, -".pdf".length),
           templateId: input.templateId,
           customCss: input.customCss,
+          notebookId,
+          notebookShortId: notebook!.shortId,
+          noteId: note.data.id,
+          userId: actor?.id ?? null,
+          bypassAccess: actor ? hasRole(actor, "admin") : false,
+          locale: getLocale(c),
         });
         const buffer = rendered.pdf.buffer.slice(rendered.pdf.byteOffset, rendered.pdf.byteOffset + rendered.pdf.byteLength) as ArrayBuffer;
         return new Response(new Blob([buffer], { type: "application/pdf" }), {

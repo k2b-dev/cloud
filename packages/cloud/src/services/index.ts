@@ -148,6 +148,7 @@ export {
   MARKDOWN_PDF_TEMPLATE_IDS,
   MarkdownPdfError,
   buildMarkdownPdfHtml,
+  buildPresetPdfHtml,
   getGotenbergConfig,
   attachPdfFiles,
   attachPdfFilesWithConfig,
@@ -163,6 +164,7 @@ export {
   testGotenberg,
 } from "./pdf";
 export type {
+  BuildPresetPdfHtmlInput,
   GotenbergConfig,
   AttachPdfFilesInput,
   RenderFacturXHtmlToPdfInput,

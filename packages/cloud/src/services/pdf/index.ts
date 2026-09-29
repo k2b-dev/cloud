@@ -22,6 +22,7 @@ export {
   testGotenberg,
 } from "./gotenberg";
 export type {
+  BuildPresetPdfHtmlInput,
   MarkdownPdfErrorCode,
   MarkdownPdfTemplateId,
   RenderMarkdownToPdfInput,
@@ -29,6 +30,7 @@ export type {
 } from "./markdown";
 export {
   buildMarkdownPdfHtml,
+  buildPresetPdfHtml,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
   MARKDOWN_PDF_MAX_MARKDOWN_BYTES,
   MARKDOWN_PDF_TEMPLATE_IDS,

@@ -38,6 +38,15 @@ export type RenderMarkdownToPdfInput = {
 
 export type RenderMarkdownToPdfOptions = RenderHtmlToPdfOptions;
 
+export type BuildPresetPdfHtmlInput = {
+  /** Body HTML the application rendered from its own document format. */
+  html: string;
+  templateId?: MarkdownPdfTemplateId;
+  customCss?: string;
+  /** Application CSS for its own elements, applied after the preset and before `customCss`. */
+  css?: string;
+};
+
 const TEMPLATE_CSS: Record<MarkdownPdfTemplateId, string> = {
   document: `
 @page { size: A4; margin: 22mm 20mm 24mm; }
@@ -144,6 +153,10 @@ const renderMarkdown = (source: string): string => {
   }
 };
 
+// Keep CSS inside its style element even when it contains an HTML end tag.
+// The backslash is valid CSS escaping but no longer an HTML token.
+const styleText = (css: string): string => css.replace(/<\/style/giu, "<\\/style");
+
 const validateCustomCss = (customCss: string): string => {
   if (byteLength(customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
     throw new MarkdownPdfError("invalid_css", "Custom CSS exceeds the 32 KiB limit.", "css_too_large");
@@ -168,15 +181,15 @@ const validateCustomCss = (customCss: string): string => {
     }
   });
 
-  // Keep the CSS inside its style element even when input contains an HTML
-  // end tag. The backslash is valid CSS escaping but no longer an HTML token.
-  return root.toString().replace(/<\/style/giu, "<\\/style");
+  return styleText(root.toString());
 };
 
-export const buildMarkdownPdfHtml = (input: RenderMarkdownToPdfInput): string => {
-  if (typeof input.markdown !== "string" || !input.markdown.trim()) {
-    throw new MarkdownPdfError("bad_input", "Markdown must not be empty.", "markdown_empty");
-  }
+/**
+ * Wrap application-rendered HTML in the same print presets and validated
+ * custom CSS as Markdown PDFs, for documents whose Markdown dialect the
+ * application renders itself.
+ */
+export const buildPresetPdfHtml = (input: BuildPresetPdfHtmlInput): string => {
   const templateId = input.templateId;
   if (templateId !== undefined && !MARKDOWN_PDF_TEMPLATE_IDS.includes(templateId)) {
     throw new MarkdownPdfError("bad_input", "Unknown Markdown PDF template.", "unknown_template");
@@ -185,8 +198,8 @@ export const buildMarkdownPdfHtml = (input: RenderMarkdownToPdfInput): string =>
   const suppliedCustomCss = input.customCss?.trim() ?? "";
   const customCss = suppliedCustomCss ? validateCustomCss(input.customCss ?? "") : "";
   const presetCss = templateId ? TEMPLATE_CSS[templateId] : customCss ? "" : TEMPLATE_CSS.document;
-  const stylesheet = `${presetCss}${presetCss && customCss ? `\n/* Custom CSS overrides */\n` : ""}${customCss}`;
-  const content = renderMarkdown(input.markdown);
+  const baseCss = [presetCss, input.css ? styleText(input.css) : ""].filter(Boolean).join("\n");
+  const stylesheet = `${baseCss}${baseCss && customCss ? `\n/* Custom CSS overrides */\n` : ""}${customCss}`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -195,8 +208,15 @@ export const buildMarkdownPdfHtml = (input: RenderMarkdownToPdfInput): string =>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src 'none'; font-src 'none'; form-action 'none'; frame-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; script-src 'none'; style-src 'unsafe-inline'">
 <style>${stylesheet}</style>
 </head>
-<body><main class="markdown-document">${content}</main></body>
+<body><main class="markdown-document">${input.html}</main></body>
 </html>`;
+};
+
+export const buildMarkdownPdfHtml = (input: RenderMarkdownToPdfInput): string => {
+  if (typeof input.markdown !== "string" || !input.markdown.trim()) {
+    throw new MarkdownPdfError("bad_input", "Markdown must not be empty.", "markdown_empty");
+  }
+  return buildPresetPdfHtml({ html: renderMarkdown(input.markdown), templateId: input.templateId, customCss: input.customCss });
 };
 
 export const renderMarkdownToPdfWithConfig = (

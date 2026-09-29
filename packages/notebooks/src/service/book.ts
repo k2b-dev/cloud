@@ -23,21 +23,17 @@ export const loadBookNote = async (params: {
   return { note, document };
 };
 
-const renderBookDocument = async (params: {
+/** Query results for the reader's user, keyed by the query's one-based source line. */
+export const resolveBookQueries = async (params: {
   notebookId: string;
-  notebookShortId: string;
   noteId: string;
-  userId: string;
-  locale: string;
+  userId: string | null;
   markdown: string;
-  linkMode?: "write" | "readonly";
   bypassAccess?: boolean;
-}) => {
-  const { markdown } = params;
-  const queries = parseNotebookQueryBlocks(markdown).blocks;
+}): Promise<Map<number, NoteQueryResult>> => {
   const queryResults = new Map<number, NoteQueryResult>();
   // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
-  for (const query of queries) {
+  for (const query of parseNotebookQueryBlocks(params.markdown).blocks) {
     queryResults.set(
       query.line,
       await resolveNoteQuery({
@@ -49,6 +45,21 @@ const renderBookDocument = async (params: {
       }),
     );
   }
+  return queryResults;
+};
+
+const renderBookDocument = async (params: {
+  notebookId: string;
+  notebookShortId: string;
+  noteId: string;
+  userId: string;
+  locale: string;
+  markdown: string;
+  linkMode?: "write" | "readonly";
+  bypassAccess?: boolean;
+}) => {
+  const { markdown } = params;
+  const queryResults = await resolveBookQueries(params);
   const document = renderNotebookBook({
     markdown,
     notebookId: params.notebookShortId,
