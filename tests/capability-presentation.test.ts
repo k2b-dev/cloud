@@ -3,7 +3,6 @@ import { compileCapabilities, resolveCapabilityManifestPresentation } from "../p
 import type { CapabilityDefinitions, CapabilityPresentationTranslation } from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
 import { aiCapabilities } from "../packages/core/src/capabilities";
-import { filesCapabilities } from "../packages/files/src/capabilities";
 import { gridsCapabilities } from "../packages/grids/src/capabilities";
 import { mailCapabilities } from "../packages/mail/src/capabilities";
 import { notebooksCapabilities } from "../packages/notebooks/src/capabilities";
@@ -15,7 +14,6 @@ import { weatherCapabilities } from "../packages/weather/src/capabilities";
 const builtIns: ReadonlyArray<[string, CapabilityDefinitions]> = [
   ["contacts", contactsCapabilities],
   ["core", aiCapabilities],
-  ["files", filesCapabilities],
   ["grids", gridsCapabilities],
   ["mail", mailCapabilities],
   ["notebooks", notebooksCapabilities],

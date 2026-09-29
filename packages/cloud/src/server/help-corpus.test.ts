@@ -13,7 +13,6 @@ const helpPackages = [
   "core",
   "dashboard",
   "faq",
-  "files",
   "filesv2",
   "gateway-ops",
   "grids",

@@ -135,12 +135,7 @@ export const rule: Rule = {
 
       const hasRateLimitImport = hasServerImport && importsNamed(apiSource, "@k2b/cloud/server", "rateLimit");
       if (hasRateLimitImport && !/\.use\(\s*rateLimit\(/.test(apiSource)) report(apiPath, "rateLimit middleware imported but not mounted.");
-      if (!hasRateLimitImport && appName !== "files") {
-        report(
-          apiPath,
-          "App APIs should include rateLimit middleware unless explicitly exempt (files upload/thumbnail throughput exception).",
-        );
-      }
+      if (!hasRateLimitImport) report(apiPath, "App APIs should include rateLimit middleware.");
     }
 
     return findings;

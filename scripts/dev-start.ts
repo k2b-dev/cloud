@@ -20,7 +20,7 @@ if (inputs.length === 0) {
     "",
     "Examples:",
     "  bun run dev:start notebooks",
-    "  bun run dev:start notebooks files grids",
+    "  bun run dev:start notebooks filesv2 grids",
   ]);
   process.exit(0);
 }

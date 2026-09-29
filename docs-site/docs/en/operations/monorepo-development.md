@@ -130,10 +130,6 @@ numeric ownership, setgid, and POSIX ACLs. It is not a production privilege
 recommendation or proof of NFS behavior.
 The published image uses `linux/amd64`; Docker Desktop uses emulation on ARM.
 
-Files (legacy), the `files` app, uses the Filegate v2 API and cannot use this v6 daemon.
-Do not point that app at the new roots. Its old Docker volumes are not migrated
-or attached. Files (`filesv2`) remains a separate application with its own configuration.
-
 ## Test Collabora locally
 
 Development infrastructure also includes Collabora Online (CODE) for Files

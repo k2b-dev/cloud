@@ -16,7 +16,7 @@ if (inputs.length === 0) {
     "",
     "Examples:",
     "  bun run dev:stop notebooks",
-    "  bun run dev:stop notebooks files",
+    "  bun run dev:stop notebooks filesv2",
   ]);
   process.exit(0);
 }

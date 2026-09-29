@@ -66,7 +66,7 @@ p(`${color.bold}Examples${color.reset}`);
 p("  bun run dev:start notebooks");
 p("  bun run dev:restart notebooks");
 p("  bun run dev:restart --running   # shared packages/cloud source");
-p("  bun run dev:rebuild notebooks files grids   # parallel");
+p("  bun run dev:rebuild notebooks filesv2 grids   # parallel");
 p("  bun run dev:logs notebooks");
 p("  bun run dev:status notebooks");
 p("  bun run dev:cld -- apps list --json");

@@ -18,6 +18,3 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
-        # Minor releases that need a migration; they get their own PRs until
-        # it lands (Filegate client API rewrite).
-        exclude-patterns: ["@valentinkolb/filegate"]

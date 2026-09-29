@@ -198,18 +198,6 @@ services:
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/grids/src/index.ts
 
-  app-files:
-    <<: *app
-    container_name: app-files
-    environment: { <<: *env, APP_ID: files }
-    profiles: [extra]
-    volumes:
-      - ./packages/cloud/src:/app/packages/cloud/src
-      - ./packages/cloud/scripts:/app/packages/cloud/scripts
-      - ./packages/files/src:/app/packages/files/src
-      - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/files/src/index.ts
-
   app-filesv2:
     <<: *app
     container_name: app-filesv2
