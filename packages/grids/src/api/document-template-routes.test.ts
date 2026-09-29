@@ -273,15 +273,15 @@ describe("document template routes", () => {
     const paths = spec.paths as Record<string, Record<string, { summary?: string; responses?: Record<string, unknown> }>>;
 
     for (const [method, operationPath, routeSummary, statuses] of [
-      ["get", "/documents/templates/by-table/{tableId}", "List document templates for a table", ["200", "403"]],
+      ["get", "/documents/templates/by-table/{tableId}", "List document templates for a table", ["200", "400", "403"]],
       ["get", "/documents/templates/by-table/{tableId}/full", "List full document templates for table admins", ["200", "403"]],
-      ["post", "/documents/templates/by-table/{tableId}", "Create a document template", ["201", "403"]],
-      ["patch", "/documents/templates/by-table/{tableId}/reorder", "Reorder document templates", ["204", "403", "409"]],
+      ["post", "/documents/templates/by-table/{tableId}", "Create a document template", ["201", "400", "403"]],
+      ["patch", "/documents/templates/by-table/{tableId}/reorder", "Reorder document templates", ["204", "400", "403", "409"]],
       ["get", "/documents/templates/{templateId}", "Get a document template", ["200", "403"]],
-      ["patch", "/documents/templates/{templateId}", "Update a document template", ["200", "403"]],
+      ["patch", "/documents/templates/{templateId}", "Update a document template", ["200", "400", "403"]],
       ["delete", "/documents/templates/{templateId}", "Delete a document template", ["204", "403"]],
       ["post", "/documents/templates/{templateId}/restore", "Restore a soft-deleted document template", ["200", "403", "404"]],
-      ["get", "/documents/templates/{templateId}/records/lookup", "Search records for a document template", ["200", "403"]],
+      ["get", "/documents/templates/{templateId}/records/lookup", "Search records for a document template", ["200", "400", "403"]],
     ] as const) {
       const operation = paths[operationPath]?.[method];
       expect(operation?.summary).toBe(routeSummary);

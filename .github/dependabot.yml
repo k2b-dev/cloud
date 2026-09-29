@@ -19,5 +19,5 @@ updates:
       minor-and-patch:
         update-types: [minor, patch]
         # Minor releases that need a migration; they get their own PRs until
-        # it lands (OpenAPI 400 responses, Filegate client API rewrite).
-        exclude-patterns: ["hono-openapi", "@hono/standard-validator", "@valentinkolb/filegate"]
+        # it lands (Filegate client API rewrite).
+        exclude-patterns: ["@valentinkolb/filegate"]
