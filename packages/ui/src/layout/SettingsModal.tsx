@@ -1,4 +1,5 @@
 import { children, createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { IconButton } from "../actions/Button";
 import { useUiMessages } from "../intl/messages";
 import { createScrollFade } from "./scroll-fade";
 import { assertUniqueStableUiIds } from "./stable-id";
@@ -197,14 +198,9 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
   return (
     <div class={`k2b-settings ${props.class ?? ""}`} role="region" aria-label={props.title}>
       <Show when={props.onClose}>
-        <button
-          type="button"
-          class="k2b-settings__close k2b-icon-button"
-          aria-label={props.closeLabel ?? messages().close}
-          onClick={props.onClose}
-        >
+        <IconButton class="k2b-settings__close" label={props.closeLabel ?? messages().close} onClick={props.onClose}>
           <i class="ti ti-x" aria-hidden="true" />
-        </button>
+        </IconButton>
       </Show>
       <aside class="k2b-settings__rail">
         <nav

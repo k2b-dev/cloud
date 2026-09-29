@@ -1471,12 +1471,13 @@
    of at least 2.75rem (44 px) in both axes, while its visible box stays the
    same. A later element paints over an earlier one, so a hit area must never
    reach back over what precedes it: a button that follows anything in its
-   row, directly or as the first control of a Dropdown or toolbar group, does
-   not extend backwards, and the gap before it belongs to the control before
-   it (feedback-parity.css does the same for Tooltip.Anchor). Wrapped or
-   stacked rows need 0.5rem between them, which @k2b/ui's own compact button
-   rows keep on touch. The zero-specificity `position` keeps component rules
-   that already place a button in charge. */
+   row does not extend backwards, and the gap before it belongs to the control
+   before it. "Follows" looks through up to two wrappers around the button:
+   @k2b/ssr islands, a Dropdown, a toolbar group, or a Tooltip.Anchor, whose
+   part feedback-parity.css owns. Wrapped or stacked rows need 0.5rem between
+   them, which @k2b/ui's own compact button rows keep on touch. The
+   zero-specificity `position` keeps component rules that already place a
+   button in charge. */
 @media (any-pointer: coarse) {
   :where(.k2b-ui .k2b-button) {
     position: relative;
@@ -1490,7 +1491,11 @@
   }
 
   .k2b-ui .k2b-button:not(:first-child)::after,
-  .k2b-ui :is(.k2b-dropdown, .k2b-toolbar__group):not(:first-child) > .k2b-button::after {
+  .k2b-ui :is(solid-island, solid-client, .k2b-dropdown, .k2b-toolbar__group):not(:first-child) > .k2b-button::after,
+  .k2b-ui
+    :is(solid-island, solid-client, .k2b-dropdown, .k2b-toolbar__group):not(:first-child)
+    > :is(solid-island, solid-client, .k2b-dropdown, .k2b-toolbar__group)
+    > .k2b-button::after {
     inset-inline-start: 0;
   }
 

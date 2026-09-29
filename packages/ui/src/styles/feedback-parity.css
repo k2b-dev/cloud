@@ -529,11 +529,14 @@
   display: inline-flex;
 }
 
-/* A button in a Tooltip.Anchor that follows other content must not reach back
-   over it with its touch hit area; see the `.k2b-button` touch-target rule in
-   index.css. */
+/* A button in a Tooltip.Anchor that follows other content, directly or with
+   one more island, Dropdown, or toolbar group around or inside the anchor,
+   must not reach back over it with its touch hit area; see the `.k2b-button`
+   touch-target rule in index.css. */
 @media (any-pointer: coarse) {
-  .k2b-ui .k2b-tooltip-wrapper:not(:first-child) > .k2b-button::after {
+  .k2b-ui .k2b-tooltip-wrapper:not(:first-child) > .k2b-button::after,
+  .k2b-ui .k2b-tooltip-wrapper:not(:first-child) > :is(solid-island, solid-client, .k2b-dropdown, .k2b-toolbar__group) > .k2b-button::after,
+  .k2b-ui :is(solid-island, solid-client, .k2b-dropdown, .k2b-toolbar__group):not(:first-child) > .k2b-tooltip-wrapper > .k2b-button::after {
     inset-inline-start: 0;
   }
 }

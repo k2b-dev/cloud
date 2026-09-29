@@ -20,6 +20,7 @@ const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
 const { SettingsGroup } = await import("../layout/Settings");
+const { default: SettingsModal } = await import("../layout/SettingsModal");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const phone = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
@@ -49,8 +50,11 @@ const anchored = (label: string) =>
     },
   });
 const html = (view: () => JSX.Element) => renderToString(view);
+// @k2b/ssr wraps every island in one of these and ships this rule with the page.
+const island = (markup: string) => `<solid-island>${markup}</solid-island>`;
 const phonePage = (body: string, head = "") =>
-  `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>${head}</head>` +
+  `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
+  `<style>solid-client,solid-island{display:contents}</style>${head}</head>` +
   `<body class="k2b-ui">${body}</body></html>`;
 
 /**
@@ -142,6 +146,47 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       }),
     );
     expect(await takenPixels(markup)).toEqual({});
+  });
+
+  test("keep a header action's edge when every action is its own island", async () => {
+    // Cloud's phone header: Help, Search, and Apps each hydrate as a separate island.
+    const row = [icon("Help"), icon("Search"), icon("Apps")].map((button) => island(html(() => button))).join("");
+    const wrapped = [menu("More actions"), anchored("Close panel")].map((control) => island(html(() => control))).join("");
+    const inRow = (markup: string) => `<div style="display:flex;gap:0.25rem;align-items:center">${markup}</div>`;
+    expect(await takenPixels(inRow(row))).toEqual({});
+    expect(await takenPixels(inRow(island(html(() => icon("Back"))) + wrapped))).toEqual({});
+  });
+
+  test("give the SettingsModal close a 44 px hit area that keeps the category row's edges", async () => {
+    const modal = (titles: string[]) =>
+      `<div style="height:30rem">${html(() =>
+        createComponent(SettingsModal, {
+          title: "Base settings",
+          onClose: () => {},
+          get children() {
+            return titles.map((title) => createComponent(SettingsModal.Tab, { id: title.toLowerCase(), title, children: title }));
+          },
+        }),
+      )}</div>`;
+    // The close comes first in the DOM, but a category row that scrolls under its hit area keeps every visible tab pixel.
+    expect(await takenPixels(modal(["General", "Fields", "Access", "Automations", "Danger"]))).toEqual({});
+
+    const page = await browser.newPage(phone);
+    try {
+      await page.setContent(phonePage(`<main style="width:22rem;padding:2rem">${modal(["General"])}</main>`));
+      const reach = await page.evaluate(() => {
+        const close = document.querySelector<HTMLElement>(".k2b-settings__close")!;
+        const box = close.getBoundingClientRect();
+        const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("button") === close;
+        const midX = box.left + box.width / 2;
+        const midY = box.top + box.height / 2;
+        // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
+        return [reaches(midX - 21, midY), reaches(midX + 21, midY), reaches(midX, midY - 21), reaches(midX, midY + 21)];
+      });
+      expect(reach).toEqual([true, true, true, true]);
+    } finally {
+      await page.close();
+    }
   });
 
   test("keep every edge in wrapped primary actions, settings actions, and a wrapped toolbar", async () => {

@@ -76,7 +76,9 @@ scrolls into view in the row or rail.
 
 `activeTab` and `onTabChange` make selection controlled; use `defaultTab` for
 local selection. An optional `onClose` adds a close action without deciding how
-the surrounding surface is opened.
+the surrounding surface is opened. The close action is a ghost `IconButton`, so
+it has the shared [touch target](/en/ui/actions/buttons#touch-targets) on
+phones and tablets.
 
 Place `SettingsModal.Footer` inside a tab when that category has a persistent
 status and action row. The modal keeps the footer outside the scrolling panel;
