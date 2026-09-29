@@ -140,7 +140,6 @@ const withoutHydrationKeys = (html: string) => html.replace(/ data-hk="[^"]*"/g,
 
 const text = (html: string) =>
   html
-    .replace(/<script[\s\S]*?<\/script>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
