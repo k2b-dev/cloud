@@ -197,11 +197,14 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(source).not.toContain('getElementById("ui-toast-container")');
   });
 
-  test("moves the toast rail off the bottom edge on narrow viewports", async () => {
+  test("moves the toast rail off the bottom edge on narrow or short viewports", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "toast.ts")).text();
     // Without the stylesheet the rail keeps its bottom edge; the stylesheet only swaps the edges.
     expect(source).toContain("top:var(--k2b-toast-rail-top,auto);bottom:var(--k2b-toast-rail-bottom,env(safe-area-inset-bottom,0px));");
-    const narrow = feedbackCss.match(/@media \(max-width: 47\.999rem\) \{\s*\.k2b-ui \[data-k2b-toast-container\] \{([^}]*)\}/)?.[1];
+    // A phone in landscape is wider than 48rem but shorter than 30rem.
+    const narrow = feedbackCss.match(
+      /@media \(max-width: 47\.999rem\), \(max-height: 29\.999rem\) \{\s*\.k2b-ui \[data-k2b-toast-container\] \{([^}]*)\}/,
+    )?.[1];
     expect(narrow).toContain("--k2b-toast-rail-top: env(safe-area-inset-top, 0px);");
     expect(narrow).toContain("--k2b-toast-rail-bottom: auto;");
   });

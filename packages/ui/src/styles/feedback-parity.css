@@ -594,10 +594,11 @@
 
 /* ----------------------------------------------------------------- toast */
 
-/* The rail sits above modal dialogs. On narrow viewports the bottom edge
-   belongs to dialog footers, bottom sheets and primary actions, so toasts
-   move to the top edge there instead of covering them. */
-@media (max-width: 47.999rem) {
+/* The rail sits above modal dialogs. On narrow or short viewports, such as a
+   phone in portrait or landscape, the bottom edge belongs to dialog footers,
+   bottom sheets and primary actions, so toasts move to the top edge there
+   instead of covering them. */
+@media (max-width: 47.999rem), (max-height: 29.999rem) {
   .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-top: env(safe-area-inset-top, 0px);
     --k2b-toast-rail-bottom: auto;
