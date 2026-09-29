@@ -54,6 +54,14 @@ test("check and switch labels contain their visually hidden input", () => {
   expect(cssRule(".k2b-ui .k2b-check > input,\n.k2b-ui .k2b-switch > input")).toContain("position: absolute");
 });
 
+test("checkbox cards contain their visually hidden input", () => {
+  // Same containing-block rule as Check and Switch: inside a scrolling list
+  // (Mail "Customize toolbar") the absolute input must scroll with its card
+  // instead of resolving against a distant positioned ancestor (k2b-dev/cloud#404).
+  expect(cssRule(".k2b-ui .k2b-checkbox-card")).toContain("position: relative");
+  expect(cssRule(".k2b-ui .k2b-checkbox-card > input")).toContain("position: absolute");
+});
+
 test("fields that share a grid align their controls through a subgrid", () => {
   const described = renderToString(() =>
     createComponent(TextInput, { label: "Address", description: "A two-line description.", value: "" }),

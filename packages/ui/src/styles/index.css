@@ -4813,6 +4813,10 @@
 
 .k2b-ui .k2b-checkbox-card {
   display: grid;
+  /* Containing block for the visually hidden input, as for Check and Switch:
+     otherwise it resolves against a distant positioned ancestor and stops
+     scrolling with the list the card sits in. */
+  position: relative;
   min-width: 0;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
