@@ -60,7 +60,7 @@ import {
 import { SignupDialog } from "./venue-workspace/signup";
 import { VenueTimeZoneNote } from "./venue-workspace/time-zone-note";
 import type { FeedbackRange, VenueView, VenueWorkspaceProps } from "./venue-workspace/types";
-import { canAdmin, canWrite, dateKey, isSlotActive, parseDateKey, timeZoneDateConfig } from "./venue-workspace/utils";
+import { calendarDateOf, canAdmin, canWrite, dateKey, isSlotActive, parseDateKey, timeZoneDateConfig } from "./venue-workspace/utils";
 
 function ViewHeader(props: { title: string; description: string; action?: JSX.Element }) {
   return (
@@ -106,7 +106,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const venue = () => dashboard().venue;
   const [view] = createSignal<VenueView>(props.initialView);
   const [calendarView] = createSignal<VenueCalendarView>(props.initialCalendarView);
-  const [calendarDate] = createSignal(parseDateKey(props.initialCalendarDate));
+  // Local midnight in the venue, the way the calendar counts days: a date at noon UTC is already tomorrow east of +12.
+  const calendarDate = createMemo(() => calendarDateOf(props.initialCalendarDate, venue().timezone));
   const [gapsOnly, setGapsOnly] = createSignal(props.initialGapsOnly === true);
   const [selectedShiftId, setSelectedShiftId] = createSignal<string | null>(props.initialShiftId ?? null);
   // The server cannot know the width: it renders the side panel, which CSS hides below 1024 px until hydration.
@@ -179,7 +180,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const canJoinShifts = () => canWrite(venue()) && venue().signupMode !== "free";
   /** Midday of the first and last day the calendar grid shows (weeks start on Monday). */
   const calendarTimes = createMemo(() => {
-    const key = dateKey(calendarDate());
+    const key = dateKey(calendarDate(), venue().timezone);
     if (calendarView() === "day") return [`${key}T12:00:00Z`];
     const weekStart = (day: string) => shiftDate(day, -((parseDateKey(day).getUTCDay() + 6) % 7));
     const month = calendarView() === "month" || calendarView() === "mobile-month";
@@ -230,7 +231,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
   const calendarHref = (nextView: VenueCalendarView, nextDate: Date | string, shift: string | null = null, gaps = gapsOnly()) =>
     scheduleHref(venue().id, {
       view: nextView,
-      date: typeof nextDate === "string" ? nextDate : dateKey(nextDate),
+      date: typeof nextDate === "string" ? nextDate : dateKey(nextDate, venue().timezone),
       gaps,
       shift,
     });
@@ -901,12 +902,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       }
                       renderCell={({ row: entry, col, value, render }) => {
                         if (col.id === "rating") {
-                          // Filled and outlined stars differ in shape, and the label states the value.
+                          // The icon font has outline stars only, so color marks the given stars and the visible
+                          // value states the rating without relying on color; the label reads it out.
                           return (
                             <span
                               role="img"
                               aria-label={t().ratingValue({ count: entry.rating })}
-                              class="inline-flex items-center gap-0.5 whitespace-nowrap text-amber-500 dark:text-amber-400"
+                              class="inline-flex items-center gap-0.5 whitespace-nowrap"
                             >
                               <For each={[1, 2, 3, 4, 5]}>
                                 {(star) => (
@@ -914,12 +916,15 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                                     aria-hidden="true"
                                     class={
                                       star <= entry.rating
-                                        ? "ti ti-star-filled text-sm"
+                                        ? "ti ti-star text-sm text-amber-500 dark:text-amber-400"
                                         : "ti ti-star text-sm text-zinc-300 dark:text-zinc-600"
                                     }
                                   />
                                 )}
                               </For>
+                              <span aria-hidden="true" class="ml-1 text-xs font-medium tabular-nums text-primary">
+                                {entry.rating}/5
+                              </span>
                             </span>
                           );
                         }

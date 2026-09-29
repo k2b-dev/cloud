@@ -26,7 +26,7 @@ import type {
 } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
 import { completeClockTime, isClockTime, isEndTime, TimeInput } from "./time-input";
-import { timeZoneDateConfig, todayDateKey } from "./utils";
+import { dateKey, timeZoneDateConfig } from "./utils";
 
 /** The staffing target as people read it: `2`, or `1–3` when more people may join than the shift needs. */
 export const slotTarget = (slot: Pick<UpcomingSlot, "minPeople" | "maxPeople">): string =>
@@ -305,7 +305,7 @@ export function ExceptionDialog(
   const t = () => venueMessages.resolve([locale()]).t;
   const dialog = createDialogSave(props);
   const [kind, setKind] = createSignal<DateOverride["kind"]>(props.initial?.kind ?? "closed");
-  const [date, setDate] = createSignal<string | null>(props.initial?.date ?? props.today ?? todayDateKey());
+  const [date, setDate] = createSignal<string | null>(props.initial?.date ?? props.today ?? dateKey(new Date(), props.timeZone));
   const [startTime, setStartTime] = createSignal(props.initial?.startTime ?? "18:00");
   const [endTime, setEndTime] = createSignal(props.initial?.endTime ?? "22:00");
   const [note, setNote] = createSignal(props.initial?.note ?? "");
