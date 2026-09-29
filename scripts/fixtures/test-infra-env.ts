@@ -11,7 +11,8 @@
  * `.env`. Every other target is removed when missing, because "unset" is the
  * documented off switch for those clients (`NATS_SERVERS` defaults to none).
  */
-import { isAbsolute } from "node:path";
+import { existsSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 
 export type InfraKind = "database" | "nats" | "valkey" | "filegate" | "gotenberg" | "rsql";
 
@@ -47,6 +48,21 @@ export const readTestNatsCredsFile = (env: Record<string, string | undefined>): 
   }
   return file;
 };
+
+/** Flag that keeps Bun from loading dotenv files; `bun run test` starts itself and every test process with it. */
+export const noEnvFile = "--no-env-file";
+
+/** Dotenv files Bun loads from its working directory at startup (`.env.test` under `bun test`, `.env.local` elsewhere). */
+const envFiles = [".env", ".env.local", ".env.test"];
+
+/**
+ * The dotenv file a process started in `cwd` without `--no-env-file` picks up,
+ * or `undefined`. A checkout's `.env` configures its development stack
+ * (`APP_URL`, secrets, internal origins); a test process that loaded it would
+ * test that installation instead of the defaults CI and worktrees use.
+ */
+export const dotenvLeak = (cwd: string, execArgv: readonly string[]): string | undefined =>
+  execArgv.includes(noEnvFile) ? undefined : envFiles.map((name) => join(cwd, name)).find((path) => existsSync(path));
 
 /**
  * Runtime variables for the `CLOUD_TEST_*` targets in `env`: every alias gets

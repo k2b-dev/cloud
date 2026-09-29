@@ -118,6 +118,17 @@ them from the preload, too late for that handle; export `REDIS_URL` yourself
 before running it. `tests/integration/test-infra-redis-binding.integration.test.ts`
 proves the binding against a disposable Valkey on a non-default port.
 
+Tests never read the checkout's `.env`. It configures the development stack,
+for example `APP_URL` for a stack served under another address, and its values
+would replace the defaults the tests expect: the OAuth issuer would become the
+stack's public address. `bun run test` therefore starts itself and every test
+process with `--no-env-file`, so tests see the same configuration as in CI and
+in worktrees, which have no `.env`. Variables you export in the shell still
+reach the tests. With a `CLOUD_TEST_*` variable set, the fixture refuses a
+process that started without that flag next to a `.env`, `.env.local`, or
+`.env.test`; start a direct run from such a directory with
+`bun --no-env-file test`.
+
 The database name must end in `_test`. Integration tests create and delete
 rows; the fixture refuses any other name. Never point them at the development
 database.

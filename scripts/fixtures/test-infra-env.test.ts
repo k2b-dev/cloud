@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { applyTestRuntimeEnv, infraMappings, testRuntimeEnv } from "./test-infra-env";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { applyTestRuntimeEnv, dotenvLeak, infraMappings, noEnvFile, testRuntimeEnv } from "./test-infra-env";
 
 describe("test runtime aliases", () => {
   test("map every configured CLOUD_TEST_* target to its runtime variables", () => {
@@ -43,5 +46,24 @@ describe("test runtime aliases", () => {
       "/cloud/.local/nats/test.creds",
     );
     expect(() => testRuntimeEnv({ CLOUD_TEST_NATS_CREDS_FILE: ".local/nats/test.creds" })).toThrow("must be an absolute path");
+  });
+});
+
+describe("dotenv leak", () => {
+  test("names a checkout's .env unless Bun started with --no-env-file", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "cloud-dotenv-"));
+    try {
+      expect(dotenvLeak(cwd, [])).toBeUndefined();
+      await writeFile(join(cwd, ".env"), "APP_URL=https://example.invalid\n");
+      expect(dotenvLeak(cwd, [])).toBe(join(cwd, ".env"));
+      expect(dotenvLeak(cwd, [noEnvFile])).toBeUndefined();
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("bun run test starts the runner without dotenv files", async () => {
+    const manifest = (await Bun.file(join(import.meta.dir, "..", "..", "package.json")).json()) as { scripts: { test: string } };
+    expect(manifest.scripts.test).toBe(`bun ${noEnvFile} scripts/run-tests.ts`);
   });
 });
