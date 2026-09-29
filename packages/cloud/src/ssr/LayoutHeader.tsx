@@ -66,40 +66,22 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
             searchLinks={props.searchLinks}
             searchResources={props.authenticated}
           />
+          {(props.authenticated || props.appLabel) && (
+            <AppLaunchpad
+              profile={props.authenticated ? { name: props.profileName, theme: props.theme } : undefined}
+              apps={props.launchpadApps}
+              legalLinks={props.legalLinks}
+              variant="header"
+              label={props.openAppsLabel}
+            />
+          )}
         </div>
         {props.authenticated ? (
-          <>
-            <div class="lg:hidden">
-              <AppLaunchpad
-                profile={props.authenticated ? { name: props.profileName, theme: props.theme } : undefined}
-                apps={props.launchpadApps}
-                legalLinks={props.legalLinks}
-                variant="header"
-                label={props.openAppsLabel}
-              />
-            </div>
-            <div class="hidden lg:block">
-              <ProfilePreferences
-                avatarSrc={props.profileAvatarSrc}
-                initialTheme={props.theme}
-                name={props.profileName}
-                placement="header"
-              />
-            </div>
-          </>
+          <div class="hidden lg:block">
+            <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="header" />
+          </div>
         ) : (
           <>
-            {props.appLabel && (
-              <div class="lg:hidden">
-                <AppLaunchpad
-                  profile={props.authenticated ? { name: props.profileName, theme: props.theme } : undefined}
-                  apps={props.launchpadApps}
-                  legalLinks={props.legalLinks}
-                  variant="header"
-                  label={props.openAppsLabel}
-                />
-              </div>
-            )}
             <LayoutPreferences initialTheme={props.theme} position="bottom-left" />
             <ButtonLink href="/auth/login" size="sm" variant="primary">
               <i class="ti ti-login" aria-hidden="true" />
