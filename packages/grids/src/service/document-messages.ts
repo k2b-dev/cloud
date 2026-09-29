@@ -114,6 +114,8 @@ export const documentServiceMessages = i18n.define({
       htmlBatchOutputExceeded: "The HTML template batch output budget was exceeded.",
       htmlRenderFailed: "HTML template rendering failed.",
       pdfRenderFailed: "PDF rendering failed.",
+      pdfNotConfigured:
+        "PDF rendering is not configured. An administrator sets it under Administration > Settings > PDF rendering settings.",
       baseMismatch: "The record does not belong to this base.",
       snapshotRecordLimit: ({ limit }: { limit: number }) => `The snapshot exceeds the limit of ${limit} records.`,
       snapshotRootMissing: "The snapshot root was not captured.",
@@ -299,6 +301,8 @@ export const documentServiceMessages = i18n.define({
       htmlBatchOutputExceeded: "Das Ausgabebudget für das stapelweise Rendern der HTML-Vorlage wurde überschritten.",
       htmlRenderFailed: "Die HTML-Vorlage konnte nicht gerendert werden.",
       pdfRenderFailed: "Das PDF konnte nicht gerendert werden.",
+      pdfNotConfigured:
+        "Die PDF-Erstellung ist nicht eingerichtet. Ein Administrator richtet sie unter Administration > Einstellungen > Einstellungen der PDF-Erstellung ein.",
       baseMismatch: "Der Datensatz gehört nicht zu dieser Base.",
       snapshotRecordLimit: ({ limit }) => `Der Snapshot überschreitet das Limit von ${limit} Datensätzen.`,
       snapshotRootMissing: "Der Ausgangsdatensatz des Snapshots wurde nicht erfasst.",

@@ -22,6 +22,7 @@ x-env: &env
   CLOUD_IDENTITY_JWKS_ORIGIN: http://app-core:3000
   CLOUD_OAUTH_JWKS_ORIGIN: http://app-oauth:3000
   CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
+  GOTENBERG_URL: http://gotenberg:3000
 
 x-app: &app
   build:

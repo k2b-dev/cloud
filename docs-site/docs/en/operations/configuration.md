@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-09-25
+updated: 2026-09-29
 ---
 
 # Configuration reference
@@ -34,6 +34,7 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `NATS_TLS_CA_FILE` | string | runtime | unset | no | Path to a mounted CA certificate that enables TLS to NATS; unset means plain TCP. |
 | `NATS_IGNORE_CLUSTER_UPDATES` | boolean | runtime | `true` | no | Only dial the listed servers and ignore cluster-advertised peer addresses; set to `false` when every advertised address is reachable. |
 | `APP_URL` | string | runtime | unset | no | Public Cloud URL used to bootstrap the `app.url` setting; the stored setting wins once written. |
+| `GOTENBERG_URL` | string | runtime | unset | no | Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
 | `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. |
 | `ADMIN_LOGIN_TOKEN` | string | secret | empty | no | Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | string | secret | unset | no | Core only: 64-hex KEK for platform identity signing keys stored in Postgres; generate once with `openssl rand -hex 32` and never distribute it to other apps. |
