@@ -17,7 +17,7 @@
  *    marker syntax AND the change doesn't introduce any, OR when
  *    the existing ranges are unaffected by the change. Used by
  *    extensions whose `build` does a full `doc.toString() +
- *    regex.matchAll()` pass (katex, tag-pill, info-blocks) — those
+ *    regex.matchAll()` pass (katex, tag-pill) — those
  *    rebuilds are expensive enough to be worth gating.
  *
  * Each caller (images, links, tag-pill, info-blocks, katex) tracks
