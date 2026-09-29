@@ -1,9 +1,8 @@
 # Files CLI
 
 Files (`cld filesv2`) works with the user's personal and group storage in
-Cloud and FreeIPA. Files (legacy) is a separate application with its own
-commands. Check `cld apps list --json` and `cld filesv2 help` before using the
-commands.
+Cloud and FreeIPA. Check `cld apps list --json` and `cld filesv2 help` before
+using the commands.
 
 ## Address files
 

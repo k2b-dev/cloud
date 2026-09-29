@@ -489,9 +489,10 @@ or preview cache is needed. The browser uses polling for updates because Filegat
 has no change feed.
 Filegate's versioning cooldown determines which automatic saves become versions.
 
-Files (legacy) remains independent and uses its older Filegate
-API. There is no automatic migration of its settings or storage. Operators map
-existing storage to the ordinary root and relative-path configuration.
+Files replaces the removed Files (legacy) application. It never read that
+application's settings or storage; operators map existing storage to the
+ordinary root and relative-path configuration. See
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#the-legacy-files-app-is-removed).
 
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 the Filegate and Collabora prerequisites. For the local test instances, see

@@ -10,6 +10,43 @@ updated: 2026-09-29
 
 # Deprecations and migrations
 
+## The legacy Files app is removed
+
+Files (legacy), the `files` application with the `cloud-app-files` image and
+the `/app/files`, `/api/files`, and `/admin/files` routes, is no longer part of
+Cloud. Releases no longer publish its image, and the supplied Compose files no
+longer define an `app-files` service. [Files](/en/apps/filesv2) (`filesv2`)
+replaces it.
+
+There is no automatic migration. Files never read the legacy application's
+settings or storage, and nothing moves on upgrade. An installation that still
+runs `app-files` must move its users to Files before it upgrades:
+
+1. Set up Files with Filegate 6.1 as described in
+   [Deployment requirements](/en/docs/operations/deployment-requirements), and
+   map the home and group directories the legacy app served to Files storage.
+2. Verify that users see and can open their files in `/app/filesv2`.
+3. Remove the `app-files` service from the deployment. Do not keep an older
+   `cloud-app-files` image running next to the new release.
+
+Links to `/app/files` and legacy file references in chats or notes no longer
+resolve.
+
+The legacy application owned no database schema; it read the shared identity
+tables. Upgrading deletes nothing. These records remain until an administrator
+removes them after verifying Files:
+
+- the `files.*` settings, including the encrypted `files.filegate_token`: in
+  `/admin/settings` on the **General** tab, review **Legacy settings** and
+  choose **Clean up**. The cleanup removes every stored key that no running
+  application registers, not only `files.*`, so first check that the list holds
+  nothing you still need.
+- the offline `files` registration: in `/admin/gateway/apps`, choose
+  **Remove offline app** for Files (legacy).
+
+Stop the Filegate v2 daemon and archive or delete its storage separately, once
+Files serves every directory you still need.
+
 ## Venue objects no longer carry a calendar token
 
 Venue objects in API responses, such as `GET /api/venue/venues`, and the
@@ -367,10 +404,9 @@ Built-in images use production mode and port 3000. Remove runtime `APP_ID`
 and `PORT` overrides; application identity comes from its declaration. Build
 and development scripts still accept `APP_ID` to select an application.
 
-FreeIPA and Files no longer import environment configuration. Configure the
-`freeipa.*` (including group rules) and `files.filegate_*` settings in administration.
-Remove Cloud-side `FREEIPA_*`, `GROUPS_*`, `FILEGATE_URL` and `FILEGATE_TOKEN`
-bootstrap inputs. Filegate's own server configuration remains separate.
+FreeIPA no longer imports environment configuration. Configure the `freeipa.*`
+settings, including group rules, in administration. Remove Cloud-side
+`FREEIPA_*`, `GROUPS_*`, `FILEGATE_URL` and `FILEGATE_TOKEN` bootstrap inputs. Filegate's own server configuration remains separate.
 
 Grids query limits moved to `grids.query_pool_size`, `grids.query_concurrency`,
 `grids.query_queue_limit` and `grids.query_queue_timeout_ms` on its admin page.
