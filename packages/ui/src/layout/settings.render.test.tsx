@@ -259,6 +259,32 @@ describe("@k2b/ui complete settings surfaces", () => {
     expect(bodyRule).toContain("overflow-y: auto");
   });
 
+  test("stacks the categories above the panel on narrow surfaces and keeps the close action off the panel", () => {
+    const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    const rule = (selector: string, source = css) => source.match(new RegExp(`${selector.replaceAll(".", "\\.")}\\s*\\{([^}]+)\\}`))?.[1];
+    const wide = css.slice(css.indexOf("@media (min-width: 48rem)"));
+
+    expect(rule(".k2b-ui .k2b-settings")).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(rule(".k2b-ui .k2b-settings__close")).not.toContain("position: absolute");
+    expect(rule(".k2b-ui .k2b-settings__close")).toContain("grid-area: 1 / 2");
+    expect(rule(".k2b-ui .k2b-settings__content")).toContain("grid-area: 2 / 1 / 3 / 3");
+    expect(rule(".k2b-ui .k2b-settings__tabs")).toContain("overflow-x: auto");
+    expect(rule(".k2b-ui .k2b-settings__tabs button")).not.toContain("width: 100%");
+
+    expect(rule(".k2b-ui .k2b-settings", wide)).toContain("grid-template-columns: 11.5rem minmax(0, 1fr)");
+    expect(rule(".k2b-ui .k2b-settings__close", wide)).toContain("position: absolute");
+    expect(rule(".k2b-ui .k2b-settings__tabs", wide)).toContain("flex-direction: column");
+    expect(rule(".k2b-ui .k2b-settings__tab-group-label", wide)).toContain("display: block");
+
+    const html = renderToString(() =>
+      createComponent(SettingsModal, {
+        title: "Settings",
+        children: createComponent(SettingsModal.Tab, { id: "general", title: "General", children: "General content" }),
+      }),
+    );
+    expect(html).toMatch(/role="tablist"[^>]*data-scroll-fade-mode="both"[^>]*data-scroll-fade-axis="horizontal"/);
+  });
+
   test("renders changed fields and sticky or fixed save controls", () => {
     const field = renderToString(() =>
       createComponent(SettingsField, {
