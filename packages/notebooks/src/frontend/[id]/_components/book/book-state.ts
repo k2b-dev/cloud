@@ -20,7 +20,7 @@ export const BOOK_SNAPSHOT_EVENT = "notebooks:book-snapshot";
 export const BOOK_CONTENT_EVENT = "notebooks:book-content";
 const BOOK_NAVIGATION_REQUEST_EVENT = "notebooks:book-navigation-request";
 
-type BookNavigationRequest = { href: string; handled?: Promise<boolean> };
+type BookNavigationRequest = { href: string; handled: boolean };
 
 declare global {
   interface WindowEventMap {
@@ -28,17 +28,16 @@ declare global {
   }
 }
 
-/** Asks the reading shell to open a reading route in place; `false` when no shell took it. */
-export const requestBookNavigation = async (href: string): Promise<boolean> => {
-  const detail: BookNavigationRequest = { href };
+/** Asks the reading shell to open a reading route in place; `false` when no shell took it. A shell that takes it owns the load and its failures. */
+export const requestBookNavigation = (href: string): boolean => {
+  const detail: BookNavigationRequest = { href, handled: false };
   window.dispatchEvent(new CustomEvent(BOOK_NAVIGATION_REQUEST_EVENT, { detail }));
-  return (await detail.handled) ?? false;
+  return detail.handled;
 };
 
-export const handleBookNavigationRequests = (open: (href: string) => Promise<boolean> | false): (() => void) => {
+export const handleBookNavigationRequests = (open: (href: string) => boolean): (() => void) => {
   const listener = (event: CustomEvent<BookNavigationRequest>) => {
-    const handled = open(event.detail.href);
-    if (handled) event.detail.handled = handled;
+    if (!event.detail.handled) event.detail.handled = open(event.detail.href);
   };
   window.addEventListener(BOOK_NAVIGATION_REQUEST_EVENT, listener);
   return () => window.removeEventListener(BOOK_NAVIGATION_REQUEST_EVENT, listener);

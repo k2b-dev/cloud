@@ -150,15 +150,28 @@ export default function BookController(props: Props) {
       else setSource(next);
     };
     // Search results and the phone navigation sheet open reading routes in this shell.
-    const openInShell = (href: string) => {
+    const shellTarget = (href: string) => {
       const target = bookNavigationTarget(href, window.location.href, props.notebookId);
-      if (!target || target.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return false;
-      return new Promise<boolean>((resolve, reject) => {
-        navigate(target, "push", undefined, (error) => (error ? reject(error) : resolve(true)));
-      });
+      return target && target.pathname.replace(/\/$/, "") !== `/app/notebooks/${props.notebookId}` ? target : null;
     };
-    onCleanup(registerSearchNavigation(({ href }) => openInShell(href)));
-    onCleanup(handleBookNavigationRequests(openInShell));
+    // Search waits for the article so its dialog can report a failure in place.
+    onCleanup(
+      registerSearchNavigation(({ href }) => {
+        const target = shellTarget(href);
+        if (!target) return false;
+        return new Promise<boolean>((resolve, reject) => {
+          navigate(target, "push", undefined, (error) => (error ? reject(error) : resolve(true)));
+        });
+      }),
+    );
+    // The sheet is already closed, so its pages load like a link in the page, with the same retry and access fallback.
+    onCleanup(
+      handleBookNavigationRequests((href) => {
+        const target = shellTarget(href);
+        if (target) navigate(target, "push");
+        return target !== null;
+      }),
+    );
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;

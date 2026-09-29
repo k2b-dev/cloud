@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
@@ -273,6 +273,38 @@ describe("Book navigation tree", () => {
       expect(sheet.expanded("Guide")).toBe("true");
       await sheet.close();
     } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a page from the phone sheet that fails to load keeps the reader in place with a retry", async () => {
+    const app = await mount("note02");
+    const documentLoad = spyOn(window.location, "assign").mockImplementation(() => undefined);
+    try {
+      const sheet = await openSheet();
+      tap(sheet.link("Glossary"));
+      await sheet.menu;
+      await flush();
+      expect(app.requests.map((request) => request.href)).toEqual(["/app/notebooks/book01/notes/note03?mode=book"]);
+      app.requests[0]!.resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+      await flush();
+      expect(documentLoad).not.toHaveBeenCalled();
+      expect(location.pathname).toEndWith("/note02");
+      expect(document.getElementById("notebook-book-content")?.textContent).toBe("note02");
+
+      const retry = Array.from(document.querySelectorAll<HTMLButtonElement>("#controller button")).find((button) =>
+        button.textContent?.includes("Retry"),
+      )!;
+      click(retry);
+      await flush();
+      expect(app.requests[1]?.href).toBe("/app/notebooks/book01/notes/note03?mode=book");
+      app.requests[1]!.resolve(Response.json(snapshot("note03")));
+      await flush();
+      expect(location.pathname).toEndWith("/note03");
+      expect(app.item("note03").getAttribute("aria-selected")).toBe("true");
+      expect(documentLoad).not.toHaveBeenCalled();
+    } finally {
+      documentLoad.mockRestore();
       app.cleanup();
     }
   });

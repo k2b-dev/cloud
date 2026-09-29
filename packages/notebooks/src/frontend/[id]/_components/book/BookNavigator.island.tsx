@@ -111,8 +111,8 @@ export default function BookNavigator(props: BookNavigatorProps) {
   // Reading pages open in the reading shell, so this island and the reader's folds outlive the sheet.
   // An action keeps that request outside the link's view transition; modified clicks still use the URL.
   const readingPage = (href: string) => ({ href, action: `open:${href}` });
-  const openReadingPage = async (href: string) => {
-    if (!(await requestBookNavigation(href).catch(() => false))) window.location.assign(href);
+  const openReadingPage = (href: string) => {
+    if (!requestBookNavigation(href)) window.location.assign(href);
   };
   const noteEntry = (node: BookTreeNode): NavigationItem => ({
     id: `note:${node.id}`,
