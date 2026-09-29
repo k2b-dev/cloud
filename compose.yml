@@ -66,6 +66,23 @@ services:
       timeout: 2s
       retries: 30
 
+  # Integration tests get their own Valkey. Cache keys such as `settings:<key>`
+  # are not namespaced, so a shared instance would hand the running stack's
+  # cached values to tests and test values to the stack. Tests leave nothing
+  # worth keeping, so this instance keeps no data across restarts.
+  valkey-test:
+    image: docker.io/valkey/valkey:8-alpine
+    container_name: ipa_valkey_test
+    restart: unless-stopped
+    command: valkey-server --save "" --appendonly no --loglevel warning
+    ports:
+      - "127.0.0.1:${CLOUD_DEV_TEST_VALKEY_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
   nats-1:
     <<: *nats
     container_name: ipa_nats_1

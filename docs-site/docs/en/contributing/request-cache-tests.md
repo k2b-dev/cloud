@@ -5,7 +5,7 @@ section: Contributing
 order: 1315
 description: Run isolated cache, session-policy, migration, and Valkey disconnect checks.
 tags: [testing, cache, settings, identity]
-updated: 2026-09-21
+updated: 2026-09-29
 ---
 
 # Verify request caches
@@ -13,7 +13,7 @@ updated: 2026-09-21
 From the repository root, with Bun, workspace dependencies, and Docker available:
 
 ```bash
-CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 bun test --preload ./scripts/fixtures/test-infra.ts packages/cloud/test/integration/request-cache
+CLOUD_TEST_DATABASE_URL=postgres://…/<name>_test CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6380 bun test --preload ./scripts/fixtures/test-infra.ts packages/cloud/test/integration/request-cache
 ```
 
 The runner starts disposable `postgres:17-alpine` and `valkey/valkey:8-alpine`
