@@ -191,7 +191,7 @@ describe("Filesv2 interactions", () => {
     cleanup = () => dom.cleanup();
   });
 
-  test("a previewed PDF opens in a new tab from its loaded bytes and downloads through a fresh lease", async () => {
+  test("a previewed PDF opens in a new tab at its stable address and downloads through a fresh lease", async () => {
     const dom = createDomTestHarness();
     const { default: Browser } = await import("../src/frontend/Browser");
     const pdf = directory.items[2]!;
@@ -264,21 +264,19 @@ describe("Filesv2 interactions", () => {
 
     const dialog = dom.document.querySelector("dialog")!;
     expect(dialog.querySelector("iframe")?.getAttribute("src")).toMatch(/^blob:preview-/);
-    const actions = [...dialog.querySelectorAll<HTMLButtonElement>(".filesv2-preview button")];
+    const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".filesv2-preview :is(a, button)")];
     // Visible text names each action for keyboard and screen-reader users; reloading an unchanged file is not offered.
-    expect(actions.map((button) => button.textContent?.trim())).toEqual(["Open in new tab", "Download"]);
-    expect(actions.every((button) => !button.disabled && !button.hasAttribute("aria-label"))).toBe(true);
+    expect([open, download].map((action) => action?.textContent?.trim())).toEqual(["Open in new tab", "Download"]);
+    expect([open, download].every((action) => !action!.hasAttribute("disabled") && !action!.hasAttribute("aria-label"))).toBe(true);
+    // The tab reads the stored file from Cloud, so it reloads and the viewer names it after the file.
+    expect(open).toBeInstanceOf(dom.window.HTMLAnchorElement);
+    expect(open!.getAttribute("href")).toBe("/api/filesv2/bases/base-1/pdf/Budget%20%231/Bericht%20Q3.pdf");
+    expect(open!.getAttribute("target")).toBe("_blank");
+    expect(open!.getAttribute("rel")).toBe("noopener");
     const leasesBefore = requests.length;
     const fetchesBefore = fetched.length;
 
-    actions[0]!.click();
-    await flush();
-    expect(tab.opener).toBeNull();
-    expect(await objectUrls.get(tab.location.href)?.text()).toBe(bytes);
-    expect(requests).toHaveLength(leasesBefore);
-    expect(fetched).toHaveLength(fetchesBefore);
-
-    actions[1]!.click();
+    download!.click();
     await flush();
     expect(requests).toHaveLength(leasesBefore + 1);
     expect(requests[leasesBefore]!.input).toEqual({ param: { baseId: "base-1" }, json: { path: pdf.path } });
@@ -304,7 +302,7 @@ describe("Filesv2 interactions", () => {
       dispose();
       dom.cleanup();
     };
-    const labels = [...dom.root.querySelectorAll("button")].map((button) => button.textContent?.trim());
+    const labels = [...dom.root.querySelectorAll("a, button")].map((action) => action.textContent?.trim());
     expect(labels).toEqual(["In neuem Tab öffnen", "Herunterladen"]);
   });
 });

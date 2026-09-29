@@ -10,6 +10,12 @@ export type PdfPreviewProps = {
   title?: string;
   buttonLabel?: string;
   openButtonLabel?: string;
+  /**
+   * Opens the document at this address in a new tab instead of a local copy. Pass a stable same-origin URL that
+   * serves the PDF inline, so reloading and the viewer's file name keep working. Without it, the open action shows
+   * a temporary copy of the requested document.
+   */
+  openHref?: string;
   /** Adds a Download action. The host owns the download, for example a fresh attachment URL. */
   onDownload?: () => void;
   emptyText?: string;
@@ -38,7 +44,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
   const [tabBlocked, setTabBlocked] = createSignal(false);
   // An automatic preview shows one fixed document; the open action reuses it instead of requesting it again.
   let shownBlob: Blob | null = null;
-  let openButton: HTMLButtonElement | undefined;
+  let openButton: HTMLElement | undefined;
   let renderButton: HTMLButtonElement | undefined;
   let disposed = false;
   let loadGeneration = 0;
@@ -109,7 +115,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
     if (!tab) return;
     tab.opener = null;
     tab.document.title = props.title ?? messages().pdfPreview;
-    tab.document.body.textContent = "Rendering PDF preview...";
+    tab.document.body.textContent = messages().pdfPreviewRendering;
     setOpening(true);
     setError(null);
     try {
@@ -134,18 +140,39 @@ export default function PdfPreview(props: PdfPreviewProps) {
   const renderable = () => !props.autoLoad || failed() || (!url() && !loading());
   const actions = () => (
     <div class="k2b-content-pdf-preview__actions">
-      <button
-        ref={openButton}
-        type="button"
-        class="k2b-button"
-        data-variant="secondary"
-        data-size="sm"
-        onClick={() => void openInNewTab()}
-        disabled={loading() || opening() || props.disabled?.()}
+      <Show
+        when={!props.disabled?.() && props.openHref}
+        fallback={
+          <button
+            ref={(element) => (openButton = element)}
+            type="button"
+            class="k2b-button"
+            data-variant="secondary"
+            data-size="sm"
+            onClick={() => void openInNewTab()}
+            disabled={loading() || opening() || props.disabled?.()}
+          >
+            <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
+            {props.openButtonLabel ?? messages().openPreview}
+          </button>
+        }
       >
-        <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
-        {props.openButtonLabel ?? messages().openPreview}
-      </button>
+        {(href) => (
+          // A plain link to a real address: the browser opens it on the user's own click, and the tab can reload it.
+          <a
+            ref={(element) => (openButton = element)}
+            class="k2b-button"
+            data-variant="secondary"
+            data-size="sm"
+            href={href()}
+            target="_blank"
+            rel="noopener"
+          >
+            <i class="ti ti-external-link" aria-hidden="true" />
+            {props.openButtonLabel ?? messages().openPreview}
+          </a>
+        )}
+      </Show>
       <Show when={props.onDownload}>
         <button
           type="button"

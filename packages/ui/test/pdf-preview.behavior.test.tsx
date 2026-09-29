@@ -354,8 +354,61 @@ domTest("a blocked tab keeps the shown document and says so in the inherited loc
     click(open);
     await Bun.sleep(0);
     expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+    expect(browser.tab.document.body.textContent).toBe("PDF-Vorschau wird erstellt…");
     expect(browser.objectUrls.get(browser.tab.location.href)).toBe(pdf);
     expect(calls).toBe(1);
+  } finally {
+    dispose();
+    browser.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("a caller's open address opens as a plain link, so reloading and the viewer keep the stored document", async () => {
+  const dom = createDomTestHarness();
+  const browser = stubPdfBrowser(dom);
+  const opened: unknown[][] = [];
+  dom.window.open = ((...args: unknown[]) => {
+    opened.push(args);
+    return browser.tab;
+  }) as unknown as typeof dom.window.open;
+  const { createSignal } = await import("solid-js");
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  const [disabled, setDisabled] = createSignal(false);
+  let calls = 0;
+  const dispose = render(
+    () => (
+      <PdfPreview
+        autoLoad
+        openHref="/api/files/Q3%20Report.pdf"
+        openButtonLabel="Open in new tab"
+        disabled={disabled}
+        request={async () => {
+          calls++;
+          return new Blob(["%PDF-1.4"], { type: "application/pdf" });
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(0);
+    const link = dom.root.querySelector<HTMLAnchorElement>(".k2b-content-pdf-preview__actions a")!;
+    expect(link.textContent?.trim()).toBe("Open in new tab");
+    expect(link.getAttribute("href")).toBe("/api/files/Q3%20Report.pdf");
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toBe("noopener");
+    expect(dom.root.querySelector("iframe")).not.toBeNull();
+    // The browser follows the link to the caller's address itself: no local copy, no second request.
+    link.click();
+    await Bun.sleep(0);
+    expect(opened).toEqual([["http://localhost/api/files/Q3%20Report.pdf", "_blank", "noopener"]]);
+    expect(browser.objectUrls.size).toBe(1);
+    expect(calls).toBe(1);
+    // A link cannot be disabled; a disabled preview offers the disabled button instead.
+    setDisabled(true);
+    expect(dom.root.querySelector(".k2b-content-pdf-preview__actions a")).toBeNull();
+    expect(dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button")!.disabled).toBe(true);
   } finally {
     dispose();
     browser.restore();

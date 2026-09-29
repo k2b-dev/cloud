@@ -120,6 +120,7 @@ suite("Files service and durable bindings", () => {
     }
   >();
   const contents = new Map<string, string>();
+  const downloadLeases = new Map<string, string>();
   const DISCOVERY = `<wopi-discovery><net-zone name="external-http"><app name="writer"><action default="true" ext="odt" name="edit" urlsrc="http://collabora:9980/browser/abc/cool.html?"/><action ext="odt" name="view" urlsrc="http://collabora:9980/browser/abc/cool.html?"/></app></net-zone></wopi-discovery>`;
   const transport = Object.assign(
     async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -158,8 +159,9 @@ suite("Files service and durable bindings", () => {
         afterSegment?.();
         return Response.json({ ...session, chunkSize: 4, expires: "2099-01-01T00:00:00Z", uploadedSegments: 1 });
       }
-      if (parts[1] === "signed") {
-        const key = `${parts[2]}:${decodeURIComponent(parts.slice(3).join("/"))}`;
+      // Download leases are transfer URLs; a GET reads the file the lease was issued for.
+      if (parts[1] === "v1" && parts[2] === "direct" && downloadLeases.has(parts[3] ?? "") && (init?.method ?? "GET") === "GET") {
+        const key = downloadLeases.get(parts[3]!)!;
         return nodes.has(key) ? new Response(contents.get(key) ?? "") : new Response("", { status: 404 });
       }
       if (parts[1] === "v1" && parts[2] === "direct") {
@@ -248,9 +250,11 @@ suite("Files service and durable bindings", () => {
         const body = init?.body ? JSON.parse(String(init.body)) : {};
         if (operation === "downloads") downloadRequests.push(body);
         const target = z.object({ path: z.string().optional() }).parse(body);
+        const leaseId = `${operation}-${downloadLeases.size + 1}.signature`;
+        downloadLeases.set(leaseId, `${root}:${target.path ?? ""}`);
         return Response.json({
           method: "GET",
-          url: `http://localhost:4000/signed/${root}/${target.path ?? ""}`,
+          url: `http://localhost:4000/v1/direct/${leaseId}`,
           expires: "2099-01-01T00:00:00Z",
         });
       }
@@ -730,6 +734,7 @@ suite("Files service and durable bindings", () => {
     nodeRevisionCounter = 0;
     directCounter = 0;
     contents.clear();
+    downloadLeases.clear();
     users.clear();
     config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
@@ -1694,6 +1699,42 @@ suite("Files service and durable bindings", () => {
     await expect(
       service.publicInboxUpload(token, { idempotencyKey: crypto.randomUUID(), name: "late.txt", size: 1 }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+  test("an inline PDF needs the download right and is served only for a PDF by name and content", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Q3 Report.pdf", 1001, 2001, "0600", false);
+    contents.set("freeipa:users/alice/Q3 Report.pdf", "%PDF-1.7 owner");
+    const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','ipa',2002) RETURNING id`;
+    await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${group!.id})`;
+    await sql`INSERT INTO auth.ipa_user_effective_groups VALUES(${id(actor)},'team')`;
+    directory("freeipa", "groups/team", 10001, 2002, "2770");
+    directory("freeipa", "groups/team/shared.pdf", 999, 2002, "0640", false);
+    contents.set("freeipa:groups/team/shared.pdf", "%PDF-1.4 shared");
+    directory("freeipa", "groups/team/private.pdf", 999, 999, "0600", false);
+    directory("freeipa", "groups/team/notes.txt", 999, 2002, "0640", false);
+    directory("freeipa", "groups/team/renamed.pdf", 999, 2002, "0640", false);
+    contents.set("freeipa:groups/team/renamed.pdf", "<html><script>alert(1)</script>");
+    const bases = (await service.bases(actor)).items;
+    const home = bases.find((base) => base.kind === "users")!.id;
+    const team = bases.find((base) => base.kind === "groups")!.id;
+    const read = (baseId: string, path: string) => service.inlinePdf(actor, { baseId, path }, new AbortController().signal);
+
+    const owned = await read(home, "Q3 Report.pdf");
+    expect(owned.name).toBe("Q3 Report.pdf");
+    expect(await new Response(owned.body).text()).toBe("%PDF-1.7 owner");
+    // A group member who may only read gets the same document as a download would.
+    expect(await new Response((await read(team, "shared.pdf")).body).text()).toBe("%PDF-1.4 shared");
+
+    const before = leases;
+    await expect(read(team, "private.pdf")).rejects.toMatchObject({ code: "forbidden", status: 403 });
+    await expect(read(`freeipa:users:${crypto.randomUUID()}`, "Q3 Report.pdf")).rejects.toMatchObject({ status: 404 });
+    await expect(read(team, "notes.txt")).rejects.toMatchObject({ code: "not_pdf", status: 400 });
+    await expect(read(home, "trash/Q3 Report.pdf")).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(read(home, "")).rejects.toMatchObject({ code: "not_file" });
+    expect(leases).toBe(before);
+    // A renamed file is refused by its content, after the ordinary download check.
+    await expect(read(team, "renamed.pdf")).rejects.toMatchObject({ code: "not_pdf", status: 400 });
   });
   test("detail and thumbnails enforce current leaf rights, traversal and trash before any lease", async () => {
     const actor = await user("alice", "ipa");
