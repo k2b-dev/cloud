@@ -48,7 +48,7 @@ Das Plus-Menü bietet dann zusätzlich **Neues Textdokument**, **Neue Tabelle** 
 
 Das Plus neben dem Suchfeld bietet **Hochladen**, **Ordner hochladen**, **Neuer Ordner** und **Neue Datei**. Du kannst Dateien auch von deinem Gerät auf die Liste ziehen. Jede Datei geht direkt an den Dateiserver, nachdem Cloud deinen Zugriff geprüft hat, und wird erst veröffentlicht, wenn die Übertragung vollständig ist. Der Fortschritt erscheint als Benachrichtigung mit Fortschrittsbalken. Existieren Namen bereits, entscheidest du einmal pro Upload, ob du sie ersetzt oder nur die neuen Dateien hochlädst. Ein erneuter Versuch derselben unveränderten Datei am selben Ziel nutzt die vorhandene Upload-Sitzung. Prüfe nach einem ungeklärten Ergebnis zuerst den Zustand, bevor du einen anderen Upload startest. Namen dürfen keine Schrägstriche enthalten.
 
-Das Detailpanel eines Eintrags bietet **In neuem Tab öffnen**, **Umbenennen**, **Duplizieren**, **Verschieben nach**, **Kopieren nach**, **Öffentlich teilen** und **In den Papierkorb**. Ordner bieten zusätzlich **Als Upload-Eingang freigeben**. Der Kopieren-Button in der Kopfzeile legt eine Cloud-Referenz in die Zwischenablage, die andere Apps verstehen.
+Das Detailpanel eines Eintrags bietet **In neuem Tab öffnen**, **Umbenennen**, **Duplizieren**, **Verschieben nach**, **Kopieren nach**, **Öffentlich teilen** und **In den Papierkorb**. Bei einem PDF funktioniert **In neuem Tab öffnen** wie in der PDF-Vorschau. Ordner bieten zusätzlich **Als Upload-Eingang freigeben**. Der Kopieren-Button in der Kopfzeile legt eine Cloud-Referenz in die Zwischenablage, die andere Apps verstehen.
 
 ## Papierkorb {icon="trash"}
 

@@ -48,7 +48,7 @@ The plus menu then also offers **New text document**, **New spreadsheet** and **
 
 The plus button next to the search field offers **Upload**, **Upload folder**, **New folder**, and **New file**. You can also drop files from your computer onto the list. Each file is transferred directly to the file server after Cloud has checked your access, and it is published only when the whole transfer has arrived. Progress appears in a notification with a progress bar. If names already exist you decide once per upload whether to replace them or upload only the new files. Retrying the same unchanged file to the same destination reuses its upload session. After an uncertain result, check what happened before starting a different upload. Names cannot contain slashes.
 
-The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicate**, **Move to**, **Copy to**, **Share publicly**, and **Move to trash**. Folders additionally offer **Share as upload inbox**. The copy button in the panel header copies a Cloud reference to the clipboard that other apps understand.
+The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicate**, **Move to**, **Copy to**, **Share publicly**, and **Move to trash**. For a PDF, **Open in new tab** works like the one in the PDF preview. Folders additionally offer **Share as upload inbox**. The copy button in the panel header copies a Cloud reference to the clipboard that other apps understand.
 
 ## Trash {icon="trash"}
 

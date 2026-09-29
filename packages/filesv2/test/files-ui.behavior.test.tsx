@@ -285,6 +285,53 @@ describe("Filesv2 interactions", () => {
     expect(fetched).toHaveLength(fetchesBefore);
   });
 
+  test("the details panel opens a PDF at the same page address as its preview and other files through a lease", async () => {
+    const dom = createDomTestHarness();
+    const { default: Browser } = await import("../src/frontend/Browser");
+    const opened: Array<[string, string | undefined, string | undefined]> = [];
+    const tab = { opener: {} as unknown, location: { href: "" }, close() {} };
+    dom.window.open = ((url: string | URL, target?: string, features?: string) => {
+      opened.push([String(url), target, features]);
+      return features === "noopener" ? null : tab;
+    }) as unknown as typeof dom.window.open;
+    const dispose = render(
+      () => createComponent(Browser, { directory, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {} }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const select = async (name: string) => {
+      [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(name))!.click();
+      for (let round = 0; round < 4; round++) {
+        await flush();
+        await Bun.sleep(0);
+      }
+    };
+    const openInTab = () =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__action")].find((action) =>
+        action.textContent?.includes("Open in new tab"),
+      )!;
+
+    // The tab gets a reloadable address that signs an expired session in again, not a lease that expires after a minute.
+    await select("Bericht Q3.pdf");
+    const pdfLeases = requests.length;
+    openInTab().click();
+    await flush();
+    expect(opened).toEqual([["/app/filesv2/pdf/base-1/Budget%20%231/Bericht%20Q3.pdf", "_blank", "noopener"]]);
+    expect(requests).toHaveLength(pdfLeases);
+
+    await select("report.txt");
+    const textLeases = requests.length;
+    openInTab().click();
+    await flush();
+    expect(opened.at(-1)).toEqual(["about:blank", "_blank", undefined]);
+    expect(requests.slice(textLeases).map(({ kind, input }) => ({ kind, input }))).toEqual([
+      { kind: "download", input: { param: { baseId: "base-1" }, json: { path: "Budget #1/report.txt" } } },
+    ]);
+  });
+
   test("a .pdf whose content is not a PDF offers only its download, not the viewer tab", async () => {
     const dom = createDomTestHarness();
     const { default: FilePreview } = await import("../src/frontend/FilePreview");
