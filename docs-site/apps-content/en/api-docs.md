@@ -37,9 +37,11 @@ Only apps that publish a safe OpenAPI source appear in API Docs. The list
 changes with the live app registry, so a missing app may be offline or may not
 publish an OpenAPI contract.
 
-An operation that validates its input lists a `400` response. Unless the app
-documents another body, it is a JSON object with a `message` and, when the app
-returns a stable error, a `code`.
+An operation that validates its input lists a `400` response for input that
+fails validation. Unless the app documents another body, it is a JSON object
+with a `message` and, when the app returns a stable error, a `code`. A request
+body that cannot be parsed, such as malformed JSON, gets a `400` with a
+plain-text message instead.
 
 ## How API Docs fits Cloud
 

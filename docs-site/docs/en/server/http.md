@@ -69,9 +69,11 @@ Read the typed value with `c.req.valid(target)`.
 Query and path values arrive as strings. Coerce numbers and booleans in the
 schema. Use enums for sort fields and directions before they reach SQL.
 
-Invalid input returns status `400` with `{ message }`, or `{ code, message }`
-when the route passes an [error resolver](/en/docs/server/middleware#validate-and-document-a-route).
-The handler does not run.
+Input that fails the schema returns status `400` with `{ message }`, or
+`{ code, message }` when the route passes an
+[error resolver](/en/docs/server/middleware#validate-and-document-a-route).
+The handler does not run. A JSON or form body that cannot be parsed never
+reaches the schema: it returns `400` with a plain-text message.
 
 Validation checks the wire shape. The service checks resource access, existing
 state, and business rules.
@@ -241,10 +243,10 @@ schema.
 
 Cloud documents validation failures for you. Every route that validates input
 and does not describe its own `400` gets a `400` response with the body `v()`
-sends: a JSON object with a required `message` string and an optional `code`
-string. Describe the `400` yourself when the route returns a different body,
-for example a validation hook with its own error format; your description
-replaces the default.
+sends when input fails the schema: a JSON object with a required `message`
+string and an optional `code` string. Describe the `400` yourself when the
+route returns a different body, for example a validation hook with its own
+error format; your description replaces the default.
 
 ## Create the browser client
 
