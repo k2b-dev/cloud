@@ -105,6 +105,9 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID]
     security_opt: [no-new-privileges:true]
+    # Filegate reads its configuration only on start, and Compose does not hash config file contents.
+    # This digest of the generated configuration makes `up` recreate Filegate after it changes.
+    env_file: ./.local/filegate/conf.env
     configs:
       - source: filegate_config
         target: /etc/filegate/conf.yaml

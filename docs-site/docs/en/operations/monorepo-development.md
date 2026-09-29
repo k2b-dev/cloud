@@ -102,9 +102,11 @@ do not isolate cookies. Browser CORS permits `http://localhost:3000`,
 interface publishes Filegate's port, so previews and transfers work only in a
 browser on the development machine.
 
-The configuration is generated in the Git-ignored `.local/filegate/conf.yaml`.
-Filegate reads it only on start; `bun run dev` recreates the container when
-`APP_URL` changes the file.
+The configuration is generated in the Git-ignored `.local/filegate/conf.yaml`,
+with its digest in `.local/filegate/conf.env`. Filegate reads the
+configuration only on start. When it changes, for example after a new
+`APP_URL`, the next `docker compose up` recreates the container, whether you
+run it yourself or `bun run dev` runs it.
 
 The backend token is stored in the Git-ignored `.local/filegate/token` file
 with mode `0600`. Repeated setup retains it. Supply it only to the application

@@ -34,12 +34,14 @@ roots:
 /**
  * Prepare a persistent backend token without printing it or rotating it on
  * restart, and write the daemon configuration for the configured `APP_URL`.
- * Returns whether the configuration changed, because Filegate reads it only on start.
+ * Filegate reads the configuration only on start, and Compose does not hash
+ * file config contents; the service loads the configuration digest from
+ * `conf.env`, so `docker compose up` recreates Filegate after a change.
  */
 export async function prepareDevFilegate(
   directory = new URL("../.local/filegate/", import.meta.url).pathname,
   appUrl = process.env.APP_URL ?? "",
-): Promise<boolean> {
+): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const path = `${directory}/token`;
   try {
@@ -51,12 +53,12 @@ export async function prepareDevFilegate(
   }
   await chmod(path, 0o600);
 
-  const configPath = `${directory}/conf.yaml`;
+  // Write the digest after the configuration so Compose never sees a new digest with an old configuration.
   const config = devFilegateConfig(appUrl);
-  const current = await readFile(configPath, "utf8").catch(() => undefined);
-  if (current === config) return false;
-  await writeFile(configPath, config, { mode: 0o600 });
-  return true;
+  await writeFile(`${directory}/conf.yaml`, config, { mode: 0o600 });
+  await writeFile(`${directory}/conf.env`, `FILEGATE_CONFIG_SHA256=${new Bun.CryptoHasher("sha256").update(config).digest("hex")}\n`, {
+    mode: 0o600,
+  });
 }
 
 if (import.meta.main) await prepareDevFilegate();
