@@ -263,6 +263,15 @@ export const browserMessages = i18n.define({
       sortDirection: "Order",
       groupFolders: "Group folders",
       readingDrop: "Reading dropped folders…",
+      systemFilesTitle: "Hidden system files",
+      systemFilesQuestion: ({ count, examples }: { count: number; examples: string }) =>
+        count === 1
+          ? `This upload contains 1 hidden system file (${examples}). Include it?`
+          : `This upload contains ${count} hidden system files (e.g. ${examples}). Include them?`,
+      systemFilesHint:
+        "macOS, Windows and Linux create these files themselves, for example for thumbnails or folder views. Ordinary files starting with a dot, such as .gitignore or .env, are your content and are always uploaded.",
+      uploadWithoutSystemFiles: "Upload without system files",
+      uploadAll: "Upload all",
       dropTooLarge: "Select at most 10,000 files and folders per upload.",
       sortName: "Name",
       sortModified: "Date",
@@ -558,6 +567,15 @@ export const browserMessages = i18n.define({
       sortDirection: "Reihenfolge",
       groupFolders: "Ordner gruppieren",
       readingDrop: "Ordner werden eingelesen…",
+      systemFilesTitle: "Versteckte Systemdateien",
+      systemFilesQuestion: ({ count, examples }: { count: number; examples: string }) =>
+        count === 1
+          ? `Dieser Upload enthält 1 versteckte Systemdatei (${examples}). Mitnehmen?`
+          : `Dieser Upload enthält ${count} versteckte Systemdateien (z. B. ${examples}). Mitnehmen?`,
+      systemFilesHint:
+        "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Normale Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, gehören zu deinem Inhalt und werden immer hochgeladen.",
+      uploadWithoutSystemFiles: "Ohne Systemdateien hochladen",
+      uploadAll: "Alle hochladen",
       dropTooLarge: "Bitte höchstens 10.000 Dateien und Ordner pro Upload auswählen.",
       sortName: "Name",
       sortModified: "Datum",

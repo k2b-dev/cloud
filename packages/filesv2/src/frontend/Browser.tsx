@@ -60,6 +60,7 @@ import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
+import { systemEntry, systemEntryLabel } from "./system-files";
 import { openTemplatePicker } from "./Templates";
 import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
@@ -443,14 +444,59 @@ export default function Browser(props: {
     if (items.length && !busy()) void download.mutate(items);
   };
 
+  // One question per folder upload that carries system files; skipping is the primary answer.
+  const askSystemFiles = (entries: readonly string[], signal: AbortSignal) =>
+    prompts.dialog<"skip" | "all">(
+      (close) => (
+        <>
+          <div class="flex flex-col gap-3 text-sm">
+            <p>
+              {b().systemFilesQuestion({
+                count: entries.length,
+                examples: [...new Set(entries.map(systemEntryLabel))].slice(0, 2).join(", "),
+              })}
+            </p>
+            <InlineGuidance icon="ti ti-info-circle">{b().systemFilesHint}</InlineGuidance>
+          </div>
+          <div class="flex flex-wrap justify-end gap-2">
+            <Button variant="ghost" onClick={() => close()}>
+              {b().cancel}
+            </Button>
+            <Button variant="secondary" onClick={() => close("all")}>
+              {b().uploadAll}
+            </Button>
+            <Button onClick={() => close("skip")}>{b().uploadWithoutSystemFiles}</Button>
+          </div>
+        </>
+      ),
+      { title: b().systemFilesTitle, icon: "ti ti-eye-off", signal },
+    );
+
   /*
    * Uploads: Cloud opens a Filegate session per file; folders are recreated from relative paths first.
-   * Progress lives in one toast. Name conflicts are answered once per batch: known ones up front
-   * from the current listing, later ones with the same answer.
+   * Progress lives in one toast. Hidden system files inside uploaded folders are asked about once, before
+   * anything is created. Name conflicts are answered once per batch: known ones up front from the current
+   * listing, later ones with the same answer.
    */
   const upload = mutation.create({
     onError: (error) => toast.error(error.message),
-    mutation: async ({ files, directories = [] }: { files: readonly File[]; directories?: readonly string[] }, { abortSignal }) => {
+    mutation: async (input: { files: readonly File[]; directories?: readonly string[] }, { abortSignal }) => {
+      let { files, directories = [] } = input;
+      const system = new Set<string>();
+      for (const path of [...files.map(relativeName), ...directories]) {
+        const entry = systemEntry(path);
+        if (entry) system.add(entry);
+      }
+      if (system.size) {
+        const choice = await askSystemFiles([...system], abortSignal);
+        abortSignal.throwIfAborted();
+        if (!choice) return;
+        if (choice === "skip") {
+          files = files.filter((file) => !systemEntry(relativeName(file)));
+          // A skipped entry never creates a folder, but the folder it sat in is still part of the upload.
+          directories = [...directories.filter((path) => !systemEntry(path)), ...[...system].map(parentPath)];
+        }
+      }
       const base = baseId();
       const root = folder();
       const uploadLocation = locationKey();
