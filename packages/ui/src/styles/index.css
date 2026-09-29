@@ -1467,6 +1467,29 @@
   }
 }
 
+/* Touch targets: on a coarse pointer every button gets an invisible hit area
+   of at least 2.75rem (44 px) in both axes. The visible box and the layout do
+   not change. A button that directly follows another button (or its tooltip
+   surface) does not extend backwards, so a row of neighbours splits the gap
+   instead of covering each other. The zero-specificity `position` keeps
+   component rules that already place a button in charge. */
+@media (any-pointer: coarse) {
+  :where(.k2b-ui .k2b-button) {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-button::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+  }
+
+  .k2b-ui :is(.k2b-button, .k2b-tooltip) + .k2b-button::after {
+    inset-inline-start: 0;
+  }
+}
+
 .k2b-ui .k2b-spin {
   animation: k2b-spin 900ms linear infinite;
 }

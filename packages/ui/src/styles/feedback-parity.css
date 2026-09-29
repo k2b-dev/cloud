@@ -248,6 +248,20 @@
   outline-offset: 2px;
 }
 
+/* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
+   2rem close control on coarse pointers, without changing the header. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-dialog__close {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-dialog__close::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - 2.75rem) / 2));
+  }
+}
+
 .k2b-ui .k2b-dialog__body {
   padding: 1rem 0;
   font-size: 0.875rem;

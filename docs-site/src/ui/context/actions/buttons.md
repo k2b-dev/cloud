@@ -114,6 +114,23 @@ uses the [navigation event contract](/en/ui/getting-started#icons-tones-and-navi
 
 All matching native button or anchor attributes pass through. The default button `type` is `button`, so form submission stays explicit. `IconButton` and `IconButtonLink` require `label`; `SplitButton` requires `menuLabel`. These labels supply the icon-only control's accessible name and title.
 
+### Touch targets
+
+On a device with a coarse pointer, such as a phone or tablet, every button and
+the dialog close control accept taps in an invisible area at least 44 px
+(2.75rem) tall and wide, centered on the control. The visible size and the
+layout stay the same, so `xs`, `sm`, and icon-only buttons keep their compact
+look. When a button directly follows another button, it does not extend
+backwards over its neighbour; the two controls share the gap between them.
+Tap areas end at the edge of a clipping container (`overflow: hidden` or a
+scroll area).
+
+Buttons that are not direct siblings, for example because each sits in its
+own wrapper, both extend into the gap. Keep compact buttons in that situation
+at least 0.5rem apart so neither tap area reaches the other's visible edge. Do
+not set `position: static` on a button: the tap area is positioned against the
+button itself.
+
 ## Runtime
 
 Buttons render complete server HTML. Click and reactive loading behavior require hydration only when their state or handlers are client-owned.
