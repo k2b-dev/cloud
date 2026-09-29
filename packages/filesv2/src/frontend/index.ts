@@ -1,4 +1,4 @@
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, rateLimit } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { Hono } from "hono";
@@ -7,6 +7,7 @@ import { resolveEntryRefId } from "../data/references";
 import { FilesError, filesService } from "../service";
 import adminPage from "./admin";
 import filesPage from "./page";
+import { pdfPage } from "./pdf-page";
 import { publicInboxPage, publicSharePage } from "./public-pages";
 import { filesUrl } from "./urls";
 
@@ -25,6 +26,9 @@ export default new Hono<AuthContext>()
       throw error;
     }
   })
+  // Each open streams a stored file, bounded like the Files API.
+  .use("/app/filesv2/pdf/*", rateLimit())
+  .route("/", pdfPage)
   .get("/share/filesv2/s/:token", auth.requireRole("*"), ...publicSharePage)
   .get("/share/filesv2/inbox/:token", auth.requireRole("*"), ...publicInboxPage)
   .get("/admin/filesv2", auth.requireRole("admin", ssr.access), ...adminPage)

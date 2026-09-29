@@ -268,9 +268,9 @@ describe("Filesv2 interactions", () => {
     // Visible text names each action for keyboard and screen-reader users; reloading an unchanged file is not offered.
     expect([open, download].map((action) => action?.textContent?.trim())).toEqual(["Open in new tab", "Download"]);
     expect([open, download].every((action) => !action!.hasAttribute("disabled") && !action!.hasAttribute("aria-label"))).toBe(true);
-    // The tab reads the stored file from Cloud, so it reloads and the viewer names it after the file.
+    // The tab reads the stored file from a Files page, so it reloads, signs in again, and the viewer names it after the file.
     expect(open).toBeInstanceOf(dom.window.HTMLAnchorElement);
-    expect(open!.getAttribute("href")).toBe("/api/filesv2/bases/base-1/pdf/Budget%20%231/Bericht%20Q3.pdf");
+    expect(open!.getAttribute("href")).toBe("/app/filesv2/pdf/base-1/Budget%20%231/Bericht%20Q3.pdf");
     expect(open!.getAttribute("target")).toBe("_blank");
     expect(open!.getAttribute("rel")).toBe("noopener");
     const leasesBefore = requests.length;
@@ -283,6 +283,92 @@ describe("Filesv2 interactions", () => {
     await settleLeases();
     expect(clicked).toEqual([{ href: `https://filegate.test/lease/${leasesBefore}`, download: pdf.name }]);
     expect(fetched).toHaveLength(fetchesBefore);
+  });
+
+  test("the details panel opens a PDF at the same page address as its preview and other files through a lease", async () => {
+    const dom = createDomTestHarness();
+    const { default: Browser } = await import("../src/frontend/Browser");
+    const opened: Array<[string, string | undefined, string | undefined]> = [];
+    const tab = { opener: {} as unknown, location: { href: "" }, close() {} };
+    dom.window.open = ((url: string | URL, target?: string, features?: string) => {
+      opened.push([String(url), target, features]);
+      return features === "noopener" ? null : tab;
+    }) as unknown as typeof dom.window.open;
+    const dispose = render(
+      () => createComponent(Browser, { directory, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {} }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const select = async (name: string) => {
+      [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(name))!.click();
+      for (let round = 0; round < 4; round++) {
+        await flush();
+        await Bun.sleep(0);
+      }
+    };
+    const openInTab = () =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__action")].find((action) =>
+        action.textContent?.includes("Open in new tab"),
+      )!;
+
+    // The tab gets a reloadable address that signs an expired session in again, not a lease that expires after a minute.
+    await select("Bericht Q3.pdf");
+    const pdfLeases = requests.length;
+    openInTab().click();
+    await flush();
+    expect(opened).toEqual([["/app/filesv2/pdf/base-1/Budget%20%231/Bericht%20Q3.pdf", "_blank", "noopener"]]);
+    expect(requests).toHaveLength(pdfLeases);
+
+    await select("report.txt");
+    const textLeases = requests.length;
+    openInTab().click();
+    await flush();
+    expect(opened.at(-1)).toEqual(["about:blank", "_blank", undefined]);
+    expect(requests.slice(textLeases).map(({ kind, input }) => ({ kind, input }))).toEqual([
+      { kind: "download", input: { param: { baseId: "base-1" }, json: { path: "Budget #1/report.txt" } } },
+    ]);
+  });
+
+  test("a .pdf whose content is not a PDF offers only its download, not the viewer tab", async () => {
+    const dom = createDomTestHarness();
+    const { default: FilePreview } = await import("../src/frontend/FilePreview");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => new Response("<html>Demo</html>", { headers: { "content-type": "text/html" } }), {
+      preconnect: originalFetch.preconnect,
+    });
+    const downloads: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(FilePreview, {
+          baseId: "base-1",
+          entry: { name: "Kein PDF (Demo).pdf", path: "Kein PDF (Demo).pdf", directory: false, size: 17, modified: "2026-09-17T10:00:00Z" },
+          onDownload: () => downloads.push("download"),
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    };
+    for (let round = 0; round < 8; round++) {
+      for (const request of requests)
+        if (request.kind === "download" && !request.signal.aborted)
+          request.resolve(Response.json({ url: "https://filegate.test/lease/demo", method: "GET", expires: "2026-09-17T10:01:00Z" }));
+      await flush();
+      await Bun.sleep(0);
+    }
+
+    expect(dom.root.querySelector("iframe")).toBeNull();
+    expect(dom.root.querySelector("a")).toBeNull();
+    expect(dom.root.textContent).toContain("This file is not a PDF");
+    const actions = [...dom.root.querySelectorAll<HTMLButtonElement>("button")];
+    expect(actions.map((action) => action.textContent?.trim())).toEqual(["Download"]);
+    actions[0]!.click();
+    expect(downloads).toEqual(["download"]);
   });
 
   test("PDF preview actions follow the German locale", async () => {

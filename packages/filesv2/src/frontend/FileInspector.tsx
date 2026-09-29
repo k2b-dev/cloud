@@ -9,7 +9,7 @@ import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
-import { apiFailure, contentLease, fileIcon, previewKind } from "./file-preview";
+import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { filesUrl } from "./urls";
 
@@ -105,6 +105,8 @@ export default function FileInspector(props: {
   const copyLabel = () =>
     refClipboard.error() ? t().copyReferenceFailed : refClipboard.wasCopied() ? t().copiedReference : t().copyReference;
   const openInTab = async (item: FileEntry) => {
+    // A PDF opens at the preview's page address, so its tab reloads and signs an expired session in again.
+    if (previewKind(item) === "pdf") return void window.open(inlinePdfHref(props.base.id, item.path), "_blank", "noopener");
     const tab = window.open("about:blank", "_blank");
     if (tab) tab.opener = null;
     try {

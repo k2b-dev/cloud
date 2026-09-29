@@ -1,8 +1,15 @@
 import { FilesError } from "./service/errors";
 
+const SIGNATURE = new TextEncoder().encode("%PDF-");
 /** Browser viewers look for the signature in the first 1024 bytes, as pdf.js and PDFium do, not only at the start. */
-const SIGNATURE = "%PDF-";
-const HEADER_WINDOW = 1024;
+export const PDF_HEADER_WINDOW = 1024;
+
+/** Whether a viewer would open these leading bytes as a PDF; shared by the server route and the preview. */
+export function hasPdfSignature(head: Uint8Array) {
+  const last = Math.min(head.byteLength, PDF_HEADER_WINDOW) - SIGNATURE.byteLength;
+  for (let start = 0; start <= last; start++) if (SIGNATURE.every((byte, index) => head[start + index] === byte)) return true;
+  return false;
+}
 
 /** Files keeps no media type besides the name; a PDF is a `.pdf` file, as in the preview. */
 export const isPdfName = (name: string) => name.toLowerCase().endsWith(".pdf");
@@ -20,14 +27,14 @@ export async function pdfBody(response: Response): Promise<ReadableStream<Uint8A
   const reader = response.body.getReader();
   const head: Uint8Array[] = [];
   let size = 0;
-  while (size < HEADER_WINDOW) {
+  while (size < PDF_HEADER_WINDOW) {
     const part = await reader.read();
     if (part.done) break;
     head.push(part.value);
     size += part.value.byteLength;
   }
   const prefix = Buffer.concat(head);
-  if (!prefix.subarray(0, HEADER_WINDOW).includes(SIGNATURE)) {
+  if (!hasPdfSignature(prefix)) {
     await reader.cancel();
     throw new FilesError("not_pdf");
   }

@@ -2,6 +2,7 @@ import { query } from "@k2b/stdlib/solid";
 import { Button, FileView, PdfPreview, Placeholder } from "@k2b/ui";
 import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
+import { hasPdfSignature, PDF_HEADER_WINDOW } from "../pdf-body";
 import { useBrowserMessages } from "./browser-messages";
 import { contentLease, inlinePdfHref, previewFile, previewKind, readPreview } from "./file-preview";
 import { useFilesMessages } from "./messages";
@@ -28,6 +29,7 @@ function RevisionPreview(props: PreviewProps) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
   const [failed, setFailed] = createSignal(false);
+  const [notPdf, setNotPdf] = createSignal(false);
   const retry = async () => {
     if (media()) await lease.refresh();
     setFailed(false);
@@ -46,6 +48,13 @@ function RevisionPreview(props: PreviewProps) {
     }),
   });
   const url = () => (lease.data()?.key === source() && !lease.error() ? lease.data()?.lease.url : null);
+  // Only a `.pdf` whose bytes a viewer accepts gets the preview and the new tab; the tab would refuse anything else.
+  const readPdf = async () => {
+    const blob = await readPreview(props.baseId, props.entry, abort.signal, t().previewFailed);
+    if (hasPdfSignature(new Uint8Array(await blob.slice(0, PDF_HEADER_WINDOW).arrayBuffer()))) return blob;
+    setNotPdf(true);
+    throw new Error(t().notPdf);
+  };
   const download = (
     <Button size="sm" variant="secondary" onClick={props.onDownload}>
       <i class="ti ti-download" aria-hidden="true" />
@@ -58,6 +67,9 @@ function RevisionPreview(props: PreviewProps) {
         <Match when={!kind()}>
           <Placeholder icon="ti ti-file" title={t().noPreview} description={t().noPreviewDescription} action={download} />
         </Match>
+        <Match when={notPdf()}>
+          <Placeholder icon="ti ti-file-alert" title={t().notPdf} description={t().notPdfDescription} action={download} />
+        </Match>
         <Match when={kind() === "pdf"}>
           {/* Safari on iOS shows only the first page of an embedded PDF; the new tab opens the whole document at a
               stable address, so it reloads and keeps its file name. */}
@@ -68,7 +80,7 @@ function RevisionPreview(props: PreviewProps) {
             openHref={inlinePdfHref(props.baseId, props.entry.path)}
             buttonLabel={t().retry}
             onDownload={props.onDownload}
-            request={() => readPreview(props.baseId, props.entry, abort.signal, t().previewFailed)}
+            request={readPdf}
           >
             {(parts) => (
               <div class="flex flex-col gap-2" classList={{ "h-[min(56rem,70dvh)]": props.previewLines === undefined }}>
