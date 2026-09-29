@@ -5,6 +5,7 @@ import { createTestSession } from "@k2b/cloud/services/session/session.test-fixt
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
+import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import type { DeviceApprovalView } from "./frontend/_components/DeviceApproval";
@@ -36,7 +37,7 @@ const insertUser = async (displayName = "Device Test") => {
 /** One fresh person with a browser session and a private client address for the failure counters. */
 const person = async (displayName?: string) => {
   const userId = await insertUser(displayName);
-  return { userId, cookie: `session_token=${await createTestSession(userId)}`, ip: `198.51.100.${Math.floor(Math.random() * 250) + 1}` };
+  return { userId, cookie: `session_token=${await createTestSession(userId)}`, ip: uniqueCallerAddress() };
 };
 
 // The page route is exercised through its view resolver so tests assert state, not rendered markup.
@@ -53,7 +54,7 @@ const deviceRoutes = () =>
 // Each request uses its own documentation address so the per-IP endpoint limits never couple tests.
 const form = (values: Record<string, string>) => ({
   method: "POST",
-  headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": `192.0.2.${Math.floor(Math.random() * 250) + 1}` },
+  headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": uniqueCallerAddress() },
   body: new URLSearchParams(values),
 });
 
@@ -242,7 +243,7 @@ suite("OAuth device authorization grant", () => {
     expect(blocked.view.kind).toBe("entry");
 
     // The same account from another address stays blocked, and so does another account from the same address.
-    expect((await view({ ...who, ip: "203.0.113.9" }, started.user_code)).status).toBe(429);
+    expect((await view({ ...who, ip: uniqueCallerAddress() }, started.user_code)).status).toBe(429);
     const neighbour = await person();
     expect((await view({ ...neighbour, ip: who.ip }, started.user_code)).status).toBe(429);
     await redis.del(`oauth:device:failed:user:${who.userId}`);

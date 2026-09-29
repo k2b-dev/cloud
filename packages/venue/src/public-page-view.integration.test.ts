@@ -5,6 +5,7 @@ import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
@@ -29,7 +30,11 @@ type Caller = { cookie?: string };
 const send = (method: "GET" | "POST" | "PUT" | "PATCH", path: string, caller: Caller, body?: unknown) =>
   venueApp.request(path, {
     method,
-    headers: { ...caller, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+    headers: {
+      ...caller,
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      "x-forwarded-for": uniqueCallerAddress(),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 

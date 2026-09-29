@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { createConfig } from "@k2b/ssr";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -230,7 +231,7 @@ suite("public attachment links", () => {
     const path = `/attachments/${token}`;
 
     const invalidRange = await publicAttachmentRoutes.request(path, {
-      headers: { Range: "bytes=999-", "X-Forwarded-For": `198.51.100.${suffix.charCodeAt(0)}` },
+      headers: { Range: "bytes=999-", "X-Forwarded-For": uniqueCallerAddress() },
     });
     expect(invalidRange.status).toBe(416);
     const [grantCount] = await sql<{ count: number }[]>`
@@ -245,7 +246,7 @@ suite("public attachment links", () => {
     expect(Number(count?.download_count)).toBe(0);
 
     const firstRange = await publicAttachmentRoutes.request(path, {
-      headers: { Range: "bytes=0-5", "X-Forwarded-For": `198.51.101.${suffix.charCodeAt(0)}` },
+      headers: { Range: "bytes=0-5", "X-Forwarded-For": uniqueCallerAddress() },
     });
     expect(firstRange.status).toBe(206);
     expect(Buffer.from(await firstRange.arrayBuffer()).toString()).toBe(bytes.subarray(0, 6).toString());
@@ -257,7 +258,7 @@ suite("public attachment links", () => {
       headers: {
         Range: "bytes=6-11",
         Cookie: cookie!,
-        "X-Forwarded-For": `198.51.102.${suffix.charCodeAt(0)}`,
+        "X-Forwarded-For": uniqueCallerAddress(),
       },
     });
     expect(resumed.status).toBe(206);
@@ -273,7 +274,7 @@ suite("public attachment links", () => {
     const protectedToken = protectedLink.data.url.split("/").at(-1)!;
     const protectedPath = `/attachments/${protectedToken}`;
     const locked = await publicAttachmentRoutes.request(protectedPath, {
-      headers: { "X-Forwarded-For": `203.0.113.${suffix.charCodeAt(0)}` },
+      headers: { "X-Forwarded-For": uniqueCallerAddress() },
     });
     expect(locked.status).toBe(200);
     const lockedHtml = await locked.text();
@@ -283,7 +284,7 @@ suite("public attachment links", () => {
 
     const wrong = await publicAttachmentRoutes.request(protectedPath, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": "203.0.113.201" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": uniqueCallerAddress() },
       body: new URLSearchParams({ password: "wrong" }),
     });
     expect(wrong.status).toBe(404);
@@ -291,14 +292,14 @@ suite("public attachment links", () => {
 
     const oversized = await publicAttachmentRoutes.request(protectedPath, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": "203.0.113.202" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": uniqueCallerAddress() },
       body: `password=${"x".repeat(5_000)}`,
     });
     expect(oversized.status).toBe(404);
 
     const unlocked = await publicAttachmentRoutes.request(protectedPath, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": "203.0.113.203" },
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": uniqueCallerAddress() },
       body: new URLSearchParams({ password: " secret with spaces " }),
     });
     expect(unlocked.status).toBe(303);
