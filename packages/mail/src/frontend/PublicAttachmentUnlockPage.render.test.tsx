@@ -39,8 +39,8 @@ describe("public attachment unlock page", () => {
     expect(html).toContain('<form method="post"');
     expect(html).toContain('name="password"');
     expect(html).toContain("2 KB · Gib das Passwort ein");
-    expect(html).toContain("minimal-layout-preferences--bottom-right");
-    expect(html).toContain("Darstellung und Sprache");
+    expect(html).toContain('<footer class="minimal-layout-footer">');
+    expect(html).toContain('aria-label="Sprache: Deutsch"');
     expect(html).not.toContain("private-name.txt");
     expect(html).not.toContain("<style>");
   });

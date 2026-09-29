@@ -1,6 +1,6 @@
-import { listLegalLinks } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
+import type { JSX } from "solid-js";
 import { toPublicForm } from "../../../../api/form-api-shared";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";
@@ -15,8 +15,9 @@ import { resolveGridsMessages } from "../../../messages";
  * URL: /share/grids/forms/:token
  *
  * Bare layout — NO `<Layout>` chrome (no header / nav / sidebar). The
- * form page is a single self-contained surface optimised for mobile,
- * with a small legal-links footer to satisfy the imprint requirement.
+ * form page is a single self-contained surface optimised for mobile;
+ * MinimalLayout's footer carries the legal links and the language and
+ * theme settings.
  *
  * SSR fetches the form by its public token + the parent table's fields,
  * then hands both to the inline-submit island. The island POSTs the user
@@ -29,8 +30,6 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = resolveGridsMessages(locale);
 
-  const legalLinks = await listLegalLinks(locale);
-
   const form = await gridsService.form.getByPublicToken(token);
   if (!form || !form.isActive) {
     c.status(404);
@@ -38,7 +37,7 @@ export default ssr<AuthContext>(async (c) => {
     c.get("page").title = t.formNotFound;
     return () => (
       <MinimalLayout c={c}>
-        <PublicShell legalLinks={legalLinks}>
+        <PublicShell>
           <div class="paper p-8 text-center text-sm text-dimmed">
             <i class="ti ti-alert-circle text-base mb-2 block" />
             {t.formUnavailable}
@@ -94,7 +93,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <MinimalLayout c={c}>
-      <PublicShell legalLinks={legalLinks}>
+      <PublicShell>
         <PublicFormSubmit
           publicToken={token}
           form={safeForm}
@@ -111,20 +110,10 @@ export default ssr<AuthContext>(async (c) => {
 // PublicShell — minimal page chrome shared by the form + the not-found state
 // =============================================================================
 
-type LegalLink = { label: string; href: string; icon?: string };
-
-function PublicShell(props: { legalLinks: LegalLink[]; children: any }) {
+function PublicShell(props: { children: JSX.Element }) {
   return (
-    <div class="min-h-screen flex flex-col bg-[var(--ui-canvas)]">
+    <div class="flex flex-1 flex-col bg-[var(--ui-canvas)]">
       <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-6 sm:py-10">{props.children}</main>
-      <footer class="shrink-0 w-full px-4 py-3 flex items-center justify-center flex-wrap gap-x-4 gap-y-1 text-xs text-dimmed">
-        {props.legalLinks.map((link) => (
-          <a href={link.href} class="hover:text-primary transition-colors flex items-center gap-1">
-            {link.icon && <i class={`${link.icon} text-xs`} />}
-            {link.label}
-          </a>
-        ))}
-      </footer>
     </div>
   );
 }

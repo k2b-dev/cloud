@@ -66,36 +66,55 @@ for route and resource policy.
 
 Use `MinimalLayout` when a standalone page should keep its application-owned
 background, spacing, branding, and content geometry without Cloud header,
-rail, footer, or canvas styling:
+rail, or canvas styling:
 
 ```tsx
 import { MinimalLayout } from "@k2b/cloud/ssr";
 
 return () => (
-  <MinimalLayout c={c} preferences="bottom-right">
-    <PublicDocument document={document} />
+  <MinimalLayout c={c}>
+    <main class="flex flex-1 items-center justify-center p-4">
+      <PublicDocument document={document} />
+    </main>
   </MinimalLayout>
 );
 ```
 
 `MinimalLayout` installs the request locale, persisted theme, and browser
-timezone wiring expected by Cloud and `@k2b/ui`. Its only visible element is a
-language and theme menu. `preferences` accepts `top-left`, `top-right`,
-`bottom-left`, or `bottom-right`; it defaults to `bottom-right`. Set it to
-`false` for embeds or fixed presentation surfaces that must have no control.
+timezone wiring expected by Cloud and `@k2b/ui`. It ends the page with a
+footer that holds the legal links of all running applications and the
+language and theme settings for visitors. The legal links come from the
+runtime registry, so they appear when the router installs
+`middleware.runtime()`. The language control shows the current language and
+switches between English and German; the theme control names the mode it
+switches to. On touch screens, every footer control is at least 44 px tall.
 
-The layout adds no wrapper around application content. The application remains
-responsible for its one semantic `main` landmark and all page styling. Do not
-use `MinimalLayout` as an access-control signal: route middleware, public
-grants, and share-token validation remain separate server responsibilities.
+The page content and the footer share one column that is at least one
+viewport tall, and the content comes first. On a short page the footer sits at
+the bottom of the screen, and on a long page it follows the content. To fill
+the space above the footer, give the content root `flex-1`, not
+`min-h-screen`, which would push the footer below the first screen. An app
+surface that scrolls inside itself uses `flex: 1 1 0` with `min-height: 0`.
+
+Set `preferences={false}` for embeds or fixed presentation surfaces, such as
+an unattended display, that must show neither legal links nor controls. The
+layout then adds no wrapper around the content. The older corner values
+`top-left`, `top-right`, `bottom-left`, and `bottom-right` are deprecated and
+behave like the default.
+
+The application remains responsible for its one semantic `main` landmark and
+all page styling. Do not add a second language or theme control or a second
+legal-links footer to the page. Do not use `MinimalLayout` as an
+access-control signal: route middleware, public grants, and share-token
+validation remain separate server responsibilities.
 
 ## Use the responsive profile menu
 
 Authenticated users change the theme or language from the profile control and
 can open `/me` for the remaining profile settings. Anonymous `Layout` pages
-and opted-in `MinimalLayout` pages expose the same preferences without profile
-actions. Applications must not add a second theme or language control to their
-own content.
+expose the same preferences in the header without profile actions, and
+`MinimalLayout` pages show them in their footer. Applications must not add a
+second theme or language control to their own content.
 
 The shared layout chooses the placement with CSS:
 

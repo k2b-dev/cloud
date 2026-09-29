@@ -134,9 +134,9 @@ SolidJS library remains independent of Cloud and application domains.
   Keep product text calm and precise; localizations preserve meaning, while code, identifiers,
   paths, and external labels stay verbatim. Show group names via `groupDisplayName()` (`@k2b/cloud/shared`).
   `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR locale provider.
-  Use `MinimalLayout` for an app-styled standalone page that needs Cloud's
-  persisted locale and theme without Cloud chrome. A custom root using none of
-  these layouts must install one provider around its returned tree.
+  Use `MinimalLayout` for an app-styled standalone page with persisted locale and
+  theme, no Cloud header or navigation, and a shared legal and preferences footer.
+  A custom root using none of these layouts must install one provider around its returned tree.
 
 ## Ship CLI commands as a plugin
 

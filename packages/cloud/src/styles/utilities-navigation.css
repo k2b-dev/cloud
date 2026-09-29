@@ -903,36 +903,85 @@
   }
 }
 
-/* MinimalLayout owns no page geometry. Its optional preference trigger is the
-   only positioned element and respects device safe areas in every corner. */
-.minimal-layout-preferences {
-  position: fixed;
-  z-index: 50;
+/* MinimalLayout stacks the page content and its footer in a column at least
+   one viewport tall, so the footer ends a short page and follows a long one.
+   Content that should fill the remaining height grows with flex-1. */
+.minimal-layout {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  flex-direction: column;
 }
 
-.minimal-layout-preferences--top-left {
-  top: max(0.75rem, env(safe-area-inset-top));
-  left: max(0.75rem, env(safe-area-inset-left));
+.minimal-layout-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem 1rem;
+  margin-top: auto;
+  padding: 0.75rem max(1rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
-.minimal-layout-preferences--top-right {
-  top: max(0.75rem, env(safe-area-inset-top));
-  right: max(0.75rem, env(safe-area-inset-right));
+.minimal-layout-footer__links,
+.minimal-layout-footer__preferences {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
 }
 
-.minimal-layout-preferences--bottom-left {
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
-  left: max(0.75rem, env(safe-area-inset-left));
+.minimal-layout-footer__links {
+  column-gap: 1rem;
 }
 
-.minimal-layout-preferences--bottom-right {
-  right: max(0.75rem, env(safe-area-inset-right));
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
+.minimal-layout-footer__preferences {
+  gap: 0.25rem;
 }
 
-.minimal-layout-preferences__trigger {
-  box-shadow: var(--ui-shadow-float);
-  backdrop-filter: blur(0.5rem);
+.minimal-layout-footer__links a {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  transition: color 150ms ease-out;
+}
+
+.minimal-layout-footer__links a:hover {
+  color: var(--k2b-text);
+}
+
+.minimal-layout-footer__links a:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
+.k2b-ui .minimal-layout-footer .k2b-button[data-size] {
+  color: inherit;
+  font-size: inherit;
+}
+
+.k2b-ui .minimal-layout-footer .k2b-button[data-size]:hover {
+  color: var(--k2b-text);
+}
+
+/* Finger-sized footer targets on touch screens. */
+@media (any-pointer: coarse) {
+  .minimal-layout-footer__links a,
+  .k2b-ui .minimal-layout-footer .k2b-button[data-size] {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .minimal-layout-footer__links a {
+    transition: none;
+  }
 }
 
 /* Workspace navigation chrome and resource identity. */

@@ -302,8 +302,8 @@
   width: 0.5rem;
 }
 
-/* Keep the standalone app within the Cloud viewport so its preview can scroll. */
-.assistant-standalone-page { display: flex; height: 100dvh; min-height: 0; overflow: hidden; }
+/* Keep the standalone app within the first screen, above the MinimalLayout footer, so its preview can scroll. */
+.assistant-standalone-page { display: flex; flex: 1 1 0; min-height: 0; overflow: hidden; }
 .assistant-standalone-runner { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: var(--ui-space-section); }
 /* From lg, the Cloud shell's gutters frame a signed-in runner like an
    AppWorkspace, so its surface and controls share the header's edges. The

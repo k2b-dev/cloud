@@ -28,8 +28,11 @@ const app = defineApp({
 
 type LayoutContextArg = Parameters<typeof Layout>[0]["c"];
 type MinimalLayoutContextArg = Parameters<typeof MinimalLayout>[0]["c"];
-type PreferencePosition = Exclude<Parameters<typeof MinimalLayout>[0]["preferences"], false | undefined>;
-const preferencePositions: PreferencePosition[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
+const legalApp = {
+  id: "legal-probe",
+  legalLinks: [{ label: "Imprint", href: "/legal/imprint" }],
+  presentation: { baseLocale: "en", translations: { de: { legalLinks: { "/legal/imprint": "Impressum" } } } },
+};
 
 const server = new Hono()
   .use("*", async (c, next) => {
@@ -65,10 +68,15 @@ const server = new Hono()
     }),
   )
   .get(
-    "/minimal/:position",
+    "/minimal/:mode",
+    async (c, next) => {
+      c.set("runtime" as never, { apps: [legalApp] } as never);
+      await next();
+    },
     ...app.ssr((c) => {
-      const requested = c.req.param("position");
-      const preferences = preferencePositions.find((position) => position === requested) ?? false;
+      const mode = c.req.param("mode");
+      // "bottom-left" is a deprecated corner position that now means "show the footer".
+      const preferences = mode === "off" ? false : mode === "bottom-left" ? "bottom-left" : undefined;
       return () =>
         createComponent(MinimalLayout, {
           c: c as unknown as MinimalLayoutContextArg,
@@ -150,44 +158,52 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain('href="/me"');
   });
 
-  test("positions minimal preferences in every supported corner without adding Cloud chrome", async () => {
-    const expectedMenuPositions = {
-      "top-left": "bottom-right",
-      "top-right": "bottom-left",
-      "bottom-left": "top-right",
-      "bottom-right": "top-left",
-    } as const;
-
-    for (const position of preferencePositions) {
-      const response = await server.request(`/minimal/${position}`, { headers: { "Accept-Language": "en" } });
+  test("ends minimal pages with legal links and labeled language and theme settings", async () => {
+    for (const mode of ["default", "bottom-left"]) {
+      const response = await server.request(`/minimal/${mode}`, { headers: { "Accept-Language": "en-US" } });
       const html = await response.text();
       expect(response.status).toBe(200);
-      expect(html).toContain(`minimal-layout-preferences--${position}`);
-      expect(html).toContain(`data-position="${expectedMenuPositions[position]}"`);
-      expect(html).toContain("Appearance and language");
-      expect(html).toContain("Minimal content");
+      expect(html).toMatch(/<div class="minimal-layout">Minimal content.*<footer class="minimal-layout-footer">/s);
+      expect(html).toContain('<nav class="minimal-layout-footer__links" aria-label="Legal">');
+      expect(html).toContain('href="/legal/imprint" target="_blank" rel="noopener"');
+      expect(html).toContain(">Imprint</a>");
+      expect(html).toContain('aria-label="Language: English"');
+      expect(html).toContain('aria-haspopup="menu"');
+      expect(html).toContain("Dark mode");
+      expect(html).not.toContain("Appearance and language");
       expect(html).not.toContain("cloud-app-canvas");
       expect(html).not.toContain("layout-header");
       expect(html).not.toContain("layout-rail");
     }
   });
 
-  test("can disable the minimal preference control completely", async () => {
+  test("renders the footer in the visitor's language and theme", async () => {
+    const response = await server.request("/minimal/default", {
+      headers: { "Accept-Language": "de-DE,de;q=0.9,en;q=0.8", Cookie: "theme=dark" },
+    });
+    const html = await response.text();
+    expect(html).toContain('<html lang="de-DE" class="dark"');
+    expect(html).toContain('aria-label="Rechtliches"');
+    expect(html).toContain(">Impressum</a>");
+    expect(html).toContain('aria-label="Sprache: Deutsch"');
+    expect(html).toContain("Heller Modus");
+  });
+
+  test("an explicit language choice outranks the browser language on anonymous pages", async () => {
+    const html = await (
+      await server.request("/minimal/default", { headers: { "Accept-Language": "de-DE,de;q=0.9", Cookie: "cloud.locale=en" } })
+    ).text();
+    expect(html).toContain('<html lang="en"');
+    expect(html).toContain('aria-label="Language: English"');
+  });
+
+  test("can leave out the footer completely", async () => {
     const response = await server.request("/minimal/off");
     const html = await response.text();
 
     expect(response.status).toBe(200);
     expect(html).toContain("Minimal content");
-    expect(html).not.toContain("minimal-layout-preferences");
-    expect(html).not.toContain("Appearance and language");
-  });
-
-  test("keeps every corner safe-area aware", async () => {
-    const css = await Bun.file(new URL("../styles/utilities-navigation.css", import.meta.url)).text();
-    for (const position of preferencePositions) expect(css).toContain(`.minimal-layout-preferences--${position}`);
-    expect(css).toContain("env(safe-area-inset-top)");
-    expect(css).toContain("env(safe-area-inset-right)");
-    expect(css).toContain("env(safe-area-inset-bottom)");
-    expect(css).toContain("env(safe-area-inset-left)");
+    expect(html).not.toContain("minimal-layout");
+    expect(html).not.toContain("<footer");
   });
 });

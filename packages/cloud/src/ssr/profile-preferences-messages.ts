@@ -6,6 +6,8 @@ export const profilePreferencesMessages = i18n.define({
     en: {
       menuLabel: "Profile and preferences",
       preferencesMenuLabel: "Appearance and language",
+      language: "Language",
+      legalLinks: "Legal",
       profileSettings: "Profile settings",
       signOut: "Sign out",
       signOutFailed: "Sign out failed. Please try again.",
@@ -17,6 +19,8 @@ export const profilePreferencesMessages = i18n.define({
     de: {
       menuLabel: "Profil und Einstellungen",
       preferencesMenuLabel: "Darstellung und Sprache",
+      language: "Sprache",
+      legalLinks: "Rechtliches",
       profileSettings: "Profileinstellungen",
       signOut: "Abmelden",
       signOutFailed: "Abmelden fehlgeschlagen. Bitte versuche es erneut.",

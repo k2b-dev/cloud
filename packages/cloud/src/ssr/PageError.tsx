@@ -17,7 +17,7 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
   return () =>
     options.layout === "minimal" ? (
       <MinimalLayout c={c}>
-        <main class="min-h-screen bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
+        <main class="flex-1 bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
           <NotFoundState code={String(status)} title={title} description={description} action={action} />
         </main>
       </MinimalLayout>
