@@ -3,7 +3,8 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
-import { createYjsProvider, reconnectDelayMs } from "./provider";
+import { reconnectDelayMs } from "../reconnect";
+import { createYjsProvider } from "./provider";
 
 const NOTE_ID = "Note01";
 const NOTEBOOK_ID = "Book01";

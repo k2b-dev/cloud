@@ -1,4 +1,4 @@
-import { ButtonLink } from "@k2b/ui";
+import { ButtonLink, IconButtonLink } from "@k2b/ui";
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import type { CloudTheme } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
@@ -34,17 +34,13 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
       style="box-shadow: var(--ui-shadow-surface)"
     >
       <div class="flex min-w-0 items-center gap-2">
-        <a
-          href="/"
-          class={
-            props.authenticated
-              ? "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary lg:hidden dark:hover:bg-zinc-800"
-              : "flex shrink-0 items-center"
-          }
-          aria-label={props.homeLabel}
-        >
-          <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
-        </a>
+        {/* Signed-in desktops reach Home through the rail. `lg:hidden` sits on a wrapper because the button's
+            own display would win over the utility on the link. */}
+        <div class={props.authenticated ? "flex shrink-0 lg:hidden" : "flex shrink-0"}>
+          <IconButtonLink href="/" label={props.homeLabel}>
+            <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
+          </IconButtonLink>
+        </div>
         <div class="hidden min-w-0 items-center lg:flex">
           <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs} />
         </div>

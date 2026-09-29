@@ -505,7 +505,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "venue.read": {
       title: "Read Venue",
-      description: "Read one venue.venue ref returned by venue.list or venue.search, without media or secret calendar tokens.",
+      description: "Read one venue.venue ref returned by venue.list or venue.search, without media.",
       input: VenueReadInputSchema,
       data: VenueDataSchema,
       openWorld: false,

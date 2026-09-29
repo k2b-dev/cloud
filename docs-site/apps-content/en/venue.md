@@ -103,7 +103,7 @@ requests and scans never send one twice.
 | Shift template and assignment | A recurring staffing slot on one weekday and the users assigned to its occurrences; a paused template (`active: false`) plans no occurrences. `POST /api/venue/venues/{id}/templates/batch` creates up to seven templates, for example one per weekday, in one transaction: all or none |
 | Public section | An ordered Markdown, menu, notice, or links block; the public page shows it unless it is a draft |
 | Feedback entry | A visitor rating (1 to 5 stars, required) and optional comment for one venue |
-| Personal calendar link | A tokenized iCal feed of the current user's shifts at every venue; renewing it replaces the token, and the old URL answers 404 |
+| Personal calendar link | A tokenized iCal feed of the current user's shifts at every venue, worded in the Cloud's default language (`app.locale`) because a calendar app sends no language; renewing it replaces the token, and the old URL answers 404 |
 
 Read, staff, and admin permissions serve different jobs:
 

@@ -16,7 +16,7 @@ if (!isServer) {
           download: { $post: request("download") },
           entry: {
             $get: async (input: { query: { path: string } }) =>
-              Response.json({ base: directory.base, entry: directory.items.find((item) => item.path === input.query.path) }),
+              Response.json({ base: directory.base, entry: [...directory.items, notPdf].find((item) => item.path === input.query.path) }),
           },
         },
       },
@@ -68,6 +68,14 @@ const directory: DirectoryResult = {
     { name: "Bericht Q3.pdf", path: "Budget #1/Bericht Q3.pdf", directory: false, size: 8, modified: "2026-09-17T10:00:00Z" },
   ],
   next: "next/+=",
+};
+
+const notPdf = {
+  name: "Kein PDF (Demo).pdf",
+  path: "Budget #1/Kein PDF (Demo).pdf",
+  directory: false,
+  size: 17,
+  modified: "2026-09-17T10:00:00Z",
 };
 
 // These tests exercise real components with controlled API responses, not a live browser.
@@ -369,6 +377,49 @@ describe("Filesv2 interactions", () => {
     expect(actions.map((action) => action.textContent?.trim())).toEqual(["Download"]);
     actions[0]!.click();
     expect(downloads).toEqual(["download"]);
+  });
+
+  test("the details panel stops offering the viewer tab once the preview finds a .pdf is no PDF", async () => {
+    const dom = createDomTestHarness();
+    const { default: Browser } = await import("../src/frontend/Browser");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(async () => new Response("<html>Demo</html>", { headers: { "content-type": "text/html" } }), {
+      preconnect: originalFetch.preconnect,
+    });
+    const listing: DirectoryResult = { ...directory, items: [...directory.items, notPdf] };
+    const dispose = render(
+      () =>
+        createComponent(Browser, {
+          directory: listing,
+          bases: [directory.base],
+          cloudUrl: "https://cloud.test",
+          onNavigate: async () => {},
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    };
+    const actions = () => [...dom.root.querySelectorAll(".k2b-detail-panel__action")].map((action) => action.textContent?.trim());
+
+    [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(notPdf.name))!.click();
+    await flush();
+    await Bun.sleep(0);
+    // Until the bytes are read, a .pdf is treated as a PDF, as in the preview dialog.
+    expect(actions()).toContain("Open in new tab");
+    for (let round = 0; round < 8; round++) {
+      for (const request of requests)
+        if (request.kind === "download" && !request.signal.aborted)
+          request.resolve(Response.json({ url: "https://filegate.test/lease/demo", method: "GET", expires: "2026-09-17T10:01:00Z" }));
+      await flush();
+      await Bun.sleep(0);
+    }
+
+    expect(dom.root.textContent).toContain("This file is not a PDF");
+    expect(actions()).not.toContain("Open in new tab");
+    expect(actions()).toContain("Rename");
   });
 
   test("PDF preview actions follow the German locale", async () => {

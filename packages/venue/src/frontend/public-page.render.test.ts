@@ -82,7 +82,6 @@ const venue: PublicStatus["venue"] = {
   accentColor: "#2563eb",
   logoBase64: null,
   bannerBase64: null,
-  icalToken: "calendar-token",
   permission: "none",
   createdAt: timestamp,
   updatedAt: timestamp,

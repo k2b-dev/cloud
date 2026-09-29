@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { settings } from "@k2b/cloud/services";
+import { coreSettings, settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
 import type { PublicSection, PublicStatus, ShiftAssignment, ShiftTemplate, VenueDashboard } from "./contracts";
+import { venueMessages } from "./messages";
 import { venueService } from "./service";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -28,7 +30,7 @@ const send = (method: "GET" | "POST" | "PATCH" | "DELETE", path: string, cookie:
     headers: {
       ...(cookie ? { cookie } : {}),
       ...(body === undefined ? {} : { "content-type": "application/json" }),
-      "x-forwarded-for": `198.51.100.${Math.floor(Math.random() * 250) + 1}`,
+      "x-forwarded-for": uniqueCallerAddress(),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -311,5 +313,59 @@ suite("Venue sections and feedback say what they do", () => {
 
     // Renewing needs a signed-in person.
     expect((await send("POST", "/api/venue/calendar/my/renew", null)).status).toBe(401);
+  });
+
+  test("the calendar feed names shifts in the Cloud's default language", async () => {
+    const template = await json<ShiftTemplate>(
+      await send("POST", `/api/venue/venues/${venueId}/templates`, cookie, {
+        weekday: 5,
+        title: "Evening bar",
+        startTime: "18:00",
+        endTime: "22:00",
+        minPeople: 1,
+        maxPeople: 2,
+      }),
+      201,
+      "create template",
+    );
+    let date = shiftDate(dates.formatDateKey(new Date(), { timeZone: "Europe/Berlin" }), 1);
+    while (new Date(`${date}T12:00:00Z`).getUTCDay() !== 5) date = shiftDate(date, 1);
+    await json(await send("POST", `/api/venue/venues/${venueId}/templates/${template.id}/signup`, cookie, { date }), 201, "sign up");
+    const startsAt = new Date(`${shiftDate(date, 1)}T08:00:00Z`).toISOString();
+    const endsAt = new Date(`${shiftDate(date, 1)}T10:00:00Z`).toISOString();
+    await json(
+      await send("POST", `/api/venue/venues/${venueId}/free-signup`, cookie, { startsAt, endsAt, note: "Bring the keys" }),
+      201,
+      "free sign-up",
+    );
+
+    const events = (feed: string) =>
+      feed
+        .split("BEGIN:VEVENT")
+        .slice(1)
+        .map((event) => ({
+          summary: /^SUMMARY:(.*)$/m.exec(event)?.[1],
+          description: /^DESCRIPTION:(.*)$/m.exec(event)?.[1],
+          url: /^URL:(.*)$/m.exec(event)?.[1],
+        }));
+    const feedFor = async (locale: string) =>
+      events(await venueService.ical.generateUser(admin.id, "cloud.example.test", locale)).filter((event) =>
+        ["Evening bar", "Free time\\nBring the keys", "Freier Zeitraum\\nBring the keys"].includes(event.description ?? ""),
+      );
+    const url = `https://cloud.example.test/app/venue/${venueId}`;
+    expect(await feedFor("en")).toEqual([
+      { summary: "Shift at Harbor Cafe", description: "Evening bar", url },
+      { summary: "Shift at Harbor Cafe", description: "Free time\\nBring the keys", url },
+    ]);
+    expect(await feedFor("de-DE")).toEqual([
+      { summary: "Schicht bei Harbor Cafe", description: "Evening bar", url },
+      { summary: "Schicht bei Harbor Cafe", description: "Freier Zeitraum\\nBring the keys", url },
+    ]);
+
+    // A calendar app fetches the feed without a locale, so the route uses `app.locale`.
+    const { href } = await json<{ href: string }>(await send("GET", "/api/venue/calendar/my", cookie), 200, "calendar link");
+    const feed = await (await send("GET", new URL(href).pathname, null)).text();
+    const expected = venueMessages.resolve([await coreSettings.get<string>("app.locale")]).t.calendarEventTitle({ venue: "Harbor Cafe" });
+    expect(events(feed).map((event) => event.summary)).toContain(expected);
   });
 });

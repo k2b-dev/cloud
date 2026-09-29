@@ -205,7 +205,12 @@ export const createMarkdownPdfRoutes = (dependencies: MarkdownPdfRouteDependenci
         return c.json({ code: "css_too_large" as const, message: t.cssTooLarge }, 413);
       }
       try {
-        const result = await render({ markdown: input.markdown, templateId: input.templateId, customCss: input.customCss });
+        const result = await render({
+          markdown: input.markdown,
+          title: safePdfFilename(input.filename).slice(0, -".pdf".length),
+          templateId: input.templateId,
+          customCss: input.customCss,
+        });
         return pdfResponse(result.pdf, input.filename);
       } catch (cause) {
         const error = renderError(cause, t);

@@ -47,7 +47,6 @@ const venue: Venue = {
   accentColor: "#facc15",
   logoBase64: null,
   bannerBase64: null,
-  icalToken: "calendar-token",
   permission: "write",
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",

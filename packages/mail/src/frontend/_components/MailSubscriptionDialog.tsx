@@ -1,4 +1,5 @@
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -268,10 +269,10 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
       classifyClose: ({ code, reason }) =>
         code === 1008 ? { code: reason || "access_denied", message: messages().mailboxAccessChanged } : null,
       onFatal: (error) => {
-        if (error.code === "login_required") {
-          const current = `${window.location.pathname}${window.location.search}`;
-          documentNavigate(`/auth/login?redirectTo=${encodeURIComponent(current)}`, { replace: true });
-        } else documentNavigate("/app/mail", { replace: true });
+        if (error.code !== "login_required") documentNavigate("/app/mail", { replace: true });
+        // A reload lets the route policy send an expired session to sign-in. A
+        // failure that survives it must not reload in a loop.
+        else if (!reloadOnce(`mail:live:${props.mailboxId}`)) setLiveTransportDegraded(true);
       },
     });
     markLiveApplied = live.markApplied;

@@ -74,7 +74,6 @@ type DbVenue = {
   accent_color: string;
   logo_base64: string | null;
   banner_base64: string | null;
-  ical_token: string;
   created_at: Date;
   updated_at: Date;
 };
@@ -241,7 +240,6 @@ const mapVenue = (row: DbVenue, permission?: PermissionLevel): Venue => ({
   accentColor: row.accent_color,
   logoBase64: row.logo_base64,
   bannerBase64: row.banner_base64,
-  icalToken: row.ical_token,
   permission,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -510,7 +508,7 @@ const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, optio
     SELECT DISTINCT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64, ''::text AS ical_token,
+      NULL::text AS logo_base64, NULL::text AS banner_base64,
       v.created_at, v.updated_at
     FROM venue.venues v
     JOIN venue.venue_access va ON va.venue_id = v.id
@@ -538,7 +536,7 @@ const discoverPublicVenues = async (options: VenueDiscoveryOptions = {}): Promis
     SELECT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64, ''::text AS ical_token,
+      NULL::text AS logo_base64, NULL::text AS banner_base64,
       v.created_at, v.updated_at
     FROM venue.venues v
     WHERE v.public_enabled = true
@@ -562,7 +560,7 @@ const getVenueSummary = async (id: string, subject?: UserLike | VenueAccessSubje
     SELECT
       v.id, v.slug, v.name, v.icon, v.description, v.timezone, v.open_mode, v.signup_mode,
       v.public_enabled, v.feedback_enabled, v.accent_color,
-      NULL::text AS logo_base64, NULL::text AS banner_base64, ''::text AS ical_token,
+      NULL::text AS logo_base64, NULL::text AS banner_base64,
       v.created_at, v.updated_at
     FROM venue.venues v
     WHERE v.id = ${id}::uuid
@@ -1723,12 +1721,19 @@ const getUserIdByIcalToken = async (token: string): Promise<string | null> => {
   return row?.user_id ?? null;
 };
 
-const generateUserIcs = async (userId: string, baseUrl: string): Promise<string> => {
-  const rows = await sql<(Omit<DbShiftAssignment, "template_title"> & { venue_name: string; venue_short_id: string })[]>`
-    SELECT sa.*, u.display_name AS user_display_name, v.name AS venue_name, v.short_id AS venue_short_id
+/**
+ * The user's shifts as an iCal feed. A calendar app fetches it without a person's locale, so `locale` is the Cloud's
+ * default language (`app.locale`), as for Venue notifications.
+ */
+const generateUserIcs = async (userId: string, baseUrl: string, locale: string): Promise<string> => {
+  const { t } = venueMessages.resolve([locale]);
+  const origin = publicCloudOrigin(baseUrl);
+  const rows = await sql<(DbShiftAssignment & { venue_name: string; venue_short_id: string })[]>`
+    SELECT sa.*, u.display_name AS user_display_name, st.title AS template_title, v.name AS venue_name, v.short_id AS venue_short_id
     FROM venue.shift_assignments sa
     JOIN venue.venues v ON v.id = sa.venue_id
     JOIN auth.users u ON u.id = sa.user_id
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
     WHERE sa.user_id = ${userId}::uuid
       AND sa.ends_at >= now() - INTERVAL '30 days'
     ORDER BY sa.starts_at
@@ -1741,9 +1746,9 @@ const generateUserIcs = async (userId: string, baseUrl: string): Promise<string>
       `DTSTAMP:${icsDate(new Date())}`,
       `DTSTART:${icsDate(row.starts_at)}`,
       `DTEND:${icsDate(row.ends_at)}`,
-      `SUMMARY:${escapeIcs(`Shift at ${row.venue_name}`)}`,
-      `DESCRIPTION:${escapeIcs(row.note ?? "Venue shift")}`,
-      `URL:${escapeIcs(`${baseUrl}/app/venue/${row.venue_short_id}`)}`,
+      `SUMMARY:${escapeIcs(t.calendarEventTitle({ venue: row.venue_name }))}`,
+      `DESCRIPTION:${escapeIcs([row.template_title ?? t.freeTime, row.note].filter(Boolean).join("\n"))}`,
+      `URL:${escapeIcs(`${origin}/app/venue/${row.venue_short_id}`)}`,
       "END:VEVENT",
     );
   }

@@ -1,7 +1,7 @@
 @reference "tailwindcss";
 @import "./file-grid.css";
 
-@layer theme, base, components, utilities;
+@layer properties, theme, base, components, utilities;
 
 .k2b-ui {
   --k2b-font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -1474,10 +1474,11 @@
    row does not extend backwards, and the gap before it belongs to the control
    before it. "Follows" looks through up to two wrappers around the button:
    @k2b/ssr islands, a Dropdown, a toolbar group, or a Tooltip.Anchor, whose
-   part feedback-parity.css owns. Wrapped or stacked rows need 0.5rem between
-   them, which @k2b/ui's own compact button rows keep on touch. The
-   zero-specificity `position` keeps component rules that already place a
-   button in charge. */
+   part feedback-parity.css owns. A later line of buttons reaches 8 px up past
+   an `sm` button, so lines that wrap or stack keep 0.625rem apart on touch:
+   a hit area that only touches the line above still takes a pixel strip at
+   its edge. The zero-specificity `position` keeps component rules that
+   already place a button in charge. */
 @media (any-pointer: coarse) {
   :where(.k2b-ui .k2b-button) {
     position: relative;
@@ -1499,8 +1500,16 @@
     inset-inline-start: 0;
   }
 
-  .k2b-ui :is(.k2b-detail-panel__primary-actions, .k2b-image-input__actions, .k2b-toolbar[data-wrap="true"], .k2b-toolbar[data-orientation="vertical"]) {
-    row-gap: 0.5rem;
+  .k2b-ui
+    :is(
+      .k2b-detail-panel__header,
+      .k2b-detail-panel__primary-actions,
+      .k2b-image-input__actions,
+      .k2b-content-pdf-preview__actions,
+      .k2b-toolbar[data-wrap="true"],
+      .k2b-toolbar[data-orientation="vertical"]
+    ) {
+    row-gap: 0.625rem;
   }
 
   /* DetailPanel.Action rows sit flush, so a row that grew vertically would

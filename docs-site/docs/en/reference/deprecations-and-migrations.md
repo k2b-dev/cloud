@@ -10,6 +10,23 @@ updated: 2026-09-29
 
 # Deprecations and migrations
 
+## Venue objects no longer carry a calendar token
+
+Venue objects in API responses, such as `GET /api/venue/venues`, and the
+`cld venue` output no longer include `icalToken`. The venue-wide token had no
+route since calendar links became personal, but every reader of a venue
+received it. A person's calendar link comes from `GET /api/venue/calendar/my`.
+On startup, Venue drops the unused `venue.venues.ical_token` column, and an
+older Venue image fails to start without it. To roll Venue back to an older
+image, first restore the column; no backup restore is needed:
+
+```sql
+ALTER TABLE venue.venues ADD COLUMN IF NOT EXISTS ical_token TEXT UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(24), 'hex');
+```
+
+Every venue gets a new token that no route accepts, and the next upgrade drops
+the column again. See [Venues](/en/apps/venue).
+
 ## Venue exception notes are public and link addresses are checked
 
 The Venue public page and `GET /api/venue/public/{id}/status` list the closed

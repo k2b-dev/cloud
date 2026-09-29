@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Browser, chromium } from "playwright";
+import { type Browser, chromium, type Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 
@@ -18,11 +18,21 @@ const { Button, IconButton } = await import("../actions/Button");
 const { Dropdown } = await import("../actions/Dropdown");
 const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
+const { default: PdfPreview } = await import("../content/PdfPreview");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
+// `toast` builds its DOM in the browser, so the page runs the real module.
+const toastEntry = resolve(root, "toast-entry.ts");
+await Bun.write(
+  toastEntry,
+  `import { toast } from ${JSON.stringify(resolve(import.meta.dir, "../feedback/toast"))};\nObject.assign(globalThis, { toast });\n`,
+);
+const toastBuild = await Bun.build({ entrypoints: [toastEntry], target: "browser", format: "iife" });
+if (!toastBuild.success) throw new AggregateError(toastBuild.logs, "Could not bundle toast for the browser.");
+const toastScript = await toastBuild.outputs[0]!.text();
 const phone = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 
 let browser: Browser;
@@ -61,20 +71,21 @@ const phonePage = (body: string, head = "") =>
  * Renders the markup on a phone and taps every pixel that reaches a control
  * when the touch hit areas are switched off. The hit areas may add pixels to
  * a control but must never take one from another control; the result lists
- * the pixels they take, keyed by owner and taker. Chromium resolves a point
- * less than a pixel before an edge to the box behind that edge, so each
- * control's outermost pixel ring is left out: two areas that only touch do
- * not count as taking.
+ * the pixels they take, keyed by owner and taker. Every pixel counts, the
+ * outermost ring included: a browser can resolve a tap on the last pixel
+ * before an edge to the box behind that edge, so a hit area that merely
+ * touches a control takes a one-pixel strip from it.
  */
-const takenPixels = async (markup: string, width = "22rem") => {
+const takenPixels = async (markup: string, width = "22rem", script = "") => {
   const page = await browser.newPage(phone);
   try {
     await page.setContent(
       phonePage(
         `<main style="width:${width};padding:2rem">${markup}</main>`,
-        `<style id="without-hit-areas">.k2b-ui .k2b-button::after { content: none !important; }</style>`,
+        `<style id="without-hit-areas">.k2b-ui :is(.k2b-button, .k2b-toast__action, .k2b-toast__close)::after { content: none !important; }</style>`,
       ),
     );
+    if (script) await runToasts(page, script);
     return await page.evaluate(() => {
       const controls = "button, a[href], input";
       const name = (element: Element | null) =>
@@ -83,8 +94,8 @@ const takenPixels = async (markup: string, width = "22rem") => {
       const owned: [Element, number, number][] = [];
       for (const control of Array.from(document.querySelectorAll(controls))) {
         const box = control.getBoundingClientRect();
-        for (let x = Math.ceil(box.left) + 1; x + 2 <= box.right; x += 1) {
-          for (let y = Math.ceil(box.top) + 1; y + 2 <= box.bottom; y += 1) {
+        for (let x = Math.floor(box.left); x < box.right; x += 1) {
+          for (let y = Math.floor(box.top); y < box.bottom; y += 1) {
             if (tap(x + 0.5, y + 0.5) === control) owned.push([control, x + 0.5, y + 0.5]);
           }
         }
@@ -103,6 +114,15 @@ const takenPixels = async (markup: string, width = "22rem") => {
   } finally {
     await page.close();
   }
+};
+
+/** Shows toasts through the real `toast` module and waits until every one has settled in the rail. */
+const runToasts = async (page: Page, script: string) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addScriptTag({ content: `${toastScript}\n${script}` });
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll(".k2b-toast")).every((toast) => toast.getAttribute("data-open") === "true"),
+  );
 };
 
 describe("@k2b/ui touch hit areas on a phone", () => {
@@ -236,6 +256,47 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect(await takenPixels(toolbar, "9rem")).toEqual({});
   });
 
+  test("keep a header meta action's edge above the DetailPanel primary actions", async () => {
+    // Files details: the copy-reference action sits in the meta line, right above the favourite and download actions.
+    const markup = html(() =>
+      createComponent(DetailPanel.Header, {
+        icon: "ti ti-file",
+        title: "Flyer.pdf",
+        subtitle: "PDF · 45 KB",
+        get meta() {
+          return createComponent(Tooltip.Anchor, {
+            content: "Copy reference",
+            get children() {
+              return createComponent(IconButton, { label: "Copy reference", size: "xs", variant: "ghost", children: "⧉" });
+            },
+          });
+        },
+        get actions() {
+          return icon("Close panel");
+        },
+        get primaryActions() {
+          return [text("Preview"), text("Download"), anchored("Favorite")];
+        },
+      }),
+    );
+    expect(await takenPixels(markup)).toEqual({});
+  });
+
+  test("keep every edge when the PdfPreview actions wrap", async () => {
+    // A failed preview adds the retry action, which wraps below the open and download actions in a narrow panel.
+    const markup = html(() =>
+      createComponent(PdfPreview, {
+        request: async () => new Blob(),
+        openHref: "/files/flyer.pdf",
+        openButtonLabel: "Open in new tab",
+        buttonLabel: "Try again",
+        onDownload: () => {},
+        children: (parts) => [parts.actions, parts.content],
+      }),
+    );
+    expect(await takenPixels(markup, "16rem")).toEqual({});
+  });
+
   test("keep stacked DetailPanel.Action rows and their section header apart", async () => {
     const markup = html(() =>
       createComponent(DetailPanel.Section, {
@@ -262,12 +323,55 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect(await takenPixels(markup)).toEqual({});
   });
 
-  test("keep a field's edge before a compact button, and after one at the documented 0.5rem", async () => {
+  test("keep a field's edge before a compact button, and after one at the documented 0.625rem", async () => {
     const row = (gap: string, content: string) => `<div style="display:flex;gap:${gap};align-items:center">${content}</div>`;
     const field = `<input aria-label="Search" style="height:1.75rem;width:10rem">`;
     const button = html(() => icon("Go"));
     expect(await takenPixels(row("0.25rem", field + button))).toEqual({});
-    expect(await takenPixels(row("0.5rem", button + field))).toEqual({});
+    expect(await takenPixels(row("0.625rem", button + field))).toEqual({});
+  });
+
+  test("give a toast's action and close button 44 px hit areas that keep each other's and the next toast's edges", async () => {
+    // "Neu laden" after a notebook session expiry, a short "OK", and a toast with a progress bar, where only the close button dismisses.
+    const toasts = `
+      toast("Live updates need a new sign-in.", { title: "Session expired", duration: 0, action: { label: "Reload", onClick: () => {} } });
+      toast("Saved.", { duration: 0, action: { label: "OK", href: "#ok" } });
+      toast("500 / 1000 records saved", { title: "Import", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });
+    `;
+    expect(await takenPixels("", "22rem", toasts)).toEqual({});
+
+    const page = await browser.newPage(phone);
+    try {
+      await page.setContent(phonePage("<main></main>"));
+      await runToasts(page, toasts);
+      const reach = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action, .k2b-toast__close")).map((control) => {
+          const box = control.getBoundingClientRect();
+          const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("a, button") === control;
+          const midX = box.left + box.width / 2;
+          const midY = box.top + box.height / 2;
+          // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
+          return [
+            control.getAttribute("aria-label") ?? control.textContent,
+            reaches(midX - 21, midY),
+            reaches(midX + 21, midY),
+            reaches(midX, midY - 21),
+            reaches(midX, midY + 21),
+          ];
+        }),
+      );
+      const close = ["Dismiss notification", true, true, true, true];
+      expect(reach).toEqual([
+        ["Reload", true, true, true, true],
+        close,
+        ["OK", true, true, true, true],
+        close,
+        ["Cancel", true, true, true, true],
+        close,
+      ]);
+    } finally {
+      await page.close();
+    }
   });
 });
 

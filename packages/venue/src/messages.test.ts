@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { venueCapabilityPresentation } from "./capability-presentation";
 import { venueMessages } from "./messages";
 import { getVenueTemplate, listVenueTemplates } from "./templates";
 
@@ -57,6 +58,14 @@ describe("Venue internationalization", () => {
       "Aus deiner Schicht bei Café am Markt austreten.",
       "Du bist aus deiner Schicht bei Café am Markt ausgetreten.",
     ]);
+  });
+
+  test("describes assistant capabilities in German the way the workspace speaks: du and Standort", () => {
+    const texts = (value: unknown): string[] =>
+      typeof value === "string" ? [value] : typeof value === "object" && value ? Object.values(value).flatMap(texts) : [];
+    const german = texts(venueCapabilityPresentation.translations.de);
+    expect(german.length).toBeGreaterThan(50);
+    expect(german.filter((text) => /\b(Sie|Ihre?[mnrs]?)\b|\bVenues?\b/.test(text))).toEqual([]);
   });
 
   test("localizes built-in templates without changing their stable IDs", () => {

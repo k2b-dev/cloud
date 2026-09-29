@@ -522,6 +522,25 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(pdf).toContain("Preview PDF");
   });
 
+  test("renders an automatic PDF preview as loading until the browser takes over, with its link already usable", () => {
+    const request = async () => new Blob([], { type: "application/pdf" });
+    const auto = renderToString(() =>
+      createComponent(PdfPreview, { request, autoLoad: true, openHref: "/files/report.pdf", buttonLabel: "Retry", title: "Report" }),
+    );
+    const disabled = renderToString(() =>
+      createComponent(PdfPreview, { request, autoLoad: true, disabled: () => true, buttonLabel: "Retry", title: "Report" }),
+    );
+
+    // Nothing has failed before hydration: no retry action and no invitation to render, only the loading state.
+    expect(auto).toMatch(/<span role="status"[^>]*>Loading\.\.\.<\/span>/);
+    expect(auto).not.toContain("Retry");
+    expect(auto).not.toContain("Render a PDF preview");
+    expect(auto).toMatch(/<a [^>]*href="\/files\/report\.pdf"[^>]*target="_blank"/);
+    // A disabled automatic preview never starts, so it keeps its idle state.
+    expect(disabled).not.toContain("Loading...");
+    expect(disabled).toContain("Retry");
+  });
+
   test("keeps DataTable density, alignment, sticky and footer geometry hooks", () => {
     type Row = { id: string; label: string; total: number };
     const html = renderToString(() =>

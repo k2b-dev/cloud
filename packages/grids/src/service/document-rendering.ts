@@ -426,7 +426,7 @@ export const renderDocumentSource = async (
 ): Promise<Result<string>> => renderLiquidText(template.source, data, SOURCE_MAX_BYTES, locale);
 
 export const renderDocumentPdfPreview = async (
-  template: Pick<DocumentTemplate, "renderer">,
+  template: Pick<DocumentTemplate, "renderer"> & { name?: string },
   data: Record<string, unknown>,
   filename?: string,
   config?: GotenbergConfig,
@@ -445,6 +445,8 @@ export const renderDocumentPdfPreview = async (
       data,
       filters: documentLiquidFilters,
       filename,
+      // Viewers show the title of the inline preview; an unsaved draft has no name yet.
+      title: template.name ?? t.draftTemplate,
     },
     config ? { config } : {},
   );
@@ -583,6 +585,7 @@ export const renderDocumentHtmlPdf = async (
       data: input.data,
       filters: documentLiquidFilters,
       filename: input.filename.replace(/\.pdf$/i, ".html"),
+      title: input.filename.replace(/\.pdf$/i, ""),
     },
     options,
   );
