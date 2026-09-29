@@ -103,7 +103,8 @@ type Responder = (request: Request) => Response | Promise<Response>;
 
 /**
  * Mounts the Public page view for an admin. `respond` answers the view's own requests, except the preview, which
- * mirrors the current workspace data. Reconciling applies `onReconcile` to the workspace data, like a reload.
+ * mirrors the current workspace data. Reconciling applies `onReconcile` to the workspace data, like a reload; with
+ * `heldReloads`, each reload waits until the test calls the function it adds there.
  */
 const mountEditor = async (
   dom: DomTestHarness,
@@ -112,6 +113,7 @@ const mountEditor = async (
     venue?: Partial<Venue>;
     respond: Responder;
     onReconcile?: (current: VenueDashboard) => VenueDashboard;
+    heldReloads?: Array<() => void>;
   },
 ) => {
   const requests: Request[] = [];
@@ -136,6 +138,8 @@ const mountEditor = async (
           initialSectionId={null}
           reconcile={async (message) => {
             toasts.push(message);
+            const held = options.heldReloads;
+            if (held) await new Promise<void>((resolve) => held.push(resolve));
             setDashboard((current) => options.onReconcile?.(current) ?? current);
             return true;
           }}
@@ -221,6 +225,80 @@ describe("Venue public page view behavior", () => {
       expect(editor.rowTitles()).toEqual(["Team day", "Opening week", "Lunch menu"]);
       await flush();
       expect(editor.previewTitles()).toEqual(["Team day", "Opening week", "Lunch menu"]);
+    } finally {
+      editor.cleanup();
+      dom.cleanup();
+    }
+  });
+
+  test("a move made while the saved order reloads is saved too and never snaps back", async () => {
+    const dom = createDomTestHarness();
+    const heldReloads: Array<() => void> = [];
+    const requests: Request[] = [];
+    const editor = await mountEditor(dom, {
+      sections: [section("Open01", "Opening week", 1), section("Menu01", "Lunch menu", 2), section("Note01", "Team day", 3)],
+      respond: (request) => {
+        requests.push(request);
+        return Response.json([]);
+      },
+      onReconcile: (current) => applySavedOrder(requests)(current),
+      heldReloads,
+    });
+    try {
+      buttonNamed(editor.list(), "Move Team day up").click();
+      await flush();
+      expect(editor.requests).toHaveLength(1);
+      expect(heldReloads).toHaveLength(1);
+
+      // The first order is saved and the workspace reloads; a second move lands in that window.
+      buttonNamed(editor.list(), "Move Opening week down").click();
+      await flush();
+      expect(editor.rowTitles()).toEqual(["Team day", "Opening week", "Lunch menu"]);
+
+      heldReloads.shift()?.();
+      await flush();
+      // The reload brings the first order only; the list keeps the second move and saves it.
+      expect(editor.rowTitles()).toEqual(["Team day", "Opening week", "Lunch menu"]);
+      expect(editor.requests.map((request) => request.body)).toEqual([
+        { sectionIds: ["Open01", "Note01", "Menu01"] },
+        { sectionIds: ["Note01", "Open01", "Menu01"] },
+      ]);
+
+      heldReloads.shift()?.();
+      await flush();
+      expect(editor.rowTitles()).toEqual(["Team day", "Opening week", "Lunch menu"]);
+      expect(editor.requests).toHaveLength(2);
+      expect(heldReloads).toHaveLength(0);
+    } finally {
+      editor.cleanup();
+      dom.cleanup();
+    }
+  });
+
+  test("while the order saves, a section's menu offers neither a copy nor a delete", async () => {
+    const dom = createDomTestHarness();
+    let finish: () => void = () => {};
+    const editor = await mountEditor(dom, {
+      sections: [section("Open01", "Opening week", 1), section("Menu01", "Lunch menu", 2)],
+      respond: () => new Promise((resolve) => (finish = () => resolve(Response.json([])))),
+    });
+    const menuItem = (label: string) =>
+      [...dom.document.querySelectorAll<HTMLElement>("[role='menuitem']")].find((item) => item.textContent?.includes(label))!;
+    try {
+      buttonNamed(editor.list(), "Move Lunch menu up").click();
+      await flush();
+      buttonNamed(editor.list(), "More actions for “Opening week”").click();
+      await flush();
+      expect(menuItem("Duplicate section").getAttribute("aria-disabled")).toBe("true");
+      expect(menuItem("Delete section").getAttribute("aria-disabled")).toBe("true");
+      menuItem("Delete section").click();
+      await flush();
+      expect(panel(dom)).toBeNull();
+
+      finish();
+      await flush();
+      expect(menuItem("Duplicate section").getAttribute("aria-disabled")).toBeNull();
+      expect(menuItem("Delete section").getAttribute("aria-disabled")).toBeNull();
     } finally {
       editor.cleanup();
       dom.cleanup();

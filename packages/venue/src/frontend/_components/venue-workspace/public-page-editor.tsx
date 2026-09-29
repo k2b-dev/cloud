@@ -159,8 +159,8 @@ export function PublicPageEditor(props: {
     }
   };
 
-  // Sections in their public order. A move shows at once and saves in the background; moves made while a save
-  // runs are saved right after it, so quick keyboard moves never race each other.
+  // Sections in their public order. A move shows at once and saves in the background; moves made while a save or
+  // the reload after it runs are saved right after it, so quick keyboard moves never race each other.
   const [order, setOrder] = createSignal<string[] | null>(null);
   const sections = (): PublicSection[] => {
     const ids = order();
@@ -208,18 +208,23 @@ export function PublicPageEditor(props: {
     const venueId = venue().id;
     void actions
       .run([SET_KEY], async (signal) => {
-        while (orderDirty) {
-          orderDirty = false;
-          const sectionIds = order();
-          if (!sectionIds) return;
-          const response = await apiClient.venues[":id"].sections.order.$put(
-            { param: { id: venueId }, json: { sectionIds } },
-            { init: { signal } },
-          );
-          if (!response.ok) throw new Error(await readError(response, t().reorderSectionsFailed));
-        }
+        let reloaded = false;
+        do {
+          while (orderDirty) {
+            orderDirty = false;
+            const sectionIds = order();
+            if (!sectionIds) return;
+            const response = await apiClient.venues[":id"].sections.order.$put(
+              { param: { id: venueId }, json: { sectionIds } },
+              { init: { signal } },
+            );
+            if (!response.ok) throw new Error(await readError(response, t().reorderSectionsFailed));
+          }
+          reloaded = await props.reconcile();
+          // A move made during the reload is not in the reloaded order yet, so it saves next.
+        } while (orderDirty);
         // Until the workspace shows the saved order, the list keeps showing it.
-        if (await props.reconcile()) setOrder(null);
+        if (reloaded) setOrder(null);
       })
       .then((saved) => {
         if (saved) return;
@@ -431,7 +436,13 @@ export function PublicPageEditor(props: {
               disabled: actions.pending(SET_KEY),
               action: () => duplicate(row.section),
             },
-            { label: t().deleteSection, icon: "ti ti-trash", variant: "danger", action: () => void confirmDelete(row.section) },
+            {
+              label: t().deleteSection,
+              icon: "ti ti-trash",
+              variant: "danger",
+              disabled: actions.pending(SET_KEY),
+              action: () => void confirmDelete(row.section),
+            },
           ]}
         >
           <Dropdown.Trigger iconOnly size="sm" label={t().sectionActions({ title: row.section.title })}>
