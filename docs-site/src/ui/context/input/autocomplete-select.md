@@ -133,7 +133,8 @@ Use a visible `label` and useful `description`. The text input exposes combobox,
 listbox, expanded, active-descendant, required, invalid, description, and error
 semantics. Loading and accepted matches are announced through a polite live
 region. Native custom validity prevents an unresolved edit from becoming a
-valid submitted value.
+valid submitted value. On touch devices each suggestion is at least 44 px
+(2.75rem) tall, without reaching into its neighbour.
 
 ## Runtime
 

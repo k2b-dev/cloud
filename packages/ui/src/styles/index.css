@@ -3926,6 +3926,15 @@
   cursor: not-allowed;
 }
 
+/* Menu items sit 0.125rem apart, so a tap area beyond an item would take taps
+   from its neighbour. On touch devices the item itself grows to 2.75rem
+   (44 px) instead; the opt-in touch variant keeps its larger rows. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-dropdown__item {
+    min-height: 2.75rem;
+  }
+}
+
 .k2b-ui .k2b-dropdown__copy {
   display: grid;
   min-width: 0;
@@ -4093,10 +4102,11 @@
   font-size: 0.625rem;
 }
 
+/* Options are Dropdown items: no own min-height, so they keep the item height,
+   including its 2.75rem on touch devices. */
 .k2b-ui .k2b-filter-chip__option {
   display: flex;
   width: 100%;
-  min-height: 2rem;
   align-items: center;
   gap: 0.625rem;
   padding: 0.4375rem 0.75rem;
@@ -4616,6 +4626,14 @@
 .k2b-ui .k2b-choice-option:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Stacked like menu items: on touch devices a list option grows to 2.75rem
+   (44 px) rather than reaching into its neighbour. Grid tiles are taller. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-choice-option {
+    min-height: 2.75rem;
+  }
 }
 
 .k2b-ui .k2b-choice-option > span:not(.k2b-choice-option__checkbox, .k2b-choice-dot) {

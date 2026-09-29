@@ -139,7 +139,8 @@ between lines: `DetailPanel` primary actions (also below the header's identity
 row), `PdfPreview` actions, settings group and collection actions, image input
 actions, and wrapping or vertical toolbars. `DetailPanel.Action` rows sit
 flush, so on touch devices each row grows to 44 px itself and its tap area
-keeps the row height.
+keeps the row height. Menu items and select options follow the same rule; see
+[menus](/en/ui/actions/menus#touch-menus).
 
 In your own layouts, keep at least 0.625rem (0.75rem next to `xs` buttons)
 between lines of compact buttons that wrap or stack, before a field or link
