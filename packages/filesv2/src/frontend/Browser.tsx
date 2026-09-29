@@ -480,13 +480,14 @@ export default function Browser(props: {
    */
   const upload = mutation.create({
     onError: (error) => toast.error(error.message),
-    mutation: async (input: { files: readonly File[]; directories?: readonly string[] }, { abortSignal }) => {
+    mutation: async (input: { files: readonly File[]; directories?: readonly string[]; hidden?: number }, { abortSignal }) => {
       // The target is where the files were dropped or picked; navigating while a question is open does not move it.
       const base = baseId();
       const root = folder();
       const uploadLocation = locationKey();
       const known = new Set(props.directory.items.filter((item) => !item.directory).map((item) => item.name));
       let { files, directories = [] } = input;
+      const { hidden = 0 } = input;
       const system = new Set<string>();
       for (const path of [...files.map(relativeName), ...directories]) {
         const entry = systemEntry(path);
@@ -596,7 +597,7 @@ export default function Browser(props: {
             }
           }
         }
-        handle.update(b().uploadSummary({ uploaded, skipped, failed }), {
+        handle.update(b().uploadSummary({ uploaded, skipped, failed, hidden }), {
           variant: failed ? "error" : "success",
           progress: null,
           duration: 5000,
@@ -605,7 +606,7 @@ export default function Browser(props: {
       } catch (error) {
         handle.update(
           uploaded
-            ? b().uploadSummary({ uploaded, skipped, failed })
+            ? b().uploadSummary({ uploaded, skipped, failed, hidden })
             : abortSignal.aborted
               ? b().uploadCancelled
               : b().uploadFailed(files[0]?.name ?? ""),
@@ -623,13 +624,17 @@ export default function Browser(props: {
     },
   });
   onCleanup(() => upload.abort());
-  const startUpload = (files: readonly File[], directories: readonly string[] = []) => {
-    if (!files.length && !directories.length) return;
+  // `hidden` counts dropped entries the browser refused to hand over; the summary names them instead of an error.
+  const startUpload = (files: readonly File[], directories: readonly string[] = [], hidden = 0) => {
+    if (!files.length && !directories.length) {
+      if (hidden) toast(b().uploadSummary({ uploaded: 0, skipped: 0, failed: 0, hidden }));
+      return;
+    }
     if (busy() || searching() || !canCreate()) {
       toast(b().uploadUnavailable);
       return;
     }
-    void upload.mutate({ files, directories });
+    void upload.mutate({ files, directories, hidden });
   };
   let filePicker: HTMLInputElement | undefined;
   let folderPicker: HTMLInputElement | undefined;
@@ -660,7 +665,7 @@ export default function Browser(props: {
       .then((result) => {
         if (request.signal.aborted || source !== locationKey()) return;
         if (result.errors.length) toast.error(result.errors.join("\n"));
-        startUpload(result.files, result.directories);
+        startUpload(result.files, result.directories, result.hidden.length);
       })
       .catch((error) => {
         if (!request.signal.aborted)

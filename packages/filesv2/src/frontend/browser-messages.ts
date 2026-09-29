@@ -222,11 +222,16 @@ export const browserMessages = i18n.define({
             : `All ${count} files already exist in this folder.`
           : `${count} of ${total} files already exist in this folder.`,
       uploadingTitle: "Preparing upload…",
-      uploadSummary: ({ uploaded, skipped, failed }: { uploaded: number; skipped: number; failed: number }) =>
+      uploadSummary: ({ uploaded, skipped, failed, hidden }: { uploaded: number; skipped: number; failed: number; hidden: number }) =>
         [
           uploaded === 1 ? "1 file uploaded" : `${uploaded} files uploaded`,
           skipped ? `${skipped} skipped` : null,
           failed ? `${failed} failed` : null,
+          hidden
+            ? hidden === 1
+              ? "1 hidden entry left out by the browser, upload it on its own"
+              : `${hidden} hidden entries left out by the browser, upload them on their own`
+            : null,
         ]
           .filter(Boolean)
           .join(" · ") + ".",
@@ -526,11 +531,16 @@ export const browserMessages = i18n.define({
             : `Alle ${count} Dateien existieren bereits in diesem Ordner.`
           : `${count} von ${total} Dateien existieren bereits in diesem Ordner.`,
       uploadingTitle: "Upload wird vorbereitet …",
-      uploadSummary: ({ uploaded, skipped, failed }: { uploaded: number; skipped: number; failed: number }) =>
+      uploadSummary: ({ uploaded, skipped, failed, hidden }: { uploaded: number; skipped: number; failed: number; hidden: number }) =>
         [
           uploaded === 1 ? "1 Datei hochgeladen" : `${uploaded} Dateien hochgeladen`,
           skipped ? `${skipped} übersprungen` : null,
           failed ? `${failed} fehlgeschlagen` : null,
+          hidden
+            ? hidden === 1
+              ? "1 versteckten Eintrag hat der Browser ausgelassen, lade ihn separat hoch"
+              : `${hidden} versteckte Einträge hat der Browser ausgelassen, lade sie separat hoch`
+            : null,
         ]
           .filter(Boolean)
           .join(" · ") + ".",
