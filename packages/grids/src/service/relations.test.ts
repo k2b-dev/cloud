@@ -1,6 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import * as relationTargets from "./relation-targets";
-import { collectHydratedRelationTargetIds } from "./relation-targets";
 import {
   buildRelationFilterLabelCache,
   enrichRecordsWithComputedColumns,
@@ -73,22 +72,6 @@ describe("relationLabelFields", () => {
   test("does not use longtext as implicit label fallback", () => {
     const notes = mkField({ id: "notes", type: "longtext", position: 0 });
     expect(relationLabelFields([notes])).toEqual([]);
-  });
-});
-
-describe("collectHydratedRelationTargetIds", () => {
-  test("collects hydrated relation ids without duplicating targets", () => {
-    const relation = mkField({
-      id: "relation",
-      type: "relation",
-      config: { targetTableId: "target-table" },
-    });
-    const first = mkRecord("record-1", { relation: ["target-1", "target-2"] });
-    const second = mkRecord("record-2", { relation: "target-1" });
-
-    expect([...collectHydratedRelationTargetIds([first, second], [relation]).entries()]).toEqual([
-      ["target-table", new Set(["target-1", "target-2"])],
-    ]);
   });
 });
 

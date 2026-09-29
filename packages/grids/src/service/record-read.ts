@@ -17,7 +17,7 @@ import { enrichRecordsWithHtmlTemplates } from "./html-template-fields";
 import { withLookupTargetMetadata } from "./lookup-display";
 import { liveRecordParentJoinSql } from "./parent-checks";
 import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
-import { attachRelationExpansion, type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
+import { type ExpansionViewer, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import { get as getTable } from "./tables";
 import type { DocumentTemplateAppData } from "./template-context";
 import type { Field, GridRecord } from "./types";
@@ -229,7 +229,6 @@ export const enrichFormulaLookups = async (
 type RecordReadOptions = {
   client?: SqlClient;
   templateApp?: DocumentTemplateAppData;
-  includeRelations?: boolean;
   viewer?: ExpansionViewer;
   authorizeComputedTable?: (tableId: string) => Promise<boolean>;
   dateConfig?: DateContext;
@@ -293,7 +292,6 @@ const createFederatedReader = async (tableId: string, fields: Field[], opts: Rec
       skipObjectListFieldIds: new Set(sourceFieldSql.keys()),
       useFinalizedFormulaValues: false,
     });
-    if (opts.includeRelations) await attachRelationExpansion(records, fieldsWithLookupMeta, opts.viewer);
     return recordIds.flatMap((id) => {
       const record = recordsById.get(id);
       return record ? [record] : [];
@@ -414,9 +412,6 @@ export const createReader = async (tableId: string, opts: RecordReadOptions = {}
       signal: opts.signal,
     });
     opts.signal?.throwIfAborted();
-    if (opts.includeRelations) {
-      await attachRelationExpansion(records, fieldsWithLookupMeta, opts.viewer);
-    }
     return recordIds.flatMap((id) => {
       const record = recordsById.get(id);
       return record ? [record] : [];

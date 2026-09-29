@@ -7,8 +7,7 @@ import { listByTable } from "./fields";
 import { lockFinalizedSchema } from "./finalized-schema";
 import { refreshLocalCalculations } from "./local-calculation-storage";
 import { createReader } from "./record-read";
-import { attachRelationExpansion } from "./relation-expansion";
-import { lookupRecords } from "./relation-labels";
+import { buildRelationLabelCache, lookupRecords } from "./relation-labels";
 import type { GridRecord } from "./types";
 
 // Raw SQL fixtures must materialize the same stored calculations as normal writes.
@@ -22,7 +21,7 @@ beforeAll(async () => {
   if (testInfra.database) await migrate();
 });
 
-describe("relation expansion integration", () => {
+describe("relation label access integration", () => {
   postgresTest("exposes every relation label in a readable Base and denies it without Base read access", async () => {
     const userId = testUuid();
     const baseId = testUuid();
@@ -37,9 +36,9 @@ describe("relation expansion integration", () => {
     try {
       await sql`
         INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
-        VALUES (${userId}::uuid, ${`expansion-${userId}`}, 'local', 'user', 'Expansion User', 'Expansion', 'User')
+        VALUES (${userId}::uuid, ${`relation-labels-${userId}`}, 'local', 'user', 'Relation Label User', 'Relation', 'User')
       `;
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Relation expansion')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Relation labels')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
           (${sourceTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Source', 0),
@@ -77,9 +76,7 @@ describe("relation expansion integration", () => {
         updatedAt: "2026-01-01T00:00:00.000Z",
       });
 
-      const denied = record();
-      await attachRelationExpansion([denied], sourceFields, { userId, userGroups: [] });
-      expect(denied.expanded).toBeUndefined();
+      expect(await buildRelationLabelCache([record()], sourceFields, { userId, userGroups: [] })).toEqual({});
       const deniedRead = await (await createReader(sourceTableId, { fields: sourceFields, viewer: { userId, userGroups: [] } })).get(
         sourceRecordId,
       );
@@ -91,9 +88,9 @@ describe("relation expansion integration", () => {
         VALUES (${accessId}::uuid, ${userId}::uuid, 'read'::auth.permission_level)
       `;
       await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${accessId}::uuid)`;
-      const readable = record();
-      await attachRelationExpansion([readable], sourceFields, { userId, userGroups: [] });
-      expect(readable.expanded).toEqual({ [targetRecordId]: { [labelFieldId]: "Secret target" } });
+      expect(await buildRelationLabelCache([record()], sourceFields, { userId, userGroups: [] })).toEqual({
+        [targetRecordId]: "Secret target",
+      });
       expect((await lookupRecords({ targetTableId })).items).toEqual([{ id: targetRecordId, label: "Secret target" }]);
       expect((await lookupRecords({ targetTableId, q: "secret" })).items).toEqual([{ id: targetRecordId, label: "Secret target" }]);
       expect((await lookupRecords({ targetTableId, q: "missing" })).items).toEqual([]);
@@ -103,9 +100,7 @@ describe("relation expansion integration", () => {
       expect(readableRead?.data[lookupFieldId]).toBe("Secret target");
 
       await sql`UPDATE grids.records SET deleted_at = now() WHERE id = ${targetRecordId}::uuid`;
-      const deleted = record();
-      await attachRelationExpansion([deleted], sourceFields, { userId, userGroups: [] });
-      expect(deleted.expanded).toBeUndefined();
+      expect(await buildRelationLabelCache([record()], sourceFields, { userId, userGroups: [] })).toEqual({});
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;

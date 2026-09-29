@@ -29,7 +29,6 @@ export const recordDisplayTitle = (input: {
     const formatted = formatFieldValueText({
       field: titleField,
       value: input.record.data[titleField.id],
-      record: input.record,
       fieldsByTable: input.fieldsByTable,
       relationLabels: input.relationLabels,
       dateConfig: input.dateConfig,

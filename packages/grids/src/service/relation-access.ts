@@ -83,7 +83,7 @@ export const resolveReadableTableIds = async (
 /**
  * Returns existing linked records only from tables the viewer can read.
  * This keeps relation UUIDs themselves from becoming a side channel when
- * labels or expansions are hidden.
+ * labels are hidden.
  */
 export const accessibleRecordIdsByTable = async (
   idsByTableId: ReadonlyMap<string, ReadonlySet<string>>,

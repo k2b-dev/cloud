@@ -30,13 +30,7 @@ import { withLookupTargetMetadata } from "./lookup-display";
 import { cleanRecordMeta, compileRecordMetaFilter, listRecordActors, recordMetaRequiresDeletedRows } from "./record-metadata";
 import { applyFinalizedComputedAccess, mapRecordRow } from "./record-persistence";
 import { enrichFormulaLookups, findTableId, get, projectionFragmentsFor } from "./record-read";
-import {
-  attachRelationExpansion,
-  type ExpansionViewer,
-  enrichRecordsWithComputedColumns,
-  enrichRecordsWithFormulas,
-  hydrateRelationsFromLinks,
-} from "./relations";
+import { type ExpansionViewer, enrichRecordsWithComputedColumns, enrichRecordsWithFormulas, hydrateRelationsFromLinks } from "./relations";
 import { compileSearchClause } from "./search";
 import { decodeCursor } from "./sort-compiler";
 import type { Field, RecordList } from "./types";
@@ -100,21 +94,11 @@ export const list = async (params: {
   search?: SearchSpec | null;
   recordMeta?: RecordMetaQuery | null;
   sort?: SortSpec[];
-  /**
-   * When true, populate each returned record's `expanded` field with
-   * the presentable-field subset of every record it links to via
-   * relation cells. One extra page-level batch (`O(target-tables)`
-   * roundtrips) — never N+1. Default false so callers must opt into
-   * the heavier expanded shape explicitly.
-   */
-  includeRelations?: boolean;
   deletedOnly?: boolean;
   /**
-   * Viewer for per-target-table permission gating on expansion. When
-   * set together with `includeRelations: true`, relation links to
-   * records in tables the viewer can't read are NOT expanded — the
-   * renderer falls back to a neutral placeholder. Omit to expand unfiltered
-   * (the call site has already gated access).
+   * Viewer for per-target-table permission gating: relation links,
+   * lookups, and calculations that reach tables the viewer can't read
+   * stay hidden. Omit when the call site has already gated access.
    */
   viewer?: ExpansionViewer;
   includeAggregates?: boolean;
@@ -273,15 +257,6 @@ export const list = async (params: {
     budget: params.htmlTemplateRenderBudget,
     signal: params.signal,
   });
-
-  // Optional relation expansion. Runs AFTER hydrateRelationsFromLinks
-  // because it reads `record.data[fieldId]` to figure out which UUIDs
-  // each record actually references. Mutates the records in place.
-  // When a viewer is supplied, target tables the viewer can't read
-  // are skipped — the renderer falls back to a neutral placeholder.
-  if (params.includeRelations) {
-    await attachRelationExpansion(items, fields, params.viewer);
-  }
 
   const filePreviews =
     params.filePreviewFieldIds && params.filePreviewFieldIds.length > 0

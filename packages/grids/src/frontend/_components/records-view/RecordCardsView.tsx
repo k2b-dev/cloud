@@ -23,7 +23,7 @@ const plainCardValue = (
   fieldsByTable?: Record<string, Field[]>,
   dateConfig?: DateContext,
   relationLabels?: Record<string, string>,
-): string => formatFieldValueText({ field, value: record.data[field.id], record, fieldsByTable, dateConfig, relationLabels });
+): string => formatFieldValueText({ field, value: record.data[field.id], fieldsByTable, dateConfig, relationLabels });
 
 const subtitleCandidate = (field: Field): boolean => ["text", "id", "relation", "select"].includes(field.type);
 

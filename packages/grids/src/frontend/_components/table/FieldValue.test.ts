@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
+import type { PublicField as Field } from "../../../api/public-dto";
 import { resolveFieldDisplay } from "./field-display";
 import { fieldDisplayFormat, formatFieldValueText, relationIds } from "./field-value-format";
 
@@ -20,19 +20,6 @@ const field = (overrides: Partial<Field> & Pick<Field, "id" | "name" | "type">):
   ...overrides,
 });
 
-const record = (data: Record<string, unknown>, expanded?: GridRecord["expanded"]): GridRecord => ({
-  id: "rec",
-  tableId: "tbl",
-  data,
-  expanded,
-  version: 1,
-  createdBy: null,
-  updatedBy: null,
-  deletedAt: null,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
-});
-
 describe("FieldValue helpers", () => {
   test("normalizes relation ids from scalar and multi-value storage", () => {
     expect(relationIds("r1")).toEqual(["r1"]);
@@ -40,18 +27,13 @@ describe("FieldValue helpers", () => {
     expect(relationIds(null)).toEqual([]);
   });
 
-  test("formats relation labels from explicit labels before expanded record data", () => {
+  test("formats relation labels from the label map and marks unlabeled records unavailable", () => {
     const relation = field({ id: "rel", name: "Author", type: "relation" });
-    const rec = record({ rel: ["a1", "a2"] }, { a1: { Name: "Expanded author" }, a2: { Name: "Second author" } });
 
-    expect(
-      formatFieldValueText({
-        field: relation,
-        value: rec.data.rel,
-        record: rec,
-        relationLabels: { a1: "Cached author" },
-      }),
-    ).toBe("Cached author, Second author");
+    expect(formatFieldValueText({ field: relation, value: ["a1", "a2"], relationLabels: { a1: "Cached author" } })).toBe(
+      "Cached author, Unavailable record",
+    );
+    expect(formatFieldValueText({ field: relation, value: ["a1"], locale: "de" })).toBe("Datensatz nicht verfügbar");
   });
 
   test("formats select values with configured labels", () => {

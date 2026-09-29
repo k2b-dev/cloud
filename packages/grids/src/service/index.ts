@@ -397,7 +397,6 @@ export const gridsService = {
     buildPinnedLabelCache: relationsModule.buildPinnedRelationLabelCache,
     buildLabelCacheForGroupedKeys: relationsModule.buildLabelCacheForGroupedKeys,
     buildFilterLabelCache: relationsModule.buildRelationFilterLabelCache,
-    buildExpansionCache: relationsModule.buildRelationExpansionCache,
     lookup: relationsModule.lookupRecords,
   },
   metadataEvents,
