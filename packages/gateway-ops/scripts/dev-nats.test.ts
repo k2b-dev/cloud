@@ -26,7 +26,7 @@ test("dev NATS preserves its private user seeds and keeps applications in DEV wi
       // The creds file signs as the TEST user; the server ignores its JWT without an operator.
       const creds = await readFile(`${directory}/test.creds`);
       const auth = credsAuthenticator(creds)("nonce");
-      expect(auth?.nkey).toBe(tester.getPublicKey());
+      expect(auth).toMatchObject({ nkey: tester.getPublicKey() });
       expect((await stat(`${directory}/test.creds`)).mode & 0o777).toBe(0o600);
 
       await chmod(`${directory}/admin.seed`, 0o644);

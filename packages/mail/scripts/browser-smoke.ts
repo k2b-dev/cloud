@@ -65,9 +65,10 @@ type Fixture = {
 let createdMailboxId: string | null = null;
 
 const ok = (message: string) => console.log(`✓ ${message}`);
-const fail = (message: string): never => {
+// A declaration, not an arrow, so `if (...) fail(...)` narrows the code after it.
+function fail(message: string): never {
   throw new Error(message);
-};
+}
 
 const assertLocalTarget = () => {
   const url = new URL(BASE_URL);

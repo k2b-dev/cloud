@@ -9,6 +9,6 @@
       "@k2b/cloud/services/*": ["../cloud/src/services/*"]
     }
   },
-  "include": ["./src/**/*.ts", "./test/**/*.ts", "../cloud/src/types/**/*.d.ts", "../cloud/src/cli/**/*.ts"],
+  "include": ["./src/**/*.ts", "./scripts/**/*.ts", "./test/**/*.ts", "../cloud/src/types/**/*.d.ts", "../cloud/src/cli/**/*.ts"],
   "exclude": ["./dist", "./node_modules"]
 }

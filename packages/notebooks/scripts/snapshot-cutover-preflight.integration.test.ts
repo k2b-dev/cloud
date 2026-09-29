@@ -21,7 +21,7 @@ testFor("database", "nats")(
     let created = false;
     const run = async () => {
       const child = Bun.spawn([process.execPath, new URL("./snapshot-cutover-preflight.ts", import.meta.url).pathname], {
-        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: natsServers(), SYNC_NAMESPACE: namespace },
+        env: { ...process.env, DATABASE_URL: target.toString(), NATS_SERVERS: natsServers().join(","), SYNC_NAMESPACE: namespace },
         stdout: "pipe",
         stderr: "pipe",
       });

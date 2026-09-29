@@ -450,7 +450,7 @@ them afterward. It does not invoke application jobs or provider operations.
 
 For isolated broker recovery, run
 `packages/cloud/scripts/sync-recovery-smoke.ts` with `prepare`, then `recover`
-using the same unique `SYNC_RECOVERY_NAMESPACE=cloud-recovery-smoke-<suffix>`.
+using the same unique `--namespace cloud-recovery-smoke-<suffix>`.
 Leave NATS running across the printed minute boundary. The check verifies a
 retained job, a missed scheduled tick, and their acknowledgments, then removes
 its own broker resources. It can bracket a full application restart, but does

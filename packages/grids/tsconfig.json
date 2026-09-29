@@ -21,13 +21,12 @@
       "@k2b/cloud/clients/core": ["../cloud/src/clients/core.ts"]
     }
   },
-  "include": [
-    "./src/**/*.ts",
-    "./src/**/*.tsx",
-    "./scripts/verify.ts",
-    "./scripts/verification*.ts",
-    "./scripts/diagnostics*.ts",
-    "../cloud/src/types/**/*.d.ts"
-  ],
-  "exclude": ["./dist", "./node_modules"]
+  "include": ["./src/**/*.ts", "./src/**/*.tsx", "./scripts/**/*.ts", "../cloud/src/types/**/*.d.ts"],
+  "exclude": [
+    "./dist",
+    "./node_modules",
+    "./scripts/render-document-template-previews.ts",
+    "./scripts/soak-100k.ts",
+    "./scripts/sql-boundary-smoke.ts"
+  ]
 }
