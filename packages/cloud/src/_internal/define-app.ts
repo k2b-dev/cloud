@@ -48,6 +48,7 @@ import { requireInvocation } from "../server/middleware/invocation";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
+import { validationErrorResponse } from "../server/middleware/validator";
 import {
   capabilityInvocationOperation,
   searchInvocationOperation,
@@ -774,6 +775,7 @@ export const defineApp = <
       if (advertiseOpenapi) {
         const apiPrefix = opts.openapi!.replace(/\/openapi\.json$/, "") || "/";
         const spec = await generateSpecs(startOpts.openapi!, {
+          defaultValidationErrorResponse: validationErrorResponse,
           documentation: {
             info: {
               title: meta.name,

@@ -1,5 +1,5 @@
 import type { Context, ValidationTargets } from "hono";
-import { validator as honoValidator } from "hono-openapi";
+import { type GenerateSpecOptions, validator as honoValidator } from "hono-openapi";
 import type { ZodType } from "zod";
 
 export type ValidatorError = Readonly<{
@@ -8,6 +8,28 @@ export type ValidatorError = Readonly<{
 }>;
 
 export type ValidatorErrorResolver = (context: Context) => ValidatorError;
+
+/**
+ * OpenAPI description of the 400 body `validator()` sends: `{ message }`, or
+ * `{ code, message }` from a route's error resolver. The generated spec of
+ * every application uses it for validated routes that do not describe their
+ * own 400, in place of hono-openapi's default body, which Cloud never sends.
+ */
+export const validationErrorResponse: Exclude<GenerateSpecOptions["defaultValidationErrorResponse"], boolean> = {
+  description: "Validation failed",
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        properties: {
+          message: { type: "string" },
+          code: { type: "string" },
+        },
+        required: ["message"],
+      },
+    },
+  },
+};
 
 /**
  * Zod validator middleware with pretty error messages and OpenAPI support.

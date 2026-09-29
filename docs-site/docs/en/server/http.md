@@ -5,7 +5,7 @@ section: Server
 order: 220
 description: Validate a Hono endpoint, publish its contract, and use its typed browser client.
 tags: [server, hono, validation, clients]
-updated: 2026-07-27
+updated: 2026-09-29
 ---
 
 # Build typed HTTP APIs
@@ -69,8 +69,9 @@ Read the typed value with `c.req.valid(target)`.
 Query and path values arrive as strings. Coerce numbers and booleans in the
 schema. Use enums for sort fields and directions before they reach SQL.
 
-Invalid input returns status `400`. The handler does not run. Validation
-failures contain a public `message` but no service error code.
+Invalid input returns status `400` with `{ message }`, or `{ code, message }`
+when the route passes an [error resolver](/en/docs/server/middleware#validate-and-document-a-route).
+The handler does not run.
 
 Validation checks the wire shape. The service checks resource access, existing
 state, and business rules.
@@ -237,6 +238,13 @@ resource check can deny an authenticated caller.
 
 Every documented status must be reachable. Every response body must match its
 schema.
+
+Cloud documents validation failures for you. Every route that validates input
+and does not describe its own `400` gets a `400` response with the body `v()`
+sends: a JSON object with a required `message` string and an optional `code`
+string. Describe the `400` yourself when the route returns a different body,
+for example a validation hook with its own error format; your description
+replaces the default.
 
 ## Create the browser client
 
