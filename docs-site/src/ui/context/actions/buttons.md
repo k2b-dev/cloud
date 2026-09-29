@@ -124,8 +124,10 @@ end at the edge of a clipping container (`overflow: hidden` or a scroll area).
 
 A tap area never reaches back over the control before it. A button that
 follows anything in its row, such as another button or a field, does not extend
-backwards. The same applies to a button in a `Dropdown`, a `Tooltip.Anchor`,
-or a `Toolbar.Group` that follows other content. The gap before the button
+backwards. The same applies when the button sits in up to two wrappers that
+follow other content: an island from `@k2b/ssr`, a `Dropdown`, a
+`Tooltip.Anchor`, or a `Toolbar.Group`. For example, header actions that each
+hydrate as their own island keep each other's edges. The gap before the button
 belongs to the control before it.
 
 Above and below, the tap area reaches 8 px past an `sm` button and 10 px past
@@ -137,8 +139,10 @@ collection actions, image input actions, and wrapping or vertical toolbars.
 In your own layouts, keep at least 0.5rem (0.625rem next to `xs` buttons)
 between lines of compact buttons that wrap or stack, before a field or link
 that follows a compact button, and before a button that sits in your own
-wrapper element after other content. Do not set `position: static` on a
-button: the tap area is positioned against the button itself.
+wrapper element after other content. Where you can, place a row's islands
+directly in the row instead of wrapping each one in its own element. Do not
+set `position: static` on a button: the tap area is positioned against the
+button itself.
 
 ## Runtime
 

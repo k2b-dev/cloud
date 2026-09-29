@@ -454,6 +454,16 @@
   white-space: nowrap;
 }
 
+/* The close control comes first in the DOM but sits after the category row,
+   so its touch hit area reaches back over the row. Positioned tabs paint above
+   that hit area and keep their edges; see the `.k2b-button` touch-target rule
+   in index.css. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-settings__tabs button {
+    position: relative;
+  }
+}
+
 .k2b-ui .k2b-settings__content {
   grid-area: 2 / 1 / 3 / 3;
   display: flex;
