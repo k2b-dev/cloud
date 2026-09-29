@@ -269,7 +269,7 @@ export const browserMessages = i18n.define({
           ? `This upload contains 1 hidden system file (${examples}). Include it?`
           : `This upload contains ${count} hidden system files (e.g. ${examples}). Include them?`,
       systemFilesHint:
-        "macOS, Windows and Linux create these files themselves, for example for thumbnails or folder views. Ordinary files starting with a dot, such as .gitignore or .env, are your content and are always uploaded.",
+        "macOS, Windows and Linux create these files themselves, for example for thumbnails or folder views. Your own files starting with a dot, such as .gitignore or .env, are not affected by this choice.",
       uploadWithoutSystemFiles: "Upload without system files",
       uploadAll: "Upload all",
       dropTooLarge: "Select at most 10,000 files and folders per upload.",
@@ -573,7 +573,7 @@ export const browserMessages = i18n.define({
           ? `Dieser Upload enthält 1 versteckte Systemdatei (${examples}). Mitnehmen?`
           : `Dieser Upload enthält ${count} versteckte Systemdateien (z. B. ${examples}). Mitnehmen?`,
       systemFilesHint:
-        "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Normale Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, gehören zu deinem Inhalt und werden immer hochgeladen.",
+        "macOS, Windows und Linux legen diese Dateien selbst an, etwa für Vorschaubilder oder Ordneransichten. Eigene Dateien, die mit einem Punkt beginnen, wie .gitignore oder .env, betrifft diese Auswahl nicht.",
       uploadWithoutSystemFiles: "Ohne Systemdateien hochladen",
       uploadAll: "Alle hochladen",
       dropTooLarge: "Bitte höchstens 10.000 Dateien und Ordner pro Upload auswählen.",

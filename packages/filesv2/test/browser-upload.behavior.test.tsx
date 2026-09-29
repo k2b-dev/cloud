@@ -251,7 +251,7 @@ test("a picked folder with system files asks once and skipping them never create
   await flush();
   const dialog = dom.document.querySelector("dialog")!;
   expect(dialog.textContent).toContain("This upload contains 3 hidden system files (e.g. .DS_Store, Thumbs.db). Include them?");
-  expect(dialog.textContent).toContain(".gitignore or .env, are your content");
+  expect(dialog.textContent).toContain(".gitignore or .env, are not affected by this choice");
   expect(calls).toEqual([]);
   answer(dom, "Upload without system files");
   await flush();
