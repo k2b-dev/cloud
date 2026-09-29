@@ -133,6 +133,13 @@ onFatal: () => {
 `reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
 reload that follows an explicit user action does not need the guard.
 
+Handle a live error that asks for sign-in, such as `login_required`, the same
+way. The reload lets the page's route policy send an expired session to
+sign-in with a return URL. Do not navigate to the sign-in page yourself: when
+the page session is still valid but the socket is rejected, sign-in returns
+straight to the page and the socket fails again. When `reloadOnce` returns
+`false`, show a sign-in link or the reload button instead.
+
 Do not keep the only copy of edits or selected resources in the socket client.
 
 For server event semantics, see

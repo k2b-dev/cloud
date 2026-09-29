@@ -1,6 +1,9 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { notebooksWorkspace, type PublicNotebookWorkspaceEvent } from "../../../../lib/workspace-events";
+import { reconnectDelayMs } from "../../../lib/reconnect";
+import { notebookWorkspaceMessages } from "../../messages";
 import { dispatchWorkspaceEvent } from "./workspace-events";
 
 type Props = {
@@ -18,21 +21,41 @@ const resolveHttpBaseUrl = (raw: string): URL => {
   return new URL(`${new URL(browserOrigin).protocol}//${value}`);
 };
 
+const SIGN_IN_CODES = new Set(["LOGIN_REQUIRED", "SESSION_EXPIRED"]);
+const TERMINAL_CODES = new Set([...SIGN_IN_CODES, "ACCESS_DENIED", "ACCESS_REVOKED", "NOTE_NOT_FOUND"]);
+
 export default function WorkspaceEventBridge(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+
   onMount(() => {
     let disposed = false;
     let socket: WebSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let failedConnects = 0;
     let lastCursor = props.initialCursor;
     let eventQueue = Promise.resolve();
     let generation = 0;
     let activeWorkspaceId = props.notebookId;
 
-    const terminateAndRefresh = () => {
+    // Reloading lets the page's route policy send an expired session to
+    // sign-in. A failure that survives the reload (for example a live origin
+    // that does not receive the session cookie) must not reload in a loop.
+    const terminateAndRefresh = (code?: unknown) => {
+      if (disposed) return;
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
-      refreshCurrentPath();
+      if (reloadOnce(`notebooks:live:${props.notebookId}`)) return;
+      const returnTo = `${window.location.pathname}${window.location.search}`;
+      if (typeof code === "string" && SIGN_IN_CODES.has(code)) {
+        toast(t().liveSignInRequired, {
+          duration: 0,
+          action: { label: t().signIn, href: `/auth/login?redirectTo=${encodeURIComponent(returnTo)}` },
+        });
+      } else {
+        toast(t().liveUpdatesStopped, { duration: 0, action: { label: t().reload, onClick: () => window.location.reload() } });
+      }
     };
 
     const connect = () => {
@@ -67,25 +90,17 @@ export default function WorkspaceEventBridge(props: Props) {
           payload?: { notebookId?: unknown; cursor?: unknown; event?: unknown; code?: unknown };
         };
         if (value.type === notebooksWorkspace.wsType.revoked) {
-          terminateAndRefresh();
+          terminateAndRefresh(value.payload?.code);
           return;
         }
         if (value.type === notebooksWorkspace.wsType.error) {
           const code = value.payload?.code;
-          if (
-            code === "LOGIN_REQUIRED" ||
-            code === "SESSION_EXPIRED" ||
-            code === "ACCESS_DENIED" ||
-            code === "ACCESS_REVOKED" ||
-            code === "NOTE_NOT_FOUND"
-          ) {
-            terminateAndRefresh();
-          } else {
-            ws.close();
-          }
+          if (typeof code === "string" && TERMINAL_CODES.has(code)) terminateAndRefresh(code);
+          else ws.close();
           return;
         }
         if (value.type === notebooksWorkspace.wsType.ready) {
+          failedConnects = 0;
           if (typeof value.payload?.notebookId === "string") activeWorkspaceId = value.payload.notebookId;
           return;
         }
@@ -109,10 +124,11 @@ export default function WorkspaceEventBridge(props: Props) {
         if (socket === ws) socket = undefined;
         if (disposed) return;
         if (event.code === 1008) {
-          terminateAndRefresh();
+          terminateAndRefresh(event.reason);
           return;
         }
-        reconnectTimer = setTimeout(connect, 2_000 + Math.floor(Math.random() * 1_500));
+        reconnectTimer = setTimeout(connect, reconnectDelayMs(failedConnects));
+        failedConnects += 1;
       };
 
       ws.onerror = () => ws.close();

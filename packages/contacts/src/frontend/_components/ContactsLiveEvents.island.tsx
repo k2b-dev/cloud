@@ -1,8 +1,8 @@
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
-import { currentPathWithQuery } from "@k2b/ssr/nav";
+import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { i18n } from "@k2b/stdlib";
 import { retry } from "@k2b/sync/retry";
-import { useLocale } from "@k2b/ui";
+import { toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import {
   CONTACTS_LIVE_WS_TYPE,
@@ -29,12 +29,16 @@ export const liveEventsMessages = i18n.define({
       updateNotApplied: "Could not apply a Contacts update",
       liveAccessChanged: "Live access changed or expired.",
       bookAccessChanged: "Contact book access changed",
+      liveUpdatesStopped: "Live updates stopped. Reload the page to see the latest changes.",
+      reload: "Reload",
     },
     de: {
       bookMetadataChanged: "Kontaktbuch geändert",
       updateNotApplied: "Eine Änderung in Kontakte konnte nicht übernommen werden",
       liveAccessChanged: "Der Zugriff wurde geändert oder ist abgelaufen.",
       bookAccessChanged: "Zugriff auf das Kontaktbuch geändert",
+      liveUpdatesStopped: "Live-Aktualisierungen wurden beendet. Lade die Seite neu, um die neuesten Änderungen zu sehen.",
+      reload: "Neu laden",
     },
   },
 });
@@ -64,11 +68,14 @@ export default function ContactsLiveEvents(props: Props) {
     const lifecycle = new AbortController();
     let reloading = false;
 
+    // A condition that persists across loads (for example a live socket that
+    // keeps rejecting the session) must not reload the page forever.
     const replaceCurrentPage = () => {
       if (reloading || lifecycle.signal.aborted) return;
       reloading = true;
       lifecycle.abort();
-      window.location.replace(currentPathWithQuery());
+      if (reloadOnce(`contacts:live:${window.location.pathname}`)) return;
+      toast(t().liveUpdatesStopped, { duration: 0, action: { label: t().reload, onClick: () => window.location.reload() } });
     };
 
     const getCurrentSelection = () => {
