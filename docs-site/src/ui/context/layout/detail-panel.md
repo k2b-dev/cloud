@@ -101,8 +101,10 @@ a native destination without nesting a button inside the link. On fine-pointer
 devices the Dots trigger appears on row hover, keyboard focus, or while its menu
 is open; it remains visible on touch devices. Do not use it for static key-value
 data, comments, history, or form fields. Stacked action rows sit flush, so on
-touch devices their tap areas keep the row height instead of reaching into the
-neighbouring row.
+touch devices each row is at least 44 px (2.75rem) tall, including its
+secondary and Dots buttons, and its tap area keeps the row height instead of
+reaching into the neighbouring row. With a mouse, rows keep their compact
+height.
 
 When one secondary command is frequent enough to deserve a direct control, such
 as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible

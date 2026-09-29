@@ -37,7 +37,7 @@ describe("@k2b/ui touch targets", () => {
     }
   });
 
-  test("keeps the visible size and every pointer-fine layout unchanged", () => {
+  test("keeps the visible size and every pointer-fine layout unchanged, except for flush DetailPanel.Action rows", () => {
     const controls = /\.k2b-(?:button|dialog__close|toast__(?:action|close))\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));
     expect(pseudo.length).toBeGreaterThan(0);
@@ -49,6 +49,10 @@ describe("@k2b/ui touch targets", () => {
         [...cssDeclarations(rule.body).keys()].some((property) => /^(?:width|height|min-|max-|padding|margin|font-size)/.test(property)),
       )
       .map((rule) => rule.selector);
-    expect(resized).toEqual([]);
+    // Stacked action rows have no room for a tap area beyond their box, so the row itself grows to 2.75rem.
+    expect(resized).toEqual([".k2b-ui .k2b-button.k2b-detail-panel__action", ".k2b-ui .k2b-detail-panel__action-row .k2b-button"]);
+    const row = declarations(".k2b-ui .k2b-button.k2b-detail-panel__action");
+    expect([...row.entries()]).toEqual([["min-height", ["2.75rem"]]]);
+    expect([...declarations(".k2b-ui .k2b-detail-panel__action-row .k2b-button").entries()]).toEqual([["min-height", ["2.75rem"]]]);
   });
 });

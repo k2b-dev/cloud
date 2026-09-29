@@ -297,8 +297,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect(await takenPixels(markup, "16rem")).toEqual({});
   });
 
-  test("keep stacked DetailPanel.Action rows and their section header apart", async () => {
-    const markup = html(() =>
+  test("give stacked DetailPanel.Action rows a 44 px row on touch that keeps its neighbours' and the section header's edges", async () => {
+    const section = html(() =>
       createComponent(DetailPanel.Section, {
         title: "Actions",
         get actions() {
@@ -306,7 +306,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
         },
         get children() {
           return [
-            createComponent(DetailPanel.Action, { title: "Rename" }),
+            createComponent(DetailPanel.Action, { title: "Open in new tab", leading: "↗" }),
+            createComponent(DetailPanel.Action, { title: "Version 3", description: "Fixed dates · Ana", trailing: "45 KB" }),
             createComponent(DetailPanel.Action, {
               title: "Move",
               menuItems: [{ label: "Copy", action: () => {} }],
@@ -316,11 +317,48 @@ describe("@k2b/ui touch hit areas on a phone", () => {
               title: "Delete",
               secondaryAction: { label: "Remove now", icon: "ti ti-trash", onClick: () => {} },
             }),
+            createComponent(DetailPanel.Action, { title: "Rename" }),
           ];
         },
       }),
     );
-    expect(await takenPixels(markup)).toEqual({});
+    // Grids and Spaces stack their rows flush; Files keeps 0.25rem between them.
+    const filesColumn = `<style>.k2b-detail-panel__section-body{display:flex;flex-direction:column;gap:0.25rem}</style>`;
+    expect(await takenPixels(section)).toEqual({});
+    expect(await takenPixels(filesColumn + section)).toEqual({});
+
+    const heights = async (options: typeof phone | { viewport: { width: number; height: number } }) => {
+      const page = await browser.newPage(options);
+      try {
+        await page.setContent(phonePage(`<main style="width:22rem;padding:2rem">${section}</main>`));
+        return await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-detail-panel__section-body .k2b-button")).map((control) => {
+            const box = control.getBoundingClientRect();
+            const reaches = (y: number) => document.elementFromPoint(box.left + box.width / 2, y)?.closest("a, button") === control;
+            // 21 px from the centre up and down: at least 42 px, which a 31 px row never reaches.
+            const midY = box.top + box.height / 2;
+            return [
+              control.getAttribute("aria-label") ?? control.textContent?.trim(),
+              Math.round(box.height),
+              reaches(midY - 21) && reaches(midY + 21),
+            ];
+          }),
+        );
+      } finally {
+        await page.close();
+      }
+    };
+    expect(await heights(phone)).toEqual([
+      ["↗Open in new tab", 44, true],
+      ["Version 3Fixed dates · Ana45 KB", 46, true],
+      ["Move", 44, true],
+      ["More for Move", 44, true],
+      ["Delete", 44, true],
+      ["Remove now", 44, true],
+      ["Rename", 44, true],
+    ]);
+    // A mouse keeps the compact rows.
+    expect((await heights({ viewport: { width: 1280, height: 800 } })).map(([, height]) => height)).toEqual([30, 46, 30, 28, 30, 28, 30]);
   });
 
   test("keep a field's edge before a compact button, and after one at the documented 0.625rem", async () => {
