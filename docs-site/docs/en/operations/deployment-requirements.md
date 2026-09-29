@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # Deployment requirements
@@ -31,7 +31,7 @@ this service set.
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
 | PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. |
-| NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see the [Notebook document log](/en/docs/operations/notebooks-document-log) for the Notebook share. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
+| NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
 | Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming and WebSocket upgrades. Only the gateway receives public application traffic. |
@@ -59,10 +59,15 @@ leaves behind on its pooled backends and which then reject writes as
 running `SELECT pg_advisory_unlock_all()` on each affected backend, or restart
 the pooler so that its server connections are recreated.
 
+There is no universal CPU, memory, disk or database-connection sizing guarantee.
+Size for your app set, data volume, replicas and workload, and verify headroom
+with representative traffic before production exposure.
+
+### Reserve JetStream storage
+
 JetStream reserves each stream's byte limit on every node that holds one of its
-replicas as soon as the stream exists, even while it stores almost nothing.
-Across Cloud's applications, these reservations add up to tens of GiB per node;
-at three replicas on three nodes, every node reserves every stream once. Unless
+replicas as soon as the stream exists, even while it stores almost nothing. At
+three replicas on three nodes, every node reserves every stream once. Unless
 `max_file_store` is set, a NATS server allows 75% of the disk space that is free
 when it starts. NATS refuses a stream that does not fit with
 `insufficient storage resources available`; when that happens during startup,
@@ -70,9 +75,54 @@ the application does not start. Set `max_file_store` on every node to a size
 that its disk actually provides, and compare it with the reservation: the
 monitoring endpoint `/jsz` reports `reserved_storage` and `config.max_storage`.
 
-There is no universal CPU, memory, disk or database-connection sizing guarantee.
-Size for your app set, data volume, replicas and workload, and verify headroom
-with representative traffic before production exposure.
+Each Sync job, queue, and topic has a work or event stream and a dead-letter
+stream. Their byte limits come from the declaration:
+
+- A job or queue declared without `retention` holds 256 messages at its payload
+  limit: 33 MiB at the default 128 KiB. Its dead-letter stream gets the same
+  limit, so it reserves 66 MiB per replica. A typical Cloud job message stores
+  about 500 bytes, so the budget holds tens of thousands of pending jobs. Past
+  it, Sync discards the oldest pending messages, which is why durable state
+  belongs in Postgres, from where recovery submits unfinished work again.
+- A job, queue, or topic declared with `retention` reserves its declared
+  `maxBytes` twice, unless a topic sets a smaller `deadLetterRetention`.
+- A pump reserves 64 MiB.
+
+Per replica, the built-in applications reserve:
+
+| Application | Jobs and queues at the default | Larger streams, log and dead letters together | Reservation |
+| --- | --- | --- | --- |
+| Core, with the platform services it runs | 18 | AI turn streams 520 MiB, AI invalidations 128 MiB, FreeIPA backfill pump 64 MiB | 1.9 GiB |
+| Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
+| Gateway Ops | 2 | none | 132 MiB |
+| Grids | 2 | `grids:records` 2 GiB, `grids:workflow-record-events` 2 GiB, workflow run events 512 MiB, metadata events 128 MiB | 4.8 GiB |
+| Mail | 10 | `mail:invalidations` 2 GiB, automation backfill pump 64 MiB | 2.7 GiB |
+| Contacts | 0 | contact events 2 GiB | 2 GiB |
+| Notebooks | 2 | snapshot job 2 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 3.8 GiB |
+| Spaces | 0 | item events 2 GiB | 2 GiB |
+| Pulse | 5 | none | 330 MiB |
+| IPA Hosts | 1 | none | 66 MiB |
+
+Together, that is about 20 GiB per replica for every built-in application.
+Size `max_file_store` for the applications you deploy with headroom for
+standalone applications, and check the live reservation of your account:
+
+```sh
+curl -s 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' \
+  | jq -r '.account_details[].stream_detail[]? | select(.config.max_bytes > 0)
+      | [.config.metadata["sync.owner"], .config.metadata["sync.kind"], .config.metadata["sync.id"], .config.max_bytes] | @tsv'
+```
+
+Releases up to 0.24.0 gave every job and queue without `retention` 1 GiB per
+stream, about 97 GiB per replica for the same applications. The first start of
+a later release lowers the byte limit of these streams in place before it uses
+them, and keeps their pending messages. A stream that already holds more than
+the new limit keeps its old limit, and the application logs
+`Kept the byte limit of a Sync stream that holds more than its new limit`; a
+later start lowers it once the stream holds less. An older release started
+against the lowered streams, or an older process that first uses such a job
+during a rolling upgrade, fails with a `ResourceDriftError` on `max_bytes`. To roll back, first raise the named streams to 1 GiB, for example
+with `nats stream edit <stream> --max-bytes 1073741824`.
 
 ## Assign configuration to the correct service
 

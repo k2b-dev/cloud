@@ -12,6 +12,7 @@ import { createSync, type Sync } from "@k2b/sync";
 import { env } from "../config/env";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
 import { connectNats } from "./nats-connection";
+import { withSyncBudgets } from "./sync-budget";
 
 let current: Sync | undefined;
 let starting = false;
@@ -64,7 +65,10 @@ export type ProcessSync = {
   stop: () => Promise<void>;
 };
 
-/** Connect NATS, create and bind the process Sync instance, and wait until it is ready. */
+/**
+ * Connect NATS, create and bind the process Sync instance, and wait until it is
+ * ready. Jobs and queues without `retention` get Cloud's JetStream budget.
+ */
 export const startProcessSync = async ({ application }: { application: string }): Promise<ProcessSync> => {
   if (!env.SYNC_NAMESPACE.trim()) {
     throw new Error(
@@ -78,13 +82,16 @@ export const startProcessSync = async ({ application }: { application: string })
     const connection = await connectNats({ name: `${application}@${hostname()}` });
     let sync: Sync | undefined;
     try {
-      sync = createSync({
-        connection,
-        namespace: env.SYNC_NAMESPACE,
-        application,
-        defaults: { replicas: env.SYNC_REPLICAS },
-        observe: (event) => observeSyncEvent(event, application),
-      });
+      sync = withSyncBudgets(
+        createSync({
+          connection,
+          namespace: env.SYNC_NAMESPACE,
+          application,
+          defaults: { replicas: env.SYNC_REPLICAS },
+          observe: (event) => observeSyncEvent(event, application),
+        }),
+        { connection, namespace: env.SYNC_NAMESPACE },
+      );
       bindProcessSync(sync);
       await sync.ready();
     } catch (error) {
