@@ -81,7 +81,7 @@ const takenPixels = async (markup: string, width = "22rem", script = "") => {
     await page.setContent(
       phonePage(
         `<main style="width:${width};padding:2rem">${markup}</main>`,
-        `<style id="without-hit-areas">.k2b-ui :is(.k2b-button, .k2b-toast__action)::after { content: none !important; }</style>`,
+        `<style id="without-hit-areas">.k2b-ui :is(.k2b-button, .k2b-toast__action, .k2b-toast__close)::after { content: none !important; }</style>`,
       ),
     );
     if (script) await runToasts(page, script);
@@ -289,8 +289,8 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect(await takenPixels(row("0.5rem", button + field))).toEqual({});
   });
 
-  test("give a toast action a 44 px hit area that keeps the close button's and the next toast's edges", async () => {
-    // "Neu laden" after a notebook session expiry, a short "OK", and a toast with a progress bar and a cancel action.
+  test("give a toast's action and close button 44 px hit areas that keep each other's and the next toast's edges", async () => {
+    // "Neu laden" after a notebook session expiry, a short "OK", and a toast with a progress bar, where only the close button dismisses.
     const toasts = `
       toast("Live updates need a new sign-in.", { title: "Session expired", duration: 0, action: { label: "Reload", onClick: () => {} } });
       toast("Saved.", { duration: 0, action: { label: "OK", href: "#ok" } });
@@ -303,14 +303,14 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       await page.setContent(phonePage("<main></main>"));
       await runToasts(page, toasts);
       const reach = await page.evaluate(() =>
-        Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action")).map((action) => {
-          const box = action.getBoundingClientRect();
-          const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest(".k2b-toast__action") === action;
+        Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action, .k2b-toast__close")).map((control) => {
+          const box = control.getBoundingClientRect();
+          const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("a, button") === control;
           const midX = box.left + box.width / 2;
           const midY = box.top + box.height / 2;
           // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
           return [
-            action.textContent,
+            control.getAttribute("aria-label") ?? control.textContent,
             reaches(midX - 21, midY),
             reaches(midX + 21, midY),
             reaches(midX, midY - 21),
@@ -318,10 +318,14 @@ describe("@k2b/ui touch hit areas on a phone", () => {
           ];
         }),
       );
+      const close = ["Dismiss notification", true, true, true, true];
       expect(reach).toEqual([
         ["Reload", true, true, true, true],
+        close,
         ["OK", true, true, true, true],
+        close,
         ["Cancel", true, true, true, true],
+        close,
       ]);
     } finally {
       await page.close();

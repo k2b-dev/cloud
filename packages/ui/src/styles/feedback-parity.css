@@ -704,22 +704,6 @@
   outline-offset: 2px;
 }
 
-/* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
-   text-sized action on coarse pointers, without changing the toast. The
-   action ends the content column and the close button has its own column
-   past the 0.75rem gap, so the area only reaches the toast's own text. */
-@media (any-pointer: coarse) {
-  .k2b-ui .k2b-toast__action {
-    position: relative;
-  }
-
-  .k2b-ui .k2b-toast__action::after {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc((100% - 2.75rem) / 2));
-  }
-}
-
 .k2b-ui .k2b-toast__close {
   display: inline-flex;
   width: 2rem;
@@ -744,6 +728,26 @@
 .k2b-ui .k2b-toast__close:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);
   outline-offset: 2px;
+}
+
+/* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
+   text-sized action and the 2rem close button on coarse pointers, without
+   changing the toast. The action ends the content column and the close
+   button has its own column past the 0.75rem gap, so neither area reaches
+   the other. The close button's area stays inside the toast's 0.75rem
+   padding, so it never reaches the next toast. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-toast__action,
+  .k2b-ui .k2b-toast__close {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-toast__action::after,
+  .k2b-ui .k2b-toast__close::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - 2.75rem) / 2));
+  }
 }
 
 .k2b-ui .k2b-inline-guidance {
