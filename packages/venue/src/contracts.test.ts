@@ -2,7 +2,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   FeedbackEntrySchema,
+  PublicExceptionSchema,
   PublicSectionInputSchema,
+  PublicStatusSchema,
   ShiftTemplateInputSchema,
   UpcomingSlotSchema,
   VenueResourceIdSchema,
@@ -110,5 +112,19 @@ describe("PublicSectionInputSchema", () => {
   test("rejects reversed or malformed menu availability dates", () => {
     expect(PublicSectionInputSchema.safeParse(menu({ availableFrom: "2026-07-15", availableUntil: "2026-07-13" })).success).toBe(false);
     expect(PublicSectionInputSchema.safeParse(menu({ availableFrom: "tomorrow" })).success).toBe(false);
+  });
+});
+
+describe("PublicStatusSchema", () => {
+  test("lists upcoming exceptions by date, kind, times, and note, without internal IDs", () => {
+    expect(PublicStatusSchema.keyof().options).toContain("upcomingExceptions");
+    expect(PublicExceptionSchema.keyof().options.toSorted()).toEqual(["date", "endTime", "kind", "note", "startTime"]);
+    expect(
+      PublicExceptionSchema.safeParse({ date: "2026-10-17", kind: "open", startTime: "18:00", endTime: "24:00", note: "Long night" })
+        .success,
+    ).toBeTrue();
+    expect(
+      PublicExceptionSchema.safeParse({ date: "2026-10-03", kind: "holiday", startTime: null, endTime: null, note: null }).success,
+    ).toBeFalse();
   });
 });

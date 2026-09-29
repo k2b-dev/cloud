@@ -161,7 +161,7 @@ describe("Venue public sections show whether visitors see them", () => {
 
   test("states the section's visibility above its preview", () => {
     const admin = text(render("admin", [draft], { sectionId: "Draft1" }));
-    expect(admin).toContain("Preview in the style of the public page.");
+    expect(admin).toContain("Visitors see this section exactly like this on the public page.");
     expect(admin).toContain("Draft Not on the public page. Only staff and admins see this draft. Choose Edit to publish it.");
     expect(admin).toContain(" Edit ");
 
@@ -170,6 +170,24 @@ describe("Venue public sections show whether visitors see them", () => {
     expect(text(render("admin", [published], { sectionId: "Menu01", ...live }))).toContain(
       "Public Visitors see this section on the public page.",
     );
+  });
+
+  test("previews a section with the public page's renderer and without a raw kind tag", () => {
+    const notice: PublicSection = { ...section, id: "Note01", kind: "notice", title: "Closed on Friday", content: { text: "Team day" } };
+    const html = render("admin", [notice], { sectionId: "Note01" });
+    expect(html).toContain('data-section-kind="notice"');
+    expect(html).toContain("k2b-notice-card");
+    expect(html).not.toMatch(/class="tag"[^>]*>\s*(?:Notice|Menu|Markdown|Links)\s*</);
+
+    const menu: PublicSection = {
+      ...section,
+      id: "Menu02",
+      title: "Lunch",
+      content: { items: [{ name: "Old soup", availableUntil: "2000-01-31" }, { name: "Fresh bread" }] },
+    };
+    const preview = text(render("admin", [menu], { sectionId: "Menu02" }));
+    expect(preview).toContain("Fresh bread");
+    expect(preview).not.toContain("Old soup");
   });
 
   test("points staff, who have no Edit action, to admins for publishing", () => {

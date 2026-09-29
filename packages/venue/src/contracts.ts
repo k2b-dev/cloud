@@ -329,6 +329,22 @@ export const PublicOpeningSchema = z.object({
 });
 export type PublicOpening = z.infer<typeof PublicOpeningSchema>;
 
+/** Days of exceptions the public status lists in advance: today and the 29 following days in the Venue's time zone. */
+export const PUBLIC_EXCEPTION_DAYS = 30;
+
+/**
+ * A closed day or a special opening on the public page. Times are Venue clock times; the note is the one the
+ * admin wrote for visitors, such as "Public holiday".
+ */
+export const PublicExceptionSchema = z.object({
+  date: DateKeySchema,
+  kind: z.enum(["closed", "open"]),
+  startTime: TimeSchema.nullable(),
+  endTime: TimeSchema.nullable(),
+  note: z.string().nullable(),
+});
+export type PublicException = z.infer<typeof PublicExceptionSchema>;
+
 export const PublicStatusSchema = z.object({
   venue: VenueSchema,
   open: z.boolean(),
@@ -338,6 +354,8 @@ export const PublicStatusSchema = z.object({
   nextOpeningLabel: z.string().nullable(),
   activeWindowLabel: z.string().nullable(),
   upcomingOpenings: z.array(PublicOpeningSchema),
+  /** Closed days and special openings of the next {@link PUBLIC_EXCEPTION_DAYS} days, today included, by date. */
+  upcomingExceptions: z.array(PublicExceptionSchema),
   openingRules: z.array(OpeningRuleSchema),
   sections: z.array(PublicSectionSchema),
 });

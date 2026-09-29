@@ -1,6 +1,6 @@
 // fallow-ignore-file unused-file
 import { describe, expect, test } from "bun:test";
-import { buildPublicAvailability } from "./availability";
+import { buildPublicAvailability, upcomingPublicExceptions } from "./availability";
 import type { DateOverride, OpeningRule, ShiftAssignment, ShiftTemplate } from "./contracts";
 
 const timestamp = "2026-07-01T00:00:00.000Z";
@@ -263,5 +263,64 @@ describe("buildPublicAvailability", () => {
       });
       expect({ openMode, open: after.open }).toEqual({ openMode, open: false });
     }
+  });
+});
+
+describe("upcomingPublicExceptions", () => {
+  const exception = (date: string, kind: DateOverride["kind"], note: string | null = null): DateOverride => ({
+    ...closedOverride(),
+    id: `override-${date}`,
+    date,
+    kind,
+    startTime: kind === "open" ? "18:00" : null,
+    endTime: kind === "open" ? "23:00" : null,
+    note,
+  });
+
+  test("lists today and the next 29 days in date order, and nothing before or after", () => {
+    const result = upcomingPublicExceptions(
+      [
+        exception("2026-10-13", "closed", "Too late"),
+        exception("2026-10-12", "open", "Last day"),
+        exception("2026-09-12", "closed", "Yesterday"),
+        exception("2026-09-13", "closed", "Today"),
+        exception("2026-10-03", "closed", "Public holiday"),
+      ],
+      "2026-09-13",
+      "Europe/Berlin",
+    );
+
+    expect(result.map((entry) => [entry.date, entry.note])).toEqual([
+      ["2026-09-13", "Today"],
+      ["2026-10-03", "Public holiday"],
+      ["2026-10-12", "Last day"],
+    ]);
+  });
+
+  test("keeps times for a special opening and none for a closed day, and never the internal IDs", () => {
+    const withStaleTimes: DateOverride = { ...exception("2026-10-03", "closed", "Public holiday"), startTime: "09:00", endTime: "17:00" };
+    const result = upcomingPublicExceptions([withStaleTimes, exception("2026-10-17", "open", "Long night")], "2026-09-29", "Europe/Berlin");
+
+    expect(result).toEqual([
+      { date: "2026-10-03", kind: "closed", startTime: null, endTime: null, note: "Public holiday" },
+      { date: "2026-10-17", kind: "open", startTime: "18:00", endTime: "23:00", note: "Long night" },
+    ]);
+  });
+
+  test("counts 30 calendar days across the autumn clock change", () => {
+    // Berlin leaves summer time on 2026-10-25; the window from 2026-10-01 still ends after 2026-10-30.
+    const result = upcomingPublicExceptions(
+      [exception("2026-10-30", "closed"), exception("2026-10-31", "closed")],
+      "2026-10-01",
+      "Europe/Berlin",
+    );
+    expect(result.map((entry) => entry.date)).toEqual(["2026-10-30"]);
+  });
+
+  test("reaches the public availability of a Venue", () => {
+    const result = project({ overrides: [exception("2026-07-20", "closed", "Summer break")] });
+    expect(result.upcomingExceptions).toEqual([
+      { date: "2026-07-20", kind: "closed", startTime: null, endTime: null, note: "Summer break" },
+    ]);
   });
 });

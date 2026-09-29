@@ -1,16 +1,4 @@
-import {
-  Button,
-  DateRangePicker,
-  ImageInput,
-  MarkdownView,
-  NoticeCard,
-  Placeholder,
-  prompts,
-  SegmentedControl,
-  Switch,
-  TextInput,
-  useLocale,
-} from "@k2b/ui";
+import { Button, DateRangePicker, ImageInput, prompts, SegmentedControl, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { PublicSection, PublicSectionInput } from "../../../contracts";
@@ -367,75 +355,5 @@ export function PublicSectionDialog(props: {
         </Show>
       </div>
     </DialogFrame>
-  );
-}
-
-export function PublicSectionPreview(props: { section: PublicSection }) {
-  const locale = useLocale();
-  const t = () => venueMessages.resolve([locale()]).t;
-  const items = () => (Array.isArray(props.section.content.items) ? props.section.content.items : []);
-  const links = () => (Array.isArray(props.section.content.links) ? props.section.content.links : []);
-
-  return (
-    <div class="grid gap-3">
-      <Show when={props.section.kind === "markdown"}>
-        <MarkdownView markdown={sectionText(props.section, "markdown")} class="text-sm" headingScale="compact" />
-      </Show>
-      <Show when={props.section.kind === "notice"}>
-        <NoticeCard tone="warning" icon={false}>
-          {sectionText(props.section, "text") || sectionText(props.section, "markdown") || t().noNoticeText}
-        </NoticeCard>
-      </Show>
-      <Show when={props.section.kind === "links"}>
-        <div class="grid gap-2">
-          <For
-            each={links()}
-            fallback={<Placeholder align="left" class="px-0 py-2" description={<>{sectionText(props.section, "text") || t().noLinks}</>} />}
-          >
-            {(raw) => {
-              const link = raw as Record<string, unknown>;
-              return (
-                <a class="paper flex items-center gap-3 p-3 no-underline hover:paper-highlighted" href={String(link.href ?? "#")}>
-                  <i class="ti ti-link text-dimmed" />
-                  <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">
-                    {String(link.label ?? link.href ?? t().links)}
-                  </span>
-                  <i class="ti ti-external-link text-dimmed" />
-                </a>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
-      <Show when={props.section.kind === "menu"}>
-        <div class="grid gap-2">
-          <For each={items()} fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noMenuItems}</>} />}>
-            {(raw) => {
-              const item = raw as Record<string, unknown>;
-              const image = typeof item.image === "string" ? item.image : "";
-              return (
-                <div class="px-1 py-2 text-sm">
-                  <div class="flex items-start justify-between gap-3">
-                    <Show when={image}>
-                      <img src={image} alt="" class="h-14 w-14 shrink-0 rounded-lg object-cover" />
-                    </Show>
-                    <div class="min-w-0 flex-1">
-                      <p class="font-medium text-primary">{String(item.name ?? t().item)}</p>
-                      <Show when={item.description}>
-                        <p class="text-xs text-dimmed">{String(item.description)}</p>
-                      </Show>
-                      <Show when={item.info || item.allergens}>
-                        <p class="mt-1 text-xs text-dimmed">({String(item.info ?? item.allergens)})</p>
-                      </Show>
-                    </div>
-                    <span class="shrink-0 text-sm font-semibold text-primary">{String(item.price ?? "")}</span>
-                  </div>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
-    </div>
   );
 }

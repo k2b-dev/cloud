@@ -1,5 +1,14 @@
 import { dates } from "@k2b/stdlib";
-import type { DateOverride, OpeningRule, PublicOpening, ShiftAssignment, ShiftTemplate, Venue } from "./contracts";
+import {
+  type DateOverride,
+  type OpeningRule,
+  PUBLIC_EXCEPTION_DAYS,
+  type PublicException,
+  type PublicOpening,
+  type ShiftAssignment,
+  type ShiftTemplate,
+  type Venue,
+} from "./contracts";
 import { venueMessages } from "./messages";
 
 type PublicAvailabilityInput = {
@@ -24,6 +33,7 @@ export type PublicAvailability = {
   nextOpeningLabel: string | null;
   activeWindowLabel: string | null;
   upcomingOpenings: PublicOpening[];
+  upcomingExceptions: PublicException[];
 };
 
 const dateKeyAt = (instant: Date, timezone: string): string => dates.formatDateKey(instant, { timeZone: timezone });
@@ -64,6 +74,24 @@ const deduplicateOpenings = (openings: PublicOpening[]): PublicOpening[] => {
     if (!unique.has(key)) unique.set(key, opening);
   }
   return [...unique.values()].sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.endsAt.localeCompare(b.endsAt));
+};
+
+/**
+ * The exceptions visitors see in advance: closed days and special openings from `today` through the following
+ * {@link PUBLIC_EXCEPTION_DAYS} days minus one, in date order. `today` is a date key in the Venue's time zone.
+ */
+export const upcomingPublicExceptions = (overrides: DateOverride[], today: string, timezone: string): PublicException[] => {
+  const end = dateKeyAfterDays(today, PUBLIC_EXCEPTION_DAYS, timezone);
+  return overrides
+    .filter((override) => override.date >= today && override.date < end)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((override) => ({
+      date: override.date,
+      kind: override.kind,
+      startTime: override.kind === "open" ? override.startTime : null,
+      endTime: override.kind === "open" ? override.endTime : null,
+      note: override.note,
+    }));
 };
 
 const isActiveAt = (opening: PublicOpening, now: Date): boolean => new Date(opening.startsAt) <= now && now < new Date(opening.endsAt);
@@ -169,5 +197,6 @@ export const buildPublicAvailability = (input: PublicAvailabilityInput): PublicA
     nextOpeningLabel: nextOpening ? formatDateTime(nextOpening.startsAt, timezone, locale) : null,
     activeWindowLabel: open && activeOpening ? formatTimeRange(activeOpening, timezone, locale) : null,
     upcomingOpenings: upcomingDynamicOpenings.filter((opening) => new Date(opening.startsAt) > input.now).slice(0, 8),
+    upcomingExceptions: upcomingPublicExceptions(input.overrides, today, timezone),
   };
 };
