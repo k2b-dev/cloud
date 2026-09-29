@@ -126,14 +126,17 @@ describe("WorkspaceEventBridge", () => {
     socket.message(WS.error, { notebookId: NOTEBOOK_ID, code: "LOGIN_REQUIRED", message: "Login required" });
   };
 
-  test("a sign-in failure reloads once and then shows a sign-in notice instead of looping", async () => {
+  const reloadAction = () => Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Reload");
+
+  test("a sign-in failure reloads once and then offers a manual reload instead of looping", async () => {
     await mount();
     signInRequired(latestSocket());
 
     expect(reload).toHaveBeenCalledTimes(1);
     expect(pendingReconnects()).toHaveLength(0);
 
-    // The reloaded page still cannot authenticate its live socket.
+    // The reloaded page is still signed in, but its live socket is rejected
+    // again, so a sign-in link would only lead back here.
     for (const dispose of disposers.splice(0)) dispose();
     await mount();
     signInRequired(latestSocket());
@@ -141,8 +144,8 @@ describe("WorkspaceEventBridge", () => {
     expect(reload).toHaveBeenCalledTimes(1);
     expect(pendingReconnects()).toHaveLength(0);
     expect(FakeWebSocket.instances).toHaveLength(2);
-    const signIn = dom.document.querySelector<HTMLAnchorElement>('a[href^="/auth/login?redirectTo="]');
-    expect(signIn?.getAttribute("href")).toBe(`/auth/login?redirectTo=${encodeURIComponent("/")}`);
+    expect(dom.document.querySelector('a[href^="/auth/login"]')).toBeNull();
+    expect(reloadAction()).toBeDefined();
   });
 
   test("repeated connection failures wait longer each time", async () => {
@@ -199,7 +202,7 @@ describe("WorkspaceEventBridge", () => {
 
     expect(reload).toHaveBeenCalledTimes(1);
     expect(pendingReconnects()).toHaveLength(0);
-    const action = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Reload");
+    const action = reloadAction();
     expect(action).toBeDefined();
     action?.click();
     expect(reload).toHaveBeenCalledTimes(2);

@@ -138,7 +138,8 @@ way. The reload lets the page's route policy send an expired session to
 sign-in with a return URL. Do not navigate to the sign-in page yourself: when
 the page session is still valid but the socket is rejected, sign-in returns
 straight to the page and the socket fails again. When `reloadOnce` returns
-`false`, show a sign-in link or the reload button instead.
+`false`, offer the reload button, not a sign-in link: a manual reload still
+reaches sign-in when the session has expired.
 
 Do not keep the only copy of edits or selected resources in the socket client.
 

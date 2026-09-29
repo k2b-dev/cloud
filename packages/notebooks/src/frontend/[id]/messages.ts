@@ -168,9 +168,7 @@ export const notebookWorkspaceMessages = i18n.define({
       accessChangedDescription: "Your access changed or the note is no longer available.",
       sessionExpiredDescription: "Sign in again to continue editing this note.",
       connectionClosedDescription: "The collaboration connection was closed.",
-      liveSignInRequired: "Sign in again to keep this notebook up to date.",
       liveUpdatesStopped: "Live updates stopped. Reload the page to see the latest changes.",
-      signIn: "Sign in",
       reload: "Reload",
       storageExhaustedTitle: "Live editing is unavailable",
       storageExhaustedDetail:
@@ -497,9 +495,7 @@ export const notebookWorkspaceMessages = i18n.define({
       accessChangedDescription: "Dein Zugriff wurde geändert oder die Notiz ist nicht mehr verfügbar.",
       sessionExpiredDescription: "Melde dich erneut an, um diese Notiz weiter zu bearbeiten.",
       connectionClosedDescription: "Die Verbindung für die gemeinsame Bearbeitung wurde geschlossen.",
-      liveSignInRequired: "Melde dich erneut an, damit dieses Notizbuch aktuell bleibt.",
       liveUpdatesStopped: "Live-Aktualisierungen wurden beendet. Lade die Seite neu, um die neuesten Änderungen zu sehen.",
-      signIn: "Anmelden",
       reload: "Neu laden",
       storageExhaustedTitle: "Live-Bearbeitung nicht verfügbar",
       storageExhaustedDetail:

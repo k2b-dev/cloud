@@ -21,8 +21,7 @@ const resolveHttpBaseUrl = (raw: string): URL => {
   return new URL(`${new URL(browserOrigin).protocol}//${value}`);
 };
 
-const SIGN_IN_CODES = new Set(["LOGIN_REQUIRED", "SESSION_EXPIRED"]);
-const TERMINAL_CODES = new Set([...SIGN_IN_CODES, "ACCESS_DENIED", "ACCESS_REVOKED", "NOTE_NOT_FOUND"]);
+const TERMINAL_CODES = new Set(["LOGIN_REQUIRED", "SESSION_EXPIRED", "ACCESS_DENIED", "ACCESS_REVOKED", "NOTE_NOT_FOUND"]);
 
 export default function WorkspaceEventBridge(props: Props) {
   const locale = useLocale();
@@ -41,21 +40,15 @@ export default function WorkspaceEventBridge(props: Props) {
     // Reloading lets the page's route policy send an expired session to
     // sign-in. A failure that survives the reload (for example a live origin
     // that does not receive the session cookie) must not reload in a loop.
-    const terminateAndRefresh = (code?: unknown) => {
+    // The page session is then still valid, so a sign-in link would only
+    // return here; a manual reload is the one action that can help.
+    const terminateAndRefresh = () => {
       if (disposed) return;
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
       if (reloadOnce(`notebooks:live:${props.notebookId}`)) return;
-      const returnTo = `${window.location.pathname}${window.location.search}`;
-      if (typeof code === "string" && SIGN_IN_CODES.has(code)) {
-        toast(t().liveSignInRequired, {
-          duration: 0,
-          action: { label: t().signIn, href: `/auth/login?redirectTo=${encodeURIComponent(returnTo)}` },
-        });
-      } else {
-        toast(t().liveUpdatesStopped, { duration: 0, action: { label: t().reload, onClick: () => window.location.reload() } });
-      }
+      toast(t().liveUpdatesStopped, { duration: 0, action: { label: t().reload, onClick: () => window.location.reload() } });
     };
 
     const connect = () => {
@@ -93,12 +86,12 @@ export default function WorkspaceEventBridge(props: Props) {
           payload?: { notebookId?: unknown; cursor?: unknown; event?: unknown; code?: unknown };
         };
         if (value.type === notebooksWorkspace.wsType.revoked) {
-          terminateAndRefresh(value.payload?.code);
+          terminateAndRefresh();
           return;
         }
         if (value.type === notebooksWorkspace.wsType.error) {
           const code = value.payload?.code;
-          if (typeof code === "string" && TERMINAL_CODES.has(code)) terminateAndRefresh(code);
+          if (typeof code === "string" && TERMINAL_CODES.has(code)) terminateAndRefresh();
           else ws.close();
           return;
         }
@@ -127,7 +120,7 @@ export default function WorkspaceEventBridge(props: Props) {
         if (socket === ws) socket = undefined;
         if (disposed) return;
         if (event.code === 1008) {
-          terminateAndRefresh(event.reason);
+          terminateAndRefresh();
           return;
         }
         if (readyAt !== undefined && Date.now() - readyAt >= RECONNECT_HEALTHY_AFTER_MS) failedConnects = 0;
