@@ -704,6 +704,22 @@
   outline-offset: 2px;
 }
 
+/* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
+   text-sized action on coarse pointers, without changing the toast. The
+   action ends the content column and the close button has its own column
+   past the 0.75rem gap, so the area only reaches the toast's own text. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-toast__action {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-toast__action::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - 2.75rem) / 2));
+  }
+}
+
 .k2b-ui .k2b-toast__close {
   display: inline-flex;
   width: 2rem;

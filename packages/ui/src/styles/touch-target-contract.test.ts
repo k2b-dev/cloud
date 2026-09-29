@@ -13,9 +13,10 @@ const declarations = (selector: string, context = coarse) =>
   );
 
 describe("@k2b/ui touch targets", () => {
-  test("gives buttons and the dialog close control a 2.75rem hit area on coarse pointers", () => {
+  test("gives buttons, the dialog close control, and the toast action a 2.75rem hit area on coarse pointers", () => {
     expect(declarations(":where(.k2b-ui .k2b-button)").get("position")).toEqual(["relative"]);
     expect(declarations(".k2b-ui .k2b-dialog__close").get("position")).toEqual(["relative"]);
+    expect(declarations(".k2b-ui .k2b-toast__action").get("position")).toEqual(["relative"]);
 
     const button = declarations(".k2b-ui .k2b-button::after");
     expect(button.get("content")).toEqual(['""']);
@@ -26,10 +27,15 @@ describe("@k2b/ui touch targets", () => {
     const close = declarations(".k2b-ui .k2b-dialog__close::after");
     expect(close.get("position")).toEqual(["absolute"]);
     expect(close.get("inset")).toEqual([hitArea]);
+
+    const action = declarations(".k2b-ui .k2b-toast__action::after");
+    expect(action.get("content")).toEqual(['""']);
+    expect(action.get("position")).toEqual(["absolute"]);
+    expect(action.get("inset")).toEqual([hitArea]);
   });
 
   test("keeps the visible size and every pointer-fine layout unchanged", () => {
-    const controls = /\.k2b-(?:button|dialog__close)\b/;
+    const controls = /\.k2b-(?:button|dialog__close|toast__action)\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));
     expect(pseudo.length).toBeGreaterThan(0);
     expect(pseudo.filter((rule) => rule.context !== coarse).map((rule) => `${rule.file}: ${rule.selector}`)).toEqual([]);

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { type Browser, chromium } from "playwright";
+import { type Browser, chromium, type Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 
@@ -23,6 +23,15 @@ const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
+// `toast` builds its DOM in the browser, so the page runs the real module.
+const toastEntry = resolve(root, "toast-entry.ts");
+await Bun.write(
+  toastEntry,
+  `import { toast } from ${JSON.stringify(resolve(import.meta.dir, "../feedback/toast"))};\nObject.assign(globalThis, { toast });\n`,
+);
+const toastBuild = await Bun.build({ entrypoints: [toastEntry], target: "browser", format: "iife" });
+if (!toastBuild.success) throw new AggregateError(toastBuild.logs, "Could not bundle toast for the browser.");
+const toastScript = await toastBuild.outputs[0]!.text();
 const phone = { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 
 let browser: Browser;
@@ -66,15 +75,16 @@ const phonePage = (body: string, head = "") =>
  * control's outermost pixel ring is left out: two areas that only touch do
  * not count as taking.
  */
-const takenPixels = async (markup: string, width = "22rem") => {
+const takenPixels = async (markup: string, width = "22rem", script = "") => {
   const page = await browser.newPage(phone);
   try {
     await page.setContent(
       phonePage(
         `<main style="width:${width};padding:2rem">${markup}</main>`,
-        `<style id="without-hit-areas">.k2b-ui .k2b-button::after { content: none !important; }</style>`,
+        `<style id="without-hit-areas">.k2b-ui :is(.k2b-button, .k2b-toast__action)::after { content: none !important; }</style>`,
       ),
     );
+    if (script) await runToasts(page, script);
     return await page.evaluate(() => {
       const controls = "button, a[href], input";
       const name = (element: Element | null) =>
@@ -103,6 +113,15 @@ const takenPixels = async (markup: string, width = "22rem") => {
   } finally {
     await page.close();
   }
+};
+
+/** Shows toasts through the real `toast` module and waits until every one has settled in the rail. */
+const runToasts = async (page: Page, script: string) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addScriptTag({ content: `${toastScript}\n${script}` });
+  await page.waitForFunction(() =>
+    Array.from(document.querySelectorAll(".k2b-toast")).every((toast) => toast.getAttribute("data-open") === "true"),
+  );
 };
 
 describe("@k2b/ui touch hit areas on a phone", () => {
@@ -268,5 +287,44 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     const button = html(() => icon("Go"));
     expect(await takenPixels(row("0.25rem", field + button))).toEqual({});
     expect(await takenPixels(row("0.5rem", button + field))).toEqual({});
+  });
+
+  test("give a toast action a 44 px hit area that keeps the close button's and the next toast's edges", async () => {
+    // "Neu laden" after a notebook session expiry, a short "OK", and a toast with a progress bar and a cancel action.
+    const toasts = `
+      toast("Live updates need a new sign-in.", { title: "Session expired", duration: 0, action: { label: "Reload", onClick: () => {} } });
+      toast("Saved.", { duration: 0, action: { label: "OK", href: "#ok" } });
+      toast("500 / 1000 records saved", { title: "Import", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });
+    `;
+    expect(await takenPixels("", "22rem", toasts)).toEqual({});
+
+    const page = await browser.newPage(phone);
+    try {
+      await page.setContent(phonePage("<main></main>"));
+      await runToasts(page, toasts);
+      const reach = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action")).map((action) => {
+          const box = action.getBoundingClientRect();
+          const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest(".k2b-toast__action") === action;
+          const midX = box.left + box.width / 2;
+          const midY = box.top + box.height / 2;
+          // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
+          return [
+            action.textContent,
+            reaches(midX - 21, midY),
+            reaches(midX + 21, midY),
+            reaches(midX, midY - 21),
+            reaches(midX, midY + 21),
+          ];
+        }),
+      );
+      expect(reach).toEqual([
+        ["Reload", true, true, true, true],
+        ["OK", true, true, true, true],
+        ["Cancel", true, true, true, true],
+      ]);
+    } finally {
+      await page.close();
+    }
   });
 });
