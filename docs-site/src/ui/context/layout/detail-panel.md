@@ -26,8 +26,9 @@ mutations, and which sections are present.
 or another custom identity; they are mutually exclusive. Pass `actions` for
 compact utilities such as more and close, and `primaryActions` for the small
 set of prominent commands below the identity row. On touch devices, primary
-actions that wrap keep 0.5rem between lines so their
-[tap areas](/en/ui/actions/buttons#touch-targets) do not overlap. Optional
+actions keep 0.625rem from the identity row and between wrapped lines, so
+their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
+`meta` action or the line above. Optional
 metadata sits beside the subtitle instead of competing with the title.
 `DetailPanel.Body` is the single scrolling element and accepts a
 `scrollPreserveKey`. Its stable scrollbar gutter prevents content from shifting

@@ -18,6 +18,7 @@ const { Button, IconButton } = await import("../actions/Button");
 const { Dropdown } = await import("../actions/Dropdown");
 const { Toolbar } = await import("../actions/Toolbar");
 const { Tooltip } = await import("../feedback/Tooltip");
+const { default: PdfPreview } = await import("../content/PdfPreview");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
@@ -61,10 +62,10 @@ const phonePage = (body: string, head = "") =>
  * Renders the markup on a phone and taps every pixel that reaches a control
  * when the touch hit areas are switched off. The hit areas may add pixels to
  * a control but must never take one from another control; the result lists
- * the pixels they take, keyed by owner and taker. Chromium resolves a point
- * less than a pixel before an edge to the box behind that edge, so each
- * control's outermost pixel ring is left out: two areas that only touch do
- * not count as taking.
+ * the pixels they take, keyed by owner and taker. Every pixel counts, the
+ * outermost ring included: a browser can resolve a tap on the last pixel
+ * before an edge to the box behind that edge, so a hit area that merely
+ * touches a control takes a one-pixel strip from it.
  */
 const takenPixels = async (markup: string, width = "22rem") => {
   const page = await browser.newPage(phone);
@@ -83,8 +84,8 @@ const takenPixels = async (markup: string, width = "22rem") => {
       const owned: [Element, number, number][] = [];
       for (const control of Array.from(document.querySelectorAll(controls))) {
         const box = control.getBoundingClientRect();
-        for (let x = Math.ceil(box.left) + 1; x + 2 <= box.right; x += 1) {
-          for (let y = Math.ceil(box.top) + 1; y + 2 <= box.bottom; y += 1) {
+        for (let x = Math.floor(box.left); x < box.right; x += 1) {
+          for (let y = Math.floor(box.top); y < box.bottom; y += 1) {
             if (tap(x + 0.5, y + 0.5) === control) owned.push([control, x + 0.5, y + 0.5]);
           }
         }
@@ -236,6 +237,47 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect(await takenPixels(toolbar, "9rem")).toEqual({});
   });
 
+  test("keep a header meta action's edge above the DetailPanel primary actions", async () => {
+    // Files details: the copy-reference action sits in the meta line, right above the favourite and download actions.
+    const markup = html(() =>
+      createComponent(DetailPanel.Header, {
+        icon: "ti ti-file",
+        title: "Flyer.pdf",
+        subtitle: "PDF · 45 KB",
+        get meta() {
+          return createComponent(Tooltip.Anchor, {
+            content: "Copy reference",
+            get children() {
+              return createComponent(IconButton, { label: "Copy reference", size: "xs", variant: "ghost", children: "⧉" });
+            },
+          });
+        },
+        get actions() {
+          return icon("Close panel");
+        },
+        get primaryActions() {
+          return [text("Preview"), text("Download"), anchored("Favorite")];
+        },
+      }),
+    );
+    expect(await takenPixels(markup)).toEqual({});
+  });
+
+  test("keep every edge when the PdfPreview actions wrap", async () => {
+    // A failed preview adds the retry action, which wraps below the open and download actions in a narrow panel.
+    const markup = html(() =>
+      createComponent(PdfPreview, {
+        request: async () => new Blob(),
+        openHref: "/files/flyer.pdf",
+        openButtonLabel: "Open in new tab",
+        buttonLabel: "Try again",
+        onDownload: () => {},
+        children: (parts) => [parts.actions, parts.content],
+      }),
+    );
+    expect(await takenPixels(markup, "16rem")).toEqual({});
+  });
+
   test("keep stacked DetailPanel.Action rows and their section header apart", async () => {
     const markup = html(() =>
       createComponent(DetailPanel.Section, {
@@ -262,11 +304,11 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     expect(await takenPixels(markup)).toEqual({});
   });
 
-  test("keep a field's edge before a compact button, and after one at the documented 0.5rem", async () => {
+  test("keep a field's edge before a compact button, and after one at the documented 0.625rem", async () => {
     const row = (gap: string, content: string) => `<div style="display:flex;gap:${gap};align-items:center">${content}</div>`;
     const field = `<input aria-label="Search" style="height:1.75rem;width:10rem">`;
     const button = html(() => icon("Go"));
     expect(await takenPixels(row("0.25rem", field + button))).toEqual({});
-    expect(await takenPixels(row("0.5rem", button + field))).toEqual({});
+    expect(await takenPixels(row("0.625rem", button + field))).toEqual({});
   });
 });
