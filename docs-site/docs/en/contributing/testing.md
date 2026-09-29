@@ -209,11 +209,16 @@ fixture's cleanup runs first, while that instance is still live.
 ### Caller addresses and rate limits
 
 Per-IP rate limits count in the shared test Valkey, across every test file,
-test process, and concurrent run. A test that sets `x-forwarded-for` takes
-the address from `uniqueCallerAddress()` in `scripts/fixtures/caller-address`,
-a fresh address in the IPv6 documentation range `2001:db8::/32`. A fixed
-address or a small pool lets unrelated tests spend each other's budget, so a
-route that allows one request per minute answers 429 at random.
+test process, and concurrent run. A fixed address or a small pool lets
+unrelated tests spend each other's budget, so a route that allows one request
+per minute answers 429 at random. `rateLimit()` counts an anonymous request
+without `x-forwarded-for` as the address `unknown`, which every such request
+shares.
+
+Give each caller its own address, for example from `uniqueCallerAddress()` in
+`scripts/fixtures/caller-address`, a fresh address in the IPv6 documentation
+range `2001:db8::/32`. Reuse one address only when the test exercises the
+limit itself.
 
 ## Request cache checks
 
