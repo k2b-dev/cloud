@@ -63,7 +63,8 @@ describe("note PDF HTML", () => {
     const html = build("x -> y <=> z != w (c) 2026 ... 1 -- 2 +- 3", { templateId: "report" });
     expect(html).toContain('<span class="notebook-ligature" title="-&gt;">→</span>');
     expect(html).toContain('<span class="notebook-ligature" title="!=">≠</span>');
-    const rule = /([^{}]*)\{ font-family: "DejaVu Sans", sans-serif; \}/.exec(html)?.[1] ?? "";
+    // Zero specificity, so any custom CSS rule for these spans wins.
+    const rule = /:where\(([^{}]*)\) \{ font-family: "DejaVu Sans", sans-serif; \}/.exec(html)?.[1] ?? "";
     const selected = [...rule.matchAll(/\.notebook-ligature\[title="([^"]+)"\]/g)].map((match) => match[1]).sort();
     // `©`, `…`, `–` and `±` exist in every text font and keep the preset's typeface.
     expect(selected).toEqual(["!=", "->", "<-", "<->", "<=", "<=>", "=>", ">="].sort());

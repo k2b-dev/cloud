@@ -18,11 +18,12 @@ import type { NoteQueryResult } from "./note-query";
  * sizes and composes `≠` as `=` plus a slash that runs into the next letter.
  * DejaVu Sans, which Gotenberg ships, draws them all alike. The other
  * ligature symbols (`©`, `…`, `–`) exist in every text font and keep the
- * preset's typeface.
+ * preset's typeface. `:where()` keeps the rule at zero specificity, so any
+ * custom CSS rule that styles these spans still wins.
  */
-const SYMBOL_LIGATURE_CSS = `${LIGATURES.filter(({ symbol }) => /[←-⋿]/u.test(symbol))
+const SYMBOL_LIGATURE_CSS = `:where(${LIGATURES.filter(({ symbol }) => /[←-⋿]/u.test(symbol))
   .map(({ source }) => `.${LIGATURE_CLASS}[title="${source}"]`)
-  .join(", ")} { font-family: "DejaVu Sans", sans-serif; }`;
+  .join(", ")}) { font-family: "DejaVu Sans", sans-serif; }`;
 
 /**
  * Print styles for the Book renderer's note blocks. They use `em` and plain
