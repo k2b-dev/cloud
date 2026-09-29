@@ -33,10 +33,13 @@ metadata sits beside the subtitle instead of competing with the title.
 `scrollPreserveKey`. Its stable scrollbar gutter prevents content from shifting
 when expanding content first makes the panel overflow. Inside
 `AppWorkspace.Detail`, that gutter occupies the host's existing trailing inset
-instead of adding a second gap. On a coarse-pointer device, where overlay
-scrollbars reserve no gutter, the panel keeps the host inset instead, so its
-content has the same margin on both sides. Do not add a second full-height
-scroller inside it.
+instead of adding a second gap. On a device whose primary pointer is coarse,
+which usually draws overlay scrollbars that reserve no gutter, the panel keeps
+the host inset instead, so its content has the same margin on both sides. The
+pointer only stands in for the scrollbar style: a touch device with classic
+scrollbars shows the gutter next to the inset, and a desktop with overlay
+scrollbars keeps the panel at the trailing edge. Do not add a second
+full-height scroller inside it.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
 item has a primary set of facts or controls. Summary and grouped sections share

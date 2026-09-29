@@ -2141,8 +2141,11 @@
   color: var(--k2b-text);
 }
 
-/* Touch devices draw overlay scrollbars that reserve no gutter, so absorbing
-   the host inset would leave the panel flush with the trailing edge. */
+/* Touch-first devices usually draw overlay scrollbars that reserve no gutter,
+   so absorbing the host inset would leave the panel flush with the trailing
+   edge. CSS cannot query the scrollbar style, so the primary pointer stands in
+   for it: a touch device with classic scrollbars shows the gutter next to the
+   inset, and a desktop with overlay scrollbars stays flush. */
 @media (pointer: coarse) {
   .k2b-ui .k2b-detail-panel {
     --k2b-detail-panel-scroll-inset: 0rem;
