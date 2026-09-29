@@ -5,6 +5,7 @@ import { settings } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
@@ -58,7 +59,7 @@ const send = (method: Method, path: string, caller: Caller, body?: unknown) =>
       ...caller,
       ...(body === undefined ? {} : { "content-type": "application/json" }),
       // Public feedback is limited per address; a fresh documentation address keeps each request independent.
-      "x-forwarded-for": `198.51.100.${Math.floor(Math.random() * 250) + 1}`,
+      "x-forwarded-for": uniqueCallerAddress(),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
