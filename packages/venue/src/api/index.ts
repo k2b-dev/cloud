@@ -249,7 +249,8 @@ const calendarRoutes = new Hono<AuthContext>()
     const token = raw.endsWith(".ics") ? raw.slice(0, -4) : raw;
     const userId = await venueService.ical.getUserIdByToken(token);
     if (!userId) return respond(c, fail(err.notFound("Calendar")));
-    const content = await venueService.ical.generateUser(userId, await coreSettings.get<string>("app.url"));
+    const [baseUrl, locale] = await Promise.all([coreSettings.get<string>("app.url"), coreSettings.get<string>("app.locale")]);
+    const content = await venueService.ical.generateUser(userId, baseUrl, locale);
     return c.text(content, 200, {
       "Content-Type": "text/calendar; charset=utf-8",
       "Content-Disposition": 'attachment; filename="venue-shifts.ics"',
