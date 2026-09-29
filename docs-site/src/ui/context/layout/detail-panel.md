@@ -103,8 +103,9 @@ is open; it remains visible on touch devices. Do not use it for static key-value
 data, comments, history, or form fields. Stacked action rows sit flush, so on
 touch devices each row is at least 44 px (2.75rem) tall, including its
 secondary and Dots buttons, and its tap area keeps the row height instead of
-reaching into the neighbouring row. With a mouse, rows keep their compact
-height.
+reaching into the neighbouring row. This follows the device, not the input in
+use: a laptop with a touch screen gets the taller rows with a mouse too, and
+devices without a touch screen keep the compact rows.
 
 When one secondary command is frequent enough to deserve a direct control, such
 as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible

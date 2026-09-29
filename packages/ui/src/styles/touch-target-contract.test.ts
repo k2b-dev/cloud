@@ -37,7 +37,7 @@ describe("@k2b/ui touch targets", () => {
     }
   });
 
-  test("keeps the visible size and every pointer-fine layout unchanged, except for flush DetailPanel.Action rows", () => {
+  test("changes nothing without a coarse pointer and keeps the visible size, except for flush DetailPanel.Action rows", () => {
     const controls = /\.k2b-(?:button|dialog__close|toast__(?:action|close))\b/;
     const pseudo = rules.filter((rule) => controls.test(rule.selector) && /::?(?:before|after)\b/.test(rule.selector));
     expect(pseudo.length).toBeGreaterThan(0);

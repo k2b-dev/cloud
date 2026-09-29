@@ -357,7 +357,7 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       ["Remove now", 44, true],
       ["Rename", 44, true],
     ]);
-    // A mouse keeps the compact rows.
+    // A device without a touch screen keeps the compact rows.
     expect((await heights({ viewport: { width: 1280, height: 800 } })).map(([, height]) => height)).toEqual([30, 46, 30, 28, 30, 28, 30]);
   });
 
