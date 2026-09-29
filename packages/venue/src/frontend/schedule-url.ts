@@ -36,7 +36,7 @@ export type ScheduleUrlState = {
   shift?: string | null;
 };
 
-export const scheduleHref = (venueId: string, state: ScheduleUrlState = {}): string => {
+export const scheduleHref = (venueId: string, state: ScheduleUrlState = {}): `/app/venue/${string}` => {
   const params = new URLSearchParams();
   if (state.view) params.set("cv", state.view);
   if (state.date) params.set("cd", state.date);

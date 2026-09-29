@@ -32,6 +32,8 @@ across different places.
   page, also while it is off.
 - Review visitor feedback, optionally only ratings with a comment, and
   subscribe to your own shifts in a calendar app.
+- Get a reminder before your shifts; admins also hear about cancellations and
+  about shifts that start within 24 hours and still miss people.
 
 Every time in a venue uses the venue's time zone and a 24-hour clock, so
 people who open the venue from another time zone see the same times as the
@@ -64,6 +66,31 @@ address or to a path on the same Cloud that starts with a single `/`, such as
 `cld venue sections` answer 400 and name the link, for example
 `content.links.1.href`. So a saved section holds only links the public page
 shows.
+
+## Notifications
+
+Venues sends three platform notifications. Each is recommended for browser
+delivery with email as the fallback, and every user can turn channels off in
+their notification preferences under **Notifications** in the profile.
+
+| Notification | Recipients | When |
+| --- | --- | --- |
+| Shift reminders (`venue.shiftReminder`) | The person who took the shift, while they still have staff access | About 24 hours before the shift starts, for sign-ups made at least 24 hours ahead; nothing for a closed day |
+| Shift cancellations (`venue.shiftCancelled`) | The venue's admins, except the admin who removed the person | After someone leaves an upcoming shift or an admin removes them |
+| Understaffed shifts (`venue.shiftUnderstaffed`) | The venue's admins | Once per shift that starts within 24 hours and still misses people; paused shifts and closed days send nothing |
+
+Admins are the users with admin access through a direct or group grant; a
+grant to everyone signed in or to the public names no recipient. A notice
+opens the schedule on the shift's day with its details, where the page
+checks access as usual, and the email ends with the same link. Notices use
+the venue's time zone and the Cloud's default language (`app.locale`).
+Browser notifications on iPhone and iPad need Cloud installed as a Home
+Screen app.
+
+A cancellation notice goes out after the cancellation commits; if it fails,
+the cancellation stands and the failure is logged. Every notice has an
+idempotency key made from the sign-up or the shift and its day, so repeated
+requests and scans never send one twice.
 
 ## Understand the Venues model
 
@@ -151,3 +178,8 @@ and the public page preview are available in the workspace and the API
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
+
+Venues runs one scheduler, `venue:shift-notices`, every 15 minutes on the
+installation's NATS; after downtime it runs once for the missed time. Each run
+scans the next 24 hours in batches of 100 venues and sign-ups and hands the
+notices to Cloud's notification delivery. It needs no new configuration.
