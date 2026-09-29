@@ -36,7 +36,15 @@ const links = section("links", "Useful links", {
   links: [
     { label: "Student union", href: "https://union.example.org/cafe" },
     { label: "Write to us", href: "mailto:cafe@example.org" },
+    { label: "Feedback form", href: "/app/grids/forms/Form01" },
+  ],
+});
+/** Saved before link addresses were checked: visitors can follow none of the last two. */
+const legacyLinks = section("links", "Useful links", {
+  links: [
+    { label: "Student union", href: "https://union.example.org/cafe" },
     { label: "Sneaky", href: "javascript:alert(1)" },
+    { label: "Our site", href: "www.cafe.example.org" },
   ],
 });
 
@@ -54,8 +62,8 @@ const withLocale = (locale: string, children: () => JSX.Element) =>
  * The section inside a theme scope, as the `<html>` class sets it on a Cloud page. The markup itself must not
  * depend on the theme: tokens resolve the colors.
  */
-const renderSection = (value: PublicSection, theme: "light" | "dark" = "light") =>
-  `<div class="${theme}">${withLocale("en", () => createComponent(PublicSectionView, { section: value, timeZone: "Europe/Berlin" }))}</div>`;
+const renderSection = (value: PublicSection, { theme = "light", preview = false }: { theme?: "light" | "dark"; preview?: boolean } = {}) =>
+  `<div class="${theme}">${withLocale("en", () => createComponent(PublicSectionView, { section: value, timeZone: "Europe/Berlin", preview }))}</div>`;
 
 /** Fixed palette classes the old public page used instead of theme tokens. */
 const FIXED_COLORS = /\b(?:bg-white|text-zinc-\d{3}|bg-zinc-\d{3}|ring-black|shadow-(?:sm|md|lg|xl))\b/;
@@ -141,7 +149,7 @@ describe("One public section renderer", () => {
   for (const theme of ["light", "dark"] as const) {
     test(`renders every kind on theme tokens only (${theme})`, () => {
       for (const value of [notice, markdown, menu, links]) {
-        const html = renderSection(value, theme);
+        const html = renderSection(value, { theme });
         expect({ kind: value.kind, fixed: html.match(FIXED_COLORS)?.[0] ?? null }).toEqual({ kind: value.kind, fixed: null });
         expect(html).toContain(`data-section-kind="${value.kind}"`);
         expect(html).toContain(`>${value.title}</h2>`);
@@ -156,25 +164,47 @@ describe("One public section renderer", () => {
     expect(text(html)).toContain("Closed for the team meeting We open again at 14:00.");
   });
 
-  test("shows only menu items inside their availability dates", () => {
-    const html = text(renderSection(menu));
+  test("previews only menu items inside their availability dates", () => {
+    const html = text(renderSection(menu, { preview: true }));
     expect(html).toContain("Pumpkin soup");
     expect(html).toContain("4.50 EUR");
     expect(html).toContain("(Contains celery)");
     expect(html).not.toContain("Summer salad");
     expect(html).not.toContain("Winter stew");
-    // Only the preview can meet a menu without any current item: the public page leaves such a menu out.
-    expect(text(renderSection(soldOut))).toContain("No item is available today, so the public page leaves this menu out.");
+    expect(text(renderSection(soldOut, { preview: true }))).toContain(
+      "No item is available today, so the public page leaves this menu out.",
+    );
   });
 
-  test("turns web and mail addresses into link cards and never a script link", () => {
+  test("shows the menu items the server chose for the public page and never the preview's note", () => {
+    // The server filters by its date; the visitor's clock, maybe past midnight already, does not filter again.
+    const html = text(renderSection(soldOut));
+    expect(html).toContain("Summer salad");
+    const empty = renderSection(section("menu", "Empty menu", { items: [] }));
+    expect(empty).not.toContain('data-section-kind="menu"');
+    expect(text(empty)).not.toContain("the public page leaves this menu out");
+  });
+
+  test("turns web, mail, and Cloud addresses into link cards and never a script link", () => {
     const html = renderSection(links);
-    expect(html.match(/<a [^>]*class="k2b-paper k2b-link-card\b/g)?.length).toBe(2);
+    expect(html.match(/<a [^>]*class="k2b-paper k2b-link-card\b/g)?.length).toBe(3);
     expect(html).toContain('href="https://union.example.org/cafe"');
     expect(html).toContain('href="mailto:cafe@example.org"');
+    expect(html).toContain('href="/app/grids/forms/Form01"');
     expect(text(html)).toContain("union.example.org");
-    expect(html).not.toContain("javascript:");
-    expect(html).not.toContain("Sneaky");
+    expect(text(html)).toContain("/app/grids/forms/Form01");
+    expect(renderSection(links, { preview: true })).not.toContain("k2b-inline-guidance");
+  });
+
+  test("leaves out a stored link visitors cannot follow, and the preview says so", () => {
+    const visitor = renderSection(legacyLinks);
+    expect(visitor.match(/<a [^>]*class="k2b-paper k2b-link-card\b/g)?.length).toBe(1);
+    expect(visitor).not.toContain("javascript:");
+    expect(visitor).not.toContain("Sneaky");
+    expect(visitor).not.toContain("www.cafe.example.org");
+    expect(text(visitor)).not.toContain("Visitors don't see");
+    const preview = text(renderSection(legacyLinks, { preview: true }));
+    expect(preview).toContain("Visitors don't see 2 links because their addresses do not start with https://, mailto:, tel:, or /.");
   });
 
   test("renders Markdown", () => {
@@ -284,6 +314,19 @@ describe("Venue monitor", () => {
     // All seven weekdays fit before the browser measures; nothing is counted as left out.
     expect(block("hours")).not.toContain("data-fit-more=");
     expect(text(block("hours"))).toContain("Sunday");
+  });
+
+  test("keeps one column on a wide screen when the second column would stay empty", () => {
+    const layout = (value: PublicStatus) => renderPage(value, "full").match(/<div[^>]*data-display-layout[^>]*>/)?.[0] ?? "";
+    const regular = { ...venue, openMode: "regular" as const, feedbackEnabled: false };
+    const alone = renderPage(status({ venue: regular, upcomingExceptions: [] }), "full");
+    expect(layout(status({ venue: regular, upcomingExceptions: [] }))).not.toContain("landscape:grid-cols-2");
+    expect(alone).toContain('data-venue-status="open"');
+    expect(alone).toContain('data-public-block="hours"');
+    // Any of exceptions, staffed openings, or the feedback code fills the second column.
+    expect(layout(status({ venue: regular }))).toContain("landscape:grid-cols-2");
+    expect(layout(status({ venue: { ...regular, openMode: "combined" }, upcomingExceptions: [] }))).toContain("landscape:grid-cols-2");
+    expect(layout(status({ venue: { ...regular, feedbackEnabled: true }, upcomingExceptions: [] }))).toContain("landscape:grid-cols-2");
   });
 
   test("keeps the feedback QR code on a light tile and the surfaces on tokens", () => {

@@ -1,7 +1,7 @@
 import { Button, DateRangePicker, ImageInput, prompts, SegmentedControl, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { createStore } from "solid-js/store";
-import type { PublicSection, PublicSectionInput } from "../../../contracts";
+import { type PublicSection, type PublicSectionInput, publicLinkHref } from "../../../contracts";
 import { type VenueMessages, venueMessages } from "../../../messages";
 import { DialogFrame } from "./schedule";
 
@@ -167,17 +167,24 @@ export function PublicSectionDialog(props: {
   const removeItem = (id: string) => {
     if (items.length > 1) setItems(items.filter((item) => item.id !== id));
   };
+  // An address visitors could not follow shows its error under the field once a save was attempted.
+  const [attempted, setAttempted] = createSignal(false);
+  const linkHrefError = (link: LinkDraft) =>
+    attempted() && link.href.trim() && !publicLinkHref(link.href) ? t().linkUrlInvalid : undefined;
+
   const addLink = () => setLinks(links.length, newLink());
   const removeLink = (id: string) => {
     if (links.length > 1) setLinks(links.filter((link) => link.id !== id));
   };
 
   const submit = () => {
+    setAttempted(true);
     if (!title().trim()) {
       prompts.error(t().titleRequired);
       return;
     }
 
+    if (kind() === "links" && links.some(linkHrefError)) return;
     const result = buildPublicSectionContent(kind(), contentText(), Array.from(items), Array.from(links), t());
     if (result.error || !result.content) {
       prompts.error(result.error ?? t().sectionInvalid);
@@ -276,6 +283,7 @@ export function PublicSectionDialog(props: {
                           value={() => link.href}
                           onValueChange={(value) => updateLink(link.id, { href: value })}
                           placeholder="https://example.com"
+                          error={() => linkHrefError(link)}
                           required
                         />
                       </div>

@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import apiRoutes from "./api";
-import type { PublicStatus, Venue } from "./contracts";
+import type { PublicSection, PublicStatus, Venue } from "./contracts";
 import "./frontend/ssr-test-plugin";
 
 const { default: pageRoutes } = await import("./frontend");
@@ -25,7 +25,7 @@ const venueApp = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }
   .route("/api/venue", apiRoutes)
   .route("/app/venue", pageRoutes);
 
-const send = (method: "GET" | "POST", path: string, cookie: string, body?: unknown) =>
+const send = (method: "GET" | "POST" | "PATCH", path: string, cookie: string, body?: unknown) =>
   venueApp.request(path, {
     method,
     headers: {
@@ -117,6 +117,45 @@ suite("Venue public page shows changed hours in advance and follows the theme", 
     expect(html).toContain("Closed · Public holiday");
     expect(html).toContain("Special opening 18:00–23:00 · Long night");
     expect(html).not.toContain("Too far ahead");
+  });
+
+  test("a links section saves only addresses the public page shows, including paths on this Cloud", async () => {
+    const sections = `/api/venue/venues/${venue.id}/sections`;
+    const links = (href: string) => ({
+      kind: "links",
+      title: "Around campus",
+      content: {
+        links: [
+          { label: "Student union", href: "https://union.example.org" },
+          { label: "Order form", href },
+        ],
+      },
+    });
+    const rejected = await expectStatus(await send("POST", sections, admin.cookie, links("www.kiosk.example.org")), 400, "bare host");
+    expect(rejected).toContain("content.links.1.href: Use a full address");
+    const created = JSON.parse(
+      await expectStatus(await send("POST", sections, admin.cookie, links("/app/grids/forms/Form01")), 201, "Cloud path"),
+    ) as PublicSection;
+    const page = await expectStatus(await send("GET", `/app/venue/public/${venue.id}`, ""), 200, "public page");
+    expect(page).toContain('href="/app/grids/forms/Form01"');
+    expect(page).toContain('href="https://union.example.org/"');
+
+    // A link saved before addresses were checked stays off the page, and the section saves again once it is fixed.
+    await sql`
+      UPDATE venue.public_sections
+      SET content = ${JSON.stringify(links("www.kiosk.example.org").content)}::text::jsonb
+      WHERE short_id = ${created.id}
+    `;
+    const legacy = await expectStatus(await send("GET", `/app/venue/public/${venue.id}`, ""), 200, "legacy link");
+    expect(legacy.match(/class="k2b-link-card__title"/g)?.length).toBe(1);
+    expect(legacy).toContain('href="https://union.example.org/"');
+    expect(legacy).not.toContain('href="www.kiosk.example.org"');
+    await expectStatus(await send("PATCH", `${sections}/${created.id}`, admin.cookie, { enabled: false }), 400, "legacy toggle");
+    await expectStatus(
+      await send("PATCH", `${sections}/${created.id}`, admin.cookie, links("https://www.kiosk.example.org")),
+      200,
+      "fixed link",
+    );
   });
 
   test("the scrollable page follows the visitor's theme; the monitor is always dark", async () => {

@@ -840,7 +840,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       </Show>
                     </div>
                     <div class="max-w-3xl">
-                      <PublicSectionView section={section()} timeZone={venue().timezone} />
+                      <PublicSectionView section={section()} timeZone={venue().timezone} preview />
                     </div>
                   </>
                 )}

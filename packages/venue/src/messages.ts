@@ -172,7 +172,9 @@ export const venueMessages = i18n.define({
       label: "Label",
       linkLabelDescription: "Visible text for this link.",
       url: "URL",
-      linkUrlDescription: "Destination opened when visitors click.",
+      linkUrlDescription:
+        "A web address with https://, an email address with mailto:, a phone number with tel:, or a path on this Cloud starting with /.",
+      linkUrlInvalid: "Use a full address starting with https://, mailto:, or tel:, or a path starting with /.",
       image: "Image",
       menuImageDescription: "Optional square image for this menu item.",
       menuNameDescription: "Main label for this item.",
@@ -308,6 +310,10 @@ export const venueMessages = i18n.define({
       changedHours: "Changed hours",
       moreItems: ({ count }: { count: number }) => `+${count} more`,
       noMenuItemsToday: "No item is available today, so the public page leaves this menu out.",
+      linksHiddenFromVisitors: ({ count }: { count: number }) =>
+        count === 1
+          ? "Visitors don't see 1 link because its address does not start with https://, mailto:, tel:, or /. Edit the section to fix it."
+          : `Visitors don't see ${count} links because their addresses do not start with https://, mailto:, tel:, or /. Edit the section to fix them.`,
       publicNoteDescription: "Visitors see this note on the public page.",
       spontaneousOpen: "Staffing makes this venue additionally open right now.",
       upcomingStaffedOpenings: "Upcoming staffed openings",
@@ -703,7 +709,9 @@ export const venueMessages = i18n.define({
       label: "Bezeichnung",
       linkLabelDescription: "Sichtbarer Text für diesen Link.",
       url: "URL",
-      linkUrlDescription: "Ziel, das beim Auswählen des Links geöffnet wird.",
+      linkUrlDescription:
+        "Eine Webadresse mit https://, eine E-Mail-Adresse mit mailto:, eine Telefonnummer mit tel: oder ein Pfad in dieser Cloud, der mit / beginnt.",
+      linkUrlInvalid: "Gib eine vollständige Adresse mit https://, mailto: oder tel: ein oder einen Pfad, der mit / beginnt.",
       image: "Bild",
       menuImageDescription: "Optionales quadratisches Bild für diesen Eintrag.",
       menuNameDescription: "Hauptbezeichnung dieses Eintrags.",
@@ -842,6 +850,10 @@ export const venueMessages = i18n.define({
       changedHours: "Abweichende Zeiten",
       moreItems: ({ count }) => `+${count} weitere`,
       noMenuItemsToday: "Heute ist kein Eintrag verfügbar, deshalb lässt die öffentliche Seite dieses Menü weg.",
+      linksHiddenFromVisitors: ({ count }) =>
+        count === 1
+          ? "Besucher sehen 1 Link nicht, weil seine Adresse nicht mit https://, mailto:, tel: oder / beginnt. Bearbeite den Abschnitt, um ihn zu korrigieren."
+          : `Besucher sehen ${count} Links nicht, weil ihre Adressen nicht mit https://, mailto:, tel: oder / beginnen. Bearbeite den Abschnitt, um sie zu korrigieren.`,
       publicNoteDescription: "Besucher sehen diesen Hinweis auf der öffentlichen Seite.",
       spontaneousOpen: "Durch die aktuelle Besetzung ist dieser Standort zusätzlich geöffnet.",
       upcomingStaffedOpenings: "Anstehende betreute Öffnungen",

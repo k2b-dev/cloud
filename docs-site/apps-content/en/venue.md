@@ -50,8 +50,18 @@ the feedback form follow. The status API returns the same list as
 `upcomingExceptions`. The page follows the Cloud theme of whoever opens it, so
 visitors without an account see it light. The workspace previews each section
 with the same renderer, so a preview matches the public page. The full monitor
-display is always dark, never scrolls, uses one column on screens taller than
-wide, and shows "+N more" where a list does not fit.
+display is always dark, never scrolls, and shows "+N more" where a list does
+not fit. It uses one column on screens taller than wide, and on wide screens
+when there are no exceptions, staffed openings, or feedback code to show next
+to the status and hours.
+
+A link in a links section leads to an `https:`, `http:`, `mailto:`, or `tel:`
+address or to a path on the same Cloud that starts with a single `/`, such as
+`/app/grids/forms/…`. The section dialog marks any other address, such as
+`www.example.org`, at its field and does not save it; the API and
+`cld venue sections` answer 400 and name the link, for example
+`content.links.1.href`. So a saved section holds only links the public page
+shows.
 
 ## Understand the Venues model
 

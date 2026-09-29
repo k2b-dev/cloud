@@ -1,7 +1,7 @@
 import { dates } from "@k2b/stdlib";
-import { LinkCard, MarkdownView, NoticeCard, Paper, Placeholder, useLocale } from "@k2b/ui";
+import { InlineGuidance, LinkCard, MarkdownView, NoticeCard, Paper, Placeholder, useLocale } from "@k2b/ui";
 import { For, type JSX, Match, Show, Switch } from "solid-js";
-import { type PublicMenuItem, PublicMenuItemSchema, type PublicSection } from "../../contracts";
+import { type PublicMenuItem, PublicMenuItemSchema, type PublicSection, publicLinkHref } from "../../contracts";
 import { venueMessages } from "../../messages";
 import { isPublicMenuItemAvailable } from "../../public-menu";
 
@@ -10,33 +10,36 @@ const sectionText = (section: PublicSection, key: "markdown" | "text"): string =
   return typeof value === "string" ? value : "";
 };
 
-/** Link schemes a visitor can follow safely; anything else, such as `javascript:`, never becomes a link. */
-const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+const sectionList = (section: PublicSection, key: "items" | "links"): unknown[] => {
+  const value = section.content[key];
+  return Array.isArray(value) ? value : [];
+};
 
 type PublicLink = { label: string; href: string; target: string };
 
-/** The section's links that visitors can follow, each with the address it leads to. */
+/** What a link card names under its label: the site of a web address, otherwise the address itself. */
+const linkTarget = (href: string): string => {
+  if (href.startsWith("/")) return href;
+  const url = new URL(href);
+  return url.protocol === "http:" || url.protocol === "https:" ? url.host : href.slice(url.protocol.length);
+};
+
+/** The section's links that visitors can follow, by the same rule that saving a section enforces. */
 const publicLinks = (section: PublicSection): PublicLink[] =>
-  (Array.isArray(section.content.links) ? section.content.links : []).flatMap((raw) => {
+  sectionList(section, "links").flatMap((raw) => {
     const link = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-    if (typeof link.href !== "string") return [];
-    let url: URL;
-    try {
-      url = new URL(link.href.trim());
-    } catch {
-      return [];
-    }
-    if (!SAFE_LINK_PROTOCOLS.has(url.protocol)) return [];
-    const target = url.protocol === "http:" || url.protocol === "https:" ? url.host : url.href.slice(url.protocol.length);
+    const href = typeof link.href === "string" ? publicLinkHref(link.href) : null;
+    if (!href) return [];
+    const target = linkTarget(href);
     const label = typeof link.label === "string" && link.label.trim() ? link.label.trim() : target;
-    return [{ label, href: url.href, target }];
+    return [{ label, href, target }];
   });
 
-/** Menu items available on the Venue-local date: the public page shows only these. */
-const availableMenuItems = (section: PublicSection, date: string): PublicMenuItem[] =>
-  (Array.isArray(section.content.items) ? section.content.items : []).flatMap((raw) => {
+/** The menu's valid items; with a date, only those available on that Venue-local date. */
+const menuItems = (section: PublicSection, date?: string): PublicMenuItem[] =>
+  sectionList(section, "items").flatMap((raw) => {
     const parsed = PublicMenuItemSchema.safeParse(raw);
-    return parsed.success && isPublicMenuItemAvailable(parsed.data, date) ? [parsed.data] : [];
+    return parsed.success && (!date || isPublicMenuItemAvailable(parsed.data, date)) ? [parsed.data] : [];
   });
 
 function SectionHeading(props: { children: JSX.Element }) {
@@ -45,14 +48,17 @@ function SectionHeading(props: { children: JSX.Element }) {
 
 /**
  * One public section as visitors see it. The public page and the workspace preview both render this, so the
- * preview cannot drift from what the page shows: notices stand out, menu items outside their availability dates
- * stay hidden, and links only lead to web, mail, or phone addresses. `timeZone` is the Venue's, which decides
- * what "today" means for menu availability.
+ * preview cannot drift from what the page shows: notices stand out, and links lead only to web, mail, or phone
+ * addresses or to paths on this Cloud. The server leaves out menu items outside their availability dates, and
+ * menus without any, before the public page gets its sections; the `preview` gets every item and leaves out the
+ * same ones for today in the Venue's `timeZone`. Only the preview says what visitors miss.
  */
-export function PublicSectionView(props: { section: PublicSection; timeZone: string }) {
+export function PublicSectionView(props: { section: PublicSection; timeZone: string; preview?: boolean }) {
   const locale = useLocale();
   const t = () => venueMessages.resolve([locale()]).t;
-  const today = () => dates.formatDateKey(new Date(), { timeZone: props.timeZone });
+  const links = () => publicLinks(props.section);
+  const hiddenLinks = () => (props.preview ? sectionList(props.section, "links").length - links().length : 0);
+  const items = () => menuItems(props.section, props.preview ? dates.formatDateKey(new Date(), { timeZone: props.timeZone }) : undefined);
 
   return (
     <Switch>
@@ -70,7 +76,7 @@ export function PublicSectionView(props: { section: PublicSection; timeZone: str
             <SectionHeading>{props.section.title}</SectionHeading>
           </div>
           <For
-            each={publicLinks(props.section)}
+            each={links()}
             fallback={
               <Paper class="p-4 text-sm text-secondary">
                 <p>{sectionText(props.section, "text") || t().noLinks}</p>
@@ -79,16 +85,18 @@ export function PublicSectionView(props: { section: PublicSection; timeZone: str
           >
             {(link) => <LinkCard href={link.href} title={link.label} description={link.target} icon="ti ti-link" />}
           </For>
+          <Show when={hiddenLinks() > 0}>
+            <InlineGuidance tone="warning" icon="ti ti-link-off">
+              {t().linksHiddenFromVisitors({ count: hiddenLinks() })}
+            </InlineGuidance>
+          </Show>
         </section>
       </Match>
-      <Match when={props.section.kind === "menu"}>
+      {/* A menu without a current item is left out of the public page; only the preview shows it, and why. */}
+      <Match when={props.section.kind === "menu" && (props.preview || items().length > 0)}>
         <Paper as="section" class="grid gap-3 p-4 sm:p-5" data-section-kind="menu">
           <SectionHeading>{props.section.title}</SectionHeading>
-          <For
-            each={availableMenuItems(props.section, today())}
-            // The public page leaves such a menu out; only the workspace preview reaches this.
-            fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noMenuItemsToday}</>} />}
-          >
+          <For each={items()} fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noMenuItemsToday}</>} />}>
             {(item) => (
               <div class="flex items-start gap-3" data-menu-item="">
                 <Show when={item.image}>{(image) => <img src={image()} alt="" class="size-16 shrink-0 rounded-lg object-cover" />}</Show>
