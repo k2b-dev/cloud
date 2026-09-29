@@ -66,7 +66,12 @@ const composeInputs: Record<string, { value: string; doc: string; optional?: tru
   },
   CLOUD_DEV_VALKEY_PORT: {
     value: "6379",
-    doc: "Development only: loopback host port for Valkey; host-run processes and CLOUD_TEST_VALKEY_URL must use the same port.",
+    doc: "Development only: loopback host port for Valkey; host-run processes must use the same port.",
+    optional: true,
+  },
+  CLOUD_DEV_TEST_VALKEY_PORT: {
+    value: "6380",
+    doc: "Development only: loopback host port for the integration tests' own Valkey; CLOUD_TEST_VALKEY_URL must use the same port.",
     optional: true,
   },
   CLOUD_DEV_NATS_PORT: {

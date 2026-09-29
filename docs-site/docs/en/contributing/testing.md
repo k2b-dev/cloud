@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # Testing
@@ -91,13 +91,13 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 | `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_test` |
 | `CLOUD_TEST_NATS_SERVERS` | `nats://127.0.0.1:4222` |
 | `CLOUD_TEST_NATS_CREDS_FILE` | `/path/to/cloud/.local/nats/test.creds` (absolute path) |
-| `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6379` (no database index) |
+| `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
 | `CLOUD_TEST_FILEGATE_URL` | `http://127.0.0.1:4000` |
 | `CLOUD_TEST_GOTENBERG_URL` | `http://127.0.0.1:3001` |
 | `CLOUD_TEST_RSQL_URL` | `http://127.0.0.1:8080` |
 
 The ports are the development stack's defaults. If you moved them with
-`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_VALKEY_PORT`, or `CLOUD_DEV_NATS_PORT`
+`CLOUD_DEV_POSTGRES_PORT`, `CLOUD_DEV_TEST_VALKEY_PORT`, or `CLOUD_DEV_NATS_PORT`
 ([Change host ports](/en/docs/operations/monorepo-development#change-host-ports)),
 use the same ports here.
 
@@ -136,11 +136,19 @@ without credentials. Both `connectTestNats()` and the fixture's NATS check
 refuse a connection that lands in `DEV`. A broker without accounts, like the
 one in CI, needs no credentials file.
 
+Valkey separates tests from the stack by instance. Cache keys such as
+`settings:<key>` carry no namespace, so a shared Valkey would hand the running
+stack's cached settings to the tests and the tests' values to the stack. The development
+stack therefore runs a second Valkey only for tests on port `6380`; the one on
+`6379` belongs to the applications. A database index is no way out, because
+the fixture refuses one. In CI, the gate's Valkey serves only the tests, so it
+stays on `6379`.
+
 ```bash
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
 CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
-CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
+CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6380 \
 bun run test --integration
 ```
 

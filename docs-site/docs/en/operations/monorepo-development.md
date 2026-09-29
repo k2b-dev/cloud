@@ -28,7 +28,7 @@ Open `http://localhost:3000`.
 The local administrator login is `/auth/login?method=admin` with token
 `dev-admin`.
 
-`bun run dev` starts Postgres, Valkey, a persistent single-node NATS JetStream server, Geo, Filegate, and Gotenberg in the
+`bun run dev` starts Postgres, Valkey, a second Valkey for integration tests, a persistent single-node NATS JetStream server, Geo, Filegate, and Gotenberg in the
 background. It then stays in the foreground and runs the gateway, Gateway Ops,
 Core, Dashboard, Accounts, and Assistant.
 
@@ -63,10 +63,11 @@ or in the checkout's `.env`, which Compose reads:
 ```bash
 CLOUD_DEV_POSTGRES_PORT=55432
 CLOUD_DEV_VALKEY_PORT=56379
+CLOUD_DEV_TEST_VALKEY_PORT=56380
 CLOUD_DEV_NATS_PORT=54222
 ```
 
-The defaults are `5432`, `6379`, and `4222`. Containers still talk to each
+The defaults are `5432`, `6379`, `6380`, and `4222`. Containers still talk to each
 other on the default ports, so only host-side clients change: use the new ports
 in `DATABASE_URL`, `REDIS_URL`, `NATS_SERVERS`, and the `CLOUD_TEST_*` URLs.
 
@@ -384,7 +385,7 @@ loudly when a target is unreachable:
 CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
 CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
-CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6379 \
+CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6380 \
 bun run test --integration
 ```
 
@@ -393,6 +394,12 @@ bun run test --integration
 the absolute path of `.local/nats/test.creds` in the checkout that runs the
 development stack, also when the tests run from a worktree. Without it, a test
 connection lands in `DEV`, and the fixture refuses to run.
+
+`CLOUD_TEST_VALKEY_URL` points at the tests' own Valkey on port `6380`, not at
+the applications' Valkey on `6379`. Cache keys such as `settings:<key>` carry
+no namespace, so a shared instance would mix the running stack's cached
+settings, for example `app.url`, with the tests' values. The test Valkey keeps
+no data across restarts.
 
 If you [changed the host ports](#change-host-ports), use them in these URLs.
 The database name must end in `_test`; the fixture refuses anything else so a

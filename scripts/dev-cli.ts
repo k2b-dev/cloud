@@ -37,7 +37,7 @@ import { prepareDevRsql } from "./dev-rsql";
 export const COMPOSE_FILE = "compose.dev.yml";
 export const INFRA_COMPOSE_FILE = "compose.yml";
 
-/** Prepare local credentials and start the infrastructure stack (Postgres, Valkey, NATS, Geo, Filegate, Collabora, Gotenberg, rsql). */
+/** Prepare local credentials and start every infrastructure service in compose.yml. */
 export const ensureInfra = async (): Promise<void> => {
   await prepareDevRsql();
   await prepareDevFilegate();
