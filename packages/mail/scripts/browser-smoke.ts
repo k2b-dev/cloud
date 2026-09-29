@@ -660,7 +660,7 @@ const runSmoke = async (fixture: Fixture) => {
       readerState.messageOffset > readerState.summaryBottom + 24
     )
       fail(`long message did not follow its conversation summary: ${JSON.stringify(readerState)}`);
-    if (readerState.nestedVerticalScroll) fail("long message body introduced a nested vertical scrollbar");
+    if (readerState?.nestedVerticalScroll) fail("long message body introduced a nested vertical scrollbar");
     await summary.getByText("The summary intentionally spans several paragraphs", { exact: false }).waitFor();
     await assertWheelScroll(page, readerScroll, summary, "conversation summary");
     await readerScroll.evaluate((element) => {

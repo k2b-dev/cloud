@@ -68,10 +68,7 @@ Run "prepare", restart the application fleet while NATS stays up, then run "reco
   check(phase === "prepare" || phase === "recover", "Pass prepare or recover");
   const namespace = options.namespace?.trim() ?? "";
   check(/^cloud-recovery-smoke-[A-Za-z0-9_-]{6,60}$/.test(namespace), "Pass a unique --namespace cloud-recovery-smoke-<suffix>");
-  const servers = (env.NATS_SERVERS ?? "nats://127.0.0.1:4222")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const servers = env.NATS_SERVERS.length ? env.NATS_SERVERS : ["nats://127.0.0.1:4222"];
   const connection = await connect({ servers, name: `${APPLICATION}-${phase}`, ignoreClusterUpdates: true });
   const sync = createSync({ connection, namespace, application: APPLICATION, defaults: { replicas: env.SYNC_REPLICAS } });
   const job = sync.job<{ preparedAt: string }>({

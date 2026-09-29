@@ -14,3 +14,5 @@ Test and verification tools read their infrastructure from the `CLOUD_TEST_*` va
 - `browser-smoke.ts` — Playwright regression smoke against a running dev server: `bun packages/grids/scripts/browser-smoke.ts --base-url http://localhost:3000`
 - `smoke.sh` — curl-based API smoke against a running dev server: `bash packages/grids/scripts/smoke.sh --debug`
 - `render-document-template-previews.ts` — renders document template PDFs/PNGs for review: `bun packages/grids/scripts/render-document-template-previews.ts --help`
+
+The package typecheck covers every script here except `soak-100k.ts`, `sql-boundary-smoke.ts`, and `render-document-template-previews.ts`. These manual tools no longer match the current Grids types and stay excluded in `tsconfig.json` until they are repaired or removed.

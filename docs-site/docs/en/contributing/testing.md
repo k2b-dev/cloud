@@ -23,8 +23,11 @@ bun run test
 
 `bun run check` verifies dependencies, import boundaries, package cycles,
 service API contracts, localization, CSS architecture, formatting, the
-application set, and every package typecheck. `bun run test` runs every
-workspace in its own process and reports the integration files it skipped.
+application set, and every package typecheck. A package typecheck covers its
+`scripts/` as well as `src/`, so the build, smoke, and verification scripts
+that CI and the nightly run break the gate when they drift from the code they
+drive. `bun run test` runs every workspace in its own process and reports the
+integration files it skipped.
 
 The localization check also rejects hard-coded prose in frontends whose text
 comes only from message catalogs, currently Mail: JSX text and expressions,

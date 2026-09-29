@@ -32,6 +32,7 @@ import { promisify } from "node:util";
 import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { Glob } from "bun";
 import tailwind from "bun-plugin-tailwind";
+import type { AppCliModules } from "../src/contracts/app";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
 import { buildPdfRenderer } from "./build-pdf-renderer";
@@ -181,7 +182,8 @@ if (existsSync(appAssets)) {
 // `cld` plugins: one self-contained module bundle plus references per module.
 // Imported after the app config so the framework sees the APP_DIR set above.
 const { buildCliPlugin, writeCliPlugin } = await import("../src/_internal/cli-plugins");
-for (const [name, declaration] of Object.entries(app?.meta.cli ?? {})) {
+const cliModules: AppCliModules = app?.meta.cli ?? {};
+for (const [name, declaration] of Object.entries(cliModules)) {
   const plugin = await buildCliPlugin({ appDir, appId, name, declaration, version });
   await writeCliPlugin(resolve(dist, "cli", name), plugin);
 }
