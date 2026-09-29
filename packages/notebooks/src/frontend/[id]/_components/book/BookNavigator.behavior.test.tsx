@@ -106,6 +106,27 @@ describe("Book navigation tree", () => {
   const press = (target: HTMLElement, key: string) =>
     target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 
+  /** Cloud's phone menu, opened on the navigation the book registers; `close` dismisses it like the handle or Back. */
+  const openSheet = async () => {
+    const { openCloudMobileMenu } = await import("@k2b/cloud/ssr/MobileNavigation");
+    const menu = openCloudMobileMenu({ apps: [], legalLinks: [] });
+    await flush();
+    const sheet = document.querySelector<HTMLElement>("dialog .k2b-navigation")!;
+    const row = (label: string) =>
+      Array.from(sheet.querySelectorAll<HTMLElement>(".k2b-navigation__row")).find((entry) => entry.textContent?.trim() === label)!;
+    return {
+      menu,
+      link: (label: string) => row(label).querySelector<HTMLAnchorElement>("a")!,
+      chevron: (label: string) => row(label).querySelector<HTMLButtonElement>(".k2b-navigation__disclosure")!,
+      expanded: (label: string) => row(label).querySelector(".k2b-navigation__disclosure")!.getAttribute("aria-expanded"),
+      close: async () => {
+        history.back();
+        await menu;
+        await flush();
+      },
+    };
+  };
+
   test("the row opens a note and the chevron folds it without navigating, and the fold survives live snapshots", async () => {
     const app = await mount("note02");
     try {
@@ -178,6 +199,79 @@ describe("Book navigation tree", () => {
       await flush();
       expect(app.item("note03").getAttribute("aria-selected")).toBe("true");
       expect(app.expanded("note01")).toBe("false");
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("the phone sheet starts from the reader's folds, keeps a fold when reopened, and its chevron does not navigate", async () => {
+    const app = await mount("note03");
+    try {
+      let sheet = await openSheet();
+      expect(sheet.expanded("Guide")).toBe("false");
+      tap(sheet.chevron("Guide"));
+      await flush();
+      expect(sheet.expanded("Guide")).toBe("true");
+      expect(app.requests).toHaveLength(0);
+      expect(location.pathname).toEndWith("/note03");
+      await sheet.close();
+      // The sheet and the sidebar tree are one reader's folds.
+      expect(app.expanded("note01")).toBe("true");
+
+      sheet = await openSheet();
+      expect(sheet.expanded("Guide")).toBe("true");
+      tap(sheet.chevron("Guide"));
+      await flush();
+      await sheet.close();
+      sheet = await openSheet();
+      expect(sheet.expanded("Guide")).toBe("false");
+      await sheet.close();
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a page opened from the phone sheet opens in place, and only a page change reveals folded parents", async () => {
+    const app = await mount("note03");
+    try {
+      let sheet = await openSheet();
+      tap(sheet.chevron("Guide"));
+      await flush();
+      expect(tap(sheet.link("Setup")).defaultPrevented).toBe(true);
+      await sheet.menu;
+      await flush();
+      expect(app.requests.map((request) => request.href)).toEqual(["/app/notebooks/book01/notes/note02?mode=book"]);
+      app.requests[0]!.resolve(Response.json(snapshot("note02")));
+      await flush();
+      expect(location.pathname).toEndWith("/note02");
+      expect(app.item("note02").getAttribute("aria-selected")).toBe("true");
+
+      // Folding the open page's parent holds across a live refresh of that page.
+      sheet = await openSheet();
+      expect(sheet.expanded("Guide")).toBe("true");
+      tap(sheet.chevron("Guide"));
+      await flush();
+      await sheet.close();
+      await app.refresh("note02");
+      sheet = await openSheet();
+      expect(sheet.expanded("Guide")).toBe("false");
+
+      tap(sheet.link("Glossary"));
+      await sheet.menu;
+      await flush();
+      app.requests.at(-1)!.resolve(Response.json(snapshot("note03")));
+      await flush();
+      expect(location.pathname).toEndWith("/note03");
+
+      // Returning to the page is a page change, so it is revealed inside its parent again.
+      history.back();
+      await flush();
+      expect(app.requests.at(-1)?.href).toBe("/app/notebooks/book01/notes/note02?mode=book");
+      app.requests.at(-1)!.resolve(Response.json(snapshot("note02")));
+      await flush();
+      sheet = await openSheet();
+      expect(sheet.expanded("Guide")).toBe("true");
+      await sheet.close();
     } finally {
       app.cleanup();
     }

@@ -13,6 +13,8 @@ type NavigationEntry = {
   children?: readonly NavigationItem[];
   /** Initial disclosure state; subsequent toggles remain local to the renderer. */
   defaultExpanded?: boolean;
+  /** Owner-held disclosure state. With `onExpandedChange` it is controlled; otherwise it is only the initial state. */
+  expanded?: boolean;
   actions?: readonly NavigationItem[];
 };
 
@@ -28,6 +30,8 @@ export type NavigationOptions = {
   items: Accessor<readonly NavigationItem[]>;
   onAction?: (action: string) => void | Promise<void>;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
+  /** Receives disclosure toggles of items that carry `expanded`, so the owner can keep them beyond one renderer. */
+  onExpandedChange?: (id: string, expanded: boolean) => void;
 };
 
 export function findNavigationItem(items: readonly NavigationItem[], id: string): NavigationItem | undefined {
@@ -44,6 +48,7 @@ export function createNavigation(options: NavigationOptions) {
   return {
     items: options.items,
     onNavigate: options.onNavigate,
+    onExpandedChange: options.onExpandedChange,
     async activate(id: string) {
       const item = findNavigationItem(options.items(), id);
       if (item?.action) await options.onAction?.(item.action);

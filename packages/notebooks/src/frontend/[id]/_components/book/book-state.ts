@@ -18,6 +18,31 @@ export type BookSnapshot = {
 export type BookMetadata = Omit<BookSnapshot, "html">;
 export const BOOK_SNAPSHOT_EVENT = "notebooks:book-snapshot";
 export const BOOK_CONTENT_EVENT = "notebooks:book-content";
+const BOOK_NAVIGATION_REQUEST_EVENT = "notebooks:book-navigation-request";
+
+type BookNavigationRequest = { href: string; handled?: Promise<boolean> };
+
+declare global {
+  interface WindowEventMap {
+    "notebooks:book-navigation-request": CustomEvent<BookNavigationRequest>;
+  }
+}
+
+/** Asks the reading shell to open a reading route in place; `false` when no shell took it. */
+export const requestBookNavigation = async (href: string): Promise<boolean> => {
+  const detail: BookNavigationRequest = { href };
+  window.dispatchEvent(new CustomEvent(BOOK_NAVIGATION_REQUEST_EVENT, { detail }));
+  return (await detail.handled) ?? false;
+};
+
+export const handleBookNavigationRequests = (open: (href: string) => Promise<boolean> | false): (() => void) => {
+  const listener = (event: CustomEvent<BookNavigationRequest>) => {
+    const handled = open(event.detail.href);
+    if (handled) event.detail.handled = handled;
+  };
+  window.addEventListener(BOOK_NAVIGATION_REQUEST_EVENT, listener);
+  return () => window.removeEventListener(BOOK_NAVIGATION_REQUEST_EVENT, listener);
+};
 
 /** Only the reading routes inside the current notebook can reuse this shell. */
 export const bookNavigationTarget = (href: string, currentHref: string, notebookId: string): URL | null => {

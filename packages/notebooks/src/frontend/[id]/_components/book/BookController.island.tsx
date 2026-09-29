@@ -5,7 +5,14 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
-import { BOOK_CONTENT_EVENT, BOOK_SNAPSHOT_EVENT, type BookMetadata, type BookSnapshot, bookNavigationTarget } from "./book-state";
+import {
+  BOOK_CONTENT_EVENT,
+  BOOK_SNAPSHOT_EVENT,
+  type BookMetadata,
+  type BookSnapshot,
+  bookNavigationTarget,
+  handleBookNavigationRequests,
+} from "./book-state";
 import { bookMessages } from "./messages";
 
 type Props = { notebookId: string; initial: BookMetadata };
@@ -142,15 +149,16 @@ export default function BookController(props: Props) {
       if (source() === next) void workspace.refresh();
       else setSource(next);
     };
-    onCleanup(
-      registerSearchNavigation(({ href }) => {
-        const target = bookNavigationTarget(href, window.location.href, props.notebookId);
-        if (!target || target.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return false;
-        return new Promise<boolean>((resolve, reject) => {
-          navigate(target, "push", undefined, (error) => (error ? reject(error) : resolve(true)));
-        });
-      }),
-    );
+    // Search results and the phone navigation sheet open reading routes in this shell.
+    const openInShell = (href: string) => {
+      const target = bookNavigationTarget(href, window.location.href, props.notebookId);
+      if (!target || target.pathname.replace(/\/$/, "") === `/app/notebooks/${props.notebookId}`) return false;
+      return new Promise<boolean>((resolve, reject) => {
+        navigate(target, "push", undefined, (error) => (error ? reject(error) : resolve(true)));
+      });
+    };
+    onCleanup(registerSearchNavigation(({ href }) => openInShell(href)));
+    onCleanup(handleBookNavigationRequests(openInShell));
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;

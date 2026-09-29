@@ -154,7 +154,9 @@ They keep local content controls.
 
 Cloud closes its menu and removes its temporary history entry before running a
 selection. Back, Escape, backdrop, the close button, and a handle drag dismiss
-the menu. Changing to desktop also closes it. App-to-app navigation replaces
+the menu. Changing to desktop also closes it. The menu renders its rows anew
+each time it opens; keep folds between openings with `expanded` items and an
+`onExpandedChange` handler on the controller. App-to-app navigation replaces
 the registered owner; an old island cannot unregister the new owner's menu.
 
 `provideWorkspaceNavigation(navigation, { label, owner })` is the lower-level
