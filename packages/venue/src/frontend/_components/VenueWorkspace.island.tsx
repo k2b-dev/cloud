@@ -902,12 +902,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       }
                       renderCell={({ row: entry, col, value, render }) => {
                         if (col.id === "rating") {
-                          // Filled and outlined stars differ in shape, and the label states the value.
+                          // The icon font has outline stars only, so color marks the given stars and the visible
+                          // value states the rating without relying on color; the label reads it out.
                           return (
                             <span
                               role="img"
                               aria-label={t().ratingValue({ count: entry.rating })}
-                              class="inline-flex items-center gap-0.5 whitespace-nowrap text-amber-500 dark:text-amber-400"
+                              class="inline-flex items-center gap-0.5 whitespace-nowrap"
                             >
                               <For each={[1, 2, 3, 4, 5]}>
                                 {(star) => (
@@ -915,12 +916,15 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                                     aria-hidden="true"
                                     class={
                                       star <= entry.rating
-                                        ? "ti ti-star-filled text-sm"
+                                        ? "ti ti-star text-sm text-amber-500 dark:text-amber-400"
                                         : "ti ti-star text-sm text-zinc-300 dark:text-zinc-600"
                                     }
                                   />
                                 )}
                               </For>
+                              <span aria-hidden="true" class="ml-1 text-xs font-medium tabular-nums text-primary">
+                                {entry.rating}/5
+                              </span>
                             </span>
                           );
                         }

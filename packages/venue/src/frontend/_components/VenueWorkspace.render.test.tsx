@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { dates } from "@k2b/stdlib";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
@@ -581,14 +583,22 @@ describe("Venue feedback evaluation", () => {
     expect(text(html)).toContain("Ratings per day");
   });
 
-  test("draws filled stars and states the rating in words", () => {
+  test("shows each rating as stars and as a value, with glyphs the icon font has", () => {
     const html = render("admin", [], {
       view: "feedback",
       dashboard: { feedback, feedbackEntries: entries, feedbackEntriesPage: { page: 1, pageSize: 50, total: 1 } },
     });
+    const cell = html.match(/<span role="img" aria-label="4 of 5 stars"[\s\S]*?\/5<\/span><\/span>/)?.[0] ?? "";
 
-    expect(html).toContain('role="img" aria-label="4 of 5 stars"');
-    expect(html.match(/ti ti-star-filled/g)).toHaveLength(4);
+    expect(cell).not.toBe("");
+    expect(cell.match(/ti ti-star text-sm text-amber-500/g)).toHaveLength(4);
+    expect(cell.match(/ti ti-star text-sm text-zinc-300/g)).toHaveLength(1);
+    expect(text(cell)).toContain("4/5");
+    // A class the font lacks renders nothing: `ti-star-filled` left the rating cells empty.
+    const shipped = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css")), "utf8");
+    const glyphs = new Set([...shipped.matchAll(/\.ti-([a-z0-9-]+)/g)].map((match) => match[1]));
+    const used = new Set([...html.matchAll(/\bti ti-([a-z0-9-]+)/g)].map((match) => match[1]));
+    expect([...used].filter((glyph) => !glyphs.has(glyph))).toEqual([]);
   });
 
   test("keeps the comments filter in the search, days, and page links", () => {
