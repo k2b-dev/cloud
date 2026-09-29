@@ -28,9 +28,10 @@ Cloud's shared profile menu, the anonymous `Layout` header, and the
 `MinimalLayout` footer let people choose English or German. The choice is
 stored in the `cloud.locale` cookie for the whole host, and the page reloads so
 SSR remains authoritative. Until someone changes it, that choice outranks the
-browser language on every page of the host, signed in or not. Applications consume the resolved
-locale; they do not add their own picker or browser locale state. The request
-sources and precedence are documented in [Locale and time](/en/docs/server/locale-and-time).
+browser language on every page of the host, signed in or not. Applications
+consume the resolved locale; they do not add their own picker or browser locale
+state. The request sources and precedence are documented in
+[Locale and time](/en/docs/server/locale-and-time).
 
 ## Own strings where they are written
 
@@ -97,9 +98,9 @@ router.get("/api/inventory", (c) => {
 Cloud SSR uses that same locale for `<html lang>` and `getDateConfig(c)`.
 `Layout`, `AdminLayout`, and `MinimalLayout` also install the matching root
 `LocaleProvider`. `MinimalLayout` is the supported root for app-styled public
-pages that need Cloud's persisted locale and theme without Cloud chrome. If a
-custom SSR page deliberately uses none of these layouts, wrap its returned root
-once with `<LocaleProvider locale={getLocale(c)}>`. This is root wiring, not a
+pages that need Cloud's persisted locale and theme without Cloud header or
+navigation. If a custom SSR page deliberately uses none of these layouts, wrap
+its returned root once with `<LocaleProvider locale={getLocale(c)}>`. This is root wiring, not a
 locale prop to pass through the component tree. Never store a current locale in
 module or process state: concurrent SSR requests must remain isolated.
 

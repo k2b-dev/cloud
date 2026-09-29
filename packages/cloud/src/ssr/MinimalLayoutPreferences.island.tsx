@@ -1,5 +1,6 @@
 import { Button, Dropdown, useLocale } from "@k2b/ui";
 import { type ProfilePreferenceLocale, profilePreferenceLocale, setLocalePreference } from "../browser/locale-preference";
+import { canonicalLocale } from "../shared/locale";
 import type { CloudTheme } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 
@@ -14,8 +15,11 @@ export default function MinimalLayoutPreferences(props: { initialTheme: CloudThe
   const t = preferences.messages;
   const language = () => profilePreferenceLocale(locale());
   const languageName = () => (language() === "de" ? t().switchToGerman : t().switchToEnglish);
+  // Keep a regional locale such as en-GB when its language is chosen again,
+  // but let a visitor on an unsupported locale such as fr-FR, who reads the
+  // English fallback, still choose English explicitly.
   const choose = (next: ProfilePreferenceLocale) => {
-    if (next !== language()) setLocalePreference(next);
+    if (canonicalLocale(locale())?.split("-")[0] !== next) setLocalePreference(next);
   };
 
   return (

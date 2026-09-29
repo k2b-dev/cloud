@@ -113,8 +113,8 @@ validation remain separate server responsibilities.
 Authenticated users change the theme or language from the profile control and
 can open `/me` for the remaining profile settings. Anonymous `Layout` pages
 expose the same preferences in the header without profile actions, and
-`MinimalLayout` pages show them in their footer. Applications must not add a second theme or language control to their
-own content.
+`MinimalLayout` pages show them in their footer. Applications must not add a
+second theme or language control to their own content.
 
 The shared layout chooses the placement with CSS:
 
