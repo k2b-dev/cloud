@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
+import type { ServiceAccount } from "@k2b/cloud/services";
 import type { Notebook } from "../service/notebooks";
 
 // Isolate import-time middleware spies while exercising the actual auth,
@@ -18,9 +19,11 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   await import("../frontend/[id]/_components/detail/ssr-test-plugin");
   const server = await import("@k2b/cloud/server");
   const { oauthTokens } = await import("@k2b/cloud/services");
+  const { GotenbergRenderError } = await import("@k2b/cloud/services/pdf");
   const rateLimit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
   const { notebooksService } = await import("../service");
   const book = await import("../service/book");
+  const notePdf = await import("../service/note-pdf");
   const routes = await import("../service/book-route");
   const { default: app } = await import("./index");
 
@@ -57,6 +60,18 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     createdAt: "2026-09-03T10:00:00Z",
     updatedAt: "2026-09-03T10:00:00Z",
   };
+  const printBot: ServiceAccount = {
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Print bot",
+    kind: "resource_bound",
+    status: "active",
+    delegatedUserId: null,
+    appId: "notebooks",
+    resourceType: "notebook",
+    resourceId: notebook.id,
+    createdBy: user.id,
+    createdAt: "2026-09-03T10:00:00Z",
+  };
   const snapshot = {
     href: "/app/notebooks/book01/notes/note01?mode=book",
     html: "<h1>Welcome</h1>",
@@ -75,10 +90,13 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   const permission = spyOn(notebooksService.notebook.permission, "get");
   const loadRoute = spyOn(routes, "loadBookRoute");
   const loadPreview = spyOn(book, "loadBookBlockPreview");
+  const getNote = spyOn(notebooksService.note, "getByShortId");
+  const renderPdf = spyOn(notePdf, "renderNotePdf");
   const headers = { authorization: "Bearer book-api-test", "content-type": "application/json", "x-cloud-locale": "de" };
   const refresh = (href = snapshot.href) => app.request(`/book01/book?${new URLSearchParams({ href })}`, { headers });
   const preview = (body: unknown = {}) =>
     app.request("/book01/notes/note01/block-preview", { method: "POST", headers, body: JSON.stringify(body) });
+  const pdf = (body: unknown) => app.request("/book01/notes/note01/pdf", { method: "POST", headers, body: JSON.stringify(body) });
 
   beforeEach(() => {
     token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
@@ -89,9 +107,26 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       kind: "ok",
       preview: { markdown: "# Welcome", blocks: [], headings: [{ id: "heading-welcome", line: 1 }], diagnostics: [] },
     });
+    getNote.mockReset().mockResolvedValue({
+      id: "33333333-3333-4333-8333-333333333333",
+      shortId: "note01",
+      notebookId: notebook.id,
+      parentId: null,
+      title: "Trip plan",
+      position: 0,
+      hasChildren: false,
+      yjsSnapshotAt: null,
+      historyIncomplete: false,
+      contentMd: null,
+      createdBy: user.id,
+      createdAt: "2026-09-03T10:00:00Z",
+      updatedAt: "2026-09-03T10:00:00Z",
+      lockedAt: null,
+    });
+    renderPdf.mockReset().mockResolvedValue({ pdf: new TextEncoder().encode("%PDF-test"), contentType: "application/pdf" });
   });
   afterAll(() => {
-    for (const spy of [token, getNotebook, permission, loadRoute, loadPreview, rateLimit]) spy.mockRestore();
+    for (const spy of [token, getNotebook, permission, loadRoute, loadPreview, getNote, renderPdf, rateLimit]) spy.mockRestore();
   });
 
   describe("Book HTTP boundary", () => {
@@ -171,6 +206,52 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       expect(loadPreview).not.toHaveBeenCalled();
       expect((await app.request("/book01/book", { headers })).status).toBe(400);
       expect(loadRoute).not.toHaveBeenCalled();
+    });
+
+    test("PDF export renders the note like the reader for the requesting user", async () => {
+      const markdown = "# Trip plan\n\n:::info\nPack the tent.\n:::";
+      const response = await pdf({ markdown, templateId: "report" });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("application/pdf");
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(renderPdf).toHaveBeenCalledWith({
+        markdown,
+        title: "Trip plan",
+        templateId: "report",
+        customCss: undefined,
+        notebookId: notebook.id,
+        notebookShortId: "book01",
+        noteId: "33333333-3333-4333-8333-333333333333",
+        userId: user.id,
+        serviceAccountId: null,
+        boundNotebookId: null,
+        bypassAccess: false,
+        locale: "de",
+      });
+
+      permission.mockResolvedValue("none");
+      expect((await pdf({ markdown })).status).toBe(403);
+      expect(renderPdf).toHaveBeenCalledTimes(1);
+    });
+
+    test("PDF export resolves queries for a notebook-bound API token as that service account", async () => {
+      token.mockResolvedValue({ kind: "service_account", payload: {}, serviceAccount: printBot, delegatedUser: null, scopes: ["read"] });
+      const markdown = ":::query\nsource: notes\n:::";
+      expect((await pdf({ markdown })).status).toBe(200);
+      expect(renderPdf).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null, serviceAccountId: printBot.id, boundNotebookId: notebook.id, bypassAccess: false }),
+      );
+    });
+
+    test("PDF export names a note that renders beyond the PDF budget", async () => {
+      for (const code of ["html_too_large", "pdf_too_large"] as const) {
+        renderPdf.mockRejectedValueOnce(new GotenbergRenderError(code, "Budget exceeded."));
+        const response = await pdf({ markdown: "$$x^2$$" });
+        expect(response.status).toBe(413);
+        expect(((await response.json()) as { message: string }).message).toBe(
+          "Die Notiz ist zu groß für ein PDF. Teile sie in kleinere Notizen auf und versuche es erneut.",
+        );
+      }
     });
 
     test("refresh invalid and unavailable results map to stable HTTP statuses", async () => {

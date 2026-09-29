@@ -277,6 +277,16 @@ describe("Notebook Book HTML", () => {
     expect(html).not.toContain("NOTEBOOKBOOKSLOT");
   });
 
+  test("print math leaves out the MathML the PDF renderer removes, while the reader keeps it", () => {
+    const source = "$x^2$\n\n$$\\frac{1}{2}$$";
+    const reader = render(source).html;
+    const print = renderNotebookBook({ markdown: source, notebookId: "ABC123", locale: "en", print: true }).html;
+    expect(reader.match(/<math/g)?.length).toBe(2);
+    expect(print).not.toContain("<math");
+    expect(print).not.toContain("katex-mathml");
+    expect(print.match(/class="katex-html"/g)?.length).toBe(2);
+  });
+
   test("script fences stay inert, highlighted source and do not produce executable carriers", () => {
     const { html, headings } = render("```script\nfetch('/secret');\n# Hidden\n:::query\nsource: notes\n:::\n```");
     expect(html).toContain("language-script");

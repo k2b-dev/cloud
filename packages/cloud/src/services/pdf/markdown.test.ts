@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { GotenbergConfig } from "./gotenberg";
-import { buildMarkdownPdfHtml, MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES, MarkdownPdfError, renderMarkdownToPdfWithConfig } from "./markdown";
+import {
+  buildMarkdownPdfHtml,
+  buildPresetPdfHtml,
+  MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
+  MarkdownPdfError,
+  renderMarkdownToPdfWithConfig,
+} from "./markdown";
 
 const config = {
   url: "http://gotenberg:3000",
@@ -77,6 +83,31 @@ describe("Markdown PDF renderer", () => {
 
     expect(html).not.toContain("</style><script>");
     expect(html).toContain("\\3c /style><script>");
+  });
+
+  test("wraps application HTML in a preset with application CSS before custom CSS", () => {
+    const html = buildPresetPdfHtml({
+      html: '<aside class="callout">Pack the tent.</aside>',
+      templateId: "report",
+      css: ".callout { border-left: 4px solid #2563eb; } </style><script>",
+      customCss: ".callout { border: 0; }",
+    });
+    const preset = html.indexOf("margin: 24mm 22mm 26mm");
+    const app = html.indexOf(".callout { border-left: 4px solid #2563eb; }");
+    const custom = html.indexOf(".callout { border: 0; }");
+
+    expect(html).toContain('<main class="markdown-document"><aside class="callout">Pack the tent.</aside></main>');
+    expect(preset).toBeGreaterThan(-1);
+    expect(app).toBeGreaterThan(preset);
+    expect(custom).toBeGreaterThan(app);
+    expect(html).not.toContain("</style><script>");
+
+    const customOnly = buildPresetPdfHtml({ html: "<p>Plain</p>", css: ".callout {}", customCss: "p { color: #111; }" });
+    expect(customOnly).not.toContain("margin: 22mm 20mm 24mm");
+    expect(customOnly).toContain(".callout {}\n/* Custom CSS overrides */\np { color: #111; }");
+    expect(() => buildPresetPdfHtml({ html: "<p>x</p>", customCss: "p { background: url(x.png); }" })).toThrow(
+      "cannot load external resources",
+    );
   });
 
   test("posts the generated HTML through the existing Gotenberg HTML renderer", async () => {

@@ -34,7 +34,7 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Inhalte bleiben zuers
 
 :::reference
 - **Notizen erfassen:** Erstelle oder öffne eine Notiz und halte Entscheidungen, Besprechungen, Recherchen oder Aufgaben in Markdown fest.
-- **Notiz herunterladen:** Lade den aktuellen Inhalt in den Notizdetails als Markdown oder PDF herunter. Die PDF-Datei wird im Arbeitsspeicher erzeugt und nicht gespeichert.
+- **Notiz herunterladen:** Lade den aktuellen Inhalt in den Notizdetails als Markdown oder PDF herunter. Das PDF zeigt die Notiz wie die Buchansicht, mit Hinweisen, benannten Daten, Inhaltsverzeichnis und Abfrageergebnissen; Bilder erscheinen als ihre Beschreibung und Diagramme als Quelltext. Die PDF-Datei wird im Arbeitsspeicher erzeugt und nicht gespeichert.
 - **Wissen verbinden:** Verknüpfe Notizen mit Notizlinks, Tags und Anhängen.
 - **Kleine Datenbestände pflegen:** Nutze Markdown-Tabellen und benannte Blöcke für überschaubare Daten nahe am erklärenden Text.
 - **Verzeichnis erstellen:** Frage Notizen nach Tags und eigenen benannten Daten ab. Ergebnisse aktualisieren sich nach gespeicherten Änderungen, ohne Code auszuführen.

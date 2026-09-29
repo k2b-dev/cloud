@@ -87,6 +87,34 @@ carries a restrictive Content Security Policy before it goes through the
 same bounded, offline HTML renderer. Markdown has no `<title>`, so pass
 `title`, such as the note or file name, for PDF viewers to show.
 
+### Render your own Markdown dialect
+
+`renderMarkdownToPdf()` knows plain GitHub-flavored Markdown only. When the
+application's documents use their own blocks, render them with the
+application's renderer and wrap the resulting HTML with
+`buildPresetPdfHtml()`:
+
+```ts
+import { buildPresetPdfHtml, renderHtmlToPdf } from "@k2b/cloud/services";
+
+const html = buildPresetPdfHtml({
+  html: renderNoteHtml(note),
+  templateId: "document",
+  css: ".callout { border-left: 4px solid #2563eb; }",
+  customCss: input.customCss,
+});
+const result = await renderHtmlToPdf({ html, title: note.title });
+```
+
+It applies the same presets, `customCss` rules, and Content Security Policy
+as `renderMarkdownToPdf()`. That policy loads no images or fonts, not even
+named assets or `data:` URLs, so the document renders only its own text,
+inline styles, and inline SVG shapes. `html` becomes the document body as
+given, so sanitize it in the application renderer. `css` styles the
+application's own elements. It comes after the preset and before
+`customCss`, so a person's custom CSS can still override it. With `customCss`
+but no `templateId`, `css` still applies while the preset is left out.
+
 The service owns conversion only. Callers still own authentication,
 authorization, request limits, filenames, response headers, and persistence.
 

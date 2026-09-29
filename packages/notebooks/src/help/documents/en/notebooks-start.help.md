@@ -36,7 +36,7 @@ Notebooks are Markdown workspaces for knowledge that should stay readable first 
 
 :::reference
 - **Capture notes:** Open a notebook, create or select a note, and use Markdown for decisions, meeting notes, research, recipes, planning, and lightweight task lists.
-- **Download a note:** Open note details, then download the current content as Markdown or PDF. PDF export offers three A4 presets and a Custom option; the current Markdown, CSS, and generated PDF are processed in memory and the PDF is not stored.
+- **Download a note:** Open note details, then download the current content as Markdown or PDF. The PDF shows the note like the book view, with callouts, named data, contents, and query results; images appear as their description and diagrams as their source. PDF export offers three A4 presets and a Custom option; the current Markdown, CSS, and generated PDF are processed in memory and the PDF is not stored.
 - **Connect knowledge:** Use note links, tags, and attachments to make related information discoverable without moving everything into one file.
 - **Track small structured data:** Use Markdown tables and named blocks for small datasets that benefit from being close to the prose around them.
 - **Build an index:** Query notes by tags and your own named data. Results refresh after saved changes without running code.

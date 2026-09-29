@@ -23,6 +23,35 @@ export const loadBookNote = async (params: {
   return { note, document };
 };
 
+/** Query results for the reading subject, keyed by the query's one-based source line. */
+export const resolveBookQueries = async (params: {
+  notebookId: string;
+  noteId: string;
+  userId: string | null;
+  serviceAccountId?: string | null;
+  boundNotebookId?: string | null;
+  markdown: string;
+  bypassAccess?: boolean;
+}): Promise<Map<number, NoteQueryResult>> => {
+  const queryResults = new Map<number, NoteQueryResult>();
+  // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
+  for (const query of parseNotebookQueryBlocks(params.markdown).blocks) {
+    queryResults.set(
+      query.line,
+      await resolveNoteQuery({
+        notebookId: params.notebookId,
+        noteId: params.noteId,
+        userId: params.userId,
+        serviceAccountId: params.serviceAccountId,
+        boundNotebookId: params.boundNotebookId,
+        bypassAccess: params.bypassAccess,
+        query,
+      }),
+    );
+  }
+  return queryResults;
+};
+
 const renderBookDocument = async (params: {
   notebookId: string;
   notebookShortId: string;
@@ -34,21 +63,7 @@ const renderBookDocument = async (params: {
   bypassAccess?: boolean;
 }) => {
   const { markdown } = params;
-  const queries = parseNotebookQueryBlocks(markdown).blocks;
-  const queryResults = new Map<number, NoteQueryResult>();
-  // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
-  for (const query of queries) {
-    queryResults.set(
-      query.line,
-      await resolveNoteQuery({
-        notebookId: params.notebookId,
-        noteId: params.noteId,
-        userId: params.userId,
-        bypassAccess: params.bypassAccess,
-        query,
-      }),
-    );
-  }
+  const queryResults = await resolveBookQueries(params);
   const document = renderNotebookBook({
     markdown,
     notebookId: params.notebookShortId,

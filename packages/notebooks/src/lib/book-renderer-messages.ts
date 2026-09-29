@@ -30,6 +30,7 @@ export const bookRendererMessages = i18n.define({
       warning: "Warning",
       danger: "Danger",
       diagramSource: "Diagram source",
+      image: ({ alt }: { alt: string }) => (alt ? `Image: ${alt}` : "Image"),
     },
     de: {
       toc: "Inhalt",
@@ -58,6 +59,7 @@ export const bookRendererMessages = i18n.define({
       warning: "Warnung",
       danger: "Gefahr",
       diagramSource: "Diagramm-Quelltext",
+      image: ({ alt }) => (alt ? `Bild: ${alt}` : "Bild"),
     },
   },
 });
