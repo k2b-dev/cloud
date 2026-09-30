@@ -49,6 +49,33 @@ describe("Markdown PDF renderer", () => {
     expect(html).not.toContain('href="javascript:');
   });
 
+  test("escapes text after an inline pre, code, kbd or script tag", () => {
+    for (const tag of ["pre", "code", "kbd", "script"]) {
+      const html = buildMarkdownPdfHtml({
+        markdown: `x <${tag}> <svg/onload=alert(1)> <a/href=javascript:alert(1)>link &amp; "q"\n\n<img/src=x/onerror=alert(1)> next`,
+      });
+      const body = html.slice(html.indexOf("<main"));
+
+      expect(body).toContain(`&lt;${tag}&gt; &lt;svg/onload=alert(1)&gt; &lt;a/href=javascript:alert(1)&gt;link &amp; &quot;q&quot;`);
+      expect(body).toContain("&lt;img/src=x/onerror=alert(1)&gt; next");
+      expect(body.replace(/<\/?(?:main|p|body|html)\b[^>]*>/g, "")).not.toContain("<");
+    }
+
+    expect(buildMarkdownPdfHtml({ markdown: "- item <pre> <svg/onload=alert(1)>" })).toContain(
+      "<li>item &lt;pre&gt; &lt;svg/onload=alert(1)&gt;</li>",
+    );
+  });
+
+  test("keeps numeric character references as escaped text", () => {
+    const html = buildMarkdownPdfHtml({
+      markdown: "&#60;script&#62;alert(1)&#60;/script&#62; &#x3c;img src=x&#x3e; <&#106;avascript:alert(1)>",
+    });
+    const body = html.slice(html.indexOf("<main"));
+
+    expect(body).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &lt;img src=x&gt;");
+    expect(body).not.toMatch(/<(?:script|img|a)\b/i);
+  });
+
   test("renders images as safe links without fetching them", () => {
     const html = buildMarkdownPdfHtml({
       markdown: "![Architecture](https://example.test/diagram.png) ![Unsafe](javascript:alert(1))",

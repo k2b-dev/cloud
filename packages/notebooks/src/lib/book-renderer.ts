@@ -190,7 +190,12 @@ export const renderNotebookBook = (
   renderer.html = ({ text: html }) => escape(html);
   renderer.text = function (token) {
     if (token.type === "text" && token.tokens) return this.parser.parseInline(token.tokens);
-    if (token.type === "escape" || token.escaped || insideLink || literalText.has(token)) return Renderer.prototype.text.call(this, token);
+    // marked flags text that follows an inline <pre>, <code>, <kbd> or <script>
+    // tag as already escaped, because it expects that tag to reach the output
+    // as HTML. The tag is escaped here, so that text is escaped as well; it
+    // stays free of ligatures, like the code it reads as.
+    if (token.type === "text" && token.escaped) return Renderer.prototype.text.call(this, { ...token, escaped: false });
+    if (token.type === "escape" || insideLink || literalText.has(token)) return Renderer.prototype.text.call(this, token);
     return ligatureHtml(token.text);
   };
   renderer.heading = function (token) {

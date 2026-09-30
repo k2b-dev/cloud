@@ -32,9 +32,11 @@ describe("Notebook Book HTML", () => {
     expect(html).not.toContain("NOTEBOOKBOOKSLOT");
     const linked = render("[==#team==](https://example.test)").html;
     expect(linked.match(/<a /g)).toHaveLength(1);
+    // A link label cannot hold a link: the inner one stays the link and the outer brackets stay text.
     const nested = render("[==[Inner](note://DEF456)==](https://example.test)").html;
-    expect(nested.match(/<a /g)).toHaveLength(1);
-    expect(nested).toContain("<mark>Inner</mark>");
+    expect(nested).not.toMatch(/<a\b[^>]*>(?:(?!<\/a>)[\s\S])*<a\b/);
+    expect(nested).toContain('<mark><a class="notebook-book-note-link" href="/app/notebooks/ABC123/notes/DEF456?mode=book">');
+    expect(nested).toContain("Inner</a></mark>");
   });
 
   test("image alt text uses plain inline labels without double escaping or HTML slots", () => {
@@ -311,6 +313,21 @@ describe("Notebook Book HTML", () => {
     expect(html).not.toMatch(/<(?:script|iframe)\b/i);
     expect(html).not.toMatch(/<(?:img|a)\b[^>]*(?:onerror|javascript:|data:|href="\/\/)/i);
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("text after an inline pre, code, kbd or script tag cannot add markup", () => {
+    for (const tag of ["pre", "code", "kbd", "script"]) {
+      const { html } = render(`x <${tag}> <div/class="fixed inset-0">cover -> &amp;\n\n<h1/id="heading-x">next`);
+      expect(html).toContain(`&lt;${tag}&gt; &lt;div/class="fixed inset-0"&gt;cover -&gt; &amp;`);
+      expect(html).toContain('&lt;h1/id="heading-x"&gt;next');
+      expect(html.replace(/<\/?p>/g, "")).not.toContain("<");
+    }
+  });
+
+  test("numeric character references stay text and cannot rebuild markup or URL schemes", () => {
+    const { html } = render("&#60;script&#62;alert(1)&#60;/script&#62; &#x3c;img src=x onerror=alert(1)&#x3e; <&#106;avascript:alert(1)>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &lt;img src=x onerror=alert(1)&gt;");
+    expect(html).not.toMatch(/<(?:script|img|a)\b/i);
   });
 
   test("authored markers cannot replace generated output", () => {

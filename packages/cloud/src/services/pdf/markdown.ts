@@ -135,6 +135,12 @@ const safeLink = (value: string): string | null => {
 const renderMarkdown = (source: string): string => {
   const renderer = new Renderer();
   renderer.html = ({ text }: Tokens.HTML | Tokens.Tag) => escapeHtml(text);
+  // marked flags text that follows an inline <pre>, <code>, <kbd> or <script>
+  // tag as already escaped, because it expects that tag to reach the output as
+  // HTML. The tag is escaped here, so the text after it is escaped as well.
+  renderer.text = function (token: Tokens.Text | Tokens.Escape) {
+    return Renderer.prototype.text.call(this, token.type === "text" && token.escaped ? { ...token, escaped: false } : token);
+  };
   renderer.image = ({ href, title, text }: Tokens.Image) => {
     const label = escapeHtml(text.trim() ? `Image: ${text}` : "Image");
     const safeHref = safeLink(href);

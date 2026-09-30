@@ -109,7 +109,7 @@
     "jose": "6.2.12",
     "katex": "0.18.9",
     "liquidjs": "10.29.0",
-    "marked": "17.0.6",
+    "marked": "18.0.14",
     "mermaid": "12.0.0",
     "nodemailer": "10.0.10",
     "postcss": "8.5.28",
