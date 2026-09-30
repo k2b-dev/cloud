@@ -298,10 +298,10 @@ const firstFrameAndLoad = async (viewport: (typeof viewports)[number]) => {
   const html = (await (await shareServer.request(`${origin}/share/minimal-layout-probe`)).text()).replace(CONTENT, share);
   const { stylesheets, file } = await coreAssets();
   const preloads = [...html.matchAll(/<link rel="preload" href="([^"]+)" as="font"/g)].map((match) => match[1]!);
-  // Serve the stylesheets once every preloaded font is served, the order a preload allows; without a preload
-  // the fonts are only requested after layout, and the stylesheets go out after a pause instead.
+  // Serve the stylesheets only once every preloaded font is served, the order a preload allows, however slow the
+  // runner; a face without a preload is only requested after the stylesheets and layout.
   const served = new Map(preloads.map((href) => [href, Promise.withResolvers<void>()]));
-  const fontsFirst = Promise.race([Promise.all([...served.values()].map((font) => font.promise)), Bun.sleep(2_000)]);
+  const fontsFirst = Promise.all([...served.values()].map((font) => font.promise));
   const tab = await browser.newPage({
     viewport: { width: viewport.width, height: viewport.height },
     deviceScaleFactor: 2,
@@ -317,9 +317,9 @@ const firstFrameAndLoad = async (viewport: (typeof viewports)[number]) => {
         await fontsFirst;
         return route.fulfill({ contentType: "text/css", body: stylesheet });
       }
+      // A preload without a file is answered too, so the stylesheets still go out and the comparison fails.
       const path = file(pathname);
-      if (!path) return route.fulfill({ status: 404, body: "" });
-      await route.fulfill({ path });
+      await (path ? route.fulfill({ path }) : route.fulfill({ status: 404, body: "" }));
       served.get(pathname)?.resolve();
     });
     // The islands' scripts answer 404, so only the fonts can move anything.

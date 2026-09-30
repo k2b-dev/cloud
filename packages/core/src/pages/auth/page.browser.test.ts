@@ -182,11 +182,11 @@ const firstFrameAndLoad = async (view: View, query: string, locale: "en" | "de")
   const preloads = [...html.matchAll(/<link rel="preload" href="([^"]+)" as="font"/g)].map((match) => match[1]!);
   for (const href of preloads.filter((href) => href.startsWith("/public/fonts/")))
     expect(stylesheets["/public/fonts.css"]).toContain(`url(${href})`);
-  // A preload makes the fonts download next to the stylesheets. Answering the stylesheets once every preloaded
-  // font is served makes that order deterministic; without a preload the fonts are only requested after layout,
-  // and the stylesheets go out after a pause instead.
+  // A preload makes the fonts download next to the stylesheets. Answering the stylesheets only once every
+  // preloaded font is served makes that order deterministic, however slow the runner; a face without a preload
+  // is only requested after the stylesheets and layout, so the first frame shows the fallback font.
   const served = new Map(preloads.map((href) => [href, Promise.withResolvers<void>()]));
-  const fontsFirst = Promise.race([Promise.all([...served.values()].map((font) => font.promise)), Bun.sleep(2_000)]);
+  const fontsFirst = Promise.all([...served.values()].map((font) => font.promise));
   const tab = await browser.newPage({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 2,
@@ -355,11 +355,16 @@ describe("sign-in page in a browser", () => {
         expect(link.hit.contiguous, `${locale} ${link.name}`).toBe(true);
         // The German footer wraps: the language switch takes a second row, 4 px below the links, and its own
         // hit area wins where they meet. The link right above it keeps the 24 px of WCAG's minimum target size;
-        // 44 px for both rows would need another 40 px of page height.
+        // 44 px would push the switch about 18 px down, and the German password form has 2 px left.
         const aboveSwitch =
           link.left < page.languageSwitch.right && link.right > page.languageSwitch.left && link.bottom <= page.languageSwitch.top;
         expect(link.hit.bottom - link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(aboveSwitch ? 24 : 44);
       }
+      // Only that one link gets the smaller target.
+      expect(
+        footer.filter((link) => link.hit.bottom - link.hit.top < 44).map((link) => link.name),
+        locale,
+      ).toEqual(locale === "de" ? ["Datenschutz"] : []);
       // The footer links' hit areas reach 14 px up and stop short of the secondary actions', which reach 4 px down.
       const actionsBottom = Math.max(...page.actions.map((action) => action.bottom));
       for (const link of footer) expect(link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(actionsBottom + 4);
