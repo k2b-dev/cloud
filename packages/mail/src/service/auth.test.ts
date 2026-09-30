@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { ServiceAccountKind } from "@k2b/cloud/contracts";
 import type { MailRequestContext } from "./auth";
-import { durableCredentialSnapshot } from "./auth";
+import { capByCredentialScopes, durableCredentialSnapshot } from "./auth";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
 
 const serviceContext = (credential: { credentialId?: string | null; credentialExpiresAt?: string | null }): MailRequestContext => ({
@@ -73,5 +74,26 @@ describe("durable Mail credential snapshots", () => {
       credential_expires_at: null,
     };
     expect(await commandStillAuthorized(command, "write")).toBe(false);
+  });
+});
+
+describe("Mail credential scope cap", () => {
+  const withAccount = (kind: ServiceAccountKind, scopes: string[]): MailRequestContext => {
+    const context = serviceContext({ credentialId: null, credentialExpiresAt: null });
+    if (context.actor.kind !== "service_account") throw new Error("Expected a service-account context");
+    return { ...context, actor: { ...context.actor, serviceAccount: { ...context.actor.serviceAccount, kind }, scopes } };
+  };
+
+  test("caps every non-delegated service account by its scopes", () => {
+    for (const kind of ["standalone", "agent", "resource_bound"] satisfies ServiceAccountKind[]) {
+      expect(capByCredentialScopes(withAccount(kind, ["read"]), "write")).toBe("read");
+      expect(capByCredentialScopes(withAccount(kind, ["read", "write"]), "write")).toBe("write");
+      expect(capByCredentialScopes(withAccount(kind, ["admin"]), "write")).toBe("write");
+      expect(capByCredentialScopes(withAccount(kind, ["openid"]), "admin")).toBe("none");
+    }
+  });
+
+  test("lets a personal API key act with its user's grant", () => {
+    expect(capByCredentialScopes(withAccount("user_delegated", []), "admin")).toBe("admin");
   });
 });
