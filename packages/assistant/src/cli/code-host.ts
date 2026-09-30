@@ -31,9 +31,15 @@ export async function createCliCodeHost(
   options?: { entry?: string; unattended?: boolean },
 ) {
   const http = createCodeHostHttp(ctx);
+  // The child reports each startup step so a missed deadline names where it stopped.
+  let step = "starting the code host process";
   const ipc = hostIpc(
     (message) => child.send(message),
     async (request) => {
+      if (request.operation === "progress") {
+        step = request.step;
+        return null;
+      }
       if (request.operation !== "approve") throw new Error("Unsupported CLI browser request");
       if (!approve)
         throw new Error(
@@ -79,7 +85,7 @@ export async function createCliCodeHost(
   // Startup shares the runtime's 45-second operation budget. A stalled child
   // must not keep a server tool waiting forever before runtime deadlines exist.
   const startupDeadline = setTimeout(() => {
-    ipc.close(new Error("Code host startup exceeded 45 seconds; no operation was executed"));
+    ipc.close(new Error(`Code host startup exceeded 45 seconds while ${step}; no operation was executed`));
     child.kill();
   }, 45_000);
   try {

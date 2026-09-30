@@ -142,7 +142,10 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
 
     // Exercise the compiled parent AND its internal browser subprocess, from
     // outside the checkout. No installation or user Cloud data is contacted.
-    const chromium = process.env.CLOUD_CLI_CHROMIUM ?? Bun.which("google-chrome") ?? Bun.which("chromium");
+    // Like `cld` by default, the child launches Playwright's Chromium from
+    // HOME. A system Chrome is only used when CLOUD_CLI_CHROMIUM names it: the
+    // CI image's Google Chrome needed 9-33 seconds for its first start.
+    const chromium = process.env.CLOUD_CLI_CHROMIUM;
     const bundle = await cliHostBundle();
     const code = "export default () => 42";
     const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
