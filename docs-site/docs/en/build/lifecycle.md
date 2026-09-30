@@ -5,7 +5,7 @@ section: Build an app
 order: 130
 description: Start the service, prepare required state, run process work, and stop cleanly.
 tags: [applications, lifecycle, shutdown]
-updated: 2026-09-07
+updated: 2026-09-30
 ---
 
 # Start and stop an application
@@ -108,6 +108,22 @@ Make setup work safe to run more than once. See
 controlled process already prepared the required state. It must not hide a
 failing migration.
 
+## Wait for NATS
+
+`app.start()` needs NATS and JetStream before anything else. When they do not
+answer yet, for example because the whole stack restarted at once and
+JetStream is still recovering, Cloud retries with a new connection. The first
+retry follows after about one second. The delay doubles up to about 20
+seconds, with random spread so that processes that restarted together do not
+retry in step. Each attempt logs `NATS or JetStream is not ready; retrying`
+with the reason.
+
+The process does not serve `/_cloud/ready` while it waits. When NATS and
+JetStream still do not answer after five minutes, it logs an error and exits
+with status 1, also under `bun --watch`, so that Docker or Kubernetes
+restarts it. A start fails at once when waiting cannot help: `NATS_SERVERS`
+is missing, the server version is unsupported, or JetStream is disabled.
+
 ## Clean up a failed start
 
 Cloud calls the application's `stop` hook if `setup`, `start`, resource
@@ -183,7 +199,8 @@ Request handlers should use request middleware instead. See
 
 Cloud starts the application in this order:
 
-1. require the shared `APP_SECRET` and connect the process-owned NATS instance;
+1. require the shared `APP_SECRET` and connect the process-owned NATS instance,
+   waiting while NATS and JetStream do not answer;
 2. declare registry resources and start the runtime watcher;
 3. run `setup`, unless skipped;
 4. register notification definitions;

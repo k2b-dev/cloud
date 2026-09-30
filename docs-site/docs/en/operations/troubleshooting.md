@@ -5,7 +5,7 @@ section: Operations
 order: 1180
 description: Diagnose common application registration, request, data, and runtime failures.
 tags: [troubleshooting, health, diagnostics]
-updated: 2026-07-27
+updated: 2026-09-30
 ---
 
 # Troubleshooting
@@ -48,6 +48,10 @@ Check:
 4. the application logged a successful registration;
 5. all containers use the same Compose network;
 6. the registry contains the application ID.
+
+A process that logs `NATS or JetStream is not ready; retrying` is still
+starting and waits for NATS; see
+[Restart NATS and applications together](/en/docs/operations/nats-operations#restart-nats-and-applications-together).
 
 A clean shutdown removes the registry entry. A crashed instance can remain
 visible for up to the registry expiry window.

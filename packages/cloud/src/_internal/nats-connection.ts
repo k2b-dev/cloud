@@ -12,15 +12,9 @@ export type ConnectNatsOptions = {
   name: string;
 };
 
-export const connectNats = async ({ name }: ConnectNatsOptions): Promise<NatsConnection> => {
-  if (env.NATS_SERVERS.length === 0) {
-    throw new Error(
-      `NATS_SERVERS is not set (connection "${name}"). @k2b/sync needs a comma-separated list of ` +
-        "nats://host:port bootstrap servers, e.g. NATS_SERVERS=nats://ipa_nats_1:4222,nats://ipa_nats_2:4222.",
-    );
-  }
-
-  return connect({
+/** Dial `NATS_SERVERS` once. `startProcessSync()` requires the list and retries while NATS does not answer. */
+export const connectNats = async ({ name }: ConnectNatsOptions): Promise<NatsConnection> =>
+  connect({
     servers: env.NATS_SERVERS,
     name,
     ignoreClusterUpdates: env.NATS_IGNORE_CLUSTER_UPDATES,
@@ -31,4 +25,3 @@ export const connectNats = async ({ name }: ConnectNatsOptions): Promise<NatsCon
     ...(env.NATS_CREDS_FILE ? { authenticator: credsAuthenticator(readFileSync(env.NATS_CREDS_FILE)) } : {}),
     ...(env.NATS_TLS_CA_FILE ? { tls: { caFile: env.NATS_TLS_CA_FILE } } : {}),
   });
-};

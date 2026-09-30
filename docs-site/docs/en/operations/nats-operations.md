@@ -5,7 +5,7 @@ section: Operations
 order: 1165
 description: Inspect NATS infrastructure, investigate Sync failures, and configure independent outage monitoring.
 tags: [nats, sync, observability, operations]
-updated: 2026-09-23
+updated: 2026-09-30
 ---
 
 # NATS operations
@@ -149,6 +149,26 @@ Keep streams and application data when investigating errors. Removing a
 stream deletes retained work and can make unsnapshotted notebook edits
 unrecoverable. For `ResourceDriftError`, follow the release's specific recovery
 instructions rather than deleting a namespace to make readiness pass.
+
+## Restart NATS and applications together
+
+Applications and the gateway do not need to start after NATS. They wait for
+NATS and JetStream when they start: after a host restart, a process that
+comes up before NATS logs `NATS or JetStream is not ready; retrying` with the
+reason, such as a refused connection, an unknown host, or
+`JetStream system temporarily unavailable`, and continues once JetStream
+answers. It reports readiness only after that.
+
+A process that gets no answer within five minutes exits with status 1. Give
+every service a restart policy, such as `restart: unless-stopped` in Compose
+or the default `Always` in Kubernetes. Repeated restarts with this error mean
+that NATS or its JetStream cluster is not recovering; inspect the NATS nodes
+before the application.
+
+After a successful start, the NATS client keeps reconnecting for the life of
+the process. An outage that outlasts the application registry lease of 180
+seconds makes the application exit because it cannot renew its registration;
+its next start waits for NATS again.
 
 ## Alert on dead letters and broker health
 
