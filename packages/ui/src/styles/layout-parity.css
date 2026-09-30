@@ -327,15 +327,20 @@
 
 /* Narrow surfaces stack one scrolling category row above the panel, with the
    close action in its own cell beside the row so it never covers the panel.
-   From 48rem the categories become the side rail (see the responsive block). */
+   From 48rem the categories become the side rail (see the responsive block).
+   Only the panel and the category list scroll. The frame, rail and content
+   clip instead of hiding: a `hidden` box is still a scroll container, so
+   focusing a control that lies beyond the frame scrolled the frame itself and
+   moved the rail, panel and footer out of the dialog, leaving it blank. */
 .k2b-ui .k2b-settings {
   position: relative;
   display: grid;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-dialog);
   background: var(--k2b-surface);
@@ -352,7 +357,7 @@
   grid-area: 1 / 1;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 /* Cloud's nav is `flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 py-3 pr-14`;
@@ -470,7 +475,7 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   border-top: 1px solid var(--k2b-border);
 }
 
