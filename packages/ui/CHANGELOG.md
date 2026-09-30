@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.9.0...npm-ui-v0.9.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **deps:** move to @k2b/stdlib 0.27.0 and show dates in each locale's order ([#472](https://github.com/k2b-dev/cloud/issues/472)) ([163ace1](https://github.com/k2b-dev/cloud/commit/163ace136dd89d587a700d579df9a42502d71f60))
+* **deps:** move to marked 18 ([#474](https://github.com/k2b-dev/cloud/issues/474)) ([5dd1d3a](https://github.com/k2b-dev/cloud/commit/5dd1d3aca52b03744fc0059fc5619a32e9972143)), closes [#463](https://github.com/k2b-dev/cloud/issues/463)
+* **ui:** keep iPhones from zooming when a text field takes focus ([#477](https://github.com/k2b-dev/cloud/issues/477)) ([8b480ec](https://github.com/k2b-dev/cloud/commit/8b480ec6e27b51e4cf3c445cee2e23509f57d197))
+* **ui:** keep the CheckboxCard input inside its card when lists scroll ([#445](https://github.com/k2b-dev/cloud/issues/445)) ([e466802](https://github.com/k2b-dev/cloud/commit/e466802ee642192ab5035f53c78c54b5d0f1c2ac)), closes [#404](https://github.com/k2b-dev/cloud/issues/404)
+* **ui:** make dropdown and menu items finger-sized on phones ([#448](https://github.com/k2b-dev/cloud/issues/448)) ([8c843b3](https://github.com/k2b-dev/cloud/commit/8c843b31c93bf5a92c32177233fe973e9cfe77c7))
+* **ui:** scroll the settings panel, not the dialog frame, when a hidden control takes focus ([#473](https://github.com/k2b-dev/cloud/issues/473)) ([849f439](https://github.com/k2b-dev/cloud/commit/849f439b2a11ee988e43eeb2668e83ffa9ef8a70))
+
 ## [0.9.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.8.0...npm-ui-v0.9.0) (2026-09-29)
 
 

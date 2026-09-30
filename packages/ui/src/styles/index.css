@@ -8555,3 +8555,34 @@
     border: 0; border-radius: 0; box-shadow: none; background: transparent;
   }
 }
+
+/* iOS Safari zooms the page when a focused field's text is smaller than 16px,
+   and leaves it zoomed afterwards. Touch devices therefore edit at 16px. The
+   controls keep their size: each field keeps the line box it had, as a fixed
+   length that its height or min-height already covered. Devices with a fine
+   primary pointer keep the compact text. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-input,
+  .k2b-ui .k2b-combobox__input > input,
+  .k2b-ui .k2b-tags-input > input {
+    font-size: max(1rem, 16px);
+  }
+
+  .k2b-ui .k2b-text-input__textarea,
+  .k2b-ui .k2b-chat-composer__highlight,
+  .k2b-ui .k2b-chat-composer__input textarea {
+    font-size: max(1rem, 16px);
+    line-height: 1.3125rem;
+  }
+
+  .k2b-ui .k2b-choice-search > input,
+  .k2b-ui .k2b-pin-input__digit {
+    font-size: max(1rem, 16px);
+    line-height: 1.25rem;
+  }
+
+  .k2b-ui .k2b-date-time__control input {
+    font-size: max(1rem, 16px);
+    line-height: 1.125rem;
+  }
+}

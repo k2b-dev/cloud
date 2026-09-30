@@ -30,15 +30,13 @@ export default ssr<AuthContext>(async (c) => {
 
   if (data.isBookMode) {
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
-    const bookTree = (nodes: typeof data.tree): import("./_components/book/BookNavigator.island").BookTreeNode[] =>
-      nodes.map((node) => ({ id: node.id, title: node.title, children: bookTree(node.children) }));
     return () => (
       <Layout c={c} fullPage fullWidth title={data.notebook.name}>
         <BookSurface
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={bookTree(data.tree)}
+          tree={data.bookTree}
           tags={data.ctx.tags}
           html={data.bookHtml}
           noteTitle={data.selectedNote?.title ?? null}

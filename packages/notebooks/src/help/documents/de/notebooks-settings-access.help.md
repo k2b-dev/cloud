@@ -17,6 +17,10 @@ In der Buchansicht aktualisieren Seitenlinks, Tagfilter, Suche und Seitennavigat
 
 Wähle in der Seitenleiste der Buchansicht eine Seite aus, um sie zu öffnen, oder blende mit dem Pfeil daneben ihre Unterseiten ein oder aus. Beim Laden zeigt die Buchansicht die aktuelle Seite mit ihren Unterseiten. Danach behält sie deine Auswahl bei und klappt nur die Seiten auf, in denen die geöffnete Seite liegt. Auf dem Smartphone zeigt das Navigationsmenü dieselben zugeklappten Seiten, behält sie beim Schließen und erneuten Öffnen bei und öffnet Seiten, ohne das Buch neu zu laden.
 
+Die Seitenleiste zeigt die Startseite des Notizbuchs zuerst, mit ihren Unterseiten darunter, auch wenn die Startseite unter einer anderen Seite liegt. Alle weiteren Seiten folgen auf jeder Ebene nach Titel, in der Reihenfolge deiner Sprache; Zahlen zählen als Zahlen, „Kapitel 2“ steht also vor „Kapitel 10“. Die Reihenfolge passt sich an, wenn sich ein Titel oder die Startseite ändert. Die Startseite legst du unter **Notizbuch – Allgemein** fest.
+
+Öffnest du das Notizbuch selbst in der Buchansicht, zeigt sie die Startseite oder, wenn es keine gibt, die erste Seite der Seitenleiste. Hattest du zuletzt eine Seite dieses Notizbuchs in Bearbeiten oder Schreibgeschützt geöffnet, zeigt die Buchansicht stattdessen diese Seite.
+
 Nutzer mit Schreib- oder Adminrechten können zwischen drei Ansichten wechseln:
 
 - **Bearbeiten:** Die Notiz bearbeiten und den Detailbereich nutzen.

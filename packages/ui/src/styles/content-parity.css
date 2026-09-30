@@ -1337,6 +1337,13 @@
   font-size: 0.75rem;
 }
 
+/* 16px keeps iOS Safari from zooming on focus; the fixed height holds the row. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-content-file-tree__rename {
+    font-size: max(1rem, 16px);
+  }
+}
+
 .k2b-ui .k2b-content-file-tree__rename:focus {
   outline: none;
   border-color: var(--k2b-focus-ring);
@@ -1434,6 +1441,12 @@
   font-size: 0.75rem;
   line-height: 1.25rem;
   tab-size: 2;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-content-file-view__code-input {
+    font-size: max(1rem, 16px);
+  }
 }
 
 .k2b-ui .k2b-content-file-view__sheet {
