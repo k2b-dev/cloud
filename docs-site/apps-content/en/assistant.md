@@ -767,7 +767,10 @@ Studio also includes stdlib `camt` and `einvoice` alongside `money`, `datev`
 and `sepa`. Read camt.052.001.08 reports, calculate exact invoice totals,
 generate supported ZUGFeRD CII EN16931 XML, including zero-rated, exempt,
 reverse-charge, intra-EU, export and out-of-scope VAT, or read invoice XML
-directly or from PDF attachments. An incoming read mode also accepts received
+directly or from PDF attachments. Generation covers invoices, credit notes,
+self-billing and self-billed credit notes, with an optional delivery date or
+invoicing period and optional payment by transfer, cash, online service or
+clearing. An incoming read mode also accepts received
 CII XRechnung invoices with discounts and prepayments and lists unmapped
 fields. PDF invoice reading extracts embedded XML; it is not OCR.
 No WASM/XSD checker is included. Parsers preserve declared incoming values;

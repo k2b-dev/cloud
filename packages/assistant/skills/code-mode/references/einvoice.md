@@ -19,11 +19,13 @@ for example `new Uint8Array(await file.arrayBuffer())`. It reads embedded XML,
 not scanned pages or arbitrary visual invoice layouts. For those, use the
 [local PDF text reader](documents.md) or the agent's document/vision tools.
 
-The supported slice covers EUR CII EN16931 invoices, credit notes and self-billing,
-VAT categories S/Z/E/AE/K/G/O, units C62/HUR/DAY/KGM. Generation does not
-support UBL, XRechnung, discounts or prepayments. Readers preserve declared totals;
-parsing is not arithmetic verification. Validation is not XSD or Schematron
-certification. No XSD validator is exposed.
+The supported slice covers EUR CII EN16931 invoices, credit notes, self-billing
+and self-billed credit notes, VAT categories S/Z/E/AE/K/G/O, units
+C62/HUR/DAY/KGM, and payment by credit transfer, cash, online service or
+clearing, or no payment means. Generation does not support UBL, XRechnung,
+discounts or prepayments. Readers preserve declared totals; parsing is not
+arithmetic verification. Validation is not XSD or Schematron certification.
+No XSD validator is exposed.
 
 ## Complete input and result shapes
 
@@ -49,13 +51,17 @@ type InvoiceTotals = {
   taxGroups: (Tax & {netAmount: string; taxAmount: string})[];
 };
 type Invoice = {
-  kind: "invoice" | "creditNote" | "selfBilling";
-  number: string; invoiceDate: string; serviceDate: string; dueDate: string;
+  kind: "invoice" | "creditNote" | "selfBilling" | "selfBillingCreditNote";
+  number: string; invoiceDate: string; dueDate: string;
+  serviceDate?: string; period?: {startDate?: string; endDate?: string};
   currency: "EUR"; seller: Party & {taxRegistrationId?: string}; buyer: Party;
   deliverToCountryCode?: string; buyerReference: string;
   notes?: string[];
   precedingInvoice?: {number: string; invoiceDate: string};
-  payment: {iban: string; accountName: string};
+  payment?: {
+    typeCode?: "10" | "30" | "58" | "68" | "97"; // default "58"
+    information?: string; iban?: string; accountName?: string;
+  };
   lines: InvoiceLine[]; totals?: InvoiceTotals;
 };
 type InvoiceCalculation = InvoiceTotals & {
@@ -73,32 +79,47 @@ XML options default to 10 Mi UTF-16 code units, 100,000 elements, depth 64.
 PDF input defaults to 25 MiB. Overrides must be positive safe integers.
 A parser result's business fields are under **`data.invoice`**. Calculated
 amounts are directly under **`data.netAmount`**, etc., with no `data.totals` wrapper.
+A parsed invoice carries `serviceDate`, `period`, `payment` and the account
+fields only when the XML does: check each before reading it, for example
+`invoice.payment?.iban`. A parsed `payment` always has its `typeCode`.
 
 - Dates are real `YYYY-MM-DD` dates; `dueDate` cannot precede `invoiceDate`.
-  Credit notes require `precedingInvoice`, whose date cannot be later than the
-  credit note; other kinds cannot supply it. Credit-note amounts stay unsigned.
+  `serviceDate` (delivery date) and `period` (invoicing period) are optional
+  and can be combined. A `period` needs a start or an end, and its end cannot
+  precede its start.
+- `creditNote` and `selfBillingCreditNote` require `precedingInvoice`; every
+  kind may supply it, and its date cannot be later than `invoiceDate`.
+  Credit-note amounts stay unsigned.
+- `payment.typeCode`: `"58"` SEPA credit transfer, `"30"` credit transfer,
+  `"10"` cash, `"68"` online payment service, `"97"` clearing between
+  partners. 30 and 58 require `iban`; `accountName` is optional. The other
+  codes forbid both. `information` is free text for any code. Omit `payment`
+  when no payment means applies. Any other code fails both writing and the
+  default reader; read such invoices with `{mode: "incoming"}`.
 - Lines: 1–1000, unique IDs. Quantities are positive, prices nonnegative,
   VAT rates at most 100. Decimal strings allow up to four
   fractional digits and no leading zeros. Totals/net amounts require exactly
   two fractional digits; do not convert through JavaScript Number.
-- Country codes: two uppercase letters. `payment.iban` must be valid.
+- Country codes: two uppercase letters. A supplied `payment.iban` must be valid.
   Required text is nonblank valid XML text. Limits: number/reference/line ID/VAT ID
   100; names/address line/accountName 200; city 100; postalCode 20;
-  line description and each note 4000; at most 100 notes.
+  line description, `payment.information` and each note 4000; at most 100 notes.
 - Category S needs a positive rate; every other category uses `taxRate: "0"`
   and zero tax. E/AE/K/G/O need `taxExemptionReason` or a VATEX
   `taxExemptionReasonCode`; S/Z forbid both. O cannot be mixed with other
   categories and requires `vatId: ""` for both parties. A seller without a VAT
   ID needs `seller.id` and, outside O, `seller.taxRegistrationId`. AE/K need a
-  buyer VAT ID, K/G a seller VAT ID, and K `deliverToCountryCode`.
+  buyer VAT ID, K/G a seller VAT ID, and K `deliverToCountryCode` plus a
+  `serviceDate` or `period`.
 - `calculate` rounds each line half up to cents, then VAT per category and rate. It recalculates
   line `netAmount`; `serialize` also rejects supplied line/totals values that
   disagree. Render these calculated amounts in HTML instead of another arithmetic path.
 
-## Minimal supported invoice
+## Example invoice
 
 Use real business data and an app-owned invoice number. This illustrative
-fixture demonstrates the required fields; it is not a document to issue.
+fixture is a credit-transfer invoice with a delivery date; it is not a
+document to issue.
 
 ```js
 const invoice = {
@@ -125,8 +146,8 @@ if (!result.ok) throw new Error(JSON.stringify(result.error));
 await files.save(new Blob([result.data.bytes], { type: "application/xml" }), "invoice.xml");
 ```
 
-Never infer a missing VAT identifier, tax category, exemption reason, account
-or business reference merely to satisfy input validation.
+Never infer a missing VAT identifier, tax category, exemption reason, delivery
+date, account or business reference merely to satisfy input validation.
 
 ## Reading received invoices
 

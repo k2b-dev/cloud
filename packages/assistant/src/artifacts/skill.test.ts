@@ -118,3 +118,34 @@ test("invoice reference generates parseable XML with matching calculated totals"
   expect(calculation.data.grossAmount).toBe("119.00");
   expect(parsed.data.invoice.totals?.grossAmount).toBe(calculation.data.grossAmount);
 });
+
+// Generated apps read parser results by this type block: a field stdlib may
+// omit must be marked optional there, and a required one must stay required.
+test("invoice reference declares the fields, kinds and payment codes stdlib accepts", async () => {
+  const { einvoice } = await import("@k2b/stdlib/finance");
+  const { invoice } = await import("./test-invoice");
+  const document = await Bun.file(new URL("../../skills/code-mode/references/einvoice.md", import.meta.url)).text();
+  const block = document.match(/^type Invoice = \{\n([\s\S]*?)\n\};/m)?.[1];
+  expect(block).toBeDefined();
+  // Top-level fields only: comments and nested object types carry names of their own.
+  let fields = block!.replaceAll(/\/\/.*$/gm, "");
+  while (/\{[^{}]*\}/.test(fields)) fields = fields.replaceAll(/\{[^{}]*\}/g, "object");
+  const declared = [...fields.matchAll(/(\w+)(\??):/g)].map(([, name, optional]) => ({ name: name!, optional: optional === "?" }));
+  expect(declared.map((field) => field.name)).toEqual(expect.arrayContaining(Object.keys(invoice)));
+  for (const { name, optional } of declared) {
+    const { [name]: _removed, ...rest } = invoice as Record<string, unknown>;
+    expect(einvoice.validate(rest).ok, name).toBe(optional);
+  }
+  const literals = (pattern: RegExp) => [...(block!.match(pattern)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1]!);
+  const kinds = literals(/kind: ([^;]+);/);
+  expect(kinds).toContain("invoice");
+  const precedingInvoice = { number: "TEST-41", invoiceDate: invoice.invoiceDate };
+  for (const kind of kinds) expect(einvoice.validate({ ...invoice, kind, precedingInvoice }).ok, kind).toBe(true);
+  const codes = literals(/typeCode\?: ([^;]+);/);
+  expect(codes).toContain("58");
+  for (const typeCode of codes) {
+    // Only credit transfers carry the account; the other codes forbid it.
+    const payment = typeCode === "30" || typeCode === "58" ? { ...invoice.payment, typeCode } : { typeCode };
+    expect(einvoice.validate({ ...invoice, payment }).ok, typeCode).toBe(true);
+  }
+});
