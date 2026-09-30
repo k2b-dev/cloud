@@ -16,10 +16,10 @@ import { AppWorkspace, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../../config";
+import { orderBookTree } from "../../../../lib/book-tree";
 import { resolvePresentationMode } from "../../../../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
-import type { BookTreeNode } from "../../_components/book/BookNavigator.island";
 import BookSurface from "../../_components/book/BookSurface";
 import BookTagContent from "../../_components/book/BookTagContent";
 import { parseSettings } from "../../_components/settings/NotebookSettingsStore";
@@ -99,8 +99,6 @@ export default ssr<AuthContext>(async (c) => {
   const paginationQuery = new URLSearchParams({ mode: presentationMode });
   if (search) paginationQuery.set("search", search);
   const paginationBaseUrl = `${baseHref}?${paginationQuery}&page=`;
-  const bookTree = (nodes: typeof publicTree): BookTreeNode[] =>
-    nodes.map((node) => ({ id: node.id, title: node.title, children: bookTree(node.children) }));
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
@@ -138,7 +136,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookId={notebook.shortId}
           notebookName={notebook.name}
           selectedNoteId={null}
-          tree={bookTree(publicTree)}
+          tree={orderBookTree(publicTree, { id: (node) => node.id, homeId: publicNotebook.homepageNoteId, locale })}
           tags={tags}
           activeTag={tagParam}
           html={html}
