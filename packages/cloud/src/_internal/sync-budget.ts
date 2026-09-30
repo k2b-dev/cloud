@@ -11,8 +11,9 @@
  * fails the declaration with `ResourceDriftError` on `max_bytes`.
  *
  * Before a job, queue, or topic is first used, this module therefore changes
- * the byte limit of each such stream in place. A stream that holds more than
- * its new limit would lose its oldest messages; it keeps its limit instead:
+ * the byte limit of such a stream in place: both streams of a job or queue,
+ * and the dead-letter stream of a topic. A stream that holds more than its new
+ * limit would lose its oldest messages; it keeps its limit instead:
  *
  * - a job or queue is declared with the stream's current limit, so its work
  *   stays usable, and a later start applies the new limit;
@@ -145,7 +146,11 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
   /**
    * Provisions a declaration. Each existing stream whose byte limit differs
    * from the declared one gets the declared limit if it holds no more; then
-   * the declaration is tried again. Each stream is changed at most once.
+   * the declaration is tried again. Each stream is changed at most once. Of a
+   * topic, only the dead-letter stream, whose subjects end in `.dlq.>`, is
+   * changed: its event stream keeps Sync's drift check, so applications that
+   * declare one topic differently still fail instead of overwriting each
+   * other's limit.
    */
   const adopt = async (kind: Kind, id: string, ready: () => Promise<void>): Promise<void> => {
     const changed = new Set<string>();
@@ -158,6 +163,7 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
         changed.add(drift.stream);
         const jsm = await manager();
         const info = await jsm.streams.info(drift.stream);
+        if (kind === "topic" && !info.config.subjects.some((subject) => subject.endsWith(".dlq.>"))) throw error;
         if (info.state.bytes > drift.maxBytes) {
           if (reported.has(drift.stream)) throw error;
           reported.add(drift.stream);
@@ -267,9 +273,14 @@ export const withSyncBudgets = (sync: Sync, { connection, namespace }: { connect
     config: Config,
     create: (config: Config) => Handle,
   ): (() => Promise<Handle>) => {
-    const resolve = once(async () => {
+    // Declared once: Sync refuses a second declaration with other limits, so a
+    // failed first use retries provisioning with the limits chosen first.
+    const declaration = once(async () => {
       const target = declaredLimits(config);
-      const handle = create(withLimits(config, target, await keep(kind, config.id, target)));
+      return create(withLimits(config, target, await keep(kind, config.id, target)));
+    });
+    const resolve = once(async () => {
+      const handle = await declaration();
       await adopt(kind, config.id, () => handle.ready());
       return handle;
     });

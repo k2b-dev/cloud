@@ -10,13 +10,6 @@ const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
 const TOPIC_RETENTION_BYTES = 1024 * 1024 * 1024;
 /** Whole envelope; events are a few hundred bytes with 200-char text bounds. */
 const TOPIC_PAYLOAD_BYTES = 16 * 1024;
-/**
- * Gateway Ops dead-letters an event only after its rollup write failed five
- * times. 256 dead letters at the payload limit plus Sync's 4 KiB of dead-letter
- * headroom, the depth Sync gives a job or queue by default: 5 MiB, thousands of
- * typical events.
- */
-const TOPIC_DEAD_LETTER_BYTES = 256 * (TOPIC_PAYLOAD_BYTES + 4096);
 const TOPIC_TENANT = "default";
 const DROP_LOG_INTERVAL_MS = 30_000;
 
@@ -139,12 +132,16 @@ export const latestGatewayRouteSnapshot = async (): Promise<GatewayRouteSnapshot
   return all.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
 };
 
+/**
+ * Dead letters keep the event stream's limit. Gateway Ops leaves dead letters
+ * when rollup writes fail; if they exceeded a lowered limit, this topic, and
+ * with it Gateway Ops' start, would fail until they expired.
+ */
 export const gatewayTelemetryTopic = lazySync((sync) =>
   sync.topic<GatewayTelemetryEvent>({
     id: TOPIC_ID,
     owner: GATEWAY_RESOURCE_OWNER,
     retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: TOPIC_RETENTION_BYTES },
-    deadLetterRetention: { maxBytes: TOPIC_DEAD_LETTER_BYTES },
     maxPayloadBytes: TOPIC_PAYLOAD_BYTES,
   }),
 );

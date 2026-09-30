@@ -1,6 +1,6 @@
 import { expect, spyOn } from "bun:test";
-import { createSync, type JobConfig, type Sync } from "@k2b/sync";
-import { jetstreamManager } from "@nats-io/jetstream";
+import { createSync, type JobConfig, type QueueConfig, type Sync } from "@k2b/sync";
+import { jetstreamManager, RetentionPolicy } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { syncDefaultMaxBytes, withSyncBudgets } from "./sync-budget";
@@ -131,6 +131,55 @@ integration(
       expect(seen.size).toBe(20);
       await current.drain({ timeoutMs: 5_000 });
     } finally {
+      await connection.drain();
+    }
+  },
+  30_000,
+);
+
+integration(
+  "a job or queue whose first use failed is used again with the limits it declared first",
+  async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const namespace = testSyncNamespace("budget-retry");
+    const retention = (maxBytes: number) => ({ maxAgeMs: WEEK_MS, maxBytes });
+    const raw = createTestSync(connection, namespace);
+    const current = withSyncBudgets(raw, { connection, namespace });
+    const declareQueue = raw.queue;
+    let failures = 1;
+    const flaky = spyOn(raw, "queue").mockImplementation(<T>(config: QueueConfig) => {
+      const handle = declareQueue<T>(config);
+      return {
+        ...handle,
+        ready: async () => {
+          if (failures-- > 0) throw new Error("NATS is unavailable");
+          await handle.ready();
+        },
+      };
+    });
+    try {
+      const legacy = openSync(connection, namespace, false);
+      const legacyQueue = legacy.queue<{ pad: string }>({ id: "retried", retention: retention(4 * 1024 * 1024), maxPayloadBytes: 16_000 });
+      await legacy.ready();
+      for (let n = 0; n < 20; n++) await legacyQueue.send({ data: { pad: "x".repeat(10_000) } });
+      await legacy.drain({ timeoutMs: 5_000 });
+
+      await current.ready();
+      const queue = current.queue<{ pad: string }>({ id: "retried", retention: retention(64 * 1024), maxPayloadBytes: 16_000 });
+      // The first use keeps the old limit of the full work stream, then fails.
+      await expect(queue.ready()).rejects.toThrow("NATS is unavailable");
+      // The work stream empties before the next use, whose check would now choose the new limit.
+      const manager = await jetstreamManager(connection);
+      for await (const info of manager.streams.list()) {
+        if (info.config.metadata?.["sync.namespace"] === namespace && info.config.retention === RetentionPolicy.Workqueue) {
+          await manager.streams.purge(info.config.name);
+        }
+      }
+      await queue.ready();
+      expect(await limitsOf(connection, namespace, "retried")).toEqual([64 * 1024, 4 * 1024 * 1024]);
+    } finally {
+      flaky.mockRestore();
+      await current.drain({ timeoutMs: 5_000 });
       await connection.drain();
     }
   },
@@ -271,6 +320,29 @@ integration(
       expect(limits.sort((a, b) => a - b)).toEqual([64 * 1024, 4 * 1024 * 1024]);
     } finally {
       abort.abort();
+      await legacy.drain({ timeoutMs: 5_000 });
+      await current.drain({ timeoutMs: 5_000 });
+      await connection.drain();
+    }
+  },
+  30_000,
+);
+
+integration(
+  "a topic declared with another event stream limit reports the drift and leaves its streams unchanged",
+  async () => {
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const namespace = testSyncNamespace("budget-topic-log");
+    const retention = (maxBytes: number) => ({ maxAgeMs: 24 * 60 * 60 * 1000, maxBytes });
+    const legacy = openSync(connection, namespace, false);
+    const current = openSync(connection, namespace);
+    try {
+      await legacy.topic<{ n: number }>({ id: "log", retention: retention(4 * 1024 * 1024), maxPayloadBytes: 16_000 }).ready();
+
+      const topic = current.topic<{ n: number }>({ id: "log", retention: retention(2 * 1024 * 1024), maxPayloadBytes: 16_000 });
+      await expect(topic.publish({ data: { n: 1 } })).rejects.toThrow("max_bytes");
+      expect(await limitsOf(connection, namespace, "log")).toEqual([4 * 1024 * 1024, 4 * 1024 * 1024]);
+    } finally {
       await legacy.drain({ timeoutMs: 5_000 });
       await current.drain({ timeoutMs: 5_000 });
       await connection.drain();
