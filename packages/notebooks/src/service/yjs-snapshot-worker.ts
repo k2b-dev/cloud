@@ -31,6 +31,11 @@ export const SNAPSHOT_JOB_CONFIG = {
   ordering: { mode: "partitioned", partitions: SNAPSHOT_PARTITIONS },
   retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
   terminalRetentionMs: 30 * 24 * 60 * 60 * 1000,
+  // 256 dead letters at Sync's 128 KiB payload limit plus its 4 KiB of
+  // dead-letter headroom, the depth Sync gives a job by default. A snapshot is
+  // dead-lettered only for incomplete or malformed history or after 20 failed
+  // attempts; each one carries a note ID and a cursor of a few hundred bytes.
+  deadLetterRetention: { maxBytes: 256 * (128 * 1024 + 4096) },
   // Inert for coalesced submits, but part of the provisioned stream: dropping
   // it would drift `duplicate_window` on every existing installation.
   dedupeWindowMs: 24 * 60 * 60 * 1000,

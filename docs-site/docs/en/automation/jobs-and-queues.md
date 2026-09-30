@@ -132,20 +132,21 @@ Payloads default to 128 KiB including the JSON envelope. Pass large artifacts
 through a Sync object store instead of embedding them.
 
 Retention is a hard loss boundary: at its byte limit, Sync discards the oldest
-pending messages. A job or queue declared on Cloud's Sync without `retention`
-keeps messages for seven days and holds 256 messages at its payload limit,
-at most 1 GiB: 33 MiB at the default 128 KiB. The dead-letter stream gets the
-same limit. JetStream reserves both limits on every replica even while they are
-empty; see
+pending messages. A job or queue declared without `retention` keeps messages
+for seven days and holds 256 messages at its payload limit, at most 1 GiB:
+33 MiB at the default 128 KiB. The dead-letter stream gets the same limit
+unless `deadLetterRetention: { maxBytes }` sets a smaller one; it must hold at
+least one dead letter, the payload limit plus 4 KiB. JetStream reserves both
+limits on every replica even while they are empty; see
 [Reserve JetStream storage](/en/docs/operations/deployment-requirements#reserve-jetstream-storage).
 When the work can back up further, declare
 `retention: { maxAgeMs, maxBytes }` from the expected backlog, including queued
 delays, processing, and retry windows.
 
-Cloud applies a changed byte limit to the existing streams of a job or queue
-before it provisions them: on start for the jobs and queues declared by then,
-otherwise on first use. A stream that holds more than its new limit keeps the
-old limit until a later start.
+Cloud applies a changed byte limit to the existing work and dead-letter streams
+of a job or queue before it provisions them: on start for the jobs and queues
+declared by then, otherwise on first use. A stream that holds more than its new
+limit keeps the old limit until a later start.
 
 ## Recover unfinished work
 

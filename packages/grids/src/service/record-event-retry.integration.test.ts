@@ -138,6 +138,10 @@ natsTest(
         id: "grids:workflow-record-events",
         ordering: { mode: "partitioned", partitions: 32 },
         retention: { maxAgeMs: 30 * 24 * 60 * 60 * 1000, maxBytes: 1024 * 1024 * 1024 },
+        // Earlier releases left dead letters at 1 GiB. The process Sync of a Cloud
+        // application lowers that stream before first use; this raw test Sync
+        // cannot, so the previous queue already has the current limit.
+        deadLetterRetention: { maxBytes: 256 * (68_000 + 4096) },
         maxPayloadBytes: 68_000,
         delivery: {
           ackWaitMs: 120_000,

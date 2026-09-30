@@ -6,6 +6,14 @@ import { projectContactEventIds } from "./public-resources";
 const log = logger("contacts:events");
 const CONTACTS_EVENT_TENANT = "contacts";
 const TOPIC_OPERATION_TIMEOUT_MS = 1_500;
+const TOPIC_PAYLOAD_BYTES = 8_000;
+/**
+ * No durable consumer processes this topic, so its dead-letter stream stays
+ * empty; Sync still provisions it. The limit holds 256 dead letters at the
+ * payload limit plus Sync's 4 KiB of dead-letter headroom, the depth Sync gives
+ * a job or queue by default.
+ */
+const TOPIC_DEAD_LETTER_BYTES = 256 * (TOPIC_PAYLOAD_BYTES + 4096);
 
 export type ContactEventEnvelope = { internal: ContactServiceEvent; public: ContactLiveEvent };
 
@@ -13,7 +21,8 @@ const contactsTopic = lazySync((sync) =>
   sync.topic<ContactEventEnvelope>({
     id: "cloud:contacts:events:changes",
     retention: { maxAgeMs: 24 * 60 * 60 * 1_000, maxBytes: 1024 * 1024 * 1024 },
-    maxPayloadBytes: 8_000,
+    deadLetterRetention: { maxBytes: TOPIC_DEAD_LETTER_BYTES },
+    maxPayloadBytes: TOPIC_PAYLOAD_BYTES,
   }),
 );
 

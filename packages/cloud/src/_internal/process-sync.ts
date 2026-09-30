@@ -67,7 +67,8 @@ export type ProcessSync = {
 
 /**
  * Connect NATS, create and bind the process Sync instance, and wait until it is
- * ready. Jobs and queues without `retention` get Cloud's JetStream budget.
+ * ready. Existing streams of its jobs, queues, and topics take the byte
+ * limits they declare before first use (see `sync-budget.ts`).
  */
 export const startProcessSync = async ({ application }: { application: string }): Promise<ProcessSync> => {
   if (!env.SYNC_NAMESPACE.trim()) {

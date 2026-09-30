@@ -86,7 +86,10 @@ stream. Their byte limits come from the declaration:
   why durable state belongs in Postgres, from where recovery submits unfinished
   work again.
 - A job, queue, or topic declared with `retention` reserves its declared
-  `maxBytes` twice, unless a topic sets a smaller `deadLetterRetention`.
+  `maxBytes` twice, unless it sets a smaller `deadLetterRetention`. Built-in
+  resources with a large `retention` limit their dead letters to 256 at the
+  payload limit, as Sync does by default; for example, 17.6 MiB for
+  `grids:records` and 3 MiB for `mail:invalidations`.
 - A pump reserves 64 MiB.
 
 Per replica, the built-in applications reserve:
@@ -94,17 +97,17 @@ Per replica, the built-in applications reserve:
 | Application | Jobs and queues at the default | Larger streams, log and dead letters together | Reservation |
 | --- | --- | --- | --- |
 | Core, with the platform services it runs | 18 | AI turn streams 520 MiB, AI invalidations 128 MiB, FreeIPA backfill pump 64 MiB | 1.9 GiB |
-| Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
+| Gateway | 0 | `cloud-gateway-telemetry` 1 GiB | 1 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
-| Grids | 2 | `grids:records` 2 GiB, `grids:workflow-record-events` 2 GiB, workflow run events 512 MiB, metadata events 128 MiB | 4.8 GiB |
-| Mail | 10 | `mail:invalidations` 2 GiB, automation backfill pump 64 MiB | 2.7 GiB |
-| Contacts | 0 | contact events 2 GiB | 2 GiB |
-| Notebooks | 2 | snapshot job 2 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 3.8 GiB |
-| Spaces | 0 | item events 2 GiB | 2 GiB |
+| Grids | 2 | `grids:records` 1 GiB, `grids:workflow-record-events` 1 GiB, workflow run events 512 MiB, metadata events 128 MiB | 2.8 GiB |
+| Mail | 10 | `mail:invalidations` 1 GiB, automation backfill pump 64 MiB | 1.7 GiB |
+| Contacts | 0 | contact events 1 GiB | 1 GiB |
+| Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
+| Spaces | 0 | item events 1 GiB | 1 GiB |
 | Pulse | 5 | none | 330 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
 
-Together, that is about 20 GiB per replica for every built-in application.
+Together, that is about 13 GiB per replica for every built-in application.
 Size `max_file_store` for the applications you deploy with headroom for
 standalone applications, and check the live reservation of your account:
 
@@ -115,32 +118,45 @@ curl -s 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' \
 ```
 
 Releases up to 0.24.0 gave every job and queue without `retention` 1 GiB per
-stream, about 97 GiB per replica for the same applications. A later release
-lowers the byte limit of these streams in place when it starts or first uses
-them, and keeps their pending messages. A stream that already holds more than
-the new limit keeps its old limit, and the application logs
-`Kept the byte limit of a Sync stream that holds more than its new limit`; a
-later start lowers it once the stream holds less.
+stream, and the dead-letter streams of `cloud-gateway-telemetry`,
+`grids:records`, `grids:workflow-record-events`, `mail:invalidations`, contact
+events, item events, and the notebook snapshot job 1 GiB each: about 97 GiB
+per replica for the same applications. A later release lowers the byte limit
+of these streams in place when it starts or first uses them, and keeps their
+pending messages and dead letters. A stream that already holds more than the
+new limit keeps its old limit, and the application logs
+`Kept the byte limit of a Sync stream that holds more than its new limit`.
+A job or queue then keeps working, and a later start lowers the stream once
+it holds less. A topic cannot keep its old limit: until its dead-letter stream
+holds less, its use fails with a `ResourceDriftError` on `max_bytes`. Of these
+topics, only `cloud-gateway-telemetry` has a consumer that leaves dead letters,
+after its rollup write failed five times. Gateway Ops then retries the consumer
+every five seconds and collects no request telemetry. Its dead letters expire
+after a day; to continue sooner, purge the dead-letter stream that the log
+entry names with `nats stream purge`, which discards those telemetry events.
 
 The change is one-way. A 0.24.0 or older process refuses a lowered stream with a
 `ResourceDriftError` on `max_bytes`: during a rolling upgrade, an older process
-that restarts or first uses such a job or queue fails, and after a rollback the
-applications do not start. Before you roll back, make sure `max_file_store` on
-every node fits the old reservation again, then raise every lowered job and
-queue stream of the namespace with a `nats` context for the Cloud account:
+that restarts or first uses such a job, queue, or topic fails, and after a
+rollback the applications do not start. Before you roll back, make sure
+`max_file_store` on every node fits the old reservation again, then raise every
+lowered stream of the namespace with a `nats` context for the Cloud account:
 
 ```sh
 curl -s 'http://127.0.0.1:8222/jsz?accounts=true&streams=true&config=true' \
   | jq -r --arg ns "$SYNC_NAMESPACE" '.account_details[].stream_detail[]?
       | select(.config.metadata["sync.namespace"] == $ns)
-      | select(.config.metadata["sync.kind"] == "job" or .config.metadata["sync.kind"] == "queue")
+      | select((.config.metadata["sync.kind"] | IN("job", "queue"))
+          or (.config.metadata["sync.id"] | IN("cloud-gateway-telemetry", "grids:records",
+                "mail:invalidations", "cloud:contacts:events:changes", "cloud:spaces:events:items")))
       | select(.config.max_bytes > 0 and .config.max_bytes < 1073741824) | .name' \
   | while read -r stream; do nats stream edit "$stream" --max-bytes 1073741824 -f; done
 ```
 
-The query also selects jobs and queues that declare a `retention` below 1 GiB
-themselves. No built-in application does; leave out such streams of your own
-applications, which `sync.owner` names.
+The query also selects jobs and queues that declare a `retention` or
+`deadLetterRetention` below 1 GiB themselves. No built-in application did so
+in 0.24.0; leave out such streams of your own applications, which `sync.owner`
+names.
 
 ## Assign configuration to the correct service
 

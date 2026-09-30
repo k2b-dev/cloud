@@ -64,8 +64,10 @@ the number of entities. For example, use the peak write rate multiplied by the
 longest time an event may wait for the durable state that covers it.
 `deadLetterRetention` defaults to `retention`. Set it lower when the topic's
 consumers rarely fail. It must hold at least one dead letter, the payload limit
-plus 4 KiB. Adding the option to an existing topic changes its dead-letter
-stream and fails with `ResourceDriftError`. Introduce it with a new topic.
+plus 4 KiB. Cloud applies a changed dead-letter limit to the existing
+dead-letter stream before the topic's first use in a process. If the stream
+holds more than the new limit, it keeps its old limit, and every use of the
+topic fails with `ResourceDriftError` until the stream holds less.
 
 `sync.listTopics({ idPrefix })` lists topics that exist on the broker in this
 namespace, including topics that no process has declared. `topic.destroy()`

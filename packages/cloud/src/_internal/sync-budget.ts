@@ -1,22 +1,23 @@
 /**
- * JetStream budgets for the Sync jobs and queues of one Cloud process.
+ * Brings existing JetStream streams to the byte limits that the Sync jobs,
+ * queues, and topics of one Cloud process declare.
  *
  * JetStream reserves a stream's whole `max_bytes` on every replica as soon as
- * the stream exists. @k2b/sync 6.5 gives a job or queue declared without
- * `retention` 1 GiB, and its dead-letter stream always gets the same limit, so
- * every such declaration reserved 2 GiB per replica for work that is almost
- * always a few hundred bytes of identifiers.
+ * the stream exists. @k2b/sync 7 declares small limits: a job or queue without
+ * `retention` holds 256 messages at its payload limit, and `deadLetterRetention`
+ * sizes dead letters apart from the work or event stream. Sync never
+ * reconfigures an existing stream, though. A stream created with other limits,
+ * such as the 1 GiB that Sync 6 gave every job and queue without `retention`,
+ * fails the declaration with `ResourceDriftError` on `max_bytes`.
  *
- * Cloud therefore declares jobs and queues without `retention` with a budget
- * derived from the primitive's payload limit: `SYNC_BACKLOG_MESSAGES` pending
- * messages at that limit, never more than Sync's own 1 GiB. An explicit
- * `retention` still wins.
+ * Before a job, queue, or topic is first used, this module therefore changes
+ * the byte limit of each such stream in place. A stream that holds more than
+ * its new limit would lose its oldest messages; it keeps its limit instead:
  *
- * Sync refuses a declaration whose byte limit differs from the existing
- * stream (`ResourceDriftError`), so before a job or queue is first used this
- * module lowers or raises the limit of its existing streams in place. A stream
- * that already holds more than the new limit would lose its oldest messages;
- * it keeps its current limit instead, and a later start applies the new one.
+ * - a job or queue is declared with the stream's current limit, so its work
+ *   stays usable, and a later start applies the new limit;
+ * - a topic is declared synchronously, before its streams can be inspected,
+ *   so its declaration keeps reporting the drift until the stream holds less.
  */
 import {
   type DeadLetterStore,
@@ -25,40 +26,27 @@ import {
   type Queue,
   type QueueConfig,
   ResourceDriftError,
-  type RetentionConfig,
   type Sync,
+  type Topic,
+  type TopicConfig,
 } from "@k2b/sync";
-import { jetstreamManager, type StreamInfo } from "@nats-io/jetstream";
+import { jetstreamManager, RetentionPolicy, type StreamInfo } from "@nats-io/jetstream";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { logger } from "../services/logging";
 
-/** Sync 6.5 defaults that @k2b/sync does not export. */
+/** Sync 7's limits for a job or queue declared without `retention`, which @k2b/sync does not export. */
 const SYNC_PAYLOAD_BYTES = 128 * 1024;
 const SYNC_DEAD_LETTER_HEADROOM_BYTES = 4096;
 const SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const SYNC_MAX_BYTES = 1024 ** 3;
 
-/**
- * Pending messages at the payload limit a job or queue without declared
- * retention holds before Sync discards the oldest. Cloud's jobs carry
- * identifiers whose state lives in Postgres, about half a KiB per stored
- * message, so the same budget holds tens of thousands of typical messages.
- */
-const SYNC_BACKLOG_MESSAGES = 256;
-
-/**
- * Retention for a job or queue declared without one: 33 MiB per stream at
- * Sync's 128 KiB payload limit. Above about 4 MiB per message the budget stops
- * at Sync's own 1 GiB, so no declaration reserves more than it did before.
- */
-export const syncBudgetRetention = (maxPayloadBytes = SYNC_PAYLOAD_BYTES): RetentionConfig => ({
-  maxAgeMs: SYNC_MAX_AGE_MS,
-  maxBytes: Math.min(SYNC_MAX_BYTES, SYNC_BACKLOG_MESSAGES * (maxPayloadBytes + SYNC_DEAD_LETTER_HEADROOM_BYTES)),
-});
+/** Byte limit Sync 7 gives a job or queue without `retention`: 256 messages at its payload limit, at most 1 GiB. */
+export const syncDefaultMaxBytes = (maxPayloadBytes = SYNC_PAYLOAD_BYTES): number =>
+  Math.min(1024 ** 3, 256 * (maxPayloadBytes + SYNC_DEAD_LETTER_HEADROOM_BYTES));
 
 const log = logger("sync:budget");
 
-type Kind = "job" | "queue";
+type Kind = "job" | "queue" | "topic";
+type Limits = { work: number; deadLetters: number };
 
 /** Memoizes a promise, forgetting a rejection so the next call retries. */
 const once = <T>(create: () => Promise<T>): (() => Promise<T>) => {
@@ -70,11 +58,29 @@ const once = <T>(create: () => Promise<T>): (() => Promise<T>) => {
     }));
 };
 
-/** Sync refused a declaration only because an existing stream has another byte limit. */
-const isByteLimitDrift = (error: unknown): boolean =>
-  error instanceof ResourceDriftError &&
-  error.differences.length > 0 &&
-  error.differences.every((difference) => difference.field === "max_bytes");
+/** The stream and declared byte limit when Sync refused a declaration only for an existing stream's byte limit. */
+const byteLimitDrift = (error: unknown): { stream: string; maxBytes: number } | undefined => {
+  if (!(error instanceof ResourceDriftError) || error.differences.length !== 1) return undefined;
+  const [difference] = error.differences;
+  if (difference?.field !== "max_bytes" || typeof difference.declared !== "number") return undefined;
+  return { stream: error.resource, maxBytes: difference.declared };
+};
+
+/** Byte limits a job or queue declares for its work and dead-letter streams. */
+const declaredLimits = (config: QueueConfig | JobConfig): Limits => {
+  const work = config.retention?.maxBytes ?? syncDefaultMaxBytes(config.maxPayloadBytes);
+  return { work, deadLetters: config.deadLetterRetention?.maxBytes ?? work };
+};
+
+/** The declaration with the given limits, or unchanged when they are its own. */
+const withLimits = <Config extends QueueConfig | JobConfig>(config: Config, target: Limits, limits: Limits): Config =>
+  limits.work === target.work && limits.deadLetters === target.deadLetters
+    ? config
+    : {
+        ...config,
+        retention: { maxAgeMs: SYNC_MAX_AGE_MS, ...config.retention, maxBytes: limits.work },
+        deadLetterRetention: { ...config.deadLetterRetention, maxBytes: limits.deadLetters },
+      };
 
 const createStreamLimits = (connection: NatsConnection, namespace: string) => {
   const manager = once(() => jetstreamManager(connection));
@@ -104,28 +110,80 @@ const createStreamLimits = (connection: NatsConnection, namespace: string) => {
     }));
 
   /**
-   * Brings the existing streams of a job or queue to `maxBytes` and returns
-   * the byte limit to declare. A stream that holds more than `maxBytes` is
-   * left alone: with `keep`, its current limit is returned so the declaration
-   * matches it; without, Sync's drift check reports it.
+   * Limits a job or queue declares: its own, except for an existing stream
+   * that holds more than its new limit, which keeps its current limit.
    */
-  return async (kind: Kind, id: string, maxBytes: number, keep: boolean): Promise<number> => {
+  const keep = async (kind: Kind, id: string, target: Limits): Promise<Limits> => {
     const streams = (await list()).get(`${kind}:${id}`) ?? [];
-    const differing = streams.filter((info) => info.config.max_bytes !== maxBytes);
-    if (differing.length === 0) return maxBytes;
-    const limits = new Set(streams.map((info) => info.config.max_bytes));
-    const held = Math.max(...streams.map((info) => info.state.bytes));
-    if (held > maxBytes) {
-      const [limit = maxBytes] = limits;
-      if (!keep || limits.size > 1) return maxBytes;
-      log.warn("Kept the byte limit of a Sync stream that holds more than its new limit", { kind, id, limit, target: maxBytes, held });
-      return limit;
-    }
-    const jsm = await manager();
-    for (const info of differing) await jsm.streams.update(info.config.name, { max_bytes: maxBytes });
-    log.info("Changed the byte limit of Sync streams", { kind, id, from: [...limits], to: maxBytes });
-    return maxBytes;
+    const kept = (info: StreamInfo | undefined, maxBytes: number): number => {
+      if (!info || info.config.max_bytes === maxBytes || info.state.bytes <= maxBytes) return maxBytes;
+      log.warn("Kept the byte limit of a Sync stream that holds more than its new limit", {
+        kind,
+        id,
+        stream: info.config.name,
+        limit: info.config.max_bytes,
+        target: maxBytes,
+        held: info.state.bytes,
+      });
+      return info.config.max_bytes;
+    };
+    return {
+      work: kept(
+        streams.find((info) => info.config.retention === RetentionPolicy.Workqueue),
+        target.work,
+      ),
+      deadLetters: kept(
+        streams.find((info) => info.config.retention !== RetentionPolicy.Workqueue),
+        target.deadLetters,
+      ),
+    };
   };
+
+  /** Streams reported as too full to lower; a topic retries on every use, but logs once. */
+  const reported = new Set<string>();
+
+  /**
+   * Provisions a declaration. Each existing stream whose byte limit differs
+   * from the declared one gets the declared limit if it holds no more; then
+   * the declaration is tried again. Each stream is changed at most once.
+   */
+  const adopt = async (kind: Kind, id: string, ready: () => Promise<void>): Promise<void> => {
+    const changed = new Set<string>();
+    for (;;) {
+      try {
+        return await ready();
+      } catch (error) {
+        const drift = byteLimitDrift(error);
+        if (!drift || changed.has(drift.stream)) throw error;
+        changed.add(drift.stream);
+        const jsm = await manager();
+        const info = await jsm.streams.info(drift.stream);
+        if (info.state.bytes > drift.maxBytes) {
+          if (reported.has(drift.stream)) throw error;
+          reported.add(drift.stream);
+          log.warn("Kept the byte limit of a Sync stream that holds more than its new limit", {
+            kind,
+            id,
+            stream: drift.stream,
+            limit: info.config.max_bytes,
+            target: drift.maxBytes,
+            held: info.state.bytes,
+          });
+          throw error;
+        }
+        await jsm.streams.update(drift.stream, { max_bytes: drift.maxBytes });
+        log.info("Changed the byte limit of a Sync stream", {
+          kind,
+          id,
+          stream: drift.stream,
+          from: info.config.max_bytes,
+          to: drift.maxBytes,
+        });
+      }
+    }
+  };
+
+  return { keep, adopt };
 };
 
 const deferDeadLetters = <T>(resolve: () => Promise<{ deadLetters: DeadLetterStore<T> }>): DeadLetterStore<T> => ({
@@ -158,37 +216,61 @@ const deferQueue = <T>(resolve: () => Promise<Queue<T>>): Queue<T> => ({
   deadLetters: deferDeadLetters(resolve),
 });
 
+/** A declared topic whose every provisioning use waits until `ready` has adopted its streams. */
+const deferTopic = <T>(topic: Topic<T>, ready: () => Promise<void>): Topic<T> => {
+  const whenReady = <Result>(use: () => Promise<Result>): Promise<Result> => ready().then(use);
+  const iterateWhenReady = async function* <Event>(open: () => AsyncIterable<Event>): AsyncIterable<Event> {
+    await ready();
+    yield* open();
+  };
+  return {
+    ready,
+    publish: (input) => whenReady(() => topic.publish(input)),
+    publishBatch: (input) => whenReady(() => topic.publishBatch(input)),
+    hub: (options) => {
+      const hub = topic.hub(options);
+      return { subscribe: (subscription) => iterateWhenReady(() => hub.subscribe(subscription)), close: () => hub.close() };
+    },
+    cursorSequence: (cursor) => topic.cursorSequence(cursor),
+    cursorAt: (sequence) => topic.cursorAt(sequence),
+    pauseConsumer: (input) => whenReady(() => topic.pauseConsumer(input)),
+    resumeConsumer: (input) => whenReady(() => topic.resumeConsumer(input)),
+    latestCursor: (options) => whenReady(() => topic.latestCursor(options)),
+    head: () => whenReady(() => topic.head()),
+    live: (options) => iterateWhenReady(() => topic.live(options)),
+    replay: (options) => iterateWhenReady(() => topic.replay(options)),
+    follow: (options) => iterateWhenReady(() => topic.follow(options)),
+    destroy: () => topic.destroy(),
+    process: (options, handler) => whenReady(() => topic.process(options, handler)),
+    deadLetters: {
+      list: (options) => whenReady(() => topic.deadLetters.list(options)),
+      get: (input) => whenReady(() => topic.deadLetters.get(input)),
+      delete: (input) => whenReady(() => topic.deadLetters.delete(input)),
+      replay: (input) => whenReady(() => topic.deadLetters.replay(input)),
+    },
+  };
+};
+
 /**
- * The process Sync with Cloud's job and queue budgets. A job or queue is
- * declared to Sync and provisioned on its first use or on `ready()`, after its
- * existing streams carry the limit it declares; every other primitive is
- * Sync's own.
+ * The process Sync whose jobs, queues, and topics adopt the byte limits of
+ * their existing streams before first use. A job or queue is declared to Sync
+ * on its first use or on `ready()`; a topic is declared at once. Every other
+ * primitive is Sync's own.
  */
 export const withSyncBudgets = (sync: Sync, { connection, namespace }: { connection: NatsConnection; namespace: string }): Sync => {
-  const fit = createStreamLimits(connection, namespace);
-  /** Every job and queue declared so far, so `ready()` provisions them like Sync does. */
+  const { keep, adopt } = createStreamLimits(connection, namespace);
+  /** Every job, queue, and topic declared so far, so `ready()` provisions them like Sync does. */
   const declared = new Map<string, () => Promise<unknown>>();
 
-  const declare = <Handle extends { ready(): Promise<void> }>(
-    kind: Kind,
-    config: QueueConfig,
-    create: (retention: RetentionConfig) => Handle,
+  const declareWork = <Config extends QueueConfig | JobConfig, Handle extends { ready(): Promise<void> }>(
+    kind: "job" | "queue",
+    config: Config,
+    create: (config: Config) => Handle,
   ): (() => Promise<Handle>) => {
-    const target = config.retention ?? syncBudgetRetention(config.maxPayloadBytes);
-    const declaration = once(async () => {
-      const maxBytes = await fit(kind, config.id, target.maxBytes, true);
-      return { handle: create({ ...target, maxBytes }), maxBytes };
-    });
     const resolve = once(async () => {
-      const { handle, maxBytes } = await declaration();
-      try {
-        await handle.ready();
-      } catch (error) {
-        if (!isByteLimitDrift(error)) throw error;
-        // Another process created or changed the streams between the check and the declaration.
-        await fit(kind, config.id, maxBytes, false);
-        await handle.ready();
-      }
+      const target = declaredLimits(config);
+      const handle = create(withLimits(config, target, await keep(kind, config.id, target)));
+      await adopt(kind, config.id, () => handle.ready());
       return handle;
     });
     declared.set(`${kind}:${config.id}`, resolve);
@@ -201,7 +283,13 @@ export const withSyncBudgets = (sync: Sync, { connection, namespace }: { connect
       await Promise.all([...declared.values()].map((resolve) => resolve()));
       await sync.ready();
     },
-    job: <Input>(config: JobConfig) => deferJob(declare("job", config, (retention) => sync.job<Input>({ ...config, retention }))),
-    queue: <T>(config: QueueConfig) => deferQueue(declare("queue", config, (retention) => sync.queue<T>({ ...config, retention }))),
+    job: <Input>(config: JobConfig) => deferJob(declareWork("job", config, (declaration) => sync.job<Input>(declaration))),
+    queue: <T>(config: QueueConfig) => deferQueue(declareWork("queue", config, (declaration) => sync.queue<T>(declaration))),
+    topic: <T>(config: TopicConfig) => {
+      const topic = sync.topic<T>(config);
+      const ready = once(() => adopt("topic", config.id, () => topic.ready()));
+      declared.set(`topic:${config.id}`, ready);
+      return deferTopic(topic, ready);
+    },
   };
 };
