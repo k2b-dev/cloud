@@ -19,6 +19,15 @@ const cleanEnv = {
   APP_DIR: consumer,
 };
 
+// The consumer lives outside the repository and does not inherit its bunfig.toml.
+const releaseAgePolicy = async (): Promise<string> => {
+  const policy = (await Bun.file(join(root, "bunfig.toml")).text()).match(/^minimumReleaseAge\w* = .+$/gm);
+  if (!policy?.some((line) => line.startsWith("minimumReleaseAge ="))) {
+    throw new Error("bunfig.toml no longer sets install.minimumReleaseAge");
+  }
+  return `[install]\n${policy.join("\n")}\n`;
+};
+
 const run = async (label: string, cmd: string[], cwd: string): Promise<void> => {
   console.log(label);
   const child = Bun.spawn(cmd, { cwd, env: cleanEnv, stdout: "pipe", stderr: "pipe" });
@@ -113,6 +122,10 @@ const router = new Hono().get("/api/inventory/health", c => c.json({ app: app.me
 export default await app.start({ fetch: router.fetch, port: Number(process.env.PORT ?? 3000) });
 `,
   );
+  // A fresh resolve would otherwise pick versions published minutes ago, whose
+  // tarballs the registry may not serve yet. The packed archives are local files
+  // and have no release age.
+  await Bun.write(join(consumer, "bunfig.toml"), await releaseAgePolicy());
   await run(
     "Install in fresh external repository",
     [process.execPath, "install", "--ignore-scripts", "--registry=https://registry.npmjs.org"],

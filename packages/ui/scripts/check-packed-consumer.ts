@@ -66,6 +66,14 @@ try {
       dependencies: { ...manifest.dependencies, ...manifest.peerDependencies },
     }),
   );
+  // The consumer lives outside the repository and does not inherit its bunfig.toml.
+  // A fresh resolve would otherwise pick versions published minutes ago, whose
+  // tarballs the registry may not serve yet.
+  const releaseAgePolicy = (await Bun.file(resolve(packageRoot, "../../bunfig.toml")).text()).match(/^minimumReleaseAge\w* = .+$/gm);
+  if (!releaseAgePolicy?.some((line) => line.startsWith("minimumReleaseAge ="))) {
+    throw new Error("bunfig.toml no longer sets install.minimumReleaseAge");
+  }
+  await Bun.write(join(consumer, "bunfig.toml"), `[install]\n${releaseAgePolicy.join("\n")}\n`);
   run([process.execPath, "install", "--ignore-scripts", "--registry=https://registry.npmjs.org"], consumer);
 
   const serverSmoke = `
