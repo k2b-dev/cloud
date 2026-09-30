@@ -73,6 +73,7 @@ import { readBoundedJson } from "./bounded-json";
 import { appRuntimeMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
 import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } from "./cli-plugins";
+import { FONT_PRELOAD_LINKS } from "./font-preloads";
 import { createHeartbeat } from "./heartbeat";
 import { compileHelp } from "./help";
 import { createPageResponses } from "./page-responses";
@@ -356,6 +357,7 @@ export const defineApp = <
     <link rel="icon" href="${appFaviconHref(opts.id, v)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
+    ${FONT_PRELOAD_LINKS}
     <link rel="stylesheet" href="/public/fonts.css?v=${v}">
     <link rel="stylesheet" href="/public/tabler-icons.css?v=${v}">
     <link rel="stylesheet" href="/public/${opts.id}/app.css?v=${v}">

@@ -146,7 +146,7 @@ export default ssr(async (c) => {
                 </div>
 
                 {!isAdminLogin && visibleCategories.length > 1 && !token && (
-                  <div class="mt-6" style={{ "view-transition-name": "login-switch" }}>
+                  <div class="mt-4 md:mt-6" style={{ "view-transition-name": "login-switch" }}>
                     <AccountCategorySwitch
                       options={visibleCategories.map((category) => ({
                         value: category,
@@ -159,7 +159,7 @@ export default ssr(async (c) => {
                   </div>
                 )}
 
-                <div class="flex flex-1 flex-col justify-center gap-4 py-5 md:py-7">
+                <div class="flex flex-1 flex-col justify-center gap-4 pt-4 pb-3 md:py-7">
                   {isAdminLogin ? (
                     <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
                   ) : useApproval && activeMethod ? (
