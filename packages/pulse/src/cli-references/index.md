@@ -334,7 +334,9 @@ cld pulse access set --group "Sysadmins" --permission write
 cld pulse access revoke --group "Sysadmins" --yes
 ```
 
-Use exactly one principal selector: `--user`, `--group`, or `--authenticated`. Grant, set, and revoke do not accept public or service-account selectors. `access list` returns direct grants and does not expand inherited access; add `--include-service-accounts` when resource-bound service-account entries are needed.
+Use exactly one principal selector: `--user`, `--group`, `--service-account`, or `--authenticated`. Grant, set, and revoke do not accept a public selector. `--service-account` takes a service account ID or exact name; `search-principals --kind service_account` finds standalone and agent accounts by name. `access list` returns direct grants, including agent grants, and does not expand inherited access; add `--include-service-accounts` when the grants behind resource-bound tokens are needed.
+
+An agent account works like a person with the same grant: it lists and reads the bases it was granted, queries them, and changes them with a `write` grant. Its token's scopes cap the grant, so a `read`-only token cannot write even with a `write` grant; managing access, deleting, or clearing a base needs an `admin` grant and a token with the `admin` scope. Creating bases and managing source tokens stay limited to people.
 
 `access grant` creates a direct grant and fails if it already exists. Prefer `access set` for agent workflows because it updates an existing direct grant or creates one when absent. Revocation requires `--yes`; `--access-id` from `access list` can replace principal resolution.
 
@@ -664,12 +666,12 @@ Access:
 
 ```text
 cld pulse access list [base] [--include-service-accounts]
-cld pulse access search-principals <query> [--kind <user,group>] [--page <n>] [--per-page <n>]
+cld pulse access search-principals <query> [--kind <user,group,service_account>] [--page <n>] [--per-page <n>]
 cld pulse access grant [base] <one principal selector> --permission <read|write|admin>
 cld pulse access set [base] (<one principal selector> | --access-id <id>) --permission <read|write|admin>
 cld pulse access revoke [base] (<one principal selector> | --access-id <id>) --yes
 
-principal selector = --user <ref> | --group <ref> | --authenticated
+principal selector = --user <ref> | --group <ref> | --service-account <ref> | --authenticated
 ```
 
 ## Further references

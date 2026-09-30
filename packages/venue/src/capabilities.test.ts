@@ -527,6 +527,75 @@ describe("Venue capabilities", () => {
     }
   });
 
+  postgresTest("lets agent service accounts use their own Venue grants", async () => {
+    const suffix = crypto.randomUUID();
+    const grantedVenueId = crypto.randomUUID();
+    const privateVenueId = crypto.randomUUID();
+    const grantedVenueShortId = newShortId();
+    const privateVenueShortId = newShortId();
+    const [agent] = await sql<{ id: string; createdAt: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind)
+      VALUES ('Venue capability agent test', 'agent')
+      RETURNING id::text AS id, created_at::text AS "createdAt"
+    `;
+    if (!agent) throw new Error("Failed to create agent Venue fixture");
+    let accessId: string | null = null;
+
+    try {
+      await sql`
+        INSERT INTO venue.venues (id, short_id, slug, name, public_enabled)
+        VALUES
+          (${grantedVenueId}::uuid, ${grantedVenueShortId}, ${`granted-agent-venue-${suffix}`}, 'Granted Agent Venue', false),
+          (${privateVenueId}::uuid, ${privateVenueShortId}, ${`private-agent-venue-${suffix}`}, 'Private Agent Venue', false)
+      `;
+      const [access] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (service_account_id, permission)
+        VALUES (${agent.id}::uuid, 'write'::auth.permission_level)
+        RETURNING id::text AS id
+      `;
+      accessId = access!.id;
+      await sql`INSERT INTO venue.venue_access (venue_id, access_id) VALUES (${grantedVenueId}::uuid, ${accessId}::uuid)`;
+
+      const context: CapabilityExecutionContext = {
+        actor: {
+          kind: "service_account",
+          serviceAccount: {
+            id: agent.id,
+            name: "Venue capability agent test",
+            kind: "agent",
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: agent.createdAt,
+          },
+          delegatedUser: null,
+          scopes: ["read"],
+        },
+        accessSubject: { type: "service_account", serviceAccountId: agent.id },
+        user: null,
+        locale: "en",
+        requestId: "req-test",
+        origin: "app",
+        signal: new AbortController().signal,
+      };
+
+      // The `write` grant is capped by the token's `read` scope.
+      const listed = await invokeQuery("venue.list", { limit: 25 }, context);
+      expect(listed.ok && listed.data.data).toEqual([expect.objectContaining({ id: grantedVenueShortId, permission: "read" })]);
+      const read = await invokeQuery("venue.read", { id: grantedVenueShortId }, context);
+      expect(read.ok).toBe(true);
+      const ungranted = await invokeQuery("venue.read", { id: privateVenueShortId }, context);
+      expect(ungranted).toMatchObject({ ok: false, error: { status: 404 } });
+    } finally {
+      await sql`DELETE FROM venue.venues WHERE id IN (${grantedVenueId}::uuid, ${privateVenueId}::uuid)`;
+      if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${agent.id}::uuid`;
+    }
+  });
+
   test("compiles the declared capability manifest", () => {
     expect(() => compileCapabilityManifest("venue", venueCapabilities)).not.toThrow();
   });

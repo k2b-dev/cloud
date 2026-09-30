@@ -144,6 +144,7 @@ const venueAccessCommands = createAccessCommands({
       'cld venue access grant "Cafe Counter" --user valentin.kolb --permission read',
       'cld venue access grant "Cafe Counter" --group "Staff" --permission write',
       'cld venue access grant "Cafe Counter" --authenticated --permission read',
+      'cld venue access grant "Cafe Counter" --service-account "Release agent" --permission read',
     ],
     set: [
       'cld venue access set "Cafe Counter" --user valentin.kolb --permission admin',
@@ -156,8 +157,10 @@ const venueAccessCommands = createAccessCommands({
     searchPrincipals: [
       "cld venue access search-principals val --kind user,group",
       'cld venue access search-principals "Staff" --kind group',
+      'cld venue access search-principals "Release agent" --kind service_account',
     ],
   },
+  allowServiceAccounts: true,
 });
 
 const openingRuleRows = (rules: OpeningRule[]) =>
