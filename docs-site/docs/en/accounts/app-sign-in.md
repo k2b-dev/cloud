@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1084
 description: Connect Cloud to its trusted authenticator website and prepare a first sign-in.
 tags: [accounts, administration, authentication]
-updated: 2026-09-25
+updated: 2026-09-30
 ---
 
 # Set up app sign-in
@@ -62,8 +62,9 @@ when replacing an untrusted authenticator.
 
 1. [Pair a device](/en/docs/accounts/devices#pair-a-device) with your account.
 2. On Cloud's login page, choose your account type if a selector is shown.
-   Login and FreeIPA start with app sign-in; Guests start with email and can
-   switch to the app. Enter your username or an email that identifies one account.
+   Login starts with app sign-in. FreeIPA starts with the password and Guest
+   with email: choose **Use the app instead** there. Enter your username or an
+   email that identifies one account.
 3. Keep the login page open and open your authenticator, or tap its
    notification if you turned notifications on.
 4. Unlock the app, compare the request with the waiting login page, and approve
@@ -72,8 +73,14 @@ when replacing an untrusted authenticator.
 The waiting page signs you in after approval. Deny requests you do not recognize.
 If a request expires, start a new sign-in from Cloud.
 
+After a FreeIPA sign-in with the app, this browser opens FreeIPA with the app
+next time, until someone signs in there with a FreeIPA password again. The
+page chooses the method from the account type you select and from this
+browser, never from the name you enter, so it does not reveal whether an
+account exists or which type it has.
+
 Without a paired device, use the prominent email-link alternative for local
-accounts or the password alternative for FreeIPA. Existing passkeys remain
+accounts or the password for FreeIPA. Existing passkeys remain
 available at the bottom of the page. If your email is shared by multiple
 accounts, use your username for app sign-in.
 

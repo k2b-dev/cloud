@@ -11,10 +11,12 @@ Die verfügbaren Anmeldeverfahren hängen vom Kontodienst und den Einstellungen 
 ## Anmelden und Zugriff wiederherstellen {icon="shield-lock"}
 
 Die Accounttypen heißen **Guest**, **Login** (gegebenenfalls mit einem anderen
-Namen deiner Organisation) und **FreeIPA**. Guest startet mit einem E-Mail-Link.
-Wenn die App-Anmeldung eingerichtet ist, starten Login und FreeIPA mit der App;
-E-Mail-Link beziehungsweise Passwort bleiben als Alternative verfügbar.
-Lokale Accounts verwenden keine Passwörter. Ein bestehender Passkey funktioniert
+Namen deiner Organisation) und **FreeIPA**. Guest startet mit einem E-Mail-Link
+und FreeIPA mit deinem Passwort. Wenn die App-Anmeldung eingerichtet ist,
+startet Login mit der App, der E-Mail-Link bleibt als Alternative verfügbar;
+bei FreeIPA und Guest wählst du **Stattdessen die App nutzen**. Nach einer
+FreeIPA-Anmeldung mit der App öffnet dieser Browser FreeIPA beim nächsten Mal
+mit der App. Lokale Accounts verwenden keine Passwörter. Ein bestehender Passkey funktioniert
 weiter, solange der Accounttyp erlaubt ist. Nutze bei einem verborgenen Typ
 deinen Einladungs- oder direkten Anmeldelink. Verbergen ist nicht dasselbe wie
 Zugriff sperren; wende dich bei deaktiviertem Zugang an die Administration.

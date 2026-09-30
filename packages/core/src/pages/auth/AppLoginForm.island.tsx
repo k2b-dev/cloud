@@ -1,7 +1,9 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
+import { cookies } from "@k2b/stdlib/browser";
 import { Button, ButtonLink, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
+import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
 import ApprovalFeedback from "../app-approval/Feedback";
 import { appApprovalMessages } from "../app-approval/messages";
@@ -67,6 +69,9 @@ export default function AppLoginForm(props: {
           }
           if (!disposed) {
             setSignedIn(true);
+            // Reopen this account type next time; a FreeIPA browser also keeps the app ahead of the password.
+            cookies.writeCookie("login_method", props.category === "freeipa" ? "ipa" : props.category);
+            if (props.category === "freeipa") cookies.writeCookie(FREEIPA_APP_SIGN_IN_COOKIE, "1");
             window.location.assign(afterSignInHref(props.redirectTo));
           }
         } else {
