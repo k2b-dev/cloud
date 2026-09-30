@@ -55,7 +55,7 @@ jobs:
           changed=$(git diff --name-only "$BASE" HEAD)
           printf '%s\n' "$changed"
           match() { grep -qE "$1" <<<"$changed" && echo true || echo false; }
-          shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/workflows/)'
+          shared='^(packages/cloud/|packages/core/|packages/gateway/|scripts/|patches/|package\.json|bun\.lock|bunfig\.toml|tsconfig|styles\.css|Dockerfile|\.dockerignore|\.github/(workflows/|nats-ci\.conf|pull-images\.sh))'
           # An application's production bundle depends on its package, the shared inputs, and the
           # non-application packages: @k2b/ui, and packages/cloud-cli, whose install script core bundles.
           bundles=()
