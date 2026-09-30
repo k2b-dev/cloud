@@ -132,6 +132,12 @@ watchers, registry entries, and its NATS connection. The application is not
 advertised before its hooks and declared Sync resources are ready. Database
 writes and external effects are not rolled back.
 
+`app.start()` then rejects. A process started with `bun`, such as a built
+image, ends with status 1 and its restart policy starts it again. Under
+`bun --watch`, the process stays alive without readiness and starts again only
+when a watched file changes. Only a NATS wait that runs out of time ends the
+process under `bun --watch` as well.
+
 Make `stop` safe after partial startup. When a hook has several steps, it can
 also release completed steps locally:
 

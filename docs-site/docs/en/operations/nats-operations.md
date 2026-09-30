@@ -157,7 +157,10 @@ NATS and JetStream when they start: after a host restart, a process that
 comes up before NATS logs `NATS or JetStream is not ready; retrying` with the
 reason, such as a refused connection, an unknown host, or
 `JetStream system temporarily unavailable`, and continues once JetStream
-answers. It reports readiness only after that.
+answers. It reports readiness only after that. Rejected credentials and a
+missing credentials or CA file are retried the same way, because an
+authorization service or a mounted secret can still be starting; check the
+logged reason when the wait does not end.
 
 A process that gets no answer within five minutes exits with status 1. Give
 every service a restart policy, such as `restart: unless-stopped` in Compose
@@ -166,9 +169,10 @@ that NATS or its JetStream cluster is not recovering; inspect the NATS nodes
 before the application.
 
 After a successful start, the NATS client keeps reconnecting for the life of
-the process. An outage that outlasts the application registry lease of 180
-seconds makes the application exit because it cannot renew its registration;
-its next start waits for NATS again.
+the process. When an outage keeps the application from renewing its
+180-second registry lease, it exits shortly before the lease expires, about
+165 seconds after its last successful renewal. Its next start waits for NATS
+again.
 
 ## Alert on dead letters and broker health
 
