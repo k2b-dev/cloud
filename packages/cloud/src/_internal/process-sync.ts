@@ -8,8 +8,11 @@
  * nothing touches sync during module evaluation.
  */
 import { hostname } from "node:os";
-import { createSync, type Sync } from "@k2b/sync";
+import { createSync, type Sync, SyncError } from "@k2b/sync";
+import { expBackoff } from "@k2b/sync/retry";
+import type { NatsConnection } from "@nats-io/transport-node";
 import { env } from "../config/env";
+import { logger } from "../services/logging";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
 import { connectNats } from "./nats-connection";
 import { withSyncBudgets } from "./sync-budget";
@@ -66,9 +69,92 @@ export type ProcessSync = {
 };
 
 /**
+ * How long a starting process waits for NATS and JetStream. After a host or
+ * stack restart, NATS nodes come up in any order and JetStream must recover
+ * its streams and elect a leader before its API answers; five minutes covers
+ * that. A process that still gets no answer exits instead of staying alive
+ * without readiness, so Docker or Kubernetes restarts it and the outage shows
+ * up as restarts.
+ */
+const NATS_STARTUP_BUDGET_MS = 5 * 60_000;
+// About 1 s, doubling to 20 s, each ±50 % so processes that restarted together spread their retries.
+const NATS_STARTUP_BACKOFF = { baseMs: 1_000, maxMs: 20_000, jitter: 0.5 };
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/**
+ * Run `attempt` until it succeeds, with exponential backoff and jitter. A
+ * `SyncError` describes the server or the declarations (unsupported version,
+ * JetStream disabled, drift), which waiting does not change, so it fails at
+ * once. Every other failure (refused or unresolved address, timeout, JetStream
+ * without a leader) is logged and retried until `budgetMs` is spent; then the
+ * process exits with status 1.
+ */
+export const waitForNats = async <T>(
+  attempt: () => Promise<T>,
+  { application, budgetMs = NATS_STARTUP_BUDGET_MS }: { application: string; budgetMs?: number },
+): Promise<T> => {
+  const log = logger("sync");
+  const deadline = Date.now() + budgetMs;
+  for (let attempts = 1; ; attempts++) {
+    try {
+      const result = await attempt();
+      if (attempts > 1) log.info("NATS and JetStream answered", { application, attempts });
+      return result;
+    } catch (error) {
+      if (error instanceof SyncError) throw error;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        log.error("NATS and JetStream did not answer within the startup budget; exiting so the process is restarted", {
+          application,
+          attempts,
+          budgetMs,
+          error: errorMessage(error),
+        });
+        process.exit(1);
+      }
+      const retryInMs = Math.min(remainingMs, expBackoff(attempts, NATS_STARTUP_BACKOFF));
+      log.warn("NATS or JetStream is not ready; retrying", { application, attempt: attempts, retryInMs, error: errorMessage(error) });
+      await Bun.sleep(retryInMs);
+    }
+  }
+};
+
+/** One start attempt: connect, bind a new Sync instance, and wait for `ready()`; release both when it fails. */
+const connectReadySync = async (application: string): Promise<{ sync: Sync; connection: NatsConnection }> => {
+  const connection = await connectNats({ name: `${application}@${hostname()}` });
+  let sync: Sync | undefined;
+  try {
+    sync = withSyncBudgets(
+      createSync({
+        connection,
+        namespace: env.SYNC_NAMESPACE,
+        application,
+        defaults: { replicas: env.SYNC_REPLICAS },
+        observe: (event) => observeSyncEvent(event, application),
+      }),
+      { connection, namespace: env.SYNC_NAMESPACE },
+    );
+    bindProcessSync(sync);
+    await sync.ready();
+    return { sync, connection };
+  } catch (error) {
+    if (current === sync) unbindProcessSync();
+    await flushSyncTraceEvents();
+    await connection.close();
+    throw error;
+  }
+};
+
+/**
  * Connect NATS, create and bind the process Sync instance, and wait until it is
  * ready. Existing streams of its jobs, queues, and topics take the byte
  * limits they declare before first use (see `sync-budget.ts`).
+ *
+ * While NATS or JetStream does not answer, it retries with a fresh connection
+ * and instance (see `waitForNats`), and exits the process once
+ * `NATS_STARTUP_BUDGET_MS` is spent. Callers are process entry points; nothing
+ * serves readiness before this returns.
  */
 export const startProcessSync = async ({ application }: { application: string }): Promise<ProcessSync> => {
   if (!env.SYNC_NAMESPACE.trim()) {
@@ -77,31 +163,16 @@ export const startProcessSync = async ({ application }: { application: string })
         "must share the same @k2b/sync namespace.",
     );
   }
+  if (env.NATS_SERVERS.length === 0) {
+    throw new Error(
+      `NATS_SERVERS is not set (application "${application}"). @k2b/sync needs a comma-separated list of ` +
+        "nats://host:port bootstrap servers, e.g. NATS_SERVERS=nats://ipa_nats_1:4222,nats://ipa_nats_2:4222.",
+    );
+  }
   if (current || starting) throw new Error("A Sync instance is already starting or bound to this process");
   starting = true;
   try {
-    const connection = await connectNats({ name: `${application}@${hostname()}` });
-    let sync: Sync | undefined;
-    try {
-      sync = withSyncBudgets(
-        createSync({
-          connection,
-          namespace: env.SYNC_NAMESPACE,
-          application,
-          defaults: { replicas: env.SYNC_REPLICAS },
-          observe: (event) => observeSyncEvent(event, application),
-        }),
-        { connection, namespace: env.SYNC_NAMESPACE },
-      );
-      bindProcessSync(sync);
-      await sync.ready();
-    } catch (error) {
-      if (current === sync) unbindProcessSync();
-      await flushSyncTraceEvents();
-      await connection.close();
-      throw error;
-    }
-    const active = sync;
+    const { sync: active, connection } = await waitForNats(() => connectReadySync(application), { application });
     let stopPromise: Promise<void> | undefined;
     return {
       sync: active,

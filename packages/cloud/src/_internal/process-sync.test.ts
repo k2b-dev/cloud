@@ -1,9 +1,10 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { createServer, type Socket, connect as tcpConnect } from "node:net";
 import * as syncModule from "@k2b/sync";
-import { natsSuite, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { natsServers, natsSuite, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { env } from "../config/env";
 import * as nats from "./nats-connection";
-import { getProcessSync, lazySync, startProcessSync } from "./process-sync";
+import { getProcessSync, lazySync, startProcessSync, waitForNats } from "./process-sync";
 
 const suite = natsSuite();
 const originalNamespace = process.env.SYNC_NAMESPACE;
@@ -13,6 +14,43 @@ afterEach(() => {
 });
 const isolate = () => {
   process.env.SYNC_NAMESPACE = testSyncNamespace("process");
+};
+
+/**
+ * A loopback port that refuses connections until `open()`, then forwards each
+ * connection to the test NATS server: NATS that becomes reachable only after
+ * the process started, as after a restart of the whole stack.
+ */
+const delayedNats = async () => {
+  const upstream = new URL(natsServers()[0]!);
+  const sockets = new Set<Socket>();
+  const server = createServer((client) => {
+    const broker = tcpConnect(Number(upstream.port || 4222), upstream.hostname);
+    for (const socket of [client, broker]) {
+      sockets.add(socket);
+      socket.on("error", () => {
+        client.destroy();
+        broker.destroy();
+      });
+      socket.on("close", () => sockets.delete(socket));
+    }
+    client.pipe(broker).pipe(client);
+  });
+  // Reserve a free port, then leave it closed until open().
+  const port = await new Promise<number>((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close(() => resolve(typeof address === "object" && address ? address.port : 0));
+    });
+  });
+  return {
+    url: `nats://127.0.0.1:${port}`,
+    open: () => server.listen(port, "127.0.0.1"),
+    close: async () => {
+      for (const socket of sockets) socket.destroy();
+      if (server.listening) await new Promise((resolve) => server.close(resolve));
+    },
+  };
 };
 
 suite("process Sync lifecycle", () => {
@@ -50,20 +88,38 @@ suite("process Sync lifecycle", () => {
     }
   });
 
-  test("closes failed startup and allows a later clean start", async () => {
+  test("retries a failed start with a fresh connection, fails at once on a Sync error, and starts cleanly later", async () => {
     isolate();
     const connect = nats.connectNats;
-    let connection: Awaited<ReturnType<typeof connect>> | undefined;
-    const connectSpy = spyOn(nats, "connectNats").mockImplementation(async (input) => (connection = await connect(input)));
+    const connections: Array<Awaited<ReturnType<typeof connect>>> = [];
+    const connectSpy = spyOn(nats, "connectNats").mockImplementation(async (input) => {
+      const connection = await connect(input);
+      connections.push(connection);
+      return connection;
+    });
+    const failures: Error[] = [];
     const create = syncModule.createSync;
     const createSpy = spyOn(syncModule, "createSync").mockImplementation((input) => {
       const sync = create(input);
-      spyOn(sync, "ready").mockRejectedValue(new Error("readiness fixture"));
+      const failure = failures.shift();
+      if (failure) spyOn(sync, "ready").mockRejectedValue(failure);
       return sync;
     });
     try {
-      await expect(startProcessSync({ application: "test-app" })).rejects.toThrow("readiness fixture");
-      expect(connection?.isClosed()).toBe(true);
+      // JetStream that does not answer yet heals by waiting: the next attempt gets its own connection.
+      failures.push(new Error("JetStream system temporarily unavailable"));
+      const runtime = await startProcessSync({ application: "test-app" });
+      expect(connections).toHaveLength(2);
+      expect(connections[0]!.isClosed()).toBe(true);
+      expect(getProcessSync()).toBe(runtime.sync);
+      await runtime.stop();
+
+      // A Sync error describes the server or declarations; waiting does not change it.
+      connections.length = 0;
+      failures.push(new syncModule.UnsupportedServerError("server fixture"));
+      await expect(startProcessSync({ application: "test-app" })).rejects.toThrow("server fixture");
+      expect(connections).toHaveLength(1);
+      expect(connections[0]!.isClosed()).toBe(true);
       expect(() => getProcessSync()).toThrow("not available");
     } finally {
       createSpy.mockRestore();
@@ -72,6 +128,50 @@ suite("process Sync lifecycle", () => {
     const runtime = await startProcessSync({ application: "test-app" });
     await runtime.stop();
   });
+
+  test("waits for NATS that becomes reachable after the process started", async () => {
+    isolate();
+    const proxy = await delayedNats();
+    const servers = process.env.NATS_SERVERS;
+    process.env.NATS_SERVERS = proxy.url;
+    const delayMs = 1_500;
+    const opening = setTimeout(proxy.open, delayMs);
+    try {
+      const startedAt = Date.now();
+      const runtime = await startProcessSync({ application: "test-delayed" });
+      try {
+        expect(Date.now() - startedAt).toBeGreaterThanOrEqual(delayMs);
+        expect(runtime.sync.health()).toMatchObject({ state: "ready", connection: "connected" });
+      } finally {
+        await runtime.stop();
+      }
+    } finally {
+      clearTimeout(opening);
+      process.env.NATS_SERVERS = servers;
+      await proxy.close();
+    }
+  }, 20_000);
+});
+
+test("exits the process once NATS does not answer within the startup budget", async () => {
+  const exit = spyOn(process, "exit").mockImplementation(((code?: number) => {
+    throw new Error(`exit ${code}`);
+  }) as typeof process.exit);
+  let attempts = 0;
+  try {
+    const waiting = waitForNats(
+      async () => {
+        attempts++;
+        throw new Error("connection refused");
+      },
+      { application: "test-budget", budgetMs: 1_500 },
+    );
+    await expect(waiting).rejects.toThrow("exit 1");
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    expect(exit).toHaveBeenCalledWith(1);
+  } finally {
+    exit.mockRestore();
+  }
 });
 
 // Stopping a NATS node needs a multi-node cluster and Docker control, which the shared test infrastructure does not provide.
