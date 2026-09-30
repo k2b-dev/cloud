@@ -389,6 +389,17 @@
   outline: 0;
 }
 
+/* 16px keeps iOS Safari from zooming on focus. The row takes its height from
+   this field, whose line box follows the host's line height, so the field
+   keeps the height its 14px line had: 14/16 of the new one. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-prompt-search__input input {
+    box-sizing: content-box;
+    height: 0.875lh;
+    font-size: max(1rem, 16px);
+  }
+}
+
 .k2b-ui .k2b-prompt-search__input input::placeholder {
   color: var(--k2b-placeholder-color);
   opacity: 1;

@@ -127,6 +127,21 @@
   tab-size: 2 !important;
 }
 
+/* 16px keeps iOS Safari from zooming on focus. The input, its highlighted
+   preview, and the placeholder change together so the caret stays on the
+   text, and the 1.55 x 14px line box stays as a fixed length. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-autocomplete__input,
+  .k2b-ui .k2b-autocomplete__preview,
+  .k2b-ui .k2b-autocomplete__placeholder,
+  .k2b-ui .k2b-markdown-editor__input,
+  .k2b-ui .k2b-markdown-editor__preview,
+  .k2b-ui .k2b-markdown-editor__placeholder {
+    font-size: max(1rem, 16px) !important;
+    line-height: 1.35625rem !important;
+  }
+}
+
 .k2b-ui .k2b-autocomplete__input,
 .k2b-ui .k2b-autocomplete__preview {
   position: absolute !important;
