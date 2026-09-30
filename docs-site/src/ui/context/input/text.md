@@ -53,6 +53,22 @@ browser reports an autofilled value, `TextInput` extends one semantic surface
 across the input, leading icon, affixes, and clear or password control. Editing
 the value returns the field to its regular visual state.
 
+## Touch devices
+
+On a device whose primary pointer is coarse, such as a phone, the editable text
+of every `@k2b/ui` field renders at 16 px instead of the compact desktop size.
+This covers `TextInput` in every mode, number, tag, PIN, and combobox fields,
+the search fields inside selects and prompts, the time field of the date
+pickers, the editors, and the chat composer. iOS Safari zooms the page when a
+focused field uses smaller text and leaves it zoomed afterwards.
+
+Only the text grows. The field, its label, and the surrounding layout keep
+their size and position, and devices with a mouse or trackpad keep the compact
+text. Do not set `maximum-scale` or `user-scalable=no` on the viewport to
+prevent the zoom; that takes pinch zoom away from people who need it. Give a
+field that an application builds itself at least 16 px of text on coarse
+pointers for the same reason.
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
