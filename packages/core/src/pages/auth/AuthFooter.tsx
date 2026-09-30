@@ -8,7 +8,7 @@ export default function AuthFooter(props: { links: Awaited<ReturnType<typeof lis
         {props.links.map((link, i) => (
           <>
             {i > 0 ? " · " : null}
-            <a href={link.href} target="_blank" rel="noopener" class="hover:text-primary">
+            <a href={link.href} target="_blank" rel="noopener" class="auth-footer-link hover:text-primary">
               {link.label}
             </a>
           </>

@@ -148,10 +148,15 @@ describe("MinimalLayout footer in a browser", () => {
 const { Paper, TextInput } = await import("@k2b/ui");
 const field = () => createComponent(TextInput, { label: "Password", value: "", password: true });
 const cards = {
-  // An elevated @k2b/ui Paper centered above the footer.
+  // An elevated @k2b/ui Paper centered above the footer, with more padding from `sm` up.
   paper: (surface: string) =>
     `<main class="flex flex-1 items-center justify-center px-4 py-8">${renderToString(() =>
-      createComponent(Paper, { as: "section" as const, elevated: true, class: `${surface} w-full max-w-md p-6`, children: field() }),
+      createComponent(Paper, { as: "section" as const, elevated: true, class: `${surface} w-full max-w-md p-6 sm:p-8`, children: field() }),
+    )}</main>`,
+  // A plain @k2b/ui Paper at the top of a share page.
+  plain: (surface: string) =>
+    `<main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10">${renderToString(() =>
+      createComponent(Paper, { as: "section" as const, class: `${surface} flex flex-col gap-4 p-6`, children: field() }),
     )}</main>`,
   // The Cloud `paper` utility at the top of a form page.
   utility: (surface: string) =>
@@ -204,7 +209,7 @@ describe("standalone card in a browser", () => {
 
   test("is flat on a phone: the content sits on the page with the page padding", async () => {
     for (const theme of ["light", "dark"] as const) {
-      for (const card of ["paper", "utility"] as const) {
+      for (const card of ["paper", "plain", "utility"] as const) {
         for (const width of [390, 767]) {
           const context = `${theme} ${card} ${width}`;
           const measured = await measureCard(width, card, "standalone-card", theme);
@@ -223,12 +228,12 @@ describe("standalone card in a browser", () => {
 
   test("keeps the card from the tablet width up, exactly like a card without the class", async () => {
     for (const theme of ["light", "dark"] as const) {
-      for (const card of ["paper", "utility"] as const) {
+      for (const card of ["paper", "plain", "utility"] as const) {
         for (const width of [768, 1440]) {
           const context = `${theme} ${card} ${width}`;
           const measured = await measureCard(width, card, "standalone-card", theme);
           expect(measured.surface.border, context).toBe("1px");
-          expect(measured.surface.padding, context).toBe("24px");
+          expect(measured.surface.padding, context).toBe(card === "paper" ? "32px" : "24px");
           expect(measured.surface.radius, context).not.toBe("0px");
           expect(measured.surface.background, context).not.toBe(flat.background);
           expect(measured, context).toEqual(await measureCard(width, card, "", theme));

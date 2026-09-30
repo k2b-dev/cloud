@@ -124,12 +124,15 @@ form, a shared document, a short public form. Give that card the
 </MinimalLayout>
 ```
 
-From 768 px the card looks as it does without the class. Below 768 px it has
-no border, radius, shadow, surface color, or padding of its own: the content
-sits on the page background inside the page padding, and fields use the full
-width. The class works on a `Paper`, on the `paper` utility, and on a card
-built from utilities. It is one CSS rule on unchanged markup, so the page
-arrives from the server in its final form and nothing moves afterwards.
+From Tailwind's `md` breakpoint (48rem, 768 px at the default font size) the
+card looks as it does without the class. Below it, the card has no border,
+radius, shadow, surface color, or padding of its own: the content sits on the
+page background inside the page padding, and fields use the full width. Page
+layout that changes with `md:` switches at the same width, also when a reader
+has set a larger default font size. The class works on a `Paper`, on the
+`paper` utility, and on a card built from utilities. It is one CSS rule on
+unchanged markup, so the page arrives from the server in its final form and
+nothing moves afterwards.
 
 Keep the page padding on `main`, not on the card, and do not select the flat
 variant from the user agent or in an island. Use the class only for the single

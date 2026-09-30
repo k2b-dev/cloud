@@ -76,21 +76,34 @@ const body = async (query: string, locale: string) => {
 };
 
 type View = { width: number; height: number; touch: boolean };
-const measure = async (view: View, query: string, options: { locale?: "en" | "de"; dark?: boolean } = {}) => {
+type Options = { locale?: "en" | "de"; dark?: boolean; defaultFontSize?: number };
+/** A tab with the server-rendered page; the caller closes it. */
+const open = async (view: View, query: string, options: Options = {}) => {
   const tab = await browser.newPage({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 2,
     isMobile: view.touch,
     hasTouch: view.touch,
   });
+  // A larger default font in the browser settings, which also moves rem-based breakpoints.
+  if (options.defaultFontSize) {
+    const session = await tab.context().newCDPSession(tab);
+    await session.send("Page.setFontSizes", { fontSizes: { standard: options.defaultFontSize } });
+  }
+  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
+  await tab.setContent(
+    `<!doctype html><html lang="en" class="${options.dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+      `<body class="k2b-ui">${await body(query, options.locale ?? "en")}</body></html>`,
+  );
+  await tab.evaluate(() => document.fonts.ready);
+  return tab;
+};
+
+/** The boxes and styles the layout checks need, as the server response renders them. */
+const measure = async (view: View, query: string, options: Options = {}) => {
+  const tab = await open(view, query, options);
   try {
-    await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
-    await tab.setContent(
-      `<!doctype html><html lang="en" class="${options.dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
-        `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-        `<body class="k2b-ui">${await body(query, options.locale ?? "en")}</body></html>`,
-    );
-    await tab.evaluate(() => document.fonts.ready);
     return await tab.evaluate(() => {
       const box = (element: Element) => {
         const rect = element.getBoundingClientRect();
@@ -98,6 +111,22 @@ const measure = async (view: View, query: string, options: { locale?: "en" | "de
       };
       const card = document.querySelector(".standalone-card")!;
       const style = getComputedStyle(card);
+      // The rows along a link's center line where a tap reaches that link.
+      const hitRows = (link: Element) => {
+        const rect = link.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const rows: number[] = [];
+        for (let y = Math.floor(rect.top) - 30; y <= rect.bottom + 30; y++) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit && (hit === link || link.contains(hit))) rows.push(y);
+        }
+        return {
+          top: Math.min(...rows),
+          bottom: Math.max(...rows) + 1,
+          contiguous: rows.length === Math.max(...rows) + 1 - Math.min(...rows),
+        };
+      };
+      const reset = document.querySelector(".auth-reset-link");
       return {
         surface: {
           border: style.borderTopWidth,
@@ -111,12 +140,35 @@ const measure = async (view: View, query: string, options: { locale?: "en" | "de
           name: action.textContent?.trim() ?? "",
           ...box(action),
         })),
+        textLinks: [...(reset ? [reset] : []), ...Array.from(document.querySelectorAll(".auth-footer-link"))].map((link) => ({
+          name: link.textContent?.trim() ?? "",
+          ...box(link),
+          hit: hitRows(link),
+        })),
+        submit: Array.from(document.querySelectorAll("main button[type=submit]")).map(box),
+        cardTop: box(card).top,
         // The page without its centering slack: where the footer ends, plus the page padding.
         contentHeight: box(document.querySelector("footer")!).bottom - box(card).top + 32,
         scrollWidth: document.documentElement.scrollWidth,
         scrollHeight: document.documentElement.scrollHeight,
       };
     });
+  } finally {
+    await tab.close();
+  }
+};
+
+/** The names keyboard focus reaches after the "use the app instead" link. */
+const tabOrder = async (view: View, query: string, steps: number) => {
+  const tab = await open(view, query);
+  try {
+    await tab.focus(".auth-login-alternative");
+    const names: string[] = [];
+    for (let step = 0; step < steps; step++) {
+      await tab.keyboard.press("Tab");
+      names.push(await tab.evaluate(() => document.activeElement?.textContent?.trim() ?? ""));
+    }
+    return names;
   } finally {
     await tab.close();
   }
@@ -199,4 +251,58 @@ describe("sign-in page in a browser", () => {
     }
     expect((await measure(desktop, forms.password)).fields.map((field) => field.width)).toEqual([448, 448]);
   }, 60_000);
+
+  test("grows and scrolls instead of clipping when the password form shows a notice", async () => {
+    // The banner is the same NoticeCard in the same place as a failed sign-in's error.
+    for (const locale of ["en", "de"] as const) {
+      const page = await measure(phone, `${forms.password}&banner=true`, { locale });
+      expect(page.scrollHeight, locale).toBeGreaterThan(phone.height);
+      // The card starts at the page padding and the document ends one padding below the footer.
+      expect(page.cardTop, locale).toBe(16);
+      expect(Math.abs(page.contentHeight - page.scrollHeight), locale).toBeLessThan(1);
+      expect(page.scrollWidth, locale).toBeLessThanOrEqual(phone.width);
+      for (const field of page.fields) expect([field.left, field.right], locale).toEqual([16, phone.width - 16]);
+    }
+  }, 60_000);
+
+  test("gives the small text links finger-sized hit areas that stop short of their neighbours", async () => {
+    for (const locale of ["en", "de"] as const) {
+      const page = await measure(phone, forms.password, { locale });
+      const [reset, ...footer] = page.textLinks;
+      expect([reset!.name, ...footer.map((link) => link.name)], locale).toEqual([
+        locale === "en" ? "Reset password" : "Passwort zurücksetzen",
+        "Imprint",
+        "Privacy",
+      ]);
+      for (const link of footer) {
+        expect(link.hit.contiguous, `${locale} ${link.name}`).toBe(true);
+        expect(link.hit.bottom - link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(44);
+      }
+      // The reset link sits between the password field and the sign-in button.
+      const password = page.fields.at(-1)!;
+      const submit = page.submit[0]!;
+      expect(reset!.hit.contiguous, locale).toBe(true);
+      expect(reset!.hit.bottom - reset!.hit.top, locale).toBeGreaterThanOrEqual(30);
+      expect(reset!.hit.top, locale).toBeGreaterThan(password.bottom);
+      expect(reset!.hit.bottom, locale).toBeLessThan(submit.top - 2);
+    }
+    // A mouse keeps the link's own box.
+    const [reset] = (await measure(desktop, forms.password)).textLinks;
+    expect(reset!.hit.bottom - reset!.hit.top).toBeLessThanOrEqual(Math.ceil(reset!.height) + 1);
+  }, 60_000);
+
+  test("moves focus through the action grid row by row", async () => {
+    expect(await tabOrder(phone, forms.password, 3)).toEqual(["Use passkey", "Contact support", "Admin token"]);
+    expect(await tabOrder(desktop, forms.password, 3)).toEqual(["Contact support", "Use passkey", "Admin token"]);
+  }, 30_000);
+
+  test("switches at the same rem breakpoint as the page's own md: layout with a larger default font", async () => {
+    // With a 20 px default font, md starts at 960 px: at 800 px the page is a phone page throughout,
+    // and the form column keeps its 28rem (560 px) width centered on the flat page.
+    const narrow = await measure({ width: 800, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
+    expect([narrow.surface, narrow.aside]).toEqual([flat, "none"]);
+    for (const field of narrow.fields) expect([field.left, field.right]).toEqual([120, 680]);
+    const wide = await measure({ width: 1000, height: 1024, touch: true }, forms.password, { defaultFontSize: 20 });
+    expect([wide.surface.border, wide.surface.radius, wide.aside]).toEqual(["1px", "20px", "flex"]);
+  }, 30_000);
 });

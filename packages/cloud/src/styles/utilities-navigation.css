@@ -986,11 +986,16 @@
 
 /* The one centered card of a standalone page (sign-in, a public share, an
    unlock form). Phones have no room for a frame inside the page padding, so
-   below the phone breakpoint the card loses border, radius, shadow, surface
-   and its own padding, and its content sits on the page background. Pure
-   CSS on the same markup: the server response is already in its final form.
-   The second selector outranks an elevated @k2b/ui Paper. */
-@media (max-width: 767px) {
+   below Tailwind's `md` breakpoint the card loses border, radius, shadow,
+   surface and its own padding, and its content sits on the page background.
+   Pure CSS on the same markup: the server response is already in its final
+   form. The second selector outranks an elevated @k2b/ui Paper.
+   The query is the exact opposite of `md:`, so a page that moves its own
+   padding or columns with `md:` switches at the same width as the card, also
+   with a larger default font size. `(width < 48rem)` is not: the build lowers
+   it to `max-width: calc(48rem - .001px)`, which Chromium still matches at
+   48rem. */
+@media not all and (min-width: 48rem) {
   .standalone-card,
   .k2b-ui .k2b-paper.standalone-card {
     padding: 0;
