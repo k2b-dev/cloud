@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
+import { Hono } from "hono";
 import { type Browser, chromium } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -239,6 +241,124 @@ describe("standalone card in a browser", () => {
           expect(measured, context).toEqual(await measureCard(width, card, "", theme));
         }
       }
+    }
+  }, 60_000);
+});
+
+// A public share as the page template delivers it: head, stylesheets and fonts included.
+const { defineApp } = await import("../_internal/define-app");
+const { Button } = await import("@k2b/ui");
+const shareApp = defineApp({
+  id: "minimal-layout-probe",
+  name: "Minimal Layout Probe",
+  icon: "ti ti-share",
+  description: "MinimalLayout first-frame probe",
+  baseUrl: "http://minimal-layout-probe:3000",
+  routes: ["/share/minimal-layout-probe"],
+});
+const shareServer = new Hono().get(
+  "/share/minimal-layout-probe",
+  ...shareApp.ssr((c) => () => {
+    const context = {
+      get: (key: string) => (key === "runtime" ? { apps: [legalApp] } : c.get(key as "page")),
+      req: c.req,
+    } as unknown as MinimalLayoutContextArg;
+    return createComponent(MinimalLayout, { c: context, children: CONTENT });
+  }),
+);
+// Headings, running text and a button: the three weights, in lines that wrap differently in another font.
+const share =
+  `<main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10"><section class="paper standalone-card flex flex-col gap-4 p-6">` +
+  `<h1 class="text-lg font-semibold">Signed contracts and the quarterly report for the supervisory board</h1>` +
+  `<p class="text-sm">Available until 31 October. Download the files you need before the link expires; uploads to this share are not possible.</p>` +
+  `${renderToString(() => createComponent(Button, { variant: "primary", children: "Download all files" }))}</section></main>`;
+
+const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
+/** The font assets Core serves, derived from the @k2b/ui presets as Core's build does. */
+const coreAssets = async () => {
+  const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
+  return {
+    stylesheets: {
+      "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
+      "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
+      "/public/global.css": css,
+    } as Record<string, string>,
+    file: (pathname: string) =>
+      pathname === "/public/tabler-icons.woff2"
+        ? resolve(uiDist, /tabler-icons-[\w-]+\.woff2/.exec(icons)![0])
+        : pathname.startsWith("/public/fonts/")
+          ? resolve(uiDist, "fonts", pathname.slice("/public/fonts/".length))
+          : null,
+  };
+};
+
+/** Every element's box in the first frame after DOMContentLoaded and after load, plus Chromium's layout shifts. */
+const firstFrameAndLoad = async (viewport: (typeof viewports)[number]) => {
+  const origin = "https://cloud.test";
+  const html = (await (await shareServer.request(`${origin}/share/minimal-layout-probe`)).text()).replace(CONTENT, share);
+  const { stylesheets, file } = await coreAssets();
+  const preloads = [...html.matchAll(/<link rel="preload" href="([^"]+)" as="font"/g)].map((match) => match[1]!);
+  // Serve the stylesheets once every preloaded font is served, the order a preload allows; without a preload
+  // the fonts are only requested after layout, and the stylesheets go out after a pause instead.
+  const served = new Map(preloads.map((href) => [href, Promise.withResolvers<void>()]));
+  const fontsFirst = Promise.race([Promise.all([...served.values()].map((font) => font.promise)), Bun.sleep(2_000)]);
+  const tab = await browser.newPage({
+    viewport: { width: viewport.width, height: viewport.height },
+    deviceScaleFactor: 2,
+    isMobile: viewport.isMobile,
+    hasTouch: viewport.hasTouch,
+  });
+  try {
+    await tab.route(`${origin}/**`, async (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname === "/share/minimal-layout-probe") return route.fulfill({ contentType: "text/html", body: html });
+      const stylesheet = stylesheets[pathname];
+      if (stylesheet !== undefined) {
+        await fontsFirst;
+        return route.fulfill({ contentType: "text/css", body: stylesheet });
+      }
+      const path = file(pathname);
+      if (!path) return route.fulfill({ status: 404, body: "" });
+      await route.fulfill({ path });
+      served.get(pathname)?.resolve();
+    });
+    // The islands' scripts answer 404, so only the fonts can move anything.
+    await tab.addInitScript(() => {
+      const state = window as unknown as { firstFrame?: string[]; shifts: number[]; boxes: () => string[] };
+      state.shifts = [];
+      state.boxes = () =>
+        Array.from(document.body.querySelectorAll("*")).map((element) => {
+          const { left, top, width, height } = element.getBoundingClientRect();
+          return `${element.tagName.toLowerCase()}.${element.classList[0] ?? ""} "${element.textContent?.trim().slice(0, 24)}" ${left},${top} ${width}x${height}`;
+        });
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) state.shifts.push((entry as PerformanceEntry & { value: number }).value);
+      }).observe({ type: "layout-shift", buffered: true });
+      document.addEventListener("DOMContentLoaded", () => requestAnimationFrame(() => (state.firstFrame = state.boxes())));
+    });
+    await tab.goto(`${origin}/share/minimal-layout-probe`, { waitUntil: "load" });
+    await tab.waitForFunction(() => "firstFrame" in window);
+    return await tab.evaluate(async () => {
+      await document.fonts.ready;
+      const state = window as unknown as { firstFrame: string[]; shifts: number[]; boxes: () => string[] };
+      const fonts: string[] = [];
+      document.fonts.forEach((font) => {
+        if (font.status === "loaded") fonts.push(`${font.family} ${font.weight}`);
+      });
+      return { firstFrame: state.firstFrame, loaded: state.boxes(), shifts: state.shifts, fonts };
+    });
+  } finally {
+    await tab.close();
+  }
+};
+
+describe("standalone page load in a browser", () => {
+  test("shows its final layout in the first frame instead of moving when the fonts arrive", async () => {
+    for (const viewport of viewports) {
+      const page = await firstFrameAndLoad(viewport);
+      expect(page.fonts, viewport.name).toEqual(expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600"]));
+      expect(page.loaded, viewport.name).toEqual(page.firstFrame);
+      expect(page.shifts, viewport.name).toEqual([]);
     }
   }, 60_000);
 });

@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-09-26
+updated: 2026-09-30
 ---
 
 # Layout and navigation
@@ -45,6 +45,14 @@ the content area of regular pages from `lg` and, below `lg`, the document of
 every page except full-page and focus-mode surfaces. Switching between short
 and long pages or tabs therefore does not shift the content sideways where
 scrollbars take layout space.
+
+Every Cloud page, with any layout, preloads the Latin IBM Plex Sans faces at
+weights 400, 500, and 600 next to its stylesheets. The first frame therefore
+uses the final font, and text does not re-wrap and move the page when the font
+arrives. Other faces load when the page first uses them and appear with
+`font-display: swap`: bold (700), italic, IBM Plex Mono, and scripts outside
+Latin. Keep them out of lines whose wrapping decides where the rest of a page
+sits, especially on a vertically centered page.
 
 Do not reproduce Cloud chrome inside application content.
 
