@@ -4,10 +4,10 @@ import { nkeys } from "@nats-io/transport-node";
 
 /**
  * JetStream limits of the TEST account. JetStream reserves the full
- * `max_bytes` of a stream against its account, 1 GiB per Sync topic, queue,
- * job, and dead-letter stream, so the file limit bounds reservations, not
- * data: a full integration run stores under 3 MiB but reserves up to 10 GiB
- * at once (the Pulse runtime Sync test). Parallel agents run up to four
+ * `max_bytes` of a stream against its account, so the file limit bounds
+ * reservations, not data: a full integration run reserves up to about 8 GiB
+ * at once (the Notebooks legacy topic migration test recreates three Sync 6
+ * per-note topics). Parallel agents run up to four
  * integration runs against this broker at once (the Postgres note in
  * `compose.yml`), so 50 GiB holds four runs at their peak plus the streams a
  * killed test process leaves behind until the one-hour sweep in

@@ -4,9 +4,9 @@
  * Tests share one JetStream account and isolate their @k2b/sync resources only
  * by namespace. Locally, that is the TEST account of the development broker,
  * whose storage limit keeps tests away from the development account.
- * JetStream reserves every stream's full size against that limit (1 GiB per
- * topic, job, and dead-letter stream by default), so a namespace a test leaves
- * behind blocks 1.5 to 2 GiB for a few kilobytes of data. Every test namespace
+ * JetStream reserves every stream's full size against that limit, so a
+ * namespace a test leaves behind blocks its whole declared budget, up to
+ * several GiB, for a few kilobytes of data. Every test namespace
  * therefore starts with `test-`. The fixture deletes a test process's
  * namespaces once its tests are done, and `bun run test` sweeps the namespaces
  * that killed processes leave behind.
