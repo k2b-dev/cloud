@@ -54,6 +54,12 @@ arrives. Other faces load when the page first uses them and appear with
 Latin. Keep them out of lines whose wrapping decides where the rest of a page
 sits, especially on a vertically centered page.
 
+An application preloads the font files of the `@k2b/ui` release that its
+`@k2b/cloud` version depends on, and Core serves the files of its own release.
+When a font update changes the files between those two releases, the preloads
+return 404, and the page shows the fallback font until Plex loads. Update
+`@k2b/cloud` to Core's release to preload the right files again.
+
 Do not reproduce Cloud chrome inside application content.
 
 ## Render anonymous application pages
