@@ -66,20 +66,21 @@ afterAll(async () => {
   await browser?.close();
 });
 
-/** The server-rendered sign-in page body, as it arrives before any script runs. */
+/** The server-rendered sign-in page body. */
 const body = async (query: string, locale: string) => {
   const app = new Hono().get("/auth/login", ...handler);
   const response = await app.request(`https://cloud.example.test/auth/login${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
   expect(response.status).toBe(200);
   const html = await response.text();
-  return /<body[^>]*>([\s\S]*)<\/body>/.exec(html)![1]!.replace(/<script[\s\S]*?<\/script>/g, "");
+  return /<body[^>]*>([\s\S]*)<\/body>/.exec(html)![1]!;
 };
 
 type View = { width: number; height: number; touch: boolean };
 type Options = { locale?: "en" | "de"; dark?: boolean; defaultFontSize?: number };
-/** A tab with the server-rendered page; the caller closes it. */
+/** A tab with the server-rendered page as it arrives, before any page script runs; the caller closes it. */
 const open = async (view: View, query: string, options: Options = {}) => {
   const tab = await browser.newPage({
+    javaScriptEnabled: false,
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 2,
     isMobile: view.touch,
