@@ -25,7 +25,13 @@ describe("Spaces recurrence summaries", () => {
         startsAt: "2026-08-14T09:00:00.000Z",
         dateConfig: { timeZone: "UTC", locale: "en" },
       }),
-    ).toBe("Repeats every Monday and Wednesday at 09:00 until Sat 15 Aug 2026");
+    ).toBe("Repeats every Monday and Wednesday at 09:00 until Sat, Aug 15, 2026");
+    expect(
+      summarizeRecurrence(recurrence("FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260815T235959Z"), {
+        startsAt: "2026-08-14T09:00:00.000Z",
+        dateConfig: { timeZone: "UTC", locale: "de" },
+      }),
+    ).toBe("Wiederholt sich jeden Montag und Mittwoch um 09:00 Uhr bis Sa., 15. Aug. 2026");
   });
 
   test("uses the start weekday when no weekly days are selected", () => {

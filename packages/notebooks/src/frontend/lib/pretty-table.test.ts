@@ -61,7 +61,7 @@ describe("pretty table rendering", () => {
     });
 
     expect(html).toContain('<time datetime="2026-05-14T18:01:15.575Z"');
-    expect(html).toContain("14 May 2026, 18:01");
+    expect(html).toContain("May 14, 2026, 18:01");
     expect(html).toContain(">2026-05-13<");
   });
 

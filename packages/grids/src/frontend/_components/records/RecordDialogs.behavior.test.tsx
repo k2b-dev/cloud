@@ -415,9 +415,9 @@ domTest("an untouched form keeps its date across midnight and closes without dis
       [field("FIELD1", "date")],
       { dateConfig: { timeZone: "Europe/Berlin" } },
     );
-    expect(dom.document.body.textContent).toContain("14 Sep 2026");
+    expect(dom.document.body.textContent).toContain("Sep 14, 2026");
     setSystemTime(new Date("2026-09-14T23:30:00Z"));
-    expect(dom.document.body.textContent).toContain("14 Sep 2026");
+    expect(dom.document.body.textContent).toContain("Sep 14, 2026");
     dom.document.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true }));
     await Bun.sleep(20);
     expect(dom.document.body.textContent).not.toContain("Unsaved changes");

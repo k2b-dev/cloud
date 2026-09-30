@@ -99,7 +99,7 @@
     "@k2b/nessi": "0.12.1",
     "@k2b/ssr": "0.14.0",
     "@k2b/ui": "0.9.0",
-    "@k2b/stdlib": "0.26.0",
+    "@k2b/stdlib": "0.27.0",
     "@k2b/sync": "7.0.0",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",

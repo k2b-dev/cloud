@@ -129,7 +129,7 @@ describe("Spaces item form", () => {
 
     expect(html).toContain(">Ends</label>");
     expect(html).toContain(">Until</label>");
-    expect(html).toContain("15 Aug 2026");
-    expect(html).toContain("Repeats every day at 09:00 until Sat 15 Aug 2026");
+    expect(html).toContain("Aug 15, 2026");
+    expect(html).toContain("Repeats every day at 09:00 until Sat, Aug 15, 2026");
   });
 });

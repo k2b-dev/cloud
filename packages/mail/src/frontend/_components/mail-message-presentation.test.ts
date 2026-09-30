@@ -24,7 +24,7 @@ describe("mail message presentation", () => {
         locale: "en",
         timeZone: "Europe/Berlin",
       }),
-    ).toBe("16:30 06 Aug 2026");
+    ).toBe("16:30 Aug 6, 2026");
   });
 
   test("keeps plain content and quoted history in ordered segments", () => {

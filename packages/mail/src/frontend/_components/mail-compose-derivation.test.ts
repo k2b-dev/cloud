@@ -183,7 +183,7 @@ describe("Mail compose derivation presentation", () => {
     );
     expect(body).toContain("---------- Weitergeleitete Nachricht ----------");
     expect(body).toContain("Von: Unbekannter Absender");
-    expect(body).toContain("Datum: 01 Jan. 2026, 00:00");
+    expect(body).toContain("Datum: 1. Jan. 2026, 00:00");
     expect(body).toContain("Betreff: (kein Betreff)");
     expect(body).toContain("An: Nicht offengelegte Empfänger");
     expect(body).not.toContain("Forwarded message");

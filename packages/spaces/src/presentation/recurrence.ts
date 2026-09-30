@@ -277,10 +277,13 @@ export const summarizeRecurrenceState = (state: RecurrenceFormState, options: Re
   const time = !options.allDay && startsAt ? t.at({ time: formatStartTime(options.startsAt, startsAt, options.dateConfig) }) : "";
   const end = parts.until
     ? t.until({
-        date: `${new Intl.DateTimeFormat(options.dateConfig?.locale ?? "en", {
+        date: new Intl.DateTimeFormat(options.dateConfig?.locale ?? "en", {
           weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
           timeZone: options.dateConfig?.timeZone ?? "UTC",
-        }).format(until!)} ${parts.until}`,
+        }).format(until!),
       })
     : parts.count
       ? t.occurrences({ count: parts.count })

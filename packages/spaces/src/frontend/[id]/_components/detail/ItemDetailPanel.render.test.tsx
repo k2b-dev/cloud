@@ -383,7 +383,7 @@ describe("Spaces item detail panel", () => {
       },
     });
 
-    expect(html).toContain("Repeats every Monday at 12:00 until Sat 15 Aug 2026");
+    expect(html).toContain("Repeats every Monday at 12:00 until Sat, Aug 15, 2026");
   });
 
   test("keeps generated occurrences read-only at item level with occurrence-scoped comments", () => {
@@ -682,7 +682,7 @@ describe("Spaces item detail groups", () => {
     const editor = renderPanel({ item: planned });
     const summary = editor.slice(editor.indexOf('class="k2b-detail-panel__summary"'), editor.indexOf("</section>"));
     expect(summary).toMatch(/>Due<\/dt>[\s\S]*>Estimate<\/dt>[\s\S]*>Priority<\/dt>[\s\S]*>Tags<\/dt>/);
-    expect(summary).toContain("12 Aug 2026, 12:00");
+    expect(summary).toContain("Aug 12, 2026, 12:00");
     expect(summary).toContain('<span class="text-dimmed"> · ');
     expect(summary).toContain("45 min");
     // The description list term names each control; the options popovers carry the same name.

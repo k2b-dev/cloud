@@ -53,8 +53,8 @@ describe("@k2b/ui complete date picker migration", () => {
   });
 
   test("keeps date-only labels on their calendar day", () => {
-    expect(displayDate("2026-07-27", { locale: "en" })).toBe("27 Jul 2026");
-    expect(displayDate("2026-07-27", { locale: "en", timeZone: "America/New_York" })).toBe("27 Jul 2026");
+    expect(displayDate("2026-07-27", { locale: "en" })).toBe("Jul 27, 2026");
+    expect(displayDate("2026-07-27", { locale: "en", timeZone: "America/New_York" })).toBe("Jul 27, 2026");
   });
 
   test("orders and previews ranges while preserving inclusive duration", () => {
