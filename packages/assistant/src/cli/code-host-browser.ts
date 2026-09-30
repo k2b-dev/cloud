@@ -10,7 +10,9 @@ export async function createBrowserCodeHost(
   endpoint: { origin: string; token: string },
   approve?: (request: CodeApproval) => Promise<CapabilityDecision>,
   unattended = false,
+  progress: (step: string) => void = () => {},
 ) {
+  progress(appEnv.CLOUD_CLI_CHROMIUM ? `launching Chromium at ${appEnv.CLOUD_CLI_CHROMIUM}` : "launching Playwright's Chromium");
   const browser: Browser = await chromium
     .launch({
       headless: true,
@@ -28,6 +30,7 @@ export async function createBrowserCodeHost(
   const lifetime = new AbortController();
   browser.on("disconnected", () => lifetime.abort());
   try {
+    progress("opening the host page");
     const page = await browser.newPage();
     const startupErrors: string[] = [];
     page.on("pageerror", (error) => startupErrors.push(error.message));
@@ -53,12 +56,14 @@ export async function createBrowserCodeHost(
       return approve(request);
     });
     await page.goto(endpoint.origin);
+    progress("loading the host runtime");
     const response = await fetch(new URL("/api/assistant/artifacts/runtime/host.js", endpoint.origin), {
       headers: { [HOST_HEADER]: endpoint.token },
       signal: lifetime.signal,
       redirect: "error",
     });
     if (!response.ok) throw new Error(`Code host unavailable: HTTP ${response.status}`);
+    progress("initializing the host runtime");
     await page.evaluate((value) => {
       window.assistantCodeUnattended = value;
     }, unattended);

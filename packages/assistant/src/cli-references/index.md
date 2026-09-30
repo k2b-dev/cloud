@@ -90,7 +90,9 @@ purge them remotely; direct the user to Studio → Advanced → Local data.
 
 Code Mode runs in an isolated browser worker hosted by the CLI. It does not need
 an open Assistant browser tab. Install Playwright Chromium, or set
-`CLOUD_CLI_CHROMIUM` to an existing Chromium executable.
+`CLOUD_CLI_CHROMIUM` to an existing Chromium executable. A host that does not
+start within 45 seconds fails without running code, and the error names the
+startup step that stalled.
 Streaming reconnects after transport interruptions and periodically reconciles
 the saved turn state. This keeps a missed completion event from leaving the CLI
 waiting indefinitely; it does not restart completed tool calls.

@@ -15,6 +15,7 @@ export function startCliCodeHostProcess() {
           { origin: request.origin, token: request.token },
           async (approval) => Decision.parse(await ipc.request({ operation: "approve", approval })),
           request.unattended,
+          (step) => void ipc.request({ operation: "progress", step }).catch(() => {}),
         );
         host = await starting;
         return null;

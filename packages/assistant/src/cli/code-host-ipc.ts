@@ -7,7 +7,8 @@ export type HostRequest =
   | { operation: "health" }
   | { operation: "close" }
   | { operation: "execute" | "call"; call: Call }
-  | { operation: "approve"; approval: CodeApproval };
+  | { operation: "approve"; approval: CodeApproval }
+  | { operation: "progress"; step: string };
 export type HostResult = Awaited<ReturnType<AiFrontendToolHandler>> | CapabilityDecision | null;
 type Message =
   | { id: number; cancel: true }
