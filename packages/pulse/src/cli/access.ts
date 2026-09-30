@@ -38,6 +38,7 @@ export const pulseAccessCommands = createAccessCommands({
       'cld pulse access grant "Ops telemetry" --user valentin.kolb --permission read',
       'cld pulse access grant "Ops telemetry" --group "Sysadmins" --permission admin',
       'cld pulse access grant "Ops telemetry" --authenticated --permission read',
+      'cld pulse access grant "Ops telemetry" --service-account "Release agent" --permission read',
     ],
     set: [
       'cld pulse access set "Ops telemetry" --group "Sysadmins" --permission write',
@@ -50,6 +51,8 @@ export const pulseAccessCommands = createAccessCommands({
     searchPrincipals: [
       "cld pulse access search-principals val --kind user,group",
       'cld pulse access search-principals "Sysadmins" --kind group',
+      'cld pulse access search-principals "Release agent" --kind service_account',
     ],
   },
+  allowServiceAccounts: true,
 });

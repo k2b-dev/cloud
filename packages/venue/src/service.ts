@@ -14,7 +14,14 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { coreSettings, isUniqueViolation, logger, serviceAccounts, toPgUuidArray } from "@k2b/cloud/services";
+import {
+  coreSettings,
+  isStandaloneServiceAccountKind,
+  isUniqueViolation,
+  logger,
+  serviceAccounts,
+  toPgUuidArray,
+} from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
@@ -421,13 +428,25 @@ const createOwnerAccessInTx = async (tx: SqlClient, userId: string): Promise<Res
   return row ? ok({ id: row.id }) : fail(err.internal("Failed to create access entry"));
 };
 
+/**
+ * Reads across venues. A resource-bound service account must pass its bound
+ * venue; a standalone or agent account is limited only by its own grants. The
+ * kind is read from the account row, so a caller that omits a binding fails
+ * closed.
+ */
+const mayReadAcrossVenues = async (subject: VenueAccessSubject): Promise<boolean> => {
+  if (subject.subject.type !== "service_account") return true;
+  if (subject.serviceAccountResourceId) return UUID_PATTERN.test(subject.serviceAccountResourceId);
+  const account = await serviceAccounts.get({ id: subject.subject.serviceAccountId });
+  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+};
+
+/** Service accounts are capped by their credential scopes; a bound account only ever reaches its own venue. */
 const getPermission = async (venueId: string, subjectInput: UserLike | VenueAccessSubject): Promise<PermissionLevel> => {
   const subject = toAccessSubject(subjectInput);
-  if (
-    subject.subject.type === "service_account" &&
-    (!UUID_PATTERN.test(subject.serviceAccountResourceId ?? "") || subject.serviceAccountResourceId !== venueId)
-  ) {
-    return "none";
+  if (subject.subject.type === "service_account") {
+    const boundVenueId = subject.serviceAccountResourceId;
+    if (boundVenueId ? boundVenueId !== venueId : !(await mayReadAcrossVenues(subject))) return "none";
   }
 
   const entries = await listAccess(venueId);
@@ -442,9 +461,7 @@ const getPermission = async (venueId: string, subjectInput: UserLike | VenueAcce
 
 const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<Venue[]> => {
   const subject = toAccessSubject(subjectInput);
-  if (subject.subject.type === "service_account" && !UUID_PATTERN.test(subject.serviceAccountResourceId ?? "")) {
-    return [];
-  }
+  if (!(await mayReadAcrossVenues(subject))) return [];
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: subject.subject,
@@ -455,7 +472,10 @@ const listVenues = async (subjectInput: UserLike | VenueAccessSubject): Promise<
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const bindingMatch = subject.subject.type === "service_account" ? sql`v.id = ${subject.serviceAccountResourceId}::uuid` : sql`true`;
+  const bindingMatch =
+    subject.subject.type === "service_account" && subject.serviceAccountResourceId
+      ? sql`v.id = ${subject.serviceAccountResourceId}::uuid`
+      : sql`true`;
 
   const rows = await sql<DbVenue[]>`
     SELECT DISTINCT v.*
@@ -489,7 +509,7 @@ const venueSearchPattern = (query: string | null | undefined): string | null => 
 
 const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, options: VenueDiscoveryOptions = {}): Promise<Venue[]> => {
   const subject = toAccessSubject(subjectInput);
-  if (subject.subject.type === "service_account" && !UUID_PATTERN.test(subject.serviceAccountResourceId ?? "")) return [];
+  if (!(await mayReadAcrossVenues(subject))) return [];
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: subject.subject,
@@ -500,7 +520,10 @@ const discoverVenues = async (subjectInput: UserLike | VenueAccessSubject, optio
       authenticatedOnly: sql`a.authenticated_only`,
     },
   });
-  const bindingMatch = subject.subject.type === "service_account" ? sql`v.id = ${subject.serviceAccountResourceId}::uuid` : sql`true`;
+  const bindingMatch =
+    subject.subject.type === "service_account" && subject.serviceAccountResourceId
+      ? sql`v.id = ${subject.serviceAccountResourceId}::uuid`
+      : sql`true`;
   const pattern = venueSearchPattern(options.query);
   const limit = Math.min(101, Math.max(1, options.limit ?? 25));
   const offset = Math.max(0, options.offset ?? 0);

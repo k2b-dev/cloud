@@ -78,6 +78,7 @@ const resourceScope = (params: {
 }): ResourceScope => ({
   subject: { type: "service_account", serviceAccountId: params.serviceAccountId },
   serviceAccount: {
+    kind: "resource_bound",
     appId: "pulse",
     resourceType: params.resourceType,
     resourceId: params.resourceId,

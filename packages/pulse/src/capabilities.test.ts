@@ -10,6 +10,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { sql } from "bun";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 import { pulseCapabilities } from "./capabilities";
 import {
   BaseListDataSchema,
@@ -64,20 +65,8 @@ const invoke = (localId: string, input: unknown, context: CapabilityExecutionCon
   });
 };
 
-const canUseDatabase = async (): Promise<boolean> => {
-  try {
-    const [row] = await sql<{ bases: string | null; users: string | null }[]>`
-      SELECT to_regclass('pulse.bases')::text AS bases, to_regclass('auth.users')::text AS users
-    `;
-    return Boolean(row?.bases && row.users);
-  } catch {
-    return false;
-  }
-};
-
-const databaseAvailable = await canUseDatabase();
-if (databaseAvailable) setDefaultTimeout(60_000);
-const postgresTest = databaseAvailable ? test : test.skip;
+setDefaultTimeout(60_000);
+const postgresTest = testFor("database");
 
 describe("Pulse capabilities", () => {
   test("declares and compiles the curated read-only v1 surface", () => {
@@ -346,6 +335,80 @@ describe("Pulse capabilities", () => {
       await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
       if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${user.id}::uuid, ${otherUserRow.id}::uuid)`;
+    }
+  });
+
+  postgresTest("lets agent service accounts read only the bases they were granted, within their scopes", async () => {
+    const grantedBaseId = crypto.randomUUID();
+    const otherBaseId = crypto.randomUUID();
+    const grantedBaseShortId = newShortId();
+    const otherBaseShortId = newShortId();
+    const [agent] = await sql<{ id: string; createdAt: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind)
+      VALUES ('Pulse capability agent test', 'agent')
+      RETURNING id::text AS id, created_at::text AS "createdAt"
+    `;
+    if (!agent) throw new Error("Failed to create agent Pulse fixture");
+    const agentContext = (scopes: string[]): CapabilityExecutionContext => ({
+      actor: {
+        kind: "service_account",
+        serviceAccount: {
+          id: agent.id,
+          name: "Pulse capability agent test",
+          kind: "agent",
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: null,
+          createdAt: agent.createdAt,
+        },
+        delegatedUser: null,
+        scopes,
+      },
+      accessSubject: { type: "service_account", serviceAccountId: agent.id },
+      user: null,
+      locale: "en",
+      requestId: "req-test",
+      origin: "app",
+      signal: new AbortController().signal,
+    });
+    let accessId: string | null = null;
+
+    try {
+      await sql`
+        INSERT INTO pulse.bases (id, short_id, name) VALUES
+          (${grantedBaseId}::uuid, ${grantedBaseShortId}, 'Granted agent telemetry'),
+          (${otherBaseId}::uuid, ${otherBaseShortId}, 'Other agent telemetry')
+      `;
+      const [access] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (service_account_id, permission)
+        VALUES (${agent.id}::uuid, 'write'::auth.permission_level)
+        RETURNING id::text AS id
+      `;
+      accessId = access!.id;
+      await sql`INSERT INTO pulse.base_access (base_id, access_id) VALUES (${grantedBaseId}::uuid, ${accessId}::uuid)`;
+
+      // A `read` token reaches the base behind the agent's `write` grant and nothing else.
+      const context = agentContext(["read"]);
+      const listed = await invoke("base.list", { limit: 25 }, context);
+      expect(listed.ok && listed.data.data).toEqual([expect.objectContaining({ id: grantedBaseShortId })]);
+      const read = await invoke("base.read", { id: grantedBaseShortId }, context);
+      expect(read.ok && read.data.data).toMatchObject({ id: grantedBaseShortId });
+      const ungranted = await invoke("base.read", { id: otherBaseShortId }, context);
+      expect(ungranted).toMatchObject({ ok: false, error: { status: 403 } });
+
+      // A token without `read` reaches nothing, even with the grant.
+      const unscoped = agentContext(["openid"]);
+      const hidden = await invoke("base.list", { limit: 25 }, unscoped);
+      expect(hidden.ok && hidden.data.data).toEqual([]);
+      const denied = await invoke("base.read", { id: grantedBaseShortId }, unscoped);
+      expect(denied).toMatchObject({ ok: false, error: { status: 403 } });
+    } finally {
+      await sql`DELETE FROM pulse.bases WHERE id IN (${grantedBaseId}::uuid, ${otherBaseId}::uuid)`;
+      if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${agent.id}::uuid`;
     }
   });
 

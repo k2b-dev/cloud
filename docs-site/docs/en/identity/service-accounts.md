@@ -111,6 +111,8 @@ the REST API:
 cld spaces access grant "Roadmap" --service-account "Release agent" --permission write
 cld notebooks access grant "Product Notes" --service-account "Release agent" --permission read
 cld contacts access grant "Customers" --service-account "Release agent" --permission read
+cld pulse access grant "Ops telemetry" --service-account "Release agent" --permission read
+cld venue access grant "Cafe Counter" --service-account "Release agent" --permission read
 cld spaces access search-principals "Release agent" --kind service_account
 ```
 
@@ -136,18 +138,24 @@ Contacts it lists, searches, and resolves its contact books and contacts, and
 creates or changes contacts with a `write` grant. In Mail it lists and works in
 the mailboxes it was granted; REST, capabilities, the CLI, and queued mailbox
 work all use the lower of its grant and its token's scopes, so a `write` grant
-with a `read`-only token only reads.
-In Spaces, Notebooks, and Contacts, actions that belong to a person stay
-user-only: creating a Space, Notebook, or contact book, managing access and API
-keys, personal views such as favorites and the Spaces work overview, editing or
-deleting comments (and, in Notebooks, writing comments), and writing contact
-notes.
+with a `read`-only token only reads. In Pulse it lists and queries its bases
+and changes them with a `write` grant. In Venue it lists its venues and reads
+their dashboards.
+In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
+person stay user-only: creating a Space, Notebook, contact book, Pulse base, or
+venue, creating and revoking API keys, managing Pulse source tokens, personal
+views such as favorites and the Spaces work overview, editing or deleting
+comments (and, in Notebooks, writing comments), writing contact notes, and
+signing up for or cancelling Venue shifts. Managing access and listing API keys
+stay user-only in Spaces, Notebooks, and Contacts.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
-contact book, renaming, importing, or exporting a contact book, and
-administering a mailbox (its settings, access, sender identities, automations,
-and restoring it after deletion) need an `admin` grant and a token with the
-`admin` scope. The client from `cld admin agents create` has only `read` and
-`write`.
+contact book, renaming, importing, or exporting a contact book, administering a
+mailbox (its settings, access, sender identities, automations, and restoring it
+after deletion), deleting or clearing a Pulse base, changing a venue's
+settings, hours, shift templates, and page sections, listing a venue's API
+keys, and managing access in Pulse and Venue need an `admin` grant and a token
+with the `admin` scope. The client from `cld admin agents create` has only
+`read` and `write`.
 Resource-bound API keys keep their binding and behave as before.
 
 ## Use an agent from the CLI
