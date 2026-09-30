@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.19.0...npm-cloud-v0.20.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **files:** remove the legacy Files app ([#465](https://github.com/k2b-dev/cloud/issues/465))
+
+### Features
+
+* **cloud:** document the real validation error in every OpenAPI route ([#459](https://github.com/k2b-dev/cloud/issues/459)) ([d2a080d](https://github.com/k2b-dev/cloud/commit/d2a080db520577bad87bf77a375fa25cd489058e))
+* **cloud:** end public minimal pages with legal links and labeled language and theme settings ([#446](https://github.com/k2b-dev/cloud/issues/446)) ([163cc8f](https://github.com/k2b-dev/cloud/commit/163cc8fd9e64228eb385f2088f40ac50af2f63f2))
+* **cloud:** move to @k2b/sync 7 and bound dead-letter storage for topics ([#467](https://github.com/k2b-dev/cloud/issues/467)) ([e4c2397](https://github.com/k2b-dev/cloud/commit/e4c2397897e3eac6dfd81afabeae98b4319d399b))
+* **cloud:** reserve small JetStream budgets for Sync jobs and queues by default ([#449](https://github.com/k2b-dev/cloud/issues/449)) ([8304632](https://github.com/k2b-dev/cloud/commit/830463293e3361b808d3daab6bf5f4b6db30938f)), closes [#362](https://github.com/k2b-dev/cloud/issues/362)
+* **cloud:** set the Gotenberg URL from GOTENBERG_URL ([#456](https://github.com/k2b-dev/cloud/issues/456)) ([e49fadc](https://github.com/k2b-dev/cloud/commit/e49fadcbbb27fb7d00058f12678ce0f79843d7c6))
+* **files:** remove the legacy Files app ([#465](https://github.com/k2b-dev/cloud/issues/465)) ([f6a6a2f](https://github.com/k2b-dev/cloud/commit/f6a6a2fb41337044611e83d7b0de478d56159de3))
+* **notebooks:** render info boxes and other note blocks in PDF exports ([#444](https://github.com/k2b-dev/cloud/issues/444)) ([2602a44](https://github.com/k2b-dev/cloud/commit/2602a44b4ad437718a746b208113e980af191eb9))
+
+
+### Bug Fixes
+
+* **cloud:** form ligatures in report PDFs ([#452](https://github.com/k2b-dev/cloud/issues/452)) ([d88e867](https://github.com/k2b-dev/cloud/commit/d88e867a30fe92a002e2adb5b506c4ec956a5019))
+* **cloud:** pick the first supported language from the browser ([#450](https://github.com/k2b-dev/cloud/issues/450)) ([51a18da](https://github.com/k2b-dev/cloud/commit/51a18da275968482d7968500731035e85459b9a2))
+* **cloud:** stop app pages from coming back stale from the browser cache ([#442](https://github.com/k2b-dev/cloud/issues/442)) ([5669879](https://github.com/k2b-dev/cloud/commit/566987982580284f1a56d966287861e7ebe7d74f))
+* **deps:** move to @k2b/stdlib 0.27.0 and show dates in each locale's order ([#472](https://github.com/k2b-dev/cloud/issues/472)) ([163ace1](https://github.com/k2b-dev/cloud/commit/163ace136dd89d587a700d579df9a42502d71f60))
+* **deps:** move to marked 18 ([#474](https://github.com/k2b-dev/cloud/issues/474)) ([5dd1d3a](https://github.com/k2b-dev/cloud/commit/5dd1d3aca52b03744fc0059fc5619a32e9972143)), closes [#463](https://github.com/k2b-dev/cloud/issues/463)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.9.0 to 0.9.1
+
 ## [0.19.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.18.0...npm-cloud-v0.19.0) (2026-09-29)
 
 

@@ -3,6 +3,43 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.25.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.24.0...cloud-v0.25.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **files:** remove the legacy Files app ([#465](https://github.com/k2b-dev/cloud/issues/465))
+
+### Features
+
+* **cloud:** document the real validation error in every OpenAPI route ([#459](https://github.com/k2b-dev/cloud/issues/459)) ([d2a080d](https://github.com/k2b-dev/cloud/commit/d2a080db520577bad87bf77a375fa25cd489058e))
+* **cloud:** end public minimal pages with legal links and labeled language and theme settings ([#446](https://github.com/k2b-dev/cloud/issues/446)) ([163cc8f](https://github.com/k2b-dev/cloud/commit/163cc8fd9e64228eb385f2088f40ac50af2f63f2))
+* **cloud:** move to @k2b/sync 7 and bound dead-letter storage for topics ([#467](https://github.com/k2b-dev/cloud/issues/467)) ([e4c2397](https://github.com/k2b-dev/cloud/commit/e4c2397897e3eac6dfd81afabeae98b4319d399b))
+* **cloud:** reserve small JetStream budgets for Sync jobs and queues by default ([#449](https://github.com/k2b-dev/cloud/issues/449)) ([8304632](https://github.com/k2b-dev/cloud/commit/830463293e3361b808d3daab6bf5f4b6db30938f)), closes [#362](https://github.com/k2b-dev/cloud/issues/362)
+* **cloud:** set the Gotenberg URL from GOTENBERG_URL ([#456](https://github.com/k2b-dev/cloud/issues/456)) ([e49fadc](https://github.com/k2b-dev/cloud/commit/e49fadcbbb27fb7d00058f12678ce0f79843d7c6))
+* **core:** offer the password first when signing in with a FreeIPA account ([#471](https://github.com/k2b-dev/cloud/issues/471)) ([c5ffd3b](https://github.com/k2b-dev/cloud/commit/c5ffd3bdb3409be0d998505245324a0f2b9f509d))
+* **files:** ask whether to include hidden system files when uploading folders ([#441](https://github.com/k2b-dev/cloud/issues/441)) ([88b4a9c](https://github.com/k2b-dev/cloud/commit/88b4a9c0d4547ce26f96978a0af54fe99b0b14ca))
+* **files:** remove the legacy Files app ([#465](https://github.com/k2b-dev/cloud/issues/465)) ([f6a6a2f](https://github.com/k2b-dev/cloud/commit/f6a6a2fb41337044611e83d7b0de478d56159de3))
+* **notebooks:** render info boxes and other note blocks in PDF exports ([#444](https://github.com/k2b-dev/cloud/issues/444)) ([2602a44](https://github.com/k2b-dev/cloud/commit/2602a44b4ad437718a746b208113e980af191eb9))
+
+
+### Bug Fixes
+
+* **cloud:** form ligatures in report PDFs ([#452](https://github.com/k2b-dev/cloud/issues/452)) ([d88e867](https://github.com/k2b-dev/cloud/commit/d88e867a30fe92a002e2adb5b506c4ec956a5019))
+* **cloud:** pick the first supported language from the browser ([#450](https://github.com/k2b-dev/cloud/issues/450)) ([51a18da](https://github.com/k2b-dev/cloud/commit/51a18da275968482d7968500731035e85459b9a2))
+* **cloud:** stop app pages from coming back stale from the browser cache ([#442](https://github.com/k2b-dev/cloud/issues/442)) ([5669879](https://github.com/k2b-dev/cloud/commit/566987982580284f1a56d966287861e7ebe7d74f))
+* **deps:** move to @k2b/stdlib 0.27.0 and show dates in each locale's order ([#472](https://github.com/k2b-dev/cloud/issues/472)) ([163ace1](https://github.com/k2b-dev/cloud/commit/163ace136dd89d587a700d579df9a42502d71f60))
+* **deps:** move to marked 18 ([#474](https://github.com/k2b-dev/cloud/issues/474)) ([5dd1d3a](https://github.com/k2b-dev/cloud/commit/5dd1d3aca52b03744fc0059fc5619a32e9972143)), closes [#463](https://github.com/k2b-dev/cloud/issues/463)
+* **deps:** resolve undici past GHSA-rfgv-xxqx-mfg5 and GHSA-w293-vg96-wgc3 ([#470](https://github.com/k2b-dev/cloud/issues/470)) ([be76413](https://github.com/k2b-dev/cloud/commit/be76413df84f9cf388710f159ea73a5ca8d95807))
+* **files:** handle dot-files Safari leaves out of folder uploads and drops ([#458](https://github.com/k2b-dev/cloud/issues/458)) ([a4bcea8](https://github.com/k2b-dev/cloud/commit/a4bcea89e951327d1951c22952d24471baf7ce73))
+* **grids:** drop the gradient that ended above the public document page footer ([#453](https://github.com/k2b-dev/cloud/issues/453)) ([7fb18b9](https://github.com/k2b-dev/cloud/commit/7fb18b9f4f6dd982dd1a3f5230b4acf4eeaeea4c))
+* **notebooks:** print ligature arrows and symbols cleanly in PDF exports ([#447](https://github.com/k2b-dev/cloud/issues/447)) ([ac916a9](https://github.com/k2b-dev/cloud/commit/ac916a96e731f12826cf465d78c97bd1520ac9a5))
+* **notebooks:** render info boxes that follow a table of contents in the editor ([#455](https://github.com/k2b-dev/cloud/issues/455)) ([172584e](https://github.com/k2b-dev/cloud/commit/172584e1ed5c8850ab9880bb005226d49f3c8b73))
+* **ui:** keep iPhones from zooming when a text field takes focus ([#477](https://github.com/k2b-dev/cloud/issues/477)) ([8b480ec](https://github.com/k2b-dev/cloud/commit/8b480ec6e27b51e4cf3c445cee2e23509f57d197))
+* **ui:** keep the CheckboxCard input inside its card when lists scroll ([#445](https://github.com/k2b-dev/cloud/issues/445)) ([e466802](https://github.com/k2b-dev/cloud/commit/e466802ee642192ab5035f53c78c54b5d0f1c2ac)), closes [#404](https://github.com/k2b-dev/cloud/issues/404)
+* **ui:** make dropdown and menu items finger-sized on phones ([#448](https://github.com/k2b-dev/cloud/issues/448)) ([8c843b3](https://github.com/k2b-dev/cloud/commit/8c843b31c93bf5a92c32177233fe973e9cfe77c7))
+* **ui:** scroll the settings panel, not the dialog frame, when a hidden control takes focus ([#473](https://github.com/k2b-dev/cloud/issues/473)) ([849f439](https://github.com/k2b-dev/cloud/commit/849f439b2a11ee988e43eeb2668e83ffa9ef8a70))
+
 ## [0.24.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.23.0...cloud-v0.24.0) (2026-09-29)
 
 
