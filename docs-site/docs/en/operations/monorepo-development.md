@@ -302,7 +302,7 @@ infrastructure:
 - `TEST` holds the streams of integration tests. Tests authenticate with
   `.local/nats/test.creds`. The account may reserve at most 50 GiB of
   JetStream storage: enough for four parallel integration runs at their peak
-  of 10 GiB each, plus the streams of a killed test process. Test runs, and
+  of about 8 GiB each, plus the streams of a killed test process. Test runs, and
   the streams they leave behind, therefore cannot exhaust the storage of
   `DEV`.
 - `$SYS` serves the Gateway Ops diagnostics. Its seed is mounted only in
