@@ -66,3 +66,33 @@ else
       dom.cleanup();
     }
   });
+
+if (!isServer)
+  test("context popup reports each opening once, for hover preview and click alike", async () => {
+    const dom = createDomTestHarness();
+    const { ChatContextPopup } = await import("../src/chat/ChatContextPopup");
+    let opened = 0;
+    const dispose = render(
+      () => createComponent(ChatContextPopup, { "aria-label": "Usage", content: "details", children: "ring", onOpen: () => opened++ }),
+      dom.root,
+    );
+    try {
+      const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-chat-context")!;
+      const popup = dom.root.querySelector<HTMLElement>("[role=dialog]")!;
+      popup.showPopover = () => {};
+      popup.hidePopover = () => {};
+      trigger.dispatchEvent(Object.assign(new MouseEvent("pointerenter"), { pointerType: "mouse" }));
+      await Bun.sleep(280);
+      expect(opened).toBe(1);
+      // Pinning an already open preview is not a second opening.
+      trigger.click();
+      expect(opened).toBe(1);
+      trigger.click();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      trigger.click();
+      expect(opened).toBe(2);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });

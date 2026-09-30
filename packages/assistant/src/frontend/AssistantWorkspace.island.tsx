@@ -1402,7 +1402,6 @@ export default function AssistantWorkspace(props: Props) {
               model={selectedModelId()}
               modelLabel={props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId()}
               error={quotas.error()}
-              loading={quotas.loading() || quotas.refreshing()}
               onRefresh={quotas.refresh}
             />
           }

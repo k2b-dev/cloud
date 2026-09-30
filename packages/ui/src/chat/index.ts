@@ -1,6 +1,6 @@
-export type { ChatContextPopupProps } from "./ChatContextPopup";
+export type { ChatContextPanelProps, ChatContextPopupProps } from "./ChatContextPopup";
 
-import { ChatContextPopup } from "./ChatContextPopup";
+import { ChatContextPanel, ChatContextPopup } from "./ChatContextPopup";
 import { ChatTasks } from "./ChatTasks";
 
 export type { ChatTask, ChatTasksProps } from "./ChatTasks";
@@ -42,6 +42,7 @@ export const Chat = Object.assign(ChatRoot, {
   Composer: ChatComposer,
   ContextUsage: ChatContextUsage,
   ContextPopup: ChatContextPopup,
+  ContextPanel: ChatContextPanel,
 });
 
 export { reconcileChatMentions } from "./composer-document";

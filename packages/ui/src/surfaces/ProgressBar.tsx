@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 import type { IntentTone } from "../semantics";
 
-export type ProgressBarTone = Extract<IntentTone, "info" | "success" | "danger">;
+export type ProgressBarTone = Extract<IntentTone, "info" | "success" | "warning" | "danger">;
 
 export type ProgressBarProps = {
   value: number;

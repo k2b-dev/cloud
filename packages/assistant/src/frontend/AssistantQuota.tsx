@@ -1,20 +1,30 @@
-import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import type { AiChatQuotaBalance, AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, Chat, Format, ProgressBar, useLocale } from "@k2b/ui";
-import { For, onCleanup, onMount, Show } from "solid-js";
+import { Chat, ProgressBar, ProgressRing, useLocale } from "@k2b/ui";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { quotaText } from "./quota-messages";
 
+/** Usage share from which an allowance reads as almost used up. */
+const NEAR_LIMIT_PERCENT = 80;
+
+export type QuotaTone = "info" | "warning" | "danger";
+const toneOf = (percent: number | null): QuotaTone =>
+  percent === null || percent >= 100 ? "danger" : percent >= NEAR_LIMIT_PERCENT ? "warning" : "info";
+
+/** The allowances that apply to one model. The fullest one decides the indicator, because it blocks first. */
 export function quotaState(snapshot: AiChatQuotaSnapshot | null | undefined, model: string) {
-  const balances = snapshot?.enabled
+  const free = Boolean(snapshot?.unlimitedModels?.includes(model));
+  const balances: AiChatQuotaBalance[] = snapshot?.enabled
     ? snapshot.balances
         .filter((b) => b.scope === "*" || b.scope === model)
-        .map((b) => (snapshot.unlimitedModels?.includes(model) ? { ...b, bypassed: true } : b))
+        .map((b) => (free ? { ...b, unlimited: true, usedPercent: null, resetsAt: null } : b))
     : [];
-  const finite = balances.filter((b) => !b.bypassed && b.limit !== null);
-  const unknown = finite.some((b) => b.unknown > 0);
-  const remaining = finite.length ? Math.min(...finite.map((b) => (b.limit === 0 ? 0 : Math.max(0, 100 * (1 - b.used / b.limit!))))) : null;
-  return { balances, unknown, remaining };
+  const finite = balances.filter((b) => !b.unlimited);
+  const unknown = finite.some((b) => b.usedPercent === null);
+  const usedPercent = finite.length && !unknown ? Math.max(...finite.map((b) => b.usedPercent ?? 0)) : null;
+  return { balances, unlimited: balances.length > 0 && finite.length === 0, unknown, usedPercent };
 }
 
 export function createAssistantQuota(initial: AiChatQuotaSnapshot | null | undefined) {
@@ -47,100 +57,93 @@ export default function AssistantQuota(props: {
   model: string;
   modelLabel: string;
   error?: unknown;
-  loading?: boolean;
   onRefresh: () => void;
 }) {
   const locale = useLocale(),
     t = () => quotaText.resolve([locale()]).t;
   const state = () => quotaState(props.snapshot, props.model);
   const failed = () => Boolean(props.error);
-  const percent = (value: number) => `${Math.floor(value).toLocaleString(locale())} %`;
-  const summary = () =>
-    failed()
-      ? t().unavailable
-      : state().unknown
-        ? t().unknownShort
-        : state().remaining === null
-          ? t().unlimited
-          : t().remaining({ percent: percent(state().remaining!) });
-  const number = (value: number) => value.toLocaleString(locale(), { maximumSignificantDigits: 6 });
+  const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent" }).format(value / 100);
+  const value = (usedPercent: number | null, unlimited: boolean) =>
+    unlimited ? t().unlimited : usedPercent === null ? t().unavailable : percent(usedPercent);
+  const summary = () => {
+    if (failed()) return t().summary({ value: t().unavailable });
+    const used = state().usedPercent;
+    const text = t().summary({ value: value(used, state().unlimited) });
+    if (used === null || used < NEAR_LIMIT_PERCENT) return text;
+    return `${text}, ${used >= 100 ? t().exhausted : t().nearLimit}`;
+  };
+  // The exact reset time follows the browser's time zone, which the server does not know.
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() => setMounted(true));
+
   return (
-    <Show when={props.model && state().balances.length}>
-      <Chat.ContextPopup
-        type="button"
-        class="inline-flex cursor-pointer items-center gap-1 rounded px-1 py-1 text-xs text-muted hover:text-default focus-visible:outline focus-visible:outline-2"
-        aria-label={`${t().title}: ${summary()}`}
-        content={
-          <div class="flex flex-col gap-4" style="width:20rem;max-width:calc(100vw - 3rem)">
-            <strong>{t().title}</strong>
-            <Show
-              when={!failed()}
-              fallback={
-                <p class="text-sm text-muted" role="status">
-                  {t().loadFailed}
-                </p>
-              }
-            >
-              <For each={state().balances}>
-                {(balance) => {
-                  const unlimited = () => balance.bypassed || balance.limit === null;
-                  const label = () => (balance.scope === "*" ? t().all : props.modelLabel);
-                  const rest = () => (balance.limit ? Math.max(0, 100 * (1 - balance.used / balance.limit)) : 0);
-                  return (
-                    <section class="flex flex-col gap-2">
-                      <div class="flex items-center justify-between gap-3 text-sm">
-                        <span class="font-medium">{label()}</span>
-                        <span>
-                          {unlimited() ? t().unlimited : balance.unknown ? t().unknownShort : t().remaining({ percent: percent(rest()) })}
-                        </span>
-                      </div>
-                      <Show when={!unlimited() && !balance.unknown}>
-                        <ProgressBar
-                          value={100 - rest()}
-                          size="xs"
-                          tone={rest() <= 10 ? "danger" : "info"}
-                          label={`${label()}: ${t().used}`}
-                        />
-                      </Show>
-                      <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-                        <span>
-                          {number(balance.used)}
-                          {unlimited()
-                            ? ` ${props.snapshot?.unit ?? "EUR"}`
-                            : ` / ${number(balance.limit!)} ${props.snapshot?.unit ?? "EUR"}`}
-                        </span>
-                        <Show when={!unlimited()}>
-                          <span>
-                            {t().reset} <Format.RelativeTime value={balance.resetsAt} />
-                          </span>
+    <Show
+      when={props.snapshot}
+      fallback={
+        // Usage is not known yet: keep the indicator's box so the composer does not move once it is.
+        <span class="k2b-chat-context" data-usage="loading" aria-hidden="true">
+          <ProgressRing value={0} />
+        </span>
+      }
+    >
+      <Show when={props.model && state().balances.length}>
+        <Chat.ContextPopup
+          aria-label={summary()}
+          data-usage={
+            failed() ? "unavailable" : state().unlimited ? "unlimited" : state().unknown ? "unknown" : toneOf(state().usedPercent)
+          }
+          onOpen={props.onRefresh}
+          content={
+            <Chat.ContextPanel title={t().title}>
+              <Show when={!failed()} fallback={<p role="status">{t().loadFailed}</p>}>
+                <For each={state().balances}>
+                  {(balance) => {
+                    const reset = () => {
+                      const at = balance.resetsAt ? new Date(balance.resetsAt) : null;
+                      return at && at.getTime() > Date.now() ? at : null;
+                    };
+                    return (
+                      <section>
+                        <dl>
+                          <div>
+                            <dt>{state().balances.length === 1 ? t().used : balance.scope === "*" ? t().all : props.modelLabel}</dt>
+                            <dd>{value(balance.usedPercent, balance.unlimited)}</dd>
+                          </div>
+                        </dl>
+                        <Show when={balance.usedPercent !== null}>
+                          <ProgressBar
+                            value={balance.usedPercent ?? 0}
+                            size="xs"
+                            tone={toneOf(balance.usedPercent)}
+                            label={state().balances.length === 1 ? t().title : balance.scope === "*" ? t().all : props.modelLabel}
+                          />
                         </Show>
-                      </div>
-                      <Show when={balance.estimated}>
-                        <p class="text-xs text-muted">{t().estimated}</p>
-                      </Show>
-                      <Show when={!unlimited() && balance.unknown}>
-                        <p class="text-xs text-muted">{t().unknown}</p>
-                      </Show>
-                    </section>
-                  );
-                }}
-              </For>
-              <Show when={state().remaining === 0 && !state().unknown}>
-                <p class="text-sm text-muted" role="status">
-                  {t().exhausted}
-                </p>
+                        <Show when={reset()}>
+                          {(at) => (
+                            <p>
+                              <time
+                                datetime={at().toISOString()}
+                                title={mounted() ? dates.formatDateTime(at(), { locale: locale() }) : undefined}
+                              >
+                                {t().resets({ when: dates.formatTimeSpan(at(), { locale: locale() }) })}
+                              </time>
+                            </p>
+                          )}
+                        </Show>
+                      </section>
+                    );
+                  }}
+                </For>
               </Show>
-            </Show>
-            <p class="text-xs text-muted">{t().scope}</p>
-            <Button size="sm" variant="ghost" disabled={props.loading} onClick={props.onRefresh}>
-              {props.loading ? t().refreshing : t().refresh}
-            </Button>
-          </div>
-        }
-      >
-        <span aria-hidden="true">·</span>
-        <span class={state().remaining !== null && state().remaining! <= 10 ? "text-danger" : undefined}>{summary()}</span>
-      </Chat.ContextPopup>
+            </Chat.ContextPanel>
+          }
+        >
+          <Show when={failed() || !state().unlimited} fallback={<i class="ti ti-infinity" aria-hidden="true" />}>
+            <ProgressRing value={failed() ? 0 : (state().usedPercent ?? 0)} tone={failed() ? "info" : toneOf(state().usedPercent)} />
+          </Show>
+        </Chat.ContextPopup>
+      </Show>
     </Show>
   );
 }

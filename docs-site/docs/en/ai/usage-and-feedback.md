@@ -164,10 +164,17 @@ an interval in the GUI starts a new period after confirmation.
 
 Rule dialogs edit a draft. **Save changes** persists the complete configuration;
 stale revisions require reloading and reconciling. Blocked queued messages are
-retained and checked again after a reset or window change. The Assistant's
-indicator shows cost allowances and refreshes after activity, on focus, and every
-30 seconds while visible. Disabled limits are invisible. Server admission remains
-authoritative and rejected submissions preserve the user's draft.
+retained and checked again after a reset or window change.
+
+Users never see amounts, limits, or the unit. Beside the model selection the
+Assistant shows a small ring for the share of the allowance that is used, and an
+infinity sign when usage is unlimited. The ring changes tone and gains a mark
+from 80 percent and again when the allowance is used up. Its panel is called
+**Usage** and lists, per allowance, the used percentage and when it resets; the
+name appears only when more than one allowance applies to the selected model.
+The indicator refreshes when the panel opens, after a message, on focus, and
+every 30 seconds while visible. Disabled limits are invisible. Server admission
+remains authoritative and rejected submissions preserve the user's draft.
 
 ## Set a background emergency stop
 
@@ -276,9 +283,14 @@ Server administration is exported from `@k2b/cloud/ai/admin` and requires the
 caller to establish the administrator boundary.
 
 `getAiChatQuotas(accessSubject)` and authenticated `GET /api/ai/quotas` return
-only the caller's allowances, unit, and accessible unpriced or free model IDs. They omit
-grant identities and inaccessible models, take no target-user parameter, and use
-`no-store`. `AiChatQuotaSnapshot` is browser-safe.
+only the caller's allowances and accessible unpriced or free model IDs. Each
+allowance is `{ scope, unlimited, usedPercent, resetsAt }`: `usedPercent` is a
+whole number from 0 to 100 that reaches 100 only when the allowance is used up,
+and is `null` when the allowance is unlimited or its usage cannot be measured.
+The response carries no amounts, limits, or unit, and omits grant identities and
+inaccessible models. It takes no target-user parameter and uses `no-store`.
+`AiChatQuotaSnapshot` is browser-safe. Amounts stay on the administrator
+endpoints above.
 
 This alpha cut starts a fresh cost ledger and budget configuration. Previous
 credits and token limits are not converted or backfilled. Configure prices and

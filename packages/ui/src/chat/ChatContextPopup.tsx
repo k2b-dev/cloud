@@ -4,11 +4,27 @@ import { positionTooltipSurface } from "../feedback/tooltip-position";
 export type ChatContextPopupProps = Omit<
   JSX.ButtonHTMLAttributes<HTMLButtonElement>,
   "content" | "ref" | "onClick" | "onPointerEnter" | "onPointerLeave"
-> & { content: JSX.Element };
+> & {
+  content: JSX.Element;
+  /** Runs each time the panel opens, for example to refresh its data. */
+  onOpen?: () => void;
+};
+
+export type ChatContextPanelProps = { title: string; children?: JSX.Element };
+
+/** Panel body shared by context details: a title, then progress, `dl` rows, and short `p` notes, grouped in `section`s when repeated. */
+export function ChatContextPanel(props: ChatContextPanelProps): JSX.Element {
+  return (
+    <div class="k2b-chat-context__tooltip">
+      <strong>{props.title}</strong>
+      {props.children}
+    </div>
+  );
+}
 
 /** Context details support hover preview and deliberate click-to-pin without changing tooltip behavior. */
 export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
-  const [local, rest] = splitProps(props, ["content", "children"]);
+  const [local, rest] = splitProps(props, ["content", "children", "onOpen", "class"]);
   const id = `chat-context-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
   let pinned = false;
@@ -28,6 +44,7 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
     surface.showPopover();
     setOpen(true);
     position();
+    local.onOpen?.();
   };
   const close = (restoreFocus = false) => {
     clear();
@@ -78,6 +95,7 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
       <button
         type="button"
         {...rest}
+        class={local.class ?? "k2b-chat-context"}
         ref={trigger}
         aria-expanded={open()}
         aria-controls={id}

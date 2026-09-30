@@ -288,12 +288,50 @@ A changed `previewUrl` loads the thumbnail again.
 ## Application-owned model details
 
 Use `Chat.ContextPopup` in `modelDetails` for a compact button with custom
-details, such as an application allowance. Pass the trigger text as children,
-`content` for the panel, and a complete `aria-label`. The button defaults to
-`type="button"`. Hover previews the panel; click or keyboard activation pins
-it open. Escape and outside click close it. Interactive panel content is
-reachable with Tab. Popup-owned click, pointer-enter/leave and ref props are
-not part of its public props. Applications own data loading and authorization.
+details, such as an application's usage indicator. Pass the trigger content as
+children, `content` for the panel, and a complete `aria-label` that names the
+state and its value. The button defaults to `type="button"` and to the same
+trigger style as the context indicator; a `class` replaces that style. Hover
+previews the panel; click or keyboard activation pins it open. Escape and
+outside click close it. `onOpen` runs each time the panel opens, which is the
+place to refresh its data instead of offering a refresh button. Interactive
+panel content is reachable with Tab. Popup-owned click, pointer-enter/leave and
+ref props are not part of its public props. Applications own data loading and
+authorization.
+
+Build the panel with `Chat.ContextPanel` so it matches the context details: it
+takes a `title` and lays out its children with the same type and spacing. Inside
+it use a `dl` with one `div` per `dt`/`dd` row, an `xs` `ProgressBar`, and a short
+`p` for a muted note. Wrap each repeated group in a `section`.
+
+```tsx
+<Chat.ContextPopup
+  aria-label="Usage: 35%"
+  onOpen={refresh}
+  content={
+    <Chat.ContextPanel title="Usage">
+      <section>
+        <dl>
+          <div>
+            <dt>Used</dt>
+            <dd>35%</dd>
+          </div>
+        </dl>
+        <ProgressBar value={35} size="xs" label="Usage" />
+        <p>Resets in 5 hours</p>
+      </section>
+    </Chat.ContextPanel>
+  }
+>
+  <ProgressRing value={35} />
+</Chat.ContextPopup>
+```
+
+An icon-only trigger, such as `<i class="ti ti-infinity" />`, takes the same
+box as a `ProgressRing`, so one can replace the other without moving the
+composer. While the state is not known yet, render
+`<span class="k2b-chat-context" aria-hidden="true">` with an empty ring: it
+keeps the trigger's box and is not interactive.
 
 ### Composer commands and mentions
 

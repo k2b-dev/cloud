@@ -1,5 +1,5 @@
 import type { ChatMention } from "@k2b/ui";
-import { Chat, type ChatTimelineItem, CodeDisplay } from "@k2b/ui";
+import { Chat, type ChatTimelineItem, CodeDisplay, ProgressBar, ProgressRing } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
@@ -150,16 +150,23 @@ const ChatDemo = () => {
           onModelChange={setModel}
           modelDetails={
             <Chat.ContextPopup
-              aria-label="Model details"
-              class="text-xs text-muted"
+              aria-label="Usage: 35%"
               content={
-                <div style="width:16rem">
-                  <strong>Model details</strong>
-                  <p>The host can explain availability or allowance here.</p>
-                </div>
+                <Chat.ContextPanel title="Usage">
+                  <section>
+                    <dl>
+                      <div>
+                        <dt>Used</dt>
+                        <dd>35%</dd>
+                      </div>
+                    </dl>
+                    <ProgressBar value={35} size="xs" label="Usage" />
+                    <p>Resets in 5 hours</p>
+                  </section>
+                </Chat.ContextPanel>
               }
             >
-              Details
+              <ProgressRing value={35} />
             </Chat.ContextPopup>
           }
           fileSelection={{ onSelect: () => undefined }}

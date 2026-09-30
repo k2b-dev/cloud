@@ -3,7 +3,7 @@ import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
-import { ChatContextPopup } from "./ChatContextPopup";
+import { ChatContextPanel, ChatContextPopup } from "./ChatContextPopup";
 import { executeChatAction } from "./chat-behavior";
 import type { ChatAction, ChatActivityTone, ChatAttachment, ChatContextUsageData, ChatMessageStatus, ChatRole } from "./types";
 
@@ -403,8 +403,7 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
   return (
     <ChatContextPopup
       content={
-        <div class="k2b-chat-context__tooltip">
-          <strong>{messages().lastRequestContext}</strong>
+        <ChatContextPanel title={messages().lastRequestContext}>
           <Show when={percent() !== null}>
             <ProgressBar
               value={percent() ?? 0}
@@ -455,7 +454,7 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
               </Button>
             )}
           </Show>
-        </div>
+        </ChatContextPanel>
       }
       type="button"
       class={`k2b-chat-context ${props.class ?? ""}`}
