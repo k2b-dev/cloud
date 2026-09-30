@@ -143,18 +143,19 @@ and changes them with a `write` grant. In Venue it lists its venues and reads
 their dashboards.
 In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, Pulse base, or
-venue, managing API keys and Pulse source tokens, personal views such as
-favorites and the Spaces work overview, editing or deleting comments (and, in
-Notebooks, writing comments), writing contact notes, and signing up for or
-cancelling Venue shifts. Managing access stays user-only in Spaces, Notebooks,
-and Contacts.
+venue, creating and revoking API keys, managing Pulse source tokens, personal
+views such as favorites and the Spaces work overview, editing or deleting
+comments (and, in Notebooks, writing comments), writing contact notes, and
+signing up for or cancelling Venue shifts. Managing access and listing API keys
+stay user-only in Spaces, Notebooks, and Contacts.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
 contact book, renaming, importing, or exporting a contact book, administering a
 mailbox (its settings, access, sender identities, automations, and restoring it
 after deletion), deleting or clearing a Pulse base, changing a venue's
-settings, hours, shift templates, and page sections, and managing access in
-Pulse and Venue need an `admin` grant and a token with the `admin` scope. The
-client from `cld admin agents create` has only `read` and `write`.
+settings, hours, shift templates, and page sections, listing a venue's API
+keys, and managing access in Pulse and Venue need an `admin` grant and a token
+with the `admin` scope. The client from `cld admin agents create` has only
+`read` and `write`.
 Resource-bound API keys keep their binding and behave as before.
 
 ## Use an agent from the CLI

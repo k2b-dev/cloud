@@ -52,7 +52,7 @@ cld venue api-keys create "Cafe Counter" --name "Display" --permission read
 
 Store a newly printed venue API key immediately because its secret is shown once. Use `access set` for an idempotent direct grant. `--service-account` takes a service account ID or exact name; `search-principals --kind service_account` finds standalone and agent accounts by name. `access list` shows agent grants; `--include-service-accounts` also shows the grants behind venue API keys.
 
-An agent account works like a person with the same grant: it lists the venues it was granted and reads their dashboards. Its token's scopes cap the grant, so changing a venue's settings, hours, templates, sections, or access needs an `admin` grant and a token with the `admin` scope. Creating venues, managing API keys, and signing up for or cancelling shifts stay limited to people. Read the matching revoke or delete command help before removing a key, a section, an opening rule, a shift assignment, or an entire venue.
+An agent account works like a person with the same grant: it lists the venues it was granted and reads their dashboards. Its token's scopes cap the grant, so changing a venue's settings, hours, templates, sections, or access, and listing its API keys, need an `admin` grant and a token with the `admin` scope. Creating venues, creating and revoking API keys, and signing up for or cancelling shifts stay limited to people. Read the matching revoke or delete command help before removing a key, a section, an opening rule, a shift assignment, or an entire venue.
 
 ## Complete command catalogue
 

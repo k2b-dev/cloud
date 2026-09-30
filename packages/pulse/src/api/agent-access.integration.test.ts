@@ -82,6 +82,12 @@ suite("Pulse REST access for standalone agents", () => {
       expect(await listedIds(await unscoped("/bases"))).toEqual([]);
       expect((await unscoped(`/bases/${granted.shortId}`)).status).toBe(403);
 
+      // With an `admin` grant, managing access still needs a token with the `admin` scope.
+      await sql`UPDATE auth.access SET permission = 'admin' WHERE service_account_id = ${agent.id}::uuid`;
+      expect((await call(`/bases/${granted.shortId}/access`)).status).toBe(403);
+      const manager = await apiAs(agent, ["read", "write", "admin"]);
+      expect((await manager(`/bases/${granted.shortId}/access`)).status).toBe(200);
+
       // Without a grant an agent sees nothing and cannot act.
       const denied = await apiAs(stranger, ["read", "write"]);
       expect(await listedIds(await denied("/bases"))).toEqual([]);

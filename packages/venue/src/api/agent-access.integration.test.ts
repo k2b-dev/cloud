@@ -89,6 +89,11 @@ suite("Venue REST access for standalone agents", () => {
       expect((await manager(`/venues/${readable.shortId}`, { method: "PATCH", body: { ...rename, slug: readable.slug } })).status).toBe(
         403,
       );
+      // The same `admin` grant and scope manage access and list API keys; creating a key stays with people.
+      expect((await manager(`/venues/${managed.shortId}/access`)).status).toBe(200);
+      expect((await manager(`/venues/${managed.shortId}/api-keys`)).status).toBe(200);
+      const keyRequest = { method: "POST", body: { name: `Display ${suffix}`, permission: "read" } };
+      expect((await manager(`/venues/${managed.shortId}/api-keys`, keyRequest)).status).toBe(403);
       const unscoped = await apiAs(agent, ["openid"]);
       expect((await unscoped("/venues")).status).toBe(403);
       expect((await unscoped(`/venues/${readable.shortId}/dashboard`)).status).toBe(403);
