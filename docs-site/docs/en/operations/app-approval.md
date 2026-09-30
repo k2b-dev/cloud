@@ -222,9 +222,10 @@ method: the default follows the selected category, an explicit
 `login_freeipa_app` cookie. A completed FreeIPA app sign-in sets that cookie in
 the browser and a FreeIPA password sign-in removes it; it names no account.
 The category switch remains unchanged. Local accounts retain **Use an email
-link instead**; FreeIPA with the app first retains its password alternative. Passkeys and email-link verification still work.
-An unpaired or unknown account does not get a distinct error: use another
-existing sign-in method if no paired app receives the request.
+link instead**. When FreeIPA opens with the app, the password alternative
+stays available. Passkeys and email-link verification still work. An unpaired
+or unknown account does not get a distinct error: use another existing sign-in
+method if no paired app receives the request.
 
 The waiting Cloud page displays the comparison code. Open the paired app and
 approve only a request you started whose code matches. The page continues as

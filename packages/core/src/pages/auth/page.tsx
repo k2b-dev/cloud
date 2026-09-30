@@ -67,7 +67,7 @@ export default ssr(async (c) => {
 
   const isEmailLogin = activeMethod === "email" || activeMethod === "guest" || activeMethod === "login";
   const useApproval =
-    useAppSignIn({ configured: approvalEnabled, category: activeMethod, query: params, cookieHeader: cookie }) &&
+    useAppSignIn({ configured: approvalEnabled, category: activeMethod, credential: params.get("credential"), cookieHeader: cookie }) &&
     !token &&
     !isAdminLogin &&
     activeMethod &&

@@ -16,10 +16,11 @@ und FreeIPA mit deinem Passwort. Wenn die App-Anmeldung eingerichtet ist,
 startet Login mit der App, der E-Mail-Link bleibt als Alternative verfügbar;
 bei FreeIPA und Guest wählst du **Stattdessen die App nutzen**. Nach einer
 FreeIPA-Anmeldung mit der App öffnet dieser Browser FreeIPA beim nächsten Mal
-mit der App. Lokale Accounts verwenden keine Passwörter. Ein bestehender Passkey funktioniert
-weiter, solange der Accounttyp erlaubt ist. Nutze bei einem verborgenen Typ
-deinen Einladungs- oder direkten Anmeldelink. Verbergen ist nicht dasselbe wie
-Zugriff sperren; wende dich bei deaktiviertem Zugang an die Administration.
+mit der App. Lokale Accounts verwenden keine Passwörter. Ein bestehender
+Passkey funktioniert weiter, solange der Accounttyp erlaubt ist. Nutze bei
+einem verborgenen Typ deinen Einladungs- oder direkten Anmeldelink. Verbergen
+ist nicht dasselbe wie Zugriff sperren; wende dich bei deaktiviertem Zugang an
+die Administration.
 
 - Verwende die normale Anmeldung für den Kontodienst deines Kontos.
 - Verwende einen bereits registrierten Passkey, wenn Browser und Gerät ihn unterstützen.
