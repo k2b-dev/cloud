@@ -76,6 +76,19 @@ describe("createICalContent", () => {
     expect(content).toContain("LOCATION:Room 1\\, Building\\; A\\nFloor 2\r\n");
   });
 
+  test("folds lines by octets and keeps multi-byte characters whole", async () => {
+    const content = await createICalContent({
+      space,
+      items: [{ ...baseItem, title: "€".repeat(25), location: "😀".repeat(20) }],
+      baseUrl: "https://cloud.test",
+      appName: "Cloud",
+      dateConfig: { timeZone: "Europe/Berlin", locale: "en", firstDayOfWeek: 1 },
+    });
+
+    expect(content).toContain(`SUMMARY:${"€".repeat(22)}\r\n ${"€".repeat(3)}\r\n`);
+    expect(content).toContain(`LOCATION:${"😀".repeat(16)}\r\n ${"😀".repeat(4)}\r\n`);
+  });
+
   test("writes recurring events, exclusions, and occurrence overrides", async () => {
     const content = await createICalContent({
       space,
