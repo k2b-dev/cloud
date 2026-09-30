@@ -102,11 +102,13 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
 async function requestPageData(mode?: string, path = "/app/notebooks/book01/notes/note01", actorUser: User = user) {
   const app = new Hono<AuthContext & { Variables: { page: { title?: string } } }>();
   let result: Awaited<ReturnType<typeof loadNotebookPageData>> | undefined;
-  app.get("/app/notebooks/:id/notes/:noteId", async (c) => {
-    c.set("actor", { kind: "user", user: actorUser });
-    result = await loadNotebookPageData(c);
-    return c.body(null, 204);
-  });
+  for (const route of ["/app/notebooks/:id", "/app/notebooks/:id/notes/:noteId"]) {
+    app.get(route, async (c) => {
+      c.set("actor", { kind: "user", user: actorUser });
+      result = await loadNotebookPageData(c);
+      return c.body(null, 204);
+    });
+  }
   const response = await app.request(`https://cloud.example.test${path}${mode ? `?mode=${mode}` : ""}`, {
     headers: { "Accept-Language": "de" },
   });
@@ -228,6 +230,28 @@ describe("notebook page presentation authorization", () => {
     expect(data.presentationMode).toBe("book");
     expect(data.selectedRouteState).toBeNull();
   });
+
+  for (const [permission, opened] of [
+    ["read", "note02"],
+    ["write", "note01"],
+  ] as const) {
+    test(`without a start page, ${permission} access opens ${permission === "read" ? "Book at its first sidebar page" : "Write at the first workspace page"}`, async () => {
+      fixtures(permission);
+      // The workspace tree compares titles as text, so "Kapitel 10" arrives before "Kapitel 2".
+      const pages = [
+        { ...note, id: "uuid-note01", shortId: "note01", title: "Kapitel 10" },
+        { ...note, id: "uuid-note02", shortId: "note02", title: "Kapitel 2" },
+      ];
+      const byShortId = async ({ shortId }: { shortId: string }) => pages.find((page) => page.shortId === shortId) ?? null;
+      track(spyOn(notebooksService.note, "getTree")).mockResolvedValue(pages.map((page) => ({ ...page, children: [] })));
+      track(spyOn(noteStore, "getWithContentByShortId")).mockImplementation(byShortId);
+      track(spyOn(notebooksService.note, "getWithContentByShortId")).mockImplementation(byShortId);
+      expect(await requestPageData(undefined, "/app/notebooks/book01")).toEqual({
+        kind: "redirect",
+        href: `/app/notebooks/book01/notes/${opened}`,
+      });
+    });
+  }
 
   test("a locked note downgrades explicit Write to the existing Read-only view", async () => {
     fixtures("admin", "book", true);

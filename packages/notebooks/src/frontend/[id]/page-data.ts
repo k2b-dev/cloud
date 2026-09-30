@@ -3,6 +3,7 @@ import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } fro
 import { get } from "@k2b/cloud/services";
 import type { Context } from "hono";
 import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
+import { orderBookTree } from "@/lib/book-tree";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { parseNavigatorQuery } from "@/lib/navigator-url";
 import { type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
@@ -54,6 +55,13 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
   const internalTree = await notebooksService.note.getTree({ notebookId });
   const tree = projectTree(internalTree, notebook.shortId);
   const publicNotebook = projectNotebook(notebook);
+  const locale = getLocale(c);
+  // A lock only turns Write into Read-only, so Book is known before a note is chosen.
+  const isBookMode =
+    resolvePresentationMode({ permission, requestedMode: mode, defaultPresentationMode: notebook.defaultPresentationMode }) === "book" &&
+    !isVersionsMode &&
+    !isGraphMode;
+  const bookTree = isBookMode ? orderBookTree(tree, { id: (node) => node.id, homeId: notebook.homepageNoteShortId, locale }) : [];
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
@@ -64,7 +72,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     noteParam,
     lastNoteId: settings.lastNoteId,
     homepageNoteId: notebook.homepageNoteShortId,
-    firstNoteId: tree[0]?.id ?? null,
+    // Book opens where its sidebar starts.
+    firstNoteId: (isBookMode ? bookTree : tree)[0]?.id ?? null,
   });
   if (noteParam && !selectedNoteId) return { kind: "not_found" as const };
 
@@ -79,7 +88,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     permission,
     requestedMode: mode,
     defaultPresentationMode: notebook.defaultPresentationMode,
-    locale: getLocale(c),
+    locale,
   });
   if (noteParam && !selected.note) return { kind: "not_found" as const };
 
@@ -96,7 +105,6 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     defaultPresentationMode: notebook.defaultPresentationMode,
     locked: !!selected.note?.lockedAt,
   });
-  const isBookMode = presentationMode === "book" && !isVersionsMode && !isGraphMode;
   const readonlyMode = presentationMode !== "write";
   const graph = isGraphMode ? await notebooksService.notebook.graph({ notebookId }) : null;
   const versionHistory =
@@ -172,6 +180,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     readonlyMode,
     presentationMode,
     isBookMode,
+    bookTree,
     bookHtml: selected.bookHtml,
     graph,
     versionHistory: publicVersionHistory,

@@ -4,6 +4,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../../tests/fixtures/rail-snapshot";
+import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
 import { notebooksService } from "../../../../service";
 import "../../_components/detail/ssr-test-plugin";
 
@@ -146,6 +147,42 @@ describe("Book tag page SSR", () => {
     expect(html).toContain("/app/notebooks/book01/notes/note01?mode=book");
     expect(html).not.toMatch(/NotebookSidebar|NoteEditor|NotebookDetailPanel/);
     expect(html).toContain("WorkspaceEventBridge");
+  });
+
+  test("the Book sidebar lists the start page first and the other pages by title", async () => {
+    const calls = fixtures();
+    const page = (shortId: string, title: string, parentId: string | null = null) => ({
+      id: `uuid-${shortId}`,
+      shortId,
+      notebookId: notebook.id,
+      parentId,
+      title,
+      position: 0,
+      hasChildren: false,
+      historyIncomplete: false,
+      yjsSnapshotAt: null,
+      contentMd: `# ${title}`,
+      yjsSnapshot: null,
+      createdBy: user.id,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      lockedAt: null,
+    });
+    const home = page("note04", "Überblick", "uuid-note03");
+    track(spyOn(notebooksService.notebook, "get")).mockResolvedValue({
+      ...notebook,
+      homepageNoteId: home.id,
+      homepageNoteShortId: home.shortId,
+    });
+    calls.tree.mockResolvedValue([
+      { ...page("note02", "Kapitel 10"), children: [] },
+      { ...page("note03", "Kapitel 2"), hasChildren: true, children: [{ ...home, children: [] }] },
+      { ...page("note05", "Anhang"), children: [] },
+    ]);
+    const rows = await selectHtml(await render("mode=book", "de"), '[role="tree"] [data-k2b-nav-tree-id]');
+
+    // The start page lives below "Kapitel 2" and is still the first row, listed once.
+    expect(rows.map((row) => row.attributes["data-k2b-nav-tree-id"])).toEqual(["note04", "note05", "note03", "note02"]);
   });
 
   test("no-access requests do not read the tag index or notebook workspace", async () => {

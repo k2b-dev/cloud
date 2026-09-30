@@ -3,7 +3,6 @@ import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { AppWorkspace, Placeholder } from "@k2b/ui";
 import { ssr } from "../../config";
-import { orderBookTree } from "../../lib/book-tree";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import BookSurface from "./_components/book/BookSurface";
@@ -31,14 +30,13 @@ export default ssr<AuthContext>(async (c) => {
 
   if (data.isBookMode) {
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
-    const bookTree = orderBookTree(data.tree, { id: (node) => node.id, homeId: data.notebook.homepageNoteId, locale: getLocale(c) });
     return () => (
       <Layout c={c} fullPage fullWidth title={data.notebook.name}>
         <BookSurface
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={bookTree}
+          tree={data.bookTree}
           tags={data.ctx.tags}
           html={data.bookHtml}
           noteTitle={data.selectedNote?.title ?? null}

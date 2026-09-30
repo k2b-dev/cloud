@@ -19,6 +19,8 @@ In the Book sidebar, select a page to open it, or use the arrow next to it to sh
 
 The sidebar lists the notebook's start page first, with its sub-pages below it, even when the start page lives under another page. Every other page follows by title at each level, in the order of your language; numbers count as numbers, so "Chapter 2" comes before "Chapter 10". The order follows along when a title or the start page changes. Set the start page in **Notebook — General**.
 
+When you open the notebook itself in Book, it shows the start page, or the first page in the sidebar when there is none. If you last had a page of this notebook open in Write or Read-only, Book shows that page instead.
+
 Editors and admins can switch between three views:
 
 - **Write:** Edit the note and use the detail panel.
