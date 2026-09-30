@@ -21,8 +21,8 @@ export default ssr(async (c) => {
   const legalLinks = await listLegalLinks(getLocale(c));
   return () => (
     <MinimalLayout c={c} preferences={false}>
-      <main class="flex min-h-screen flex-col items-center justify-center gap-6 bg-zinc-50 p-4 dark:bg-zinc-950">
-        <section class="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 dark:border-zinc-800 dark:bg-zinc-900">
+      <main class="flex min-h-svh flex-col items-center justify-center gap-6 bg-zinc-50 p-4 dark:bg-zinc-950">
+        <section class="standalone-card w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 dark:border-zinc-800 dark:bg-zinc-900">
           <h1 class="text-2xl font-semibold text-primary">{t.consentTitle}</h1>
           <p class="mt-2 text-sm text-dimmed">{t.consentDescription}</p>
           <ConsentForm version={version} redirectTo={redirectTo} />

@@ -46,7 +46,7 @@ export function PublicDocumentShare(props: {
     // MinimalLayout footer alike, so the two never meet at a visible edge.
     <div class="flex flex-1 items-center justify-center px-4 py-8 text-primary sm:py-12">
       <main class="w-full max-w-xl">
-        <Paper as="article" elevated class="w-full p-6 sm:p-8">
+        <Paper as="article" elevated class="standalone-card w-full p-6 sm:p-8">
           <Show
             when={available()}
             fallback={<NoticeCard tone="warning" icon="ti ti-link-off" title={t().linkUnavailable} detail={t().documentLinkUnavailable} />}

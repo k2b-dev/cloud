@@ -139,7 +139,7 @@ export default function FormSubmit(props: Props) {
       const selected = values()[entry.fieldId];
       return Array.isArray(selected) && (inlineCreates()[entry.fieldId] ?? []).some((draft) => selected.includes(draft.tempId));
     });
-  const surfaceClass = () => (props.surface === "bare" ? "w-full" : "paper mx-auto max-w-xl p-6");
+  const surfaceClass = () => (props.surface === "bare" ? "w-full" : "paper standalone-card mx-auto max-w-xl p-6");
 
   onMount(() => {
     setClientReady(true);

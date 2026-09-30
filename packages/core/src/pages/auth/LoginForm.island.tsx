@@ -80,7 +80,10 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
           onValueChange={setPassword}
           autocomplete="current-password"
         />
-        <a href={resetPasswordHref()} class="self-start text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline">
+        <a
+          href={resetPasswordHref()}
+          class="auth-reset-link self-start text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+        >
           {t().resetPassword}
         </a>
       </div>

@@ -108,6 +108,37 @@ legal-links footer to the page. Do not use `MinimalLayout` as an
 access-control signal: route middleware, public grants, and share-token
 validation remain separate server responsibilities.
 
+### Show the page's one card flat on phones
+
+A standalone page often shows its content in one centered card: an unlock
+form, a shared document, a short public form. Give that card the
+`standalone-card` class:
+
+```tsx
+<MinimalLayout c={c}>
+  <main class="flex flex-1 items-center justify-center px-4 py-8">
+    <Paper as="section" elevated class="standalone-card w-full max-w-md p-6">
+      <UnlockForm />
+    </Paper>
+  </main>
+</MinimalLayout>
+```
+
+From Tailwind's `md` breakpoint (48rem, 768 px at the default font size) the
+card looks as it does without the class. Below it, the card has no border,
+radius, shadow, surface color, or padding of its own: the content sits on the
+page background inside the page padding, and fields use the full width. Page
+layout that changes with `md:` switches at the same width, also when a reader
+has set a larger default font size. The class works on a `Paper`, on the
+`paper` utility, and on a card built from utilities. It is one CSS rule on
+unchanged markup, so the page arrives from the server in its final form and
+nothing moves afterwards.
+
+Keep the page padding on `main`, not on the card, and do not select the flat
+variant from the user agent or in an island. Use the class only for the single
+card that is the page; cards inside an application layout keep their frame.
+The Core sign-in, password, and consent pages use the same class.
+
 ## Use the responsive profile menu
 
 Authenticated users change the theme or language from the profile control and

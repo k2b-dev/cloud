@@ -38,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
     return () => (
       <MinimalLayout c={c}>
         <PublicShell>
-          <div class="paper p-8 text-center text-sm text-dimmed">
+          <div class="paper standalone-card p-8 text-center text-sm text-dimmed">
             <i class="ti ti-alert-circle text-base mb-2 block" />
             {t.formUnavailable}
           </div>
