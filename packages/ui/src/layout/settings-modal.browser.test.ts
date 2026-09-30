@@ -71,12 +71,13 @@ const modal = () =>
     }),
   );
 
+// The wrapper is what applications put around the modal to size it inside their dialog.
 const openDialog = async (viewport: { width: number; height: number }) => {
   const page = await browser.newPage({ viewport });
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui"><dialog class="k2b-dialog k2b-dialog--large is-bare"><div class="k2b-dialog__viewport is-bare">` +
-      `<div style="display:flex;height:86vh;min-height:0;flex-direction:column">${modal()}</div></div></dialog></body></html>`,
+      `<div style="display:flex;height:86vh;min-height:0;flex-direction:column;overflow:hidden">${modal()}</div></div></dialog></body></html>`,
   );
   await page.evaluate(() => document.querySelector("dialog")!.showModal());
   return page;
@@ -100,37 +101,43 @@ const layout = () => {
   };
 };
 
-describe("@k2b/ui SettingsModal frame", () => {
+/** Adds a visually hidden control without a positioned ancestor of its own, as applications render them, and focuses it. */
+const focusHiddenControl = ({ parent, style }: { parent: string; style: string }) => {
+  const control = document.createElement("input");
+  control.id = "hidden-control";
+  control.style.cssText = `position:absolute;width:1px;height:1px;opacity:0;${style}`;
+  document.querySelector(parent)!.append(control);
+  control.focus();
+};
+
+describe("@k2b/ui SettingsModal scrolling", () => {
   for (const [name, viewport] of Object.entries(viewports)) {
-    test(`keeps its size and its footer at the bottom when the last option is switched on a ${name}`, async () => {
+    test(`scrolls the panel to a visually hidden control at the end of a tab on a ${name}`, async () => {
+      const page = await openDialog(viewport);
+      try {
+        const before = await page.evaluate(layout);
+        await page.evaluate(focusHiddenControl, { parent: ".k2b-settings__section", style: "" });
+        expect(await page.evaluate(layout)).toEqual(before);
+
+        // The control scrolls with the panel, so focusing it reveals the option it belongs to.
+        const control = await page.locator("#hidden-control").boundingBox();
+        expect(control!.y).toBeGreaterThan(before.panel.top);
+        expect(control!.y + control!.height).toBeLessThanOrEqual(before.panel.bottom);
+        expect(await page.locator(".k2b-settings__body").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`keeps the frame in place with its footer at the bottom when a control beyond it takes focus on a ${name}`, async () => {
       const page = await openDialog(viewport);
       try {
         const before = await page.evaluate(layout);
         expect(before.footer.bottom).toBeGreaterThan(before.frame.bottom - 4);
         expect(before.panel.bottom).toBe(before.footer.top);
 
-        const panel = page.locator(".k2b-settings__body");
-        await panel.evaluate((element) => element.scrollTo(0, element.scrollHeight));
-        await page.locator(".k2b-checkbox-card").last().click();
-        expect(await page.evaluate(layout)).toEqual(before);
-        expect(await panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-      } finally {
-        await page.close();
-      }
-    });
-
-    test(`scrolls only the panel when a control beyond the frame takes focus on a ${name}`, async () => {
-      const page = await openDialog(viewport);
-      try {
-        const before = await page.evaluate(layout);
-        await page.evaluate(() => {
-          // An application's own visually hidden control at the end of the panel. It resolves against the
-          // settings frame instead of the panel, so it stays at the panel's full unscrolled height.
-          const control = document.createElement("input");
-          control.style.cssText = "position:absolute;width:1px;height:1px;opacity:0";
-          document.querySelector(".k2b-settings__section")!.append(control);
-          control.focus();
-        });
+        // The panel contains whatever a tab renders, so the control sits in the frame itself to lie beyond it.
+        await page.evaluate(focusHiddenControl, { parent: ".k2b-settings", style: "top:300%" });
         expect(await page.evaluate(layout)).toEqual(before);
       } finally {
         await page.close();

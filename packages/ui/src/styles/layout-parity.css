@@ -480,8 +480,13 @@
 }
 
 /* Cloud's panel is `h-full overflow-y-auto` and the padding lives on the inner
-   section; `overflow: auto` here added a second horizontal scroll region. */
+   section; `overflow: auto` here added a second horizontal scroll region.
+   The panel is the containing block for whatever a tab renders: an absolutely
+   positioned control without a positioned ancestor of its own, such as a
+   visually hidden input, otherwise resolves against the frame, stays where the
+   unscrolled panel put it, and takes focus out of view. */
 .k2b-ui .k2b-settings__body {
+  position: relative;
   height: 100%;
   min-height: 0;
   flex: 1;
