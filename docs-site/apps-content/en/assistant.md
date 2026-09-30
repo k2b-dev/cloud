@@ -569,6 +569,8 @@ Exported files remain in the chat. If the host exits unexpectedly, pending calls
 fail without automatically repeating code or actions. Capability actions need explicit `--approve` authorization or the
 interactive chat approval flow. The CLI needs Chromium installed through
 Playwright, or `CLOUD_CLI_CHROMIUM` pointing to an installed Chromium executable.
+If the host does not start within 45 seconds, the command fails without running
+code and names the startup step that stalled, such as launching Chromium.
 
 ### Administer Studio
 
