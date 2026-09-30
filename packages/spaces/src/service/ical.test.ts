@@ -53,6 +53,29 @@ describe("createICalContent", () => {
     expect(content).not.toContain(baseItem.id);
   });
 
+  test("escapes text values and folds long lines", async () => {
+    const content = await createICalContent({
+      space,
+      items: [
+        {
+          ...baseItem,
+          title: 'Comma, semi; back\\slash "quote" äöü and a long title that has to be folded at seventy-five octets',
+          description: "Line1\nLine2\r\nLine3; a, b",
+          location: "Room 1, Building; A\nFloor 2",
+        },
+      ],
+      baseUrl: "https://cloud.test",
+      appName: "Cloud",
+      dateConfig: { timeZone: "Europe/Berlin", locale: "en", firstDayOfWeek: 1 },
+    });
+
+    expect(content).toContain(
+      'SUMMARY:Comma\\, semi\\; back\\\\slash "quote" äöü and a long title that ha\r\n s to be folded at seventy-five octets\r\n',
+    );
+    expect(content).toContain("DESCRIPTION:Line1\\nLine2\\nLine3\\; a\\, b\r\n");
+    expect(content).toContain("LOCATION:Room 1\\, Building\\; A\\nFloor 2\r\n");
+  });
+
   test("writes recurring events, exclusions, and occurrence overrides", async () => {
     const content = await createICalContent({
       space,
