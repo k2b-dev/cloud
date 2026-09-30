@@ -1,6 +1,7 @@
 name: Nightly
 
 # Slow or environment-sensitive checks that do not gate pull requests.
+# Like ci.yml, no job installs from the runner's apt mirror.
 
 on:
   schedule:
@@ -59,12 +60,12 @@ jobs:
           set -euo pipefail
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils
+          HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
+          sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
       - run: bun ci
       - run: bun run --cwd packages/ui build
       - name: Install the Playwright browser used by the Assistant code host and Mail tests
-        run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
+        run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification has its own job below.
       - run: bun run test --integration --exclude grids
       - if: always()
@@ -96,8 +97,8 @@ jobs:
       - run: |
           set -euo pipefail
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:15-alpine
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils
+          HOMEBREW_NO_AUTO_UPDATE=1 /home/linuxbrew/.linuxbrew/bin/brew install --quiet poppler
+          sudo ln -s /home/linuxbrew/.linuxbrew/bin/{pdftotext,pdfinfo,pdffonts} /usr/local/bin/
           docker run --detach --name grids-postgres --publish 127.0.0.1:5432:5432 \
             --env POSTGRES_USER=grids_test --env POSTGRES_PASSWORD=grids_test --env POSTGRES_DB=grids_test \
             postgres:15-alpine -c max_connections=300
@@ -156,7 +157,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun ci
       - run: bun run --cwd packages/ui build
-      - run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
+      - run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Only the Playwright suites; the DOM suites of this directory run in the unit job with browser conditions.
       # globstar includes the suites in subdirectories such as runtime/.
       - run: |
@@ -175,7 +176,7 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun ci
       - run: bun run --cwd packages/ui build
-      - run: ./packages/grids/node_modules/.bin/playwright install --with-deps chromium
+      - run: ./packages/grids/node_modules/.bin/playwright install chromium
       - name: Build the Core, gateway, Grids and Mail images
         run: |
           set -euo pipefail
@@ -283,7 +284,7 @@ jobs:
       - run: bun run --cwd packages/ui build
       - run: bun run check
       - name: Install the Playwright browser used by the Assistant code host and Mail tests
-        run: ./packages/assistant/node_modules/.bin/playwright install --with-deps chromium
+        run: ./packages/assistant/node_modules/.bin/playwright install chromium
       - run: bun run test --shard 1/3
 
   dependencies:
