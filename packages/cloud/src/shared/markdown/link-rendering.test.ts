@@ -24,6 +24,25 @@ describe("markdown links", () => {
     expect(renderMarkdownSync("[Cloud](https://example.com)")).toContain('<span class="md-link-label">[Cloud]</span>');
   });
 
+  test("a link label cannot hold another link", () => {
+    const source = "[outer [inner](https://inner.example) text](https://outer.example)";
+
+    for (const links of ["widget", "plain"] as const) {
+      const html = renderMarkdownSync(source, { links });
+      expect(html).not.toMatch(/<a\b[^>]*>(?:(?!<\/a>)[\s\S])*<a\b/);
+      expect(html).toContain('<a href="https://inner.example"');
+    }
+  });
+
+  test("numeric character references stay text and cannot rebuild markup or URL schemes", () => {
+    const html = renderMarkdownSync(
+      "&#60;script&#62;alert(1)&#60;/script&#62; &#x3c;img src=x onerror=alert(1)&#x3e; <&#106;avascript:alert(1)>",
+    );
+
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &lt;img src=x onerror=alert(1)&gt;");
+    expect(html).not.toMatch(/<(?:script|img|a)\b/i);
+  });
+
   test("keeps help links in the current browsing context", () => {
     const html = renderHelpMarkdown("[Next](/docs/next)");
 

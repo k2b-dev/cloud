@@ -66,6 +66,16 @@ describe("Markdown PDF renderer", () => {
     );
   });
 
+  test("keeps numeric character references as escaped text", () => {
+    const html = buildMarkdownPdfHtml({
+      markdown: "&#60;script&#62;alert(1)&#60;/script&#62; &#x3c;img src=x&#x3e; <&#106;avascript:alert(1)>",
+    });
+    const body = html.slice(html.indexOf("<main"));
+
+    expect(body).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &lt;img src=x&gt;");
+    expect(body).not.toMatch(/<(?:script|img|a)\b/i);
+  });
+
   test("renders images as safe links without fetching them", () => {
     const html = buildMarkdownPdfHtml({
       markdown: "![Architecture](https://example.test/diagram.png) ![Unsafe](javascript:alert(1))",
