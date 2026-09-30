@@ -154,7 +154,7 @@ describe("Spaces item quick create", () => {
     event.click();
 
     expect(dom.root.textContent).toContain("New event");
-    expect(dom.root.textContent).toContain("14 Aug 2026, 09:00");
+    expect(dom.root.textContent).toContain("Aug 14, 2026, 09:00");
     expect(dom.root.querySelector<HTMLInputElement>('input[placeholder="Event title"]')?.value).toBe("Design review");
 
     dispose();

@@ -120,8 +120,8 @@ describe("Mail composer history", () => {
       expect(requests.some((url) => url.includes("/messages/Old001"))).toBeFalse();
       expect(dom.root.textContent).toContain("Newest subject");
       expect(dom.root.textContent).toContain("Older subject");
-      expect(dom.root.textContent).toContain("12:00 16 Aug 2026");
-      expect(dom.root.textContent).toContain("12:00 15 Aug 2026");
+      expect(dom.root.textContent).toContain("12:00 Aug 16, 2026");
+      expect(dom.root.textContent).toContain("12:00 Aug 15, 2026");
       expect(dom.root.textContent).toContain("https://unsafe.example.test");
       expect(dom.root.querySelector('a[href="https://unsafe.example.test"]')).toBeNull();
       expect(dom.root.querySelector("[class~='border-t']")).toBeNull();

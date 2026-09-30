@@ -127,9 +127,9 @@ describe("Format components SSR", () => {
       createComponent(Format.DateTime, { value: instant }),
     ]);
     expect(html).toContain('datetime="2025-03-05T13:53:20.000Z"');
-    expect(html).toContain("05 Mar 2025");
+    expect(html).toContain("Mar 5, 2025");
     expect(html).toContain("13:53");
-    expect(html).toContain("05 Mar 2025, 13:53");
+    expect(html).toContain("Mar 5, 2025, 13:53");
     expect(html.match(/<time/g)?.length).toBe(3);
   });
 
@@ -145,7 +145,7 @@ describe("Format components SSR", () => {
       createComponent(Format.DateTime, { value: instant, timeZone: "Europe/Berlin" }),
     ]);
     expect(html).toContain("08:53");
-    expect(html).toContain("05 Mar 2025, 14:53");
+    expect(html).toContain("Mar 5, 2025, 14:53");
   });
 
   test("renders a span fallback for null and invalid temporal input", () => {

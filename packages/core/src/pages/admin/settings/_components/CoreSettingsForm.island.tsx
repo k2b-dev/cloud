@@ -2625,7 +2625,7 @@ const TEMPLATE_SAMPLE_VALUES: Record<string, string> = {
   CONTACT_EMAIL: "support@example.org",
   DISPLAY_NAME: "Eva Becker",
   EMAIL: "eva@example.org",
-  EXPIRY: "31 Dec 2026",
+  EXPIRY: "Dec 31, 2026",
   EXTEND_URL: "https://cloud.example.org/me",
   FIRST_NAME: "Eva",
   LOGIN_URL: "https://cloud.example.org/auth/login",

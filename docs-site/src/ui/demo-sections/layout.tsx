@@ -1224,8 +1224,8 @@ const DetailPanelDemo = () => {
                       layout="rows"
                       size="sm"
                       items={[
-                        { term: "Created", description: "07 Jul 2026" },
-                        { term: "Updated", description: "07 Jul 2026" },
+                        { term: "Created", description: "Jul 7, 2026" },
+                        { term: "Updated", description: "Jul 7, 2026" },
                       ]}
                     />
                   </DetailPanel.Section>
