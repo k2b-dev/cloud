@@ -132,6 +132,11 @@ export const latestGatewayRouteSnapshot = async (): Promise<GatewayRouteSnapshot
   return all.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
 };
 
+/**
+ * Dead letters keep the event stream's limit. Gateway Ops leaves dead letters
+ * when rollup writes fail; if they exceeded a lowered limit, this topic, and
+ * with it Gateway Ops' start, would fail until they expired.
+ */
 export const gatewayTelemetryTopic = lazySync((sync) =>
   sync.topic<GatewayTelemetryEvent>({
     id: TOPIC_ID,

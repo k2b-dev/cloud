@@ -4,6 +4,14 @@ import type { sql } from "bun";
 import type { MailInvalidation } from "../live-events";
 
 const RETENTION_MS = 24 * 60 * 60 * 1_000;
+const PAYLOAD_BYTES = 8_000;
+/**
+ * No durable consumer processes this topic, so its dead-letter stream stays
+ * empty; Sync still provisions it. The limit holds 256 dead letters at the
+ * payload limit plus Sync's 4 KiB of dead-letter headroom, the depth Sync gives
+ * a job or queue by default.
+ */
+const DEAD_LETTER_BYTES = 256 * (PAYLOAD_BYTES + 4096);
 const RECONCILE_INTERVAL_MS = 15_000;
 
 type SqlClient = typeof sql;
@@ -44,7 +52,8 @@ const invalidationTopic = lazySync((sync) =>
   sync.topic<MailInvalidation>({
     id: "mail:invalidations",
     retention: { maxAgeMs: RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
-    maxPayloadBytes: 8_000,
+    deadLetterRetention: { maxBytes: DEAD_LETTER_BYTES },
+    maxPayloadBytes: PAYLOAD_BYTES,
   }),
 );
 

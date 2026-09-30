@@ -139,7 +139,7 @@
         "@k2b/nessi": "0.12.1",
         "@k2b/ssr": "0.14.0",
         "@k2b/stdlib": "0.26.0",
-        "@k2b/sync": "6.5.0",
+        "@k2b/sync": "7.0.0",
         "@k2b/ui": "0.9.0",
         "@modelcontextprotocol/sdk": "1.30.1",
         "@napi-rs/canvas": "1.0.9",
@@ -689,7 +689,7 @@
     "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch",
   },
   "overrides": {
-    "@k2b/sync": "6.5.0",
+    "@k2b/sync": "7.0.0",
     "@xmldom/xmldom": "0.9.12",
     "fast-uri": "3.1.8",
     "lodash-es": "4.18.1",
@@ -710,7 +710,7 @@
     "@k2b/nessi": "0.12.1",
     "@k2b/ssr": "0.14.0",
     "@k2b/stdlib": "0.26.0",
-    "@k2b/sync": "6.5.0",
+    "@k2b/sync": "7.0.0",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "@types/bun": "1.4.2",
@@ -984,7 +984,7 @@
 
     "@k2b/stdlib": ["@k2b/stdlib@0.26.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "ibantools": "^4.5.4", "lean-qr": "", "libxml2-wasm": "0.6.0", "pdf-lib": "1.17.1", "saxes": "^6.0.0", "solid-js": "", "zod": "^4.4.3" }, "optionalPeers": ["ibantools", "lean-qr", "libxml2-wasm", "pdf-lib", "saxes", "solid-js", "zod"] }, "sha512-2Ka7uA71RdGbmAoukKGRmYPBEGH8VVVCT9skias9mgejxsK0XaamF33y/VEIggtm4uYszpShhEBxKYkuwvc87g=="],
 
-    "@k2b/sync": ["@k2b/sync@6.5.0", "", { "dependencies": { "@nats-io/jetstream": "3.4.0", "@nats-io/kv": "3.4.0", "@nats-io/nats-core": "3.4.0", "@nats-io/obj": "3.4.0" } }, "sha512-6pLVb+emG2z4oRYZtDyzY6gD7nOHmKul0vSjlsoDd9nzpENizLbU2wAh/lQii04rgDehQr2LyUQpwb9oOoTovA=="],
+    "@k2b/sync": ["@k2b/sync@7.0.0", "", { "dependencies": { "@nats-io/jetstream": "3.4.0", "@nats-io/kv": "3.4.0", "@nats-io/nats-core": "3.4.0", "@nats-io/obj": "3.4.0" } }, "sha512-1RmV32TY/4MUip/UdqPrVB9GpBDqg9AwFI4IyQiUSmI3Z1MTERO+uwYzcEdWXHwz904caY+FAqfk/+ncEKSsRA=="],
 
     "@k2b/ui": ["@k2b/ui@workspace:packages/ui"],
 

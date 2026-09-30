@@ -36,7 +36,8 @@ old events. Payload size includes the JSON envelope and defaults to 128 KiB.
 
 Resources opened by different applications need the same explicit `owner` and
 identical retention and delivery settings. A conflicting declaration fails
-with `ResourceDriftError`; it does not update the existing resource.
+with `ResourceDriftError`; it does not update the existing resource, except
+for the dead-letter byte limit described below.
 
 ## Keep one topic per kind of log
 
@@ -64,8 +65,13 @@ the number of entities. For example, use the peak write rate multiplied by the
 longest time an event may wait for the durable state that covers it.
 `deadLetterRetention` defaults to `retention`. Set it lower when the topic's
 consumers rarely fail. It must hold at least one dead letter, the payload limit
-plus 4 KiB. Adding the option to an existing topic changes its dead-letter
-stream and fails with `ResourceDriftError`. Introduce it with a new topic.
+plus 4 KiB. Cloud applies a changed dead-letter byte limit to the existing
+dead-letter stream before the topic's first use in a process. If the stream
+holds more than the new limit, it keeps its old limit, and the topic reports
+`ResourceDriftError` until the stream holds less: every use fails, and an
+application that uses the topic in its `setup` or `start` lifecycle does not
+start. On a topic whose consumers leave dead letters, lower the limit only
+once its dead-letter stream holds less than the new one.
 
 `sync.listTopics({ idPrefix })` lists topics that exist on the broker in this
 namespace, including topics that no process has declared. `topic.destroy()`

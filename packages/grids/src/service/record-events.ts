@@ -7,6 +7,14 @@ import { z } from "zod";
 import { projectPublicIds } from "./public-resources";
 
 const TOPIC_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const RECORD_EVENT_PAYLOAD_BYTES = 68_000;
+/**
+ * 256 dead letters at the payload limit plus Sync's 4 KiB of dead-letter
+ * headroom, the depth Sync gives a job or queue by default. The topic has no
+ * durable consumer, and the work queue dead-letters only when PostgreSQL, which
+ * records workflow delivery failures, is unavailable.
+ */
+const RECORD_EVENT_DEAD_LETTER_BYTES = 256 * (RECORD_EVENT_PAYLOAD_BYTES + 4096);
 const WORK_QUEUE_TENANT = "workflow-kernel";
 export const RECORD_EVENT_WORK_PARTITIONS = 32;
 export const RECORD_EVENT_WORK_LEASE_MS = 120_000;
@@ -63,7 +71,8 @@ const recordTopic = lazySync((sync) =>
   sync.topic<GridsRecordEvent>({
     id: "grids:records",
     retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
-    maxPayloadBytes: 68_000,
+    deadLetterRetention: { maxBytes: RECORD_EVENT_DEAD_LETTER_BYTES },
+    maxPayloadBytes: RECORD_EVENT_PAYLOAD_BYTES,
   }),
 );
 
@@ -72,7 +81,8 @@ export const recordEventWorkQueue = lazySync((sync) =>
     id: "grids:workflow-record-events",
     ordering: { mode: "partitioned", partitions: RECORD_EVENT_WORK_PARTITIONS },
     retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
-    maxPayloadBytes: 68_000,
+    deadLetterRetention: { maxBytes: RECORD_EVENT_DEAD_LETTER_BYTES },
+    maxPayloadBytes: RECORD_EVENT_PAYLOAD_BYTES,
     delivery: {
       ackWaitMs: RECORD_EVENT_WORK_LEASE_MS,
       maxAttempts: RECORD_EVENT_WORK_TRANSPORT_ATTEMPTS,

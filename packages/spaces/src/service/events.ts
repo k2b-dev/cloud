@@ -5,6 +5,14 @@ import { type PublicSpaceEvent, type SpaceServiceEvent, type SpaceServiceEventDa
 
 const log = logger("spaces:events");
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
+const TOPIC_PAYLOAD_BYTES = 16_000;
+/**
+ * No durable consumer processes this topic, so its dead-letter stream stays
+ * empty; Sync still provisions it. The limit holds 256 dead letters at the
+ * payload limit plus Sync's 4 KiB of dead-letter headroom, the depth Sync gives
+ * a job or queue by default.
+ */
+const TOPIC_DEAD_LETTER_BYTES = 256 * (TOPIC_PAYLOAD_BYTES + 4096);
 
 type StoredSpaceEvent = {
   internal: SpaceServiceEvent;
@@ -21,7 +29,8 @@ const spaceTopic = lazySync((sync) =>
   sync.topic<StoredSpaceEvent>({
     id: "cloud:spaces:events:items",
     retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 1024 * 1024 * 1024 },
-    maxPayloadBytes: 16_000,
+    deadLetterRetention: { maxBytes: TOPIC_DEAD_LETTER_BYTES },
+    maxPayloadBytes: TOPIC_PAYLOAD_BYTES,
   }),
 );
 

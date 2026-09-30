@@ -1,15 +1,12 @@
 import { expect, test } from "bun:test";
-import { syncBudgetRetention } from "./sync-budget";
-
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+import { syncDefaultMaxBytes } from "./sync-budget";
 
 test("a job or queue without retention holds 256 messages at its payload limit", () => {
-  expect(syncBudgetRetention()).toEqual({ maxAgeMs: WEEK_MS, maxBytes: 256 * (128 * 1024 + 4096) });
-  expect(syncBudgetRetention(8_000).maxBytes).toBe(256 * (8_000 + 4096));
+  expect(syncDefaultMaxBytes()).toBe(256 * (128 * 1024 + 4096));
+  expect(syncDefaultMaxBytes(8_000)).toBe(256 * (8_000 + 4096));
 });
 
-test("the budget never exceeds Sync's own 1 GiB, even for large payload limits", () => {
-  expect(syncBudgetRetention(4 * 1024 * 1024 - 4096).maxBytes).toBe(1024 ** 3);
-  expect(syncBudgetRetention(8 * 1024 * 1024).maxBytes).toBe(1024 ** 3);
-  expect(syncBudgetRetention(16 * 1024 * 1024).maxBytes).toBe(1024 ** 3);
+test("the default never exceeds 1 GiB, even for large payload limits", () => {
+  expect(syncDefaultMaxBytes(4 * 1024 * 1024 - 4096)).toBe(1024 ** 3);
+  expect(syncDefaultMaxBytes(16 * 1024 * 1024)).toBe(1024 ** 3);
 });

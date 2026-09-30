@@ -1,8 +1,8 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
+import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { createSync } from "@k2b/sync";
-import { jetstreamManager } from "@nats-io/jetstream";
+import { jetstreamManager, RetentionPolicy } from "@nats-io/jetstream";
 import { connectTestNats, requireInfra, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { connectGridsTestSync } from "../sync-test-utils";
 import type { RecordEventDeliveryFailureInput } from "./record-event-delivery-failures";
@@ -125,15 +125,17 @@ natsTest(
 );
 
 natsTest(
-  "workers reopen the existing queue and preserve accepted work without resource drift",
+  "workers reopen the 0.24.0 queue with a lowered dead-letter stream and preserve accepted work",
   async () => {
     await requireInfra("nats");
     const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("grids-cutover");
     const previous = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
-    const current = createSync({ connection, namespace, application: "grids", defaults: { replicas: 1 } });
+    const processNamespace = process.env.SYNC_NAMESPACE;
+    let current: ProcessSync | undefined;
     try {
       const input = event(crypto.randomUUID(), 1);
+      // The queue as 0.24.0 declared it: its dead-letter stream shares the work stream's 1 GiB.
       const oldQueue = previous.queue<GridsRecordEvent>({
         id: "grids:workflow-record-events",
         ordering: { mode: "partitioned", partitions: 32 },
@@ -151,7 +153,9 @@ natsTest(
         throw new Error("old process must remain stopped");
       });
       await previous.drain();
-      bindProcessSync(current);
+      // The process Sync of the Grids application, which adopts existing streams before first use.
+      process.env.SYNC_NAMESPACE = namespace;
+      current = await startProcessSync({ application: "grids" });
       const seen: Array<number | null> = [];
       await recordEventWorkQueue().process({ concurrency: 32 }, (delivery) =>
         processWorkflowRecordEventDelivery(delivery, async (value) => {
@@ -161,10 +165,20 @@ natsTest(
       await recordEventWorkQueue().send({ data: { ...input, version: 2 }, tenantId: TENANT, orderingKey: input.recordId });
       await waitFor(() => seen.length === 2);
       expect(seen).toEqual([1, 2]);
+      const manager = await jetstreamManager(connection);
+      const limits: Record<string, number> = {};
+      for await (const stream of manager.streams.list()) {
+        if (stream.config.metadata?.["sync.namespace"] === namespace) limits[stream.config.retention] = stream.config.max_bytes;
+      }
+      expect(limits).toEqual({
+        [RetentionPolicy.Workqueue]: 1024 * 1024 * 1024,
+        [RetentionPolicy.Limits]: 256 * (68_000 + 4096),
+      });
     } finally {
+      if (processNamespace === undefined) delete process.env.SYNC_NAMESPACE;
+      else process.env.SYNC_NAMESPACE = processNamespace;
       await previous.drain({ timeoutMs: 5_000 });
-      await current.drain({ timeoutMs: 5_000 });
-      unbindProcessSync();
+      await current?.stop();
       const manager = await jetstreamManager(connection);
       for await (const stream of manager.streams.list()) {
         if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
