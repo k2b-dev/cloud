@@ -957,8 +957,8 @@
 }
 
 .minimal-layout-footer__links a:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .minimal-layout-footer .k2b-button[data-size] {

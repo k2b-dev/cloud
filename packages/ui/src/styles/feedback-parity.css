@@ -244,8 +244,8 @@
 }
 
 .k2b-ui .k2b-dialog__close:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
@@ -474,8 +474,8 @@
 }
 
 .k2b-ui .k2b-prompt-search__list > button:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: -2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
 .k2b-ui .k2b-prompt-search__copy {
@@ -711,8 +711,8 @@
 }
 
 .k2b-ui .k2b-toast__action:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-toast__close {
@@ -737,8 +737,8 @@
 }
 
 .k2b-ui .k2b-toast__close:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
@@ -825,8 +825,8 @@
 
 @media (forced-colors: active) {
   .k2b-ui .k2b-prompt-search__input:focus-within {
-    outline: 2px solid CanvasText;
-    outline-offset: -2px;
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
   }
 }
 
@@ -879,4 +879,24 @@
     background-image: none;
     -webkit-text-fill-color: currentColor;
   }
+}
+
+/* These containers clip their content, so focus rings inside them are drawn
+   inside the control. See the focus tokens in index.css. */
+.k2b-ui
+  :is(
+    .k2b-dialog,
+    .k2b-prompt-search
+  ) {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
+}
+
+.k2b-ui
+  :where(
+    .k2b-dialog,
+    .k2b-prompt-search
+  )
+  :where(:focus-visible) {
+  outline-offset: var(--k2b-focus-offset);
 }

@@ -271,6 +271,12 @@ loading, error, and dark treatments.
   visible context does not explain the action.
 - Keep one continuous, visible focus indicator. Do not stack unrelated border
   and ring colors on the same edge.
+- Keep focus rings whole. Shared containers that clip their content, such as
+  `AppWorkspace`, `ScrollArea`, `DetailPanel`, dialogs, and `DataTable`, draw
+  the rings of the controls inside them within the controls. Add
+  `k2b-focus-inset` to your own element that clips focusable content with
+  `overflow`. Never add padding or margins so that a ring fits. See
+  [Focus rings](/en/ui/focus).
 - Keep progressive actions discoverable by keyboard focus and touch when they
   are hidden at rest on fine pointers.
 - Use `InlineGuidance` for a short local hint, action error, or loading message

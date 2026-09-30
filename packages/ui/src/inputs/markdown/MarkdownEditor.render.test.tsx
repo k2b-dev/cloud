@@ -133,7 +133,7 @@ describe("source-faithful editor SSR contracts", () => {
       expect(body, selector).toContain("background: var(--k2b-surface)");
       expect(focusSignalCount(body), selector).toBe(1);
     }
-    expect(css).not.toContain("inset 0 0 0 2px var(--k2b-focus-ring)");
-    expect(css).not.toContain("outline: 2px solid var(--k2b-focus-ring)");
+    expect(css).not.toContain("inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring)");
+    expect(css).not.toContain("outline: var(--k2b-focus-width) solid var(--k2b-focus-ring)");
   });
 });

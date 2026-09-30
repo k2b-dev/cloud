@@ -3,8 +3,8 @@
 .k2b-ui .k2b-content-lightbox button:focus-visible,
 .k2b-ui .k2b-content-lightbox a:focus-visible,
 .k2b-ui .k2b-content-file-tree [role="treeitem"]:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--k2b-focus-ring);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 0px);
 }
 
 /* Calendar */
@@ -886,7 +886,7 @@
 .k2b-ui .k2b-content-calendar button:focus-visible,
 .k2b-ui .k2b-content-calendar [data-calendar-event]:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 2px var(--k2b-focus-ring);
+  box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-ring);
 }
 
 /* Code and documentation */
@@ -1289,8 +1289,8 @@
 .k2b-ui .k2b-content-file-view__action:focus-visible,
 .k2b-ui .k2b-content-structured-data__action:focus-visible,
 .k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav, .k2b-content-lightbox__dot):focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--k2b-focus-ring);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 0px);
 }
 
 .k2b-ui .k2b-content-file-tree__icon {
@@ -1825,8 +1825,8 @@
 }
 
 .k2b-ui .k2b-content-markdown__table:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-content-markdown table {
@@ -2115,8 +2115,8 @@
   .k2b-ui .k2b-content-file-view__action:focus-visible,
   .k2b-ui .k2b-content-structured-data__action:focus-visible,
   .k2b-ui :is(.k2b-content-lightbox__button, .k2b-content-lightbox__nav, .k2b-content-lightbox__dot):focus-visible {
-    outline: 2px solid CanvasText;
-    outline-offset: -2px;
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
   }
 }
 
@@ -2144,4 +2144,36 @@
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__document {
   padding: 0;
+}
+
+/* These containers clip their content, so focus rings inside them are drawn
+   inside the control. See the focus tokens in index.css. */
+.k2b-ui
+  :is(
+    .k2b-content-calendar,
+    .k2b-content-code-display,
+    .k2b-content-doc-code,
+    .k2b-content-file-browser__tree,
+    .k2b-content-file-view__preview,
+    .k2b-content-pdf-preview,
+    .k2b-content-markdown__table,
+    .k2b-content-markdown :is(pre, blockquote)
+  ) {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
+}
+
+.k2b-ui
+  :where(
+    .k2b-content-calendar,
+    .k2b-content-code-display,
+    .k2b-content-doc-code,
+    .k2b-content-file-browser__tree,
+    .k2b-content-file-view__preview,
+    .k2b-content-pdf-preview,
+    .k2b-content-markdown__table,
+    .k2b-content-markdown :is(pre, blockquote)
+  )
+  :where(:focus-visible) {
+  outline-offset: var(--k2b-focus-offset);
 }

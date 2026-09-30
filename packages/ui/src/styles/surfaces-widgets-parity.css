@@ -49,8 +49,8 @@
 }
 
 .k2b-ui .k2b-paper[data-interactive="true"]:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* ---------------------------------------------------------------- Avatar --
@@ -102,8 +102,8 @@
 .k2b-ui a.k2b-widget__header:focus-visible,
 .k2b-ui a.k2b-widget-list__item:focus-visible,
 .k2b-ui a.k2b-widget-pill:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* `rounded` (0.25rem) and a neutral tile: `.link-card-icon` overrides the
@@ -846,4 +846,24 @@
   .k2b-ui .k2b-widget-list__item {
     transition: none;
   }
+}
+
+/* These containers clip their content, so focus rings inside them are drawn
+   inside the control. See the focus tokens in index.css. */
+.k2b-ui
+  :is(
+    .k2b-widget,
+    .k2b-stat-grid
+  ) {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
+}
+
+.k2b-ui
+  :where(
+    .k2b-widget,
+    .k2b-stat-grid
+  )
+  :where(:focus-visible) {
+  outline-offset: var(--k2b-focus-offset);
 }

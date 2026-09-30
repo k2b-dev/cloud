@@ -345,8 +345,8 @@
   display: none;
 }
 .cloud-resource-search :is(.cloud-resource-search__result, .cloud-resource-search__tag-option, .cloud-resource-search__tag):focus-visible {
-  outline: 2px solid var(--color-blue-500);
-  outline-offset: -2px;
+  outline: var(--k2b-focus-width) solid var(--color-blue-500);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 @media (min-width: 48rem) {
   .cloud-resource-search {

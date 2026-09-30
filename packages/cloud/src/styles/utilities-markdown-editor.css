@@ -433,8 +433,8 @@
 
 .md-link-widget:focus-visible {
   border-radius: 0.125rem;
-  outline: 2px solid var(--ui-app-accent-border);
-  outline-offset: 2px;
+  outline: var(--k2b-focus-width) solid var(--ui-app-accent-border);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .md-link-icon {
