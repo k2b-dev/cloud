@@ -3,6 +3,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { afterSignInHref } from "./login-redirect";
 import { authMessages } from "./messages";
 
@@ -34,6 +35,7 @@ export default function LoginForm(props: { redirectTo?: string; showBanner?: boo
     },
     onSuccess: () => {
       cookies.writeCookie("login_method", "ipa");
+      cookies.deleteCookie(FREEIPA_APP_SIGN_IN_COOKIE);
       window.location.href = afterSignInHref(props.redirectTo);
     },
   });

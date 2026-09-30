@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-09-27
+updated: 2026-09-30
 ---
 
 # Integrate an authenticator website
@@ -212,15 +212,20 @@ automatically or persist pairing links. A clipboard manager may retain a copy.
 
 ## Approve a browser sign-in
 
-When app approval is enabled and configured, **Login** and **FreeIPA** default
-to app sign-in by email or username. **Guest** defaults to email, with the app
-available as an alternative. Users without a paired device can use the email
-or password alternative and enroll one under Security. Cloud does not expose a
-public account/device lookup to choose a method. The category switch remains
-unchanged. Local accounts retain **Use an email link instead**; FreeIPA retains
-its password alternative. Passkeys and email-link verification still work.
-An unpaired or unknown account does not get a distinct error: use another
-existing sign-in method if no paired app receives the request.
+When app approval is enabled and configured, **Login** defaults to app sign-in
+by email or username. **FreeIPA** defaults to the password and **Guest** to
+email, each with **Use the app instead** as an alternative. Users without a
+paired device can use the email or password method and enroll one under
+Security. Cloud does not expose a public account/device lookup to choose a
+method: the default follows the selected category, an explicit
+`credential=app` or `credential=legacy` link, and for FreeIPA the
+`login_freeipa_app` cookie. A completed FreeIPA app sign-in sets that cookie in
+the browser and a FreeIPA password sign-in removes it; it names no account.
+The category switch remains unchanged. Local accounts retain **Use an email
+link instead**. When FreeIPA opens with the app, the password alternative
+stays available. Passkeys and email-link verification still work. An unpaired
+or unknown account does not get a distinct error: use another existing sign-in
+method if no paired app receives the request.
 
 The waiting Cloud page displays the comparison code. Open the paired app and
 approve only a request you started whose code matches. The page continues as

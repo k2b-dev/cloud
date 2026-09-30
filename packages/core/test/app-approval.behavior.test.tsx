@@ -29,10 +29,12 @@ const cancel = mock(async () => new Response(null, { status: 204 }));
 const update = mock(async () => new Response(null, { status: 204 }));
 const list = mock(async () => Response.json({ items: [], nextCursor: null }));
 const logout = mock(async () => new Response(null, { status: 204 }));
+const passwordLogin = mock(async () => new Response(null, { status: 204 }));
 if (!isServer)
   mock.module("@k2b/cloud/clients/core", () => ({
     apiClient: {
       auth: {
+        login: { $post: passwordLogin },
         logout: { $post: logout },
         "app-approval": {
           v1: {
@@ -66,7 +68,7 @@ describe("Cloud app approval UI", () => {
   afterEach(() => {
     cleanup();
     mock.restore();
-    for (const fn of [start, status, complete, pairStart, inspection, confirm, cancel, update, list, logout]) fn.mockClear();
+    for (const fn of [start, status, complete, pairStart, inspection, confirm, cancel, update, list, logout, passwordLogin]) fn.mockClear();
   });
   test("incomplete setup is visible with an admin route, not a broken pairing action", async () => {
     const dom = createDomTestHarness();
@@ -789,5 +791,95 @@ describe("Cloud app approval UI", () => {
     expect(dom.root.textContent).not.toContain("Email recovery");
     expect(status).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+  test.each([
+    ["freeipa", ["login_freeipa_app=1", "login_method=ipa"], true],
+    ["login", ["login_method=login"], true],
+    ["guest", ["login_method=guest"], false],
+  ] as const)("a completed %s app sign-in reopens that account type next time", async (category, remembered, withApp) => {
+    const dom = createDomTestHarness();
+    dom.window.sessionStorage.setItem(`cloud.app-login:${category}:/`, JSON.stringify(login()));
+    status.mockImplementationOnce(async () => Response.json({ state: "approved", pollAfterSeconds: 5 }));
+    const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {});
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { useAppSignIn } = await import("../src/pages/app-approval/availability");
+    const { readLoginMethodFromCookieHeader } = await import("@k2b/cloud/shared");
+    const { DEFAULT_ACCOUNT_CATEGORY_POLICY, resolveAccountCategoryLogin } = await import("@k2b/cloud/contracts");
+    const dispose = render(() => createComponent(Login, { category }), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await Bun.sleep(20); // the first status read starts on a zero-delay timer
+    await flush();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledTimes(1);
+    // Only FreeIPA keeps a memory of the app, and no cookie names an account.
+    const cookieHeader = dom.document.cookie;
+    expect(cookieHeader.split("; ").sort()).toEqual([...remembered]);
+    // The next request carries these cookies; the sign-in page resolves them like this.
+    const { active } = resolveAccountCategoryLogin({
+      policy: DEFAULT_ACCOUNT_CATEGORY_POLICY,
+      freeIpaEnabled: true,
+      remembered: readLoginMethodFromCookieHeader(cookieHeader),
+    });
+    expect(active).toBe(category);
+    expect(useAppSignIn({ configured: true, category: active, cookieHeader })).toBe(withApp);
+  });
+  test("a lost or denied app sign-in remembers nothing", async () => {
+    const dom = createDomTestHarness();
+    dom.window.sessionStorage.setItem("cloud.app-login:freeipa:/", JSON.stringify(login()));
+    status.mockImplementationOnce(async () => Response.json({ state: "approved", pollAfterSeconds: 5 }));
+    complete.mockImplementationOnce(async () => {
+      throw new Error("connection lost");
+    });
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    let dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await Bun.sleep(20);
+    await flush();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(dom.document.cookie).toBe("");
+    dispose();
+    dom.window.sessionStorage.setItem("cloud.app-login:freeipa:/", JSON.stringify(login()));
+    status.mockImplementationOnce(async () => Response.json({ state: "denied", pollAfterSeconds: 5 }));
+    dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
+    await Bun.sleep(20);
+    await flush();
+    expect(dom.root.textContent).toContain("Sign-in was declined");
+    expect(dom.document.cookie).toBe("");
+  });
+  test("a FreeIPA password sign-in returns the browser to the password; a rejected one changes nothing", async () => {
+    const dom = createDomTestHarness();
+    const { FREEIPA_APP_SIGN_IN_COOKIE, useAppSignIn } = await import("../src/pages/app-approval/availability");
+    const { default: PasswordLogin } = await import("../src/pages/auth/LoginForm.island");
+    const opensWithApp = () => useAppSignIn({ configured: true, category: "freeipa", cookieHeader: dom.document.cookie });
+    dom.document.cookie = `${FREEIPA_APP_SIGN_IN_COOKIE}=1; path=/`;
+    expect(opensWithApp()).toBe(true);
+    const dispose = render(() => createComponent(PasswordLogin, { defaultUsername: "mira" }), dom.root);
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const submit = async () => {
+      dom.root
+        .querySelector("form")!
+        .dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }) as unknown as Event);
+      await flush();
+    };
+    passwordLogin.mockImplementationOnce(async () => Response.json({ message: "Invalid credentials" }, { status: 401 }));
+    await submit();
+    expect(passwordLogin).toHaveBeenCalledTimes(1);
+    expect(dom.root.textContent).toContain("Invalid credentials");
+    expect(opensWithApp()).toBe(true);
+    await submit();
+    expect(passwordLogin).toHaveBeenCalledTimes(2);
+    // Read through the chooser: happy-dom drops a `max-age=0` cookie only on the next millisecond.
+    expect(opensWithApp()).toBe(false);
+    expect(dom.document.cookie).toContain("login_method=ipa");
+    expect(dom.window.location.pathname).toBe("/auth/continue");
   });
 });

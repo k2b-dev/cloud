@@ -11,9 +11,11 @@ The available sign-in methods depend on the account provider and platform settin
 ## Sign in and recover access {icon="shield-lock"}
 
 The account types are **Guest**, **Login** (your organization may use another
-name) and **FreeIPA**. Guest starts with an email link. When app sign-in is
-configured, Login and FreeIPA start with the app; email and password
-alternatives remain available. Local accounts do not use passwords.
+name) and **FreeIPA**. Guest starts with an email link and FreeIPA with your
+password. When app sign-in is configured, Login starts with the app and keeps
+the email link as an alternative; for FreeIPA and Guest choose **Use the app
+instead**. After a FreeIPA sign-in with the app, this browser opens FreeIPA
+with the app next time. Local accounts do not use passwords.
 An existing passkey still works while the account type is allowed. If your
 type is hidden, use your invitation or direct sign-in link. A hidden entry is
 not the same as disabled access; ask your administrator if access is disabled.
