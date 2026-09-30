@@ -32,10 +32,10 @@ export default ssr(async (c) => {
 
   return () => (
     <LocaleProvider locale={locale}>
-      <div class="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-        <div class="flex min-h-screen flex-col items-center justify-center gap-5 p-4">
-          <div class="grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_16px_48px_rgb(24_24_27/0.12)] dark:border-zinc-800 dark:bg-zinc-950 [@media(min-width:560px)]:grid-cols-[0.9fr_1.1fr]">
-            <aside class="flex flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 dark:border-zinc-800 dark:bg-zinc-900/60 [@media(max-width:559px)]:hidden">
+      <div class="min-h-svh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+        <div class="flex min-h-svh flex-col items-center justify-center gap-5 p-4">
+          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_16px_48px_rgb(24_24_27/0.12)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
+            <aside class="hidden flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 md:flex dark:border-zinc-800 dark:bg-zinc-900/60">
               <div class="flex flex-1 items-center justify-center">
                 <div class="flex flex-col items-center gap-4 text-center">
                   <img
@@ -59,7 +59,7 @@ export default ssr(async (c) => {
               </div>
             </aside>
 
-            <main class="flex items-center justify-center p-6 sm:p-10">
+            <main class="flex items-center justify-center md:p-10">
               <div class="w-full max-w-md" style={{ "view-transition-name": "login-card" }}>
                 <div class="mb-8 flex items-start justify-between gap-4">
                   <div>

@@ -106,10 +106,10 @@ export default ssr(async (c) => {
 
   return () => (
     <LocaleProvider locale={locale}>
-      <div class="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-        <div class="flex min-h-screen flex-col items-center justify-center gap-5 p-4">
-          <div class="grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_16px_48px_rgb(24_24_27/0.12)] dark:border-zinc-800 dark:bg-zinc-950 [@media(min-width:560px)]:grid-cols-[0.9fr_1.1fr]">
-            <aside class="flex flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 dark:border-zinc-800 dark:bg-zinc-900/60 [@media(max-width:559px)]:hidden">
+      <div class="min-h-svh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
+        <div class="flex min-h-svh flex-col items-center justify-center gap-5 p-4">
+          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_16px_48px_rgb(24_24_27/0.12)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
+            <aside class="hidden flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 md:flex dark:border-zinc-800 dark:bg-zinc-900/60">
               <div class="flex flex-1 items-center justify-center">
                 <div class="flex flex-col items-center gap-4 text-center">
                   <img
@@ -134,8 +134,11 @@ export default ssr(async (c) => {
               </div>
             </aside>
 
-            <main class="flex justify-center p-6 sm:p-10">
-              <div class="flex min-h-[32rem] w-full max-w-md flex-col sm:min-h-[36rem]" style={{ "view-transition-name": "login-card" }}>
+            <main class="flex justify-center md:p-10">
+              <div
+                class="auth-login-column flex min-h-[32rem] w-full max-w-md flex-col sm:min-h-[36rem]"
+                style={{ "view-transition-name": "login-card" }}
+              >
                 <div>
                   <h1 class="sr-only">{t.signIn}</h1>
                   <h2 class="text-3xl font-semibold tracking-tight text-primary">{confirmation?.reauthenticate ?? formTitle}</h2>
@@ -156,7 +159,7 @@ export default ssr(async (c) => {
                   </div>
                 )}
 
-                <div class="flex flex-1 flex-col justify-center gap-4 py-7">
+                <div class="flex flex-1 flex-col justify-center gap-4 py-5 md:py-7">
                   {isAdminLogin ? (
                     <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
                   ) : useApproval && activeMethod ? (
@@ -186,7 +189,7 @@ export default ssr(async (c) => {
                 </div>
 
                 {!isAdminLogin && !token && (
-                  <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
+                  <div class="auth-secondary-actions flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
                     <ButtonLink href={supportHref} variant="secondary" size="sm">
                       <i class="ti ti-lifebuoy" />
                       {t.contactSupport}

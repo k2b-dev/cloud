@@ -143,3 +143,97 @@ describe("MinimalLayout footer in a browser", () => {
     }, 30_000);
   }
 });
+
+// The one card of a standalone page, as the public pages of Mail and Grids build it.
+const { Paper, TextInput } = await import("@k2b/ui");
+const field = () => createComponent(TextInput, { label: "Password", value: "", password: true });
+const cards = {
+  // An elevated @k2b/ui Paper centered above the footer.
+  paper: (surface: string) =>
+    `<main class="flex flex-1 items-center justify-center px-4 py-8">${renderToString(() =>
+      createComponent(Paper, { as: "section" as const, elevated: true, class: `${surface} w-full max-w-md p-6`, children: field() }),
+    )}</main>`,
+  // The Cloud `paper` utility at the top of a form page.
+  utility: (surface: string) =>
+    `<main class="mx-auto w-full max-w-2xl px-4 py-6"><section class="paper ${surface} p-6">${renderToString(field)}</section></main>`,
+} as const;
+
+const measureCard = async (width: number, card: keyof typeof cards, surface: string, theme: "light" | "dark") => {
+  const tab = await browser.newPage({ viewport: { width, height: 664 }, isMobile: width < 768, hasTouch: width < 768 });
+  try {
+    const context = {
+      get: (key: string) => (key === "page" ? {} : key === "runtime" ? { apps: [legalApp] } : undefined),
+      req: { raw: { headers: new Headers({ "Accept-Language": "en" }), url: "https://cloud.test/share/probe" } },
+    } as unknown as MinimalLayoutContextArg;
+    const html = renderToString(() => createComponent(MinimalLayout, { c: context, children: CONTENT })).replace(
+      CONTENT,
+      cards[card](surface),
+    );
+    await tab.setContent(
+      `<!doctype html><html lang="en" class="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+        `<body class="k2b-ui">${html}</body></html>`,
+    );
+    return await tab.evaluate(() => {
+      const section = document.querySelector("section")!;
+      const style = getComputedStyle(section);
+      const box = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+      };
+      return {
+        surface: {
+          border: style.borderTopWidth,
+          radius: style.borderTopLeftRadius,
+          shadow: style.boxShadow,
+          background: style.backgroundColor,
+          padding: style.paddingTop,
+        },
+        card: box(section),
+        input: box(document.querySelector(".k2b-input-shell")!),
+        footer: box(document.querySelector("footer")!),
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+  } finally {
+    await tab.close();
+  }
+};
+
+describe("standalone card in a browser", () => {
+  const flat = { border: "0px", radius: "0px", shadow: "none", background: "rgba(0, 0, 0, 0)", padding: "0px" };
+
+  test("is flat on a phone: the content sits on the page with the page padding", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      for (const card of ["paper", "utility"] as const) {
+        for (const width of [390, 767]) {
+          const context = `${theme} ${card} ${width}`;
+          const measured = await measureCard(width, card, "standalone-card", theme);
+          expect(measured.surface, context).toEqual(flat);
+          expect(measured.scrollWidth, context).toBeLessThanOrEqual(width);
+          if (width === 390) {
+            // Fields span the viewport minus the page padding of 16 px on each side.
+            expect([measured.input.left, measured.input.right], context).toEqual([16, 374]);
+          }
+          // The footer keeps its place at the end of the first screen.
+          expect(Math.abs(measured.footer.bottom - 664), context).toBeLessThan(1);
+        }
+      }
+    }
+  }, 60_000);
+
+  test("keeps the card from the tablet width up, exactly like a card without the class", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      for (const card of ["paper", "utility"] as const) {
+        for (const width of [768, 1440]) {
+          const context = `${theme} ${card} ${width}`;
+          const measured = await measureCard(width, card, "standalone-card", theme);
+          expect(measured.surface.border, context).toBe("1px");
+          expect(measured.surface.padding, context).toBe("24px");
+          expect(measured.surface.radius, context).not.toBe("0px");
+          expect(measured.surface.background, context).not.toBe(flat.background);
+          expect(measured, context).toEqual(await measureCard(width, card, "", theme));
+        }
+      }
+    }
+  }, 60_000);
+});

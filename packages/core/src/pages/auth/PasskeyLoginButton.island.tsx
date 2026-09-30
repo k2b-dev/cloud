@@ -37,7 +37,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
   });
 
   return (
-    <div class="flex flex-col gap-2">
+    <div class="auth-passkey flex flex-col gap-2">
       <Button
         type="button"
         size="sm"

@@ -18,6 +18,29 @@
 .k2b-ui .auth-login-identifier .k2b-input-shell__icon {
   display: none;
 }
+/* Sign-in's secondary actions share one row where the form column has room
+   for all three. In a narrower column (a phone, the two-column card on a
+   small tablet) they would wrap unevenly, so there they form a grid: the
+   passkey on a full row, support and the admin token as two equal halves.
+   The rows keep the distance @k2b/ui's touch hit areas need. */
+.auth-login-column {
+  container: auth-login-column / inline-size;
+}
+@container auth-login-column (max-width: 25rem) {
+  .auth-secondary-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem 0.5rem;
+  }
+  .auth-secondary-actions .auth-passkey {
+    grid-area: 1 / 1 / auto / -1;
+  }
+  .k2b-ui .auth-secondary-actions .k2b-button[data-size] {
+    width: 100%;
+    min-height: 2.25rem;
+    justify-content: center;
+  }
+}
 
 .k2b-ui .k2b-dialog.app-pairing-dialog {
   width: min(96vw, 32rem);

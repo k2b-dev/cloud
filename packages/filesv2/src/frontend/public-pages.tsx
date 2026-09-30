@@ -26,7 +26,7 @@ function Card(props: { locale: string; share: PublicShare | null; children?: JSX
   const t = browserMessages.resolve([props.locale]).t;
   return (
     <main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10">
-      <Paper class="flex flex-col gap-4 p-6">
+      <Paper class="standalone-card flex flex-col gap-4 p-6">
         {props.share ? (
           <>
             <header class="flex items-start gap-3">
@@ -69,7 +69,7 @@ const publicPage = (kind: "download" | "inbox") =>
       <MinimalLayout c={c}>
         {share === "locked" ? (
           <main class="mx-auto flex w-full max-w-md flex-col gap-4 px-4 py-10">
-            <Paper class="flex flex-col gap-4 p-6">
+            <Paper class="standalone-card flex flex-col gap-4 p-6">
               <h1 class="text-lg font-semibold">{t.unlockTitle}</h1>
               <p class="text-sm text-dimmed">{t.unlockHint}</p>
               <PublicShareUnlock token={token} kind={kind} />
