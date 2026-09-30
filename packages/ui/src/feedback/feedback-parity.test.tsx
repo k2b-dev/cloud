@@ -298,7 +298,7 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(indexCss).toContain(".k2b-ui .k2b-bottom-sheet__handle:focus-visible {");
     expect(indexCss).not.toMatch(/\.k2b-bottom-sheet__handle:focus\s*\{/);
     const buttonRule = indexCss.match(/\.k2b-ui \.k2b-button:focus-visible \{([^}]*)\}/)?.[1] ?? "";
-    expect(buttonRule).toMatch(/outline:\s*2px solid var\(--k2b-focus-ring\)/);
+    expect(buttonRule).toMatch(/outline:\s*var\(--k2b-focus-width\) solid var\(--k2b-focus-ring\)/);
   });
 
   test("extends a closing bottom sheet footer through the bottom safe area", () => {

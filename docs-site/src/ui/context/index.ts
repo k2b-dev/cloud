@@ -158,5 +158,6 @@ export const catalogContextFiles = Object.fromEntries(Object.entries(catalogCont
 
 export const standaloneUiContextFiles = {
   "getting-started.md": "Portable package installation, style scoping, theming, and SSR setup guide.",
+  "focus.md": "Focus ring placement inside clipping containers, focus tokens, and the k2b-focus-inset class.",
   "overview.md": "Catalog landing-page context rendered by the collection root.",
 } as const satisfies Record<string, string>;

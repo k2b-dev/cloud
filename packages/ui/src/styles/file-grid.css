@@ -30,8 +30,8 @@
   background: var(--k2b-selected);
 }
 .k2b-ui .k2b-file-grid__item:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: -2px;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 .k2b-ui .k2b-file-grid__preview {
   height: 8rem;

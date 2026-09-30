@@ -623,3 +623,29 @@
     transition: none;
   }
 }
+
+/* These containers clip their content, so focus rings inside them are drawn
+   inside the control. See the focus tokens in index.css. */
+.k2b-ui
+  :is(
+    .k2b-autocomplete,
+    .k2b-autocomplete__options,
+    .k2b-markdown-editor,
+    .k2b-template-preview,
+    .k2b-template-sample
+  ) {
+  --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
+  --k2b-focus-on-fill: currentColor;
+}
+
+.k2b-ui
+  :where(
+    .k2b-autocomplete,
+    .k2b-autocomplete__options,
+    .k2b-markdown-editor,
+    .k2b-template-preview,
+    .k2b-template-sample
+  )
+  :where(:focus-visible) {
+  outline-offset: var(--k2b-focus-offset);
+}

@@ -24,6 +24,80 @@ describe("@k2b/ui focus and color contract", () => {
     expect(css).toContain("--k2b-focus-ring: var(--k2b-accent-400);");
   });
 
+  test("sizes and places every focus ring with the shared tokens", async () => {
+    const css = await Bun.file(resolve(stylesDir, "index.css")).text();
+    const root = css.match(/\.k2b-ui\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    expect(root).toContain("--k2b-focus-width: 2px;");
+    expect(root).toContain("--k2b-focus-offset: 2px;");
+
+    // The pane separator highlights its handle line with a glow; it is not a ring around a control.
+    const handleGlow = ".k2b-ui .k2b-panes__separator:focus-visible > span";
+    const untokenized: string[] = [];
+    for (const rule of rules.filter(
+      (candidate) => isFocusSelector(candidate.selector) && !(candidate.selector === handleGlow && !candidate.context),
+    )) {
+      const declarations = cssDeclarations(rule.body);
+      const where = `${rule.file}: ${rule.context ? `${rule.context} ` : ""}${rule.selector}`;
+      for (const outline of declarations.get("outline") ?? []) {
+        if (hasVisibleValue([outline]) && !outline.includes("var(--k2b-focus-width)")) untokenized.push(`${where} outline: ${outline}`);
+      }
+      for (const offset of declarations.get("outline-offset") ?? []) {
+        if (!/var\(--k2b-focus-(?:offset|width)\)/.test(offset)) untokenized.push(`${where} outline-offset: ${offset}`);
+      }
+      // A spread-only shadow is a ring. An outer one cannot move inside a clipping container, so rings are outlines or inset.
+      for (const shadow of declarations.get("box-shadow") ?? []) {
+        const ring = /^(?:inset\s+)?0(?:px)?\s+0(?:px)?\s+0(?:px)?\s+/.test(shadow);
+        if (ring && !(shadow.startsWith("inset") && shadow.includes("var(--k2b-focus-width)")))
+          untokenized.push(`${where} box-shadow: ${shadow}`);
+      }
+    }
+    expect(untokenized).toEqual([]);
+  });
+
+  test("moves rings inside every clipping container, and filled controls draw theirs on the fill", async () => {
+    const list = (selector: string, head: string) =>
+      selector
+        .slice(head.length, selector.lastIndexOf(")", selector.endsWith(":where(:focus-visible)") ? selector.length - 23 : undefined))
+        .split(/,(?![^(]*\))/)
+        .map((part) => part.trim());
+    const scopes = new Map<string, string[]>();
+    const inherited = new Map<string, string[]>();
+    for (const rule of rules) {
+      if (rule.selector.startsWith(".k2b-ui :is(") && rule.body.includes("--k2b-focus-offset: calc(-1 * var(--k2b-focus-width))")) {
+        expect(rule.body, rule.selector).toContain("--k2b-focus-on-fill: currentColor");
+        scopes.set(rule.file, list(rule.selector, ".k2b-ui :is("));
+      }
+      if (rule.selector.startsWith(".k2b-ui :where(") && rule.selector.endsWith(":where(:focus-visible)")) {
+        expect(rule.body, rule.selector).toBe("outline-offset: var(--k2b-focus-offset);");
+        inherited.set(rule.file, list(rule.selector, ".k2b-ui :where("));
+      }
+    }
+
+    // Each stylesheet moves the rings inside the containers it owns, and controls
+    // without their own ring follow exactly the same containers.
+    expect([...inherited]).toEqual([...scopes]);
+    const all = [...scopes.values()].flat();
+    for (const container of [
+      ".k2b-focus-inset",
+      ".k2b-app-workspace",
+      ".k2b-scroll-area",
+      ".k2b-detail-panel",
+      ".k2b-settings",
+      ".k2b-dialog",
+      ".k2b-table-shell",
+      ".k2b-widget",
+      ".k2b-stat-grid",
+      ".k2b-pagination",
+    ]) {
+      expect(all, container).toContain(container);
+    }
+
+    const css = await Bun.file(resolve(stylesDir, "index.css")).text();
+    expect(css).toMatch(
+      /\[data-variant="primary"\][\s\S]*?\):focus-visible \{\s*outline-color: var\(--k2b-focus-on-fill, var\(--k2b-focus-ring\)\);/,
+    );
+  });
+
   test("renders at most one focus signal per focused selector", () => {
     const focused = rules.filter((rule) => isFocusSelector(rule.selector));
     const grouped = new Map<string, typeof focused>();
@@ -98,7 +172,7 @@ describe("@k2b/ui focus and color contract", () => {
       ".k2b-ui .k2b-date-trigger",
       ".k2b-ui .k2b-color-input__value",
     ];
-    expect(css).toContain("--k2b-focus-inset: inset 0 0 0 2px");
+    expect(css).toContain("--k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width)");
     for (const selector of shared) {
       const body = rules
         .filter((rule) => rule.selector === selector)
@@ -200,7 +274,7 @@ describe("@k2b/ui focus and color contract", () => {
     expect(ring?.body).toContain("inset: 0");
     expect(ring?.body).toContain("box-shadow: var(--k2b-focus-inset)");
     expect(ring?.body).toContain("pointer-events: none");
-    expect(invalid?.body).toContain("box-shadow: inset 0 0 0 2px var(--k2b-danger-500)");
+    expect(invalid?.body).toContain("box-shadow: inset 0 0 0 var(--k2b-focus-width) var(--k2b-danger-500)");
   });
 
   test("keeps the tags editor geometry stable while its markup changes on focus", () => {

@@ -14,7 +14,7 @@
   --ui-selected: color-mix(in srgb, var(--color-blue-500) 7%, var(--ui-surface));
   --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
   --ui-app-accent-border: var(--app-accent, var(--color-blue-500));
-  --ui-focus: inset 0 0 0 2px color-mix(in srgb, var(--color-blue-500) 45%, transparent);
+  --ui-focus: inset 0 0 0 var(--k2b-focus-width, 2px) color-mix(in srgb, var(--color-blue-500) 45%, transparent);
   --ui-action-primary-surface: var(--color-zinc-900);
   --ui-action-primary-hover: var(--color-black);
   --ui-action-primary-active: var(--color-zinc-800);
@@ -142,7 +142,7 @@
   --ui-selected: color-mix(in srgb, var(--color-blue-400) 12%, var(--ui-surface));
   --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
-  --ui-focus: inset 0 0 0 2px color-mix(in srgb, var(--color-blue-400) 55%, transparent);
+  --ui-focus: inset 0 0 0 var(--k2b-focus-width, 2px) color-mix(in srgb, var(--color-blue-400) 55%, transparent);
   --ui-action-primary-surface: var(--color-zinc-100);
   --ui-action-primary-hover: var(--color-white);
   --ui-action-primary-active: var(--color-zinc-200);

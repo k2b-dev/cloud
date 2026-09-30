@@ -1,6 +1,7 @@
 import { solidPage } from "@k2b/fibel/solid";
 import { fibelHtml } from "../ssr";
 import { uiCatalogEntries } from "./catalog";
+import focusMarkdown from "./context/focus.md" with { type: "text" };
 import gettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
 import overviewMarkdown from "./context/overview.md" with { type: "text" };
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
@@ -41,6 +42,32 @@ export const uiPages = [
           <p>{page.meta.description}</p>
         </header>
         <section class="ui-reference-body" aria-label="Getting started guide">
+          <div class="ui-documentation fibel-prose" innerHTML={content.html} />
+        </section>
+      </article>
+    ),
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/focus",
+    title: "Focus rings",
+    navTitle: "Focus rings",
+    description: "How focus rings stay visible inside clipping containers without moving the layout, and how to style your own.",
+    section: "Start",
+    order: 3,
+    layout: "full",
+    content: focusMarkdown,
+    component: ({ content, page }) => (
+      <article class="ui-showcase ui-reference-showcase">
+        <header class="ui-reference-heading">
+          <div class="ui-page-heading">
+            <p>@k2b/ui</p>
+            <h1>{page.meta.title}</h1>
+          </div>
+          <p>{page.meta.description}</p>
+        </header>
+        <section class="ui-reference-body" aria-label="Focus ring guide">
           <div class="ui-documentation fibel-prose" innerHTML={content.html} />
         </section>
       </article>
