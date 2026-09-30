@@ -20,6 +20,8 @@ export type {
 export { default as Placeholder } from "./Placeholder";
 export type { ProgressBarProps, ProgressBarTone } from "./ProgressBar";
 export { ProgressBar } from "./ProgressBar";
+export type { ProgressRingProps, ProgressRingTone } from "./ProgressRing";
+export { ProgressRing } from "./ProgressRing";
 export type { StatCellAccent, StatCellProps, StatCellTone } from "./StatCell";
 export { StatCell } from "./StatCell";
 export type {

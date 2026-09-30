@@ -98,7 +98,7 @@ export async function beginAiCall(
           return {
             error: new AiQuotaError(
               "quota_usage_unknown",
-              "Chat costs could not be measured. Reset the allowance or wait for the next window.",
+              "Chat usage could not be measured. Reset the allowance or wait for the next window.",
             ),
           };
         const rule = config.rules.find((rule) => rule.scope === balance.scope)!;
@@ -127,7 +127,7 @@ export async function beginAiCall(
           error:
             context.kind === "background"
               ? new AiBackgroundAdmissionError(backgroundHeadroom !== undefined && inputCost + outputPrice <= backgroundHeadroom)
-              : new AiQuotaError("quota_exhausted", "Chat cost limit reached."),
+              : new AiQuotaError("quota_exhausted", "Chat usage limit reached."),
         };
       const reserveOutput = Math.min(requestedOutput ?? outputBound ?? affordable, affordable);
       // Preserve adapter defaults unless an explicit maximum or budget requires a cap.

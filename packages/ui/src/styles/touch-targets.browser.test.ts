@@ -24,6 +24,8 @@ const { default: DetailPanel } = await import("../layout/DetailPanel");
 const { default: Select } = await import("../inputs/Select");
 const { SettingsGroup } = await import("../layout/Settings");
 const { default: SettingsModal } = await import("../layout/SettingsModal");
+const { Chat } = await import("../chat");
+const { ProgressRing } = await import("../surfaces/ProgressRing");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 // `toast` builds its DOM in the browser, so the page runs the real module.
@@ -84,12 +86,12 @@ const takenPixels = async (markup: string, width = "22rem", script = "") => {
     await page.setContent(
       phonePage(
         `<main style="width:${width};padding:2rem">${markup}</main>`,
-        `<style id="without-hit-areas">.k2b-ui :is(.k2b-button, .k2b-toast__action, .k2b-toast__close)::after { content: none !important; }</style>`,
+        `<style id="without-hit-areas">.k2b-ui :is(.k2b-button, .k2b-toast__action, .k2b-toast__close, .k2b-chat-context)::after { content: none !important; }</style>`,
       ),
     );
     if (script) await runToasts(page, script);
     return await page.evaluate(() => {
-      const controls = "button, a[href], input";
+      const controls = "button, a[href], input, textarea";
       const name = (element: Element | null) =>
         element ? (element.getAttribute("aria-label") ?? element.textContent?.trim() ?? element.tagName) : "nothing";
       const tap = (x: number, y: number) => document.elementFromPoint(x, y)?.closest(controls) ?? null;
@@ -481,6 +483,59 @@ describe("@k2b/ui touch hit areas on a phone", () => {
     const button = html(() => icon("Go"));
     expect(await takenPixels(row("0.25rem", field + button))).toEqual({});
     expect(await takenPixels(row("0.625rem", button + field))).toEqual({});
+  });
+
+  test("keep the message field's edge above the chat composer footer, and one trigger box for every context state", async () => {
+    // The Assistant's composer: add menu, model, usage indicator, context usage, dictation, and send.
+    const composer = (details: string) =>
+      html(() =>
+        createComponent(Chat.Composer, {
+          value: "",
+          onValueChange: () => {},
+          onSubmit: () => {},
+          fileSelection: { onSelect: () => {} },
+          models: [{ id: "a", label: "Model A" }],
+          selectedModelId: "a",
+          onModelChange: () => {},
+          modelDetails: "%details%",
+          contextUsage: { usage: { input: 1200, output: 20 }, contextWindow: 128_000 },
+          get submitTools() {
+            return icon("Dictate");
+          },
+        }),
+      ).replace("%details%", details);
+    const popup = (trigger: string) =>
+      html(() => createComponent(Chat.ContextPopup, { "aria-label": "Usage", content: "Usage", children: "%trigger%" })).replace(
+        "%trigger%",
+        trigger,
+      );
+    const dashed = `<i class="ti ti-circle-dashed" aria-hidden="true"></i>`;
+    // A reading, a missing or failed reading, unlimited usage, and the placeholder before the first reading.
+    const states = [
+      popup(html(() => createComponent(ProgressRing, { value: 92, tone: "warning" }))),
+      popup(dashed),
+      popup(`<i class="ti ti-infinity" aria-hidden="true"></i>`),
+      `<span class="k2b-chat-context" aria-hidden="true">${dashed}</span>`,
+    ].map(composer);
+    for (const markup of states) expect(await takenPixels(markup)).toEqual({});
+
+    const page = await browser.newPage(phone);
+    try {
+      const boxes: number[][] = [];
+      for (const markup of states) {
+        await page.setContent(phonePage(`<main style="width:22rem;padding:2rem">${markup}</main>`));
+        boxes.push(
+          await page.evaluate(() => {
+            const box = document.querySelector(".k2b-chat-composer__tools .k2b-chat-context")!.getBoundingClientRect();
+            const footer = document.querySelector(".k2b-chat-composer__footer")!.getBoundingClientRect();
+            return [box.left, box.top, box.width, box.height, footer.height];
+          }),
+        );
+      }
+      expect(new Set(boxes.map((box) => box.join())).size).toBe(1);
+    } finally {
+      await page.close();
+    }
   });
 
   test("give a toast's action and close button 44 px hit areas that keep each other's and the next toast's edges", async () => {

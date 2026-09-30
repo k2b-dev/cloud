@@ -35,7 +35,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -288,12 +288,52 @@ A changed `previewUrl` loads the thumbnail again.
 ## Application-owned model details
 
 Use `Chat.ContextPopup` in `modelDetails` for a compact button with custom
-details, such as an application allowance. Pass the trigger text as children,
-`content` for the panel, and a complete `aria-label`. The button defaults to
-`type="button"`. Hover previews the panel; click or keyboard activation pins
-it open. Escape and outside click close it. Interactive panel content is
-reachable with Tab. Popup-owned click, pointer-enter/leave and ref props are
-not part of its public props. Applications own data loading and authorization.
+details, such as an application's usage indicator. Pass the trigger content as
+children, `content` for the panel, and a complete `aria-label` that names the
+state and its value. The button defaults to `type="button"` and to the same
+trigger style as the context indicator; a `class` replaces that style. Hover
+previews the panel; click or keyboard activation pins it open. Escape and
+outside click close it. `onOpen` runs each time the panel opens, which is the
+place to refresh its data instead of offering a refresh button. Interactive
+panel content is reachable with Tab. Popup-owned click, pointer-enter/leave and
+ref props are not part of its public props. Applications own data loading and
+authorization.
+
+Build the panel with `Chat.ContextPanel` so it matches the context details: it
+takes a `title` and lays out its children with the same type and spacing. Inside
+it use a `dl` with one `div` per `dt`/`dd` row, an `xs` `ProgressBar`, and a short
+`p` for a muted note. Wrap each repeated group in a `section`.
+
+```tsx
+<Chat.ContextPopup
+  aria-label="Usage: 35%"
+  onOpen={refresh}
+  content={
+    <Chat.ContextPanel title="Usage">
+      <section>
+        <dl>
+          <div>
+            <dt>Used</dt>
+            <dd>35%</dd>
+          </div>
+        </dl>
+        <ProgressBar value={35} size="xs" label="Usage" />
+        <p>Resets in 5 hours</p>
+      </section>
+    </Chat.ContextPanel>
+  }
+>
+  <ProgressRing value={35} />
+</Chat.ContextPopup>
+```
+
+An icon-only trigger, such as `<i class="ti ti-infinity" />`, takes the same
+box as a `ProgressRing`, so one can replace the other without moving the
+composer. An empty ring means 0 %, so do not use one for a value you do not
+have: show `<i class="ti ti-circle-dashed" />` when the value could not be
+loaded. While the state is not known yet, render
+`<span class="k2b-chat-context" aria-hidden="true">` with the same dashed
+circle: it keeps the trigger's box and is not interactive.
 
 ### Composer commands and mentions
 

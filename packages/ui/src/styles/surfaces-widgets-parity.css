@@ -316,8 +316,15 @@
 .k2b-ui .k2b-progress[data-size="xs"] .k2b-progress__track { height: 0.375rem; }
 .k2b-ui .k2b-progress__value { height: 100%; border-radius: inherit; background: var(--k2b-action-solid); transition: width 200ms ease; }
 .k2b-ui .k2b-progress[data-tone="success"] .k2b-progress__value { background: var(--k2b-success-500); }
+.k2b-ui .k2b-progress[data-tone="warning"] .k2b-progress__value { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-progress[data-tone="danger"] .k2b-progress__value { background: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress__percent { flex: 0 0 auto; color: var(--k2b-text-muted); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
+.k2b-ui .k2b-progress-ring { display: block; width: 1rem; height: 1rem; flex: 0 0 auto; color: var(--k2b-action-solid); }
+.k2b-ui .k2b-progress-ring[data-tone="warning"] { color: var(--k2b-warning-500); }
+.k2b-ui .k2b-progress-ring[data-tone="danger"] { color: var(--k2b-danger-500); }
+.k2b-ui .k2b-progress-ring__track { stroke: var(--k2b-border-strong); }
+.k2b-ui .k2b-progress-ring__value { stroke: currentColor; transition: stroke-dasharray 200ms ease; }
+.k2b-ui .k2b-progress-ring__mark { fill: currentColor; }
 
 /* ----------------------------------------------------------- StatusBadge -- */
 .k2b-ui .k2b-status-badge {
@@ -835,6 +842,7 @@
     animation: none;
   }
   .k2b-ui .k2b-progress__value,
+  .k2b-ui .k2b-progress-ring__value,
   .k2b-ui .k2b-link-card,
   .k2b-ui .k2b-link-card__chevron,
   .k2b-ui .k2b-stat-cell--link,

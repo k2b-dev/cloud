@@ -7036,6 +7036,38 @@
   color: var(--k2b-warning-text);
 }
 
+/* An icon-only trigger takes the box of a ProgressRing, so the two can replace each other in place. */
+.k2b-ui .k2b-chat-context > .ti:only-child {
+  display: grid;
+  width: 1rem;
+  height: 1rem;
+  place-items: center;
+  font-size: 0.875rem;
+}
+
+/* A state that is not interactive yet keeps the trigger's box, so nothing moves when it becomes one. */
+.k2b-ui span.k2b-chat-context {
+  cursor: default;
+  pointer-events: none;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-context {
+    position: relative;
+  }
+
+  .k2b-ui button.k2b-chat-context::after {
+    content: "";
+    position: absolute;
+    inset-block: min(0px, calc((100% - 2.75rem) / 2));
+    inset-inline: min(0px, calc((100% - 2.75rem) / 2));
+  }
+
+  .k2b-ui button.k2b-chat-context:not(:first-child)::after {
+    inset-inline-start: 0;
+  }
+}
+
 .k2b-ui .k2b-chat-context small {
   opacity: 1;
 }
@@ -7065,6 +7097,16 @@
 .k2b-ui .k2b-chat-context__tooltip dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-chat-context__tooltip section {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-chat-context__tooltip p {
+  margin: 0;
+  color: color-mix(in srgb, currentColor 68%, transparent);
 }
 
 .k2b-ui .k2b-chat-context__tooltip .k2b-progress__track {
@@ -7407,6 +7449,15 @@
 
 .k2b-ui .k2b-chat-composer__submit {
   margin-left: auto;
+}
+
+/* On touch screens a footer control accepts taps up to 10 px above its box.
+   The footer then keeps 0.625rem from the message field, so those taps never
+   take the field's last pixel rows. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-composer__footer {
+    margin-top: 0.25rem;
+  }
 }
 
 .k2b-ui .k2b-chat-composer__icon-action,

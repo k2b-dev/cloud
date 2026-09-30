@@ -13,6 +13,7 @@ import {
   Paper,
   Placeholder,
   ProgressBar,
+  ProgressRing,
   RangePicker,
   StatCell,
   StatGrid,
@@ -279,12 +280,20 @@ const ProgressDemo = () => (
     description="Determinate progress in semantic tones and three compact sizes."
     code={`<ProgressBar value={72.4} label="Upload progress" tone="success" showValue />
 <ProgressBar value={38} label="Indexing" size="sm" showValue />
-<ProgressBar value={16} label="Storage limit" tone="danger" size="xs" showValue />`}
+<ProgressBar value={16} label="Storage limit" tone="danger" size="xs" showValue />
+<ProgressRing value={35} label="Usage" />
+<ProgressRing value={92} tone="warning" label="Usage, almost used up" />
+<ProgressRing value={100} tone="danger" label="Usage, used up" />`}
   >
     <div class="ui-demo-form-grid">
       <ProgressBar value={72.4} label="Upload progress" tone="success" showValue />
       <ProgressBar value={38} label="Indexing" showValue size="sm" />
       <ProgressBar value={16} label="Storage limit" tone="danger" showValue size="xs" />
+      <div class="flex items-center gap-3">
+        <ProgressRing value={35} label="Usage" />
+        <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
+        <ProgressRing value={100} tone="danger" label="Usage, used up" />
+      </div>
     </div>
   </DemoCard>
 );

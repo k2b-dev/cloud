@@ -19,6 +19,7 @@ const { NoticeCard } = await import("./NoticeCard");
 const { Paper } = await import("./Paper");
 const { default: Placeholder } = await import("./Placeholder");
 const { ProgressBar } = await import("./ProgressBar");
+const { ProgressRing } = await import("./ProgressRing");
 const { StatCell } = await import("./StatCell");
 const { StatGrid } = await import("./StatGrid");
 const { StatusBadge } = await import("./StatusBadge");
@@ -285,6 +286,25 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(value(row, "padding")).toBe(value(sidebarItem, "padding"));
     expect(value(row, "gap")).toBe(value(sidebarItem, "gap"));
     expect(value(icon, "width")).toBe(value(sidebarIcon, "width"));
+  });
+
+  test("progress ring draws a rounded, clamped share and marks warning and danger beyond colour", () => {
+    const ring = (props: Parameters<typeof ProgressRing>[0]) => renderToString(() => createComponent(ProgressRing, props));
+    const quiet = ring({ value: 41.6 });
+    expect(quiet).toContain('stroke-dasharray="42 100"');
+    expect(quiet).toContain('data-tone="info"');
+    expect(quiet).toContain('aria-hidden="true"');
+    expect(quiet).not.toContain("role=");
+    expect(quiet).not.toContain("k2b-progress-ring__mark");
+    expect(ring({ value: 140 })).toContain('stroke-dasharray="100 100"');
+    expect(ring({ value: Number.NaN })).toContain('stroke-dasharray="0 100"');
+    expect(ring({ value: 90, tone: "warning" })).toContain('<circle class="k2b-progress-ring__mark"');
+    expect(ring({ value: 100, tone: "danger" })).toContain('<path class="k2b-progress-ring__mark"');
+    const named = ring({ value: 35, label: "Storage used" });
+    expect(named).toContain('role="progressbar"');
+    expect(named).toContain('aria-label="Storage used"');
+    expect(named).toContain('aria-valuenow="35"');
+    expect(named).not.toContain("aria-hidden");
   });
 
   test("rounds and clamps determinate progress", () => {

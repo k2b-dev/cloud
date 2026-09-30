@@ -124,7 +124,7 @@ export const aiQuotas = {
           "quota_usage_unknown",
           "Chat usage could not be measured. Contact an administrator or wait for the quota reset.",
         );
-      if (b.used >= b.limit) throw new AiQuotaError("quota_exhausted", `Chat cost limit reached. Resets at ${b.resetsAt}.`);
+      if (b.used >= b.limit) throw new AiQuotaError("quota_exhausted", `Chat usage limit reached. Resets at ${b.resetsAt}.`);
     }
     return snapshot.balances.some((b) => !b.bypassed && b.limit !== null);
   },

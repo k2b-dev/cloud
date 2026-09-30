@@ -37,10 +37,37 @@ describe("@k2b/ui portable chat family", () => {
   });
 
   test("exposes one compound chat API without legacy runtime exports", () => {
-    expect(Object.keys(Chat)).toEqual(["Tasks", "Timeline", "Message", "Activity", "Composer", "ContextUsage", "ContextPopup"]);
+    expect(Object.keys(Chat)).toEqual([
+      "Tasks",
+      "Timeline",
+      "Message",
+      "Activity",
+      "Composer",
+      "ContextUsage",
+      "ContextPopup",
+      "ContextPanel",
+    ]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
       expect(legacyExport in publicUi).toBe(false);
     }
+  });
+
+  test("context popup defaults to the context trigger and shares its panel with application details", () => {
+    const popup = (extra: { class?: string }) =>
+      renderToString(() =>
+        createComponent(Chat.ContextPopup, {
+          "aria-label": "Usage: 35%",
+          ...extra,
+          get content() {
+            return createComponent(Chat.ContextPanel, { title: "Usage", children: "rows" });
+          },
+          children: "ring",
+        }),
+      );
+    const html = popup({});
+    expect(html).toMatch(/<button type="button"[^>]* class="k2b-chat-context ?"/);
+    expect(html).toContain('<div class="k2b-chat-context__tooltip"><strong>Usage</strong>rows</div>');
+    expect(popup({ class: "own" })).toMatch(/<button type="button"[^>]* class="own ?"/);
   });
 
   test("renders controlled composition, commands, attachments, models, and runtime actions", () => {

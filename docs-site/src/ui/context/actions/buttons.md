@@ -137,7 +137,8 @@ one-pixel strip from its edge, so lines need a little more than that reach. On
 touch devices, @k2b/ui's own button rows that wrap or stack keep 0.625rem
 between lines: `DetailPanel` primary actions (also below the header's identity
 row), `PdfPreview` actions, settings group and collection actions, image input
-actions, and wrapping or vertical toolbars. `DetailPanel.Action` rows sit
+actions, wrapping or vertical toolbars, and the chat composer's footer below its
+message field. `DetailPanel.Action` rows sit
 flush, so on touch devices each row grows to 44 px itself and its tap area
 keeps the row height. Menu items and select options follow the same rule; see
 [menus](/en/ui/actions/menus#touch-menus).
