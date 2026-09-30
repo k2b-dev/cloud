@@ -85,6 +85,12 @@ status and action row. The modal keeps the footer outside the scrolling panel;
 the application still owns dirty state, saving, discarding, and navigation
 guards.
 
+Only the panel and the category list scroll; the modal's frame stays in place.
+The panel is the containing block for a tab's content. Absolutely positioned
+content without a positioned ancestor of its own, such as a visually hidden
+input, therefore scrolls with the panel and comes into view when it takes
+focus.
+
 Use category titles, descriptions, and icons to provide visible context.
 
 ## Compose flat groups and collections
