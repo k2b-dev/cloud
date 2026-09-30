@@ -60,7 +60,11 @@ const isStandaloneInlineToken = (text: string, start: number, value: string): bo
 const createSafeRenderer = (options: MarkdownRenderOptions = {}): Renderer => {
   const renderer = new Renderer();
   const inlineTokens = normalizeInlineTokens(options.inlineTokens);
-  const renderText = renderer.text.bind(renderer);
+  const baseText = renderer.text.bind(renderer);
+  // marked flags text that follows an inline <pre>, <code>, <kbd> or <script>
+  // tag as already escaped, because it expects that tag to reach the output as
+  // HTML. The tag is escaped here, so the text after it is escaped as well.
+  const renderText: Renderer["text"] = (token) => baseText(token.type === "text" && token.escaped ? { ...token, escaped: false } : token);
   const renderTable = renderer.table.bind(renderer);
   renderer.table = (token: Tokens.Table) => {
     const table = renderTable(token);

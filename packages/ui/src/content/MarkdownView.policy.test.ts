@@ -26,6 +26,20 @@ test("Markdown resource policy suppresses images and limits link navigation with
   expect(isolated).toContain("&lt;img");
 });
 
+test("text after an inline pre, code, kbd or script tag stays escaped", () => {
+  for (const tag of ["pre", "code", "kbd", "script"]) {
+    const html = renderSafeMarkdown(
+      `x <${tag}> <svg/onload=alert(1)> <a/href=javascript:alert(1)>link &amp; "q"\n\n<img/src=x/onerror=alert(1)> next`,
+    );
+    expect(html).toContain(`&lt;${tag}&gt; &lt;svg/onload=alert(1)&gt; &lt;a/href=javascript:alert(1)&gt;link &amp; &quot;q&quot;`);
+    expect(html).toContain("&lt;img/src=x/onerror=alert(1)&gt; next");
+    expect(html.replace(/<\/?p>/g, "")).not.toContain("<");
+  }
+
+  const highlighted = renderSafeMarkdown("x <pre> @ada <svg/onload=alert(1)>", { inlineTokens: ["@ada"] });
+  expect(highlighted).toContain('<span class="k2b-content-markdown__inline-token">@ada</span> &lt;svg/onload=alert(1)&gt;');
+});
+
 test("empty Markdown table headers are omitted while alignment and emphasis survive", () => {
   const html = renderSafeMarkdown("| | |\n| --- | ---: |\n| Tip | **12,30 €** |\n| Total | **135,30 €** |");
   expect(html).not.toContain("<thead>");

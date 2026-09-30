@@ -313,6 +313,15 @@ describe("Notebook Book HTML", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
+  test("text after an inline pre, code, kbd or script tag cannot add markup", () => {
+    for (const tag of ["pre", "code", "kbd", "script"]) {
+      const { html } = render(`x <${tag}> <div/class="fixed inset-0">cover -> &amp;\n\n<h1/id="heading-x">next`);
+      expect(html).toContain(`&lt;${tag}&gt; &lt;div/class="fixed inset-0"&gt;cover -&gt; &amp;`);
+      expect(html).toContain('&lt;h1/id="heading-x"&gt;next');
+      expect(html.replace(/<\/?p>/g, "")).not.toContain("<");
+    }
+  });
+
   test("authored markers cannot replace generated output", () => {
     const { html } = render("NOTEBOOKBOOKSLOTMATH0END\n\n$x$");
     expect(html).toContain("NOTEBOOKBOOKSLOTMATH0END");
