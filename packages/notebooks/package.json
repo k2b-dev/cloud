@@ -43,7 +43,7 @@
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "d3-force": "3.0.0",
-    "diff": "8.0.4",
+    "diff": "9.0.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "katex": "catalog:",
