@@ -147,4 +147,71 @@ describe("PermissionEditor service accounts", () => {
       }
     });
   }
+
+  test("a kind this bundle does not know shows a key without a label", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    // Core may add a kind before an independently deployed app updates its bundle.
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({
+          items: [
+            {
+              kind: "service_account",
+              serviceAccount: {
+                id: "found-later",
+                name: "Found later",
+                kind: "added_later",
+                appId: null,
+                resourceType: null,
+                resourceId: null,
+              },
+            },
+          ],
+        }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["input", "click"]);
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[]}
+          allowAuthenticated={false}
+          allowServiceAccounts
+          grantAccess={async (principal, permission, display) => ({
+            id: "access-new",
+            principal,
+            permission,
+            createdAt: "2026-09-30T00:00:00.000Z",
+            ...display,
+          })}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.value = "fo";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => dom.root.querySelectorAll("[role=option]").length === 1, "the service-account result");
+      const option = dom.root.querySelector<HTMLButtonElement>("[role=option]")!;
+      expect(option.querySelector("i.ti-key")).not.toBeNull();
+      expect(option.querySelector("small")).toBeNull();
+
+      option.click();
+      const rowOf = () =>
+        Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes("Found later"));
+      await waitFor(() => rowOf() !== undefined, "the new row");
+      expect(rowOf()!.querySelector("i.ti-key")).not.toBeNull();
+      expect(rowOf()!.textContent).not.toContain("(");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
 });

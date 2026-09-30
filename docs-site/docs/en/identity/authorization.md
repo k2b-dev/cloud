@@ -425,7 +425,10 @@ from `resolveDisplayNames()`, or select `auth.service_accounts.kind` next to
 the name, both from the list and from `grantAccess`. A form that keeps new
 grants as a draft builds the entry from the `display` argument of
 `grantAccess`, which carries the kind the picker showed. An entry without a
-kind shows a key icon and no label.
+kind, or with a kind that the app's `@k2b/cloud` version does not know yet,
+shows a key icon and no label. A form that renders its own rows for
+`PrincipalPicker` selections, such as the AI cost limit rules, keeps
+`serviceAccountKind` from `onSelect` and uses the same icons and labels.
 
 On narrow screens the name and the label stay on one line. When both do not
 fit, each gets an equal share and the shorter one stays whole.

@@ -317,8 +317,14 @@ function AccessEntryRow(props: {
         <Show when={props.entry.principal.type === "public"}>
           <span class="truncate text-xs text-dimmed">({t().anyoneWithLink})</span>
         </Show>
-        <Show when={props.entry.principal.type === "service_account" && props.entry.serviceAccountKind}>
-          {(kind) => <span class="truncate text-xs text-dimmed">({serviceAccountKindDisplay(kind(), t()).label})</span>}
+        <Show
+          when={
+            props.entry.principal.type === "service_account" &&
+            props.entry.serviceAccountKind &&
+            serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label
+          }
+        >
+          {(label) => <span class="truncate text-xs text-dimmed">({label()})</span>}
         </Show>
       </div>
 

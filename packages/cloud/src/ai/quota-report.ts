@@ -18,7 +18,12 @@ export async function quotaAdminConfig() {
       ...rule,
       grants: rule.grants.map(() => {
         const grant = grants[offset++]!;
-        return { principal: grant.principal, limit: grant.limit, displayName: grant.displayName };
+        return {
+          principal: grant.principal,
+          limit: grant.limit,
+          displayName: grant.displayName,
+          serviceAccountKind: grant.serviceAccountKind,
+        };
       }),
     })),
   };

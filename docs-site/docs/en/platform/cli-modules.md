@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-09-28
+updated: 2026-09-30
 ---
 
 # Application CLI modules
@@ -553,7 +553,8 @@ explicitly enables them. Principal search uses the same Accounts endpoint as
 `PermissionEditor`.
 
 `access list` prints direct grants. Its table labels service accounts as
-`agent` or `service account` and hides grants whose `serviceAccountKind` is
+`agent`, `user-bound`, or `service account`, following the kind labels of
+`PermissionEditor`, and hides grants whose `serviceAccountKind` is
 `resource_bound`, which belong to resource API keys, unless the caller passes
 `--include-service-accounts`; those rows then show the type
 `resource-bound`. JSON output always contains every entry. Return entries

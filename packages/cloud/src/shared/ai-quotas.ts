@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PrincipalSchema } from "../contracts/shared";
+import { PrincipalSchema, ServiceAccountKindSchema } from "../contracts/shared";
 import { AiPriceSchema } from "./ai-costs";
 
 export const AiBackgroundBudgetSchema = z
@@ -22,6 +22,8 @@ export const AiQuotaRuleSchema = z
           .object({
             principal: PrincipalSchema.refine((p) => p.type !== "public", "Chat quotas require an identity."),
             displayName: z.string().max(300).optional(),
+            /** Presentation only, like `displayName`: service-account grants show the same kind as the principal picker. */
+            serviceAccountKind: ServiceAccountKindSchema.optional(),
             limit: AiPriceSchema.nullable(),
           })
           .strict(),

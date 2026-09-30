@@ -158,7 +158,11 @@ export default function AiQuotaRules(props: {
                 <Index each={rule().grants}>
                   {(grant, i) => (
                     <div class="ai-quota-grant">
-                      <AiQuotaIdentity type={grant().principal.type} label={grant().displayName || principalKey(grant().principal)} />
+                      <AiQuotaIdentity
+                        type={grant().principal.type}
+                        label={grant().displayName || principalKey(grant().principal)}
+                        kind={grant().serviceAccountKind}
+                      />
                       <div class="flex flex-wrap items-center gap-2">
                         <Select
                           class="w-32"
@@ -211,7 +215,12 @@ export default function AiQuotaRules(props: {
                   onSelect={(principal, display) =>
                     principal.type !== "public" &&
                     update((r) => {
-                      r.grants.push({ principal, displayName: display.displayName, limit: 10 });
+                      r.grants.push({
+                        principal,
+                        displayName: display.displayName,
+                        serviceAccountKind: display.serviceAccountKind,
+                        limit: 10,
+                      });
                     })
                   }
                 />
@@ -295,7 +304,11 @@ export default function AiQuotaRules(props: {
                   <For each={row.grants.slice(0, 2)} fallback={<span class="text-xs text-dimmed">{t().emptyGrants}</span>}>
                     {(g) => (
                       <div class="flex items-center justify-between gap-4">
-                        <AiQuotaIdentity type={g.principal.type} label={g.displayName || principalKey(g.principal)} />
+                        <AiQuotaIdentity
+                          type={g.principal.type}
+                          label={g.displayName || principalKey(g.principal)}
+                          kind={g.serviceAccountKind}
+                        />
                         <span class="text-xs tabular-nums text-dimmed">
                           {g.limit === null
                             ? t().unlimited
