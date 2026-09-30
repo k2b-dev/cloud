@@ -47,7 +47,8 @@ test("normal usage is a quiet ring with a name and value but no number on it", (
   expect(html).toContain('aria-label="Nutzung: 35\u00a0%"');
   expect(html).toContain('data-usage="info"');
   expect(trigger(html)).toContain('stroke-dasharray="35 100"');
-  expect(trigger(html).replace(/<[^>]*>/g, "")).toBe("");
+  // No text node inside the trigger: every tag is followed directly by another tag.
+  expect(trigger(html)).not.toMatch(/>[^<]/);
   expect(trigger(html)).not.toContain("k2b-progress-ring__mark");
   // One allowance needs no name; the panel says what was used and when it resets.
   expect(html).toContain("<strong>Nutzung</strong>");

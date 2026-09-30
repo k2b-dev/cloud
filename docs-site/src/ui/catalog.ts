@@ -288,7 +288,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 116;
+export const portableUiComponentCount = 117;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
