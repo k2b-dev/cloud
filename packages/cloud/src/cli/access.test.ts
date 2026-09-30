@@ -65,6 +65,7 @@ const serviceAccountEntries = (): AccessEntry[] => [
   serviceAccountEntry("33333333-3333-4333-8333-333333333333", "Release agent", "write", "agent"),
   serviceAccountEntry("44444444-4444-4444-8444-444444444444", "CI export", "read", "standalone"),
   serviceAccountEntry("55555555-5555-4555-8555-555555555555", "Roadmap API access", "write", "resource_bound"),
+  serviceAccountEntry("77777777-7777-4777-8777-777777777777", "Personal CLI key", "read", "user_delegated"),
   serviceAccountEntry("66666666-6666-4666-8666-666666666666", "Unknown Service Account", "read"),
 ];
 
@@ -150,7 +151,7 @@ describe("access CLI helper", () => {
     expect(lines).toEqual([JSON.stringify({ resource: { id: "resource-a", label: "resource-a" }, entries: state.entries })]);
   });
 
-  test("access list table shows standalone and agent service accounts and hides resource-bound ones", async () => {
+  test("access list table shows standalone, agent, and user-bound service accounts and hides resource-bound ones", async () => {
     const state = { entries: serviceAccountEntries(), grants: [] as Principal[], updates: [] as string[], revokes: [] as string[] };
     const mod = createModule(state, { allowServiceAccounts: true });
     const { ctx, tables } = createContext(["access", "list", "resource-a"], {}, () => Response.json({}));
@@ -160,6 +161,7 @@ describe("access CLI helper", () => {
     expect(tableSummary(tables[0])).toEqual([
       "Release agent | agent | write",
       "CI export | service account | read",
+      "Personal CLI key | user-bound | read",
       "Unknown Service Account | service account | read",
       "Valentin Kolb | user | read",
     ]);
@@ -176,6 +178,7 @@ describe("access CLI helper", () => {
       "Release agent | agent | write",
       "Roadmap API access | resource-bound | write",
       "CI export | service account | read",
+      "Personal CLI key | user-bound | read",
       "Unknown Service Account | service account | read",
       "Valentin Kolb | user | read",
     ]);

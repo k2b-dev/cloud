@@ -1249,12 +1249,16 @@ function AiSettingsPanel(props: {
     const stored = props.modelAccess[profile.id]?.entries;
     const display = accessDisplay.get(profile.id) ?? stored ?? [];
     return profile.assistantAccess
-      ? profile.assistantAccess.entries.map((entry) => ({
-          ...entry,
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-          displayName: display.find((item) => JSON.stringify(item.principal) === JSON.stringify(entry.principal))?.displayName,
-        }))
+      ? profile.assistantAccess.entries.map((entry) => {
+          const shown = display.find((item) => JSON.stringify(item.principal) === JSON.stringify(entry.principal));
+          return {
+            ...entry,
+            id: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+            displayName: shown?.displayName,
+            serviceAccountKind: shown?.serviceAccountKind,
+          };
+        })
       : (stored ?? accessEntriesFor());
   };
   const openProfile = (profile?: AiModelProfileDraft) =>

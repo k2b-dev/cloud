@@ -24,11 +24,11 @@ Every service account has one `kind`:
 | `standalone` | An integration with its own identity | Explicit grants on the account |
 | `agent` | A standalone account that surfaces as an agent | Explicit grants on the account |
 
-`agent` changes presentation only: pickers, entity search, and the Accounts app
-show a robot icon and the label "Agent" instead of a key. It carries no extra
-permission and no different token rules. Use it for coding agents and other
-automated workers that people should recognize in assignee lists, activity, and
-audit trails.
+`agent` changes presentation only: pickers, entity search, permission editor
+rows, and the Accounts app show a robot icon and the label "Agent" instead of a
+key. It carries no extra permission and no different token rules. Use it for
+coding agents and other automated workers that people should recognize in
+assignee lists, activity, and audit trails.
 
 The request contract does not change. A standalone account authenticates as a
 `service_account` actor with `delegatedUser: null`, and its `accessSubject` is
@@ -118,9 +118,9 @@ cld spaces access search-principals "Release agent" --kind service_account
 
 The REST API takes the same principal:
 `{"principal":{"type":"service_account","serviceAccountId":"<id>"},"permission":"write"}`.
-The account's access entries carry `serviceAccountKind`, and
-`cld spaces access list "Roadmap"` shows its grant with type `agent` or
-`service account`; see
+The account's access entries carry `serviceAccountKind`, which the permission
+editor shows next to the name, and `cld spaces access list "Roadmap"` shows its
+grant with type `agent` or `service account`; see
 [Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
 Two limits apply to every request, and the lower one wins:

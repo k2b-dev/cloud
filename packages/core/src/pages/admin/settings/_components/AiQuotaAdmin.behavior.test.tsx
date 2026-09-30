@@ -1,10 +1,35 @@
 import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
-import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import { delegateEvents, isServer, render } from "solid-js/web";
+import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
 import { quotaFixture } from "./ai-quota-fixture";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+const waitFor = async (condition: () => boolean, label: string) => {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (condition()) return;
+    await Bun.sleep(10);
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+};
+/** happy-dom has no Popover API; the principal picker's result list opens through it. */
+const installPopoverApi = (dom: DomTestHarness) => {
+  const prototype = dom.window.HTMLElement.prototype as unknown as Record<string, unknown>;
+  const open = new WeakSet<object>();
+  const matches = prototype.matches as (this: Element, selector: string) => boolean;
+  Object.assign(prototype, {
+    matches(this: Element, selector: string) {
+      return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+    },
+    showPopover(this: object) {
+      open.add(this);
+    },
+    hidePopover(this: object) {
+      open.delete(this);
+    },
+    scrollIntoView() {},
+  });
+};
 // The first import runs the Solid DOM transform over the island's whole source graph, which dominates this
 // file and took longer than the 5 s test timeout on a busy machine. Load it once, outside any test, so the
 // timeout measures behavior. The @k2b/ui browser build needs a document while its modules evaluate.
@@ -149,6 +174,103 @@ if (!isServer)
       dom.cleanup();
     }
   });
+if (!isServer)
+  for (const [locale, userBound, edit, apply] of [
+    ["en", "User-bound service account", "Edit rule", "Apply to draft"],
+    ["de", "Benutzergebundenes Dienstkonto", "Regel bearbeiten", "In Entwurf übernehmen"],
+  ] as const)
+    test(`${locale}: rule grants show a service account with the kind the principal picker shows`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      const { Rules, ui } = modules!;
+      const { dialogCore, LocaleProvider } = ui;
+      delegateEvents(["input", "click"]);
+      const fetch = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async (input: unknown) =>
+            String(input).includes("/api/accounts/entities")
+              ? Response.json({
+                  items: [
+                    {
+                      kind: "service_account",
+                      serviceAccount: {
+                        id: "22222222-2222-4222-8222-222222222222",
+                        name: "Personal CLI key",
+                        kind: "user_delegated",
+                        appId: null,
+                        resourceType: null,
+                        resourceId: null,
+                      },
+                    },
+                  ],
+                })
+              : Response.json({ used: 0, reserved: 0, unknown: 0, stoppedAt: null, unit: "EUR" }),
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+      const agentGrant = {
+        principal: { type: "service_account" as const, serviceAccountId: "11111111-1111-4111-8111-111111111111" },
+        displayName: "Release agent",
+        serviceAccountKind: "agent" as const,
+        limit: 10,
+      };
+      const dispose = render(
+        () =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(Rules, {
+                config: {
+                  enabled: true,
+                  revision: 1,
+                  rules: [{ scope: "*", hours: 24, anchor: "1970-01-01T00:00:00.000Z", grants: [agentGrant] }],
+                },
+                models: [],
+              });
+            },
+          }),
+        dom.root,
+      );
+      const identity = (root: ParentNode, name: string) =>
+        Array.from(root.querySelectorAll<HTMLElement>("div.gap-3")).find((el) => el.querySelector(".font-medium")?.textContent === name);
+      const shows = (root: ParentNode, name: string) => {
+        const el = identity(root, name);
+        return { icon: el?.querySelector("i")?.className.split(" ")[1], kind: el?.querySelector(".text-xs")?.textContent };
+      };
+      const button = (root: ParentNode, label: string) =>
+        Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent === label)!;
+      try {
+        await tick();
+        expect(shows(dom.root, "Release agent")).toEqual({ icon: "ti-robot", kind: "Agent" });
+
+        button(dom.root, edit).click();
+        await tick();
+        const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]') ?? dom.document.body;
+        expect(shows(dialog, "Release agent")).toEqual({ icon: "ti-robot", kind: "Agent" });
+
+        const input = dialog.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = "cl";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const option = () =>
+          Array.from(dialog.querySelectorAll<HTMLButtonElement>("[role=option]")).find((o) => o.textContent?.includes("Personal CLI key"));
+        await waitFor(() => option() !== undefined, "the service-account result");
+        expect(option()!.querySelector("i.ti-user-key")).not.toBeNull();
+        expect(option()!.querySelector("small")?.textContent).toBe(userBound);
+
+        option()!.click();
+        await waitFor(() => identity(dialog, "Personal CLI key") !== undefined, "the new grant row");
+        expect(shows(dialog, "Personal CLI key")).toEqual({ icon: "ti-user-key", kind: userBound });
+
+        button(dialog, apply).click();
+        await tick();
+        expect(shows(dom.root, "Personal CLI key")).toEqual({ icon: "ti-user-key", kind: userBound });
+      } finally {
+        dialogCore.close();
+        dispose();
+        fetch.mockRestore();
+        dom.cleanup();
+      }
+    });
 if (!isServer)
   test("reset refreshes the open modal and preserves typed grant explanations", async () => {
     const dom = createDomTestHarness();

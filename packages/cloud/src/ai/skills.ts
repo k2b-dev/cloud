@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type SQL, type SQLQuery, sql } from "bun";
-import { AuthenticatedPrincipalSchema } from "../contracts/shared";
+import { AuthenticatedPrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
 import type { AccessSubject } from "../server";
 import {
   buildAccessPrincipalCondition,
@@ -58,6 +58,8 @@ export type AiSkillAccess = {
   principal: Principal;
   permission: AiSkillPermission;
   displayName?: string;
+  /** Kind of a `service_account` principal; presentation only. */
+  serviceAccountKind?: ServiceAccountKind;
   createdAt: string;
 };
 
@@ -128,6 +130,7 @@ type SkillAccessRow = {
   permission: AiSkillPermission;
   created_at: Date | string;
   display_name: string | null;
+  service_account_kind: ServiceAccountKind | null;
 };
 
 type SkillSummaryRow = Pick<SkillRow, "id" | "short_id" | "name" | "description" | "revision" | "created_at" | "updated_at"> & {
@@ -282,7 +285,8 @@ const listSkillAccess = async (skillId: string, db: SQL = sql): Promise<AiSkillA
     SELECT skill_access.short_id, access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
            access.permission, access.created_at,
            COALESCE(users.display_name, groups.name, service_accounts.name,
-             CASE WHEN access.authenticated_only THEN 'All authenticated users' ELSE 'Public' END) AS display_name
+             CASE WHEN access.authenticated_only THEN 'All authenticated users' ELSE 'Public' END) AS display_name,
+           service_accounts.kind AS service_account_kind
     FROM ai.skill_access skill_access
     JOIN auth.access access ON access.id = skill_access.access_id
     LEFT JOIN auth.users users ON users.id = access.user_id
@@ -305,6 +309,7 @@ const listSkillAccess = async (skillId: string, db: SQL = sql): Promise<AiSkillA
             : { type: "public" },
     permission: row.permission,
     displayName: row.display_name ?? undefined,
+    serviceAccountKind: row.service_account_kind ?? undefined,
     createdAt: iso(row.created_at),
   }));
 };

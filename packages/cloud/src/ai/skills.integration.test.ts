@@ -256,6 +256,35 @@ databaseSuite()("aiSkills (integration)", () => {
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid,${otherId}::uuid)`;
     }
   });
+  test("returns an agent grant with its kind so the permission editor can name it", async () => {
+    const userId = await insertUser("agent-kind");
+    const owner = { type: "user" as const, userId };
+    const [agent] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${`AI Skill agent ${crypto.randomUUID()}`}, 'agent') RETURNING id
+    `;
+    const principal = { type: "service_account" as const, serviceAccountId: agent!.id };
+    const skill = await aiSkills.create({
+      subject: owner,
+      name: `agent-kind-${crypto.randomUUID()}`,
+      description: "Agent kind fixture",
+      instructions: "Summarize the supplied text.",
+    });
+    try {
+      expect(await aiSkills.grantAccess(skill.id, owner, { principal, permission: "read" })).toMatchObject({
+        principal,
+        serviceAccountKind: "agent",
+      });
+      expect((await aiSkills.listAccess(skill.id, owner))?.find((entry) => entry.principal.type === "service_account")).toMatchObject({
+        principal,
+        serviceAccountKind: "agent",
+      });
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${agent!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("seeds one ordinary Skill once, then leaves permissions, edits, and deletion to admins", async () => {
     const userId = await insertUser("seeded");
     const subject = { type: "user" as const, userId };

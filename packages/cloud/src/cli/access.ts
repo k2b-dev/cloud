@@ -238,6 +238,7 @@ const entryTypeLabel = (entry: AccessEntry): string => {
   if (entry.principal.type !== "service_account") return entry.principal.type;
   if (entry.serviceAccountKind === "agent") return "agent";
   if (entry.serviceAccountKind === "resource_bound") return "resource-bound";
+  if (entry.serviceAccountKind === "user_delegated") return "user-bound";
   return "service account";
 };
 

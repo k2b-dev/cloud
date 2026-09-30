@@ -29,7 +29,7 @@ const load = async () => {
 };
 const modules = isServer ? undefined : await load();
 
-async function setup() {
+async function setup(extra: Record<string, unknown> = {}) {
   const dom = createDomTestHarness();
   const { Form, dialogCore } = modules!;
   const requests: string[] = [];
@@ -66,6 +66,7 @@ async function setup() {
             group: "ai",
           },
         ],
+        ...extra,
       }),
     dom.root,
   );
@@ -268,6 +269,38 @@ describe("Provider dialog", () => {
       await ui.choose("Provider", "Anthropic");
       expect(ui.document.body.textContent).toContain("No key stored yet.");
       expect(ui.document.body.textContent).not.toContain("New key in draft · not saved yet.");
+      expect(ui.requests).toHaveLength(0);
+    } finally {
+      ui.cleanup();
+    }
+  });
+  test("a reopened access draft still names a granted agent by its kind", async () => {
+    const agent = {
+      id: crypto.randomUUID(),
+      principal: { type: "service_account", serviceAccountId: crypto.randomUUID() },
+      permission: "read",
+      createdAt: "2026-09-30T00:00:00.000Z",
+      displayName: "Release agent",
+      serviceAccountKind: "agent",
+    };
+    const ui = await setup({ aiModelAccess: { chat: { revision: 1, entries: [agent] } } });
+    const agentRow = () =>
+      Array.from(ui.document.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) =>
+        row.textContent?.includes("Release agent"),
+      );
+    try {
+      ui.section("Access");
+      expect(agentRow()?.textContent).toContain("(Agent)");
+      // A new profile ID turns the stored grants into an access draft.
+      ui.section("Connection");
+      ui.fill("Profile ID", "chat-renamed");
+      ui.button("Apply to draft").click();
+      await tick();
+      ui.button("Edit profile").click();
+      await tick();
+      ui.section("Access");
+      expect(agentRow()?.querySelector("i.ti-robot")).not.toBeNull();
+      expect(agentRow()?.textContent).toContain("(Agent)");
       expect(ui.requests).toHaveLength(0);
     } finally {
       ui.cleanup();

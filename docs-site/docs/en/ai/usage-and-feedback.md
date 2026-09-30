@@ -5,7 +5,7 @@ section: AI
 order: 1065
 description: Inspect AI reference costs, configure Assistant budgets and a background emergency stop, and investigate workflow costs.
 tags: [ai, usage, feedback, administration]
-updated: 2026-09-16
+updated: 2026-09-30
 ---
 
 # Usage and feedback
@@ -248,6 +248,10 @@ Rules carry `scope`, `hours`, `anchor` and `grants` with a cost `limit` (`null`
 means unlimited). `authenticated` matches signed-in users and service accounts.
 Use `user`/`userId`, `group`/`groupId`, or `service_account`/`serviceAccountId` for
 specific identities. Group membership follows the normal permission rules.
+Exported grants also carry `displayName` and, for service accounts,
+`serviceAccountKind`. Both are display metadata: Cloud resolves them again on
+every read, so the rule table shows an agent or a user-bound account the same way
+as the principal picker, and editing them changes nothing.
 
 Resets are idempotent by request UUID. Reuse the UUID after an uncertain response;
 a new intentional reset needs a new UUID. Quote `*` to avoid shell expansion.
