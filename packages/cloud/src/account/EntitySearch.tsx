@@ -2,6 +2,8 @@ import { timed } from "@k2b/stdlib/solid";
 import { Button, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { createSignal, For, Show } from "solid-js";
+import { accessMessages } from "../access/messages";
+import { serviceAccountKindDisplay } from "../access/service-account-kind";
 import { groupDisplayName } from "../shared/account-display";
 import { CloudAvatar } from "./Avatar";
 
@@ -115,6 +117,8 @@ const EntitySearch = (props: EntitySearchProps) => {
   const [groups, setGroups] = createSignal<ApiGroup[]>([]);
   const [serviceAccounts, setServiceAccounts] = createSignal<ApiServiceAccount[]>([]);
   const [loading, setLoading] = createSignal(false);
+  const serviceAccountKind = (serviceAccount: ApiServiceAccount) =>
+    serviceAccountKindDisplay(serviceAccount.kind, accessMessages.resolve([locale()]).t);
 
   // Defensive dev-warning: at least one principal kind must be enabled,
   // otherwise the component is decorative-only and the caller probably
@@ -290,16 +294,13 @@ const EntitySearch = (props: EntitySearchProps) => {
             <For each={serviceAccounts()}>
               {(serviceAccount) => (
                 <ResultRow
-                  icon={serviceAccount.kind === "agent" ? "ti-robot" : "ti-key"}
+                  icon={serviceAccountKind(serviceAccount).icon}
                   title={serviceAccount.name}
                   subtitle={
-                    serviceAccount.kind === "user_delegated"
-                      ? "User-bound service account"
-                      : serviceAccount.kind === "agent"
-                        ? "Agent"
-                        : serviceAccount.kind === "standalone"
-                          ? "Service account"
-                          : [serviceAccount.appId, serviceAccount.resourceType, serviceAccount.resourceId].filter(Boolean).join(" · ")
+                    // Resource-bound accounts often share a name; their binding tells them apart.
+                    serviceAccount.kind === "resource_bound"
+                      ? [serviceAccount.appId, serviceAccount.resourceType, serviceAccount.resourceId].filter(Boolean).join(" · ")
+                      : serviceAccountKind(serviceAccount).label
                   }
                   disabled={props.disabled}
                   onSelect={() =>

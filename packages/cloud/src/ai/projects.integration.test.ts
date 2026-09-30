@@ -212,6 +212,30 @@ databaseSuite()("aiProjects (integration)", () => {
     }
   });
 
+  test("returns an agent grant with its kind so the permission editor can name it", async () => {
+    const userId = await insertUser("agent-kind");
+    const owner = { type: "user" as const, userId };
+    const [agent] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind) VALUES (${`AI Project agent ${crypto.randomUUID()}`}, 'agent') RETURNING id
+    `;
+    const principal = { type: "service_account" as const, serviceAccountId: agent!.id };
+    const project = await aiProjects.create({ subject: owner, name: "Agent kind" });
+    try {
+      expect(await aiProjects.grantAccess(project.id, owner, { principal, permission: "write" })).toMatchObject({
+        principal,
+        serviceAccountKind: "agent",
+      });
+      expect((await aiProjects.listAccess(project.id, owner))?.find((entry) => entry.principal.type === "service_account")).toMatchObject({
+        principal,
+        serviceAccountKind: "agent",
+      });
+    } finally {
+      await aiProjects.delete(project.id, owner);
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${agent!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("resolves authenticated principals and rejects public grants", async () => {
     const creatorId = await insertUser("matrix-creator");
     const nestedUserId = await insertUser("matrix-nested");

@@ -2,10 +2,11 @@ import { mutation } from "@k2b/stdlib/solid";
 import { IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { CloudAvatar } from "../account/Avatar";
-import type { AccessEntry, PermissionLevel, Principal } from "../contracts/shared";
+import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
 import { groupDisplayName } from "../shared/account-display";
 import { accessMessages } from "./messages";
 import PrincipalPicker from "./PrincipalPicker";
+import { serviceAccountKindDisplay } from "./service-account-kind";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public API
@@ -31,8 +32,13 @@ type PermissionEditorProps = {
   canEdit?: boolean;
 
   /** Grant access. The caller closes over the resource id. The optional
-   *  display metadata lets deferred form drafts retain the selected name. */
-  grantAccess: (principal: Principal, permission: GrantableLevel, display?: { displayName: string }) => Promise<AccessEntry>;
+   *  display metadata lets deferred form drafts retain the selected name
+   *  and, for service accounts, the kind shown in the row. */
+  grantAccess: (
+    principal: Principal,
+    permission: GrantableLevel,
+    display?: { displayName: string; serviceAccountKind?: ServiceAccountKind },
+  ) => Promise<AccessEntry>;
 
   /** Update an existing entry's permission level. */
   updateAccess: (accessId: string, permission: GrantableLevel) => Promise<void>;
@@ -122,14 +128,14 @@ const getEntryDisplayName = (entry: AccessEntry, t: ReturnType<typeof accessMess
   return entry.principal.groupId;
 };
 
-const getPrincipalIcon = (principal: Principal): string => {
-  switch (principal.type) {
+const getPrincipalIcon = (entry: AccessEntry, t: ReturnType<typeof accessMessages.resolve>["t"]): string => {
+  switch (entry.principal.type) {
     case "user":
       return "ti-user";
     case "group":
       return "ti-users-group";
     case "service_account":
-      return "ti-key";
+      return entry.serviceAccountKind ? serviceAccountKindDisplay(entry.serviceAccountKind, t).icon : "ti-key";
     case "authenticated":
       return "ti-lock-open-2";
     case "public":
@@ -162,8 +168,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   }
 
   const grantMut = mutation.create({
-    mutation: async (data: { principal: Principal; permission: GrantableLevel; display: { displayName: string } }) =>
-      props.grantAccess(data.principal, data.permission, data.display),
+    mutation: async (data: {
+      principal: Principal;
+      permission: GrantableLevel;
+      display: { displayName: string; serviceAccountKind?: ServiceAccountKind };
+    }) => props.grantAccess(data.principal, data.permission, data.display),
     onSuccess: (newEntry) => {
       setEntries([...entries(), newEntry as AccessEntry]);
     },
@@ -288,7 +297,7 @@ function AccessEntryRow(props: {
         when={props.entry.principal.type === "user"}
         fallback={
           <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-            <i class={`ti ${getPrincipalIcon(props.entry.principal)} text-sm`} />
+            <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
           </div>
         }
       >
@@ -301,11 +310,15 @@ function AccessEntryRow(props: {
         />
       </Show>
 
-      {/* Display name */}
-      <div class="min-w-0 flex-1">
+      {/* Display name. Name and label share one line so every row keeps its height on phones:
+          when both do not fit, each gets an equal share and the shorter one stays whole. */}
+      <div class="grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1">
         <span class="truncate text-sm">{displayName()}</span>
         <Show when={props.entry.principal.type === "public"}>
-          <span class="ml-1 text-xs text-dimmed">({t().anyoneWithLink})</span>
+          <span class="truncate text-xs text-dimmed">({t().anyoneWithLink})</span>
+        </Show>
+        <Show when={props.entry.principal.type === "service_account" && props.entry.serviceAccountKind}>
+          {(kind) => <span class="truncate text-xs text-dimmed">({serviceAccountKindDisplay(kind(), t()).label})</span>}
         </Show>
       </div>
 

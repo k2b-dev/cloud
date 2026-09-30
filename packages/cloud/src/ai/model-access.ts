@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import { z } from "zod";
-import { type AccessEntry, type Principal, PrincipalSchema } from "../contracts/shared";
+import { type AccessEntry, type Principal, PrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
 import { type AccessSubject, buildAccessPrincipalCondition, createAccess } from "../server/services/access";
 import { toPgTextArray } from "../services/postgres";
 import type { AiSettingsError } from "./types";
@@ -114,11 +114,13 @@ export const aiModelAccess = {
         service_account_id: string | null;
         authenticated_only: boolean | null;
         display_name: string | null;
+        service_account_kind: ServiceAccountKind | null;
       }[]
     >`
       SELECT resource.profile_id, resource.revision, access.id, access.created_at,
         access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
-        COALESCE(users.display_name, groups.name, service_accounts.name) AS display_name
+        COALESCE(users.display_name, groups.name, service_accounts.name) AS display_name,
+        service_accounts.kind AS service_account_kind
       FROM ai.model_access_resources resource LEFT JOIN ai.model_access model ON model.profile_id = resource.profile_id
       LEFT JOIN auth.access access ON access.id = model.access_id
       LEFT JOIN auth.users users ON users.id = access.user_id
@@ -146,6 +148,7 @@ export const aiModelAccess = {
         permission: "read",
         createdAt: row.created_at.toISOString(),
         ...(row.display_name ? { displayName: row.display_name } : {}),
+        ...(row.service_account_kind ? { serviceAccountKind: row.service_account_kind } : {}),
       });
     }
     return Object.fromEntries(result);

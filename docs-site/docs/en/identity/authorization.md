@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-09-26
+updated: 2026-09-30
 ---
 
 # Resource authorization
@@ -386,7 +386,8 @@ must not display raw keys or own secret lifecycle.
 
 For assignment forms that need identity selection without permission levels,
 use `PrincipalPicker` from `@k2b/cloud/access/ui`. Its `onSelect` callback returns
-a `Principal` and display name; the consumer owns persistence and authorization.
+a `Principal` and display metadata: `displayName` and, for service accounts,
+`serviceAccountKind`. The consumer owns persistence and authorization.
 Pass `existing` to exclude already selected principals. Users and groups are
 searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
@@ -402,3 +403,29 @@ used for both new grants and existing rows. For example, return `["read"]` for
 public recipients and `["read", "admin"]` for users and groups. A single allowed
 level renders as a fixed badge. Enforce the same restriction in the resource's
 service; the editor does not authorize requests.
+
+### Show service-account kinds
+
+Editor rows and picker results show one icon and label per service-account
+kind:
+
+| Kind | Icon | Label |
+| --- | --- | --- |
+| `agent` | `ti-robot` | Agent |
+| `standalone` | `ti-key` | Service account |
+| `resource_bound` | `ti-box` | Resource-bound service account |
+| `user_delegated` | `ti-user-key` | User-bound service account |
+
+Picker and entity-search results for resource-bound accounts show the app,
+resource type, and resource ID instead of the label, because several such
+accounts often share a name.
+
+A row reads the kind from the entry's `serviceAccountKind`. Return entries
+from `resolveDisplayNames()`, or select `auth.service_accounts.kind` next to
+the name, both from the list and from `grantAccess`. A form that keeps new
+grants as a draft builds the entry from the `display` argument of
+`grantAccess`, which carries the kind the picker showed. An entry without a
+kind shows a key icon and no label.
+
+On narrow screens the name and the label stay on one line. When both do not
+fit, each gets an equal share and the shorter one stays whole.

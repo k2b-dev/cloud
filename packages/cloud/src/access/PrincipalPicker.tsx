@@ -1,7 +1,8 @@
 import { Combobox, type ComboboxOption, useLocale } from "@k2b/ui";
-import type { Principal } from "../contracts/shared";
+import type { Principal, ServiceAccountKind } from "../contracts/shared";
 import { groupDisplayName } from "../shared/account-display";
 import { accessMessages } from "./messages";
+import { serviceAccountKindDisplay } from "./service-account-kind";
 
 export const principalKey = (p: Principal) =>
   p.type === "user"
@@ -19,7 +20,7 @@ type Entity =
       serviceAccount: {
         id: string;
         name: string;
-        kind: string;
+        kind: ServiceAccountKind;
         appId: string | null;
         resourceType: string | null;
         resourceId: string | null;
@@ -32,13 +33,15 @@ export default function PrincipalPicker(props: {
   allowAuthenticated?: boolean;
   allowServiceAccounts?: boolean;
   disabled?: boolean;
-  onSelect: (principal: Principal, display: { displayName: string }) => void;
+  /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
+  onSelect: (principal: Principal, display: { displayName: string; serviceAccountKind?: ServiceAccountKind }) => void;
 }) {
   const locale = useLocale(),
     t = () => accessMessages.resolve([locale()]).t;
-  let principals = new Map<string, Principal>();
+  type Entry = { principal: Principal; label: string; icon: string; description?: string; serviceAccountKind?: ServiceAccountKind };
+  let selectable = new Map<string, Entry>();
   const load = async (search: string, signal: AbortSignal): Promise<ComboboxOption[]> => {
-    const entries: { principal: Principal; label: string; icon: string; description?: string }[] = [];
+    const entries: Entry[] = [];
     if (props.allowAuthenticated !== false)
       entries.push({ principal: { type: "authenticated" }, label: t().allUsers, icon: "ti ti-lock-open-2" });
     if (props.allowPublic) entries.push({ principal: { type: "public" }, label: t().public, icon: "ti ti-world" });
@@ -71,26 +74,27 @@ export default function PrincipalPicker(props: {
             icon: "ti ti-users-group",
             description: e.group.description ?? undefined,
           });
-        else
+        else {
+          const account = e.serviceAccount;
+          const kind = serviceAccountKindDisplay(account.kind, t());
           entries.push({
-            principal: { type: "service_account", serviceAccountId: e.serviceAccount.id },
-            label: e.serviceAccount.name,
+            principal: { type: "service_account", serviceAccountId: account.id },
+            label: account.name,
+            // Resource-bound accounts often share a name; their binding tells them apart.
             description:
-              e.serviceAccount.kind === "user_delegated"
-                ? t().userBoundServiceAccount
-                : e.serviceAccount.kind === "agent"
-                  ? t().agentServiceAccount
-                  : e.serviceAccount.kind === "standalone"
-                    ? t().standaloneServiceAccount
-                    : [e.serviceAccount.appId, e.serviceAccount.resourceType, e.serviceAccount.resourceId].filter(Boolean).join(" · "),
-            icon: e.serviceAccount.kind === "agent" ? "ti ti-robot" : "ti ti-key",
+              account.kind === "resource_bound"
+                ? [account.appId, account.resourceType, account.resourceId].filter(Boolean).join(" · ")
+                : kind.label,
+            icon: `ti ${kind.icon}`,
+            serviceAccountKind: account.kind,
           });
+        }
       }
     }
     const existing = new Set(props.existing?.map(principalKey));
     const filtered = entries.filter((e) => !existing.has(principalKey(e.principal)));
     if (signal.aborted) return [];
-    principals = new Map(filtered.map((e) => [principalKey(e.principal), e.principal]));
+    selectable = new Map(filtered.map((e) => [principalKey(e.principal), e]));
     return filtered.map((e) => ({ id: principalKey(e.principal), label: e.label, icon: e.icon, description: e.description }));
   };
   return (
@@ -107,8 +111,8 @@ export default function PrincipalPicker(props: {
       }
       fetchData={load}
       onSelect={(option) => {
-        const principal = principals.get(option.id);
-        if (principal) props.onSelect(principal, { displayName: option.label });
+        const entry = selectable.get(option.id);
+        if (entry) props.onSelect(entry.principal, { displayName: entry.label, serviceAccountKind: entry.serviceAccountKind });
       }}
     />
   );

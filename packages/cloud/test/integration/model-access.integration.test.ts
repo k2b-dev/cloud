@@ -86,6 +86,12 @@ suite("Assistant model grants using normal Cloud access", () => {
     );
     await expect(aiModelAccess.assertAllowed("limited", subject())).resolves.toBeUndefined();
     await expect(aiModelAccess.assertAllowed("limited", { type: "service_account", serviceAccountId })).resolves.toBeUndefined();
+    // The permission editor names the account by its kind.
+    expect((await aiModelAccess.listForAdmin()).limited?.entries.find((entry) => entry.principal.type === "service_account")).toMatchObject(
+      {
+        serviceAccountKind: "resource_bound",
+      },
+    );
     await expect(aiModelAccess.assertAllowed("limited", { type: "user", userId: outsiderId })).rejects.toMatchObject({
       aiError: { code: "model_access_denied" },
     });
