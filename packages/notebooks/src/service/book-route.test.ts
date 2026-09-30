@@ -157,6 +157,33 @@ describe("authorized Book refresh routes", () => {
       expect(encoded).not.toContain(secret);
   });
 
+  test("lists the start page first and follows a changed start page on the next refresh", async () => {
+    const calls = fixture();
+    const page = (shortId: string, title: string, children: notes.NoteTreeNode[] = []): notes.NoteTreeNode => ({
+      ...note,
+      id: `uuid-${shortId}`,
+      shortId,
+      title,
+      children,
+    });
+    calls.tree.mockResolvedValue([
+      page("note02", "Kapitel 10"),
+      page("note03", "Kapitel 2", [page("note04", "Überblick"), page("note05", "Ablauf")]),
+      page("note01", "Willkommen"),
+    ]);
+    const titles = async () => {
+      const result = await loadBookRoute({ ...params, locale: "de" });
+      if (result.kind !== "ok") throw new Error(result.kind);
+      return result.snapshot.tree.map((node) => [node.title, ...node.children.map((child) => child.title)]);
+    };
+    expect(await titles()).toEqual([["Kapitel 2", "Ablauf", "Überblick"], ["Kapitel 10"], ["Willkommen"]]);
+    calls.get.mockResolvedValue({ ...notebook, homepageNoteId: "uuid-note01", homepageNoteShortId: "note01" });
+    expect(await titles()).toEqual([["Willkommen"], ["Kapitel 2", "Ablauf", "Überblick"], ["Kapitel 10"]]);
+    // A start page below another page is listed once, at the top.
+    calls.get.mockResolvedValue({ ...notebook, homepageNoteId: "uuid-note04", homepageNoteShortId: "note04" });
+    expect(await titles()).toEqual([["Überblick"], ["Kapitel 2", "Ablauf"], ["Kapitel 10"], ["Willkommen"]]);
+  });
+
   test("a valid note URL cannot render a note from another notebook", async () => {
     const calls = fixture();
     calls.content.mockResolvedValue({ ...note, notebookId: "44444444-4444-4444-8444-444444444444" });

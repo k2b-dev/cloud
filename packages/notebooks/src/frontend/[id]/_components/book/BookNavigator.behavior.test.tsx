@@ -71,13 +71,13 @@ describe("Book navigation tree", () => {
       chevron: (id: string) => row(id).querySelector<HTMLElement>("[data-k2b-nav-tree-toggle]")!,
       expanded: (id: string) => item(id).getAttribute("aria-expanded"),
       /** A live change elsewhere reloads the current note and delivers a fresh snapshot of it. */
-      refresh: async (noteId: string) => {
+      refresh: async (noteId: string, nextTree = tree) => {
         const covered = dispatchWorkspaceEvent(
           { v: 1, type: "workspace.invalidated", notebookId: "book01", reason: "bulk", scopes: ["tree"] },
           "1-0",
         );
         await flush();
-        requests.at(-1)!.resolve(Response.json(snapshot(noteId)));
+        requests.at(-1)!.resolve(Response.json({ ...snapshot(noteId), tree: nextTree }));
         await covered;
       },
       cleanup: () => {
@@ -225,6 +225,32 @@ describe("Book navigation tree", () => {
       await sheet.close();
       sheet = await openSheet();
       expect(sheet.expanded("Guide")).toBe("false");
+      await sheet.close();
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a changed reading order reaches the sidebar and the phone sheet, which list the same pages in the same order", async () => {
+    const app = await mount("note03");
+    const sidebar = () =>
+      Array.from(document.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]"), (entry) => entry.getAttribute("data-k2b-nav-tree-id"));
+    const sheetPages = () =>
+      Array.from(document.querySelectorAll<HTMLAnchorElement>('dialog .k2b-navigation a[href*="/notes/"]'), (link) =>
+        new URL(link.href).pathname.split("/").at(-1),
+      );
+    try {
+      expect(sidebar()).toEqual(["note01", "note03"]);
+      // The server now lists "Setup" as the start page: first, at the top level, and no longer below "Guide".
+      await app.refresh("note03", [
+        { id: "note02", title: "Setup", children: [] },
+        { id: "note03", title: "Glossary", children: [] },
+        { id: "note01", title: "Guide", children: [] },
+      ]);
+      await flush();
+      expect(sidebar()).toEqual(["note02", "note03", "note01"]);
+      const sheet = await openSheet();
+      expect(sheetPages()).toEqual(["note02", "note03", "note01"]);
       await sheet.close();
     } finally {
       app.cleanup();

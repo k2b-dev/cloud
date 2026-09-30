@@ -3,6 +3,7 @@ import { renderToString } from "solid-js/web";
 import BookTagContent from "../frontend/[id]/_components/book/BookTagContent";
 import { type BookSnapshot, bookNavigationTarget } from "../frontend/[id]/_components/book/book-state";
 import { bookMessages } from "../frontend/[id]/_components/book/messages";
+import { orderBookTree } from "../lib/book-tree";
 import { loadBookNote } from "./book";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
@@ -45,12 +46,10 @@ export const loadBookRoute = async (params: {
     notes.getTree({ notebookId: params.notebookId }),
     tags.listForNotebook({ notebookId: params.notebookId }),
   ]);
-  const projectTree = (nodes: typeof tree): BookSnapshot["tree"] =>
-    nodes.map((node) => ({ id: node.shortId, title: node.title, children: projectTree(node.children) }));
   const common = {
     href: `${target.pathname}${target.search}${target.hash}`,
     notebookName: notebook.name,
-    tree: projectTree(tree),
+    tree: orderBookTree(tree, { id: (node) => node.shortId, homeId: notebook.homepageNoteShortId, locale: params.locale }),
     tags: tagList,
     canWrite: permission === "write" || permission === "admin",
     cursor,

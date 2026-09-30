@@ -5,6 +5,8 @@ import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import { notebooksService } from "../../service";
+import * as notebookStore from "../../service/notebooks";
+import * as noteStore from "../../service/notes";
 import "./_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
@@ -129,4 +131,60 @@ test("an empty book shows its sidebar placeholder as one line below the pages he
   expect(placeholder?.text).toBe("Noch keine Seiten");
   // Screen readers get the empty line, not an empty tree next to it.
   expect(await select(html, '[role="tree"]')).toEqual([]);
+});
+
+test("a book page is server-rendered with the start page first and the other pages by title", async () => {
+  const page = (shortId: string, title: string, parentId: string | null = null) => ({
+    id: `uuid-${shortId}`,
+    shortId,
+    notebookId: notebook.id,
+    parentId,
+    title,
+    position: 0,
+    hasChildren: false,
+    historyIncomplete: false,
+    yjsSnapshotAt: null,
+    contentMd: `# ${title}`,
+    yjsSnapshot: null,
+    createdBy: user.id,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lockedAt: null,
+  });
+  const home = page("note04", "Überblick", "uuid-note03");
+  const withHome = { ...notebook, homepageNoteId: home.id, homepageNoteShortId: home.shortId };
+  spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
+  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(withHome));
+  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(withHome));
+  spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("read"));
+  spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
+  spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
+  spies.push(
+    spyOn(notebooksService.note, "getTree").mockResolvedValue([
+      { ...page("note02", "Kapitel 10"), children: [] },
+      { ...page("note03", "Kapitel 2"), hasChildren: true, children: [{ ...home, children: [] }] },
+      { ...page("note01", "Anhang"), children: [] },
+    ]),
+  );
+  spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(home));
+  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue(home));
+  spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.get("/app/notebooks/:id/notes/:noteId", ...handler);
+  const response = await app.request("https://cloud.example.test/app/notebooks/book01/notes/note04?mode=book", {
+    headers: { "accept-language": "de" },
+  });
+  expect(response.status).toBe(200);
+  const rows = await select(await response.text(), '[role="tree"] [data-k2b-nav-tree-id]');
+
+  // The start page lives below "Kapitel 2" and is still the first row, listed once.
+  expect(rows.map((row) => row.attributes["data-k2b-nav-tree-id"])).toEqual(["note04", "note01", "note03", "note02"]);
 });
