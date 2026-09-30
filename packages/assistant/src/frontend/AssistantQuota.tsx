@@ -2,7 +2,7 @@ import type { AiChatQuotaBalance, AiChatQuotaSnapshot } from "@k2b/cloud/shared"
 import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Chat, ProgressBar, ProgressRing, useLocale } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { assistantApi } from "../api/client";
 import { quotaText } from "./quota-messages";
 
@@ -77,13 +77,16 @@ export default function AssistantQuota(props: {
   const [mounted, setMounted] = createSignal(false);
   onMount(() => setMounted(true));
 
+  // Without a current reading the indicator shows a dashed circle: an empty ring would read as "nothing used".
+  const noReading = () => <i class="ti ti-circle-dashed" aria-hidden="true" />;
+
   return (
     <Show
       when={props.snapshot}
       fallback={
         // Usage is not known yet: keep the indicator's box so the composer does not move once it is.
         <span class="k2b-chat-context" data-usage="loading" aria-hidden="true">
-          <ProgressRing value={0} />
+          {noReading()}
         </span>
       }
     >
@@ -139,9 +142,12 @@ export default function AssistantQuota(props: {
             </Chat.ContextPanel>
           }
         >
-          <Show when={failed() || !state().unlimited} fallback={<i class="ti ti-infinity" aria-hidden="true" />}>
-            <ProgressRing value={failed() ? 0 : (state().usedPercent ?? 0)} tone={failed() ? "info" : toneOf(state().usedPercent)} />
-          </Show>
+          <Switch fallback={<ProgressRing value={state().usedPercent ?? 0} tone={toneOf(state().usedPercent)} />}>
+            <Match when={failed()}>{noReading()}</Match>
+            <Match when={state().unlimited}>
+              <i class="ti ti-infinity" aria-hidden="true" />
+            </Match>
+          </Switch>
         </Chat.ContextPopup>
       </Show>
     </Show>

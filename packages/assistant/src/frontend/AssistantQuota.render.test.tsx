@@ -30,7 +30,8 @@ const trigger = (html: string) => html.slice(html.indexOf("<button"), html.index
 test("loading reserves the indicator box without a control or a value", () => {
   for (const html of [render(undefined), render(null), render(null, new Error("offline"))]) {
     expect(html).toContain('<span class="k2b-chat-context" data-usage="loading" aria-hidden="true">');
-    expect(html).toContain("k2b-progress-ring");
+    expect(html).toContain("ti ti-circle-dashed");
+    expect(html).not.toContain("k2b-progress-ring");
     expect(html).not.toContain("<button");
     expect(html).not.toContain('role="dialog"');
   }
@@ -110,9 +111,17 @@ test("usage that cannot be measured is not shown as a share", () => {
 test("a failed refresh never presents a cached share as current", () => {
   const html = render({ enabled: true, balances: [finite("*", 20)] }, new Error("offline"));
   expect(html).toContain('aria-label="Nutzung: Nicht verfügbar"');
+  expect(html).toContain('data-usage="unavailable"');
   expect(html).toContain("Die Nutzung konnte nicht geladen werden.");
   expect(html).not.toContain("20\u00a0%");
-  expect(trigger(html)).toContain('stroke-dasharray="0 100"');
+  // The trigger shows a dashed circle, never the empty ring of a real 0 %, and not the last known state either.
+  const face = (markup: string) => trigger(markup).replace(/^<button[^>]*>/, "");
+  const zero = face(render({ enabled: true, balances: [finite("*", 0)] }));
+  expect(zero).toContain('stroke-dasharray="0 100"');
+  expect(face(html)).toContain("ti ti-circle-dashed");
+  expect(face(html)).not.toContain("k2b-progress-ring");
+  expect(face(html)).not.toBe(zero);
+  expect(face(render({ enabled: true, balances: [unlimited("*")] }, new Error("offline")))).toBe(face(html));
 });
 
 test("users never see money, costs, or a refresh control, in either language", () => {

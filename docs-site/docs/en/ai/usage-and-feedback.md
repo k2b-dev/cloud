@@ -169,9 +169,11 @@ retained and checked again after a reset or window change.
 Users never see amounts, limits, or the unit. Beside the model selection the
 Assistant shows a small ring for the share of the allowance that is used, and an
 infinity sign when usage is unlimited. The ring changes tone and gains a mark
-from 80 percent and again when the allowance is used up. Its panel is called
-**Usage** and lists, per allowance, the used percentage and when it resets; the
-name appears only when more than one allowance applies to the selected model.
+from 80 percent and again when the allowance is used up. When the usage cannot
+be loaded, a dashed circle replaces the ring, so a failed refresh never reads as
+nothing used. Its panel is called **Usage** and lists, per allowance, the used
+percentage and when it resets; the name appears only when more than one
+allowance applies to the selected model.
 The indicator refreshes when the panel opens, after a message, on focus, and
 every 30 seconds while visible. Disabled limits are invisible. Server admission
 remains authoritative and rejected submissions preserve the user's draft.
@@ -287,6 +289,9 @@ only the caller's allowances and accessible unpriced or free model IDs. Each
 allowance is `{ scope, unlimited, usedPercent, resetsAt }`: `usedPercent` is a
 whole number from 0 to 100 that reaches 100 only when the allowance is used up,
 and is `null` when the allowance is unlimited or its usage cannot be measured.
+A value below 100 does not promise that the next message is admitted: admission
+also rejects a call that the rest of the allowance cannot cover, such as a long
+prompt close to the limit.
 The response carries no amounts, limits, or unit, and omits grant identities and
 inaccessible models. It takes no target-user parameter and uses `no-store`.
 `AiChatQuotaSnapshot` is browser-safe. Amounts stay on the administrator

@@ -35,7 +35,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -329,9 +329,11 @@ it use a `dl` with one `div` per `dt`/`dd` row, an `xs` `ProgressBar`, and a sho
 
 An icon-only trigger, such as `<i class="ti ti-infinity" />`, takes the same
 box as a `ProgressRing`, so one can replace the other without moving the
-composer. While the state is not known yet, render
-`<span class="k2b-chat-context" aria-hidden="true">` with an empty ring: it
-keeps the trigger's box and is not interactive.
+composer. An empty ring means 0 %, so do not use one for a value you do not
+have: show `<i class="ti ti-circle-dashed" />` when the value could not be
+loaded. While the state is not known yet, render
+`<span class="k2b-chat-context" aria-hidden="true">` with the same dashed
+circle: it keeps the trigger's box and is not interactive.
 
 ### Composer commands and mentions
 

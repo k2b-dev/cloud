@@ -81,6 +81,17 @@ test("opening the panel refreshes usage, and new data swaps the ring in place", 
     expect(trigger.getAttribute("aria-label")).toBe("Usage: 100%, used up");
     expect(trigger.querySelector(".k2b-progress-ring")?.getAttribute("data-tone")).toBe("danger");
     expect(popup.querySelector("time")?.getAttribute("title")).toBeTruthy();
+
+    // A failed refresh replaces the ring with the dashed circle in the same trigger, not with an empty ring.
+    load.mockRejectedValue(new Error("offline"));
+    trigger.click();
+    trigger.click();
+    await tick();
+    expect(dom.root.querySelector("button.k2b-chat-context")).toBe(trigger);
+    expect(trigger.getAttribute("aria-label")).toBe("Usage: Not available");
+    expect(trigger.querySelector(".k2b-progress-ring")).toBeNull();
+    expect(trigger.querySelector(".ti-circle-dashed")).not.toBeNull();
+    expect(popup.textContent).toContain("Usage could not be loaded.");
   } finally {
     dispose();
     load.mockRestore();

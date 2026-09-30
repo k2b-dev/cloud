@@ -161,7 +161,8 @@ test("own view carries usage shares only: no amounts, limits, or unit", async ()
       unlimitedModels: [],
       balances: [
         { scope: "*", unlimited: false, usedPercent: 35, resetsAt },
-        // Only a used-up allowance reads 100, so the ring shows "used up" exactly when the server blocks.
+        // Only a used-up allowance reads 100, so "used up" never shows while calls are still admitted.
+        // Admission can reject earlier, when the rest cannot cover the next call.
         { scope: "near", unlimited: false, usedPercent: 99, resetsAt },
         { scope: "over", unlimited: false, usedPercent: 100, resetsAt },
         { scope: "zero", unlimited: false, usedPercent: 100, resetsAt },

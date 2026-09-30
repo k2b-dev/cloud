@@ -74,6 +74,7 @@ export const AiQuotaUsersQuerySchema = z
 /**
  * One own chat allowance as the browser sees it. It carries no amounts, limits, or unit:
  * `usedPercent` is a whole number from 0 to 100 and reaches 100 only when the allowance is used up.
+ * Below 100 the server can still reject a call that the rest of the allowance cannot cover.
  * It is `null` when the allowance is unlimited or its usage cannot be measured right now.
  */
 export type AiChatQuotaBalance = {
