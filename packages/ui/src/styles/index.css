@@ -65,8 +65,6 @@
   --k2b-selection: rgb(29 78 216 / 0.35);
   --k2b-focus-ring: var(--k2b-accent-500);
   --k2b-focus-width: 2px;
-  /* Where a focus outline sits relative to the control; clipping containers move it inside. */
-  --k2b-focus-offset: 2px;
   --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 45%, var(--k2b-surface));
   --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
   --k2b-info-surface: var(--k2b-accent-50);
@@ -178,6 +176,13 @@
 
 .k2b-ui :where(button, a) {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Where a focus outline sits relative to its control. The placement is
+   context, not theme: only the outermost root sets it, so a `.k2b-ui` root
+   nested inside a clipping container keeps the inset placement it inherits. */
+.k2b-ui:not(.k2b-ui *) {
+  --k2b-focus-offset: 2px;
 }
 
 /* A focus outline sits outside its control, where a container that clips its
@@ -5282,7 +5287,11 @@
 }
 
 .k2b-ui .k2b-date-trigger__clear:focus-visible,
-.k2b-ui .k2b-date-durations button:focus-visible,
+.k2b-ui .k2b-date-durations button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
 .k2b-ui .k2b-date-apply:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-on-fill, var(--k2b-focus-ring));
   outline-offset: min(var(--k2b-focus-offset) - 1px, calc(var(--k2b-focus-offset) * 2));
@@ -7866,6 +7875,10 @@
 .k2b-ui .k2b-tabs__list button:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+/* A line tab overlaps the list's bottom border by 1px, which the scrolling list clips, so its ring sits 1px deeper. */
+.k2b-ui .k2b-tabs[data-orientation="horizontal"][data-variant="line"] .k2b-tabs__list [role="tab"]:focus-visible {
+  outline-offset: calc(-1 * var(--k2b-focus-width) - 1px);
 }
 .k2b-ui .k2b-tabs__panel {
   min-width: 0;

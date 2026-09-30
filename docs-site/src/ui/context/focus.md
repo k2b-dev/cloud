@@ -20,9 +20,9 @@ The shared containers that clip their content already do this:
 `Disclosure`, menus and picker popovers, input fields, `Tabs`, `DataTable`,
 `Pagination`, widgets, `StatGrid`, and the calendar, code, file, Markdown, chart,
 image, template, and chat views that scroll or clip. This includes controls
-you render inside these containers, such as a link in a table cell. Such a
-control can keep the browser's default ring; the container still draws it
-inside.
+you render inside these containers, such as a link in a table cell, and
+controls in a `.k2b-ui` root nested inside them. Such a control can keep the
+browser's default ring; the container still draws it inside.
 
 A filled control, such as a primary or danger button, a checked checkbox, or
 a checked switch, draws its inside ring in the color of its label or check

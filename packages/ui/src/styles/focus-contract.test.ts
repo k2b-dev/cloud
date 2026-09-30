@@ -28,7 +28,9 @@ describe("@k2b/ui focus and color contract", () => {
     const css = await Bun.file(resolve(stylesDir, "index.css")).text();
     const root = css.match(/\.k2b-ui\s*\{([\s\S]*?)\}/)?.[1] ?? "";
     expect(root).toContain("--k2b-focus-width: 2px;");
-    expect(root).toContain("--k2b-focus-offset: 2px;");
+    // Only the outermost root places rings, so a nested root keeps an inset placement it inherits.
+    expect(css.match(/--k2b-focus-offset: 2px;/g)).toHaveLength(1);
+    expect(rules.find((rule) => rule.body.includes("--k2b-focus-offset: 2px;"))?.selector).toBe(".k2b-ui:not(.k2b-ui *)");
 
     // The pane separator highlights its handle line with a glow; it is not a ring around a control.
     const handleGlow = ".k2b-ui .k2b-panes__separator:focus-visible > span";

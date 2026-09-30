@@ -19,9 +19,11 @@ const { Disclosure } = await import("../actions/Disclosure");
 const { Dropdown } = await import("../actions/Dropdown");
 const { RemoveButton } = await import("../actions/RemoveButton");
 const { SpotlightButton } = await import("../actions/SpotlightSearch");
+const { Tabs } = await import("../actions/Tabs");
 const { default: DataTable } = await import("../content/DataTable");
 const { Pagination } = await import("../content/Pagination");
 const { Checkbox } = await import("../inputs/Checkbox");
+const { DateRangePicker } = await import("../inputs/DatePicker");
 const { Switch } = await import("../inputs/Switch");
 const { default: TextInput } = await import("../inputs/TextInput");
 const { default: AppWorkspace } = await import("../layout/AppWorkspace");
@@ -275,14 +277,43 @@ const panels = () =>
     createComponent(Pagination, { currentPage: 2, totalPages: 5, baseUrl: "/members" }),
   ]);
 
+/** The selected tab rests on the list's border with its underline, where that list clips it. */
+const tabs = () =>
+  html(() =>
+    (["horizontal", "vertical"] as const).flatMap((orientation) =>
+      (["line", "pill"] as const).map((variant) =>
+        createComponent(Tabs, {
+          value: "tasks",
+          onValueChange: () => {},
+          ariaLabel: `${orientation} ${variant} views`,
+          orientation,
+          variant,
+          options: [
+            { value: "tasks", label: "Tasks", panel: "Open tasks", onClose: () => {} },
+            { value: "calendar", label: "Calendar", onClose: () => {} },
+          ],
+        }),
+      ),
+    ),
+  );
+
+/** A `.k2b-ui` root nested flush in a clipping container, as a page embedding a workspace renders one. */
+const nested = () =>
+  `<div class="k2b-focus-inset" style="overflow:hidden"><div class="k2b-ui" style="display:flex;overflow:hidden">${html(() => [
+    text("Save", "primary"),
+    text("Cancel"),
+  ])}</div></div>`;
+
 const scenes: Record<string, { markup: () => string; frame: string }> = {
   workspace: { markup: workspace, frame: "height:36rem" },
+  tabs: { markup: tabs, frame: "display:grid;gap:1rem" },
   table: { markup: table, frame: "height:12rem" },
   rail: { markup: rail, frame: "width:3rem;height:9rem" },
   widgets: { markup: widgets, frame: "display:grid;gap:1rem" },
   "detail panel": { markup: () => html(detail), frame: "height:24rem;display:flex" },
   settings: { markup: settings, frame: "height:30rem" },
   "disclosure and pagination": { markup: panels, frame: "display:grid;gap:1rem" },
+  "nested root": { markup: nested, frame: "display:grid" },
 };
 
 const page = (body: string) =>
@@ -390,7 +421,8 @@ const walk = async (target: Page): Promise<Problem[]> => {
       let reach = Number.NEGATIVE_INFINITY;
       let outline = "";
       if (style.outlineStyle !== "none" && px(style.outlineWidth) > 0) {
-        reach = px(style.outlineWidth) + px(style.outlineOffset);
+        // Each engine paints the browser's `auto` ring at its own width, but none more than 2px beyond the offset.
+        reach = (style.outlineStyle === "auto" ? 2 : px(style.outlineWidth)) + px(style.outlineOffset);
         outline = style.outlineColor;
       }
       for (const shadow of style.boxShadow === "none" ? [] : style.boxShadow.split(/,(?![^(]*\))/)) {
@@ -398,7 +430,8 @@ const walk = async (target: Page): Promise<Problem[]> => {
         const [x = 0, y = 0, blur = 0, spread = 0] = lengths;
         reach = Math.max(reach, /\binset\b/.test(shadow) ? 0 : blur + spread + Math.max(Math.abs(x), Math.abs(y)));
       }
-      const edge = Math.max(reach, 0);
+      // A ring drawn deeper than its own width ends inside the box.
+      const edge = Number.isFinite(reach) ? reach : 0;
       return {
         rect: { left: box.left - edge, top: box.top - edge, right: box.right + edge, bottom: box.bottom + edge },
         /** The colour of an outline drawn inside the control, where it sits on the control's own fill. */
@@ -436,12 +469,20 @@ const walk = async (target: Page): Promise<Problem[]> => {
           const painted = ring(host);
           const edges = painted.rect;
           for (const clipper of clippers(host)) {
-            const box = clipper.element.getBoundingClientRect();
+            const element = clipper.element;
+            const box = element.getBoundingClientRect();
+            const border = getComputedStyle(element);
+            const left = px(border.borderLeftWidth);
+            const top = px(border.borderTopWidth);
+            const right = px(border.borderRightWidth);
+            const bottom = px(border.borderBottomWidth);
+            // Client sizes round to whole pixels, so they only measure the scrollbars.
+            const [outerWidth, outerHeight] = element instanceof HTMLElement ? [element.offsetWidth, element.offsetHeight] : [0, 0];
             const clip = {
-              left: box.left + clipper.element.clientLeft,
-              top: box.top + clipper.element.clientTop,
-              right: box.left + clipper.element.clientLeft + clipper.element.clientWidth,
-              bottom: box.top + clipper.element.clientTop + clipper.element.clientHeight,
+              left: box.left + left,
+              top: box.top + top,
+              right: box.right - right - Math.max(0, Math.round(outerWidth - element.clientWidth - left - right)),
+              bottom: box.bottom - bottom - Math.max(0, Math.round(outerHeight - element.clientHeight - top - bottom)),
             };
             const cut = [
               clipper.x && edges.left < clip.left - 0.01 ? `left ${(clip.left - edges.left).toFixed(2)}px` : "",
@@ -493,7 +534,7 @@ const walk = async (target: Page): Promise<Problem[]> => {
 };
 
 describe("@k2b/ui focus rings inside clipping containers", () => {
-  for (const [viewport, options] of Object.entries(viewports)) {
+  for (const options of Object.values(viewports)) {
     for (const [scene, { markup: render, frame }] of Object.entries(scenes)) {
       test(`${scene} at ${options.viewport.width} px: every ring stays visible and focus never moves a box`, async () => {
         const target = await browser.newPage(options);
@@ -506,6 +547,63 @@ describe("@k2b/ui focus rings inside clipping containers", () => {
       });
     }
   }
+});
+
+describe("@k2b/ui focus ring colours inside clipping containers", () => {
+  test("only filled controls draw their ring in their label colour", async () => {
+    const target = await browser.newPage(viewports.desktop);
+    try {
+      const picker = html(() =>
+        createComponent(ScrollArea, {
+          get children() {
+            return createComponent(DateRangePicker, {
+              label: "Window",
+              clearable: true,
+              withTime: true,
+              value: { start: "2026-07-27T07:00:00.000Z", end: "2026-07-27T08:00:00.000Z" },
+              dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
+              durationPresets: [
+                { label: "30 min", minutes: 30 },
+                { label: "1 hour", minutes: 60 },
+              ],
+            });
+          },
+        }),
+      );
+      await target.setContent(page(picker));
+      await target.evaluate(() => document.querySelector<HTMLElement>(".k2b-date-popover")?.showPopover());
+      // A key press first, so focus from script shows its ring like focus from the keyboard.
+      await target.keyboard.press("Shift");
+      const rings = await target.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = getComputedStyle(document.body).getPropertyValue("--k2b-focus-ring").trim();
+        document.body.append(probe);
+        const focusColour = getComputedStyle(probe).color;
+        probe.remove();
+        return [
+          ".k2b-date-trigger__clear",
+          ".k2b-date-durations button",
+          ".k2b-date-durations button[aria-pressed='true']",
+          ".k2b-date-apply",
+        ].map((selector) => {
+          const control = document.querySelector<HTMLElement>(selector)!;
+          control.focus();
+          const style = getComputedStyle(control);
+          const colour =
+            style.outlineColor === focusColour ? "focus colour" : style.outlineColor === style.color ? "label colour" : style.outlineColor;
+          return [control.textContent?.trim() || control.getAttribute("aria-label"), control.matches(":focus-visible"), colour];
+        });
+      });
+      expect(rings).toEqual([
+        ["Clear date", true, "focus colour"],
+        ["30 min", true, "focus colour"],
+        ["1 hour", true, "focus colour"],
+        ["Apply", true, "label colour"],
+      ]);
+    } finally {
+      await target.close();
+    }
+  });
 });
 
 describe("@k2b/ui focus rings outside clipping containers", () => {
