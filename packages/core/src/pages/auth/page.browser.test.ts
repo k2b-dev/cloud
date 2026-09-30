@@ -31,10 +31,13 @@ beforeEach(() => {
       async (key) => (key === "freeipa.enable" ? true : key === "app.contact_email" ? "help@cloud.example.test" : undefined) as never,
     ),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
-    spyOn(cloud, "listLegalLinks").mockResolvedValue([
-      { label: "Imprint", href: "/legal/imprint" },
-      { label: "Privacy", href: "/legal/privacy" },
-    ] as never),
+    // All three legal pages, as Core lists them: with the language switch, the German footer takes two rows on a phone.
+    spyOn(cloud, "listLegalLinks").mockImplementation(async (locale) =>
+      (locale === "de" ? ["Impressum", "Datenschutz", "Nutzungsbedingungen"] : ["Imprint", "Privacy", "Terms"]).map((label, index) => ({
+        label,
+        href: ["/impressum", "/legal/privacy", "/legal/terms"][index]!,
+      })),
+    ),
     spyOn(services.appApproval, "config").mockResolvedValue({
       issuer: "https://cloud.example.test",
       appOrigin: "https://auth.example.test",
@@ -49,31 +52,39 @@ afterEach(() => {
 
 let browser: Browser;
 let css: string;
+let stylesheets: Record<string, string>;
 beforeAll(async () => {
   // As the page template does: the layer order first, then Core's stylesheet, then the global one.
   const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
-  css = [
-    "@layer properties, theme, base, components, utilities;",
-    ...(await Promise.all(built.map((build) => build.outputs[0]!.text()))),
-  ].join("\n");
+  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
+  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
+  // The stylesheets the page template links, by path.
+  stylesheets = {
+    "/public/fonts.css": await Bun.file(join(publicDir, "fonts.css")).text(),
+    "/public/tabler-icons.css": await Bun.file(join(publicDir, "tabler-icons.css")).text(),
+    "/public/core/app.css": appCss!,
+    "/public/global.css": globalCss!,
+  };
   browser = await chromium.launch();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
 });
 
-/** The server-rendered sign-in page body. */
-const body = async (query: string, locale: string) => {
+/** The server-rendered sign-in document. */
+const serverDocument = async (query: string, locale: string) => {
   const app = new Hono().get("/auth/login", ...handler);
   const response = await app.request(`https://cloud.example.test/auth/login${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
   expect(response.status).toBe(200);
-  const html = await response.text();
-  return /<body[^>]*>([\s\S]*)<\/body>/.exec(html)![1]!;
+  return await response.text();
 };
+
+/** The server-rendered sign-in page body. */
+const body = async (query: string, locale: string) => /<body[^>]*>([\s\S]*)<\/body>/.exec(await serverDocument(query, locale))![1]!;
 
 type View = { width: number; height: number; touch: boolean };
 type Options = { locale?: "en" | "de"; dark?: boolean; defaultFontSize?: number };
@@ -147,12 +158,77 @@ const measure = async (view: View, query: string, options: Options = {}) => {
           hit: hitRows(link),
         })),
         submit: Array.from(document.querySelectorAll("main button[type=submit]")).map(box),
+        languageSwitch: box(document.querySelector(".auth-language-trigger")!),
         cardTop: box(card).top,
         // The page without its centering slack: where the footer ends, plus the page padding.
         contentHeight: box(document.querySelector("footer")!).bottom - box(card).top + 32,
         scrollWidth: document.documentElement.scrollWidth,
         scrollHeight: document.documentElement.scrollHeight,
       };
+    });
+  } finally {
+    await tab.close();
+  }
+};
+
+/**
+ * Every element's box in the first frame after DOMContentLoaded and once the page and its fonts have loaded,
+ * plus Chromium's layout-shift entries. The tab loads the complete server response with the stylesheets and
+ * fonts its template links; the islands' scripts are left out, so only the fonts can move anything.
+ */
+const firstFrameAndLoad = async (view: View, query: string, locale: "en" | "de") => {
+  const html = await serverDocument(query, locale);
+  // The template preloads the faces that Core's font stylesheet names, under the same URLs.
+  const preloads = [...html.matchAll(/<link rel="preload" href="([^"]+)" as="font"/g)].map((match) => match[1]!);
+  for (const href of preloads.filter((href) => href.startsWith("/public/fonts/")))
+    expect(stylesheets["/public/fonts.css"]).toContain(`url(${href})`);
+  // A preload makes the fonts download next to the stylesheets. Answering the stylesheets once every preloaded
+  // font is served makes that order deterministic; without a preload the fonts are only requested after layout,
+  // and the stylesheets go out after a pause instead.
+  const served = new Map(preloads.map((href) => [href, Promise.withResolvers<void>()]));
+  const fontsFirst = Promise.race([Promise.all([...served.values()].map((font) => font.promise)), Bun.sleep(2_000)]);
+  const tab = await browser.newPage({
+    viewport: { width: view.width, height: view.height },
+    deviceScaleFactor: 2,
+    isMobile: view.touch,
+    hasTouch: view.touch,
+  });
+  try {
+    await tab.route(`${origin}/**`, async (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname === "/auth/login") return route.fulfill({ contentType: "text/html", body: html });
+      const stylesheet = stylesheets[pathname];
+      if (stylesheet !== undefined) {
+        await fontsFirst;
+        return route.fulfill({ contentType: "text/css", body: stylesheet });
+      }
+      if (!pathname.startsWith("/public/")) return route.fulfill({ status: 404, body: "" });
+      await route.fulfill({ path: join(root, pathname) });
+      served.get(pathname)?.resolve();
+    });
+    await tab.addInitScript(() => {
+      const state = window as unknown as { firstFrame?: string[]; shifts: number[]; boxes: () => string[] };
+      state.shifts = [];
+      state.boxes = () =>
+        Array.from(document.body.querySelectorAll("*")).map((element) => {
+          const { left, top, width, height } = element.getBoundingClientRect();
+          return `${element.tagName.toLowerCase()}.${element.classList[0] ?? ""} "${element.textContent?.trim().slice(0, 24)}" ${left},${top} ${width}x${height}`;
+        });
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) state.shifts.push((entry as PerformanceEntry & { value: number }).value);
+      }).observe({ type: "layout-shift", buffered: true });
+      document.addEventListener("DOMContentLoaded", () => requestAnimationFrame(() => (state.firstFrame = state.boxes())));
+    });
+    await tab.goto(`${origin}/auth/login${query}`, { waitUntil: "load" });
+    await tab.waitForFunction(() => "firstFrame" in window);
+    return await tab.evaluate(async () => {
+      await document.fonts.ready;
+      const state = window as unknown as { firstFrame: string[]; shifts: number[]; boxes: () => string[] };
+      const fonts: string[] = [];
+      document.fonts.forEach((font) => {
+        if (font.status === "loaded") fonts.push(`${font.family} ${font.weight}`);
+      });
+      return { firstFrame: state.firstFrame, loaded: state.boxes(), shifts: state.shifts, fonts };
     });
   } finally {
     await tab.close();
@@ -271,14 +347,26 @@ describe("sign-in page in a browser", () => {
       const page = await measure(phone, forms.password, { locale });
       const [reset, ...footer] = page.textLinks;
       expect([reset!.name, ...footer.map((link) => link.name)], locale).toEqual([
-        locale === "en" ? "Reset password" : "Passwort zurücksetzen",
-        "Imprint",
-        "Privacy",
+        ...(locale === "en"
+          ? ["Reset password", "Imprint", "Privacy", "Terms"]
+          : ["Passwort zurücksetzen", "Impressum", "Datenschutz", "Nutzungsbedingungen"]),
       ]);
       for (const link of footer) {
         expect(link.hit.contiguous, `${locale} ${link.name}`).toBe(true);
-        expect(link.hit.bottom - link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(44);
+        // The German footer wraps: the language switch takes a second row, 4 px below the links, and its own
+        // hit area wins where they meet. The link right above it keeps the 24 px of WCAG's minimum target size;
+        // 44 px for both rows would need another 40 px of page height.
+        const aboveSwitch =
+          link.left < page.languageSwitch.right && link.right > page.languageSwitch.left && link.bottom <= page.languageSwitch.top;
+        expect(link.hit.bottom - link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(aboveSwitch ? 24 : 44);
       }
+      // The footer links' hit areas reach 14 px up and stop short of the secondary actions', which reach 4 px down.
+      const actionsBottom = Math.max(...page.actions.map((action) => action.bottom));
+      for (const link of footer) expect(link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(actionsBottom + 4);
+      expect(
+        footer.filter((link) => link.bottom <= page.languageSwitch.top).length,
+        `${locale}: links in a row above the language switch`,
+      ).toBe(locale === "de" ? 3 : 0);
       // The reset link sits between the password field and the sign-in button.
       const password = page.fields.at(-1)!;
       const submit = page.submit[0]!;
@@ -290,6 +378,18 @@ describe("sign-in page in a browser", () => {
     // A mouse keeps the link's own box.
     const [reset] = (await measure(desktop, forms.password)).textLinks;
     expect(reset!.hit.bottom - reset!.hit.top).toBeLessThanOrEqual(Math.ceil(reset!.height) + 1);
+  }, 60_000);
+
+  test("shows its final layout in the first frame instead of moving when the fonts arrive", async () => {
+    for (const view of [phone, desktop]) {
+      for (const locale of ["en", "de"] as const) {
+        const context = `${view.width} ${locale}`;
+        const page = await firstFrameAndLoad(view, forms.password, locale);
+        expect(page.fonts, context).toEqual(expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600"]));
+        expect(page.loaded, context).toEqual(page.firstFrame);
+        expect(page.shifts, context).toEqual([]);
+      }
+    }
   }, 60_000);
 
   test("moves focus through the action grid row by row", async () => {
