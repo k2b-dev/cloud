@@ -457,7 +457,6 @@ function AssistantSkillReferencesEditor(props: {
           fallback={
             <Placeholder
               state="empty"
-              surface="paper"
               variant="panel"
               icon="ti ti-files"
               title={text("No extra info yet")}

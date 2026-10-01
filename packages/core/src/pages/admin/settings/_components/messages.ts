@@ -9,6 +9,7 @@ export const settingsMessages = i18n.define({
       skillProjectUnavailable: "Project without access to its details",
       documentation: "Documentation",
       documentationNewTab: "Documentation (English, opens in a new tab)",
+      sectionDocumentationNewTab: ({ section }: { section: string }) => `Documentation for ${section} (English, opens in a new tab)`,
       registration: "Registration & requests",
       registrationDescription: "Self-registration creates Guest accounts. Requests ask for FreeIPA access; these are separate choices.",
       actionNotice: "Follow-up notices",
@@ -232,6 +233,7 @@ export const settingsMessages = i18n.define({
       skillProjectUnavailable: "Projekt ohne Zugriff auf Details",
       documentation: "Dokumentation",
       documentationNewTab: "Dokumentation (Englisch, öffnet in einem neuen Tab)",
+      sectionDocumentationNewTab: ({ section }: { section: string }) => `Dokumentation zu ${section} (Englisch, öffnet in einem neuen Tab)`,
       registration: "Registrierung & Anfragen",
       registrationDescription:
         "Selbstregistrierung erstellt Guest-Accounts. Anfragen beantragen FreeIPA-Zugang; beides wird getrennt gesteuert.",

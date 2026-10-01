@@ -39,7 +39,7 @@ export default function RemoveRegisteredAppButton(props: { id: string; name: str
 
   return (
     <Tooltip.Anchor content={props.disabled ? t.onlyOfflineAppsRemovable : t.removeOfflineApp}>
-      <Button type="button" variant="danger" size="sm" disabled={props.disabled || removeApp.loading()} onClick={() => removeApp.mutate()}>
+      <Button type="button" variant="ghost" size="sm" disabled={props.disabled || removeApp.loading()} onClick={() => removeApp.mutate()}>
         <i class={`ti ${removeApp.loading() ? "ti-loader-2 animate-spin" : "ti-trash"}`} />
         {t.remove}
       </Button>

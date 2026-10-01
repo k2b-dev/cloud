@@ -36,9 +36,9 @@ import {
 
 ## Compose a full settings page
 
-Keep the page flat: place section cards directly in `SettingsPage`, and put
-save state in `footer`. Do not wrap a dedicated route in `PanelDialog` merely
-to create another outer surface.
+Keep the page flat: place sections directly in `SettingsPage`, and put save
+state in `footer`. Do not wrap a dedicated route in `PanelDialog` merely to
+create another outer surface.
 
 ```tsx
 <SettingsPage
@@ -54,10 +54,18 @@ to create another outer surface.
 </SettingsPage>
 ```
 
-`SettingsSection` is the page-level paper surface for a coherent settings
-group. It provides one accessible section heading, optional actions, and the
-same compact rhythm as Cloud admin data panels. Keep `PanelDialog.Section`
-inside dialogs; it intentionally has a different containment contract.
+`SettingsSection` groups one coherent set of page settings. It renders like
+`SettingsGroup`: a heading, an optional subtitle, and its fields directly on
+the page surface, with no card, header rule, or lines between fields. Space
+separates sections and fields, so the page stays the only frame. Header
+actions wrap below the heading on narrow screens instead of squeezing the
+subtitle. Keep `PanelDialog.Section` inside dialogs; it intentionally has a
+different containment contract.
+
+Put a shared action, such as a documentation link, once in the page
+`actions`. Give a section its own action only when it leads somewhere the page
+action does not, and prefer a compact `IconButtonLink` with a label that names
+the section.
 
 Inside `SettingsModal`, use `SettingsGroup` for a flat form group and
 `SettingsCollection` for compact entity management. Neither component owns a

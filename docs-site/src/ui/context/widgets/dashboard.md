@@ -72,6 +72,8 @@ widget header stays plain text and navigation belongs in its content.
 ## Accessibility
 
 Every stat needs a visible label and enough context to interpret its value.
+Write titles and labels in sentence case. The component shows them as written
+and never changes their case, so long compound words do not grow wider.
 Status blocks include visible text; tone and icons are supplementary.
 
 Long titles and list labels truncate visually but remain complete in the DOM.

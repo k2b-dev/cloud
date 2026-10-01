@@ -176,7 +176,7 @@ export default function ApiKeysSettings(props: Props) {
         </Button>
       </div>
 
-      <Show when={keys().length > 0} fallback={<Placeholder surface="paper" icon="ti ti-key" description={<>{t().noApiKeys}</>} />}>
+      <Show when={keys().length > 0} fallback={<Placeholder icon="ti ti-key" description={<>{t().noApiKeys}</>} />}>
         <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
           <For each={keys()}>
             {(key) => (

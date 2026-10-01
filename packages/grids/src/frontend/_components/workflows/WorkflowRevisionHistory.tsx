@@ -181,7 +181,6 @@ export function WorkflowRevisionHistory(props: {
             when={selected()}
             fallback={
               <Placeholder
-                surface="paper"
                 state={loadRevisionMut.loading() || loadMut.loading() ? "loading" : loadRevisionMut.error() ? "error" : "empty"}
                 title={loadRevisionMut.error() ? t().loadRevisionFailed : t().selectRevision}
                 description={loadRevisionMut.error()?.message}

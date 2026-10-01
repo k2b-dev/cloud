@@ -24,6 +24,13 @@ import { ButtonLink, InlineGuidance, NoticeCard } from "@k2b/ui";
 `NoticeCard.Grid` receives an `items` array and a child renderer. It selects
 one, two, or three responsive columns from the item count.
 
+A notice is a tinted area without a border, so it does not read as a second
+box inside a section, panel, or dialog. Place it directly in the host's
+content flow instead of wrapping it in `Paper` or another card. Warning and
+danger use the shared `--k2b-warning-*` and `--k2b-danger-*` tokens, and the
+neutral tone is a translucent tint that stays visible on white and muted
+surfaces. In forced-colors mode a system border outlines every notice.
+
 The component owns presentation only. Put retry, dismissal, and navigation controls beside the notice when they are needed.
 
 `InlineGuidance` accepts `children`, an optional `tone`, and an optional icon. It is borderless and has no default icon unless `loading` is true. Its tones use the shared `neutral`, `info`, `success`, `warning`, and `danger` vocabulary. Put a native link or `ButtonLink variant="text"` inside the guidance when a real next step exists.

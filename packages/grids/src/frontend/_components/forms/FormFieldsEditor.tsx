@@ -97,10 +97,7 @@ export function FormFieldsEditor(props: {
           </div>
           <span class="text-[10px] text-dimmed">{props.entries().length}</span>
         </div>
-        <Show
-          when={props.entries().length > 0}
-          fallback={<Placeholder surface="paper" align="left" class="p-3" description={<>{t().noFields}</>} />}
-        >
+        <Show when={props.entries().length > 0} fallback={<Placeholder align="left" class="p-3" description={<>{t().noFields}</>} />}>
           <ul class="flex min-h-0 flex-col gap-1 overflow-y-auto">
             <Index each={props.entries()}>
               {(entry, idx) => {

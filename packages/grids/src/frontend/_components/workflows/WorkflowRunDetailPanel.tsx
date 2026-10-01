@@ -540,11 +540,10 @@ export function WorkflowRunDetailPanel(props: {
 
       <DetailPanel.Body scrollPreserveKey={`grids-workflow-run-detail-${props.runId}`}>
         <Show when={!run()}>
-          <Show when={loadMut.error()} fallback={<Placeholder state="loading" surface="paper" title={t().loadingRun} />}>
+          <Show when={loadMut.error()} fallback={<Placeholder state="loading" title={t().loadingRun} />}>
             {(error) => (
               <Placeholder
                 state="error"
-                surface="paper"
                 title={t().couldNotLoadRun}
                 description={error().message}
                 action={
@@ -560,7 +559,6 @@ export function WorkflowRunDetailPanel(props: {
           {(error) => (
             <Placeholder
               state="error"
-              surface="paper"
               align="left"
               title={t().couldNotRefreshRun}
               description={error().message}

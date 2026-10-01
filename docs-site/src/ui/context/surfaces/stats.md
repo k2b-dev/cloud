@@ -59,6 +59,8 @@ An accent has a `tone`, Tabler `icon`, and optional `text`. Text creates a pill.
 ## Composition
 
 - Keep cells in one comparable scope and time range.
+- Put related cells in one `StatGrid` instead of wrapping each cell in its own `Paper`.
+- Write labels in sentence case. The label is shown as written, and the value stays the visual anchor.
 - Put a unit in the label, value, or `sub` when it is not obvious.
 - Use `sub` to qualify the value, not repeat the label.
 - Link operational values to the filtered page that explains them.

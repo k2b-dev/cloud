@@ -193,7 +193,6 @@ function CombinedAuditDialog(props: Props) {
                 {(error) => (
                   <Placeholder
                     state="error"
-                    surface="paper"
                     align="left"
                     title={t().auditLoadFailed}
                     description={error().message}
@@ -212,7 +211,6 @@ function CombinedAuditDialog(props: Props) {
               {(error) => (
                 <Placeholder
                   state="error"
-                  surface="paper"
                   align="left"
                   title={t().olderEventsFailed}
                   description={error().message}

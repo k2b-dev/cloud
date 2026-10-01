@@ -2446,7 +2446,7 @@
   min-width: 0;
   flex: 1;
   margin: 0;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   font-size: 0.75rem;
   font-weight: 600;
   line-height: 1rem;
@@ -2458,20 +2458,23 @@
   min-width: 0;
 }
 
+/* A group is one quiet surface like the summary. Its sections are separated
+   by space and their headings, not by rules or a border. */
 .k2b-ui .k2b-detail-panel__group {
   display: flex;
   min-width: 0;
-  overflow: hidden;
   flex-direction: column;
-  gap: 1px;
-  border: 1px solid var(--k2b-border);
+  padding-block: 0.25rem;
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-border);
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section {
-  padding: 0.625rem 0.75rem 0.75rem;
-  background: var(--k2b-surface);
+  padding: 0.5rem 0.875rem 0.75rem;
+}
+
+.k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section + .k2b-detail-panel__section {
+  padding-top: 0.75rem;
 }
 
 .k2b-ui section.k2b-detail-panel__section {
@@ -2812,7 +2815,7 @@
 .k2b-ui .k2b-detail-panel__section-header h3,
 .k2b-ui .k2b-detail-panel__section-title {
   margin: 0;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-secondary);
   font-size: 0.75rem;
   font-family: inherit;
   font-weight: 600;
