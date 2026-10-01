@@ -21,7 +21,7 @@ import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { executeMutationCommand } from "./command-runtime";
 import { createActorCommand, createMailCommand, createWorkflowCommand } from "./commands";
-import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
+import { type ConnectorEnvelope, type FlagChange, imapSmtpConnector } from "./connectors";
 import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import {
@@ -1680,6 +1680,7 @@ suite("mail lifecycle control plane", () => {
           folderPath: "Reconcile",
           folderId: fixture.folderId,
           uidValidity: "62",
+          draftsFolder: false,
           signal: AbortSignal.timeout(10_000),
         }),
       ).rejects.toMatchObject({ code: "RECONCILE_WINDOW_UNTRUSTED" });
@@ -1710,6 +1711,7 @@ suite("mail lifecycle control plane", () => {
         folderPath: "Reconcile",
         folderId: fixture.folderId,
         uidValidity: "63",
+        draftsFolder: false,
         signal: AbortSignal.timeout(10_000),
       });
       expect(envelopes.mock.calls[0]?.[1]).toMatchObject({ uids: [2] });
@@ -1720,6 +1722,82 @@ suite("mail lifecycle control plane", () => {
     } finally {
       envelopes.mockRestore();
       window.mockRestore();
+      await dropReconcileFolders();
+    }
+  });
+
+  test("a reconcile window fetches drafts only in the Drafts folder", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-drafts", uidValidity: "64", localUids: [1] });
+    const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([
+      { uid: 1, modseq: null, flags: [], labels: [] },
+      { uid: 2, modseq: null, flags: ["\\Draft"], labels: [] },
+      { uid: 3, modseq: null, flags: [], labels: ["\\Draft"] },
+      { uid: 4, modseq: null, flags: ["\\Seen"], labels: [] },
+      { uid: 5, modseq: null, flags: ["\\draft"], labels: [] },
+    ]);
+    const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({ messages: [], nextHighUid: null });
+    try {
+      for (const draftsFolder of [false, true]) {
+        await fetchReconcileStep({
+          cursor: reconcileCursor("64", 1),
+          currentHighUid: 10,
+          remoteMessages: 5,
+          runtime: {} as never,
+          folderPath: "Reconcile",
+          folderId: fixture.folderId,
+          uidValidity: "64",
+          draftsFolder,
+          signal: AbortSignal.timeout(10_000),
+        });
+      }
+      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [2, 3, 4, 5]]);
+    } finally {
+      envelopes.mockRestore();
+      window.mockRestore();
+      await dropReconcileFolders();
+    }
+  });
+
+  test("a skipped draft that loses its flag at the same UID starts a reconciliation of its window", async () => {
+    const fixture = await reconcileFixture({ key: "revealed-draft", uidValidity: "65", localUids: [1] });
+    const commitFlags = async (flagChanges: FlagChange[]) => {
+      const fence = await claimFence(fixture.resourceId, bindingId, "incremental");
+      const beforeCursor = reconcileCursor("65");
+      const cursor = structuredClone(beforeCursor);
+      await commitSyncBatch({
+        folder: {
+          folder_id: fixture.folderId,
+          mailbox_id: mailboxId,
+          remote_resource_id: fixture.resourceId,
+          sync_generation: fence.generation,
+          envelope_cursor: beforeCursor,
+          role: "other",
+        },
+        folderId: fixture.folderId,
+        bindingId,
+        secretRevision: 1,
+        fence,
+        status: { uidValidity: "65", uidNext: 11, highestModseq: "6", messages: 2 },
+        beforeCursor,
+        cursor,
+        uidValidityChanged: false,
+        envelopeBatch: null,
+        envelopeKind: null,
+        flagChanges,
+        reconcileWindow: null,
+      });
+      return cursor.reconcileNextLow;
+    };
+    try {
+      // Known messages and messages still marked as drafts need no reconciliation.
+      expect(
+        await commitFlags([
+          { uid: 1, modseq: "4", flags: ["\\Seen"], labels: [] },
+          { uid: 2, modseq: "5", flags: ["\\Draft"], labels: [] },
+        ]),
+      ).toBeNull();
+      expect(await commitFlags([{ uid: 2, modseq: "6", flags: ["\\Seen"], labels: [] }])).toBe(1);
+    } finally {
       await dropReconcileFolders();
     }
   });

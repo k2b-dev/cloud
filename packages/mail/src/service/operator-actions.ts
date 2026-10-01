@@ -242,6 +242,36 @@ const rebuildSearchProjection = async (db: SqlClient, mailboxId: string): Promis
 };
 
 const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promise<JsonRecord> => {
+  // Drafts Mail projected to the provider are never conversation messages. Syncs before the
+  // `\Draft` guard imported them from folders such as Gmail's All Mail; the timeline refresh
+  // below recomputes the conversations they were in. A message placed anywhere without the
+  // `\Draft` flag, even in a placement the provider has since removed, was sent from another
+  // program with the draft's Message-ID and stays, and so does a copy someone threaded by hand
+  // or referenced in a comment.
+  const removedDraftCopies = await db<{ id: string }[]>`
+    DELETE FROM mail.message_contents message
+    USING mail.draft_provider_snapshots snapshot
+    WHERE message.mailbox_id = ${mailboxId}::uuid
+      AND snapshot.mailbox_id = message.mailbox_id
+      AND snapshot.direction = 'export'
+      AND lower(snapshot.stable_message_id) = lower(message.message_id)
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.message_placements placement
+        WHERE placement.message_id = message.id
+          AND NOT EXISTS (
+            SELECT 1 FROM unnest(placement.flags || placement.keywords) AS flag(value) WHERE lower(flag.value) = '\\draft'
+          )
+      )
+      AND NOT EXISTS (SELECT 1 FROM mail.outbox_submissions outbox WHERE outbox.message_id = message.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.drafts draft
+        WHERE draft.source_message_id = message.id OR draft.derived_from_message_id = message.id
+      )
+      AND NOT EXISTS (SELECT 1 FROM mail.automatic_reply_effects effect WHERE effect.message_id = message.id)
+      AND NOT EXISTS (SELECT 1 FROM mail.conversation_thread_overrides thread_override WHERE thread_override.message_id = message.id)
+      AND NOT EXISTS (SELECT 1 FROM mail.conversation_comments referencing_comment WHERE referencing_comment.referenced_message_id = message.id)
+    RETURNING message.id
+  `;
   await db`SELECT id FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid ORDER BY id FOR SHARE`;
   const orphans = await db<
     {
@@ -360,7 +390,11 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       AND participants.conversation_id = conversation.id
     RETURNING conversation.id
   `;
-  return { createdSingletonThreads: orphans.length, refreshedThreads: refreshed.length };
+  return {
+    createdSingletonThreads: orphans.length,
+    refreshedThreads: refreshed.length,
+    removedDraftCopies: removedDraftCopies.length,
+  };
 };
 
 export const executeOperatorAction = async (params: {

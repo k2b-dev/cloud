@@ -348,6 +348,14 @@ const findCanonicalMessageContent = async (params: {
   return candidates.length === 1 ? candidates[0]!.message_id : null;
 };
 
+/**
+ * A message flagged `\Draft` is still being composed. Gmail lists every draft in All Mail too,
+ * including the ones Mail projects into Drafts; the Drafts folder owns drafts, so no other
+ * folder turns one into a conversation message. IMAP system flags ignore letter case.
+ */
+const isProviderDraft = (message: Pick<ConnectorEnvelope, "flags" | "labels">): boolean =>
+  [...message.flags, ...message.labels].some((flag) => flag.toLowerCase() === "\\draft");
+
 type IngestEnvelopeParams = {
   db: typeof sql;
   mailboxId: string;
@@ -1043,6 +1051,8 @@ export const fetchReconcileStep = async (params: {
   folderPath: string;
   folderId: string;
   uidValidity: string;
+  /** The Drafts folder imports its drafts; every other folder never fetches them. */
+  draftsFolder: boolean;
   signal: AbortSignal;
 }): Promise<ReconcileWindow | null> => {
   const due =
@@ -1067,7 +1077,11 @@ export const fetchReconcileStep = async (params: {
   }
   const uids = flags.map((entry) => entry.uid);
   const imports = await fetchReconcileImports({
-    window: { low, high, uids },
+    window: {
+      low,
+      high,
+      uids: params.draftsFolder ? uids : flags.filter((entry) => !isProviderDraft(entry)).map((entry) => entry.uid),
+    },
     runtime: params.runtime,
     folderPath: params.folderPath,
     folderId: params.folderId,
@@ -1126,6 +1140,66 @@ const fetchReconcileImports = async (params: {
   return { messages: batch.messages, truncated };
 };
 
+const reconcileWindowStart = (uid: number): number => {
+  const boundedUid = Math.max(1, Number.isSafeInteger(uid) ? uid : 1);
+  return Math.floor((boundedUid - 1) / RECONCILE_WINDOW_SIZE) * RECONCILE_WINDOW_SIZE + 1;
+};
+
+/**
+ * A message the sync skipped as a draft has no local reference. When the provider reports it
+ * without `\Draft` at the same UID, the folder reconciles from that UID's window to import it.
+ */
+const reconcileRevealedDrafts = async (params: {
+  db: typeof sql;
+  folderId: string;
+  uidValidity: string;
+  changes: FlagChange[];
+  cursor: EnvelopeCursor;
+}): Promise<void> => {
+  const uids = params.changes.filter((change) => !isProviderDraft(change)).map((change) => change.uid);
+  if (uids.length === 0) return;
+  const [revealed] = await params.db<{ uid: string | null }[]>`
+    SELECT min(remote.uid::numeric)::text AS uid
+    FROM jsonb_array_elements_text(${uids}::jsonb) AS remote(uid)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM mail.remote_message_refs ref
+      WHERE ref.folder_id = ${params.folderId}::uuid
+        AND ref.uid_validity = ${params.uidValidity}::numeric
+        AND ref.uid = remote.uid::numeric
+        AND ref.stale_at IS NULL
+    )
+  `;
+  if (revealed?.uid == null) return;
+  const start = reconcileWindowStart(Number(revealed.uid));
+  params.cursor.reconcileNextLow = Math.min(params.cursor.reconcileNextLow ?? start, start);
+};
+
+/** Whether the folder is the mailbox's Drafts folder: the one configured for drafts, else the provider's. */
+const isEffectiveDraftsFolder = async (db: typeof sql, folder: Pick<FolderSyncRow, "mailbox_id" | "role">, folderId: string) => {
+  const [effectiveRole] = await db<{ is_drafts: boolean }[]>`
+    SELECT (
+      EXISTS (
+        SELECT 1
+        FROM mail.folder_role_overrides override
+        WHERE override.mailbox_id = ${folder.mailbox_id}::uuid
+          AND override.role = 'drafts'
+          AND override.folder_id = ${folderId}::uuid
+      )
+      OR (
+        ${folder.role} = 'drafts'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM mail.folder_role_overrides override
+          WHERE override.mailbox_id = ${folder.mailbox_id}::uuid
+            AND override.role = 'drafts'
+        )
+      )
+    ) AS is_drafts
+  `;
+  return effectiveRole?.is_drafts === true;
+};
+
 export const commitSyncBatch = async (params: {
   folder: FolderSyncRow;
   folderId: string;
@@ -1178,27 +1252,7 @@ export const commitSyncBatch = async (params: {
     if (storedReconcileLow != null && storedReconcileLow !== (params.beforeCursor?.reconcileNextLow ?? null)) {
       params.cursor.reconcileNextLow = Math.min(storedReconcileLow, params.cursor.reconcileNextLow ?? storedReconcileLow);
     }
-    const [effectiveRole] = await tx<{ is_drafts: boolean }[]>`
-      SELECT (
-        EXISTS (
-          SELECT 1
-          FROM mail.folder_role_overrides override
-          WHERE override.mailbox_id = ${params.folder.mailbox_id}::uuid
-            AND override.role = 'drafts'
-            AND override.folder_id = ${params.folderId}::uuid
-        )
-        OR (
-          ${params.folder.role} = 'drafts'
-          AND NOT EXISTS (
-            SELECT 1
-            FROM mail.folder_role_overrides override
-            WHERE override.mailbox_id = ${params.folder.mailbox_id}::uuid
-              AND override.role = 'drafts'
-          )
-        )
-      ) AS is_drafts
-    `;
-    const isDraftFolder = effectiveRole?.is_drafts === true;
+    const isDraftFolder = await isEffectiveDraftsFolder(tx, params.folder, params.folderId);
     if (params.uidValidityChanged && !isDraftFolder) {
       await tx`
         WITH stale AS (
@@ -1235,6 +1289,7 @@ export const commitSyncBatch = async (params: {
       draftRemoved = projection.removed;
     } else {
       for (const message of params.envelopeBatch?.messages ?? []) {
+        if (isProviderDraft(message)) continue;
         hydratedIds.push(
           await ingestEnvelope({
             db: tx,
@@ -1247,6 +1302,7 @@ export const commitSyncBatch = async (params: {
         );
       }
       for (const message of params.reconcileWindow?.imports ?? []) {
+        if (isProviderDraft(message)) continue;
         hydratedIds.push(
           await ingestEnvelope({
             db: tx,
@@ -1267,6 +1323,15 @@ export const commitSyncBatch = async (params: {
           uidValidity: params.status.uidValidity,
           changes: [...params.flagChanges, ...(params.reconcileWindow?.flags ?? [])],
         });
+    if (!isDraftFolder) {
+      await reconcileRevealedDrafts({
+        db: tx,
+        folderId: params.folderId,
+        uidValidity: params.status.uidValidity,
+        changes: params.flagChanges,
+        cursor: params.cursor,
+      });
+    }
     const removed = isDraftFolder
       ? draftRemoved
       : params.reconcileWindow
@@ -1466,6 +1531,7 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
           folderPath: folderExecution.path,
           folderId,
           uidValidity: status.uidValidity,
+          draftsFolder: await isEffectiveDraftsFolder(sql, folder, folderId),
           signal,
         });
         if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
@@ -1722,7 +1788,9 @@ const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<Hyd
 const nextMailboxHydrationTarget = async (mailboxId: string): Promise<HydrationTarget | null> =>
   (await newestPendingBody(mailboxId, false)) ?? (await newestPendingBody(mailboxId, true));
 
-export const hydrateMessageBatch = async (ctx: JobContext<HydrationInput>): Promise<{ hydrated: boolean }> => {
+export const hydrateMessageBatch = async (
+  ctx: Pick<JobContext<HydrationInput>, "input" | "heartbeat" | "resubmit">,
+): Promise<{ hydrated: boolean }> => {
   let activeClaim: { messageId: string; claimId: string } | null = null;
   return withLeaseHeartbeat({
     intervalMs: 60_000,
@@ -2185,8 +2253,7 @@ export const enqueueFolderSync = async (folderId: string): Promise<void> => {
 };
 
 export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {
-  const boundedUid = Math.max(1, Number.isSafeInteger(fromUid) ? fromUid : 1);
-  const reconcileWindowStart = Math.floor((boundedUid - 1) / RECONCILE_WINDOW_SIZE) * RECONCILE_WINDOW_SIZE + 1;
+  const windowStart = reconcileWindowStart(fromUid);
   // Only a cursor rewind: a running sync batch may hold the provider mutex, and
   // the request must survive that contention.
   await sql`
@@ -2197,8 +2264,8 @@ export const enqueueFolderReconciliation = async (folderId: string, fromUid: num
         '{reconcileNextLow}',
         to_jsonb(
           LEAST(
-            COALESCE((envelope_cursor ->> 'reconcileNextLow')::numeric, ${reconcileWindowStart}::numeric),
-            ${reconcileWindowStart}::numeric
+            COALESCE((envelope_cursor ->> 'reconcileNextLow')::numeric, ${windowStart}::numeric),
+            ${windowStart}::numeric
           )
         ),
         true

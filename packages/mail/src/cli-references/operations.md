@@ -207,7 +207,7 @@ cld --json mail operator run retry --command <command-id> --wait
 cld --json mail operator run cancel --command <command-id> --wait
 ```
 
-Use rebuild actions only after diagnostics show the corresponding projection is incomplete. `reconcile`, `retry`, and `cancel` require the target durable command id.
+Use rebuild actions only after diagnostics show the corresponding projection is incomplete. `rebuild-threads` also removes copies of Mail's own drafts that an earlier synchronization imported as messages, for example from Gmail's All Mail. `reconcile`, `retry`, and `cancel` require the target durable command id.
 
 ## Observe storage
 

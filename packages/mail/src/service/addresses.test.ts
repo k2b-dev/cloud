@@ -34,6 +34,22 @@ describe("mail folder addresses", () => {
     ]);
   });
 
+  test("a single name also finds a nested special folder by its last segment or role", () => {
+    const gmail = [
+      { publicId: "Inbox2", path: "INBOX", role: "inbox" },
+      { publicId: "Sent01", path: "[Gmail] / Sent Mail", role: "sent" },
+      { publicId: "AllMai", path: "[Gmail] / All Mail", role: "all" },
+      { publicId: "Label1", path: "Clients / Sent Mail", role: "other" },
+    ];
+    expect(matchMailFolders(gmail, "[Gmail]/Sent Mail").map((folder) => folder.publicId)).toEqual(["Sent01"]);
+    expect(matchMailFolders(gmail, "sent").map((folder) => folder.publicId)).toEqual(["Sent01"]);
+    expect(matchMailFolders(gmail, "all mail").map((folder) => folder.publicId)).toEqual(["AllMai"]);
+    // Two folders end in the same name: every candidate, no guess.
+    expect(matchMailFolders(gmail, "Sent Mail").map((folder) => folder.publicId)).toEqual(["Sent01", "Label1"]);
+    // A path with a separator never falls back to the last segment.
+    expect(matchMailFolders(gmail, "Other / Sent Mail")).toEqual([]);
+  });
+
   test("an ID always resolves and an empty path matches nothing", () => {
     expect(matchMailFolders(folders, "Year25").map((folder) => folder.publicId)).toEqual(["Year25"]);
     expect(matchMailFolders(folders, " / ")).toEqual([]);

@@ -31,11 +31,21 @@ export const normalizeMailFolderPath = (value: string): string =>
  * Every folder a reference can mean: its public ID, or its path compared
  * case-insensitively (IMAP treats `INBOX` case-insensitively; everything else
  * that differs only in case is reported as ambiguous instead of guessed).
+ *
+ * Providers nest some special folders, such as Gmail's `[Gmail] / Sent Mail`.
+ * When no path matches, a single name also matches a folder's last path
+ * segment or its role, such as `sent`.
  */
-export const matchMailFolders = <T extends { publicId: string; path: string }>(folders: readonly T[], ref: string): T[] => {
+export const matchMailFolders = <T extends { publicId: string; path: string; role?: string }>(folders: readonly T[], ref: string): T[] => {
   const wanted = normalizeMailFolderPath(ref).toLowerCase();
-  return folders.filter(
+  const exact = folders.filter(
     (folder) => folder.publicId === ref || (wanted !== "" && normalizeMailFolderPath(folder.path).toLowerCase() === wanted),
+  );
+  if (exact.length > 0 || wanted === "" || wanted.includes(" / ")) return exact;
+  return folders.filter(
+    (folder) =>
+      normalizeMailFolderPath(folder.path).split(" / ").at(-1)?.toLowerCase() === wanted ||
+      (folder.role !== undefined && folder.role !== "other" && folder.role === wanted),
   );
 };
 
@@ -99,7 +109,12 @@ const resolveFolder = async (
     folders.data.map((folder) => folder.id),
   );
   const matches = matchMailFolders(
-    folders.data.map((folder) => ({ folder, publicId: ids.get(folder.id) ?? "", path: paths.get(folder.id) ?? folder.name })),
+    folders.data.map((folder) => ({
+      folder,
+      publicId: ids.get(folder.id) ?? "",
+      path: paths.get(folder.id) ?? folder.name,
+      role: folder.role,
+    })),
     ref,
   );
   if (matches.length === 1) return ok({ ...matches[0]!.folder, path: matches[0]!.path });

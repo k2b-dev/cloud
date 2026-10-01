@@ -23,7 +23,7 @@ import {
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { isOperatorMaintenanceKind } from "./operator-actions";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
-import { loadOutboundProjectionByOutbox } from "./outbound-message-projection";
+import { loadOutboundProjectionByOutbox, recordOutboundSentAt, recordSentCopyPlacement } from "./outbound-message-projection";
 import { buildMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 import { type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
@@ -2235,6 +2235,9 @@ const finishOutbox = async (params: {
         updated_at = now()
       WHERE id = ${params.outbox.id}::uuid
     `;
+    if (["accepted", "sent_sync_pending", "sent", "reconciled_accepted"].includes(params.outboxState)) {
+      await recordOutboundSentAt(tx, params.outbox.id);
+    }
     await tx`
       UPDATE mail.commands
       SET
@@ -2404,6 +2407,17 @@ const sentCopySource = async (
   return { blobId: blob.id, byteLength: blob.byteLength };
 };
 
+type SentCopy = {
+  /** The copy is in Sent, or the identity declares that its provider stores it there. */
+  stored: boolean;
+  /** UIDs of the copy in the sender's Sent folder, when Mail found them. */
+  uids: number[];
+};
+
+/**
+ * Makes sure the sent message has a copy in the sender's Sent folder. With `appendMissing`
+ * off, Mail only looks for a copy the provider stored itself and never adds one.
+ */
 const appendSentCopy = async (params: {
   outbox: DbOutboxExecution;
   sender: DbSenderBinding;
@@ -2412,18 +2426,33 @@ const appendSentCopy = async (params: {
   mimeByteLength: number;
   assertLeaseActive: LeaseAssertion;
   signal: AbortSignal;
-}): Promise<boolean> => {
-  if (params.sender.saves_sent_automatically) return true;
-  if (!params.sender.sent_path) return false;
+  appendMissing: boolean;
+}): Promise<SentCopy> => {
+  if (params.sender.saves_sent_automatically) {
+    // The provider stores the copy itself. One lookup places it right away when the provider
+    // already lists it; otherwise the folder's next sync places it.
+    const found = await sentMatches({
+      runtime: params.runtime,
+      sentPath: params.sender.sent_path,
+      messageId: params.outbox.stable_message_id,
+      signal: params.signal,
+    }).catch(() => []);
+    return { stored: true, uids: found };
+  }
+  if (!params.sender.sent_path) return { stored: false, uids: [] };
   const existing = await sentMatches({
     runtime: params.runtime,
     sentPath: params.sender.sent_path,
     messageId: params.outbox.stable_message_id,
     signal: params.signal,
   });
-  if (existing.length > 0) return true;
+  if (existing.length > 0) return { stored: true, uids: existing };
+  if (!params.appendMissing) return { stored: false, uids: [] };
   const source = await sentCopySource(params.outbox, { blobId: params.mimeBlobId, byteLength: params.mimeByteLength });
   await params.assertLeaseActive();
+  // A completed APPEND stores the copy even when the provider's search does not list it yet;
+  // treating that as missing would append a second copy on the next attempt.
+  let appended = false;
   try {
     await imapSmtpConnector.appendSource(
       params.runtime,
@@ -2434,6 +2463,7 @@ const appendSentCopy = async (params: {
       new Date(params.outbox.created_at),
       params.signal,
     );
+    appended = true;
     await params.assertLeaseActive();
   } catch (error) {
     const reconciled = await sentMatches({
@@ -2441,18 +2471,44 @@ const appendSentCopy = async (params: {
       sentPath: params.sender.sent_path,
       messageId: params.outbox.stable_message_id,
     }).catch(() => []);
-    if (reconciled.length > 0) return true;
+    if (appended || reconciled.length > 0) return { stored: true, uids: reconciled };
     log.warn("Sent copy append remains pending", { outboxId: params.outbox.id, code: normalizeCode(error, "SENT_APPEND_FAILED") });
-    return false;
+    return { stored: false, uids: [] };
   }
   const confirmed = await sentMatches({
     runtime: params.runtime,
     sentPath: params.sender.sent_path,
     messageId: params.outbox.stable_message_id,
     signal: params.signal,
-  });
-  return confirmed.length > 0;
+  }).catch(() => []);
+  return { stored: true, uids: confirmed };
 };
+
+/**
+ * Places the confirmed Sent copy right away. The folder's next sync places it too, so a
+ * failure here never changes the outcome of the send.
+ */
+const recordSentCopy = async (outbox: DbOutboxExecution, sender: DbSenderBinding, uids: number[]): Promise<void> => {
+  if (uids.length === 0 || !sender.sent_folder_id) return;
+  const folderId = sender.sent_folder_id;
+  try {
+    await sql.begin((tx) => recordSentCopyPlacement(tx, { outboxId: outbox.id, bindingId: outbox.selected_binding_id, folderId, uids }));
+    await notifyMailInvalidations();
+  } catch (error) {
+    log.warn("Sent copy placement waits for the next folder sync", {
+      outboxId: outbox.id,
+      code: normalizeCode(error, "SENT_PLACEMENT_FAILED"),
+    });
+  }
+};
+
+/**
+ * Gmail stores every message sent through its own SMTP server in Sent Mail, and its search can
+ * list that copy only after a while. Mail then only looks for the copy and appends one itself
+ * on the last attempt, when every earlier attempt found none.
+ */
+const providerStoresSubmission = (binding: DbPinnedBinding, outbox: DbOutboxExecution): boolean =>
+  outbox.selected_identity_transport_revision === null && parseJsonRecord(binding.capabilities).gmailExtensions === true;
 
 const prepareFreshOutbox = async (
   outbox: DbOutboxExecution,
@@ -2466,10 +2522,12 @@ const prepareFreshOutbox = async (
   mimeBlobId: string;
   mimeByteLength: number;
   snapshot: z.infer<typeof outboundDraftSnapshotSchema>;
-  alreadySent: boolean;
+  alreadySent: number[];
+  providerStoresSubmission: boolean;
 }> => {
   const sender = await loadSenderBinding(command, outbox.sender_identity_id);
-  const mailboxRuntime = await loadPinnedRuntime(await loadPinnedBinding(command));
+  const binding = await loadPinnedBinding(command);
+  const mailboxRuntime = await loadPinnedRuntime(binding);
   const customTransport =
     outbox.selected_identity_transport_revision === null
       ? null
@@ -2516,7 +2574,8 @@ const prepareFreshOutbox = async (
     mimeBlobId: mime.blobId,
     mimeByteLength: mime.byteLength,
     snapshot: mime.snapshot,
-    alreadySent: beforeSend.length > 0,
+    alreadySent: beforeSend,
+    providerStoresSubmission: providerStoresSubmission(binding, outbox),
   };
 };
 
@@ -2580,7 +2639,9 @@ const persistSmtpResult = async (params: {
     });
     return;
   }
-  const sentStored = await appendSentCopy({
+  // SMTP accepted the message, so an IMAP failure while storing the Sent copy leaves the send
+  // confirmed and the copy to the next attempt instead of making the delivery look uncertain.
+  const sentCopy = await appendSentCopy({
     outbox,
     sender: prepared.sender,
     runtime: prepared.mailboxRuntime,
@@ -2588,11 +2649,16 @@ const persistSmtpResult = async (params: {
     mimeByteLength: prepared.mimeByteLength,
     assertLeaseActive: params.assertLeaseActive,
     signal: params.signal,
+    appendMissing: !prepared.providerStoresSubmission,
+  }).catch((error: unknown): SentCopy => {
+    log.warn("Sent copy waits for the next attempt", { outboxId: outbox.id, code: normalizeCode(error, "SENT_APPEND_FAILED") });
+    return { stored: false, uids: [] };
   });
+  await recordSentCopy(outbox, prepared.sender, sentCopy.uids);
   await finishOutbox({
     outbox,
     command,
-    outboxState: sentStored ? "sent" : "sent_sync_pending",
+    outboxState: sentCopy.stored ? "sent" : "sent_sync_pending",
     commandState: "confirmed",
     draftState: "sent",
     providerResponse: response,
@@ -2627,6 +2693,7 @@ const persistSmtpFailure = async (params: {
     messageId: outbox.stable_message_id,
   }).catch(() => []);
   if (reconciled.length > 0) {
+    await recordSentCopy(outbox, prepared.sender, reconciled);
     await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent", error });
     return;
   }
@@ -2652,7 +2719,8 @@ const executeFreshOutbox = async (
   }
   const prepared = await prepareFreshOutboxOrFinish(outbox, command, assertLeaseActive, signal);
   if (!prepared) return;
-  if (prepared.alreadySent) {
+  if (prepared.alreadySent.length > 0) {
+    await recordSentCopy(outbox, prepared.sender, prepared.alreadySent);
     await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent" });
     return;
   }
@@ -2700,6 +2768,7 @@ const reconcileUnknownOutbox = async (outbox: DbOutboxExecution, command: DbComm
   const runtime = await loadPinnedRuntime(binding);
   const matches = await sentMatches({ runtime, sentPath: sender.sent_path, messageId: outbox.stable_message_id, signal });
   if (matches.length > 0) {
+    await recordSentCopy(outbox, sender, matches);
     await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent" });
   } else {
     await finishOutbox({
@@ -2723,7 +2792,7 @@ const reconcileSentCopy = async (
   const sender = await loadSenderBinding(command, outbox.sender_identity_id);
   const runtime = await loadPinnedRuntime(binding);
   const mime = await ensureMimeBlob(outbox);
-  const stored = await appendSentCopy({
+  const sentCopy = await appendSentCopy({
     outbox,
     sender,
     runtime,
@@ -2731,8 +2800,10 @@ const reconcileSentCopy = async (
     mimeByteLength: mime.byteLength,
     assertLeaseActive,
     signal,
+    appendMissing: !providerStoresSubmission(binding, outbox) || outbox.attempt >= OUTBOX_MAX_ATTEMPTS,
   });
-  if (stored) {
+  if (sentCopy.stored) {
+    await recordSentCopy(outbox, sender, sentCopy.uids);
     await sql`
       UPDATE mail.outbox_submissions
       SET state = 'sent', last_error_code = NULL, last_error_message = NULL, updated_at = now()
@@ -2740,13 +2811,14 @@ const reconcileSentCopy = async (
         AND attempt = ${outbox.attempt}
         AND state = ${outbox.state}
     `;
+    await publishOutboundSubmissionChange({ outboxId: outbox.id, state: "sent", attempt: outbox.attempt });
   } else {
     await deferSentCopy(outbox);
   }
 };
 
 const deferSentCopy = async (outbox: DbOutboxExecution, error?: unknown): Promise<void> => {
-  const exhausted = outbox.attempt >= 5;
+  const exhausted = outbox.attempt >= OUTBOX_MAX_ATTEMPTS;
   await sql`
     UPDATE mail.outbox_submissions
     SET

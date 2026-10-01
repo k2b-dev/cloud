@@ -105,6 +105,15 @@ A shared draft allows one active editor. The collaboration dialog distinguishes 
 
 Starting another reply does not hide existing work. The **Continue a draft?** dialog shows the author, update time, and content preview so you can resume the correct draft or deliberately create another.
 
+## A sent message is missing from Sent {icon="send"}
+
+Mail places a sent message in the identity's Sent folder once it finds the copy there. Gmail's All Mail placement follows with the next synchronization of that folder.
+
+- If the message shows **Sent, but not saved**, Mail could not store or find the copy. Check the identity's Sent folder mapping and the provider's rights on that folder. Do not resend the message.
+- If a conversation shows an extra copy of a draft next to the sent message, an earlier version imported Gmail's draft copy from All Mail. An administrator can remove such copies with **Repair thread projection**.
+
+To check one folder from a terminal, `cld mail ls "Mailbox:Sent Mail"` also accepts a folder's last name or its role, such as `sent`, when the provider nests it, for example under `[Gmail]`.
+
 ## Search returns no expected result {icon="search"}
 
 :::steps
