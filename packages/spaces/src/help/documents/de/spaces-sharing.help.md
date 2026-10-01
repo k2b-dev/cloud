@@ -33,5 +33,5 @@ Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Za
 :::
 
 :::note Einstellungen mit Adminzugriff
-Nur Personen mit Adminzugriff können Wormholes, das GitHub-Token, Zugriffsrechte, API-Schlüssel und das Löschen verwalten. Personen mit Schreibzugriff können gemeinsame Angaben zum Space, Tags und Status verwalten. Personen mit Lesezugriff können ihre persönlichen Voreinstellungen ändern und den Kalender-Feed kopieren.
+Nur Personen mit Adminzugriff können Wormholes, das GitHub-Token, Zugriffsrechte, API-Schlüssel und das Löschen verwalten. Personen mit Schreibzugriff können gemeinsame Angaben zum Space, Tags, Status, die automatischen Kanban-Spalten und die Spaltenreihenfolge verwalten. Personen mit Lesezugriff können ihre persönlichen Voreinstellungen ändern und den Kalender-Feed kopieren.
 :::

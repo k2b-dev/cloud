@@ -67,7 +67,7 @@ cld spaces show Item01 --context --json
 | `--q <text>` | Search in title, description, location, and URL |
 | `--sort`, `--ascending`, `--page`, `--per-page` | Order and paging (`--per-page` ≤ 100) |
 
-`--ready` means open and unblocked; it is not a claim. `show <space>:` returns columns and tags with their IDs. `show <item> --context` adds work state, checklist, blockers, a page of dependent tasks, references, links, and a page of comments; follow `comments.hasNext` and `blocks.hasNext` with `--page` and `--per-page`, or read further pages through `comments list` and `deps`. Pages are fresh reads, not a frozen snapshot.
+`--ready` means open and unblocked; it is not a claim. `show <space>:` returns columns and tags with their IDs, and `virtualColumns` lists the enabled automatic Kanban columns (`blocked`, `overdue`) with ranks that share the column order. Automatic columns hold no items and are never a `--column` or `mv` target; the CLI does not manage statuses or automatic columns. `show <item> --context` adds work state, checklist, blockers, a page of dependent tasks, references, links, and a page of comments; follow `comments.hasNext` and `blocks.hasNext` with `--page` and `--per-page`, or read further pages through `comments list` and `deps`. Pages are fresh reads, not a frozen snapshot.
 
 ## Add and change items
 

@@ -784,6 +784,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "getDetail").mockResolvedValue({
       ...space,
       columns: [{ id: columnUuid, spaceId: spaceUuid, name: "Todo", color: null, rank: "1024", isDone: false }],
+      virtualColumns: [],
       tags: [tag],
     });
 
@@ -924,6 +925,7 @@ describe("spaces capabilities", () => {
     spyOn(spacesService.space, "getDetail").mockResolvedValue({
       ...space,
       columns: [],
+      virtualColumns: [],
       tags: [tag],
     });
 
@@ -959,7 +961,7 @@ describe("spaces capabilities", () => {
     const getItem = spyOn(spacesService.item, "get").mockResolvedValue(task);
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
-    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], tags: [tag] });
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [tag] });
     spyOn(spacesService.comment, "get").mockResolvedValue(comment);
     spyOn(spacesService.calendarInvitations, "getEventInvitationCommitContext").mockResolvedValue({
       ok: true,

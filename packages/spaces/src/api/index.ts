@@ -60,6 +60,9 @@ import {
   SpaceTaskDependencyInputSchema,
   SpaceTaskDependencySchema,
   SpaceTaskDependentSchema,
+  type SpaceVirtualColumnKind,
+  SpaceVirtualColumnKindSchema,
+  SpaceVirtualColumnSchema,
   SpaceWormholeDestinationSchema,
   SpaceWormholeSchema,
   SplitRecurringItemSchema,
@@ -88,6 +91,7 @@ import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { spacesService } from "../service";
 import { isSpaceResourceId, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
+import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
 import { loadOverviewWork } from "../service/overview";
@@ -139,6 +143,9 @@ const ItemLinkDeleteSchema = z.object({ url: SpaceItemLinkInputSchema.shape.url 
 const GitHubTokenStateSchema = z.object({ configured: z.boolean() }).strict();
 const SpaceAssignableUserListSchema = z.array(SpaceAssignableUserSchema);
 const SpaceWormholeListSchema = z.array(SpaceWormholeSchema);
+const SpaceVirtualColumnListSchema = z.array(SpaceVirtualColumnSchema);
+const VirtualColumnParamSchema = z.object({ id: z.string(), kind: SpaceVirtualColumnKindSchema });
+const isVirtualColumnKind = (id: string): id is SpaceVirtualColumnKind => SpaceVirtualColumnKindSchema.safeParse(id).success;
 const SpaceWormholeDestinationListSchema = z.array(SpaceWormholeDestinationSchema);
 const AssignableUsersQuerySchema = z.object({
   search: z.string().optional(),
@@ -1442,7 +1449,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Get space details",
-      description: "Get space with columns and tags.",
+      description: "Get space with columns, enabled automatic Kanban columns, and tags.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceDetailSchema, "Space details"),
@@ -1462,7 +1469,7 @@ const app = new Hono<AuthContext>()
         projectColumns(space.columns),
         projectTags(space.tags),
       ]);
-      return respond(c, ok({ ...projectedSpace[0]!, columns, tags }));
+      return respond(c, ok({ ...projectedSpace[0]!, columns, virtualColumns: space.virtualColumns, tags }));
     },
   )
 
@@ -1680,7 +1687,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Reorder columns",
-      description: "Set the order of columns in a space.",
+      description:
+        "Set the board order of a space. List every column ID; name enabled automatic columns by kind (blocked, overdue). An automatic column left out keeps its place. Requires write permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Columns reordered"),
@@ -1696,9 +1704,62 @@ const app = new Hono<AuthContext>()
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
       if (error) return error;
-      const resolvedColumnIds = await resolveSpacePublicIds("columns", spaceId!, columnIds);
+      const publicColumnIds = columnIds.filter((id) => !isVirtualColumnKind(id));
+      const resolvedColumnIds = await resolveSpacePublicIds("columns", spaceId!, publicColumnIds);
       if (!resolvedColumnIds) return respond(c, fail(err.notFound("Column")));
-      return respondMessage(c, spacesService.column.reorder({ spaceId: spaceId!, columnIds: resolvedColumnIds }), "columnsReordered");
+      const internalIds = new Map(publicColumnIds.map((id, index) => [id, resolvedColumnIds[index]!]));
+      const order = columnIds.map(
+        (id): BoardOrderEntry => (isVirtualColumnKind(id) ? { kind: id } : { kind: "column", id: internalIds.get(id)! }),
+      );
+      return respondMessage(c, spacesService.column.reorder({ spaceId: spaceId!, order }), "columnsReordered");
+    },
+  )
+
+  // ==========================
+  // AUTOMATIC COLUMNS
+  // ==========================
+
+  .put(
+    "/:id/virtual-columns/:kind",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Enable an automatic Kanban column",
+      description:
+        "Show open tasks with unfinished blockers (blocked) or with a deadline before today (overdue) in their own Kanban column. It starts in front of the first done column; enabling it again keeps its place. Items are never stored in it. Requires write permission.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceVirtualColumnListSchema, "Enabled automatic columns"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    v("param", VirtualColumnParamSchema),
+    async (c) => {
+      const { id, kind } = c.req.valid("param");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, id, "write");
+      if (error) return error;
+      return respond(c, async () => ok(await spacesService.column.virtual.enable({ spaceId: spaceId!, kind })));
+    },
+  )
+  .delete(
+    "/:id/virtual-columns/:kind",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Disable an automatic Kanban column",
+      description: "Remove an automatic Kanban column; its tasks show in their status columns again. Requires write permission.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceVirtualColumnListSchema, "Enabled automatic columns"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Space not found"),
+      },
+    }),
+    v("param", VirtualColumnParamSchema),
+    async (c) => {
+      const { id, kind } = c.req.valid("param");
+      const { internalId: spaceId, error } = await checkSpaceAccess(c, id, "write");
+      if (error) return error;
+      return respond(c, async () => ok(await spacesService.column.virtual.disable({ spaceId: spaceId!, kind })));
     },
   )
 

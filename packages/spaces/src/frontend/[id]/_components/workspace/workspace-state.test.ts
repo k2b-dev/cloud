@@ -144,7 +144,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         },
         getDetail: async () => {
           calls.push("space.getDetail");
-          return { ...space, columns: [column], tags: [tag] };
+          return { ...space, columns: [column], virtualColumns: [], tags: [tag] };
         },
         permission: { get: async () => permission },
       },

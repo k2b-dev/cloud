@@ -64,6 +64,18 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   console.log("  ✓ spaces.columns table");
 
+  // An enabled automatic Kanban column of a Space; its rank shares the order of spaces.columns.
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.virtual_columns (
+      space_id UUID NOT NULL REFERENCES spaces.spaces(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('blocked', 'overdue')),
+      rank BIGINT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (space_id, kind)
+    )
+  `.simple();
+  console.log("  ✓ spaces.virtual_columns table");
+
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.wormholes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -118,6 +118,11 @@ export const spacesService = {
     update: columns.update,
     remove: columns.remove,
     reorder: columns.reorder,
+    virtual: {
+      list: columns.listVirtual,
+      enable: columns.enableVirtual,
+      disable: columns.disableVirtual,
+    },
   },
   tag: {
     list: async (config: { spaceId: string; pagination?: PageParams; filter?: { query?: string } }): Promise<Paginated<SpaceTag>> => {

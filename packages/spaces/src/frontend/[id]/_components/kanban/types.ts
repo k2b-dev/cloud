@@ -1,10 +1,11 @@
-import type { SpaceItem } from "@/contracts";
+import type { SpaceItem, SpaceVirtualColumnKind } from "@/contracts";
 
 export type KanbanBucketInitial = {
   key: string;
   label: string;
   color: string | null;
-  kind: "column";
+  /** A status column, or an automatic column that gathers open tasks across statuses and takes no drops. */
+  kind: "column" | SpaceVirtualColumnKind;
   columnId: string | null;
   isDone: boolean;
   items: SpaceItem[];

@@ -36,6 +36,7 @@ const spaceDetail = {
     { id: "Col001", spaceId: "Space1", name: "To do", color: null, rank: "1024", isDone: false },
     { id: "Col002", spaceId: "Space1", name: "Doing", color: null, rank: "2048", isDone: false },
   ],
+  virtualColumns: [{ kind: "blocked", rank: "1536" }],
   tags: [{ id: "Tag001", spaceId: "Space1", name: "Backend", color: null }],
 };
 const item = (id: string, title: string) => ({
@@ -260,6 +261,13 @@ describe("addressing", () => {
   test("<space>: addresses the space itself", async () => {
     const { json } = await run(["show", "Roadmap:"]);
     expect(json).toEqual(spaceDetail);
+  });
+
+  test("<space>: names the enabled automatic columns in text output", async () => {
+    const result = await cld(["spaces", "show", "Roadmap:"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("To do (Col001), Doing (Col002)");
+    expect(result.stdout).toContain("automatic columns: blocked");
   });
 });
 

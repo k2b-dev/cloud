@@ -156,7 +156,11 @@ describe("Spaces wormhole contracts", () => {
   });
 
   test("bounds public reorder requests", () => {
-    expect(ReorderColumnsSchema.safeParse({ columnIds: Array.from({ length: 101 }, () => columnId) }).success).toBe(false);
+    // 100 columns plus both automatic columns, named by kind.
+    const fullBoard = [...Array.from({ length: 100 }, () => columnId), "blocked", "overdue"];
+    expect(ReorderColumnsSchema.safeParse({ columnIds: fullBoard }).success).toBe(true);
+    expect(ReorderColumnsSchema.safeParse({ columnIds: [...fullBoard, columnId] }).success).toBe(false);
+    expect(ReorderColumnsSchema.safeParse({ columnIds: ["stalled"] }).success).toBe(false);
     expect(ReorderWormholesSchema.safeParse({ wormholeIds: Array.from({ length: 101 }, () => wormholeId) }).success).toBe(false);
   });
 });

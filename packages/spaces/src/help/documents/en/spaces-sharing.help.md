@@ -33,5 +33,5 @@ When a form has a footer, review its change count and choose **Save changes**. C
 :::
 
 :::note Admin-only settings
-Only Space administrators can manage wormholes, the GitHub token, access, API keys, and deletion. Writers can manage shared Space details, tags, and statuses. Readers can change their personal defaults and copy the calendar feed.
+Only Space administrators can manage wormholes, the GitHub token, access, API keys, and deletion. Writers can manage shared Space details, tags, statuses, the automatic Kanban columns, and the column order. Readers can change their personal defaults and copy the calendar feed.
 :::

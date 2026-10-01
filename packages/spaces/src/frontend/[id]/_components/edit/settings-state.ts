@@ -28,7 +28,7 @@ export const loadSpaceSettingsContext = async (params: {
     spacesPublicResources.projectTags(detail.tags),
   ]);
   if (!space) return fail(err.notFound("Space"));
-  const publicDetail = { ...space, columns, tags };
+  const publicDetail = { ...space, columns, virtualColumns: detail.virtualColumns, tags };
 
   if (permission !== "admin") {
     return ok({
