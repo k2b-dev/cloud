@@ -1051,6 +1051,8 @@ export const fetchReconcileStep = async (params: {
   folderPath: string;
   folderId: string;
   uidValidity: string;
+  /** The Drafts folder imports its drafts; every other folder never fetches them. */
+  draftsFolder: boolean;
   signal: AbortSignal;
 }): Promise<ReconcileWindow | null> => {
   const due =
@@ -1075,7 +1077,11 @@ export const fetchReconcileStep = async (params: {
   }
   const uids = flags.map((entry) => entry.uid);
   const imports = await fetchReconcileImports({
-    window: { low, high, uids: flags.filter((entry) => !isProviderDraft(entry)).map((entry) => entry.uid) },
+    window: {
+      low,
+      high,
+      uids: params.draftsFolder ? uids : flags.filter((entry) => !isProviderDraft(entry)).map((entry) => entry.uid),
+    },
     runtime: params.runtime,
     folderPath: params.folderPath,
     folderId: params.folderId,
@@ -1134,6 +1140,31 @@ const fetchReconcileImports = async (params: {
   return { messages: batch.messages, truncated };
 };
 
+/** Whether the folder is the mailbox's Drafts folder: the one configured for drafts, else the provider's. */
+const isEffectiveDraftsFolder = async (db: typeof sql, folder: Pick<FolderSyncRow, "mailbox_id" | "role">, folderId: string) => {
+  const [effectiveRole] = await db<{ is_drafts: boolean }[]>`
+    SELECT (
+      EXISTS (
+        SELECT 1
+        FROM mail.folder_role_overrides override
+        WHERE override.mailbox_id = ${folder.mailbox_id}::uuid
+          AND override.role = 'drafts'
+          AND override.folder_id = ${folderId}::uuid
+      )
+      OR (
+        ${folder.role} = 'drafts'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM mail.folder_role_overrides override
+          WHERE override.mailbox_id = ${folder.mailbox_id}::uuid
+            AND override.role = 'drafts'
+        )
+      )
+    ) AS is_drafts
+  `;
+  return effectiveRole?.is_drafts === true;
+};
+
 export const commitSyncBatch = async (params: {
   folder: FolderSyncRow;
   folderId: string;
@@ -1186,27 +1217,7 @@ export const commitSyncBatch = async (params: {
     if (storedReconcileLow != null && storedReconcileLow !== (params.beforeCursor?.reconcileNextLow ?? null)) {
       params.cursor.reconcileNextLow = Math.min(storedReconcileLow, params.cursor.reconcileNextLow ?? storedReconcileLow);
     }
-    const [effectiveRole] = await tx<{ is_drafts: boolean }[]>`
-      SELECT (
-        EXISTS (
-          SELECT 1
-          FROM mail.folder_role_overrides override
-          WHERE override.mailbox_id = ${params.folder.mailbox_id}::uuid
-            AND override.role = 'drafts'
-            AND override.folder_id = ${params.folderId}::uuid
-        )
-        OR (
-          ${params.folder.role} = 'drafts'
-          AND NOT EXISTS (
-            SELECT 1
-            FROM mail.folder_role_overrides override
-            WHERE override.mailbox_id = ${params.folder.mailbox_id}::uuid
-              AND override.role = 'drafts'
-          )
-        )
-      ) AS is_drafts
-    `;
-    const isDraftFolder = effectiveRole?.is_drafts === true;
+    const isDraftFolder = await isEffectiveDraftsFolder(tx, params.folder, params.folderId);
     if (params.uidValidityChanged && !isDraftFolder) {
       await tx`
         WITH stale AS (
@@ -1476,6 +1487,7 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
           folderPath: folderExecution.path,
           folderId,
           uidValidity: status.uidValidity,
+          draftsFolder: await isEffectiveDraftsFolder(sql, folder, folderId),
           signal,
         });
         if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");

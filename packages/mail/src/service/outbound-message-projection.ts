@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";
+import { enqueueMailInvalidation } from "./events";
 import { normalizeMailSubject } from "./message-threading";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
 import { splitSearchText } from "./search-chunks";
@@ -281,16 +282,17 @@ export const recordOutboundSentAt = async (db: SqlClient, outboxId: string): Pro
  * provider copy, so Sent shows it without waiting for that folder's next sync. The sync later
  * reaches the same UIDs and keeps these references. UIDVALIDITY is the one the binding last
  * verified for the folder; if the provider has changed it since, the next sync retires these
- * references with every other one of the folder and imports the copy again.
+ * references with every other one of the folder and imports the copy again. Open views learn
+ * about a new placement through a live invalidation committed with it.
  */
 export const recordSentCopyPlacement = async (
   db: SqlClient,
   params: { outboxId: string; bindingId: string; folderId: string; uids: readonly number[] },
 ): Promise<void> => {
   if (params.uids.length === 0) return;
-  await db`
+  const placed = await db<{ mailbox_id: string; conversation_id: string | null }[]>`
     WITH target AS (
-      SELECT outbox.message_id, folder_ref.uid_validity
+      SELECT outbox.message_id, outbox.mailbox_id, folder_ref.uid_validity
       FROM mail.outbox_submissions outbox
       JOIN mail.binding_folder_refs folder_ref
         ON folder_ref.binding_id = ${params.bindingId}::uuid
@@ -306,12 +308,20 @@ export const recordSentCopyPlacement = async (
       CROSS JOIN unnest(${toPgTextArray(params.uids.map(String))}::numeric[]) AS remote(uid)
       ON CONFLICT (folder_id, uid_validity, uid) DO NOTHING
       RETURNING id, message_id
+    ),
+    placements AS (
+      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
+      SELECT refs.id, ${params.folderId}::uuid, refs.message_id, ARRAY['\\Seen']::text[]
+      FROM refs
+      ON CONFLICT (remote_message_ref_id) DO NOTHING
+      RETURNING message_id
     )
-    INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
-    SELECT refs.id, ${params.folderId}::uuid, refs.message_id, ARRAY['\\Seen']::text[]
-    FROM refs
-    ON CONFLICT (remote_message_ref_id) DO NOTHING
+    SELECT DISTINCT target.mailbox_id, link.conversation_id
+    FROM placements
+    JOIN target ON target.message_id = placements.message_id
+    LEFT JOIN mail.conversation_messages link ON link.message_id = placements.message_id
   `;
+  for (const row of placed) await enqueueMailInvalidation(db, { mailboxId: row.mailbox_id, conversationId: row.conversation_id });
 };
 
 export const loadOutboundProjectionByOutbox = async (db: SqlClient, outboxId: string): Promise<OutboundMessageProjection | null> => {

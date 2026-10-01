@@ -71,7 +71,10 @@ const createProvider = (kind: ProviderKind) => {
   const appends: string[] = [];
   // Messages the provider stored but its search does not return yet, like Gmail right after SMTP.
   const unindexed = new Set<StoredMessage>();
-  let indexSubmissionsLate = false;
+  let indexNewMessagesLate = false;
+  // Searches that fail once the next SMTP submission went through, like a dropped IMAP connection.
+  let searchFailuresAfterSubmission = 0;
+  let failingSearches = 0;
 
   const folder = (path: string): StoredFolder => {
     const found = folders.get(path);
@@ -106,6 +109,7 @@ const createProvider = (kind: ProviderKind) => {
     };
     const uid = place(message, path, flags);
     if (kind === "gmail" && path !== ALL) place(message, ALL, flags);
+    if (indexNewMessagesLate) unindexed.add(message);
     return { message, uid };
   };
   const labelsFor = (message: StoredMessage): string[] => {
@@ -182,10 +186,9 @@ const createProvider = (kind: ProviderKind) => {
     }),
     spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (_config, request) => {
       const source = await readAll(request.source);
-      if (kind === "gmail") {
-        const stored = await store(source, sentPath, ["\\Seen"]);
-        if (indexSubmissionsLate) unindexed.add(stored.message);
-      }
+      if (kind === "gmail") await store(source, sentPath, ["\\Seen"]);
+      failingSearches = searchFailuresAfterSubmission;
+      searchFailuresAfterSubmission = 0;
       return { accepted: request.recipients, rejected: [], response: "250 2.0.0 OK", messageId: request.messageId };
     }),
     spyOn(imapSmtpConnector, "appendSource").mockImplementation(async (_config, path, source, _length, flags) => {
@@ -193,12 +196,16 @@ const createProvider = (kind: ProviderKind) => {
       const stored = await store(await readAll(source), path, flags ?? []);
       return { uidValidity: folder(path).uidValidity, uid: stored.uid };
     }),
-    spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (_config, path, messageId) =>
-      [...folder(path).entries.entries()]
+    spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (_config, path, messageId) => {
+      if (failingSearches > 0) {
+        failingSearches -= 1;
+        throw Object.assign(new Error("Connection closed"), { code: "ECONNRESET" });
+      }
+      return [...folder(path).entries.entries()]
         .filter(([, message]) => !unindexed.has(message) && message.messageId?.toLowerCase() === messageId.trim().toLowerCase())
         .map(([uid]) => uid)
-        .sort((left, right) => left - right),
-    ),
+        .sort((left, right) => left - right);
+    }),
     spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async (_config, target) => {
       const message = folder(target.folderPath).entries.get(target.uid);
       const flags = [...(message?.flags.get(target.folderPath) ?? [])];
@@ -228,12 +235,15 @@ const createProvider = (kind: ProviderKind) => {
       const request = { folderPath: path, folderStableKey, uidValidity: folder(path).uidValidity, highUid: uid, limit: 1 };
       return mapFetchedEnvelope(await fetchObject(path, uid, message), request);
     },
-    indexSubmissionsLate: () => {
-      indexSubmissionsLate = true;
+    indexNewMessagesLate: () => {
+      indexNewMessagesLate = true;
     },
     indexEverything: () => {
-      indexSubmissionsLate = false;
+      indexNewMessagesLate = false;
       unindexed.clear();
+    },
+    failSearchesAfterSubmission: (count: number) => {
+      searchFailuresAfterSubmission = count;
     },
     messagesWithId: (path: string, messageId: string) =>
       [...folder(path).entries.values()].filter((message) => message.messageId?.toLowerCase() === messageId.toLowerCase()),
@@ -643,13 +653,21 @@ suite("mail sent message projection", () => {
       const inbound = await receive(provider, mailbox, "gmail-lag");
       const draft = await replyDraft(mailbox, inbound);
       await waitForDraftExport(draft.id, ["active"]);
-      provider.indexSubmissionsLate();
+      provider.indexNewMessagesLate();
       const outbox = await send(mailbox, draft.id, draft.revision, "gmail-lag", "sent_sync_pending");
       expect(provider.appends.filter((path) => path === SENT)).toEqual([]);
 
       provider.indexEverything();
+      const [mark] = await sql<{ at: Date }[]>`SELECT clock_timestamp() AS at`;
       expect(await executeOutboxSubmission(outbox.id)).toBe("sent");
       expect(provider.appends.filter((path) => path === SENT)).toEqual([]);
+      // The later attempt placed the message, so open views of its conversation refresh.
+      const [invalidations] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count
+        FROM mail.live_invalidation_outbox
+        WHERE conversation_id = ${inbound.conversation_id}::uuid AND created_at >= ${mark!.at}
+      `;
+      expect(invalidations?.count).toBe(1);
       expect(provider.messagesWithId(SENT, outbox.stable_message_id)).toHaveLength(1);
       const projection = await sentProjection(mailbox, outbox.stable_message_id);
       expect(projection.placements).toEqual([SENT]);
@@ -701,6 +719,71 @@ suite("mail sent message projection", () => {
     }
   });
 
+  const newDraft = async (mailbox: Connected, subject: string) => {
+    const draft = await createDraft({
+      context,
+      mailboxId: mailbox.mailboxId,
+      input: {
+        senderIdentityId: mailbox.identityId,
+        to: [{ name: "Customer", address: CUSTOMER }],
+        cc: [],
+        bcc: [],
+        subject,
+        body: "The report is ready.",
+        format: "plain",
+      },
+    });
+    if (!draft.ok) throw new Error(JSON.stringify(draft.error));
+    await waitForDraftExport(draft.data.id, ["active"]);
+    return draft.data;
+  };
+
+  test("a completed append counts as the Sent copy even before the server's search lists it", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Search lag");
+      provider.indexNewMessagesLate();
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-lag");
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual([]);
+
+      provider.indexEverything();
+      await mailbox.syncAll();
+      await waitForHydration(mailbox);
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      const projection = await sentProjection(mailbox, outbox.stable_message_id);
+      expect(projection.messages.map((message) => message.id)).toEqual([outbox.message_id]);
+      expect(projection.placements).toEqual(["Sent"]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an IMAP failure after SMTP accepted the message keeps the send confirmed and stores the copy later", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Dropped connection");
+      provider.failSearchesAfterSubmission(1);
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-dropped", "sent_sync_pending");
+      const [command] = await sql<{ state: string }[]>`
+        SELECT command.state
+        FROM mail.outbox_submissions outbox
+        JOIN mail.commands command ON command.id = outbox.command_id
+        WHERE outbox.id = ${outbox.id}::uuid
+      `;
+      expect(command?.state).toBe("confirmed");
+      expect(provider.appends).toEqual(["Drafts"]);
+
+      expect(await executeOutboxSubmission(outbox.id)).toBe("sent");
+      expect(provider.appends).toEqual(["Drafts", "Sent"]);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual(["Sent"]);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("rebuilding threads removes projected drafts an earlier sync imported as messages", async () => {
     const provider = createProvider("gmail");
     try {
@@ -717,29 +800,39 @@ suite("mail sent message projection", () => {
         ([, message]) => message.messageId === snapshot!.stable_message_id,
       );
       const envelope = await provider.envelope(ALL, allMailCopy![0], mailbox.folderId(ALL));
+      expect(envelope.flags).toContain("\\Draft");
       const [resource] = await sql<{ id: string }[]>`
         SELECT remote_resource_id AS id FROM mail.folders WHERE id = ${mailbox.folderId(ALL)}::uuid
       `;
-      await ingestEnvelope({
-        db: sql,
-        mailboxId: mailbox.mailboxId,
-        remoteResourceId: resource!.id,
-        folderId: mailbox.folderId(ALL),
-        message: { ...envelope, flags: [], labels: [] },
-      });
+      const importCopy = (flags: string[], labels: string[]) =>
+        ingestEnvelope({
+          db: sql,
+          mailboxId: mailbox.mailboxId,
+          remoteResourceId: resource!.id,
+          folderId: mailbox.folderId(ALL),
+          message: { ...envelope, flags, labels },
+        });
+      const rebuildThreads = async (key: string) => {
+        const rebuild = await createMailCommand({
+          context,
+          mailboxId: mailbox.mailboxId,
+          input: { kind: "rebuild_threads", idempotencyKey: `repair-threads-${key}-${suffix}` },
+          enqueue: false,
+        });
+        if (!rebuild.ok) throw new Error(JSON.stringify(rebuild.error));
+        expect(await executeMaintenanceCommand(rebuild.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      };
+
+      // Live without the \Draft flag, the message is real mail that kept the draft's Message-ID.
+      await importCopy([], []);
+      await rebuildThreads("sent-elsewhere");
       expect((await conversationMessages(inbound.conversation_id)).map((message) => message.message_id)).toEqual([
         inbound.messageId,
         snapshot!.stable_message_id,
       ]);
 
-      const rebuild = await createMailCommand({
-        context,
-        mailboxId: mailbox.mailboxId,
-        input: { kind: "rebuild_threads", idempotencyKey: `repair-threads-${suffix}` },
-        enqueue: false,
-      });
-      if (!rebuild.ok) throw new Error(JSON.stringify(rebuild.error));
-      expect(await executeMaintenanceCommand(rebuild.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      await importCopy(envelope.flags, envelope.labels);
+      await rebuildThreads("draft-copy");
       expect(await conversationMessages(inbound.conversation_id)).toEqual([{ message_id: inbound.messageId, active_placements: 2 }]);
       const [kept] = await sql<{ state: string }[]>`
         SELECT state FROM mail.drafts WHERE id = ${draft.id}::uuid

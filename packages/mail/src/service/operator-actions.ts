@@ -244,7 +244,8 @@ const rebuildSearchProjection = async (db: SqlClient, mailboxId: string): Promis
 const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promise<JsonRecord> => {
   // Drafts Mail projected to the provider are never conversation messages. Syncs before the
   // `\Draft` guard imported them from folders such as Gmail's All Mail; the timeline refresh
-  // below recomputes the conversations they were in.
+  // below recomputes the conversations they were in. A copy that is live anywhere without the
+  // `\Draft` flag was sent from another program with the draft's Message-ID and stays.
   const removedDraftCopies = await db<{ id: string }[]>`
     DELETE FROM mail.message_contents message
     USING mail.draft_provider_snapshots snapshot
@@ -252,6 +253,12 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       AND snapshot.mailbox_id = message.mailbox_id
       AND snapshot.direction = 'export'
       AND lower(snapshot.stable_message_id) = lower(message.message_id)
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.message_placements placement
+        WHERE placement.message_id = message.id
+          AND placement.deleted_at IS NULL
+          AND NOT ('\\Draft' = ANY(placement.flags) OR '\\Draft' = ANY(placement.keywords))
+      )
       AND NOT EXISTS (SELECT 1 FROM mail.outbox_submissions outbox WHERE outbox.message_id = message.id)
       AND NOT EXISTS (
         SELECT 1 FROM mail.drafts draft

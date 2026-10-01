@@ -1680,6 +1680,7 @@ suite("mail lifecycle control plane", () => {
           folderPath: "Reconcile",
           folderId: fixture.folderId,
           uidValidity: "62",
+          draftsFolder: false,
           signal: AbortSignal.timeout(10_000),
         }),
       ).rejects.toMatchObject({ code: "RECONCILE_WINDOW_UNTRUSTED" });
@@ -1710,6 +1711,7 @@ suite("mail lifecycle control plane", () => {
         folderPath: "Reconcile",
         folderId: fixture.folderId,
         uidValidity: "63",
+        draftsFolder: false,
         signal: AbortSignal.timeout(10_000),
       });
       expect(envelopes.mock.calls[0]?.[1]).toMatchObject({ uids: [2] });
@@ -1717,6 +1719,37 @@ suite("mail lifecycle control plane", () => {
       expect(result?.flags).toHaveLength(2);
       expect(result?.imports).toHaveLength(1);
       expect(cursor.reconcileNextLow).toBeNull();
+    } finally {
+      envelopes.mockRestore();
+      window.mockRestore();
+      await dropReconcileFolders();
+    }
+  });
+
+  test("a reconcile window fetches drafts only in the Drafts folder", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-drafts", uidValidity: "64", localUids: [1] });
+    const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([
+      { uid: 1, modseq: null, flags: [], labels: [] },
+      { uid: 2, modseq: null, flags: ["\\Draft"], labels: [] },
+      { uid: 3, modseq: null, flags: [], labels: ["\\Draft"] },
+      { uid: 4, modseq: null, flags: ["\\Seen"], labels: [] },
+    ]);
+    const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({ messages: [], nextHighUid: null });
+    try {
+      for (const draftsFolder of [false, true]) {
+        await fetchReconcileStep({
+          cursor: reconcileCursor("64", 1),
+          currentHighUid: 10,
+          remoteMessages: 4,
+          runtime: {} as never,
+          folderPath: "Reconcile",
+          folderId: fixture.folderId,
+          uidValidity: "64",
+          draftsFolder,
+          signal: AbortSignal.timeout(10_000),
+        });
+      }
+      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [2, 3, 4]]);
     } finally {
       envelopes.mockRestore();
       window.mockRestore();

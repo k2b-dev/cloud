@@ -273,7 +273,7 @@ cld --json mail identity setup-default <binding-id> --label "Support mailbox" --
 cld --json mail identity list
 ```
 
-Pass `--provider-saves-sent` only when the provider stores SMTP submissions in Sent itself. Otherwise Cloud resolves the configured Sent role and appends the sent copy through IMAP.
+Pass `--provider-saves-sent` only when the provider stores SMTP submissions in Sent itself. Otherwise Cloud resolves the configured Sent role and appends the sent copy through IMAP once. Gmail needs no flag: Cloud looks for the copy Gmail stores and appends its own only when a later check still finds none.
 
 Use the manual identity lifecycle only for aliases, delegated senders, or other advanced cases:
 

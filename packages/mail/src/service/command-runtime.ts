@@ -2440,6 +2440,9 @@ const appendSentCopy = async (params: {
   if (!params.appendMissing) return { stored: false, uids: [] };
   const source = await sentCopySource(params.outbox, { blobId: params.mimeBlobId, byteLength: params.mimeByteLength });
   await params.assertLeaseActive();
+  // A completed APPEND stores the copy even when the provider's search does not list it yet;
+  // treating that as missing would append a second copy on the next attempt.
+  let appended = false;
   try {
     await imapSmtpConnector.appendSource(
       params.runtime,
@@ -2450,6 +2453,7 @@ const appendSentCopy = async (params: {
       new Date(params.outbox.created_at),
       params.signal,
     );
+    appended = true;
     await params.assertLeaseActive();
   } catch (error) {
     const reconciled = await sentMatches({
@@ -2457,7 +2461,7 @@ const appendSentCopy = async (params: {
       sentPath: params.sender.sent_path,
       messageId: params.outbox.stable_message_id,
     }).catch(() => []);
-    if (reconciled.length > 0) return { stored: true, uids: reconciled };
+    if (appended || reconciled.length > 0) return { stored: true, uids: reconciled };
     log.warn("Sent copy append remains pending", { outboxId: params.outbox.id, code: normalizeCode(error, "SENT_APPEND_FAILED") });
     return { stored: false, uids: [] };
   }
@@ -2466,8 +2470,8 @@ const appendSentCopy = async (params: {
     sentPath: params.sender.sent_path,
     messageId: params.outbox.stable_message_id,
     signal: params.signal,
-  });
-  return { stored: confirmed.length > 0, uids: confirmed };
+  }).catch(() => []);
+  return { stored: true, uids: confirmed };
 };
 
 /**
@@ -2479,6 +2483,7 @@ const recordSentCopy = async (outbox: DbOutboxExecution, sender: DbSenderBinding
   const folderId = sender.sent_folder_id;
   try {
     await sql.begin((tx) => recordSentCopyPlacement(tx, { outboxId: outbox.id, bindingId: outbox.selected_binding_id, folderId, uids }));
+    await notifyMailInvalidations();
   } catch (error) {
     log.warn("Sent copy placement waits for the next folder sync", {
       outboxId: outbox.id,
@@ -2623,6 +2628,8 @@ const persistSmtpResult = async (params: {
     });
     return;
   }
+  // SMTP accepted the message, so an IMAP failure while storing the Sent copy leaves the send
+  // confirmed and the copy to the next attempt instead of making the delivery look uncertain.
   const sentCopy = await appendSentCopy({
     outbox,
     sender: prepared.sender,
@@ -2632,6 +2639,9 @@ const persistSmtpResult = async (params: {
     assertLeaseActive: params.assertLeaseActive,
     signal: params.signal,
     appendMissing: !prepared.providerStoresSubmission,
+  }).catch((error: unknown): SentCopy => {
+    log.warn("Sent copy waits for the next attempt", { outboxId: outbox.id, code: normalizeCode(error, "SENT_APPEND_FAILED") });
+    return { stored: false, uids: [] };
   });
   await recordSentCopy(outbox, prepared.sender, sentCopy.uids);
   await finishOutbox({

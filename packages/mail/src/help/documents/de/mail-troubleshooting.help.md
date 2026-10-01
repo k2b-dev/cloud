@@ -106,7 +106,7 @@ Eine weitere Antwort blendet vorhandene Arbeit nicht aus. Der Dialog **Entwurf f
 Mail legt eine gesendete Nachricht in den Gesendet-Ordner der Identität, sobald es die Kopie dort findet. Bei Gmail folgt die Zuordnung zu „Alle Nachrichten“ mit der nächsten Synchronisierung dieses Ordners.
 
 - Zeigt die Nachricht **Gesendet, aber nicht gespeichert**, konnte Mail die Kopie weder ablegen noch finden. Prüfe die Zuordnung des Gesendet-Ordners der Identität und die Rechte des Anbieters für diesen Ordner. Sende die Nachricht nicht erneut.
-- Zeigt eine Unterhaltung neben der gesendeten Nachricht eine zusätzliche Kopie eines Entwurfs, hat eine frühere Version Gmails Entwurfskopie aus „Alle Nachrichten“ übernommen. Eine Person mit Adminrechten entfernt solche Kopien mit **Unterhaltungsprojektion reparieren**.
+- Zeigt eine Unterhaltung neben der gesendeten Nachricht eine zusätzliche Kopie eines Entwurfs, hat eine frühere Version Gmails Entwurfskopie aus „Alle Nachrichten“ übernommen. Eine Person mit Adminrechten entfernt solche Kopien mit **Unterhaltungsansicht reparieren**.
 
 Für einen einzelnen Ordner im Terminal akzeptiert `cld mail ls "Postfach:Sent Mail"` auch den letzten Namensteil oder die Rolle eines Ordners, etwa `sent`, wenn der Anbieter ihn verschachtelt, zum Beispiel unter `[Gmail]`.
 
@@ -125,7 +125,7 @@ Lokale Tags und interne Kommentare gibt es nur in Cloud. Anbieterordner und Schl
 
 Die Texterkennung für Anhänge blockiert niemals Empfang, Lesen oder Versand einer Nachricht. Mail wiederholt unterbrochene Verarbeitungen automatisch und nimmt regelmäßig Anhänge wieder auf, die gespeichert wurden, bevor sie einer Verarbeitung zugeordnet werden konnten. Verschlüsselte, gescannte, nicht unterstützte, fehlerhafte oder zu große Anhänge sind endgültige Ergebnisse: Die ursprüngliche Datei bleibt verfügbar, ihr Inhalt ist aber nicht durchsuchbar.
 
-Zeigt **Status > Reparatur- und Projektionsabdeckung** eine Lücke, kann eine Person mit Adminrechten **Fehlende Inhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsprojektion reparieren** einplanen. Warte, bis der dauerhafte Befehl abgeschlossen ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und erhalten Postfachinhalte sowie Zusammenarbeitsdaten.
+Zeigt **Status > Reparatur- und Projektionsabdeckung** eine Lücke, kann eine Person mit Adminrechten **Fehlende Inhalte laden**, **Suche neu aufbauen** oder **Unterhaltungsansicht reparieren** einplanen. Warte, bis der dauerhafte Befehl abgeschlossen ist, bevor du ihn wiederholst. Reparaturen von Suche und Unterhaltungen bauen abgeleitete Daten neu auf und erhalten Postfachinhalte sowie Zusammenarbeitsdaten.
 
 ## Ein Befehl benötigt Aufmerksamkeit {icon="lifebuoy"}
 
