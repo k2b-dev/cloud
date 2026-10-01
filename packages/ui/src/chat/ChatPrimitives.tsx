@@ -279,7 +279,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
             </span>
           </Show>
           <Show when={actions().length > 0 && actionDisplay() === "menu"}>
-            <Dropdown.Root position="bottom-left" width="12rem" label={messages().messageActions} items={menuItems()}>
+            <Dropdown.Root position="bottom-left" label={messages().messageActions} items={menuItems()}>
               <Dropdown.Trigger
                 appearance="plain"
                 class="k2b-chat-message__menu"

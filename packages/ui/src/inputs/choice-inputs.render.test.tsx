@@ -446,11 +446,21 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain("Comfortable");
     expect(html).toContain("Compact");
-    // Cloud opens this menu at `w-40`, and marks the current option with a
-    // trailing check rather than a leading icon.
-    expect(html).toContain("--k2b-dropdown-width:10rem");
+    // Cloud opens this menu at `w-40`; it is now the floor of a menu sized to
+    // its options. The current option carries a trailing check rather than a
+    // leading icon, and the others reserve its space hidden.
+    expect(html).not.toContain("--k2b-dropdown-width");
+    expect(html).toContain("k2b-select-chip__menu");
+    expect(cssRule('.k2b-ui .k2b-dropdown__menu.k2b-select-chip__menu:not([data-width="fixed"])')).toContain(
+      "min-width: min(10rem, 100vw - 2rem)",
+    );
     expect(html).toContain("k2b-select-chip__option");
-    expect(html).toContain('<span class="k2b-dropdown__copy"><span>Comfortable</span></span><i class="ti ti-check k2b-dropdown__check"');
+    expect(html).toContain(
+      '<span class="k2b-dropdown__copy"><span>Comfortable</span></span><i class="ti ti-check k2b-dropdown__check" aria-hidden="true"',
+    );
+    expect(html).toContain(
+      '<span class="k2b-dropdown__copy"><span>Compact</span></span><i class="ti ti-check k2b-dropdown__check" data-hidden="true"',
+    );
     expect(html).not.toContain('<i class="ti ti-check" aria-hidden="true"></i><span>Comfortable');
 
     const chipRule = cssRule(".k2b-ui .k2b-select-chip");

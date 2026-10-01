@@ -491,6 +491,10 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).not.toContain('type="checkbox"');
     expect(html).toContain('aria-label="Filter actions"');
     expect(html).toContain("Reset");
+    // The menu sizes to its longest option with the former 13rem as its floor.
+    expect(html).toContain("k2b-filter-chip__menu");
+    expect(html).not.toContain("--k2b-dropdown-width");
+    expect(rule(".k2b-ui .k2b-dropdown__menu.k2b-filter-chip__menu")).toContain("min-width: min(13rem, 100vw - 2rem)");
   });
 
   test("treats an empty filter default as clear mode and keeps the selected count", () => {
@@ -510,7 +514,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).not.toContain("Reset");
   });
 
-  test("applies the dropdown width as a real CSS length, not a class name", () => {
+  test("sizes menus to their entries and applies an explicit width as a real CSS length", () => {
     const sized = renderToString(() =>
       createComponent(Dropdown.Root, {
         width: "10rem",
@@ -532,12 +536,24 @@ describe("@k2b/ui complete action migrations", () => {
     // The package ships no utility classes, so a class-name passthrough would be
     // dead API for every standalone consumer.
     expect(sized).toContain("--k2b-dropdown-width:10rem");
+    expect(sized).toContain('data-width="fixed"');
     expect(sized).not.toContain('class="k2b-dropdown__menu 10rem');
     expect(unsized).not.toContain("--k2b-dropdown-width");
-    // The default stays in CSS, and nothing may clamp a narrower request.
-    expect(actionsCss).toContain("width: var(--k2b-dropdown-width, 12rem)");
+    expect(unsized).not.toContain("data-width");
+    // Without a width the menu grows with its longest entry from the compact
+    // default up to the viewport.
     const menu = rule(".k2b-ui .k2b-dropdown__menu");
-    expect(menu).not.toContain("min-width:");
+    expect(menu).toContain("width: max-content");
+    expect(menu).toContain("min-width: min(12rem, 100vw - 2rem)");
+    expect(menu).toContain("max-width: calc(100vw - 2rem)");
+    // An explicit width is exact: nothing may clamp a narrower request.
+    const fixed = rule('.k2b-ui .k2b-dropdown__menu[data-width="fixed"]');
+    expect(fixed).toContain("width: var(--k2b-dropdown-width)");
+    expect(fixed).toContain("min-width: 0");
+    // Entries wrap instead of truncating.
+    const copy = rule(".k2b-ui .k2b-dropdown__copy > span,\n.k2b-ui .k2b-dropdown__copy > small");
+    expect(copy).toContain("overflow-wrap: anywhere");
+    expect(copy).not.toContain("ellipsis");
     expect(menu).toContain("display: none");
     expect(menu).toContain("flex-direction: column");
     expect(menu).toContain("transition: none");

@@ -35,7 +35,9 @@ immediately or as a promise. `context` contains the complete text, caret, and
 token start. Use the signal to cancel remote work.
 
 Set `dropdown: true` to show all matches. The dropdown aligns with the start of
-the active token, follows editor scrolling, and stays within the viewport.
+the active token, follows editor scrolling, and stays within the viewport. It
+is as wide as its longest suggestion, at least 280 px, and wraps a suggestion
+only where the viewport ends, so no suggestion is cut off.
 Without it, the active suggestion appears as a ghost preview. Tab accepts the
 active suggestion; dropdowns also support arrow keys and Enter.
 

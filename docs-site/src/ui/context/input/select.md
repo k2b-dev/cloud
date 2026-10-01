@@ -169,8 +169,9 @@ Each selection closes the menu before reporting through both value callbacks,
 so a consumer update cannot leave stale option content visible. Its options use
 `{ value, label }`, and their values may be strings or numbers. Optional
 `icon`, `image`, and `description` metadata supports compact rich choices such
-as model or environment selectors; use `menuWidth` only when their copy needs
-more than the default `10rem`.
+as model or environment selectors. The menu sizes to its options, at least
+`10rem`, and long options wrap at the viewport; `menuWidth` sets an exact width
+instead.
 
 Selection popovers dismiss synchronously. Do not add a generic host-level
 `[popover]` display or overlay transition around them; `@k2b/ui` explicitly
@@ -300,7 +301,7 @@ type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & 
 
 `fetchData` takes precedence over `loadOptions`; either remote source takes precedence over `options`. Debounce is `fetchDebounceMs ?? debounceMs ?? 200` milliseconds. Static `Select` search defaults off; static `MultiSelectInput` search defaults on. Remote search is always enabled. Render callbacks belong to `MultiSelectInput`, not `Select`. They receive normalized `ChoiceOption<string>` objects and return Solid content.
 
-`SelectChip.size` uses [ButtonSize](/en/ui/actions/buttons); `position` uses [DropdownPosition](/en/ui/actions/menus#api-reference). `menuWidth` is a CSS length, default `"10rem"`. `SelectChip` does not accept `null`; represent an explicit empty choice with an option of your value type.
+`SelectChip.size` uses [ButtonSize](/en/ui/actions/buttons); `position` uses [DropdownPosition](/en/ui/actions/menus#api-reference). `menuWidth` is an optional exact CSS length; without it the menu sizes to its options, at least `10rem`. `SelectChip` does not accept `null`; represent an explicit empty choice with an option of your value type.
 
 ## Accessibility
 
@@ -311,6 +312,11 @@ at least 44 px (2.75rem) tall. Options sit close together, so the option
 itself grows instead of reaching into its neighbour; devices without a touch
 screen keep the compact options, and grid tiles are already larger.
 `SelectChip` uses menu items, which follow the same rule.
+
+The option list of `Select`, `MultiSelectInput`, `AutocompleteSelect`, and
+`Combobox` keeps the trigger's width, so it lines up with its field. A long
+option label or description wraps there instead of ending in an ellipsis;
+grid tiles keep their two-line clamp.
 
 Option labels must remain clear without icons or colors. If the surrounding
 toolbar already names a `SelectChip`, use the native `"aria-label"` property

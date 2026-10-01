@@ -20,6 +20,9 @@ describe("CardSizeDropdown", () => {
     expect(html).toContain("Small cards");
     expect(html).toContain("Medium cards");
     expect(html).toContain("Large cards");
-    expect(html.match(/ti-check/g)).toHaveLength(1);
+    // Only the chosen size shows its check; the others reserve its space hidden,
+    // so choosing a size cannot widen the open menu.
+    expect(html.match(/ti-check/g)).toHaveLength(3);
+    expect(html.match(/ti-check k2b-dropdown__check" data-hidden="true"/g)).toHaveLength(2);
   });
 });

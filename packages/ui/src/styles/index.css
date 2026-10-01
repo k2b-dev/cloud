@@ -3983,9 +3983,11 @@
   display: none;
   flex-direction: column;
   gap: 0.125rem;
-  /* `Dropdown`'s `width` prop sets `--k2b-dropdown-width` to a CSS length.
-     No `min-width`: it would silently clamp a narrower requested width. */
-  width: var(--k2b-dropdown-width, 12rem);
+  /* Menus size to their longest entry, so callers need not know a width:
+     never narrower than the compact default, never wider than the viewport.
+     Entries wrap there instead of truncating. */
+  width: max-content;
+  min-width: min(12rem, 100vw - 2rem);
   max-width: calc(100vw - 2rem);
   max-height: min(24rem, 80dvh);
   overflow: auto;
@@ -4058,11 +4060,11 @@
   gap: 0.0625rem;
 }
 
+/* Every label stays readable: entries wrap, and a long unbroken word breaks
+   rather than overflowing the menu. */
 .k2b-ui .k2b-dropdown__copy > span,
 .k2b-ui .k2b-dropdown__copy > small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-dropdown__copy > small {
@@ -4105,6 +4107,10 @@
   font-size: 0.75rem;
 }
 
+.k2b-ui .k2b-dropdown__check[data-hidden="true"] {
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-dropdown__section {
   display: flex;
   flex-direction: column;
@@ -4124,15 +4130,25 @@
   font-size: 0.625rem;
   font-weight: 500;
   letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
 }
 
 /* Opt-in touch menus leave the compact default and shared ContextMenu rows unchanged. */
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
-  width: var(--k2b-dropdown-width, 18rem);
+  min-width: min(18rem, 100vw - 2rem);
   max-height: min(32rem, 80dvh);
   padding: 0.5rem;
   gap: 0.25rem;
+}
+
+/* `Dropdown`'s `width` prop sets `--k2b-dropdown-width` to an exact CSS
+   length, also on touch. No minimum: it would silently clamp a narrower
+   requested width. */
+.k2b-ui .k2b-dropdown__menu[data-width="fixed"] {
+  width: var(--k2b-dropdown-width);
+  min-width: 0;
+  max-width: calc(100vw - 2rem);
 }
 
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] .k2b-dropdown__item {
@@ -4249,9 +4265,12 @@
 .k2b-ui .k2b-filter-chip__option > span:not(.k2b-dropdown__checkbox, .k2b-dropdown__color) {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+/* A filter menu keeps its former 13rem as the floor and grows with its
+   longest option like every other menu. */
+.k2b-ui .k2b-dropdown__menu.k2b-filter-chip__menu {
+  min-width: min(13rem, 100vw - 2rem);
 }
 
 .k2b-ui .k2b-filter-chip__checkbox {
@@ -4769,20 +4788,18 @@
   border-radius: 999px;
 }
 
+/* The list keeps the trigger's width, so a long option wraps instead of
+   truncating; grid tiles clamp their own text. */
 .k2b-ui .k2b-choice-option strong {
-  overflow: hidden;
   font-size: 0.75rem;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-choice-option small {
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .k2b-ui .k2b-choice-option__checkbox {
   display: flex;
@@ -7193,17 +7210,17 @@
   gap: 0.125rem;
 }
 
-.k2b-ui .k2b-chat-composer__commands strong { font-size: 0.8125rem; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 55%; }
+/* Command names and descriptions wrap instead of truncating, so every entry
+   stays readable on a phone. */
+.k2b-ui .k2b-chat-composer__commands strong { font-size: 0.8125rem; font-weight: 400; overflow-wrap: anywhere; flex-shrink: 0; max-width: 55%; }
 .k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] { opacity: 0.5; cursor: default; }
 
 .k2b-ui .k2b-chat-composer__commands small {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-chat-composer__attachments {
@@ -7712,8 +7729,11 @@
   position: fixed;
   z-index: 1001;
   display: flex;
-  width: 13rem;
-  max-width: min(22rem, calc(100vw - 1rem));
+  /* Sized to its longest entry like a dropdown menu; entries wrap only at
+     the viewport. */
+  width: max-content;
+  min-width: min(13rem, 100vw - 1rem);
+  max-width: calc(100vw - 1rem);
   max-height: min(24rem, calc(100dvh - 1rem));
   flex-direction: column;
   gap: 0.125rem;
@@ -7732,6 +7752,12 @@
 .k2b-ui .k2b-select-chip {
   min-width: 0;
   max-width: 100%;
+}
+
+/* Cloud opens this menu at `w-40`: the floor of a content-sized select chip
+   menu. An explicit `menuWidth` stays exact. */
+.k2b-ui .k2b-dropdown__menu.k2b-select-chip__menu:not([data-width="fixed"]) {
+  min-width: min(10rem, 100vw - 2rem);
 }
 
 .k2b-ui .k2b-spotlight-button,

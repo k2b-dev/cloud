@@ -719,7 +719,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 <div class="k2b-chat-composer__tools">
                   {props.footerTools}
                   <Show when={hasAddMenu()}>
-                    <Dropdown.Root position="top-right" width="12rem" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
+                    <Dropdown.Root position="top-right" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
                       <Dropdown.Trigger
                         appearance="plain"
                         class="k2b-chat-composer__icon-action"

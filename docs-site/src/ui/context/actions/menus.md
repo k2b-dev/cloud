@@ -44,11 +44,11 @@ items with a mouse too, and devices without a touch screen keep the compact
 
 Set `variant="touch"` on `Dropdown.Root` for larger touch targets on every
 device. It uses rows at least 52 px high, 16 px labels, larger icons, and an
-18rem default width.
+18rem minimum width.
 An explicit `width` still takes precedence; the menu stays within the viewport
 and scrolls when necessary. Keyboard navigation and selection behave the same.
 Omitting `variant` (or using `variant="default"`) keeps the compact appearance
-and 12rem default width. Trigger styling is configured separately.
+and 12rem minimum width. Trigger styling is configured separately.
 
 ```tsx
 <Dropdown.Root items={items} variant="touch" align="end">
@@ -83,7 +83,25 @@ An `iconOnly` trigger defaults to the quiet `ghost` variant and shows its
 when the icon action should be emphasized, and `tooltip` to change or omit the
 hint.
 
-`width` is a **CSS length string**, not a class name. It sets the menu's `--k2b-dropdown-width` and defaults to `12rem`:
+## Menu width
+
+Menus size to their entries, so a caller does not need to know a width. A menu
+is as wide as its longest label or description, at least `12rem` (`18rem` for
+`variant="touch"`, `13rem` for `FilterChip`, and `10rem` for `SelectChip`), and
+at most the viewport width less `1rem` per side. An entry or section label
+longer than that wraps instead of ending in an ellipsis, and an unbroken word
+breaks, so every label stays readable on a phone. A radio choice reserves its
+check mark while unchecked, so choosing an option never widens an open menu.
+`ContextMenu` follows the same rule with a `13rem` minimum and `0.5rem` to each
+viewport edge, and is measured before it is clamped beside the pointer. When
+entries change while a menu is open, it keeps its alignment with the trigger or
+pointer and stays inside the viewport. Opening a menu never moves the trigger
+or the page around it.
+
+`width` is an optional exact override as a **CSS length string**, not a class
+name. It sets the menu's `--k2b-dropdown-width`; entries wrap within it, and
+the viewport bound still applies. Use it only when a menu must line up with
+something else:
 
 ```tsx
 <Dropdown.Root items={actions} width="18rem" position="bottom-left">
@@ -150,7 +168,7 @@ type ContextMenuProps = {
 
 `DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. `DropdownChoice.closeOnSelect` defaults to true; ordinary actions close on activation. A section contains actions/choices, not nested sections.
 
-`position` defaults to `"bottom-right"`; `align` (`"start" | "end"`) is an optional alignment override. `variant="default"`; `width` is a CSS length. Pair controlled `open` with `onOpenChange`, or omit both for internal state. `ContextMenu` has no controlled `open` prop. `DropdownItem` is also a low-level JSX export; normal consumers use the declarative `items` API above.
+`position` defaults to `"bottom-right"`; `align` (`"start" | "end"`) is an optional alignment override. `variant="default"`; `width` is an optional exact CSS length, and without it the menu sizes to its entries. Pair controlled `open` with `onOpenChange`, or omit both for internal state. `ContextMenu` has no controlled `open` prop. `DropdownItem` is also a low-level JSX export; normal consumers use the declarative `items` API above.
 
 ## Accessibility
 

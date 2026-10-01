@@ -104,7 +104,13 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
   });
 
   return (
-    <Dropdown.Root disabled={props.disabled} items={items()} position={props.position ?? "bottom-left"} width="13rem" label={props.label}>
+    <Dropdown.Root
+      disabled={props.disabled}
+      items={items()}
+      position={props.position ?? "bottom-left"}
+      menuClass="k2b-filter-chip__menu"
+      label={props.label}
+    >
       <Dropdown.Trigger
         appearance={props.variant ? "button" : "plain"}
         variant={props.variant}

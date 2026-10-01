@@ -14,6 +14,7 @@ export type SplitButtonProps = Omit<ButtonProps, "align"> & {
   /** Accessible name and title for the icon-only menu trigger. */
   menuLabel: string;
   menuPosition?: DropdownPosition | (() => DropdownPosition);
+  /** Exact width of both menus as a CSS length. Without it the menus size to their entries. */
   menuWidth?: string;
 };
 

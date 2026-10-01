@@ -174,10 +174,6 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
     const maxHeight = 260;
     const spaceBelow = window.innerHeight - rect.bottom;
     const openAbove = spaceBelow < maxHeight && rect.top > spaceBelow;
-    const width = Math.min(280, window.innerWidth - 16);
-    const left = Math.min(rect.left, window.innerWidth - width - 8);
-    dropdown.style.setProperty("left", `${Math.max(8, left)}px`, "important");
-    dropdown.style.setProperty("width", `${width}px`, "important");
     if (openAbove) {
       dropdown.style.setProperty("top", "auto", "important");
       dropdown.style.setProperty("bottom", `${window.innerHeight - rect.top + 4}px`, "important");
@@ -186,6 +182,11 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
       dropdown.style.setProperty("bottom", "auto", "important");
     }
     if (!dropdown.matches(":popover-open")) dropdown.showPopover();
+    // The list sizes to its suggestions in CSS; measured once shown, it is
+    // clamped into the viewport before the next paint.
+    const width = dropdown.getBoundingClientRect().width;
+    const left = Math.min(rect.left, window.innerWidth - width - 8);
+    dropdown.style.setProperty("left", `${Math.max(8, left)}px`, "important");
   };
 
   const isAbortError = (error: unknown): boolean =>
