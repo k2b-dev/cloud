@@ -203,8 +203,8 @@ Choose a component from the interaction it needs to support:
 Do not mechanically replace every native menu button with the general `Button`
 component. Declarative `Dropdown` items own menu alignment and keyboard
 semantics; selection components own field state and selected-option semantics.
-When a dropdown needs a fixed width, pass a CSS length such as `width="16rem"`,
-not a utility class such as `w-64`.
+Dropdown menus size to their entries. When one must have an exact width, pass
+a CSS length such as `width="16rem"`, not a utility class such as `w-64`.
 
 Dropdown menus are declarative action surfaces. They do not accept arbitrary
 interactive content. Use a dialog for composite workflows and a selection

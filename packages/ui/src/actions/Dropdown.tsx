@@ -71,7 +71,11 @@ export type DropdownProps = {
   position?: DropdownPosition | (() => DropdownPosition);
   /** Larger menu rows and typography for touch. Defaults to `default`. */
   variant?: "default" | "touch";
-  /** Menu width as a CSS length. Defaults to `12rem`, or `18rem` for touch. */
+  /**
+   * Exact menu width as a CSS length. Without it the menu sizes to its longest
+   * entry: at least `12rem` (`18rem` for touch), at most the viewport width
+   * less `1rem` per side, where longer entries wrap.
+   */
   width?: string;
   class?: string;
   menuClass?: string;
@@ -271,8 +275,9 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
         <span>{props.label}</span>
         <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
       </span>
-      <Show when={props.choice === "radio" && checked()}>
-        <i class="ti ti-check k2b-dropdown__check" aria-hidden="true" />
+      {/* Always present for radios, so selecting the widest entry cannot widen a content-sized menu. */}
+      <Show when={props.choice === "radio"}>
+        <i class="ti ti-check k2b-dropdown__check" data-hidden={checked() ? undefined : "true"} aria-hidden="true" />
       </Show>
     </button>
   );
@@ -548,6 +553,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           aria-label={props.label ?? messages().dropdownMenu}
           class={`k2b-dropdown__menu ${props.menuClass ?? ""}`}
           style={props.width ? { "--k2b-dropdown-width": props.width } : undefined}
+          data-width={props.width ? "fixed" : undefined}
           data-variant={props.variant ?? "default"}
           data-position={position()}
           onKeyDown={handleMenuKeyDown}

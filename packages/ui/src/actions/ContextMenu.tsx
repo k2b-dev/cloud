@@ -89,19 +89,22 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     closeActiveContextMenu?.();
     // Focus may sit on a descendant of the host, as in composite widgets.
     hostRing = ringOnReturn(document.activeElement);
-    const point = dropdownPosition(
-      new DOMRect(x, y, 0, 0),
-      // Matches the fixed 13rem `.k2b-context-menu` surface (border-box).
-      { width: 208, height: Math.min(items().length * 38 + 12, 384) },
-      "bottom-right" satisfies DropdownPosition,
-      { width: window.innerWidth, height: window.innerHeight },
-      0,
-    );
-    setPosition({ x: point.left, y: point.top });
+    setPosition({ x, y });
     closeActiveContextMenu = close;
     attachOpenListeners();
     props.onOpen?.();
+    // The menu sizes to its entries, so it is measured once rendered and
+    // clamped into the viewport before the next paint.
     queueMicrotask(() => {
+      if (!menu?.isConnected) return;
+      const point = dropdownPosition(
+        new DOMRect(x, y, 0, 0),
+        menu.getBoundingClientRect(),
+        "bottom-right" satisfies DropdownPosition,
+        { width: window.innerWidth, height: window.innerHeight },
+        0,
+      );
+      setPosition({ x: point.left, y: point.top });
       focusItem(0);
     });
   };

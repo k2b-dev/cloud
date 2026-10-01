@@ -237,6 +237,11 @@
   position: fixed;
   z-index: 1001;
   inset: unset;
+  /* Sized to the longest suggestion, at least the former 280px, and wrapped
+     only where the viewport ends. */
+  width: max-content;
+  min-width: min(17.5rem, 100vw - 1rem);
+  max-width: calc(100vw - 1rem);
   max-height: min(17rem, calc(100dvh - 1rem));
   overflow: hidden;
   margin: 0;
@@ -286,21 +291,17 @@
 
 .k2b-ui .k2b-autocomplete__option > span {
   min-width: 0;
-  overflow: hidden;
   font-family: var(--k2b-font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-autocomplete__option small {
   min-width: 0;
   margin-left: auto;
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
   line-height: 1rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-autocomplete__status {

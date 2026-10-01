@@ -23,6 +23,7 @@ export type SelectChipProps<T extends string | number = string> = ValueFieldProp
   size?: ButtonSize;
   placeholder?: string;
   position?: DropdownPosition;
+  /** Exact menu width as a CSS length. Without it the menu sizes to its options, at least `10rem`. */
   menuWidth?: string;
   name?: string;
 };
@@ -59,8 +60,9 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
     >
       <Dropdown.Root
         position={props.position ?? "bottom-right"}
-        /* Cloud opens this menu at `w-40`. */
-        width={props.menuWidth ?? "10rem"}
+        /* Cloud opens this menu at `w-40`; the stylesheet keeps that as its floor. */
+        width={props.menuWidth}
+        menuClass="k2b-select-chip__menu"
         label={triggerLabel()}
         items={items()}
       >
