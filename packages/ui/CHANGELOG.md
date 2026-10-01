@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.10.0...npm-ui-v0.11.0) (2026-10-01)
+
+
+### Features
+
+* **mail:** show a quick look card when hovering a conversation ([#517](https://github.com/k2b-dev/cloud/issues/517)) ([a8402c8](https://github.com/k2b-dev/cloud/commit/a8402c8ceac8d54960f13d9d1145542eee3e0a46))
+* **notebooks:** hide the navigation completely for focused writing ([#520](https://github.com/k2b-dev/cloud/issues/520)) ([e78fd79](https://github.com/k2b-dev/cloud/commit/e78fd797e6d7e5a190fa3906bf4796a7308260a5))
+
 ## [0.10.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.9.1...npm-ui-v0.10.0) (2026-10-01)
 
 
