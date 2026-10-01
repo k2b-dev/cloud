@@ -918,6 +918,13 @@ export const listFiltered = async (params: {
     ) = ${filter.blocked}`;
   }
 
+  if (filter.overdue !== undefined) {
+    const { todayStart } = deadlineWindow(params.dateConfig);
+    conditions = filter.overdue
+      ? sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz`
+      : sql`${conditions} AND (i.deadline IS NULL OR i.deadline >= ${todayStart}::timestamptz)`;
+  }
+
   // Status filter
   if (status === "active") {
     conditions = sql`${conditions} AND i.completed_at IS NULL`;

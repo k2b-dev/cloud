@@ -489,6 +489,11 @@ function spacesCommands(locale?: string) {
               ctx.print(`${space.name} (${space.id})`);
               if (space.description) ctx.print(space.description);
               ctx.print(`${t({ en: "columns", de: "Spalten" })}: ${space.columns.map((c) => `${c.name} (${c.id})`).join(", ") || "-"}`);
+              if (space.virtualColumns.length > 0) {
+                ctx.print(
+                  `${t({ en: "automatic columns", de: "automatische Spalten" })}: ${space.virtualColumns.map((virtual) => virtual.kind).join(", ")}`,
+                );
+              }
               ctx.print(
                 `${t({ en: "tags", de: "Schlagwörter" })}: ${space.tags.map((tag) => `${tag.name} (${tag.id})`).join(", ") || "-"}`,
               );

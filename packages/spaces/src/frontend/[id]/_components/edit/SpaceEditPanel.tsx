@@ -76,6 +76,7 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
               <StatusesSection
                 spaceId={props.space.id}
                 columns={props.space.columns}
+                virtualColumns={props.space.virtualColumns}
                 onWorkspaceChange={props.onWorkspaceChange}
                 onSettingsChange={props.onSettingsChange}
                 onDirtyChange={setStatusesDirty}

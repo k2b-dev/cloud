@@ -1,8 +1,9 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, toast } from "@k2b/ui";
+import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, Switch, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { SpaceColumn } from "@/contracts";
+import { type BoardColumn, boardColumnOrderId, orderBoardColumns } from "@/board-columns";
+import type { SpaceColumn, SpaceVirtualColumn, SpaceVirtualColumnKind } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import { NameColorForm } from "./NameColorForm";
 import { readErrorMessage } from "./utils";
@@ -10,13 +11,18 @@ import { readErrorMessage } from "./utils";
 export function StatusesSection(props: {
   spaceId: string;
   columns: SpaceColumn[];
+  virtualColumns: SpaceVirtualColumn[];
   onWorkspaceChange?: () => void;
   onSettingsChange?: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const m = useSpaceMessages();
-  const [optimisticColumns, setOptimisticColumns] = createSignal<SpaceColumn[] | null>(null);
-  const columns = () => optimisticColumns() ?? props.columns;
+  const [optimisticBoard, setOptimisticBoard] = createSignal<BoardColumn[] | null>(null);
+  // Statuses and enabled automatic columns share one board order.
+  const board = () => optimisticBoard() ?? orderBoardColumns(props.columns, props.virtualColumns);
+  const columns = () => board().flatMap((entry) => (entry.kind === "column" ? [entry.column] : []));
+  const virtualLabel = (kind: SpaceVirtualColumnKind) => (kind === "blocked" ? m.blockedColumn : m.overdueColumn);
+  const entryLabel = (entry: BoardColumn) => (entry.kind === "column" ? entry.column.name : virtualLabel(entry.kind));
   const [editingId, setEditingId] = createSignal<string | "new" | null>(null);
   const reconcile = () => void props.onSettingsChange?.().catch((error) => prompts.error(error.message));
 
@@ -96,16 +102,40 @@ export function StatusesSection(props: {
       props.onWorkspaceChange?.();
       const refresh = props.onSettingsChange?.();
       if (!refresh) {
-        setOptimisticColumns(null);
+        setOptimisticBoard(null);
         return;
       }
-      void refresh.catch((error) => prompts.error(error.message)).finally(() => setOptimisticColumns(null));
+      void refresh.catch((error) => prompts.error(error.message)).finally(() => setOptimisticBoard(null));
     },
     onError: (err) => {
-      setOptimisticColumns(null);
+      setOptimisticBoard(null);
       prompts.error(err.message);
     },
-    onAbort: () => setOptimisticColumns(null),
+    onAbort: () => setOptimisticBoard(null),
+  });
+
+  const [pendingVirtual, setPendingVirtual] = createSignal<Partial<Record<SpaceVirtualColumnKind, boolean>>>({});
+  const virtualEnabled = (kind: SpaceVirtualColumnKind) =>
+    pendingVirtual()[kind] ?? props.virtualColumns.some((virtual) => virtual.kind === kind);
+  const toggleVirtualMut = mutations.create({
+    onBefore: ({ kind, enabled }: { kind: SpaceVirtualColumnKind; enabled: boolean }) =>
+      setPendingVirtual({ ...pendingVirtual(), [kind]: enabled }),
+    mutation: async ({ kind, enabled }: { kind: SpaceVirtualColumnKind; enabled: boolean }) => {
+      const route = apiClient[":id"]["virtual-columns"][":kind"];
+      const res = enabled
+        ? await route.$put({ param: { id: props.spaceId, kind } })
+        : await route.$delete({ param: { id: props.spaceId, kind } });
+      if (!res.ok) throw new Error(await readErrorMessage(res, m.virtualColumnChangeFailed));
+    },
+    onSuccess: () => {
+      props.onWorkspaceChange?.();
+      const refresh = props.onSettingsChange?.() ?? Promise.resolve();
+      void refresh.catch((error) => prompts.error(error.message)).finally(() => setPendingVirtual({}));
+    },
+    onError: (err) => {
+      setPendingVirtual({});
+      prompts.error(err.message);
+    },
   });
   let reorderSubmitting = false;
   let deletePromptPending = false;
@@ -126,16 +156,15 @@ export function StatusesSection(props: {
   const moveColumn = (index: number, direction: -1 | 1) => {
     if (reorderSubmitting || reorderMut.loading()) return;
     const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= columns().length) return;
+    if (newIndex < 0 || newIndex >= board().length) return;
 
-    const previous = columns();
-    const newColumns = [...previous];
-    const [moved] = newColumns.splice(index, 1);
-    newColumns.splice(newIndex, 0, moved!);
-    setOptimisticColumns(newColumns);
+    const next = [...board()];
+    const [moved] = next.splice(index, 1);
+    next.splice(newIndex, 0, moved!);
+    setOptimisticBoard(next);
 
     reorderSubmitting = true;
-    void reorderMut.mutate({ columnIds: newColumns.map((c) => c.id) }).finally(() => (reorderSubmitting = false));
+    void reorderMut.mutate({ columnIds: next.map(boardColumnOrderId) }).finally(() => (reorderSubmitting = false));
   };
 
   return (
@@ -175,42 +204,74 @@ export function StatusesSection(props: {
             {m.newStatus}
           </Button>
         </SettingsCollection.Action>
-        <For each={columns()}>
-          {(column, index) => (
-            <SettingsCollection.Item
-              title={column.name}
-              description={m.positionOf({ position: index() + 1, count: columns().length })}
-              icon={<span class="h-3 w-3 rounded-full" style={`background-color:${column.color || "#6b7280"}`} />}
-            >
-              <SettingsCollection.Item.Actions>
-                <SettingsCollection.Item.Reorder
-                  label={column.name}
-                  index={index()}
-                  count={columns().length}
-                  disabled={reorderMut.loading()}
-                  onMove={(direction) => moveColumn(index(), direction)}
-                />
-                <IconButton
-                  label={m.editNamedStatus({ name: column.name })}
-                  size="sm"
-                  onClick={() => setEditingId(column.id)}
-                  title={m.editGenericStatus}
+        <For each={board()}>
+          {(entry, index) => {
+            const position = () => m.positionOf({ position: index() + 1, count: board().length });
+            const reorder = () => (
+              <SettingsCollection.Item.Reorder
+                label={entryLabel(entry)}
+                index={index()}
+                count={board().length}
+                disabled={reorderMut.loading()}
+                onMove={(direction) => moveColumn(index(), direction)}
+              />
+            );
+            if (entry.kind !== "column") {
+              return (
+                <SettingsCollection.Item
+                  title={virtualLabel(entry.kind)}
+                  description={`${m.automaticColumn} · ${position()}`}
+                  icon={<i class={`ti ${entry.kind === "blocked" ? "ti-lock" : "ti-alert-triangle"} text-dimmed`} aria-hidden="true" />}
                 >
-                  <i class="ti ti-pencil" aria-hidden="true" />
-                </IconButton>
-                <IconButton
-                  label={m.deleteNamedStatus({ name: column.name })}
-                  size="sm"
-                  onClick={() => void deleteColumn(column)}
-                  title={m.deleteStatus}
-                >
-                  <i class="ti ti-trash" aria-hidden="true" />
-                </IconButton>
-              </SettingsCollection.Item.Actions>
-            </SettingsCollection.Item>
-          )}
+                  <SettingsCollection.Item.Actions>{reorder()}</SettingsCollection.Item.Actions>
+                </SettingsCollection.Item>
+              );
+            }
+            const column = entry.column;
+            return (
+              <SettingsCollection.Item
+                title={column.name}
+                description={position()}
+                icon={<span class="h-3 w-3 rounded-full" style={`background-color:${column.color || "#6b7280"}`} />}
+              >
+                <SettingsCollection.Item.Actions>
+                  {reorder()}
+                  <IconButton
+                    label={m.editNamedStatus({ name: column.name })}
+                    size="sm"
+                    onClick={() => setEditingId(column.id)}
+                    title={m.editGenericStatus}
+                  >
+                    <i class="ti ti-pencil" aria-hidden="true" />
+                  </IconButton>
+                  <IconButton
+                    label={m.deleteNamedStatus({ name: column.name })}
+                    size="sm"
+                    onClick={() => void deleteColumn(column)}
+                    title={m.deleteStatus}
+                  >
+                    <i class="ti ti-trash" aria-hidden="true" />
+                  </IconButton>
+                </SettingsCollection.Item.Actions>
+              </SettingsCollection.Item>
+            );
+          }}
         </For>
       </SettingsCollection>
+
+      <SettingsGroup title={m.automaticColumns} description={m.automaticColumnsDescription}>
+        <For each={["blocked", "overdue"] as const}>
+          {(kind) => (
+            <Switch
+              label={virtualLabel(kind)}
+              description={kind === "blocked" ? m.blockedColumnDescription : m.overdueColumnDescription}
+              value={virtualEnabled(kind)}
+              disabled={toggleVirtualMut.loading()}
+              onValueChange={(enabled) => void toggleVirtualMut.mutate({ kind, enabled })}
+            />
+          )}
+        </For>
+      </SettingsGroup>
     </>
   );
 }

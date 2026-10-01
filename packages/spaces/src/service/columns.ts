@@ -1,5 +1,6 @@
 import { sql } from "bun";
-import type { CreateColumn, MutationResult, SpaceColumn, UpdateColumn } from "@/contracts";
+import { orderBoardColumns } from "@/board-columns";
+import type { CreateColumn, MutationResult, SpaceColumn, SpaceVirtualColumn, SpaceVirtualColumnKind, UpdateColumn } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { rank } from "./rank";
 
@@ -60,11 +61,12 @@ export const get = async (params: { id: string }): Promise<SpaceColumn | null> =
 export const create = async (params: { spaceId: string; data: CreateColumn }): Promise<MutationResult<SpaceColumn>> => {
   const { spaceId, data } = params;
 
-  // Get next rank at the end of this space
+  // Next rank at the end of the board, after automatic columns too
   const [maxRow] = await sql<{ max: string | null }[]>`
-    SELECT MAX(rank)::text AS max
-    FROM spaces.columns
-    WHERE space_id = ${spaceId}
+    SELECT GREATEST(
+      (SELECT MAX(rank) FROM spaces.columns WHERE space_id = ${spaceId}),
+      (SELECT MAX(rank) FROM spaces.virtual_columns WHERE space_id = ${spaceId})
+    )::text AS max
   `;
   const nextRank = rank.next(maxRow?.max);
 
@@ -148,35 +150,96 @@ export const remove = async (params: { id: string }): Promise<MutationResult<voi
   return { ok: true, data: undefined };
 };
 
+/** One entry of the board order: a column by its internal ID, or an automatic column by kind. */
+export type BoardOrderEntry = { kind: "column"; id: string } | { kind: SpaceVirtualColumnKind };
+
 /**
- * Reorder columns
+ * List the enabled automatic Kanban columns of a space by rank.
  */
-export const reorder = async (params: { spaceId: string; columnIds: string[] }): Promise<MutationResult<void>> => {
-  const { spaceId, columnIds } = params;
+export const listVirtual = async (params: { spaceId: string }): Promise<SpaceVirtualColumn[]> =>
+  sql<SpaceVirtualColumn[]>`
+    SELECT kind, rank::text AS rank
+    FROM spaces.virtual_columns
+    WHERE space_id = ${params.spaceId}
+    ORDER BY rank, kind
+  `;
 
-  // Verify all columns belong to the space
-  const columns = await list({ spaceId });
-  const columnIdSet = new Set(columns.map((c) => c.id));
+const currentBoardOrder = async (spaceId: string) => {
+  const [columns, virtualColumns] = await Promise.all([list({ spaceId }), listVirtual({ spaceId })]);
+  return { columns, virtualColumns, board: orderBoardColumns(columns, virtualColumns) };
+};
 
-  for (const id of columnIds) {
-    if (!columnIdSet.has(id)) {
-      return { ok: false, error: `Column ${id} not found in space`, status: 400 };
+/** Renumbers the whole board in one transaction; an automatic column in the order is enabled at its place. */
+const writeBoardOrder = (spaceId: string, order: BoardOrderEntry[]) =>
+  sql.begin(async (tx) => {
+    for (const [index, entry] of order.entries()) {
+      const nextRank = rank.toDb(rank.atIndex(index));
+      if (entry.kind === "column") {
+        await tx`UPDATE spaces.columns SET rank = ${nextRank}::bigint WHERE id = ${entry.id} AND space_id = ${spaceId}`;
+      } else {
+        await tx`
+          INSERT INTO spaces.virtual_columns (space_id, kind, rank)
+          VALUES (${spaceId}, ${entry.kind}, ${nextRank}::bigint)
+          ON CONFLICT (space_id, kind) DO UPDATE SET rank = EXCLUDED.rank
+        `;
+      }
+    }
+  });
+
+/**
+ * Enable an automatic Kanban column. It starts in front of the first done column, where open work ends;
+ * enabling one that is already enabled keeps its place.
+ */
+export const enableVirtual = async (params: { spaceId: string; kind: SpaceVirtualColumnKind }): Promise<SpaceVirtualColumn[]> => {
+  const { board } = await currentBoardOrder(params.spaceId);
+  if (!board.some((entry) => entry.kind === params.kind)) {
+    const order: BoardOrderEntry[] = board.map((entry) => (entry.kind === "column" ? { kind: "column", id: entry.column.id } : entry));
+    const firstDone = board.findIndex((entry) => entry.kind === "column" && entry.column.isDone);
+    order.splice(firstDone < 0 ? order.length : firstDone, 0, { kind: params.kind });
+    await writeBoardOrder(params.spaceId, order);
+  }
+  return listVirtual({ spaceId: params.spaceId });
+};
+
+/**
+ * Disable an automatic Kanban column. Its tasks show in their status columns again.
+ */
+export const disableVirtual = async (params: { spaceId: string; kind: SpaceVirtualColumnKind }): Promise<SpaceVirtualColumn[]> => {
+  await sql`DELETE FROM spaces.virtual_columns WHERE space_id = ${params.spaceId} AND kind = ${params.kind}`;
+  return listVirtual({ spaceId: params.spaceId });
+};
+
+/**
+ * Reorder the board: every column, and any enabled automatic column by kind. An automatic column left
+ * out keeps its place, so clients that only know statuses reorder them around it.
+ */
+export const reorder = async (params: { spaceId: string; order: BoardOrderEntry[] }): Promise<MutationResult<void>> => {
+  const { columns, virtualColumns, board } = await currentBoardOrder(params.spaceId);
+  const columnIds = new Set(columns.map((column) => column.id));
+  const enabled = new Set(virtualColumns.map((virtual) => virtual.kind));
+  const seen = new Set<string>();
+
+  for (const entry of params.order) {
+    const key = entry.kind === "column" ? entry.id : entry.kind;
+    if (seen.has(key)) return { ok: false, error: "Each column may appear only once in a reorder", status: 400 };
+    seen.add(key);
+    if (entry.kind === "column" && !columnIds.has(entry.id)) {
+      return { ok: false, error: `Column ${entry.id} not found in space`, status: 400 };
+    }
+    if (entry.kind !== "column" && !enabled.has(entry.kind)) {
+      return { ok: false, error: `Automatic column ${entry.kind} is not enabled`, status: 400 };
     }
   }
-
-  if (columnIds.length !== columns.length) {
+  if (params.order.filter((entry) => entry.kind === "column").length !== columns.length) {
     return { ok: false, error: "Must include all columns in reorder", status: 400 };
   }
 
-  // Update ranks by explicit order
-  for (let i = 0; i < columnIds.length; i++) {
-    const nextRank = rank.atIndex(i);
-    await sql`
-      UPDATE spaces.columns
-      SET rank = ${rank.toDb(nextRank)}::bigint
-      WHERE id = ${columnIds[i]}
-    `;
-  }
-
+  // Omitted automatic columns stay at their board index; the given order fills the other places.
+  const pending = [...params.order];
+  const order = board.map((entry): BoardOrderEntry => {
+    if (entry.kind !== "column" && !seen.has(entry.kind)) return { kind: entry.kind };
+    return pending.shift()!;
+  });
+  await writeBoardOrder(params.spaceId, order);
   return { ok: true, data: undefined };
 };

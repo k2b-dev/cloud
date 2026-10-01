@@ -1,5 +1,6 @@
 import { logger, weatherService } from "@k2b/cloud/services";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
+import { orderBoardColumns } from "@/board-columns";
 import {
   type CalendarItem,
   type ItemListResult,
@@ -18,6 +19,7 @@ import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { boardFilter, defaultFilter, type FilterState, hasActiveFilters, parseFilterFromUrl } from "../filter/types";
+import { kanbanBucketFilter } from "../kanban/bucket-filter";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { isValidView, parseSpaceSettings, type SpaceUserSettings, type ViewType } from "../settings/SpaceSettingsStore";
 import type { SpaceItemDetail, SpacesViewSnapshot, SpacesWorkspaceState } from "./workspace-types";
@@ -110,7 +112,7 @@ const projectSpaceDetail = async (space: SpaceDetail): Promise<SpaceDetail> => {
     spacesPublicResources.projectTags(space.tags),
   ]);
   if (!projectedSpace) throw new Error("Missing public ID for Space");
-  return { ...projectedSpace, columns, tags };
+  return { ...projectedSpace, columns, virtualColumns: space.virtualColumns, tags };
 };
 
 const projectItemResult = async (result: ItemListResult): Promise<ItemListResult> => ({
@@ -205,24 +207,6 @@ const loadListItems = async (params: {
   });
 };
 
-/** One Kanban column's page; the board filter only narrows what the URL asks for, never the column or completion. */
-const kanbanColumnFilter = (params: { columnId: string; isDone: boolean; filter: FilterState; page: number; pageSize: number }) => ({
-  type: "all" as const,
-  status: params.isDone ? ("completed" as const) : ("active" as const),
-  activity: params.filter.activity,
-  priority: nonEmpty(params.filter.priority),
-  tagIds: nonEmpty(params.filter.tagIds),
-  columnIds: [params.columnId],
-  assignedTo: params.filter.assignedTo,
-  deadlineFilter: params.filter.deadlineFilter,
-  search: params.filter.search || undefined,
-  sort: "column" as const,
-  sortDesc: false,
-  groupBy: "column" as const,
-  page: params.page,
-  pageSize: params.pageSize,
-});
-
 const loadKanbanBuckets = async (params: {
   currentView: ViewType;
   space: SpaceDetail;
@@ -233,19 +217,15 @@ const loadKanbanBuckets = async (params: {
 }): Promise<KanbanBucketInitial[]> => {
   if (params.currentView !== "kanban") return [];
   const filtered = hasActiveFilters(params.filter);
+  const { t } = spaceMessages.resolve(params.dateConfig?.locale ? [params.dateConfig.locale] : []);
+  const board = orderBoardColumns(params.space.columns, params.space.virtualColumns);
+  const virtualKinds = new Set(params.space.virtualColumns.map((virtual) => virtual.kind));
 
-  const loadBucket = async (config: {
-    key: string;
-    label: string;
-    color: string | null;
-    kind: "column";
-    columnId: string;
-    isDone: boolean;
-  }): Promise<KanbanBucketInitial> => {
+  const loadBucket = async (config: Omit<KanbanBucketInitial, "items" | "page" | "totalPages" | "total">): Promise<KanbanBucketInitial> => {
     const list = (filter: FilterState, pageSize: number) =>
       spacesService.item.listFiltered({
         spaceId: params.spaceId,
-        filter: kanbanColumnFilter({ columnId: config.columnId, isDone: config.isDone, filter, page: 1, pageSize }),
+        filter: kanbanBucketFilter({ bucket: config, virtualKinds, filter, page: 1, pageSize }),
         currentUserId: params.userId,
         dateConfig: params.dateConfig,
       });
@@ -265,15 +245,24 @@ const loadKanbanBuckets = async (params: {
   };
 
   return Promise.all(
-    params.space.columns.map((column) =>
-      loadBucket({
-        key: `column:${column.id}`,
-        label: column.name,
-        color: column.color,
-        kind: "column",
-        columnId: column.id,
-        isDone: column.isDone,
-      }),
+    board.map((entry) =>
+      entry.kind === "column"
+        ? loadBucket({
+            key: `column:${entry.column.id}`,
+            label: entry.column.name,
+            color: entry.column.color,
+            kind: "column",
+            columnId: entry.column.id,
+            isDone: entry.column.isDone,
+          })
+        : loadBucket({
+            key: `virtual:${entry.kind}`,
+            label: entry.kind === "blocked" ? t.blockedColumn : t.overdueColumn,
+            color: null,
+            kind: entry.kind,
+            columnId: null,
+            isDone: false,
+          }),
     ),
   );
 };

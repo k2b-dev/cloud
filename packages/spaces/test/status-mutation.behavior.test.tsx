@@ -58,6 +58,7 @@ describe("Spaces status mutations", () => {
         createComponent(StatusesSection, {
           spaceId: SPACE_ID,
           columns,
+          virtualColumns: [],
           onDirtyChange: () => undefined,
           onSettingsChange: () => reconciliation.promise,
         }),
@@ -77,6 +78,29 @@ describe("Spaces status mutations", () => {
     reconciliation.resolve();
     await flush();
     expect(dom.root.textContent!.indexOf("Open")).toBeLessThan(dom.root.textContent!.indexOf("Done"));
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("orders an enabled automatic column with the statuses and names it by kind", async () => {
+    requests.length = 0;
+    const dom = createDomTestHarness();
+    const { StatusesSection } = await import("../src/frontend/[id]/_components/edit/StatusesSection");
+    const dispose = render(
+      () =>
+        createComponent(StatusesSection, {
+          spaceId: SPACE_ID,
+          columns,
+          virtualColumns: [{ kind: "overdue", rank: "1536" }],
+          onDirtyChange: () => undefined,
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Move Overdue up"]')!.click();
+    expect(requests.map((request) => request.columnIds)).toEqual([["overdue", columns[0]!.id, columns[1]!.id]]);
+    expect(dom.root.textContent!.indexOf("Overdue")).toBeLessThan(dom.root.textContent!.indexOf("Open"));
 
     dispose();
     dom.cleanup();

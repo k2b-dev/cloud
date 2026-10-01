@@ -90,6 +90,38 @@ const bucketsFor = (filter?: (entry: SpaceItem) => boolean): KanbanBucketInitial
     };
   });
 const unfiltered = () => bucketsFor();
+
+// A board with both automatic columns: Blocked after "To do", Overdue before "Done".
+const yesterday = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+const waiting = [
+  item("Item08", "Col001", "Hang the signs", { activeBlockerCount: 1 }),
+  item("Item09", "Col002", "Pay the deposit", { deadline: yesterday }),
+  item("Item10", "Col003", "Print the badges", { activeBlockerCount: 2, deadline: yesterday }),
+];
+const allItems = [...items, ...waiting];
+const isBlocked = (entry: SpaceItem) => !entry.completedAt && entry.activeBlockerCount > 0;
+const isOverdue = (entry: SpaceItem) => !entry.completedAt && entry.deadline !== null && !isBlocked(entry);
+const bucket = (
+  base: Pick<KanbanBucketInitial, "key" | "label" | "color" | "kind" | "columnId" | "isDone">,
+  shown: SpaceItem[],
+): KanbanBucketInitial => ({ ...base, items: shown, page: 1, totalPages: shown.length > 0 ? 1 : 0, total: shown.length });
+const statusBucket = (column: SpaceColumn) =>
+  bucket(
+    { key: `column:${column.id}`, label: column.name, color: column.color, kind: "column", columnId: column.id, isDone: column.isDone },
+    allItems.filter((entry) => entry.columnId === column.id && !isBlocked(entry) && !isOverdue(entry)),
+  );
+const blockedBucket = (label: string) =>
+  bucket({ key: "virtual:blocked", label, color: null, kind: "blocked", columnId: null, isDone: false }, allItems.filter(isBlocked));
+const overdueBucket = (label: string) =>
+  bucket({ key: "virtual:overdue", label, color: null, kind: "overdue", columnId: null, isDone: false }, allItems.filter(isOverdue));
+const withAutomaticColumns = (locale: "en" | "de" = "en") => [
+  statusBucket(columns[0]!),
+  blockedBucket(locale === "de" ? "Blockiert" : "Blocked"),
+  statusBucket(columns[1]!),
+  statusBucket(columns[2]!),
+  overdueBucket(locale === "de" ? "Überfällig" : "Overdue"),
+  statusBucket(columns[3]!),
+];
 const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
 
 type Scenario = { locale: "en" | "de"; query?: string; folded?: string[]; buckets?: KanbanBucketInitial[]; canWrite?: boolean };
@@ -115,6 +147,7 @@ let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const moves: unknown[] = [];
 const filterRequests: unknown[] = [];
+const columnOrders: unknown[] = [];
 let browser: Browser;
 
 beforeAll(async () => {
@@ -135,7 +168,7 @@ beforeAll(async () => {
       if (move && request.method === "POST") {
         const body = (await request.json()) as { columnId: string };
         moves.push(body);
-        return Response.json({ ...items.find((entry) => entry.id === move[1])!, columnId: body.columnId });
+        return Response.json({ ...allItems.find((entry) => entry.id === move[1])!, columnId: body.columnId });
       }
       if (url.pathname === "/api/spaces/Space1/items/filter") {
         // As strict as the real route: the schema answers 400, a tag the Space does not have 404.
@@ -143,8 +176,20 @@ beforeAll(async () => {
         filterRequests.push(parsed.success ? parsed.data : null);
         if (!parsed.success) return Response.json({ message: "Invalid filter" }, { status: 400 });
         if (parsed.data.tagIds?.some((tagId) => tagId !== "Tag001")) return Response.json({ message: "Tag not found" }, { status: 404 });
-        const bucket = unfiltered().find((entry) => entry.columnId === parsed.data.columnIds?.[0])!;
-        return Response.json({ items: bucket.items, total: bucket.total, page: 1, pageSize: 30, totalPages: bucket.totalPages });
+        // A board with automatic columns asks for them by flag; a status column then leaves their tasks out.
+        const automatic = parsed.data.blocked !== undefined || parsed.data.overdue !== undefined;
+        const found = automatic
+          ? parsed.data.blocked
+            ? blockedBucket("Blocked")
+            : parsed.data.overdue
+              ? overdueBucket("Overdue")
+              : statusBucket(columns.find((column) => column.id === parsed.data.columnIds?.[0])!)
+          : unfiltered().find((entry) => entry.columnId === parsed.data.columnIds?.[0])!;
+        return Response.json({ items: found.items, total: found.total, page: 1, pageSize: 30, totalPages: found.totalPages });
+      }
+      if (url.pathname === "/api/spaces/Space1/columns/order" && request.method === "PUT") {
+        columnOrders.push(await request.json());
+        return Response.json({ message: "Columns reordered" });
       }
       if (url.pathname === "/api/spaces/workspace/view") {
         const href = new URL(url.searchParams.get("href") ?? "", url.origin);
@@ -219,6 +264,35 @@ const layout = (page: Page) =>
       separateFilters: visible(window.document.querySelector("[data-spaces-board-chips]")!),
     };
   });
+
+/** Drags with the mouse in small steps, as a person does, and releases over the target's center. */
+const drag = async (page: Page, from: { x: number; y: number; width: number; height: number }, to: { x: number; y: number }) => {
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  for (let step = 1; step <= 12; step++) {
+    await page.mouse.move(
+      from.x + from.width / 2 + ((to.x - from.x - from.width / 2) * step) / 12,
+      from.y + from.height / 2 + ((to.y - from.y - from.height / 2) * step) / 12,
+    );
+  }
+};
+const center = async (locator: ReturnType<Page["locator"]>) => {
+  const box = (await locator.boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+const cardHandle = async (page: Page, title: string) => {
+  const card = page.locator("article").filter({ hasText: title });
+  await card.hover();
+  return (await card.locator("[data-dnd-card-handle]").boundingBox())!;
+};
+const columnTitles = (page: Page) =>
+  page
+    .locator('[role="region"] section[data-spaces-kanban-column] h3')
+    .evaluateAll((titles) => titles.map((title) => title.firstChild?.textContent ?? ""));
+const cardsIn = (page: Page, key: string) =>
+  page
+    .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
+    .evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.itemId));
 
 describe("Spaces Kanban board in Chromium", () => {
   for (const [name, view] of [
@@ -467,4 +541,209 @@ describe("Spaces Kanban board in Chromium", () => {
       }
     }, 30_000);
   }
+  test("automatic columns show blocked and overdue tasks only there, with the status as a badge; Blocked wins", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      expect(await columnTitles(page)).toEqual(["To do", "Blocked", "In progress", "Review", "Overdue", "Done"]);
+      expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
+      expect(await cardsIn(page, "virtual:overdue")).toEqual(["Item09"]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+      expect(await cardsIn(page, "column:Col003")).toEqual(["Item06"]);
+      expect(await page.locator('[role="region"] header > span[title] > [aria-hidden="true"]').allTextContents()).toEqual([
+        "3",
+        "2",
+        "2",
+        "1",
+        "1",
+        "1",
+      ]);
+      const badge = (id: string) => page.locator(`article:has([data-item-id="${id}"]) [data-spaces-kanban-card-status]`);
+      expect(await badge("Item08").getAttribute("title")).toBe("Status: To do");
+      expect(await badge("Item10").getAttribute("title")).toBe("Status: Review");
+      expect(await badge("Item09").getAttribute("title")).toBe("Status: In progress");
+      expect(await badge("Item01").count()).toBe(0);
+      // Blocked wins; the overdue state stays visible as a badge there, and only there.
+      expect(await page.locator('article:has([data-item-id="Item10"]) [data-spaces-kanban-card-overdue]').count()).toBe(1);
+      expect(await page.locator('article:has([data-item-id="Item09"]) [data-spaces-kanban-card-overdue]').count()).toBe(0);
+
+      // Hovering a column header or its menu moves nothing.
+      const at = await layout(page);
+      await page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-column-handle]').hover();
+      expect(await layout(page)).toEqual(at);
+      await page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]').hover();
+      expect(await layout(page)).toEqual(at);
+
+      // Arrow keys walk through an automatic column like any other.
+      await page.locator('[data-item-id="Item01"]').focus();
+      await page.keyboard.press("ArrowRight");
+      expect(await page.evaluate(() => (window.document.activeElement as HTMLElement | null)?.dataset.itemId)).toBe("Item08");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("an automatic column refuses a dropped card and says so", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      moves.splice(0);
+      await drag(
+        page,
+        await cardHandle(page, "Ask the bakery"),
+        await center(page.locator('[data-spaces-kanban-column="virtual:blocked"] article').first()),
+      );
+      await page.waitForSelector('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-no-drop]');
+      expect(await page.locator("[data-spaces-kanban-no-drop]").textContent()).toContain("Cards can't be dropped here");
+      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
+      await page.mouse.up();
+      await page.waitForTimeout(200);
+      expect(moves).toEqual([]);
+      expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
+      expect(await cardsIn(page, "column:Col001")).toContain("Item02");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a card dragged out of Blocked into an open status stays there with its new status; one done leaves Overdue", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      moves.splice(0);
+      await drag(
+        page,
+        await cardHandle(page, "Hang the signs"),
+        await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first()),
+      );
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item08/move"));
+      await page.mouse.up();
+      await moved;
+      expect(moves).toEqual([{ columnId: "Col002", beforeItemId: "Item04", completed: false }]);
+      await page.getByText("Moved to In progress. It stays under Blocked until its blockers are done.").waitFor();
+      expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
+      expect(await page.locator('article:has([data-item-id="Item08"]) [data-spaces-kanban-card-status]').getAttribute("title")).toBe(
+        "Status: In progress",
+      );
+      expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
+
+      await drag(
+        page,
+        await cardHandle(page, "Pay the deposit"),
+        await center(page.locator('[data-spaces-kanban-column="column:Col004"] article').first()),
+      );
+      const completed = page.waitForResponse((response) => response.url().endsWith("/items/Item09/move"));
+      await page.mouse.up();
+      await completed;
+      expect(moves.at(-1)).toMatchObject({ columnId: "Col004", completed: true });
+      await page.waitForFunction(
+        () => !window.document.querySelector('[data-spaces-kanban-column="virtual:overdue"] [data-item-id="Item09"]'),
+      );
+      expect(await cardsIn(page, "column:Col004")).toContain("Item09");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("people who may change statuses reorder columns by dragging a header, for everyone", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      columnOrders.splice(0);
+      const handle = page.locator('[data-spaces-kanban-column="column:Col003"] [data-spaces-kanban-column-handle]');
+      const target = (await page.locator('[data-spaces-kanban-column="column:Col001"]').boundingBox())!;
+      await drag(page, (await handle.boundingBox())!, { x: target.x + 20, y: target.y + 40 });
+      await page.waitForSelector("[data-spaces-kanban-column-drop-indicator]");
+      const saved = page.waitForResponse((response) => response.url().endsWith("/columns/order"));
+      await page.mouse.up();
+      await saved;
+      expect(columnOrders).toEqual([{ columnIds: ["Col003", "Col001", "blocked", "Col002", "overdue", "Col004"] }]);
+      expect(await columnTitles(page)).toEqual(["Review", "To do", "Blocked", "In progress", "Overdue", "Done"]);
+      expect(await page.locator("[data-spaces-kanban-column-drop-indicator]").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: a column header menu moves a column, announces it, and keeps focus", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      columnOrders.splice(0);
+      const menu = page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]');
+      await menu.focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("menuitem", { name: "Move right" }).waitFor();
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.document.querySelector("[data-spaces-kanban-column-status]")?.textContent !== "");
+      expect(columnOrders).toEqual([{ columnIds: ["Col001", "Col002", "blocked", "Col003", "overdue", "Col004"] }]);
+      expect(await columnTitles(page)).toEqual(["To do", "In progress", "Blocked", "Review", "Overdue", "Done"]);
+      expect(await page.locator("[data-spaces-kanban-column-status]").textContent()).toBe("Blocked is now column 3 of 6");
+      await page.waitForFunction(() => window.document.activeElement?.getAttribute("data-spaces-kanban-column-menu") === "virtual:blocked");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("readers get no drag affordance and no column menu", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns(), canWrite: false });
+    try {
+      expect(await page.locator("[data-spaces-kanban-column-handle]").count()).toBe(0);
+      expect(await page.locator("[data-spaces-kanban-column-menu]").count()).toBe(0);
+      expect(await page.locator("[data-dnd-card-handle]").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a folded automatic column is a narrow strip that refuses drops", async () => {
+    const page = await open(desktop, { locale: "de", buckets: withAutomaticColumns("de"), folded: ["virtual:blocked"] });
+    try {
+      moves.splice(0);
+      const strip = page.locator('[data-spaces-kanban-fold="virtual:blocked"]');
+      expect(await strip.getAttribute("aria-label")).toBe("Blockiert ausklappen, 2 Einträge");
+      expect((await page.locator('[data-spaces-kanban-column="virtual:blocked"]').boundingBox())!.width).toBe(40);
+      await drag(page, await cardHandle(page, "Ask the bakery"), await center(strip));
+      await page.waitForSelector('[data-spaces-kanban-fold="virtual:blocked"][data-spaces-kanban-no-drop]');
+      await page.mouse.up();
+      await page.waitForTimeout(200);
+      expect(moves).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("phone: automatic columns and their header controls fit at 390 px, and the column menu works by tap", async () => {
+    for (const theme of ["light", "dark"] as const) {
+      const page = await open(phone, { locale: "de", buckets: withAutomaticColumns("de") }, { theme });
+      try {
+        const fit = await page.evaluate(() => {
+          const sections = Array.from(window.document.querySelectorAll<HTMLElement>('[role="region"] section[data-spaces-kanban-column]'));
+          return {
+            documentOverflow: window.document.documentElement.scrollWidth > window.document.documentElement.clientWidth,
+            widths: sections.map((section) => Math.round(section.getBoundingClientRect().width)),
+            headerOverflow: sections.some((section) => {
+              const header = section.querySelector("header")!;
+              const right = header.getBoundingClientRect().right;
+              return Array.from(header.querySelectorAll("button")).some((button) => button.getBoundingClientRect().right > right + 0.5);
+            }),
+            headerHeights: [
+              ...new Set(sections.map((section) => Math.round(section.querySelector("header")!.getBoundingClientRect().height))),
+            ],
+          };
+        });
+        expect(fit).toEqual({
+          documentOverflow: false,
+          widths: [288, 288, 288, 288, 288, 288],
+          headerOverflow: false,
+          headerHeights: [fit.headerHeights[0]!],
+        });
+
+        columnOrders.splice(0);
+        await page.locator('[data-spaces-kanban-column-menu="virtual:blocked"]').tap();
+        await page.getByRole("menuitem", { name: "Nach rechts verschieben" }).tap();
+        await page.waitForFunction(() => window.document.querySelector("[data-spaces-kanban-column-status]")?.textContent !== "");
+        expect(columnOrders).toEqual([{ columnIds: ["Col001", "Col002", "blocked", "Col003", "overdue", "Col004"] }]);
+        expect(await columnTitles(page)).toEqual(["To do", "In progress", "Blockiert", "Review", "Überfällig", "Done"]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
 });

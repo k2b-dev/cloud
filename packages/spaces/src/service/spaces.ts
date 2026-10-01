@@ -14,6 +14,7 @@ import {
 } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
+import { listVirtual as listVirtualColumns } from "./columns";
 import { publishSpaceEvent } from "./events";
 import { spacesMessages } from "./messages";
 import { rank } from "./rank";
@@ -365,9 +366,11 @@ export const getDetail = async (params: { id: string }): Promise<SpaceDetail | n
     WHERE space_id = ${params.id}
     ORDER BY name
   `;
+  const virtualColumns = await listVirtualColumns({ spaceId: params.id });
 
   return {
     ...mapToSpace(spaceRow),
+    virtualColumns,
     columns: columns.map((c) => ({
       id: c.id,
       spaceId: c.space_id,
