@@ -399,7 +399,7 @@ describe("@k2b/ui feedback runtime", () => {
     expect(card?.querySelector<HTMLAnchorElement>(".k2b-toast__action")?.href).toBe("http://localhost/retry");
 
     // Three stay visible on a wide screen. Older confirmations leave first, the error stays.
-    for (let index = 0; index < 4; index += 1) toast(`Notice ${index}`, { duration: 0 });
+    for (let index = 0; index < 4; index += 1) toast(`Notice ${index}`, { duration: 10_000 });
     const open = () =>
       Array.from(rail?.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])") ?? [], (item) => item.textContent);
     expect(open().map((text) => text?.replace("Retry", ""))).toEqual(["Could not publishPublish failed", "Notice 2", "Notice 3"]);
@@ -575,9 +575,17 @@ describe("@k2b/ui feedback runtime", () => {
     dom.document.documentElement.setAttribute("lang", "de");
     toast.success("Kontakt erstellt", { action: { label: "Rückgängig", onClick: () => {} } });
     const regions = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-live] > *"));
-    expect(regions.map((region) => [region.getAttribute("role"), region.getAttribute("aria-live"), region.textContent])).toEqual([
-      ["status", "polite", ""],
-      ["alert", "assertive", ""],
+    // Not atomic: each line is read on its own, not again with every later one.
+    expect(
+      regions.map((region) => [
+        region.getAttribute("role"),
+        region.getAttribute("aria-live"),
+        region.getAttribute("aria-atomic"),
+        region.textContent,
+      ]),
+    ).toEqual([
+      ["status", "polite", "false", ""],
+      ["alert", "assertive", "false", ""],
     ]);
     // Persistent: the regions are outside the rail, which moves into a new top-layer element for every toast.
     expect(regions[0]?.closest("[data-k2b-toast-container]")).toBeNull();
@@ -598,6 +606,12 @@ describe("@k2b/ui feedback runtime", () => {
       "6 von 10",
       "Import fertig",
     ]);
+
+    // Turning into an error with the same text is still announced, with the error word.
+    const sync = toast("Kontakte werden abgeglichen", { progress: "indeterminate" });
+    sync.update("Kontakte werden abgeglichen", { variant: "error", progress: null });
+    await Bun.sleep(150);
+    expect(regions[1]!.lastElementChild?.textContent).toBe("Fehler: Kontakte werden abgeglichen");
     dom.document.documentElement.removeAttribute("lang");
     dom.cleanup();
   });
@@ -626,6 +640,79 @@ describe("@k2b/ui feedback runtime", () => {
     expect(second!.dataset.closing).toBe("true");
     expect(dom.document.activeElement).toBe(opener);
     await Bun.sleep(220);
+
+    // Focus skips a neighbour that is still closing and goes to the next open toast.
+    for (const name of ["One", "Two", "Three"]) toast(name, { duration: 0 });
+    const [one, two, three] = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]"));
+    two!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.focus();
+    two!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(dom.document.activeElement).toBe(three!.querySelector(".k2b-toast__close"));
+    three!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(dom.document.activeElement).toBe(one!.querySelector(".k2b-toast__close"));
+    await Bun.sleep(220);
+    dom.cleanup();
+  });
+
+  test("pauses every toast while one is under the pointer or holds focus, so none slides away", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const open = () =>
+      Array.from(
+        dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])"),
+        (card) => card.querySelector(".k2b-toast__description")?.textContent,
+      );
+
+    toast.error("Could not save the file", { duration: 400 });
+    toast.success("Message archived", { duration: 100 });
+    const [error] = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]"));
+    error!.dispatchEvent(new dom.window.PointerEvent("pointerenter") as unknown as Event);
+    await Bun.sleep(200);
+    expect(open()).toEqual(["Could not save the file", "Message archived"]);
+    error!.dispatchEvent(new dom.window.PointerEvent("pointerleave") as unknown as Event);
+    await Bun.sleep(150);
+    expect(open()).toEqual(["Could not save the file"]);
+    toast.dismissAll();
+    await Bun.sleep(220);
+
+    toast.error("Could not save the file", { duration: 400, action: { label: "Try again", onClick: () => {} } });
+    toast.success("Message archived", { duration: 100 });
+    const retry = dom.document.querySelector<HTMLButtonElement>(".k2b-toast__action")!;
+    retry.focus();
+    await Bun.sleep(200);
+    expect(open()).toEqual(["Could not save the file", "Message archived"]);
+    retry.blur();
+    await Bun.sleep(150);
+    expect(open()).toEqual(["Could not save the file"]);
+    dom.cleanup();
+  });
+
+  test("the rail limit keeps sticky toasts and the toast under the pointer or focus", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const open = () =>
+      Array.from(
+        dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])"),
+        (card) => card.querySelector(".k2b-toast__description")?.textContent,
+      );
+
+    // A caller's sticky toast is the only sign that live updates stopped; timed confirmations leave before it.
+    toast("Live updates stopped", { duration: 0, action: { label: "Reload", onClick: () => {} } });
+    for (const name of ["Saved 1", "Saved 2", "Saved 3"]) toast.success(name, { duration: 10_000 });
+    expect(open()).toEqual(["Live updates stopped", "Saved 2", "Saved 3"]);
+    toast.dismissAll();
+    await Bun.sleep(220);
+
+    // The toast with focus on its Undo stays, and keeps the focus, even past the limit until the user leaves it.
+    toast.success("Message moved to trash", { action: { label: "Undo", onClick: () => {} } });
+    const undo = dom.document.querySelector<HTMLButtonElement>(".k2b-toast__action")!;
+    undo.focus();
+    for (const name of ["Upload 1", "Upload 2", "Upload 3"]) toast(name, { progress: 0 });
+    expect(open()).toEqual(["Message moved to trash", "Upload 1", "Upload 2", "Upload 3"]);
+    expect(dom.document.activeElement).toBe(undo);
+    undo.blur();
+    expect(open()).toEqual(["Upload 1", "Upload 2", "Upload 3"]);
     dom.cleanup();
   });
 
@@ -699,9 +786,11 @@ describe("@k2b/ui feedback runtime", () => {
     element.click();
     await settle();
     expect(element.dataset.closing).toBeUndefined();
-    notice.update("Half done", { progress: 0.5 });
+    notice.update("6 of 12 files", { progress: 0.5 });
     expect(element.querySelector("progress")).toBe(progress);
     expect(progress.value).toBe(0.5);
+    // The title names the bar; the summary line is read instead of a bare percentage.
+    expect([progress.getAttribute("aria-label"), progress.getAttribute("aria-valuetext")]).toEqual(["Import", "6 of 12 files"]);
     element.querySelector<HTMLButtonElement>(".k2b-toast__action")!.click();
     expect(cancelled).toBe(1);
     expect(element.dataset.closing).toBeUndefined();

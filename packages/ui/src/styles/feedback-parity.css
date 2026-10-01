@@ -724,9 +724,12 @@
    phone in portrait or landscape, the bottom edge belongs to dialog footers,
    bottom sheets and primary actions, so toasts move to the top edge there
    instead of covering them, newest at the edge. A host with a fixed header
-   sets `--k2b-toast-offset-top` to its height so toasts do not cover it. */
+   sets `--k2b-toast-offset-top` to its height so toasts do not cover it.
+   The rail scrolls, so it clips what reaches past it: the 1.5rem end padding
+   holds the toast shadow, which reaches about 1.5rem below the last card. */
 @media (max-width: 47.999rem), (max-height: 29.999rem) {
   .k2b-ui [data-k2b-toast-container] {
+    --k2b-toast-rail-padding: 0.75rem 1rem 1.5rem;
     --k2b-toast-rail-top: calc(env(safe-area-inset-top, 0px) + var(--k2b-toast-offset-top, 0px));
     --k2b-toast-rail-bottom: auto;
     --k2b-toast-rail-direction: column-reverse;
@@ -739,7 +742,7 @@
   .k2b-ui [data-k2b-toast-container] {
     --k2b-toast-rail-left: env(safe-area-inset-left, 0px);
     --k2b-toast-rail-width: auto;
-    --k2b-toast-rail-padding: 0.25rem 0.5rem;
+    --k2b-toast-rail-padding: 0.25rem 0.5rem 1.5rem;
   }
 }
 
@@ -921,15 +924,64 @@
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
+/* A progress toast follows the Files upload panel: the title, the bar, then
+   the summary line with the action. Without a title the message and the
+   action keep the first line and the bar follows. The content reaches under
+   the close column; its last track keeps the close button's place free on the
+   first line. */
+.k2b-ui [data-k2b-toast-container] .k2b-toast[data-progress="true"] .k2b-toast__content {
+  display: grid;
+  grid-column: 2 / -1;
+  grid-row: 1;
+  grid-template-columns: minmax(0, 1fr) auto 2.625rem;
+  grid-template-areas:
+    "text action ."
+    "bar bar bar";
+  gap: 0;
+}
+
+.k2b-ui [data-k2b-toast-container] .k2b-toast[data-progress="true"] .k2b-toast__content:has(> .k2b-toast__title:not([hidden])) {
+  grid-template-areas:
+    "title title ."
+    "bar bar bar"
+    "text action action";
+}
+
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__close {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__title {
+  grid-area: title;
+}
+
+/* Tabular digits: a changing count ("3 of 12 files") does not move. */
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__description {
+  grid-area: text;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__title:not([hidden]) + .k2b-toast__description {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__action {
+  grid-area: action;
+  justify-self: end;
+  margin: -0.375rem 0 -0.375rem 0.75rem;
+}
+
 /* The bar of the Files upload panel: a rounded track in the border colour and
-   an action-coloured fill, under the text and the close column. */
+   an action-coloured fill, across the toast up to its close column's edge. */
 .k2b-ui .k2b-toast__progress {
   display: block;
   width: auto;
   height: 0.375rem;
   min-width: 0;
-  grid-column: 2 / -1;
-  margin: 0.25rem 0.5rem 0.5rem 0;
+  grid-area: bar;
+  align-self: start;
+  margin: 0.625rem 0.5rem 0.125rem 0;
   overflow: hidden;
   border: 0;
   border-radius: 999px;
@@ -940,6 +992,12 @@
 
 .k2b-ui .k2b-toast__progress[hidden] {
   display: none;
+}
+
+/* Under a title the summary line follows; on a phone, the bar keeps the
+   close button's hit area off the action below it. */
+.k2b-ui .k2b-toast__title:not([hidden]) ~ .k2b-toast__progress {
+  margin-bottom: 0.5rem;
 }
 
 .k2b-ui .k2b-toast__progress::-webkit-progress-bar {
@@ -989,7 +1047,8 @@
    toast. The action keeps the 0.625rem column gap to the close button, which
    is more than the close button's hit area reaches into it, and both areas
    end at the toast's outer edge, so neither reaches the other or the next
-   toast. */
+   toast. In a titled progress toast the action sits on the summary line
+   below the bar, where the close button's area ends. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-toast__action,
   .k2b-ui .k2b-toast__close {
@@ -1015,9 +1074,39 @@
     animation-duration: 2.4s;
   }
 
+  /* A still segment would read as a third done: the whole track takes a
+     muted fill instead. */
   .k2b-ui .k2b-toast__progress:indeterminate {
-    background-position: 0 0, 0 0;
+    background: color-mix(in srgb, var(--k2b-action-solid) 35%, var(--k2b-border));
     animation: none;
+  }
+}
+
+/* Forced colours turn the track and the fill into the same Canvas, so the bar
+   draws itself in system colours: an outlined track, a Highlight fill, and a
+   still hatch while the total is unknown. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-toast__progress {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .k2b-ui .k2b-toast[data-tone] .k2b-toast__progress::-webkit-progress-value {
+    background: Highlight;
+  }
+
+  .k2b-ui .k2b-toast[data-tone] .k2b-toast__progress::-moz-progress-bar {
+    background: Highlight;
+  }
+
+  .k2b-ui .k2b-toast__progress:indeterminate {
+    background: repeating-linear-gradient(135deg, Highlight 0 2px, Canvas 2px 6px);
+    animation: none;
+  }
+
+  .k2b-ui .k2b-toast[data-tone] .k2b-toast__progress:indeterminate::-moz-progress-bar {
+    background: transparent;
   }
 }
 

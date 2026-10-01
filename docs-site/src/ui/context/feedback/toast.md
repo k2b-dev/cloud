@@ -54,11 +54,11 @@ Without a `duration`, a toast stays long enough to read and reach:
 - an error or any toast with an action: at least 8 seconds;
 - an error longer than 120 characters, and a toast with progress: until it is closed.
 
-An explicit `duration` wins. The timer pauses while the pointer is over the toast, while it contains keyboard focus, and while the browser tab is hidden.
+An explicit `duration` wins. Every toast's timer pauses while the pointer is over any toast or custom slot in the rail, while one of them holds keyboard focus, and while the browser tab is hidden, so a toast never slides away from under the pointer or focus because a neighbour expired.
 
 ## Stacking
 
-At most three toasts are visible, two on a phone. When another arrives, older success and info toasts leave first, then older errors; running progress and the newest toast stay. A closing toast collapses its space, so its neighbours glide instead of jumping; with reduced motion they move at once.
+At most three toasts are visible, two on a phone. When another arrives, older timed success and info toasts leave first, then older errors and toasts that stay until closed (`duration: 0`, or a long error). Running progress, the newest toast, and a toast under the pointer or with keyboard focus stay; while only such toasts remain, the rail shows more than the limit until the pointer or focus leaves. A closing toast collapses its space, so its neighbours glide instead of jumping; with reduced motion they move at once.
 
 ## Update or dismiss
 
@@ -132,7 +132,7 @@ Do not place a destructive action in a toast. Ask for confirmation before the op
 
 ## Accessibility
 
-The rail is a region named "Notifications" ("Benachrichtigungen"). Two persistent, empty live regions beside it announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, not at every update.
+The rail is a region named "Notifications" ("Benachrichtigungen"). Two persistent, empty live regions beside it announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, each time only if its message changed; it is not announced at every update. A change to the error variant is announced even when the text stays the same. The regions are not atomic, so each announcement is read once on its own.
 
 A toast closes only through its close button, through Escape while it has focus, through its link action, or when its time runs out. Clicking the text does not close it, so an error message can be selected and copied. When a focused toast closes, focus moves to the next toast or back to where it was before the toast appeared.
 
@@ -144,7 +144,7 @@ Messages must identify the affected operation. Do not write "Success" or "Error"
 
 `toast` is a browser API. Calls made without `document`, including during SSR, return a no-op handle.
 
-The toast rail uses the browser top layer when available so feedback remains visible above dialogs. A toast displayed over a modal is read-only until the modal closes because the browser makes content outside the modal inert.
+The toast rail uses the browser top layer when available so feedback remains visible above dialogs. A toast displayed over a modal is read-only until the modal closes because the browser makes content outside the modal inert. For the same reason, screen readers do not announce toasts that appear while a modal dialog is open; show a failure that belongs to a dialog in the dialog itself.
 
 The rail sits in the bottom-right corner, 22rem wide, newest toast at the
 bottom. Below a viewport width of 48rem or a viewport height of 30rem, as on a
@@ -172,7 +172,7 @@ toast("Reload the page to use it.", {
 
 ## Progress and cancellation
 
-Pass `progress: 0` through `1` for a determinate bar, or `"indeterminate"` while the total is unknown. A progress toast shows a small ring instead of its glyph and the bar of the Files upload panel under its text: a rounded track in the border colour with an action-coloured fill, green once the variant is `success`. It does not time out. Update the existing handle instead of creating one toast per batch. Pass `progress: null` on completion; ordinary duration behavior resumes.
+Pass `progress: 0` through `1` for a determinate bar, or `"indeterminate"` while the total is unknown. A progress toast shows a small ring instead of its glyph and the bar of the Files upload panel: a rounded track in the border colour with an action-coloured fill, green once the variant is `success`. With a title it follows the panel's order: the title, the bar, then the message as a summary line ("6 of 12 files") with the action at its end; without a title, the message and action keep the first line and the bar follows. The bar reaches under the close button. The message uses tabular digits, so a changing count does not move, and with a title the bar's accessible value is the message instead of a bare percentage. It does not time out. Update the existing handle instead of creating one toast per batch. Pass `progress: null` on completion; ordinary duration behavior resumes.
 
 ```ts
 const controller = new AbortController();

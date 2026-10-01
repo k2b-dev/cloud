@@ -577,6 +577,46 @@ describe("@k2b/ui touch hit areas on a phone", () => {
       }
     }
   });
+
+  test("keep the rail open below the last toast for its shadow, and order a titled progress toast like the upload panel", async () => {
+    const page = await browser.newPage(phone);
+    try {
+      await page.setContent(phonePage("<main></main>"));
+      await runToasts(
+        page,
+        `toast("6 of 12 files", { title: "Exporting archive", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });`,
+      );
+      const layout = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        const [rail, card, title, bar, summary, action, close] = [
+          "[data-k2b-toast-container]",
+          ".k2b-toast",
+          ".k2b-toast__title",
+          ".k2b-toast__progress",
+          ".k2b-toast__description",
+          ".k2b-toast__action",
+          ".k2b-toast__close",
+        ].map(box);
+        return {
+          // The rail scrolls and so clips; the toast shadow reaches 24 px below the card in the dark theme.
+          shadowRoom: rail!.bottom - card!.bottom >= 24,
+          order: title!.bottom <= bar!.top && bar!.bottom <= summary!.top,
+          actionOnSummaryLine: action!.top >= bar!.bottom && action!.right === close!.right,
+          barUnderCloseColumn: bar!.right > close!.left,
+          tabular: getComputedStyle(document.querySelector(".k2b-toast__description")!).fontVariantNumeric,
+        };
+      });
+      expect(layout).toEqual({
+        shadowRoom: true,
+        order: true,
+        actionOnSummaryLine: true,
+        barUnderCloseColumn: true,
+        tabular: "tabular-nums",
+      });
+    } finally {
+      await page.close();
+    }
+  });
 });
 
 describe("@k2b/ui Calendar on a phone", () => {

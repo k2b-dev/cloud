@@ -92,12 +92,33 @@ const applyIconClass = (icon: HTMLElement, iconClass: string): void => {
 
 type LiveToast = {
   dismiss: () => void;
-  /** Errors and running progress stay when the rail is full; older confirmations leave first. */
+  /** Errors, sticky toasts, and running progress stay when the rail is full; older timed confirmations leave first. */
   keep: () => boolean;
   progress: () => boolean;
+  /** Under the pointer or holding keyboard focus: the rail limit never removes it. */
+  held: () => boolean;
+  pause: () => void;
+  resume: () => void;
 };
 
 const liveToasts = new Set<LiveToast>();
+
+/**
+ * Cards under the pointer or holding keyboard focus. While the rail holds any, no toast times out, so nothing moves
+ * under the pointer or out from under focus because a neighbour expired.
+ */
+const pointerHolds = new Set<HTMLElement>();
+const focusHolds = new Set<HTMLElement>();
+const railHeld = (): boolean => pointerHolds.size + focusHolds.size > 0;
+
+const setHold = (holds: Set<HTMLElement>, card: HTMLElement, held: boolean): void => {
+  const wasHeld = railHeld();
+  if (held) holds.add(card);
+  else holds.delete(card);
+  if (railHeld() !== wasHeld) for (const item of Array.from(liveToasts)) (wasHeld ? item.resume : item.pause)();
+  // A released card may be the one the rail limit had to wait for.
+  if (!held) enforceCap();
+};
 
 const VISUALLY_HIDDEN =
   "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;";
@@ -117,6 +138,8 @@ const ensureLiveRegions = (root: HTMLElement): HTMLElement => {
     const region = document.createElement("div");
     region.setAttribute("role", assertive ? "alert" : "status");
     region.setAttribute("aria-live", assertive ? "assertive" : "polite");
+    // Both roles are atomic by default, which would read every line still in the region again with each new one.
+    region.setAttribute("aria-atomic", "false");
     region.dataset.politeness = assertive ? "assertive" : "polite";
     live.appendChild(region);
   }
@@ -160,7 +183,7 @@ const ensureContainer = (): HTMLElement | null => {
     "z-index:50;box-sizing:border-box;display:flex;flex-direction:var(--k2b-toast-rail-direction,column);" +
     "width:var(--k2b-toast-rail-width,min(24rem,calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))));" +
     "height:auto;max-width:100vw;" +
-    "max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));" +
+    "max-height:calc(100dvh - env(safe-area-inset-top,0px) - var(--k2b-toast-offset-top,0px) - env(safe-area-inset-bottom,0px));" +
     "margin:0;padding:var(--k2b-toast-rail-padding,0.75rem 1rem);border:0;background:transparent;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;" +
     "pointer-events:none;";
   root.appendChild(container);
@@ -235,6 +258,12 @@ type RailItem = {
 };
 
 const railItem = (card: HTMLElement): RailItem => {
+  card.addEventListener("pointerenter", () => setHold(pointerHolds, card, true));
+  card.addEventListener("pointerleave", () => setHold(pointerHolds, card, false));
+  card.addEventListener("focusin", () => setHold(focusHolds, card, true));
+  card.addEventListener("focusout", (event) => {
+    if (!card.contains(event.relatedTarget as Node | null)) setHold(focusHolds, card, false);
+  });
   const slot = document.createElement("div");
   slot.className = "k2b-toast-slot";
   slot.dataset.state = "entering";
@@ -256,6 +285,9 @@ const railItem = (card: HTMLElement): RailItem => {
     close: (onRemoved) => {
       slot.dataset.state = "closing";
       card.dataset.closing = "true";
+      // A card that leaves under the pointer or with focus no longer holds the rail.
+      if (pointerHolds.has(card)) setHold(pointerHolds, card, false);
+      if (focusHolds.has(card)) setHold(focusHolds, card, false);
       setTimeout(() => {
         slot.remove();
         hideEmptyContainers();
@@ -265,17 +297,22 @@ const railItem = (card: HTMLElement): RailItem => {
   };
 };
 
-/** The rail is full: older confirmations leave first, then older errors; running progress and the newest toast stay. */
-const enforceCap = (): void => {
+/**
+ * The rail is full: older timed confirmations leave first, then older errors and sticky toasts. Running progress, the
+ * newest toast, and a toast under the pointer or with focus stay; the rail waits until they are released.
+ */
+function enforceCap(): void {
   const narrow = typeof matchMedia === "function" && matchMedia(NARROW_RAIL_QUERY).matches;
   const cap = narrow ? MAX_VISIBLE_TOASTS_NARROW : MAX_VISIBLE_TOASTS;
   while (liveToasts.size > cap) {
-    const older = Array.from(liveToasts).slice(0, -1);
+    const older = Array.from(liveToasts)
+      .slice(0, -1)
+      .filter((item) => !item.held());
     const victim = older.find((item) => !item.keep()) ?? older.find((item) => !item.progress());
     if (!victim) return;
     victim.dismiss();
   }
-};
+}
 
 const showToast = (description: string, options?: ToastOptions): ToastHandle => {
   const initialContainer = ensureContainer();
@@ -297,8 +334,6 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let explicitDuration = options?.duration;
   let remainingDuration = 0;
   let timerStartedAt = 0;
-  let pausedByPointer = false;
-  let pausedByFocus = false;
   let lastAnnouncement = "";
 
   const toastElement = doc.createElement("div");
@@ -340,21 +375,22 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   closeIcon.setAttribute("aria-hidden", "true");
   closeButton.appendChild(closeIcon);
 
+  // Inside the content, so a titled progress toast can place the bar between its title and its summary line.
   const progressElement = doc.createElement("progress");
   progressElement.className = "k2b-toast__progress";
   progressElement.max = 1;
+  contentElement.appendChild(progressElement);
 
-  toastElement.append(leadElement, contentElement, closeButton, progressElement);
+  toastElement.append(leadElement, contentElement, closeButton);
   const item = railItem(toastElement);
 
   const text = () => [titleElement.textContent, descriptionElement.textContent].filter(Boolean).join(". ");
   const effectiveDuration = () => explicitDuration ?? defaultDuration(currentVariant, text(), currentAction !== null);
   /** The error word is read before the message; the action is left out. */
+  const spoken = () => (currentVariant === "error" ? `${resolveUiMessages().error}: ${text()}` : text());
   const say = () => {
-    const spoken = text();
-    lastAnnouncement = spoken;
-    const isError = currentVariant === "error";
-    announce(item.slot.parentElement?.parentElement ?? null, isError ? `${resolveUiMessages().error}: ${spoken}` : spoken, isError);
+    lastAnnouncement = spoken();
+    announce(item.slot.parentElement?.parentElement ?? null, lastAnnouncement, currentVariant === "error");
   };
 
   const clearDismissTimer = () => {
@@ -370,7 +406,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   };
 
   const resumeDismissTimer = () => {
-    if (dismissed || currentProgress !== null || remainingDuration <= 0 || pausedByPointer || pausedByFocus || doc.hidden) return;
+    if (dismissed || currentProgress !== null || remainingDuration <= 0 || railHeld() || doc.hidden) return;
     clearDismissTimer();
     timerStartedAt = Date.now();
     dismissTimer = setTimeout(() => dismiss(), remainingDuration);
@@ -384,13 +420,19 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
 
   const onVisibilityChange = () => (doc.hidden ? pauseDismissTimer() : resumeDismissTimer());
 
+  /** The close button of the nearest open toast in one direction, past neighbours that are still closing. */
+  const nearestOpenClose = (step: (slot: Element) => Element | null): HTMLElement | null => {
+    for (let slot = step(item.slot); slot; slot = step(slot)) {
+      const button = slot.querySelector<HTMLElement>(".k2b-toast:not([data-closing]) .k2b-toast__close");
+      if (button) return button;
+    }
+    return null;
+  };
+
   /** A focused toast hands focus to its neighbour, or back to where the user was, instead of dropping it on the page. */
   const moveFocusAway = () => {
     if (!toastElement.contains(doc.activeElement)) return;
-    const neighbours = [item.slot.nextElementSibling, item.slot.previousElementSibling];
-    const next = neighbours
-      .map((slot) => slot?.querySelector<HTMLElement>(".k2b-toast:not([data-closing]) .k2b-toast__close"))
-      .find((button) => button);
+    const next = nearestOpenClose((slot) => slot.nextElementSibling) ?? nearestOpenClose((slot) => slot.previousElementSibling);
     const target = next ?? (opener?.isConnected ? opener : null);
     if (target) target.focus({ preventScroll: true });
     else (doc.activeElement as HTMLElement | null)?.blur();
@@ -409,7 +451,12 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const renderProgress = () => {
     progressElement.hidden = currentProgress === null;
     toastElement.dataset.progress = String(currentProgress !== null);
-    progressElement.setAttribute("aria-label", titleElement.textContent || descriptionElement.textContent || "");
+    const title = titleElement.textContent;
+    const summary = descriptionElement.textContent ?? "";
+    progressElement.setAttribute("aria-label", title || summary);
+    // With a title, the message is the summary line under the bar ("6 of 12 files"), read instead of a bare percentage.
+    if (typeof currentProgress === "number" && title && summary) progressElement.setAttribute("aria-valuetext", summary);
+    else progressElement.removeAttribute("aria-valuetext");
     if (typeof currentProgress === "number")
       progressElement.value = Number.isFinite(currentProgress) ? Math.max(0, Math.min(1, currentProgress)) : 0;
     else progressElement.removeAttribute("value");
@@ -464,11 +511,12 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     renderProgress();
     resetDismissTimer();
 
-    // Progress is announced at its start, half way, and its end, never at every step.
+    // Progress is announced at its start, half way, and its end, never at every step, and only with something new to say.
+    // The comparison includes the error word, so a change to an error with the same text is still announced.
     const ticking = previousProgress !== null && currentProgress !== null;
     const halfway =
       typeof currentProgress === "number" && currentProgress >= 0.5 && !(typeof previousProgress === "number" && previousProgress >= 0.5);
-    if ((!ticking || halfway || variantChanged) && text() !== lastAnnouncement) say();
+    if ((!ticking || halfway || variantChanged) && spoken() !== lastAnnouncement) say();
   };
 
   closeButton.addEventListener("click", () => dismiss());
@@ -478,30 +526,16 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     event.stopPropagation();
     dismiss();
   });
-  toastElement.addEventListener("pointerenter", () => {
-    pausedByPointer = true;
-    pauseDismissTimer();
-  });
-  toastElement.addEventListener("pointerleave", () => {
-    pausedByPointer = false;
-    resumeDismissTimer();
-  });
-  toastElement.addEventListener("focusin", () => {
-    pausedByFocus = true;
-    pauseDismissTimer();
-  });
-  toastElement.addEventListener("focusout", (event) => {
-    if (toastElement.contains(event.relatedTarget as Node | null)) return;
-    pausedByFocus = false;
-    resumeDismissTimer();
-  });
   doc.addEventListener("visibilitychange", onVisibilityChange);
 
   const handle: ToastHandle = { dismiss, update };
   const live: LiveToast = {
     dismiss,
-    keep: () => currentVariant === "error" || currentProgress !== null,
+    keep: () => currentVariant === "error" || currentProgress !== null || effectiveDuration() === 0,
     progress: () => currentProgress !== null,
+    held: () => pointerHolds.has(toastElement) || focusHolds.has(toastElement),
+    pause: pauseDismissTimer,
+    resume: resumeDismissTimer,
   };
   liveToasts.add(live);
   promoteToTopLayer(initialContainer).appendChild(item.slot);
