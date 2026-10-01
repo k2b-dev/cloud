@@ -3,6 +3,23 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.27.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.26.0...cloud-v0.27.0) (2026-10-01)
+
+
+### Features
+
+* **mail:** show a quick look card when hovering a conversation ([#517](https://github.com/k2b-dev/cloud/issues/517)) ([a8402c8](https://github.com/k2b-dev/cloud/commit/a8402c8ceac8d54960f13d9d1145542eee3e0a46))
+* **notebooks:** hide the navigation completely for focused writing ([#520](https://github.com/k2b-dev/cloud/issues/520)) ([e78fd79](https://github.com/k2b-dev/cloud/commit/e78fd797e6d7e5a190fa3906bf4796a7308260a5))
+* **spaces:** filter the kanban board and fold columns away ([#521](https://github.com/k2b-dev/cloud/issues/521)) ([1ba5d98](https://github.com/k2b-dev/cloud/commit/1ba5d9841cbc7ccd968c8c88064891406ac02ce0))
+* **spaces:** show blocked and overdue tasks in their own kanban columns ([#524](https://github.com/k2b-dev/cloud/issues/524)) ([ba95fd1](https://github.com/k2b-dev/cloud/commit/ba95fd14e84cb1c9032f54368ef12eb5740c7740))
+
+
+### Bug Fixes
+
+* **notebooks:** hide Book view's contents list together with the navigation ([#523](https://github.com/k2b-dev/cloud/issues/523)) ([b735196](https://github.com/k2b-dev/cloud/commit/b735196fe11a379700a1745462bc62bbdb097ffc))
+* **notebooks:** keep the text at the top of a note in place when the navigation hides or shows ([#525](https://github.com/k2b-dev/cloud/issues/525)) ([23c5957](https://github.com/k2b-dev/cloud/commit/23c59572a290a7bbc54e65f358285741c4913a00))
+* open the notebook, space, or base you used last ([#519](https://github.com/k2b-dev/cloud/issues/519)) ([4f0d92c](https://github.com/k2b-dev/cloud/commit/4f0d92cbf80a6e6b36f2bcc9fb81888836d6fbbe))
+
 ## [0.26.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.25.0...cloud-v0.26.0) (2026-10-01)
 
 
