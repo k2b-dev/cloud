@@ -224,13 +224,18 @@ function TextExcerpt(props: { renderer: FileViewRendererProps; text: string; mar
   const lines = createMemo(() => props.text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"));
   const limit = () => (props.renderer.previewLines === undefined ? lines().length : Math.max(1, props.renderer.previewLines));
   const text = () => lines().slice(0, limit()).join("\n");
+  const content = () => (
+    <Show when={props.markdown} fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} />}>
+      <MarkdownView markdown={text()} headingScale={props.renderer.headingScale ?? "compact"} />
+    </Show>
+  );
+  // Only an excerpt needs a clipping box; a complete preview keeps its content
+  // a direct child of the preview frame, which the frame's styles expect.
   return (
     <>
-      <div classList={{ "k2b-content-file-view__excerpt": props.renderer.previewLines !== undefined }}>
-        <Show when={props.markdown} fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} />}>
-          <MarkdownView markdown={text()} headingScale={props.renderer.headingScale ?? "compact"} />
-        </Show>
-      </div>
+      <Show when={props.renderer.previewLines !== undefined} fallback={content()}>
+        <div class="k2b-content-file-view__excerpt">{content()}</div>
+      </Show>
       <MoreLines count={lines().length - limit()} onClick={props.renderer.onExpandPreview} />
     </>
   );

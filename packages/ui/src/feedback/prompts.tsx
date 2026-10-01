@@ -819,7 +819,7 @@ export const prompts = {
             <Show when={options?.header !== false}>
               <DialogHeader title={options?.title} icon={options?.icon} close={() => close(undefined)} />
             </Show>
-            {body}
+            <div class="k2b-dialog__content">{body}</div>
           </div>
         );
       },
