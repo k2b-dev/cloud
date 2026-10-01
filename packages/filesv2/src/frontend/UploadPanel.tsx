@@ -21,6 +21,8 @@ const VISIBLE_ROWS = 5;
 /** Rows rendered beyond the visible ones, so scrolling never shows a gap. */
 const OVERSCAN = 4;
 const DISMISS_MS = 5000;
+/** The usual double-click interval: the batch action ignores a second press that lands this soon after it changed meaning. */
+const ACTION_SETTLE_MS = 500;
 /** Failures that land this close together are announced as one message. */
 const FAILURE_GATHER_MS = 1500;
 
@@ -54,12 +56,14 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   const [expanded, setExpanded] = createSignal(batch.phase === "running" || batch.phase === "errors");
   const [live, setLive] = createSignal("");
   const value = () => percent(batch);
-  const action = () => (batch.phase === "running" ? "cancel" : batch.failed ? "retry" : null);
+  const action = createMemo(() => (batch.phase === "running" ? "cancel" : batch.failed ? "retry" : null));
   const title = () => {
     switch (batch.phase) {
       case "running":
         return batch.target ? u().uploadingTo(batch.target.label) : u().uploading;
       case "done":
+        // Every file already existed and was skipped: nothing was uploaded.
+        if (!batch.count) return u().nothingUploaded;
         return batch.target ? u().uploadedTo(batch.target.label) : u().uploaded;
       case "errors":
         return u().failedTitle(batch.failed);
@@ -152,6 +156,16 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     onCleanup(() => clearTimeout(timer));
   });
 
+  // A double-click on "Try again" must not land its second click on the "Cancel" the first one turned it into.
+  let actionChanged = Number.NEGATIVE_INFINITY;
+  createEffect(on(action, () => (actionChanged = performance.now()), { defer: true }));
+  const runAction = () => {
+    if (performance.now() - actionChanged < ACTION_SETTLE_MS) return;
+    if (action() === "cancel") props.queue.cancel();
+    else props.queue.retry();
+  };
+  let closeButton: HTMLButtonElement | undefined;
+
   const toggle = () => {
     setExpanded(!expanded());
     if (expanded() && batch.active !== null) requestAnimationFrame(() => showRow(batch.active!));
@@ -190,7 +204,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
           <i class="ti ti-chevron-down" aria-hidden="true" />
         </IconButton>
         <Show when={batch.phase !== "running"}>
-          <IconButton size="sm" label={u().dismiss} onClick={() => props.queue.close()}>
+          <IconButton size="sm" ref={closeButton} label={u().dismiss} onClick={() => props.queue.close()}>
             <i class="ti ti-x" aria-hidden="true" />
           </IconButton>
         </Show>
@@ -235,10 +249,11 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
                 row={batch.rows[id]!}
                 folder={showsFolder(batch, batch.rows[id]!)}
                 total={batch.rows.length}
-                onRetry={() => {
+                onRetry={(event) => {
                   props.queue.retry([id]);
-                  // The retry button leaves with the failure; keep keyboard focus in the list.
-                  scroll?.focus();
+                  // The retry button leaves with the failure; keyboard focus stays in the list. A pointer leaves focus
+                  // alone, so the list keeps following the file in flight.
+                  if (event.detail === 0) scroll?.focus();
                 }}
               />
             )}
@@ -246,20 +261,32 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
         </ol>
       </div>
       <div class="filesv2-upload__foot">
-        <p class="filesv2-upload__count">{u().count({ done: batch.done, count: batch.count })}</p>
+        <p class="filesv2-upload__count">
+          {batch.count || !batch.skipped ? u().count({ done: batch.done, count: batch.count }) : u().allExist(batch.skipped)}
+        </p>
         <Show when={batch.failed && batch.phase !== "errors"}>
           <p class="filesv2-upload__errors">{u().errors(batch.failed)}</p>
         </Show>
         <Show when={action()}>
-          <Button
-            variant="text"
-            size="xs"
-            class="filesv2-upload__action"
-            aria-label={action() === "cancel" ? u().cancelUpload : u().retryAll(batch.failed)}
-            onClick={() => (action() === "cancel" ? props.queue.cancel() : props.queue.retry())}
-          >
-            {action() === "cancel" ? u().cancel : u().retry}
-          </Button>
+          {(_) => {
+            let button: HTMLButtonElement | undefined;
+            // When the action leaves with focus on it, focus moves to the close button that takes its place, not the page.
+            onCleanup(() => {
+              if (document.activeElement === button) queueMicrotask(() => closeButton?.isConnected && closeButton.focus());
+            });
+            return (
+              <Button
+                ref={button}
+                variant="text"
+                size="xs"
+                class="filesv2-upload__action"
+                aria-label={action() === "cancel" ? u().cancelUpload : u().retryAll(batch.failed)}
+                onClick={runAction}
+              >
+                {action() === "cancel" ? u().cancel : u().retry}
+              </Button>
+            );
+          }}
         </Show>
       </div>
       <div class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true">
@@ -269,7 +296,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   );
 }
 
-function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; onRetry: () => void }) {
+function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; onRetry: (event: MouseEvent) => void }) {
   const u = useUploadMessages();
   const hint = () => (
     <>

@@ -62,6 +62,7 @@ import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { systemEntry, systemEntryLabel } from "./system-files";
 import { openTemplatePicker } from "./Templates";
+import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
 
 type Directory = DirectoryResult & { query?: string; scope?: "folder" | "tree" };
@@ -506,7 +507,7 @@ export default function Browser(props: {
     let policy: ReplacePolicy = "ask";
     const conflicts = files.filter((file) => !relativeName(file).includes("/") && known.has(file.name)).length;
     if (conflicts) {
-      const decided = await askReplace(b(), files.find((file) => known.has(file.name))?.name ?? "", conflicts, files.length);
+      const decided = await askReplace(b(), files.find((file) => known.has(file.name))?.name ?? "", conflicts, files.length, signal);
       if (!decided || signal.aborted) return;
       policy = decided;
     }
@@ -648,9 +649,31 @@ export default function Browser(props: {
       refresh(path);
     });
   };
+  // An empty file has nothing to transfer, so it is created at once like a folder instead of waiting behind an upload.
   const createFile = async () => {
     const name = await askName(b().newFile, b().newFileName);
-    if (name) startUpload([new File([], name)]);
+    if (!name) return;
+    const base = baseId();
+    const path = folder() ? `${folder()}/${name}` : name;
+    runAction(async () => {
+      let onConflict: "error" | "overwrite" = "error";
+      for (;;) {
+        try {
+          const result = await uploadFile(base, path, new File([], name), {
+            onConflict,
+            signal: questions.signal,
+            fallback: t().unavailable,
+          });
+          toast.success(b().documentCreated(name));
+          refresh(result.entry.path);
+          return;
+        } catch (error) {
+          if (!(error instanceof UploadConflict) || onConflict === "overwrite") throw error;
+          if ((await askReplace(b(), name, 1, 1, questions.signal)) !== "overwrite") return;
+          onConflict = "overwrite";
+        }
+      }
+    });
   };
   const editable = (entry: FileEntry) =>
     !!props.onEdit && !entry.directory && (isMarkdown(entry.name) || (!!props.editor && !!editableExtension(entry.name)));

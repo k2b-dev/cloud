@@ -19,18 +19,20 @@ export type FilesUploadGroup = {
 };
 export type FilesUploads = UploadQueue<FilesUploadGroup>;
 
-/** Asks once whether existing names are replaced; null when the question was dismissed. */
+/** Asks once whether existing names are replaced; null when the question was dismissed or its signal aborted. */
 export async function askReplace(
   b: ReturnType<ReturnType<typeof useBrowserMessages>>,
   name: string,
   count: number,
   total: number,
+  signal: AbortSignal,
 ): Promise<Exclude<ReplacePolicy, "ask"> | null> {
   const choice = await prompts.confirm(count > 1 ? b.replaceManyQuestion({ count, total }) : b.replaceQuestion(name), {
     title: count > 1 ? b.replaceManyTitle : b.replaceTitle,
     confirmText: b.replaceAll,
     cancelText: total > count ? b.onlyNew(total - count) : b.skip,
     variant: "danger",
+    signal,
   });
   return choice === undefined ? null : choice ? "overwrite" : "skip";
 }
@@ -60,7 +62,8 @@ export function createFilesUploads(): FilesUploads {
         } catch (error) {
           if (!(error instanceof UploadConflict) || onConflict !== "error") throw error;
           if (group.policy === "ask") {
-            const decided = await askReplace(b(), error.fileName, 1, group.total);
+            // A cancel or the workspace leaving closes the question with the upload.
+            const decided = await askReplace(b(), error.fileName, 1, group.total, signal);
             signal.throwIfAborted();
             if (!decided) return { status: "cancel" };
             group.policy = decided;

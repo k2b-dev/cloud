@@ -172,7 +172,10 @@ export const browserMessages = i18n.define({
       publicBack: "Back",
       moreShares: "Load more",
       quotaInvalid: "Choose positive limits. The per-file limit must not exceed the total budget.",
-      uploadTooLarge: "This file exceeds the inbox's per-file limit.",
+      uploadTooLarge: (names: readonly string[]) =>
+        names.length === 1
+          ? `“${names[0]}” exceeds the inbox's per-file limit.`
+          : `${names.length} files exceed the inbox's per-file limit.`,
       shareDownloadScope: "Anyone with the link can download these entries until the link expires or is revoked.",
       shareInboxScope:
         "Anyone with the link can upload files into this folder until the link expires or is revoked. Uploads never replace existing files.",
@@ -463,7 +466,10 @@ export const browserMessages = i18n.define({
       publicBack: "Zurück",
       moreShares: "Weitere laden",
       quotaInvalid: "Wähle positive Limits. Das Limit pro Datei darf das gesamte Budget nicht überschreiten.",
-      uploadTooLarge: "Diese Datei überschreitet das Dateigrößenlimit des Upload-Eingangs.",
+      uploadTooLarge: (names: readonly string[]) =>
+        names.length === 1
+          ? `„${names[0]}“ überschreitet das Dateigrößenlimit des Upload-Eingangs.`
+          : `${names.length} Dateien überschreiten das Dateigrößenlimit des Upload-Eingangs.`,
       shareDownloadScope: "Jede Person mit dem Link kann diese Einträge herunterladen, bis der Link abläuft oder widerrufen wird.",
       shareInboxScope:
         "Jede Person mit dem Link kann Dateien in diesen Ordner hochladen, bis der Link abläuft oder widerrufen wird. Bestehende Dateien werden nie ersetzt.",

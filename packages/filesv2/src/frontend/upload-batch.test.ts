@@ -126,7 +126,7 @@ describe("upload batch transitions", () => {
     expect(nextRow(batch)).toBe(1);
   });
 
-  test("failure keeps the reason, retry puts the file back at the end and clears it", () => {
+  test("failure keeps the reason, retry puts the file back at the end and a new result replaces the reason", () => {
     const batch = createBatch();
     appendFiles(batch, target, 0, files(["a.jpg", 10], ["b.jpg", 10], ["c.jpg", 10]));
     expect(complete(batch, { status: "failed", reason: "Connection lost" })).toEqual({
@@ -136,13 +136,15 @@ describe("upload batch transitions", () => {
     });
     expect(batch.rows[0]).toMatchObject({ status: "failed", reason: "Connection lost", sent: 0 });
     expect(retryRows(batch, [0])).toEqual({ kind: "retrying", count: 1, name: "a.jpg" });
-    expect(batch.rows[0]).toMatchObject({ status: "pending", reason: null });
+    expect(batch.rows[0]).toMatchObject({ status: "pending", reason: "Connection lost" });
     expect(batch.failed).toBe(0);
     expect(batch.failedBytes).toBe(0);
     expect(nextRow(batch)).toBe(1);
     complete(batch);
     complete(batch);
     expect(nextRow(batch)).toBe(0);
+    complete(batch);
+    expect(batch.rows[0]).toMatchObject({ status: "success", reason: null });
   });
 
   test("retry after the batch ended runs it again; retrying nothing changes nothing", () => {
@@ -186,6 +188,45 @@ describe("upload batch transitions", () => {
     expect(finishRow(batch, 2, { status: "success" })).toBeNull();
     expect(batch.rows[2]!.status).toBe("cancelled");
   });
+
+  test("cancelling a retry returns its files to their failure, so they can still be retried", () => {
+    const batch = createBatch();
+    appendFiles(batch, target, 0, files(["a", 10], ["b", 10], ["c", 10], ["d", 10]));
+    complete(batch);
+    complete(batch, { status: "failed", reason: "Connection lost" });
+    complete(batch);
+    complete(batch, { status: "failed", reason: "Server did not answer" });
+    settleBatch(batch);
+    retryRows(batch);
+    // One retried file is in flight, the other waits.
+    startRow(batch, nextRow(batch)!);
+    cancelBatch(batch);
+    expect(batch.rows.map((row) => [row.status, row.reason])).toEqual([
+      ["success", null],
+      ["failed", "Connection lost"],
+      ["success", null],
+      ["failed", "Server did not answer"],
+    ]);
+    expect({ failed: batch.failed, failedBytes: batch.failedBytes, active: batch.active }).toEqual({
+      failed: 2,
+      failedBytes: 20,
+      active: null,
+    });
+    expect(retryRows(batch)).toEqual({ kind: "retrying", count: 2, name: "b" });
+  });
+
+  test("a cancelled batch stays cancelled after a retry, since its cancelled files were never uploaded", () => {
+    const batch = createBatch();
+    appendFiles(batch, target, 0, files(["a", 10], ["b", 10], ["c", 10]));
+    complete(batch, { status: "failed", reason: "Connection lost" });
+    startRow(batch, nextRow(batch)!);
+    cancelBatch(batch);
+    retryRows(batch);
+    complete(batch);
+    expect(settleBatch(batch)).toEqual({ kind: "cancelled", done: 1, count: 3 });
+    expect(batch.phase).toBe("cancelled");
+    expect(percent(batch)).toBe(33);
+  });
 });
 
 describe("upload batch presentation rules", () => {
@@ -195,6 +236,17 @@ describe("upload batch presentation rules", () => {
     expect(batch.rows.map((row) => showsFolder(batch, row))).toEqual([false, false, false]);
     appendFiles(batch, target, 1, files(["Backup/IMG_1.jpg", 1], ["IMG_1.jpg", 1]));
     expect(batch.rows.map((row) => showsFolder(batch, row))).toEqual([true, false, false, true, false]);
+  });
+
+  test("names that are also object members count like any other name", () => {
+    const batch = createBatch();
+    appendFiles(
+      batch,
+      target,
+      0,
+      files(["A/constructor", 1], ["B/constructor", 1], ["C/toString", 1], ["D/__proto__", 1], ["E/__proto__", 1]),
+    );
+    expect(batch.rows.map((row) => showsFolder(batch, row))).toEqual([true, true, false, true, true]);
   });
 
   test("milestones announce 25, 50 and 75 % once each, never single percent steps", () => {

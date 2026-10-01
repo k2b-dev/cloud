@@ -45,7 +45,6 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
   const uploads = createUploadQueue<null>({
     reason: (error) => (error instanceof Error && error.message ? error.message : u().failed),
     upload: async (_, { file }, { signal, onProgress }) => {
-      if (file.size > props.share.maxFileSize) throw new Error(b().uploadTooLarge);
       const start = await browserUploadKey(["public", props.token], file);
       const opened = await publicClient.inbox[":token"].api.uploads.$post(
         { param, json: { name: file.name, size: file.size, idempotencyKey: start.idempotencyKey } },
@@ -106,13 +105,16 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
         label={b().upload}
         hint={b().publicInboxHint}
         multiple
-        onDrop={(files) =>
+        onDrop={(files) => {
+          // A file over the limit can never be uploaded, so it is named once instead of becoming a row to retry.
+          const tooLarge = files.filter((file) => file.size > props.share.maxFileSize);
+          if (tooLarge.length) toast.error(b().uploadTooLarge(tooLarge.map((file) => file.name)));
           uploads.add(
             null,
             { key: "inbox", label: props.share.title },
-            files.map((file) => ({ file, path: file.name })),
-          )
-        }
+            files.filter((file) => file.size <= props.share.maxFileSize).map((file) => ({ file, path: file.name })),
+          );
+        }}
       />
       <UploadSurface queue={uploads} />
       <Show when={props.share.showUploadNames}>

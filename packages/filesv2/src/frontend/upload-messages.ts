@@ -4,6 +4,8 @@ import type { UploadAnnouncement, UploadStatus } from "./upload-batch";
 
 const enFiles = (n: number) => (n === 1 ? "1 file" : `${n} files`);
 const deFiles = (n: number) => (n === 1 ? "1 Datei" : `${n} Dateien`);
+const enAllExist = (n: number) => (n === 1 ? "The file already exists" : `All ${n} files already exist`);
+const deAllExist = (n: number) => (n === 1 ? "Die Datei existiert bereits" : `Alle ${n} Dateien existieren bereits`);
 
 const messages = i18n.define({
   baseLocale: "en",
@@ -14,6 +16,8 @@ const messages = i18n.define({
       uploading: "Uploading",
       uploadedTo: (target: string) => `Uploaded to “${target}”`,
       uploaded: "Upload complete",
+      nothingUploaded: "Nothing uploaded",
+      allExist: enAllExist,
       failedTitle: (n: number) => `${enFiles(n)} failed`,
       cancelled: "Upload cancelled",
       count: ({ done, count }: { done: number; count: number }) => `${done} of ${enFiles(count)}`,
@@ -57,8 +61,9 @@ const messages = i18n.define({
           case "retrying":
             return said.count === 1 ? `Uploading ${said.name} again.` : `Uploading ${enFiles(said.count)} again.`;
           case "finished":
-            return said.failed
-              ? `Upload finished. ${said.done} of ${enFiles(said.count)} uploaded, ${said.failed} failed.`
+            if (said.failed) return `Upload finished. ${said.done} of ${enFiles(said.count)} uploaded, ${said.failed} failed.`;
+            return !said.count && said.skipped
+              ? `Nothing uploaded. ${enAllExist(said.skipped)}.`
               : `Upload complete. ${enFiles(said.done)} uploaded${said.skipped ? `, ${said.skipped} skipped because they already exist` : ""}.`;
           case "cancelled":
             return `Upload cancelled. ${said.done} of ${enFiles(said.count)} uploaded.`;
@@ -71,6 +76,8 @@ const messages = i18n.define({
       uploading: "Hochladen",
       uploadedTo: (target: string) => `In „${target}“ hochgeladen`,
       uploaded: "Upload abgeschlossen",
+      nothingUploaded: "Nichts hochgeladen",
+      allExist: deAllExist,
       failedTitle: (n: number) => `${deFiles(n)} fehlgeschlagen`,
       cancelled: "Upload abgebrochen",
       count: ({ done, count }: { done: number; count: number }) => `${done} von ${deFiles(count)}`,
@@ -114,8 +121,9 @@ const messages = i18n.define({
           case "retrying":
             return said.count === 1 ? `${said.name} wird erneut hochgeladen.` : `${deFiles(said.count)} werden erneut hochgeladen.`;
           case "finished":
-            return said.failed
-              ? `Upload beendet. ${said.done} von ${deFiles(said.count)} hochgeladen, ${said.failed} fehlgeschlagen.`
+            if (said.failed) return `Upload beendet. ${said.done} von ${deFiles(said.count)} hochgeladen, ${said.failed} fehlgeschlagen.`;
+            return !said.count && said.skipped
+              ? `Nichts hochgeladen. ${deAllExist(said.skipped)}.`
               : `Upload abgeschlossen. ${deFiles(said.done)} hochgeladen${said.skipped ? `, ${said.skipped} übersprungen, weil sie bereits existieren` : ""}.`;
           case "cancelled":
             return `Upload abgebrochen. ${said.done} von ${deFiles(said.count)} hochgeladen.`;

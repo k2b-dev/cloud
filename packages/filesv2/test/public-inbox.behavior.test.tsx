@@ -127,3 +127,26 @@ test("public inbox keeps its durable start key after an ambiguous commit and nev
   expect(commits).toBe(2);
   expect(localStorage.length).toBe(0);
 });
+
+test("a file over the inbox limit is named once and never becomes a row that could be retried", async () => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={share} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: [new File([new Uint8Array(2048)], "video.mp4"), new File([], "file.txt", { lastModified: 123 })],
+  });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  expect(creates).toBe(1);
+  expect([...dom.document.querySelectorAll(".filesv2-upload-row__base")].map((node) => node.textContent)).toEqual(["file.txt"]);
+  expect(
+    [...dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom]) .k2b-toast__description")].map((node) => node.textContent),
+  ).toEqual(["“video.mp4” exceeds the inbox's per-file limit."]);
+});

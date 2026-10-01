@@ -171,6 +171,72 @@ describe("upload panel in a browser", () => {
     }
   });
 
+  test("another toast keeps the list where it was, with its rows and the focus", async () => {
+    const tab = await open(desktop);
+    try {
+      await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+      for (let index = 0; index < 6; index++) await run(tab, "window.uploads.finish()");
+      await tab.focus(".filesv2-upload__scroll");
+      const state = () =>
+        tab.evaluate(() => {
+          const list = document.querySelector<HTMLElement>(".filesv2-upload__scroll")!;
+          const view = list.getBoundingClientRect();
+          return {
+            scrollTop: list.scrollTop,
+            focused: document.activeElement === list,
+            // Rows that actually fill the visible part of the list.
+            visible: [...list.querySelectorAll(".filesv2-upload-row")].filter((row) => {
+              const box = row.getBoundingClientRect();
+              return box.bottom > view.top && box.top < view.bottom;
+            }).length,
+          };
+        });
+      const before = await state();
+      expect(before).toEqual({ scrollTop: 5 * 36, focused: true, visible: 5 });
+      await run(tab, "window.uploads.notify('Link copied')");
+      expect(await state()).toEqual(before);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("a double-click on Try again retries the failed files and leaves them running", async () => {
+    const tab = await open(desktop);
+    try {
+      await run(tab, `window.uploads.add(${JSON.stringify(demo.slice(0, 4))})`);
+      await run(tab, "window.uploads.fail('Connection lost')");
+      await run(tab, "window.uploads.finish()");
+      await run(tab, "window.uploads.fail('Connection lost')");
+      await run(tab, "window.uploads.finish()");
+      await tab.waitForTimeout(600);
+      await tab.dblclick(".filesv2-upload__action");
+      await settle(tab);
+      expect(await tab.textContent(".filesv2-upload__action")).toBe("Cancel");
+      expect(await tab.$$eval(".filesv2-upload-row", (rows) => rows.map((row) => (row as HTMLElement).dataset.status))).toEqual([
+        "working",
+        "success",
+        "pending",
+        "success",
+      ]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("Cancel works as soon as the panel appears and hands keyboard focus to the close button", async () => {
+    const tab = await open(desktop);
+    try {
+      await run(tab, `window.uploads.add(${JSON.stringify(demo.slice(0, 3))})`);
+      await tab.focus(".filesv2-upload__action");
+      await tab.keyboard.press("Enter");
+      await settle(tab);
+      expect(await tab.textContent(".filesv2-upload__title")).toBe("Upload cancelled");
+      expect(await tab.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Dismiss notification");
+    } finally {
+      await tab.context().close();
+    }
+  });
+
   test("collapsing keeps the headline, bar and count; the list returns on the active file", async () => {
     const tab = await open(desktop);
     try {

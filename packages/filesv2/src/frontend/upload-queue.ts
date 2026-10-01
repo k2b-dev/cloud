@@ -1,4 +1,4 @@
-import { onCleanup } from "solid-js";
+import { onCleanup, batch as together } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import {
   appendFiles,
@@ -140,6 +140,14 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
     controller?.abort();
     apply(cancelBatch);
   };
+  const close = () => {
+    if (batch.phase === "running") return;
+    generation++;
+    // A cancelled upload may still be unwinding; groups it changed are still heard once the queue drains.
+    groups = groups.filter((group) => group.changed);
+    items = [];
+    setBatch(createBatch());
+  };
 
   onCleanup(() => {
     disposed = true;
@@ -150,16 +158,20 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
     batch,
     add: (group, target, added) => {
       if (!added.length) return;
-      const index = groups.push({ value: group, prepared: false, changed: false, last: null }) - 1;
-      items = [...items, ...added];
-      apply((draft) =>
-        appendFiles(
-          draft,
-          target,
-          index,
-          added.map((item) => ({ path: item.path, size: item.file.size })),
-        ),
-      );
+      // Files after a cancel start a new batch: the cancelled files stay out of its totals. One update, so the panel stays.
+      together(() => {
+        if (batch.phase === "cancelled") close();
+        const index = groups.push({ value: group, prepared: false, changed: false, last: null }) - 1;
+        items = [...items, ...added];
+        apply((draft) =>
+          appendFiles(
+            draft,
+            target,
+            index,
+            added.map((item) => ({ path: item.path, size: item.file.size })),
+          ),
+        );
+      });
       void run();
     },
     cancel,
@@ -167,13 +179,7 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
       apply((draft) => retryRows(draft, ids));
       void run();
     },
-    close: () => {
-      if (batch.phase === "running") return;
-      generation++;
-      groups = [];
-      items = [];
-      setBatch(createBatch());
-    },
+    close,
     listen: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

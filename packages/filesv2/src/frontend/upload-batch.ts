@@ -16,6 +16,7 @@ export type UploadRow = {
   /** Bytes the current attempt has transferred. */
   sent: number;
   status: UploadStatus;
+  /** The last failure. It stays while a retry waits or runs, so cancelling the retry returns the file to it. */
   reason: string | null;
   group: number;
 };
@@ -34,7 +35,7 @@ export type UploadBatch = {
   failedBytes: number;
   skipped: number;
   active: number | null;
-  /** How many rows share a file name; a shared name shows its folder. */
+  /** How many rows share a file name; a shared name shows its folder. Without a prototype, so any name is a plain key. */
   names: Record<string, number>;
   /** Row ids in upload order; entries before `head` have had their turn. Retries join at the end. */
   queue: number[];
@@ -64,7 +65,7 @@ export const createBatch = (): UploadBatch => ({
   failedBytes: 0,
   skipped: 0,
   active: null,
-  names: {},
+  names: Object.create(null) as Record<string, number>,
   queue: [],
   head: 0,
   milestone: 0,
@@ -148,7 +149,6 @@ export const startRow = (batch: UploadBatch, id: number) => {
   const row = batch.rows[id]!;
   row.status = "working";
   row.sent = 0;
-  row.reason = null;
   batch.active = id;
 };
 
@@ -168,6 +168,7 @@ export const finishRow = (
   if (row.status !== "working") return null;
   if (batch.active === id) batch.active = null;
   row.status = outcome.status;
+  if (outcome.status !== "failed") row.reason = null;
   if (outcome.status === "success") {
     row.sent = row.size;
     batch.done++;
@@ -199,13 +200,12 @@ export const failGroup = (batch: UploadBatch, group: number, reason: string) => 
   }
 };
 
-/** Puts failed rows back in line, all of them when no ids are given. */
+/** Puts failed rows back in line, all of them when no ids are given. Each keeps its reason until it gets a new result. */
 export const retryRows = (batch: UploadBatch, ids?: readonly number[]): UploadAnnouncement | null => {
   const rows = (ids ? ids.map((id) => batch.rows[id]!) : batch.rows).filter((row) => row.status === "failed");
   if (!rows.length) return null;
   for (const row of rows) {
     row.status = "pending";
-    row.reason = null;
     row.sent = 0;
     batch.failed--;
     batch.failedBytes -= row.size;
@@ -216,13 +216,22 @@ export const retryRows = (batch: UploadBatch, ids?: readonly number[]): UploadAn
   return { kind: "retrying", count: rows.length, name: rows[0]!.name };
 };
 
-/** Stops the batch: finished files stay finished, everything still waiting or uploading is cancelled. */
+/**
+ * Stops the batch: finished files stay finished, everything still waiting or uploading is cancelled. A file that was
+ * being retried returns to its failure, so a cancel never takes away the way to try it again.
+ */
 export const cancelBatch = (batch: UploadBatch): UploadAnnouncement | null => {
   if (batch.phase !== "running") return null;
   for (const row of batch.rows) {
     if (row.status !== "pending" && row.status !== "working") continue;
-    row.status = "cancelled";
     row.sent = 0;
+    if (row.reason === null) {
+      row.status = "cancelled";
+      continue;
+    }
+    row.status = "failed";
+    batch.failed++;
+    batch.failedBytes += row.size;
   }
   batch.active = null;
   batch.head = batch.queue.length;
@@ -230,9 +239,16 @@ export const cancelBatch = (batch: UploadBatch): UploadAnnouncement | null => {
   return { kind: "cancelled", done: batch.done, count: batch.count };
 };
 
-/** Ends a drained batch: quiet success, or the errors state that stays until it is closed. */
+/**
+ * Ends a drained batch: quiet success, or the errors state that stays until it is closed. A batch that was cancelled
+ * stays cancelled after a retry, since its cancelled files were never uploaded.
+ */
 export const settleBatch = (batch: UploadBatch): UploadAnnouncement | null => {
   if (!batch.rows.length || batch.phase !== "running" || batch.active !== null || nextRow(batch) !== null) return null;
+  if (batch.rows.some((row) => row.status === "cancelled")) {
+    batch.phase = "cancelled";
+    return { kind: "cancelled", done: batch.done, count: batch.count };
+  }
   batch.phase = batch.failed ? "errors" : "done";
   return { kind: "finished", done: batch.done, count: batch.count, failed: batch.failed, skipped: batch.skipped };
 };

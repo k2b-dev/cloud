@@ -1,4 +1,4 @@
-import { LocaleProvider } from "@k2b/ui";
+import { LocaleProvider, toast } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { UploadSurface } from "./UploadPanel";
 import { createUploadQueue, type UploadOutcome, type UploadQueue } from "./upload-queue";
@@ -18,6 +18,8 @@ declare global {
       progress: (bytes: number) => void;
       finish: () => void;
       fail: (reason: string) => void;
+      /** Any other toast, shown while the panel is in the rail. */
+      notify: (text: string) => void;
       queue: UploadQueue<null>;
     };
   }
@@ -49,6 +51,7 @@ render(
           progress: (bytes) => current().progress(bytes),
           finish: () => current().resolve({ status: "uploaded", path: current().path }),
           fail: (reason) => current().reject(new Error(reason)),
+          notify: (text) => toast(text),
           queue,
         };
         return <UploadSurface queue={queue} />;

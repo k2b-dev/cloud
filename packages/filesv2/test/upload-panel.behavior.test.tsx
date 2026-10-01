@@ -14,6 +14,8 @@ type Transfer = {
 const transfers: Transfer[] = [];
 let cleanup = () => {};
 const wait = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Longer than the pause in which the batch action ignores a press after it changed meaning. */
+const settleAction = () => wait(550);
 const file = (path: string, size: number) => ({ file: new File([new Uint8Array(size)], path.split("/").at(-1)!), path });
 
 /** A queue whose uploads wait until the test settles them, with its panel in the toast rail. */
@@ -162,6 +164,7 @@ describe("upload panel", () => {
     expect(ui.current().name).toBe("a.jpg");
     await ui.finish();
     expect(ui.text(".filesv2-upload__title")).toBe("1 file failed");
+    await settleAction();
     ui.button("Upload 1 file again")!.click();
     await wait();
     expect(ui.current().name).toBe("c.jpg");
@@ -183,6 +186,136 @@ describe("upload panel", () => {
     expect(ui.text(".filesv2-upload__count")).toBe("1 of 3 files");
     expect(ui.button("Cancel upload")).toBeUndefined();
     expect(transfers).toHaveLength(2);
+  });
+
+  test("files added after a cancel start a new batch that ends as a full success", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1), file("c", 1));
+    await ui.finish();
+    ui.button("Cancel upload")!.click();
+    await wait();
+    await ui.add(file("d", 1));
+    expect(ui.rows()).toEqual([{ name: "d", status: "working" }]);
+    expect(ui.text(".filesv2-upload__count")).toBe("0 of 1 file");
+    await ui.finish();
+    expect(ui.text(".filesv2-upload__title")).toBe("Uploaded to “Projects”");
+    expect(ui.text(".filesv2-upload__count")).toBe("1 of 1 file");
+    expect(ui.dom.document.querySelectorAll(".filesv2-upload")).toHaveLength(1);
+  });
+
+  test("files uploaded before a cancel still refresh their folder when new files follow at once", async () => {
+    const ui = await mount();
+    const settled: (string | null)[] = [];
+    ui.queue().onSettled((_, last) => settled.push(last));
+    await ui.add(file("a", 1), file("b", 1));
+    await ui.finish();
+    // The cancelled upload is still unwinding when the next file arrives.
+    ui.button("Cancel upload")!.click();
+    ui.queue().add(null, { key: "home:Projects", label: "Projects" }, [file("d", 1)]);
+    await wait();
+    await ui.finish();
+    expect(settled).toEqual(["a", "d"]);
+  });
+
+  test("a retry after a cancel ends cancelled, not as a success", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1), file("c", 1));
+    ui.current().reject(new Error("Connection lost"));
+    await wait();
+    ui.button("Cancel upload")!.click();
+    await wait();
+    expect(ui.rows().map((row) => row.status)).toEqual(["failed", "cancelled", "cancelled"]);
+    await settleAction();
+    ui.button("Upload 1 file again")!.click();
+    await wait();
+    await ui.finish();
+    expect(ui.text(".filesv2-upload__title")).toBe("Upload cancelled");
+    expect(ui.text(".filesv2-upload__count")).toBe("1 of 3 files");
+    expect(ui.rows().map((row) => row.status)).toEqual(["success", "cancelled", "cancelled"]);
+  });
+
+  test("a double-click on Try again retries once and does not cancel what it retried", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1), file("c", 1), file("d", 1));
+    await ui.finish();
+    ui.current().reject(new Error("Connection lost"));
+    await wait();
+    await ui.finish();
+    ui.current().reject(new Error("Connection lost"));
+    await wait();
+    await settleAction();
+    const action = ui.panel()!.querySelector<HTMLButtonElement>(".filesv2-upload__action")!;
+    action.click();
+    action.click();
+    await wait();
+    expect(ui.text(".filesv2-upload__title")).toBe("Uploading to “Projects”");
+    expect(ui.current().signal.aborted).toBeFalse();
+    expect(ui.rows().map((row) => row.status)).toEqual(["success", "working", "success", "pending"]);
+  });
+
+  test("cancelling a retry keeps the failures retryable", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1));
+    ui.current().reject(new Error("Connection lost"));
+    await wait();
+    await ui.finish();
+    await settleAction();
+    ui.button("Upload 1 file again")!.click();
+    await wait();
+    await settleAction();
+    ui.button("Cancel upload")!.click();
+    await wait();
+    expect(ui.rows().map((row) => row.status)).toEqual(["failed", "success"]);
+    expect(ui.panel()!.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Connection lost");
+    expect(ui.button("Upload 1 file again")).toBeDefined();
+  });
+
+  test("a batch of files that all exist says nothing was uploaded", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1));
+    await ui.finish({ status: "skipped" });
+    await ui.finish({ status: "skipped" });
+    expect(ui.text(".filesv2-upload__title")).toBe("Nothing uploaded");
+    expect(ui.text(".filesv2-upload__count")).toBe("All 2 files already exist");
+    await wait(100);
+    expect(ui.live.at(-1)).toBe("Nothing uploaded. All 2 files already exist.");
+  });
+
+  test("when the batch action leaves with focus on it, focus moves to the close button", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1));
+    ui.button("Cancel upload")!.focus();
+    ui.button("Cancel upload")!.click();
+    await wait();
+    expect(ui.dom.document.activeElement?.getAttribute("aria-label")).toBe("Dismiss notification");
+    cleanup();
+    transfers.length = 0;
+
+    const done = await mount();
+    await done.add(file("a", 1));
+    done.button("Cancel upload")!.focus();
+    await done.finish();
+    expect(done.dom.document.activeElement?.getAttribute("aria-label")).toBe("Dismiss notification");
+  });
+
+  test("a row retry by keyboard keeps focus in the list; by pointer it leaves focus alone", async () => {
+    const ui = await mount();
+    await ui.add(file("a", 1), file("b", 1), file("c", 1));
+    ui.current().reject(new Error("Connection lost"));
+    await wait();
+    ui.current().reject(new Error("Connection lost"));
+    await wait();
+    const retry = (name: string, detail: number) =>
+      ui
+        .panel()!
+        .querySelector<HTMLButtonElement>(`button[aria-label="Try again: ${name}"]`)!
+        .dispatchEvent(new ui.dom.window.MouseEvent("click", { bubbles: true, detail }) as unknown as Event);
+    retry("a", 1);
+    await wait();
+    expect(ui.dom.document.activeElement?.classList.contains("filesv2-upload__scroll")).toBeFalse();
+    retry("b", 0);
+    await wait();
+    expect(ui.dom.document.activeElement?.classList.contains("filesv2-upload__scroll")).toBeTrue();
   });
 
   test("the live region says milestones, failures and the summary, never single percent steps", async () => {

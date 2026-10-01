@@ -389,7 +389,8 @@ test("a loose dot-file WebKit refuses next to a dropped folder is named in the s
   dom.root.querySelector(".filesv2-browser__surface")!.dispatchEvent(event);
   await flush();
   expect(calls).toEqual(["mkdir Documents/Docs", "open Documents/Docs/report.txt 0 error", "commit"]);
-  const toasts = [...dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom])")];
+  // The reading notice is already leaving; its exit animation may still keep it in the DOM, so only staying toasts count.
+  const toasts = [...dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom]):not([data-closing])")];
   expect(toasts.map((toast) => toast.querySelector(".k2b-toast__description")?.textContent)).toEqual([
     "The browser left out 1 hidden file. Upload it on its own.",
   ]);
@@ -447,4 +448,66 @@ test("files picked while an upload runs join the same batch instead of being ref
     "open Documents/second.txt 6 error",
   ]);
   expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("2 of 2 files");
+});
+
+test("a new empty file is created at once instead of waiting behind a running upload", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new URL(String(input)).searchParams.has("segments")) return Response.json({ items: [] });
+    if (init?.method === "PUT") {
+      await held;
+      received += (await new Response(init.body as BodyInit).arrayBuffer()).byteLength;
+    }
+    // The empty file's session is the latest one; it has nothing to receive.
+    const size = Number(
+      calls
+        .filter((call) => call.startsWith("open"))
+        .at(-1)!
+        .split(" ")[2],
+    );
+    return Response.json({
+      id: "s1",
+      root: "cloud",
+      size,
+      chunkSize: 4,
+      expires: "2099-01-01T00:00:00Z",
+      state: "open",
+      received: size ? received : 0,
+    });
+  }) as typeof fetch;
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const dispose = await mountWithUploads(dom.root, {
+    directory: initial,
+    bases: [initial.base],
+    cloudUrl: "https://cloud.test",
+    onNavigate: async () => {},
+    onChanged: () => {},
+  });
+  cleanup = () => {
+    release();
+    dispose();
+    dom.cleanup();
+  };
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File(["abcdef"], "large.bin")] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  dom.root.querySelector<HTMLButtonElement>('button[aria-label="Add"]')!.click();
+  await flush();
+  [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((node) => node.textContent?.includes("New file"))!.click();
+  await flush();
+  const dialog = dom.document.querySelector("dialog")!;
+  const name = dialog.querySelector<HTMLInputElement>("input")!;
+  name.value = "notes.md";
+  name.dispatchEvent(new Event("input", { bubbles: true }));
+  dialog.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await flush();
+  expect(calls).toEqual(["open Documents/large.bin 6 error", "open Documents/notes.md 0 error", "commit"]);
+  // The running batch is untouched: the new file is not a row behind it.
+  expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("0 of 1 file");
+  expect([...dom.document.querySelectorAll(".k2b-toast__description")].map((node) => node.textContent)).toContain("notes.md created.");
 });
