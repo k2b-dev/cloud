@@ -10,7 +10,7 @@ import type { NotebookContext } from "./types";
  * the browser every surface that shows or toggles it follows this event.
  */
 export const NAVIGATION_VISIBILITY_EVENT = "notebooks.navigation.visibilityChanged";
-/** Dispatched before the layout changes, so the editor can note its reading position. */
+/** Dispatched before the layout changes, so the editor and Book view can note their reading position. */
 export const NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT = "notebooks.navigation.visibilityWillChange";
 /**
  * Dispatched, cancelable, when hiding removed the focused element. The note

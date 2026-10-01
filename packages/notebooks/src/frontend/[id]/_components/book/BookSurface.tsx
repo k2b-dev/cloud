@@ -36,6 +36,7 @@ export default function BookSurface(props: BookSurfaceProps) {
           activeTag={props.activeTag}
           canWrite={props.canWrite}
           locked={props.locked}
+          navigationHidden={props.navigationHidden}
         />
         <AppWorkspace.Content>
           <div class="flex flex-1 min-w-0 min-h-0 flex-col">

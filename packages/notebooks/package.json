@@ -63,6 +63,7 @@
     "@types/bun": "catalog:",
     "@types/d3-force": "3.0.10",
     "@types/sanitize-html": "catalog:",
+    "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
     "typescript": "catalog:"
   },

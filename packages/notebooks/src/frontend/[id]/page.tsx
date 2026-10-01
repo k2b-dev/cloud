@@ -48,6 +48,7 @@ export default ssr<AuthContext>(async (c) => {
           historyIncomplete={data.selectedNote?.historyIncomplete ?? false}
           appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
+          navigationHidden={data.ctx.navigationHidden}
         />
       </Layout>
     );

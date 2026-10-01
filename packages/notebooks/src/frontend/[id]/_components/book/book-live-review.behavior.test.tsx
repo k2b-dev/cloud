@@ -64,6 +64,7 @@ describe("independent Book live metadata regression", () => {
           selectedNoteId: "note03",
           tree: [{ id: "note03", title: "Deleted", children: [] }],
           tags: [{ tag: "obsolete", count: 1 }],
+          navigationHidden: false,
         }),
       dom.root,
     );

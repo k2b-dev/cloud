@@ -4,7 +4,9 @@ import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { withPresentationMode } from "../../../../lib/presentation-url";
+import { NAVIGATION_VISIBILITY_EVENT, NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT } from "../sidebar/navigation-visibility";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
+import { keepBookReadingPosition } from "./book-reading-position";
 import {
   BOOK_CONTENT_EVENT,
   BOOK_SNAPSHOT_EVENT,
@@ -238,10 +240,23 @@ export default function BookController(props: Props) {
         detail.cover(workspace.invalidate());
       }
     };
+    // Showing or hiding the navigation can rewrap the article; the same text stays at the top.
+    let restoreReadingPosition: (() => void) | null = null;
+    const onNavigationWillChange = () => {
+      restoreReadingPosition = article && scrollContainer ? keepBookReadingPosition(article, scrollContainer) : null;
+    };
+    const onNavigationChanged = () => {
+      const restore = restoreReadingPosition;
+      restoreReadingPosition = null;
+      // After every listener of this event, so the navigation has already changed.
+      if (restore) queueMicrotask(restore);
+    };
     document.addEventListener("click", onClick, true);
     document.addEventListener("submit", onSubmit);
     window.addEventListener("popstate", onPopState);
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+    window.addEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
+    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
     scrollContainer?.addEventListener("scroll", saveScroll, { passive: true });
     window.addEventListener("scroll", saveScroll, { passive: true });
     onCleanup(() => {
@@ -252,6 +267,8 @@ export default function BookController(props: Props) {
       document.removeEventListener("submit", onSubmit);
       window.removeEventListener("popstate", onPopState);
       window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+      window.removeEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
+      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
       scrollContainer?.removeEventListener("scroll", saveScroll);
       window.removeEventListener("scroll", saveScroll);
       history.scrollRestoration = previousScrollRestoration;

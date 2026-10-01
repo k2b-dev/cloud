@@ -31,7 +31,7 @@ Beim Bearbeiten öffnet das Buchsymbol in der unteren Werkzeugleiste die Buchans
 
 In Buch und Schreibgeschützt erscheint unten rechts ein runder Stift, sobald du den Mauszeiger über das Dokument bewegst. Er wird auch bei Tastaturfokus sichtbar und bleibt auf Touchgeräten eingeblendet. Gesperrte Notizen zeigen keine Bearbeitungsaktion.
 
-Ist keine Notiz ausgewählt oder die Notiz gesperrt, bietet Buch Nutzern mit Schreib- oder Adminrechten **Arbeitsbereich öffnen** in der Seitenleiste. Dort kannst du Einstellungen öffnen oder eine Notiz erstellen.
+Ist keine Notiz ausgewählt oder die Notiz gesperrt, bietet Buch Nutzern mit Schreib- oder Adminrechten **Arbeitsbereich öffnen** in der Seitenleiste. Dort kannst du Einstellungen öffnen oder eine Notiz erstellen. Hast du die Navigation ausgeblendet, blende sie zuerst mit der Schaltfläche unten links ein.
 
 Unter **Notizbuch – Ansicht und Verhalten** legen Admins die **Standardansicht** für Nutzer mit Schreib- oder Adminrechten fest. Die Änderung wird sofort gespeichert. Anfangs öffnen diese Nutzer das Notizbuch zum Bearbeiten. Eine ausdrücklich in der Seiten-URL gewählte Ansicht hat Vorrang vor der Standardansicht.
 

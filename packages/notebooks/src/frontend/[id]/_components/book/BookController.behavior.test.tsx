@@ -301,4 +301,37 @@ describe("Book controller", () => {
       }
     }
   });
+
+  test("keeps the text at the top of the article in place when the notebook navigation hides and shows", async () => {
+    const app = await mount();
+    const { NAVIGATION_VISIBILITY_EVENT, setNavigationHidden } = await import("../sidebar/navigation-visibility");
+    const main = app.article.closest<HTMLElement>(".notebook-book-main")!;
+    app.article.innerHTML = "<p>A long paragraph that the reader is halfway through.</p>";
+    const paragraph = app.article.querySelector("p")!;
+    // Layout stand-ins (the real rewrap runs in book-hidden-navigation.browser.test.ts): the port starts
+    // 100 px down, and the paragraph 800 px into the article takes 400 px, or 200 px while the article is wider.
+    let paragraphHeight = 400;
+    const rewrap = (event: Event) => {
+      paragraphHeight = (event as CustomEvent<{ hidden: boolean }>).detail.hidden ? 200 : 400;
+    };
+    const box = (top: number, height: number) => new app.dom.window.DOMRect(0, top, 600, height);
+    main.getBoundingClientRect = () => box(100, 600);
+    app.article.getBoundingClientRect = () => box(100 - main.scrollTop, 3000);
+    paragraph.getBoundingClientRect = () => box(900 - main.scrollTop, paragraphHeight);
+    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, rewrap);
+    try {
+      // Half of the paragraph is scrolled out above the port.
+      main.scrollTo(0, 1000);
+      setNavigationHidden(true);
+      await Promise.resolve();
+      expect(main.scrollTop).toBe(900);
+      setNavigationHidden(false);
+      await Promise.resolve();
+      expect(main.scrollTop).toBe(1000);
+    } finally {
+      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, rewrap);
+      setNavigationHidden(false);
+      app.cleanup();
+    }
+  });
 });
