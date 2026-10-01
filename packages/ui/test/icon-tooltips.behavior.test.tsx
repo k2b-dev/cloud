@@ -12,9 +12,14 @@ const installPopover = (dom: DomTestHarness) => {
   prototype.hidePopover = function (this: HTMLElement) {
     delete this.dataset.testPopoverOpen;
   };
-  prototype.matches = function (this: HTMLElement, selector: string) {
-    return selector === ":popover-open" ? this.dataset.testPopoverOpen === "true" : matches.call(this, selector);
-  };
+  // `matches` declares type-predicate overloads; the stub only answers the runtime string form.
+  Object.defineProperty(prototype, "matches", {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement, selector: string): boolean {
+      return selector === ":popover-open" ? this.dataset.testPopoverOpen === "true" : matches.call(this, selector);
+    },
+  });
 };
 
 const pointer = (dom: DomTestHarness, target: Element, type: string, pointerType: "mouse" | "touch") =>

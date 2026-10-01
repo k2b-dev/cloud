@@ -325,8 +325,12 @@ describe("@k2b/ui feedback runtime", () => {
     const surface = dom.root.querySelector<HTMLElement>(".k2b-tooltip");
     const matches = surface?.matches.bind(surface);
     if (surface && matches) {
-      surface.matches = (selector: string) =>
-        selector === ":popover-open" ? surface.dataset.testPopoverOpen === "true" : matches(selector);
+      // `matches` declares type-predicate overloads; the stub only answers the runtime string form.
+      Object.defineProperty(surface, "matches", {
+        configurable: true,
+        writable: true,
+        value: (selector: string) => (selector === ":popover-open" ? surface.dataset.testPopoverOpen === "true" : matches(selector)),
+      });
       surface.showPopover = () => {
         surface.dataset.testPopoverOpen = "true";
       };

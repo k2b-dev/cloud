@@ -45,7 +45,7 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     new URL(props.initial.source, "https://files.invalid").searchParams.get("refreshed") === "true",
   );
   const preference = (baseId: string) => viewFor(parsePreferences(typeof document === "undefined" ? undefined : document.cookie), baseId);
-  const workspace = createWorkspaceState({
+  const workspace = createWorkspaceState<WorkspaceSnapshot>({
     initial: props.initial,
     load: async (source, signal) => {
       const url = new URL(source, window.location.origin);

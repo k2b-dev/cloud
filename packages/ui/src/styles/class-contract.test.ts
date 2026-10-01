@@ -23,7 +23,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import * as ts from "typescript";
+import ts from "@typescript/typescript6";
 
 const packageRoot = resolve(import.meta.dir, "../..");
 const stylesPath = resolve(packageRoot, "dist/styles.css");

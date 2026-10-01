@@ -30,12 +30,13 @@
     "read-excel-file": "9.3.10",
     "solid-js": "catalog:",
     "zod": "catalog:",
-    "typescript": "catalog:"
+    "@typescript/typescript6": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
     "@types/papaparse": "5.5.2",
-    "@k2b/nessi": "catalog:"
+    "@k2b/nessi": "catalog:",
+    "typescript": "catalog:"
   },
   "license": "AGPL-3.0-or-later"
 }

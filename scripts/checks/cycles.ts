@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, normalize, relative, resolve } from "node:path";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 import { packageIds } from "../workspace";
 import { listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";

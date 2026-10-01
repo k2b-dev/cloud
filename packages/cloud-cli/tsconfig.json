@@ -1,7 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["../notebooks/src/*"],
       "@k2b/cloud/cli": ["../cloud/src/cli/index.ts"],
