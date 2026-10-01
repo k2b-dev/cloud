@@ -45,6 +45,7 @@ const space: SpaceDetail = {
   createdAt: "2026-08-10T10:00:00.000Z",
   updatedAt: "2026-08-10T10:00:00.000Z",
   columns,
+  virtualColumns: [],
   tags: [],
 };
 
@@ -111,7 +112,9 @@ describe("Spaces settings", () => {
   });
 
   test("renders statuses as a semantic settings collection", () => {
-    const html = renderToString(() => createComponent(StatusesSection, { spaceId, columns, onDirtyChange: () => undefined }));
+    const html = renderToString(() =>
+      createComponent(StatusesSection, { spaceId, columns, virtualColumns: [], onDirtyChange: () => undefined }),
+    );
 
     expect(html).toContain('class="k2b-settings-collection"');
     expect(html).toContain('class="k2b-settings-collection__list"');
@@ -119,6 +122,28 @@ describe("Spaces settings", () => {
     expect(html).toContain("Position 1 of 2");
     expect(html).toContain('aria-label="Edit Open"');
     expect(html).toContain('aria-label="Move Done down"');
+    expect(html).toContain("Automatic columns");
+  });
+
+  test("orders an enabled automatic column among the statuses, without edit or delete", () => {
+    const html = renderToString(() =>
+      createComponent(StatusesSection, {
+        spaceId,
+        columns,
+        virtualColumns: [{ kind: "blocked", rank: "1536" }],
+        onDirtyChange: () => undefined,
+      }),
+    );
+
+    // The automatic-column switches above the list name the same columns; the order is the list's.
+    const list = html.slice(html.indexOf("k2b-settings-collection__list"));
+    const order = ["Open", "Blocked", "Done"].map((title) => list.indexOf(`>${title}<`));
+    expect(order.every((position) => position >= 0)).toBe(true);
+    expect(order.every((position, index) => position > (order[index - 1] ?? -1))).toBe(true);
+    expect(html).toContain("Automatic column · Position 2 of 3");
+    expect(html).toContain('aria-label="Move Blocked up"');
+    expect(html).not.toContain('aria-label="Edit Blocked"');
+    expect(html).not.toContain('aria-label="Delete Blocked"');
   });
 
   test("renders German settings through the inherited locale", () => {

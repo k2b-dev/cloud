@@ -8,16 +8,16 @@ import {
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
-import { IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Dropdown, IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
   INACTIVE_ITEM_DAYS,
-  type ItemFilter,
   type ItemListResult,
   type SpaceColumn,
   type SpaceItem,
   type SpaceTag,
+  type SpaceVirtualColumnKind,
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
@@ -33,6 +33,7 @@ import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
+import { boardVirtualKinds, kanbanBucketFilter } from "./bucket-filter";
 import type { KanbanBucketInitial } from "./types";
 
 type Props = {
@@ -78,6 +79,9 @@ type MovePosition = { afterItemId?: string; beforeItemId?: string };
 
 type MoveContext = {
   previousBuckets: KanbanBucketInitial[];
+  /** Set when the card lands in an open status but an automatic column still gathers it: it shows there, with the new status. */
+  gatheredBy: SpaceVirtualColumnKind | null;
+  targetLabel: string;
   sourceBucketKey: string;
   targetBucketKey: string;
   targetColumnId: string;
@@ -87,6 +91,9 @@ type MoveContext = {
   claimId: string | undefined;
 };
 
+/** Where a dragged column header lands: before the board column at this index, or at the end. */
+type ColumnIntent = { index: number };
+
 type TransferContext = {
   previousBuckets: KanbanBucketInitial[];
 };
@@ -95,6 +102,8 @@ type TransferContext = {
 type KanbanPage = ItemListResult & { unfilteredTotal?: number };
 
 const boardScrollMemory = new Map<string, { left: number; top: number }>();
+
+const virtualColumnIcon = { blocked: "ti-lock", overdue: "ti-alert-triangle" } as const;
 
 const priorityMeta: Record<string, { icon: string; color: string }> = {
   urgent: { icon: "ti-alert-circle", color: "text-red-500" },
@@ -121,26 +130,6 @@ const movePosition = (items: SpaceItem[], insertIndex: number): MovePosition => 
   return before ? { beforeItemId: before.id } : {};
 };
 
-const buildRequest = (params: { bucket: KanbanBucketInitial; filter: FilterState; page: number; pageSize: number }): ItemFilter => {
-  const { bucket, filter, page, pageSize } = params;
-  return {
-    type: "all",
-    status: bucket.isDone ? "completed" : "active",
-    activity: filter.activity,
-    priority: filter.priority.length > 0 ? filter.priority : undefined,
-    tagIds: filter.tagIds.length > 0 ? filter.tagIds : undefined,
-    columnIds: bucket.columnId ? [bucket.columnId] : undefined,
-    assignedTo: filter.assignedTo,
-    deadlineFilter: filter.deadlineFilter,
-    search: filter.search || undefined,
-    sort: "column",
-    sortDesc: false,
-    groupBy: "column",
-    page,
-    pageSize,
-  };
-};
-
 /** Moves a card in or out of a column's counts; a card that matched the filter counts in both. */
 const shiftTotals = (bucket: KanbanBucketInitial, delta: number) => ({
   total: Math.max(bucket.total + delta, 0),
@@ -156,6 +145,7 @@ export default function KanbanBoard(props: Props) {
   // The route mounts a new board for every snapshot, so one board keeps one filter for its lifetime.
   const filter = props.filter;
   const filtered = hasActiveFilters(filter);
+  const virtualKinds = boardVirtualKinds(props.initialBuckets);
   const bucketQueries = props.initialBuckets.map((initialBucket) => {
     const source = `${props.spaceId}:${initialBucket.key}`;
     const initialPage: KanbanPage = {
@@ -170,7 +160,7 @@ export default function KanbanBoard(props: Props) {
       const res = await apiClient[":id"].items.filter.$post(
         {
           param: { id: props.spaceId },
-          json: buildRequest({ bucket: initialBucket, filter: pageFilter, page, pageSize }),
+          json: kanbanBucketFilter({ bucket: initialBucket, virtualKinds, filter: pageFilter, page, pageSize }),
         },
         { init: { signal: abortSignal } },
       );
@@ -219,7 +209,13 @@ export default function KanbanBoard(props: Props) {
       };
     });
   const [optimisticBuckets, setOptimisticBuckets] = createSignal<KanbanBucketInitial[] | null>(null);
-  const buckets = () => optimisticBuckets() ?? canonicalBuckets();
+  // A column order this person just chose; the next snapshot mounts a new board with the stored order.
+  const [columnOrder, setColumnOrder] = createSignal<string[] | null>(null);
+  const inColumnOrder = (list: KanbanBucketInitial[]) => {
+    const order = columnOrder();
+    return order ? [...list].sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key)) : list;
+  };
+  const buckets = () => inColumnOrder(optimisticBuckets() ?? canonicalBuckets());
   const setBuckets = (update: KanbanBucketInitial[] | ((current: KanbanBucketInitial[]) => KanbanBucketInitial[])) =>
     setOptimisticBuckets((current) => (typeof update === "function" ? update(current ?? canonicalBuckets()) : update));
   const [movingItemId, setMovingItemId] = createSignal<string | null>(null);
@@ -363,6 +359,14 @@ export default function KanbanBoard(props: Props) {
     if (!resolveTargetColumnId(resolved.targetBucket)) {
       return null;
     }
+    // A card from an automatic column over the open status it already has would change nothing.
+    if (
+      resolved.source.bucket.kind !== "column" &&
+      !resolved.targetBucket.isDone &&
+      resolved.source.item.columnId === resolved.targetBucket.columnId
+    ) {
+      return null;
+    }
 
     const targetIndex = normalizeTargetIndex({
       sourceBucketKey: resolved.source.bucket.key,
@@ -388,7 +392,8 @@ export default function KanbanBoard(props: Props) {
       return target ? t.wormholeTarget({ space: target.spaceName, column: target.columnName }) : t.unavailableWormhole;
     }
     const bucket = getBucketByKey(over.meta.bucketKey);
-    return bucket ? t.columnTarget({ column: bucket.label }) : t.unknownTarget;
+    if (!bucket) return t.unknownTarget;
+    return bucket.kind === "column" ? t.columnTarget({ column: bucket.label }) : t.virtualColumnTarget({ column: bucket.label });
   };
 
   const describeActiveItem = (active: DndDraggableSnapshot<DragMeta>) => {
@@ -396,15 +401,39 @@ export default function KanbanBoard(props: Props) {
     return location?.item.title ?? t.genericItem;
   };
 
+  /** The automatic column under a dragged card that came from elsewhere: it takes no drop and says so. */
+  const refusingBucket = (itemId: string, over: DndDroppableSnapshot<DropMeta> | null) => {
+    if (!over || over.meta.kind === "wormhole") return null;
+    const bucket = getBucketByKey(over.meta.bucketKey);
+    if (!bucket || bucket.kind === "column") return null;
+    return findItemLocation(itemId)?.bucket.key === bucket.key ? null : bucket;
+  };
+  const [refusingBucketKey, setRefusingBucketKey] = createSignal<string | null>(null);
+  // The controller clears its intent before it announces a drop, so the board keeps the last one.
+  let cardIntent: DropIntent | null = null;
   const boardDnd = dnd.create<DragMeta, DropMeta, DropIntent>({
     buildIntent: buildDropIntent,
+    onDragStart: () => {
+      cardIntent = null;
+    },
+    onDragOver: ({ active, over, intent }) => {
+      cardIntent = intent;
+      setRefusingBucketKey(refusingBucket(active.meta.itemId, over)?.key ?? null);
+    },
+    onCancel: () => setRefusingBucketKey(null),
     announcements: {
       dragStart: (active) => t.dragPickedUp({ item: describeActiveItem(active) }),
       dragOver: (_active, over) => describeDroppable(over),
-      drop: (active, over) => t.dragDropped({ item: describeActiveItem(active), target: describeDroppable(over) }),
+      drop: (active, over) => {
+        const item = describeActiveItem(active);
+        if (cardIntent && !isNoOpMove(active.meta.itemId, cardIntent)) return t.dragDropped({ item, target: describeDroppable(over) });
+        const refusing = refusingBucket(active.meta.itemId, over);
+        return refusing ? t.dragRefused({ item, column: refusing.label }) : t.dragNotMoved({ item });
+      },
       cancel: (active) => t.dragCancelled({ item: describeActiveItem(active) }),
     },
     onDrop: ({ active, intent }) => {
+      setRefusingBucketKey(null);
       if (!intent || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
       if (intent.kind === "wormhole") {
         transferMutation.mutate({ itemId: active.meta.itemId, wormholeId: intent.wormholeId });
@@ -430,6 +459,101 @@ export default function KanbanBoard(props: Props) {
       unsubscribe();
     });
   });
+
+  // ---- Column order: people who may change the statuses reorder the board for everyone. ----
+  const [columnAnnouncement, setColumnAnnouncement] = createSignal("");
+  type ColumnMove = { keys: string[]; movedKey: string };
+  const reorderColumnsMutation = mutations.create<void, ColumnMove, ColumnMove & { previous: string[] | null }>({
+    onBefore: (move) => {
+      const previous = columnOrder();
+      setColumnOrder(move.keys);
+      return { ...move, previous };
+    },
+    mutation: async ({ keys }) => {
+      const columnIds = keys.map((key) => {
+        const bucket = getBucketByKey(key)!;
+        return bucket.kind === "column" ? bucket.columnId! : bucket.kind;
+      });
+      const response = await apiClient[":id"].columns.order.$put({ param: { id: props.spaceId }, json: { columnIds } });
+      if (!response.ok) throw new Error(await readResponseError(response, t.reorderStatusesFailed));
+    },
+    onSuccess: (_result, context) => {
+      const bucket = context && getBucketByKey(context.movedKey);
+      if (!context || !bucket) return;
+      setColumnAnnouncement(
+        t.columnMoved({ column: bucket.label, position: context.keys.indexOf(context.movedKey) + 1, count: context.keys.length }),
+      );
+    },
+    onError: (error, context) => {
+      setColumnOrder(context?.previous ?? null);
+      prompts.error(error.message);
+    },
+  });
+  /** Moves a column so it sits before the column now at `insertIndex`, or last. */
+  const moveColumn = (key: string, insertIndex: number) => {
+    if (!props.canWrite || reorderColumnsMutation.loading()) return;
+    const keys = buckets().map((bucket) => bucket.key);
+    const from = keys.indexOf(key);
+    const to = insertIndex > from ? insertIndex - 1 : insertIndex;
+    if (from < 0 || to === from || to < 0 || to >= keys.length) return;
+    keys.splice(from, 1);
+    keys.splice(to, 0, key);
+    void reorderColumnsMutation.mutate({ keys, movedKey: key });
+  };
+  const bucketLabel = (key: string) => getBucketByKey(key)?.label ?? t.unknownTarget;
+  // As for cards: the intent is already cleared when the controller announces the drop.
+  let columnIntent: ColumnIntent | null = null;
+  const columnDnd = dnd.create<{ bucketKey: string }, { bucketKey: string }, ColumnIntent>({
+    isSameIntent: (a, b) => a?.index === b?.index,
+    onDragStart: () => {
+      columnIntent = null;
+    },
+    onDragOver: ({ intent }) => {
+      columnIntent = intent;
+    },
+    buildIntent: ({ active, over, pointer }) => {
+      if (!over) return null;
+      const keys = buckets().map((bucket) => bucket.key);
+      const overIndex = keys.indexOf(over.meta.bucketKey);
+      const index = pointer.x < over.rect.left + over.rect.width / 2 ? overIndex : overIndex + 1;
+      const from = keys.indexOf(active.meta.bucketKey);
+      return overIndex < 0 || index === from || index === from + 1 ? null : { index };
+    },
+    announcements: {
+      dragStart: (active) => t.columnPickedUp({ column: bucketLabel(active.meta.bucketKey) }),
+      dragOver: (_active, over) => (over ? t.columnTarget({ column: bucketLabel(over.meta.bucketKey) }) : t.noTarget),
+      // A real move is announced once it is saved.
+      drop: (active): string => (columnIntent ? "" : t.columnMoveCancelled({ column: bucketLabel(active.meta.bucketKey) })),
+      cancel: (active) => t.columnMoveCancelled({ column: bucketLabel(active.meta.bucketKey) }),
+    },
+    onDrop: ({ active, intent }) => {
+      if (intent) moveColumn(active.meta.bucketKey, intent.index);
+    },
+  });
+  const columnIndicatorIndex = () => (columnDnd.isDragging() ? (columnDnd.intent()?.index ?? null) : null);
+  const focusColumnMenu = (key: string) =>
+    requestAnimationFrame(() =>
+      boardScrollContainer
+        ?.querySelector<HTMLElement>(`[data-spaces-kanban-column-menu="${CSS.escape(key)}"]`)
+        ?.focus({ preventScroll: true }),
+    );
+
+  /** Overdue as the board counts it: an open task whose deadline lies before today. */
+  const isOverdue = (item: SpaceItem) =>
+    !item.completedAt && item.deadline !== null && new Date(item.deadline) < dates.today(props.dateConfig);
+  /** The automatic column that shows an item on this board, by the server's rule: Blocked first, then Overdue. */
+  const gatheringKind = (item: SpaceItem): SpaceVirtualColumnKind | null => {
+    if (item.completedAt) return null;
+    if (virtualKinds.has("blocked") && item.activeBlockerCount > 0) return "blocked";
+    return virtualKinds.has("overdue") && isOverdue(item) ? "overdue" : null;
+  };
+  /** Where a card with this status joins an automatic column, which lists its tasks in status order. */
+  const gatheredIndex = (bucket: KanbanBucketInitial, columnId: string) => {
+    const statusIndex = (id: string) => props.columns.findIndex((column) => column.id === id);
+    const status = statusIndex(columnId);
+    const next = bucket.items.findIndex((item) => statusIndex(item.columnId) > status);
+    return next < 0 ? bucket.items.length : next;
+  };
 
   const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent }, MoveContext>({
     onBefore: ({ itemId, intent }) => {
@@ -461,6 +585,18 @@ export default function KanbanBoard(props: Props) {
         columnId: targetColumnId,
         completedAt: resolved.targetBucket.isDone ? new Date().toISOString() : null,
       };
+      // Only completion ends blocked or overdue, so a card that lands in an open status shows under the
+      // automatic column that still gathers it: one dragged out of it stays in place, one reopened from a
+      // done status goes there.
+      const sourceBucket = resolved.source.bucket;
+      const gatheredBy = gatheringKind(optimisticUpdated);
+      const landing = (gatheredBy && buckets().find((bucket) => bucket.kind === gatheredBy)) || resolved.targetBucket;
+      const landingIndex =
+        landing.key === resolved.targetBucket.key
+          ? targetIndexClamped
+          : landing.key === sourceBucket.key
+            ? resolved.source.index
+            : gatheredIndex(landing, targetColumnId);
 
       withBoardScrollPreserved(() => {
         withViewTransition(() => {
@@ -470,8 +606,8 @@ export default function KanbanBoard(props: Props) {
               const nextItems = bucket.items.filter((item) => item.id !== itemId);
               let delta = hadItem ? -1 : 0;
 
-              if (bucket.key === resolved.targetBucket.key) {
-                nextItems.splice(targetIndexClamped, 0, optimisticUpdated);
+              if (bucket.key === landing.key) {
+                nextItems.splice(landingIndex, 0, optimisticUpdated);
                 delta += 1;
               }
 
@@ -484,13 +620,15 @@ export default function KanbanBoard(props: Props) {
       setMovingItemId(itemId);
       return {
         previousBuckets,
-        sourceBucketKey: resolved.source.bucket.key,
-        targetBucketKey: resolved.targetBucket.key,
+        gatheredBy: landing.key === resolved.targetBucket.key ? null : gatheredBy,
+        targetLabel: resolved.targetBucket.label,
+        sourceBucketKey: sourceBucket.key,
+        targetBucketKey: landing.key,
         targetColumnId,
         // A folded column shows no cards to land next to; without a position the server puts the card at
         // the top of the whole column, above cards an active filter hides.
         position: props.folded.has(resolved.targetBucket.key) ? {} : movePosition(targetItemsWithoutSource, targetIndexClamped),
-        targetIndex: targetIndexClamped,
+        targetIndex: landingIndex,
         targetCompleted: resolved.targetBucket.isDone,
         claimId: resolved.targetBucket.isDone ? ownClaimId(resolved.source.item.claim, props.currentUserId) : undefined,
       };
@@ -530,6 +668,13 @@ export default function KanbanBoard(props: Props) {
           );
         });
       });
+      if (ctx?.gatheredBy) {
+        toast(
+          ctx.gatheredBy === "blocked"
+            ? t.movedStaysBlocked({ status: ctx.targetLabel })
+            : t.movedStaysOverdue({ status: ctx.targetLabel }),
+        );
+      }
       void invalidateSpacesData(["view"]).catch(() => prompts.error(t.moveRefreshFailed));
     },
     onError: (error, ctx) => {
@@ -788,6 +933,7 @@ export default function KanbanBoard(props: Props) {
     return boardDnd.isDragging() && intent?.kind === "wormhole" && intent.wormholeId === wormholeId;
   };
 
+  const columnOf = (columnId: string) => props.columns.find((column) => column.id === columnId) ?? null;
   const bucketColor = (bucket: KanbanBucketInitial) => bucket.color ?? (bucket.isDone ? "#10b981" : "#6b7280");
   const countText = (bucket: KanbanBucketInitial) =>
     bucket.unfilteredTotal === undefined ? String(bucket.total) : `${bucket.total}/${bucket.unfilteredTotal}`;
@@ -816,6 +962,9 @@ export default function KanbanBoard(props: Props) {
       <p id={`spaces-kanban-shortcuts-${props.spaceId}`} class="sr-only">
         {props.canWrite ? t.kanbanKeyboardHelp : t.kanbanKeyboardHelpReadOnly}
       </p>
+      <p class="sr-only" aria-live="polite" data-spaces-kanban-column-status>
+        {columnAnnouncement()}
+      </p>
       <div
         ref={boardScrollContainer}
         tabIndex={0}
@@ -840,21 +989,75 @@ export default function KanbanBoard(props: Props) {
       >
         <div class="flex h-full min-w-max items-stretch gap-[var(--ui-space-shell)]">
           <For each={buckets()}>
-            {(bucket) => {
+            {(bucket, bucketIndex) => {
               const canDropInBucket = props.canWrite && !!resolveTargetColumnId(bucket);
+              const virtual = bucket.kind === "column" ? null : bucket.kind;
+              // An automatic column stays a droppable, so a card over it can say that it takes no drop.
+              const cardDropDisabled = () =>
+                !props.canWrite || (!canDropInBucket && !virtual) || moveMutation.loading() || transferMutation.loading();
+              const refuseDrop = () => boardDnd.isDragging() && refusingBucketKey() === bucket.key;
+              const registerColumn = (element: HTMLElement, draggable: boolean) => {
+                columnDnd.droppable(element, () => ({
+                  id: `drop:board-column:${bucket.key}`,
+                  disabled: !props.canWrite,
+                  meta: { bucketKey: bucket.key },
+                }));
+                if (!draggable) return;
+                columnDnd.draggable(element, () => ({
+                  id: `drag:board-column:${bucket.key}`,
+                  disabled: !props.canWrite || reorderColumnsMutation.loading(),
+                  focusable: false,
+                  keyboard: false,
+                  handleSelector: "[data-spaces-kanban-column-handle]",
+                  meta: { bucketKey: bucket.key },
+                }));
+              };
+              /** Accent line on the edge where a dragged column lands; outside the flow, so nothing moves, and never clipped by the board. */
+              const ColumnDropLine = () => (
+                <>
+                  <Show when={columnIndicatorIndex() === bucketIndex()}>
+                    <div
+                      aria-hidden="true"
+                      data-spaces-kanban-column-drop-indicator
+                      class="pointer-events-none absolute inset-y-1 left-0 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)]"
+                    />
+                  </Show>
+                  <Show when={bucketIndex() === buckets().length - 1 && columnIndicatorIndex() === buckets().length}>
+                    <div
+                      aria-hidden="true"
+                      data-spaces-kanban-column-drop-indicator
+                      class="pointer-events-none absolute inset-y-1 right-0 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)]"
+                    />
+                  </Show>
+                </>
+              );
+              const ColumnMark = (markProps: { class?: string }) =>
+                virtual ? (
+                  <i class={`ti ${virtualColumnIcon[virtual]} shrink-0 text-xs text-dimmed ${markProps.class ?? ""}`} aria-hidden="true" />
+                ) : (
+                  <span
+                    class={`h-2 w-2 shrink-0 rounded-full ${markProps.class ?? ""}`}
+                    style={`background-color:${bucketColor(bucket)}`}
+                  />
+                );
 
               return (
                 <Show
                   when={!props.folded.has(bucket.key)}
                   fallback={
                     // A folded column stays a drop target: a card dropped on it lands at the top of the column.
-                    <section class="flex h-full w-10 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1">
+                    <section
+                      ref={(element) => registerColumn(element, false)}
+                      data-spaces-kanban-column={bucket.key}
+                      class="relative flex h-full w-10 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
+                    >
+                      <ColumnDropLine />
                       <button
                         type="button"
                         ref={(element) => {
                           boardDnd.droppable(element, () => ({
                             id: `drop:column:${bucket.key}`,
-                            disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
+                            disabled: cardDropDisabled(),
                             meta: { kind: "column", bucketKey: bucket.key },
                           }));
                         }}
@@ -865,9 +1068,10 @@ export default function KanbanBoard(props: Props) {
                         onClick={() => toggleFolded(bucket.key)}
                         class={`focus-ui flex min-h-0 flex-1 flex-col items-center gap-2 rounded-[var(--ui-radius-control)] px-1 py-1.5 transition-[background-color] ${
                           isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"
-                        }`}
+                        } ${refuseDrop() ? "cursor-not-allowed outline-1 outline-dashed outline-[var(--ui-border-strong)]" : ""}`}
+                        data-spaces-kanban-no-drop={refuseDrop() ? "" : undefined}
                       >
-                        <span class="mt-1 h-2 w-2 shrink-0 rounded-full" style={`background-color:${bucketColor(bucket)}`} />
+                        <ColumnMark class="mt-1" />
                         <span class="text-[11px] tabular-nums text-dimmed" aria-hidden="true">
                           {countText(bucket)}
                         </span>
@@ -878,11 +1082,74 @@ export default function KanbanBoard(props: Props) {
                     </section>
                   }
                 >
-                  <section class="flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1">
+                  <section
+                    ref={(element) => registerColumn(element, true)}
+                    data-spaces-kanban-column={bucket.key}
+                    aria-labelledby={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
+                    class="relative flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
+                  >
+                    <ColumnDropLine />
                     <header class="flex items-center gap-2 px-1.5 py-1">
-                      <span class="h-2 w-2 shrink-0 rounded-full" style={`background-color:${bucketColor(bucket)}`} />
-                      <h3 class="flex-1 truncate text-xs font-medium">{bucket.label}</h3>
+                      {/* The title is the drag handle for people who may reorder the board; others get no affordance. A
+                          touch on it still scrolls the board, so a swipe never reorders it for everyone: on touch
+                          screens the ⋯ menu moves columns. */}
+                      <div
+                        data-spaces-kanban-column-handle={props.canWrite ? "" : undefined}
+                        class={`flex min-w-0 flex-1 items-center gap-2 ${props.canWrite ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
+                      >
+                        <Show when={virtual} fallback={<ColumnMark />}>
+                          {(kind) => (
+                            <Tooltip.Anchor content={kind() === "blocked" ? t.blockedColumnHelp : t.overdueColumnHelp}>
+                              <span class="inline-flex">
+                                <ColumnMark />
+                              </span>
+                            </Tooltip.Anchor>
+                          )}
+                        </Show>
+                        <h3 id={`spaces-kanban-column-${props.spaceId}-${bucket.key}`} class="flex-1 truncate text-xs font-medium">
+                          {bucket.label}
+                          <Show when={virtual}>
+                            {(kind) => <span class="sr-only">. {kind() === "blocked" ? t.blockedColumnHelp : t.overdueColumnHelp}</span>}
+                          </Show>
+                        </h3>
+                      </div>
                       <ColumnCount bucket={bucket} />
+                      <Show when={props.canWrite}>
+                        <Dropdown.Root
+                          position="bottom-left"
+                          items={[
+                            {
+                              label: t.moveColumnLeft,
+                              icon: "ti ti-arrow-left",
+                              disabled: bucketIndex() === 0 || reorderColumnsMutation.loading(),
+                              action: () => {
+                                moveColumn(bucket.key, bucketIndex() - 1);
+                                focusColumnMenu(bucket.key);
+                              },
+                            },
+                            {
+                              label: t.moveColumnRight,
+                              icon: "ti ti-arrow-right",
+                              disabled: bucketIndex() === buckets().length - 1 || reorderColumnsMutation.loading(),
+                              action: () => {
+                                moveColumn(bucket.key, bucketIndex() + 2);
+                                focusColumnMenu(bucket.key);
+                              },
+                            },
+                          ]}
+                        >
+                          <Dropdown.Trigger
+                            iconOnly
+                            size="xs"
+                            variant="ghost"
+                            class="h-6 w-6 text-dimmed"
+                            label={t.columnActions({ column: bucket.label })}
+                            data-spaces-kanban-column-menu={bucket.key}
+                          >
+                            <i class="ti ti-dots text-sm" aria-hidden="true" />
+                          </Dropdown.Trigger>
+                        </Dropdown.Root>
+                      </Show>
                       <IconButton
                         label={t.foldColumn({ column: bucket.label })}
                         size="xs"
@@ -895,212 +1162,260 @@ export default function KanbanBoard(props: Props) {
                       </IconButton>
                     </header>
 
-                    <div
-                      ref={(element) => {
-                        boardDnd.droppable(element, () => ({
-                          id: `drop:column:${bucket.key}`,
-                          disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
-                          meta: { kind: "column", bucketKey: bucket.key },
-                        }));
-                      }}
-                      class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
-                        isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
-                      }`}
-                      data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
-                    >
-                      <Show
-                        when={bucket.items.length > 0}
-                        fallback={
-                          <>
-                            <DropLine bucketKey={bucket.key} index={0} />
-                            <p class="px-2 py-6 text-center text-[11px] text-dimmed">
-                              {bucket.unfilteredTotal ? t.noMatchingItems : t.noItems}
-                            </p>
-                          </>
-                        }
+                    <div class="relative flex min-h-0 flex-1 flex-col">
+                      <Show when={refuseDrop()}>
+                        <div
+                          aria-hidden="true"
+                          data-spaces-kanban-no-drop
+                          class="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-1 rounded-[var(--ui-radius-control)] bg-[color-mix(in_srgb,var(--ui-surface-subtle)_88%,transparent)] text-xs font-medium text-dimmed outline-1 outline-dashed outline-[var(--ui-border-strong)]"
+                        >
+                          <i class="ti ti-ban text-base" />
+                          {t.virtualColumnNoDrop}
+                        </div>
+                      </Show>
+                      <div
+                        ref={(element) => {
+                          boardDnd.droppable(element, () => ({
+                            id: `drop:column:${bucket.key}`,
+                            disabled: cardDropDisabled(),
+                            meta: { kind: "column", bucketKey: bucket.key },
+                          }));
+                        }}
+                        class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
+                          isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
+                        }`}
+                        data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
                       >
-                        <For each={bucket.items}>
-                          {(item, itemIndex) => {
-                            const priority = item.priority ? priorityMeta[item.priority] : null;
-                            const isSelected = () => item.id === selectedItemId();
-                            const dragId = `drag:item:${item.id}`;
-                            const dropId = `drop:item:${bucket.key}:${item.id}`;
-                            const isDraggingThis = () => boardDnd.activeId() === dragId;
-                            const isMovingThis = () => (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
+                        <Show
+                          when={bucket.items.length > 0}
+                          fallback={
+                            <>
+                              <DropLine bucketKey={bucket.key} index={0} />
+                              <p class="px-2 py-6 text-center text-[11px] text-dimmed">
+                                {bucket.unfilteredTotal
+                                  ? t.noMatchingItems
+                                  : virtual === "blocked"
+                                    ? t.blockedColumnHelp
+                                    : virtual === "overdue"
+                                      ? t.overdueColumnHelp
+                                      : t.noItems}
+                              </p>
+                            </>
+                          }
+                        >
+                          <For each={bucket.items}>
+                            {(item, itemIndex) => {
+                              const priority = item.priority ? priorityMeta[item.priority] : null;
+                              const isSelected = () => item.id === selectedItemId();
+                              const dragId = `drag:item:${item.id}`;
+                              const dropId = `drop:item:${bucket.key}:${item.id}`;
+                              const isDraggingThis = () => boardDnd.activeId() === dragId;
+                              const isMovingThis = () =>
+                                (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
 
-                            return (
-                              <>
-                                <DropLine bucketKey={bucket.key} index={itemIndex()} />
-                                <article
-                                  ref={(element) => {
-                                    boardDnd.droppable(element, () => ({
-                                      id: dropId,
-                                      disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
-                                      meta: {
-                                        bucketKey: bucket.key,
-                                        index: itemIndex(),
-                                        kind: "item",
-                                      },
-                                    }));
-                                    boardDnd.draggable(element, () => ({
-                                      id: dragId,
-                                      disabled: !props.canWrite || moveMutation.loading() || transferMutation.loading(),
-                                      focusable: false,
-                                      keyboard: false,
-                                      handleSelector: "[data-dnd-card-handle]",
-                                      meta: { itemId: item.id },
-                                    }));
-                                  }}
-                                  data-card-index={itemIndex()}
-                                  class={`group/card relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] ${
-                                    isSelected()
-                                      ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
-                                      : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
-                                  } ${isDraggingThis() ? "opacity-40" : ""}`}
-                                >
-                                  <Show when={props.canWrite}>
-                                    <Show
-                                      when={isMovingThis()}
-                                      fallback={
-                                        <button
-                                          type="button"
-                                          data-dnd-card-handle
-                                          aria-label={t.dragItem({ title: item.title })}
-                                          title={t.drag}
-                                          class="focus-ui absolute right-1.5 top-1.5 inline-flex h-5 w-5 cursor-grab items-center justify-center rounded-[var(--ui-radius-control)] text-dimmed opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--ui-hover)] hover:text-primary group-hover/card:opacity-100 group-focus-within/card:opacity-100 active:cursor-grabbing"
-                                          onClick={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                          }}
-                                        >
-                                          <i class="ti ti-grip-vertical text-[13px]" />
-                                        </button>
-                                      }
-                                    >
-                                      <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
-                                        <i class="ti ti-loader-2 animate-spin text-[11px]" />
+                              return (
+                                <>
+                                  <DropLine bucketKey={bucket.key} index={itemIndex()} />
+                                  <article
+                                    ref={(element) => {
+                                      boardDnd.droppable(element, () => ({
+                                        id: dropId,
+                                        disabled: cardDropDisabled(),
+                                        meta: {
+                                          bucketKey: bucket.key,
+                                          index: itemIndex(),
+                                          kind: "item",
+                                        },
+                                      }));
+                                      boardDnd.draggable(element, () => ({
+                                        id: dragId,
+                                        disabled: !props.canWrite || moveMutation.loading() || transferMutation.loading(),
+                                        focusable: false,
+                                        keyboard: false,
+                                        handleSelector: "[data-dnd-card-handle]",
+                                        meta: { itemId: item.id },
+                                      }));
+                                    }}
+                                    data-card-index={itemIndex()}
+                                    class={`group/card relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] ${
+                                      isSelected()
+                                        ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
+                                        : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
+                                    } ${isDraggingThis() ? "opacity-40" : ""}`}
+                                  >
+                                    <Show when={props.canWrite}>
+                                      <Show
+                                        when={isMovingThis()}
+                                        fallback={
+                                          <button
+                                            type="button"
+                                            data-dnd-card-handle
+                                            aria-label={t.dragItem({ title: item.title })}
+                                            title={t.drag}
+                                            class="focus-ui absolute right-1.5 top-1.5 inline-flex h-5 w-5 cursor-grab items-center justify-center rounded-[var(--ui-radius-control)] text-dimmed opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--ui-hover)] hover:text-primary group-hover/card:opacity-100 group-focus-within/card:opacity-100 active:cursor-grabbing"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                            }}
+                                          >
+                                            <i class="ti ti-grip-vertical text-[13px]" />
+                                          </button>
+                                        }
+                                      >
+                                        <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
+                                          <i class="ti ti-loader-2 animate-spin text-[11px]" />
+                                        </div>
+                                      </Show>
+                                    </Show>
+                                    <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
+                                      {/* The wrapper places the button: on touch screens buttons are positioned relative for their larger hit area. */}
+                                      <div class="absolute bottom-1.5 right-1.5 flex">
+                                        <ClaimButton
+                                          claim={item.claim}
+                                          currentUserId={props.currentUserId}
+                                          isAdmin={false}
+                                          compact
+                                          loading={claimingItemId() === item.id}
+                                          disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
+                                          class={`h-6 w-6 ${
+                                            item.claim ? "" : "opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
+                                          }`}
+                                          onClaim={() => void claimCardMutation.mutate(item)}
+                                          onRelease={() => void claimCardMutation.mutate(item)}
+                                          onTakeOver={() => undefined}
+                                        />
                                       </div>
                                     </Show>
-                                  </Show>
-                                  <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
-                                    {/* The wrapper places the button: on touch screens buttons are positioned relative for their larger hit area. */}
-                                    <div class="absolute bottom-1.5 right-1.5 flex">
-                                      <ClaimButton
-                                        claim={item.claim}
-                                        currentUserId={props.currentUserId}
-                                        isAdmin={false}
-                                        compact
-                                        loading={claimingItemId() === item.id}
-                                        disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
-                                        class={`h-6 w-6 ${
-                                          item.claim ? "" : "opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
-                                        }`}
-                                        onClaim={() => void claimCardMutation.mutate(item)}
-                                        onRelease={() => void claimCardMutation.mutate(item)}
-                                        onTakeOver={() => undefined}
-                                      />
-                                    </div>
-                                  </Show>
-                                  <a
-                                    data-spaces-kanban-card
-                                    data-bucket-key={bucket.key}
-                                    data-item-id={item.id}
-                                    aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
-                                    href={buildItemUrl(props.baseUrl, item.id)}
-                                    onClick={(event) => {
-                                      if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-                                      event.preventDefault();
-                                      const href = buildItemUrl(props.baseUrl, item.id);
-                                      setSelectedItemId(item.id);
-                                      requestSpacesRouteNavigation(href, { scroll: "preserve" });
-                                    }}
-                                    class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
-                                  >
-                                    <div class="flex items-start gap-2">
-                                      <Show when={priority}>
-                                        <i class={`ti ${priority!.icon} ${priority!.color} mt-0.5 shrink-0 text-xs`} />
-                                      </Show>
-                                      <p
-                                        class={`break-words text-xs font-medium leading-tight ${item.completedAt ? "line-through text-dimmed" : ""}`}
-                                      >
-                                        {item.title}
-                                      </p>
-                                    </div>
-
-                                    <Show when={item.description}>
-                                      <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{item.description}</p>
-                                    </Show>
-
-                                    <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
-                                      <Show when={item.deadline}>
-                                        <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
-                                          <i class="ti ti-clock text-[10px]" />
-                                          {dates.formatDateRelative(item.deadline!, props.dateConfig)}
-                                        </span>
-                                      </Show>
-                                      <AssigneeAvatars
-                                        assignees={item.assignees ?? []}
-                                        claim={item.claim}
-                                        currentUserId={props.currentUserId}
-                                        max={3}
-                                      />
-                                      <Show when={isInactiveTask(item)}>
-                                        <span
-                                          class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
-                                          title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
+                                    <a
+                                      data-spaces-kanban-card
+                                      data-bucket-key={bucket.key}
+                                      data-item-id={item.id}
+                                      aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
+                                      href={buildItemUrl(props.baseUrl, item.id)}
+                                      onClick={(event) => {
+                                        if (!shouldHandleDetailClick(event, event.currentTarget)) return;
+                                        event.preventDefault();
+                                        const href = buildItemUrl(props.baseUrl, item.id);
+                                        setSelectedItemId(item.id);
+                                        requestSpacesRouteNavigation(href, { scroll: "preserve" });
+                                      }}
+                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
+                                    >
+                                      <div class="flex items-start gap-2">
+                                        <Show when={priority}>
+                                          <i class={`ti ${priority!.icon} ${priority!.color} mt-0.5 shrink-0 text-xs`} />
+                                        </Show>
+                                        <p
+                                          class={`break-words text-xs font-medium leading-tight ${item.completedAt ? "line-through text-dimmed" : ""}`}
                                         >
-                                          <i class="ti ti-clock-pause text-[10px]" aria-hidden="true" />
-                                          {t.inactive}
-                                        </span>
+                                          {item.title}
+                                        </p>
+                                      </div>
+
+                                      <Show when={item.description}>
+                                        <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{item.description}</p>
                                       </Show>
-                                    </div>
-                                  </a>
-                                </article>
-                              </>
-                            );
-                          }}
-                        </For>
-                        <DropLine bucketKey={bucket.key} index={bucket.items.length} />
-                      </Show>
 
-                      <Show when={bucketQuery(bucket.key)?.hasMore()}>
-                        <IconButton
-                          label={t.loadMoreIn({ group: bucket.label })}
-                          size="sm"
-                          onClick={() => void bucketQuery(bucket.key)?.loadMore()}
-                          disabled={bucketQuery(bucket.key)?.loadingMore()}
-                          class="mx-auto mt-1 h-7 w-7"
-                          title={t.loadMore}
-                        >
-                          <i
-                            class={`ti ${bucketQuery(bucket.key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`}
-                          />
-                        </IconButton>
-                      </Show>
+                                      <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
+                                        {/* In an automatic column the status is no longer the column, so the card names it. */}
+                                        <Show when={virtual && columnOf(item.columnId)}>
+                                          {(column) => (
+                                            <span
+                                              data-spaces-kanban-card-status
+                                              class="inline-flex max-w-full items-center gap-1 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-1.5 text-[11px] leading-5 text-dimmed"
+                                              title={t.cardStatus({ status: column().name })}
+                                            >
+                                              <span
+                                                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                                                style={`background-color:${column().color ?? (column().isDone ? "#10b981" : "#6b7280")}`}
+                                                aria-hidden="true"
+                                              />
+                                              <span class="sr-only">{t.cardStatus({ status: column().name })}</span>
+                                              <span class="truncate" aria-hidden="true">
+                                                {column().name}
+                                              </span>
+                                            </span>
+                                          )}
+                                        </Show>
+                                        <Show when={virtual === "blocked" && isOverdue(item)}>
+                                          <span
+                                            data-spaces-kanban-card-overdue
+                                            class="inline-flex items-center gap-1 text-[11px] text-red-600 dark:text-red-400"
+                                          >
+                                            <i class="ti ti-alert-triangle text-[10px]" aria-hidden="true" />
+                                            {t.overdue}
+                                          </span>
+                                        </Show>
+                                        <Show when={item.deadline}>
+                                          <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
+                                            <i class="ti ti-clock text-[10px]" />
+                                            {dates.formatDateRelative(item.deadline!, props.dateConfig)}
+                                          </span>
+                                        </Show>
+                                        <AssigneeAvatars
+                                          assignees={item.assignees ?? []}
+                                          claim={item.claim}
+                                          currentUserId={props.currentUserId}
+                                          max={3}
+                                        />
+                                        <Show when={isInactiveTask(item)}>
+                                          <span
+                                            class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                            title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
+                                          >
+                                            <i class="ti ti-clock-pause text-[10px]" aria-hidden="true" />
+                                            {t.inactive}
+                                          </span>
+                                        </Show>
+                                      </div>
+                                    </a>
+                                  </article>
+                                </>
+                              );
+                            }}
+                          </For>
+                          <DropLine bucketKey={bucket.key} index={bucket.items.length} />
+                        </Show>
 
-                      <Show when={bucketQuery(bucket.key)?.error()}>
-                        {(error) => (
-                          <button
-                            type="button"
-                            class="focus-ui mx-1 mb-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-left text-xs text-red-600"
-                            onClick={() => void bucketQuery(bucket.key)?.refresh()}
+                        <Show when={bucketQuery(bucket.key)?.hasMore()}>
+                          <IconButton
+                            label={t.loadMoreIn({ group: bucket.label })}
+                            size="sm"
+                            onClick={() => void bucketQuery(bucket.key)?.loadMore()}
+                            disabled={bucketQuery(bucket.key)?.loadingMore()}
+                            class="mx-auto mt-1 h-7 w-7"
+                            title={t.loadMore}
                           >
-                            {error().message} Retry
-                          </button>
-                        )}
-                      </Show>
+                            <i
+                              class={`ti ${bucketQuery(bucket.key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`}
+                            />
+                          </IconButton>
+                        </Show>
 
-                      <Show when={props.canWrite && bucket.columnId}>
-                        <CreateItemButton
-                          spaceId={props.spaceId}
-                          columns={props.columns}
-                          tags={props.tags}
-                          dateConfig={props.dateConfig}
-                          variant="inline"
-                          defaultType="task"
-                          defaultColumnId={bucket.columnId!}
-                        />
-                      </Show>
+                        <Show when={bucketQuery(bucket.key)?.error()}>
+                          {(error) => (
+                            <button
+                              type="button"
+                              class="focus-ui mx-1 mb-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-left text-xs text-red-600"
+                              onClick={() => void bucketQuery(bucket.key)?.refresh()}
+                            >
+                              {error().message} Retry
+                            </button>
+                          )}
+                        </Show>
+
+                        <Show when={props.canWrite && bucket.columnId}>
+                          <CreateItemButton
+                            spaceId={props.spaceId}
+                            columns={props.columns}
+                            tags={props.tags}
+                            dateConfig={props.dateConfig}
+                            variant="inline"
+                            defaultType="task"
+                            defaultColumnId={bucket.columnId!}
+                          />
+                        </Show>
+                      </div>
                     </div>
                   </section>
                 </Show>

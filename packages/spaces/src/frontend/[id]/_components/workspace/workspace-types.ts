@@ -15,6 +15,7 @@ import {
   SpaceTaskChecklistEntrySchema,
   SpaceTaskDependencySchema,
   SpaceTaskDependentSchema,
+  SpaceVirtualColumnKindSchema,
   SpaceWormholeSchema,
 } from "@/contracts";
 import { SpaceUserSettingsSchema } from "@/settings-context";
@@ -40,7 +41,7 @@ const KanbanBucketInitialSchema = z.object({
   key: z.string(),
   label: z.string(),
   color: z.string().nullable(),
-  kind: z.literal("column"),
+  kind: z.union([z.literal("column"), SpaceVirtualColumnKindSchema]),
   columnId: z.string().nullable(),
   isDone: z.boolean(),
   items: z.array(SpaceItemSchema),

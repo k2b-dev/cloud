@@ -27,6 +27,18 @@ export const SpaceColumnSchema = z.object({
 });
 export type SpaceColumn = z.infer<typeof SpaceColumnSchema>;
 
+/** Automatic Kanban columns: they gather open tasks by state, hold no items, and are not statuses. */
+export const SpaceVirtualColumnKindSchema = z.enum(["blocked", "overdue"]);
+export type SpaceVirtualColumnKind = z.infer<typeof SpaceVirtualColumnKindSchema>;
+
+export const SpaceVirtualColumnSchema = z.object({
+  kind: SpaceVirtualColumnKindSchema.describe(
+    "blocked gathers open tasks with unfinished blockers; overdue gathers open tasks whose deadline lies before today",
+  ),
+  rank: z.string().describe("Board position, ordered together with the column ranks"),
+});
+export type SpaceVirtualColumn = z.infer<typeof SpaceVirtualColumnSchema>;
+
 export const SpaceTagSchema = z.object({
   id: ResourceShortIdSchema.describe("Tag ID"),
   spaceId: ResourceShortIdSchema.describe("Parent space ID"),
@@ -285,6 +297,9 @@ export type SpaceComment = z.infer<typeof SpaceCommentSchema>;
 // Space with columns and tags (for detail view)
 export const SpaceDetailSchema = SpaceSchema.extend({
   columns: z.array(SpaceColumnSchema).describe("Space columns"),
+  virtualColumns: z
+    .array(SpaceVirtualColumnSchema)
+    .describe("Enabled automatic Kanban columns; items are never stored in them and they are not statuses"),
   tags: z.array(SpaceTagSchema).describe("Space tags"),
 });
 export type SpaceDetail = z.infer<typeof SpaceDetailSchema>;
@@ -372,7 +387,12 @@ export const UpdateColumnSchema = z.object({
 export type UpdateColumn = z.infer<typeof UpdateColumnSchema>;
 
 export const ReorderColumnsSchema = z.object({
-  columnIds: z.array(ResourceShortIdSchema).max(100).describe("Column IDs in new order"),
+  columnIds: z
+    .array(z.union([ResourceShortIdSchema, SpaceVirtualColumnKindSchema]))
+    .max(100 + SpaceVirtualColumnKindSchema.options.length)
+    .describe(
+      "Every column ID in the new order. Enabled automatic columns are named by kind (blocked, overdue); one left out keeps its place on the board",
+    ),
 });
 export type ReorderColumns = z.infer<typeof ReorderColumnsSchema>;
 
@@ -594,6 +614,7 @@ export type AssignedToFilter = z.infer<typeof AssignedToFilterSchema>;
 export const ItemFilterSchema = z.object({
   // Filter options
   blocked: z.boolean().optional().describe("Whether unfinished blocker tasks exist"),
+  overdue: z.boolean().optional().describe("Whether the deadline lies before today, as the deadline filter overdue counts it"),
   type: ItemTypeSchema.default("all").describe("Filter by item type"),
   status: ItemStatusSchema.default("active").describe("Filter by completion status"),
   activity: ItemActivityFilterSchema.default("all").describe("Filter open tasks by recent activity or an active claim"),

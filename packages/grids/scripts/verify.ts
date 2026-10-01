@@ -22,6 +22,7 @@
  *
  * Phases in order: outbox, workflow-concurrency, workflow-kernel, database-and-standard,
  * sync, evidence-exports, browser-bundle, pdf, process-crashes, recovery-and-cleanup, dom.
+ * Every Grids test file runs in exactly one phase; see `verificationPhases` in ./verification-phases.ts.
  */
 import { closeSync, openSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
@@ -30,6 +31,7 @@ import { join, resolve } from "node:path";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { SQL, sql } from "bun";
 import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
+import { verificationPhases } from "./verification-phases";
 
 const root = resolve(import.meta.dir, "../../..");
 const argv = process.argv.slice(2);
@@ -52,6 +54,7 @@ if (argv.includes("--bootstrap")) {
     VALUES ('grids-verification', 'local', 'user', 'Grids', 'Verification', 'Grids Verification')`;
   await sql.close();
 } else {
+  const allPhases = await verificationPhases(root);
   const { connectTestNats, createDisposableDatabase, requireInfra, testInfra } = await import("../../../scripts/fixtures/test-infra");
   await requireInfra("database", "nats", "gotenberg");
   const adminUrl = localVerificationUrl("PostgreSQL", testInfra.database);
@@ -62,120 +65,6 @@ if (argv.includes("--bootstrap")) {
   await mkdir(reportRoot, { recursive: true });
   const reports = await mkdtemp(join(reportRoot, "grids-verification-"));
   console.log(`Grids verification reports: ${reports}`);
-  const special = [
-    "src/service/workflow-run-events.integration.test.ts",
-    "src/service/record-events.integration.test.ts",
-    "src/service/record-event-retry.integration.test.ts",
-    "src/service/record-event-runtime.integration.test.ts",
-    "src/service/evidence-cleanup.integration.test.ts",
-    "src/frontend/_components/records/RecordReferencedBy.behavior.test.ts",
-    "src/service/record-event-outbox.integration.test.ts",
-  ];
-  const dom = [
-    special[5]!,
-    "src/frontend/_components/table/ResourceValue.behavior.test.tsx",
-    "src/frontend/_components/records/RecordReadView.behavior.test.tsx",
-    "src/frontend/_components/records/RelationPicker.behavior.test.tsx",
-    "src/frontend/_components/table/GroupDetailPanel.behavior.test.tsx",
-    "src/frontend/_components/custom-apps/CustomAppBlockPreview.behavior.test.tsx",
-    "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
-    "src/frontend/_components/workspace/WorkspaceMetadataRefresh.behavior.test.tsx",
-    "src/frontend/_components/workspace/GridsNavigation.behavior.test.tsx",
-    "src/frontend/_components/sidebar/RememberGridsPath.behavior.test.tsx",
-    "src/frontend/_components/records-view/records-data-controller.behavior.test.tsx",
-    "src/frontend/_components/records-view/records-admin-controller.behavior.test.tsx",
-    "src/frontend/_components/records-view/RecordsPrimaryToolbar.behavior.test.tsx",
-    "src/frontend/_components/records-view/RecordsView.behavior.test.tsx",
-    "src/frontend/_components/documents/DocumentDetailsDialog.behavior.test.tsx",
-    "src/frontend/_components/documents/DocumentSourcesDialog.behavior.test.tsx",
-    "src/frontend/_components/documents/DocumentGenerateDialog.behavior.test.tsx",
-    "src/frontend/_components/dialogs/PolicyDialogs.behavior.test.tsx",
-    "src/frontend/_components/dialogs/ViewSettingsDialogs.behavior.test.tsx",
-    "src/frontend/_components/forms/EditorDialogs.behavior.test.tsx",
-    "src/frontend/_components/forms/PublicFormSubmit.behavior.test.tsx",
-    "src/frontend/custom-app/RecordDetails.behavior.test.tsx",
-    "src/frontend/custom-app/DocumentPreviewDialog.behavior.test.tsx",
-    "src/frontend/custom-app/WorkflowActionDialog.behavior.test.tsx",
-    "src/frontend/custom-app/WorkflowActionRecovery.behavior.test.tsx",
-    "src/frontend/custom-app/BackgroundAction.behavior.test.tsx",
-    "src/frontend/custom-app/RecordsTable.actions.behavior.test.tsx",
-    "src/frontend/custom-app/FormWorkspace.behavior.test.tsx",
-    "src/frontend/custom-app/FormDialog.behavior.test.tsx",
-    "src/frontend/custom-app/SidebarActions.behavior.test.tsx",
-    "src/frontend/custom-app/Actions.behavior.test.tsx",
-    "src/frontend/custom-app/RecordsTable.behavior.test.tsx",
-    "src/frontend/custom-app/RecordsTable.presentation.behavior.test.tsx",
-    "src/frontend/custom-app/calendar-date-base.behavior.test.tsx",
-    "src/frontend/_components/table/ObjectListValue.behavior.test.tsx",
-    "src/frontend/_components/forms/FormInputValidation.behavior.test.tsx",
-    "src/frontend/_components/dialogs/DocumentTemplatesManagerDialog.behavior.test.tsx",
-    "src/frontend/_components/settings/settings-creation.behavior.test.tsx",
-    "src/frontend/_components/settings/DocumentDefaultsForm.behavior.test.tsx",
-    "src/frontend/_components/records/RecordDialogs.behavior.test.tsx",
-    "src/frontend/_components/workflows/WorkflowLauncherManager.behavior.test.tsx",
-    "src/frontend/_components/workflows/WorkflowInputFields.behavior.test.tsx",
-    "src/frontend/_components/workflows/WorkflowRunDetailPanel.behavior.test.tsx",
-    "src/frontend/_components/workflows/FinancialWorkflowStarter.behavior.test.tsx",
-    "src/frontend/_components/workflows/FinancialExportDialog.behavior.test.tsx",
-    "src/frontend/_components/workflows/QueryExportStarter.behavior.test.tsx",
-    "src/frontend/_components/fields/ObjectListConfigEditor.behavior.test.tsx",
-    "src/frontend/_components/forms/ObjectListInput.behavior.test.tsx",
-    "src/frontend/_components/forms/percent-input.behavior.test.tsx",
-  ];
-  const workflowConcurrency = ["src/service/workflow-concurrency.integration.test.ts"];
-  const ownSync = ["src/service/evidence-exports.integration.test.ts"];
-  const bundleChecks = ["src/frontend/_components/dialogs/AuditPolicyDialog.bundle.test.ts"];
-  const pdf = ["src/service/document-query-pdf.integration.test.ts"];
-  const crashes = ["src/service/document-workflow-crash.integration.test.ts"];
-  const packageRoot = join(root, "packages/grids");
-  const all = [...new Bun.Glob("{src,scripts,test}/**/*.test.{ts,tsx}").scanSync(packageRoot)].sort();
-  const allPhases = [
-    // The outbox reconciler claims database-wide work, so test it before other suites enqueue events.
-    // This suite owns its Sync lifecycle for the live burst test.
-    { name: "outbox", files: special.slice(6), flags: [] },
-    {
-      name: "workflow-concurrency",
-      files: workflowConcurrency,
-      flags: ["--timeout", "120000", "--preload", "./packages/grids/scripts/verify-sync-preload.ts"],
-    },
-    {
-      name: "workflow-kernel",
-      files: [
-        ...new Bun.Glob("packages/cloud/src/workflows/store/*.integration.test.ts").scanSync(root),
-        "packages/cloud/src/workflows/store/worker-pool.test.ts",
-        ...new Bun.Glob("packages/cloud/src/workflows/runtime/*.test.ts").scanSync(root),
-      ]
-        .sort()
-        .map((file) => resolve(root, file)),
-      // packages/cloud runs these files with --isolate, so a module mock in one of them must not leak into the next.
-      flags: ["--isolate", "--timeout", "30000"],
-    },
-    {
-      name: "database-and-standard",
-      files: all.filter(
-        (file) =>
-          !workflowConcurrency.includes(file) &&
-          !special.includes(file) &&
-          !dom.includes(file) &&
-          !ownSync.includes(file) &&
-          !bundleChecks.includes(file) &&
-          !crashes.includes(file) &&
-          !pdf.includes(file),
-      ),
-      // These suites include multi-step migrations and history baselines;
-      // their timeout is not a single-request latency budget.
-      flags: ["--timeout", "30000", "--preload", "./packages/grids/scripts/verify-sync-preload.ts"],
-      pdftotext: true,
-    },
-    { name: "sync", files: special.slice(0, 3), flags: [] },
-    { name: "evidence-exports", files: ownSync, flags: ["--timeout", "30000"] },
-    // Keep browser bundling isolated from process-global test plugins.
-    { name: "browser-bundle", files: bundleChecks, flags: [] },
-    { name: "pdf", files: pdf, flags: [], pdftotext: true },
-    { name: "process-crashes", files: crashes, flags: [] },
-    { name: "recovery-and-cleanup", files: special.slice(3, 5), flags: [] },
-    { name: "dom", files: dom, flags: ["--isolate", "--conditions=browser", "--preload", "./packages/ui/test/solid-dom-preload.ts"] },
-  ];
   const phases = selectPhases(allPhases, { phase: option("--phase"), shard: option("--shard") });
   if (phases.some((phase) => phase.pdftotext) && !Bun.which(pdftotext)) {
     throw new Error("Grids verification requires Poppler pdftotext on PATH or an executable PDFTOTEXT path");
@@ -258,14 +147,7 @@ if (argv.includes("--bootstrap")) {
       let code: number;
       try {
         current = Bun.spawn(
-          [
-            process.execPath,
-            "test",
-            ...phase.flags,
-            "--reporter=junit",
-            `--reporter-outfile=${report}`,
-            ...phase.files.map((file) => resolve(packageRoot, file)),
-          ],
+          [process.execPath, "test", ...phase.flags, "--reporter=junit", `--reporter-outfile=${report}`, ...phase.files],
           { cwd: root, env, stdout: output, stderr: output },
         );
         code = await current.exited;

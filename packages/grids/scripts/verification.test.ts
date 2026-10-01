@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
 
 test("verification rejects empty, skipped and failed reports", () => {
@@ -37,4 +39,9 @@ test("verification selects phases by name and by shard", () => {
   expect(selectPhases(phases, { shard: "3/3", phase: "c" }).map((phase) => phase.name)).toEqual(["c"]);
   expect(() => selectPhases(phases, { phase: "z" })).toThrow('Unknown phase "z"');
   for (const shard of ["0/2", "3/2", "a/b", "2"]) expect(() => selectPhases(phases, { shard })).toThrow("Invalid shard");
+});
+
+test("verification checks load no other module, because tests, crash workers and diagnostics import them", () => {
+  const source = readFileSync(resolve(import.meta.dir, "verification.ts"), "utf8");
+  expect(new Bun.Transpiler({ loader: "ts" }).scanImports(source)).toEqual([]);
 });
