@@ -52,6 +52,34 @@ const Done = (props) => {
   return button;
 };
 
+/** A custom body that opts into shrinking: a min-height 0 column whose list scrolls above its own action row. */
+const shrinking = (close) => {
+  const root = document.createElement("div");
+  root.style.cssText = "display:flex;flex-direction:column;gap:1rem;min-height:0";
+  const list = long();
+  list.dataset.list = "";
+  list.style.cssText = "min-height:0;overflow-y:auto";
+  const row = document.createElement("div");
+  row.dataset.row = "";
+  row.append(Done({ close }));
+  root.append(list, row);
+  return root;
+};
+
+/** A short custom body that ends in its own buttons, the last one an xs icon button at the edge. */
+const buttons = (close) => {
+  const icon = Done({ close });
+  icon.classList.add("k2b-icon-button");
+  icon.dataset.size = "xs";
+  icon.textContent = "×";
+  icon.setAttribute("aria-label", "More actions");
+  const row = document.createElement("div");
+  row.dataset.end = "";
+  row.style.cssText = "display:flex;justify-content:flex-end;gap:0.5rem";
+  row.append(Done({ close }), icon);
+  return row;
+};
+
 const fields = Object.fromEntries(Array.from({ length: 30 }, (_, index) => ["field" + index, { type: "text", label: "Field " + (index + 1) }]));
 fields.end = { type: "info", content: () => long().lastElementChild };
 
@@ -63,6 +91,8 @@ window.openVariant = {
   form: () => void prompts.form({ title: "Add member", fields }),
   "custom dialog": () => void prompts.dialog(() => long(), { title: "notes.txt", size: "large" }),
   "full custom dialog": () => void prompts.dialog(() => long(), { title: "notes.txt", size: "full" }),
+  "shrinking custom dialog": () => void prompts.dialog((close) => shrinking(close), { title: "Customize toolbar", size: "large" }),
+  "short custom dialog": () => void prompts.dialog((close) => buttons(close), { title: "Publish changes" }),
   "unstructured content": () => void dialogCore.open(() => long()),
   "panel dialog": panel(panelDialogOptions),
   "wide panel dialog": panel(panelDialogWideOptions),
@@ -89,7 +119,7 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the d
 const script = await build.outputs[0]!.text();
 
 const viewports = {
-  desktop: { viewport: { width: 1280, height: 800 } },
+  desktop: { viewport: { width: 1440, height: 900 } },
   phone: { viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true },
 };
 
@@ -184,6 +214,39 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
         const { frameScrolled, end } = await layout(page, undefined);
         expect(frameScrolled).toBeGreaterThan(0);
         expect(end).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
+    // A body with a min-height 0 root asks to shrink to the frame, so only its
+    // own list scrolls and its action row stays below it, as on a laptop or phone.
+    test(`a shrinking custom dialog body fits its frame at ${options.viewport.width} px`, async () => {
+      const page = await open(options, "shrinking custom dialog");
+      try {
+        await scrollToEnd(page);
+        const content = await page.evaluate(() => {
+          const region = document.querySelector("dialog[open] .k2b-dialog__content")!;
+          const list = document.querySelector("dialog[open] [data-list]")!;
+          return { regionScrolls: region.scrollHeight > region.clientHeight, listScrolled: list.scrollTop > 0 };
+        });
+        expect(content).toEqual({ regionScrolls: false, listScrolled: true });
+        expect(await layout(page, "[data-row]")).toEqual({ frameScrolled: 0, header: true, footer: true, end: true });
+      } finally {
+        await page.close();
+      }
+    });
+
+    // On touch, a button's hit area reaches past its box; at the edge of the
+    // content region it must not leave a short body a few pixels to scroll.
+    test(`a short custom dialog that ends in its own buttons does not scroll at ${options.viewport.width} px`, async () => {
+      const page = await open(options, "short custom dialog");
+      try {
+        const overflow = await page.evaluate(() => {
+          const region = document.querySelector("dialog[open] .k2b-dialog__content")!;
+          return { block: region.scrollHeight - region.clientHeight, inline: region.scrollWidth - region.clientWidth };
+        });
+        expect(overflow).toEqual({ block: 0, inline: 0 });
       } finally {
         await page.close();
       }

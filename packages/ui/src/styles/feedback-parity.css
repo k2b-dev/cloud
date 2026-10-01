@@ -206,20 +206,26 @@
   gap: 1rem;
 }
 
-/* The scroll region around a custom `prompts.dialog` body. Like
- * `PanelDialog.Body`, its children keep their natural height instead of
- * shrinking until they clip; a child that should fill a `full` dialog says so
- * with its own flex sizing. */
+/* The scroll region around a custom `prompts.dialog` body. The body keeps the
+ * flex defaults on purpose: with `min-height: auto` and visible overflow it
+ * keeps its natural height and scrolls here, while a body that sets
+ * `min-height: 0` or its own overflow shrinks to the frame, for example to
+ * scroll its own list above its own action row. A child that should fill a
+ * `full` dialog says so with its own flex sizing.
+ *
+ * The region reaches 0.625rem into the panel's padding at its sides and end
+ * and pads its content back into place. The touch hit area of a button at
+ * its edge, up to 0.625rem past an `xs` button (see the `.k2b-button`
+ * touch-target rule in index.css), then stays inside the region instead of
+ * making it scroll. */
 .k2b-ui .k2b-dialog__content {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
+  margin: 0 -0.625rem -0.625rem;
+  padding: 0 0.625rem 0.625rem;
   overflow-y: auto;
-}
-
-:where(.k2b-ui .k2b-dialog__content > *) {
-  flex-shrink: 0;
 }
 
 .k2b-ui .k2b-dialog__header {

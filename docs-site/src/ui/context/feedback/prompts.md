@@ -165,7 +165,7 @@ use context Commands so search and Layout Help share the active shortcuts.
 
 `prompts.dialog` passes a typed `close(result)` callback to the component. Use it when the standard methods cannot express the content or actions.
 
-Every prompt keeps its header, with the title and close button, in view. When the content is taller than the dialog, only the body scrolls; the action row of `alert`, `success`, `error`, `confirm`, `prompt`, `promptNumber`, and `form` stays below it. In `prompts.dialog`, the component's content scrolls under the header, and its children keep their natural height. Actions rendered inside the component scroll with it, so use `PanelDialog` with `PanelDialog.Footer` when actions must stay in view. A child that should fill a `full` dialog sets its own flex sizing, for example `flex-1 min-h-0`.
+Every prompt keeps its header, with the title and close button, in view. When the content is taller than the dialog, only the body scrolls; the action row of `alert`, `success`, `error`, `confirm`, `prompt`, `promptNumber`, and `form` stays below it. In `prompts.dialog`, the component keeps its natural height and scrolls under the header, together with any actions it renders. A root that sets `min-h-0` or its own overflow shrinks to the dialog instead. As a flex column, it can then scroll a list with `min-h-0`, such as `ScrollArea`, above an action row that stays in view. `PanelDialog` with `PanelDialog.Footer` provides that structure ready-made. A child that should fill a `full` dialog sets its own flex sizing, for example `flex-1 min-h-0`.
 
 The standard surface can provide the title and close row:
 
