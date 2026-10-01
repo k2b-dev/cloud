@@ -258,7 +258,9 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       AND NOT EXISTS (
         SELECT 1 FROM mail.message_placements placement
         WHERE placement.message_id = message.id
-          AND NOT ('\\Draft' = ANY(placement.flags) OR '\\Draft' = ANY(placement.keywords))
+          AND NOT EXISTS (
+            SELECT 1 FROM unnest(placement.flags || placement.keywords) AS flag(value) WHERE lower(flag.value) = '\\draft'
+          )
       )
       AND NOT EXISTS (SELECT 1 FROM mail.outbox_submissions outbox WHERE outbox.message_id = message.id)
       AND NOT EXISTS (

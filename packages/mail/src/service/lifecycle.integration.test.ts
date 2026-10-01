@@ -1733,6 +1733,7 @@ suite("mail lifecycle control plane", () => {
       { uid: 2, modseq: null, flags: ["\\Draft"], labels: [] },
       { uid: 3, modseq: null, flags: [], labels: ["\\Draft"] },
       { uid: 4, modseq: null, flags: ["\\Seen"], labels: [] },
+      { uid: 5, modseq: null, flags: ["\\draft"], labels: [] },
     ]);
     const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({ messages: [], nextHighUid: null });
     try {
@@ -1740,7 +1741,7 @@ suite("mail lifecycle control plane", () => {
         await fetchReconcileStep({
           cursor: reconcileCursor("64", 1),
           currentHighUid: 10,
-          remoteMessages: 4,
+          remoteMessages: 5,
           runtime: {} as never,
           folderPath: "Reconcile",
           folderId: fixture.folderId,
@@ -1749,7 +1750,7 @@ suite("mail lifecycle control plane", () => {
           signal: AbortSignal.timeout(10_000),
         });
       }
-      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [2, 3, 4]]);
+      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [2, 3, 4, 5]]);
     } finally {
       envelopes.mockRestore();
       window.mockRestore();

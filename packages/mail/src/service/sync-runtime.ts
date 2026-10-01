@@ -351,10 +351,10 @@ const findCanonicalMessageContent = async (params: {
 /**
  * A message flagged `\Draft` is still being composed. Gmail lists every draft in All Mail too,
  * including the ones Mail projects into Drafts; the Drafts folder owns drafts, so no other
- * folder turns one into a conversation message.
+ * folder turns one into a conversation message. IMAP system flags ignore letter case.
  */
 const isProviderDraft = (message: Pick<ConnectorEnvelope, "flags" | "labels">): boolean =>
-  message.flags.includes("\\Draft") || message.labels.includes("\\Draft");
+  [...message.flags, ...message.labels].some((flag) => flag.toLowerCase() === "\\draft");
 
 type IngestEnvelopeParams = {
   db: typeof sql;
