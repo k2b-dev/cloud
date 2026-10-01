@@ -289,6 +289,8 @@ const columnTitles = (page: Page) =>
   page
     .locator('[role="region"] section[data-spaces-kanban-column] h3')
     .evaluateAll((titles) => titles.map((title) => title.firstChild?.textContent ?? ""));
+/** What the drag-and-drop live regions last told screen readers. */
+const dragAnnouncements = (page: Page) => page.locator('body > [role="status"][aria-live="polite"]').allTextContents();
 const cardsIn = (page: Page, key: string) =>
   page
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
@@ -599,6 +601,32 @@ describe("Spaces Kanban board in Chromium", () => {
       expect(moves).toEqual([]);
       expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
       expect(await cardsIn(page, "column:Col001")).toContain("Item02");
+      // Screen readers hear that nothing moved, not that the card was dropped.
+      expect(await dragAnnouncements(page)).toContain("Ask the bakery about a stand not moved; Blocked fills itself");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a card picked up in an automatic column is not refused there and has no target over the status it has", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      moves.splice(0);
+      const handle = await cardHandle(page, "Hang the signs");
+      await drag(page, handle, { x: handle.x + 30, y: handle.y + 60 });
+      expect(await page.locator("[data-spaces-kanban-no-drop]").count()).toBe(0);
+      // Over "To do", the status it already has: no drop line, no highlighted column, and nothing saved.
+      const own = await center(page.locator('[data-spaces-kanban-column="column:Col001"] article').first());
+      for (let step = 1; step <= 12; step++) {
+        await page.mouse.move(handle.x + 30 + ((own.x - handle.x - 30) * step) / 12, handle.y + 60 + ((own.y - handle.y - 60) * step) / 12);
+      }
+      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
+      expect(await page.locator('[data-spaces-kanban-column="column:Col001"] .bg-\\[var\\(--ui-selected\\)\\]').count()).toBe(0);
+      await page.mouse.up();
+      await page.waitForTimeout(200);
+      expect(moves).toEqual([]);
+      expect(await dragAnnouncements(page)).toContain("Hang the signs not moved");
+      expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
     } finally {
       await page.context().close();
     }
@@ -617,7 +645,7 @@ describe("Spaces Kanban board in Chromium", () => {
       await page.mouse.up();
       await moved;
       expect(moves).toEqual([{ columnId: "Col002", beforeItemId: "Item04", completed: false }]);
-      await page.getByText("Moved to In progress. It stays under Blocked until its blockers are done.").waitFor();
+      await page.getByText("Moved to In progress. It shows under Blocked until its blockers are done.").waitFor();
       expect(await cardsIn(page, "virtual:blocked")).toEqual(["Item08", "Item10"]);
       expect(await page.locator('article:has([data-item-id="Item08"]) [data-spaces-kanban-card-status]').getAttribute("title")).toBe(
         "Status: In progress",
@@ -637,6 +665,23 @@ describe("Spaces Kanban board in Chromium", () => {
         () => !window.document.querySelector('[data-spaces-kanban-column="virtual:overdue"] [data-item-id="Item09"]'),
       );
       expect(await cardsIn(page, "column:Col004")).toContain("Item09");
+
+      // Reopened while its deadline is still past, it goes straight back to Overdue and says why.
+      await drag(
+        page,
+        await cardHandle(page, "Pay the deposit"),
+        await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first()),
+      );
+      const reopened = page.waitForResponse((response) => response.url().endsWith("/items/Item09/move"));
+      await page.mouse.up();
+      // It lands in Overdue, not in the status it was dropped on.
+      await page.waitForSelector('[data-spaces-kanban-column="virtual:overdue"] [data-item-id="Item09"]');
+      expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item05"]);
+      await reopened;
+      expect(moves.at(-1)).toMatchObject({ columnId: "Col002", completed: false });
+      await page.getByText("Moved to In progress. It shows under Overdue until it is done.").waitFor();
+      expect(await cardsIn(page, "virtual:overdue")).toEqual(["Item09"]);
+      expect(await cardsIn(page, "column:Col004")).not.toContain("Item09");
     } finally {
       await page.context().close();
     }
@@ -656,6 +701,10 @@ describe("Spaces Kanban board in Chromium", () => {
       expect(columnOrders).toEqual([{ columnIds: ["Col003", "Col001", "blocked", "Col002", "overdue", "Col004"] }]);
       expect(await columnTitles(page)).toEqual(["Review", "To do", "Blocked", "In progress", "Overdue", "Done"]);
       expect(await page.locator("[data-spaces-kanban-column-drop-indicator]").count()).toBe(0);
+      // Screen readers hear the saved move, not that the column stayed where it was.
+      await page.waitForFunction(() => window.document.querySelector("[data-spaces-kanban-column-status]")?.textContent !== "");
+      expect(await page.locator("[data-spaces-kanban-column-status]").textContent()).toBe("Review is now column 1 of 6");
+      expect(await dragAnnouncements(page)).not.toContain("Column Review not moved");
     } finally {
       await page.context().close();
     }
@@ -704,6 +753,7 @@ describe("Spaces Kanban board in Chromium", () => {
       await page.mouse.up();
       await page.waitForTimeout(200);
       expect(moves).toEqual([]);
+      expect(await dragAnnouncements(page)).toContain("Ask the bakery about a stand nicht verschoben; Blockiert füllt sich von selbst");
     } finally {
       await page.context().close();
     }
@@ -746,4 +796,33 @@ describe("Spaces Kanban board in Chromium", () => {
       }
     }
   }, 60_000);
+
+  test("phone: a swipe that starts on a column title scrolls the board and never reorders it", async () => {
+    const page = await open(phone, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      columnOrders.splice(0);
+      const board = page.locator('[role="region"]');
+      await board.evaluate((element) => {
+        element.scrollLeft = 100;
+      });
+      const title = (await page.locator('[data-spaces-kanban-column="virtual:blocked"] h3').boundingBox())!;
+      const y = title.y + title.height / 2;
+      let x = Math.min(title.x + title.width - 8, 380);
+      // A plain swipe through the browser's touch pipeline, no hold: one finger moving left in small steps.
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      for (let step = 0; step < 15; step++) {
+        x -= 24;
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y }] });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await page.waitForTimeout(300);
+      expect(columnOrders).toEqual([]);
+      expect(await columnTitles(page)).toEqual(["To do", "Blocked", "In progress", "Review", "Overdue", "Done"]);
+      expect(await board.evaluate((element) => element.scrollLeft)).toBeGreaterThan(100);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });

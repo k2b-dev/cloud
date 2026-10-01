@@ -17,6 +17,7 @@ import {
   type SpaceColumn,
   type SpaceItem,
   type SpaceTag,
+  type SpaceVirtualColumnKind,
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
@@ -78,8 +79,8 @@ type MovePosition = { afterItemId?: string; beforeItemId?: string };
 
 type MoveContext = {
   previousBuckets: KanbanBucketInitial[];
-  /** Set when the card leaves an automatic column for a status it still matches there: it stays, with the new status. */
-  staysIn: "blocked" | "overdue" | null;
+  /** Set when the card lands in an open status but an automatic column still gathers it: it shows there, with the new status. */
+  gatheredBy: SpaceVirtualColumnKind | null;
   targetLabel: string;
   sourceBucketKey: string;
   targetBucketKey: string;
@@ -314,14 +315,6 @@ export default function KanbanBoard(props: Props) {
     if (intent.kind !== "column") return false;
     const resolved = resolveMoveTargets({ itemId, bucketKey: intent.bucketKey });
     if (!resolved) return true;
-    // A card that stays in its automatic column and keeps its status would change nothing visible.
-    if (
-      resolved.source.bucket.kind !== "column" &&
-      !resolved.targetBucket.isDone &&
-      resolved.source.item.columnId === resolved.targetBucket.columnId
-    ) {
-      return true;
-    }
     const targetIndex = normalizeTargetIndex({
       sourceBucketKey: resolved.source.bucket.key,
       sourceIndex: resolved.source.index,
@@ -366,6 +359,14 @@ export default function KanbanBoard(props: Props) {
     if (!resolveTargetColumnId(resolved.targetBucket)) {
       return null;
     }
+    // A card from an automatic column over the open status it already has would change nothing.
+    if (
+      resolved.source.bucket.kind !== "column" &&
+      !resolved.targetBucket.isDone &&
+      resolved.source.item.columnId === resolved.targetBucket.columnId
+    ) {
+      return null;
+    }
 
     const targetIndex = normalizeTargetIndex({
       sourceBucketKey: resolved.source.bucket.key,
@@ -400,20 +401,39 @@ export default function KanbanBoard(props: Props) {
     return location?.item.title ?? t.genericItem;
   };
 
-  // The column under a dragged card, also when it takes no drop, so an automatic column can say so.
-  const [cardOverBucketKey, setCardOverBucketKey] = createSignal<string | null>(null);
+  /** The automatic column under a dragged card that came from elsewhere: it takes no drop and says so. */
+  const refusingBucket = (itemId: string, over: DndDroppableSnapshot<DropMeta> | null) => {
+    if (!over || over.meta.kind === "wormhole") return null;
+    const bucket = getBucketByKey(over.meta.bucketKey);
+    if (!bucket || bucket.kind === "column") return null;
+    return findItemLocation(itemId)?.bucket.key === bucket.key ? null : bucket;
+  };
+  const [refusingBucketKey, setRefusingBucketKey] = createSignal<string | null>(null);
+  // The controller clears its intent before it announces a drop, so the board keeps the last one.
+  let cardIntent: DropIntent | null = null;
   const boardDnd = dnd.create<DragMeta, DropMeta, DropIntent>({
     buildIntent: buildDropIntent,
-    onDragOver: ({ over }) => setCardOverBucketKey(over && over.meta.kind !== "wormhole" ? over.meta.bucketKey : null),
-    onCancel: () => setCardOverBucketKey(null),
+    onDragStart: () => {
+      cardIntent = null;
+    },
+    onDragOver: ({ active, over, intent }) => {
+      cardIntent = intent;
+      setRefusingBucketKey(refusingBucket(active.meta.itemId, over)?.key ?? null);
+    },
+    onCancel: () => setRefusingBucketKey(null),
     announcements: {
       dragStart: (active) => t.dragPickedUp({ item: describeActiveItem(active) }),
       dragOver: (_active, over) => describeDroppable(over),
-      drop: (active, over) => t.dragDropped({ item: describeActiveItem(active), target: describeDroppable(over) }),
+      drop: (active, over) => {
+        const item = describeActiveItem(active);
+        if (cardIntent && !isNoOpMove(active.meta.itemId, cardIntent)) return t.dragDropped({ item, target: describeDroppable(over) });
+        const refusing = refusingBucket(active.meta.itemId, over);
+        return refusing ? t.dragRefused({ item, column: refusing.label }) : t.dragNotMoved({ item });
+      },
       cancel: (active) => t.dragCancelled({ item: describeActiveItem(active) }),
     },
     onDrop: ({ active, intent }) => {
-      setCardOverBucketKey(null);
+      setRefusingBucketKey(null);
       if (!intent || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
       if (intent.kind === "wormhole") {
         transferMutation.mutate({ itemId: active.meta.itemId, wormholeId: intent.wormholeId });
@@ -481,8 +501,16 @@ export default function KanbanBoard(props: Props) {
     void reorderColumnsMutation.mutate({ keys, movedKey: key });
   };
   const bucketLabel = (key: string) => getBucketByKey(key)?.label ?? t.unknownTarget;
+  // As for cards: the intent is already cleared when the controller announces the drop.
+  let columnIntent: ColumnIntent | null = null;
   const columnDnd = dnd.create<{ bucketKey: string }, { bucketKey: string }, ColumnIntent>({
     isSameIntent: (a, b) => a?.index === b?.index,
+    onDragStart: () => {
+      columnIntent = null;
+    },
+    onDragOver: ({ intent }) => {
+      columnIntent = intent;
+    },
     buildIntent: ({ active, over, pointer }) => {
       if (!over) return null;
       const keys = buckets().map((bucket) => bucket.key);
@@ -494,7 +522,8 @@ export default function KanbanBoard(props: Props) {
     announcements: {
       dragStart: (active) => t.columnPickedUp({ column: bucketLabel(active.meta.bucketKey) }),
       dragOver: (_active, over) => (over ? t.columnTarget({ column: bucketLabel(over.meta.bucketKey) }) : t.noTarget),
-      drop: (active): string => (columnDnd.intent() ? "" : t.columnMoveCancelled({ column: bucketLabel(active.meta.bucketKey) })),
+      // A real move is announced once it is saved.
+      drop: (active): string => (columnIntent ? "" : t.columnMoveCancelled({ column: bucketLabel(active.meta.bucketKey) })),
       cancel: (active) => t.columnMoveCancelled({ column: bucketLabel(active.meta.bucketKey) }),
     },
     onDrop: ({ active, intent }) => {
@@ -508,6 +537,23 @@ export default function KanbanBoard(props: Props) {
         ?.querySelector<HTMLElement>(`[data-spaces-kanban-column-menu="${CSS.escape(key)}"]`)
         ?.focus({ preventScroll: true }),
     );
+
+  /** Overdue as the board counts it: an open task whose deadline lies before today. */
+  const isOverdue = (item: SpaceItem) =>
+    !item.completedAt && item.deadline !== null && new Date(item.deadline) < dates.today(props.dateConfig);
+  /** The automatic column that shows an item on this board, by the server's rule: Blocked first, then Overdue. */
+  const gatheringKind = (item: SpaceItem): SpaceVirtualColumnKind | null => {
+    if (item.completedAt) return null;
+    if (virtualKinds.has("blocked") && item.activeBlockerCount > 0) return "blocked";
+    return virtualKinds.has("overdue") && isOverdue(item) ? "overdue" : null;
+  };
+  /** Where a card with this status joins an automatic column, which lists its tasks in status order. */
+  const gatheredIndex = (bucket: KanbanBucketInitial, columnId: string) => {
+    const statusIndex = (id: string) => props.columns.findIndex((column) => column.id === id);
+    const status = statusIndex(columnId);
+    const next = bucket.items.findIndex((item) => statusIndex(item.columnId) > status);
+    return next < 0 ? bucket.items.length : next;
+  };
 
   const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent }, MoveContext>({
     onBefore: ({ itemId, intent }) => {
@@ -539,26 +585,29 @@ export default function KanbanBoard(props: Props) {
         columnId: targetColumnId,
         completedAt: resolved.targetBucket.isDone ? new Date().toISOString() : null,
       };
-      // Only completion ends blocked or overdue, so a card from an automatic column that lands in an open
-      // status changes its status but stays where it is.
+      // Only completion ends blocked or overdue, so a card that lands in an open status shows under the
+      // automatic column that still gathers it: one dragged out of it stays in place, one reopened from a
+      // done status goes there.
       const sourceBucket = resolved.source.bucket;
-      const staysIn = sourceBucket.kind !== "column" && !resolved.targetBucket.isDone ? sourceBucket.kind : null;
+      const gatheredBy = gatheringKind(optimisticUpdated);
+      const landing = (gatheredBy && buckets().find((bucket) => bucket.kind === gatheredBy)) || resolved.targetBucket;
+      const landingIndex =
+        landing.key === resolved.targetBucket.key
+          ? targetIndexClamped
+          : landing.key === sourceBucket.key
+            ? resolved.source.index
+            : gatheredIndex(landing, targetColumnId);
 
       withBoardScrollPreserved(() => {
         withViewTransition(() => {
           setBuckets((current) =>
             current.map((bucket) => {
-              if (staysIn) {
-                return bucket.key === sourceBucket.key
-                  ? { ...bucket, items: bucket.items.map((item) => (item.id === itemId ? optimisticUpdated : item)) }
-                  : bucket;
-              }
               const hadItem = bucket.items.some((item) => item.id === itemId);
               const nextItems = bucket.items.filter((item) => item.id !== itemId);
               let delta = hadItem ? -1 : 0;
 
-              if (bucket.key === resolved.targetBucket.key) {
-                nextItems.splice(targetIndexClamped, 0, optimisticUpdated);
+              if (bucket.key === landing.key) {
+                nextItems.splice(landingIndex, 0, optimisticUpdated);
                 delta += 1;
               }
 
@@ -571,15 +620,15 @@ export default function KanbanBoard(props: Props) {
       setMovingItemId(itemId);
       return {
         previousBuckets,
-        staysIn,
+        gatheredBy: landing.key === resolved.targetBucket.key ? null : gatheredBy,
         targetLabel: resolved.targetBucket.label,
         sourceBucketKey: sourceBucket.key,
-        targetBucketKey: staysIn ? sourceBucket.key : resolved.targetBucket.key,
+        targetBucketKey: landing.key,
         targetColumnId,
         // A folded column shows no cards to land next to; without a position the server puts the card at
         // the top of the whole column, above cards an active filter hides.
         position: props.folded.has(resolved.targetBucket.key) ? {} : movePosition(targetItemsWithoutSource, targetIndexClamped),
-        targetIndex: staysIn ? resolved.source.index : targetIndexClamped,
+        targetIndex: landingIndex,
         targetCompleted: resolved.targetBucket.isDone,
         claimId: resolved.targetBucket.isDone ? ownClaimId(resolved.source.item.claim, props.currentUserId) : undefined,
       };
@@ -619,9 +668,11 @@ export default function KanbanBoard(props: Props) {
           );
         });
       });
-      if (ctx?.staysIn) {
+      if (ctx?.gatheredBy) {
         toast(
-          ctx.staysIn === "blocked" ? t.movedStaysBlocked({ status: ctx.targetLabel }) : t.movedStaysOverdue({ status: ctx.targetLabel }),
+          ctx.gatheredBy === "blocked"
+            ? t.movedStaysBlocked({ status: ctx.targetLabel })
+            : t.movedStaysOverdue({ status: ctx.targetLabel }),
         );
       }
       void invalidateSpacesData(["view"]).catch(() => prompts.error(t.moveRefreshFailed));
@@ -883,9 +934,6 @@ export default function KanbanBoard(props: Props) {
   };
 
   const columnOf = (columnId: string) => props.columns.find((column) => column.id === columnId) ?? null;
-  /** Overdue as the board counts it: an open task whose deadline lies before today. */
-  const isOverdue = (item: SpaceItem) =>
-    !item.completedAt && item.deadline !== null && new Date(item.deadline) < dates.today(props.dateConfig);
   const bucketColor = (bucket: KanbanBucketInitial) => bucket.color ?? (bucket.isDone ? "#10b981" : "#6b7280");
   const countText = (bucket: KanbanBucketInitial) =>
     bucket.unfilteredTotal === undefined ? String(bucket.total) : `${bucket.total}/${bucket.unfilteredTotal}`;
@@ -947,7 +995,7 @@ export default function KanbanBoard(props: Props) {
               // An automatic column stays a droppable, so a card over it can say that it takes no drop.
               const cardDropDisabled = () =>
                 !props.canWrite || (!canDropInBucket && !virtual) || moveMutation.loading() || transferMutation.loading();
-              const refuseDrop = () => virtual !== null && boardDnd.isDragging() && cardOverBucketKey() === bucket.key;
+              const refuseDrop = () => boardDnd.isDragging() && refusingBucketKey() === bucket.key;
               const registerColumn = (element: HTMLElement, draggable: boolean) => {
                 columnDnd.droppable(element, () => ({
                   id: `drop:board-column:${bucket.key}`,
@@ -1042,10 +1090,12 @@ export default function KanbanBoard(props: Props) {
                   >
                     <ColumnDropLine />
                     <header class="flex items-center gap-2 px-1.5 py-1">
-                      {/* The title is the drag handle for people who may reorder the board; others get no affordance. */}
+                      {/* The title is the drag handle for people who may reorder the board; others get no affordance. A
+                          touch on it still scrolls the board, so a swipe never reorders it for everyone: on touch
+                          screens the ⋯ menu moves columns. */}
                       <div
                         data-spaces-kanban-column-handle={props.canWrite ? "" : undefined}
-                        class={`flex min-w-0 flex-1 items-center gap-2 ${props.canWrite ? "cursor-grab touch-none select-none active:cursor-grabbing" : ""}`}
+                        class={`flex min-w-0 flex-1 items-center gap-2 ${props.canWrite ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
                       >
                         <Show when={virtual} fallback={<ColumnMark />}>
                           {(kind) => (

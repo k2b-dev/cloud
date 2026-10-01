@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
+import * as columnsService from "../service/columns";
 import spacesApi from ".";
 
 const suite = databaseSuite();
@@ -196,6 +197,50 @@ suite("Spaces automatic Kanban columns", () => {
         await sql`DELETE FROM auth.access WHERE user_id = ${id}::uuid`;
         await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
       }
+    }
+  });
+
+  test("a reorder or switch that races a switch-off never brings the automatic column back", async () => {
+    const [space] = await sql<{ id: string }[]>`
+      INSERT INTO spaces.spaces (short_id, name) VALUES (${newShortId()}, ${`Race ${crypto.randomUUID().slice(0, 8)}`}) RETURNING id`;
+    const spaceId = space!.id;
+    try {
+      const statuses: string[] = [];
+      for (const [index, name] of ["Open", "Doing", "Review", "Done"].entries()) {
+        const [row] = await sql<{ id: string }[]>`
+          INSERT INTO spaces.columns (short_id, space_id, name, rank, is_done)
+          VALUES (${newShortId()}, ${spaceId}::uuid, ${name}, ${(index + 1) * 1024}, ${name === "Done"}) RETURNING id`;
+        statuses.push(row!.id);
+      }
+      const enabledKinds = async () => (await columnsService.listVirtual({ spaceId })).map((entry) => entry.kind);
+      const order = statuses.map((id) => ({ kind: "column" as const, id }));
+
+      for (let round = 0; round < 15; round++) {
+        await columnsService.disableVirtual({ spaceId, kind: "overdue" });
+        await columnsService.enableVirtual({ spaceId, kind: "blocked" });
+        // A reorder from a board that still shows Blocked: it fails or lands first, but never re-enables it.
+        const [reordered] = await Promise.all([
+          columnsService.reorder({ spaceId, order: [{ kind: "blocked" }, ...order] }),
+          columnsService.disableVirtual({ spaceId, kind: "blocked" }),
+        ]);
+        if (!reordered.ok) expect(reordered.error).toBe("Automatic column blocked is not enabled");
+        expect(await enabledKinds()).toEqual([]);
+
+        // Switching one automatic column on while another goes off keeps both decisions.
+        await columnsService.enableVirtual({ spaceId, kind: "blocked" });
+        await Promise.all([
+          columnsService.enableVirtual({ spaceId, kind: "overdue" }),
+          columnsService.disableVirtual({ spaceId, kind: "blocked" }),
+        ]);
+        expect(await enabledKinds()).toEqual(["overdue"]);
+      }
+
+      // Concurrent new statuses each get their own place at the end of the board.
+      await Promise.all(["One", "Two", "Three"].map((name) => columnsService.create({ spaceId, data: { name, isDone: false } })));
+      const ranks = (await columnsService.list({ spaceId })).map((column) => column.rank);
+      expect(new Set(ranks).size).toBe(ranks.length);
+    } finally {
+      await sql`DELETE FROM spaces.spaces WHERE id = ${spaceId}::uuid`;
     }
   });
 });

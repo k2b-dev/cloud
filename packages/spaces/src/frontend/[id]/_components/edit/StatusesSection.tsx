@@ -18,8 +18,23 @@ export function StatusesSection(props: {
 }) {
   const m = useSpaceMessages();
   const [optimisticBoard, setOptimisticBoard] = createSignal<BoardColumn[] | null>(null);
-  // Statuses and enabled automatic columns share one board order.
-  const board = () => optimisticBoard() ?? orderBoardColumns(props.columns, props.virtualColumns);
+  const [pendingVirtual, setPendingVirtual] = createSignal<Partial<Record<SpaceVirtualColumnKind, boolean>>>({});
+  // Statuses and enabled automatic columns share one board order. A switch shows its column change at
+  // once, where the server puts it, so the list never offers to move a column that is already gone.
+  const board = () => {
+    const optimistic = optimisticBoard();
+    if (optimistic) return optimistic;
+    const pending = pendingVirtual();
+    const stored = orderBoardColumns(props.columns, props.virtualColumns).filter(
+      (entry) => entry.kind === "column" || pending[entry.kind] !== false,
+    );
+    for (const kind of ["blocked", "overdue"] as const) {
+      if (!pending[kind] || stored.some((entry) => entry.kind === kind)) continue;
+      const firstDone = stored.findIndex((entry) => entry.kind === "column" && entry.column.isDone);
+      stored.splice(firstDone < 0 ? stored.length : firstDone, 0, { kind, rank: "0" });
+    }
+    return stored;
+  };
   const columns = () => board().flatMap((entry) => (entry.kind === "column" ? [entry.column] : []));
   const virtualLabel = (kind: SpaceVirtualColumnKind) => (kind === "blocked" ? m.blockedColumn : m.overdueColumn);
   const entryLabel = (entry: BoardColumn) => (entry.kind === "column" ? entry.column.name : virtualLabel(entry.kind));
@@ -114,7 +129,6 @@ export function StatusesSection(props: {
     onAbort: () => setOptimisticBoard(null),
   });
 
-  const [pendingVirtual, setPendingVirtual] = createSignal<Partial<Record<SpaceVirtualColumnKind, boolean>>>({});
   const virtualEnabled = (kind: SpaceVirtualColumnKind) =>
     pendingVirtual()[kind] ?? props.virtualColumns.some((virtual) => virtual.kind === kind);
   const toggleVirtualMut = mutations.create({
@@ -154,7 +168,7 @@ export function StatusesSection(props: {
   };
 
   const moveColumn = (index: number, direction: -1 | 1) => {
-    if (reorderSubmitting || reorderMut.loading()) return;
+    if (reorderSubmitting || reorderMut.loading() || toggleVirtualMut.loading()) return;
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= board().length) return;
 
@@ -197,6 +211,21 @@ export function StatusesSection(props: {
         }}
       </Show>
 
+      {/* Above the list: the rows a switch adds or removes then never move the switch itself. */}
+      <SettingsGroup title={m.automaticColumns} description={m.automaticColumnsDescription}>
+        <For each={["blocked", "overdue"] as const}>
+          {(kind) => (
+            <Switch
+              label={virtualLabel(kind)}
+              description={kind === "blocked" ? m.blockedColumnDescription : m.overdueColumnDescription}
+              value={virtualEnabled(kind)}
+              disabled={toggleVirtualMut.loading() || reorderMut.loading()}
+              onValueChange={(enabled) => void toggleVirtualMut.mutate({ kind, enabled })}
+            />
+          )}
+        </For>
+      </SettingsGroup>
+
       <SettingsCollection title={m.workflowStatuses} description={m.workflowStatusesDescription} empty={m.noStatuses}>
         <SettingsCollection.Action>
           <Button type="button" size="sm" disabled={editingId() !== null} onClick={() => setEditingId("new")}>
@@ -212,7 +241,7 @@ export function StatusesSection(props: {
                 label={entryLabel(entry)}
                 index={index()}
                 count={board().length}
-                disabled={reorderMut.loading()}
+                disabled={reorderMut.loading() || toggleVirtualMut.loading()}
                 onMove={(direction) => moveColumn(index(), direction)}
               />
             );
@@ -258,20 +287,6 @@ export function StatusesSection(props: {
           }}
         </For>
       </SettingsCollection>
-
-      <SettingsGroup title={m.automaticColumns} description={m.automaticColumnsDescription}>
-        <For each={["blocked", "overdue"] as const}>
-          {(kind) => (
-            <Switch
-              label={virtualLabel(kind)}
-              description={kind === "blocked" ? m.blockedColumnDescription : m.overdueColumnDescription}
-              value={virtualEnabled(kind)}
-              disabled={toggleVirtualMut.loading()}
-              onValueChange={(enabled) => void toggleVirtualMut.mutate({ kind, enabled })}
-            />
-          )}
-        </For>
-      </SettingsGroup>
     </>
   );
 }

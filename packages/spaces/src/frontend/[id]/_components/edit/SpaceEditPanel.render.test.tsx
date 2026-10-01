@@ -135,7 +135,10 @@ describe("Spaces settings", () => {
       }),
     );
 
-    const order = ["Open", "Blocked", "Done"].map((title) => html.indexOf(`>${title}<`));
+    // The automatic-column switches above the list name the same columns; the order is the list's.
+    const list = html.slice(html.indexOf("k2b-settings-collection__list"));
+    const order = ["Open", "Blocked", "Done"].map((title) => list.indexOf(`>${title}<`));
+    expect(order.every((position) => position >= 0)).toBe(true);
     expect(order.every((position, index) => position > (order[index - 1] ?? -1))).toBe(true);
     expect(html).toContain("Automatic column · Position 2 of 3");
     expect(html).toContain('aria-label="Move Blocked up"');
