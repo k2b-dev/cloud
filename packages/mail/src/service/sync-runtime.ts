@@ -8,8 +8,9 @@ import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/st
 import type { JobContext, Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
+import { truncateUtf8 } from "../lib/utf8";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
-import { normalizeEmailAddress } from "./address-normalization";
+import { isStorableMessageAddress, normalizeEmailAddress } from "./address-normalization";
 import { cleanupPublicAttachmentLinks } from "./attachment-links";
 import { type BindingRediscoveryResult, rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
@@ -17,6 +18,7 @@ import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, FlagChange } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import { isAutomaticSubmission } from "./conversation-work-state";
+import { databaseErrorCode, databaseErrorConstraint, isPermanentDataError } from "./database-errors";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -225,6 +227,10 @@ const upsertAddresses = async (db: typeof sql, messageId: string, message: Conne
   }
 };
 
+// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
+// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
+const MESSAGE_ID_MAX_BYTES = 998;
+
 const findConversation = async (params: {
   db: typeof sql;
   mailboxId: string;
@@ -246,8 +252,13 @@ const findConversation = async (params: {
     if (native) return native.conversation_id;
   }
 
+  // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
   const replyIds = [
-    ...new Set([params.message.inReplyTo, ...params.message.references].filter((value): value is string => Boolean(value))),
+    ...new Set(
+      [params.message.inReplyTo, ...params.message.references]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES)),
+    ),
   ];
   const participants = allParticipantEmails(params.message);
   if (replyIds.length > 0 && participants.length > 0) {
@@ -337,14 +348,56 @@ const findCanonicalMessageContent = async (params: {
   return candidates.length === 1 ? candidates[0]!.message_id : null;
 };
 
-export const ingestEnvelope = async (params: {
+type IngestEnvelopeParams = {
   db: typeof sql;
   mailboxId: string;
   remoteResourceId: string;
   folderId: string;
   message: ConnectorEnvelope;
   captureWorkflowTriggers?: boolean;
-}): Promise<string> => {
+};
+
+type AddressRole = keyof ConnectorEnvelope["addresses"];
+
+/**
+ * Bounds the envelope values the store cannot hold as received. One unusable header must not
+ * reject the whole sync batch: the message stays importable without an address outside the
+ * `mail.message_addresses` bounds and with a shortened Message-ID, and the raw headers remain
+ * in the message source.
+ */
+const storableEnvelope = (
+  message: ConnectorEnvelope,
+): { message: ConnectorEnvelope; skipped: { role: AddressRole; length: number }[]; messageIdShortened: boolean } => {
+  const skipped: { role: AddressRole; length: number }[] = [];
+  const keep = (role: AddressRole) =>
+    message.addresses[role].filter((address) => {
+      if (isStorableMessageAddress(address.address)) return true;
+      skipped.push({ role, length: [...address.address].length });
+      return false;
+    });
+  const addresses = { from: keep("from"), replyTo: keep("replyTo"), to: keep("to"), cc: keep("cc"), bcc: keep("bcc") };
+  const messageId = message.messageId && truncateUtf8(message.messageId, MESSAGE_ID_MAX_BYTES);
+  const messageIdShortened = messageId !== message.messageId;
+  if (skipped.length === 0 && !messageIdShortened) return { message, skipped, messageIdShortened };
+  return { message: { ...message, messageId, addresses }, skipped, messageIdShortened };
+};
+
+export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
+  const { message, skipped, messageIdShortened } = storableEnvelope(params.message);
+  if (skipped.length > 0 || messageIdShortened) {
+    // Lengths only: the rejected values are untrusted header text from the message.
+    log.warn("Mail adjusted envelope values it cannot store", {
+      folderId: params.folderId,
+      uidValidity: message.remoteRef.uidValidity,
+      uid: message.remoteRef.uid,
+      skippedAddresses: skipped,
+      messageIdShortened,
+    });
+  }
+  return ingestStorableEnvelope({ ...params, message });
+};
+
+const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
   const protocolFacts = parseMessageProtocolFacts(params.message.protocolFacts);
   const contentHash = sha256Json({
     remoteResourceId: params.remoteResourceId,
@@ -564,12 +617,15 @@ export const ingestEnvelope = async (params: {
     if (!conversation) throw new Error("Conversation insert returned no row");
     conversationId = conversation.id;
   }
+  // The position only orders a conversation and must not be negative; a server can report an
+  // INTERNALDATE before 1970.
+  const position = Math.max(0, params.message.internalDate.getTime());
   const [linked] = await params.db<{ message_id: string }[]>`
     INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
     VALUES (
       ${conversationId}::uuid,
       ${messageContentId}::uuid,
-      ${params.message.internalDate.getTime()},
+      ${position},
       ${
         manualConversationId
           ? "manual"
@@ -1474,21 +1530,64 @@ const normalizeSyncErrorCode = (error: unknown): string => {
 };
 
 const SYNC_FOLDER_MAX_ATTEMPTS = 5;
+// Data the database rejects fails the same way on every attempt. The folder waits as long as an
+// errored binding waits for its next verification instead of repeating the failure every minute.
+const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
+
+const markFolderDegraded = async (folderId: string): Promise<void> => {
+  await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid`.catch((cause: Error) =>
+    log.error("Failed to mark a Mail folder as degraded", { folderId, error: cause.message }),
+  );
+};
+
 const syncFolderJob = lazySync((sync) =>
   sync.job<{ folderId: string }>({
     id: "mail:sync-folder",
     delivery: { ackWaitMs: 3 * 60_000, maxAttempts: SYNC_FOLDER_MAX_ATTEMPTS, backoffMs: [5_000, 10_000, 20_000, 40_000] },
   }),
 );
+
+/** Runs one `mail:sync-folder` attempt; exported so tests can drive the job's failure handling. */
+export const runSyncFolderJob = async (ctx: Pick<JobContext<{ folderId: string }>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+  try {
+    const data = await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat());
+    if (data.hasMore) ctx.resubmit({ delayMs: 0 });
+  } catch (error) {
+    const code = normalizeSyncErrorCode(error);
+    if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+    if (code === "MAIL_RATE_LIMITED") {
+      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
+      return;
+    }
+    // A sibling job holds the remote resource: routine contention, not a failed attempt.
+    if (code === "SYNC_BUSY") {
+      ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+      return;
+    }
+    // The failed run and the resource error are already recorded; retries and dead letters
+    // would only repeat them, because the scheduler queues a degraded folder again.
+    if (isPermanentDataError(error)) {
+      await markFolderDegraded(ctx.input.folderId);
+      log.error("Mail folder sync stopped on data the database rejected", {
+        folderId: ctx.input.folderId,
+        sqlState: databaseErrorCode(error),
+        constraint: databaseErrorConstraint(error),
+        recheckInMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS,
+      });
+      ctx.resubmit({ delayMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS });
+      return;
+    }
+    throw error;
+  }
+};
+
 let syncFolderJobWorker: Worker | undefined;
 const startSyncFolderJob = async (): Promise<void> => {
   syncFolderJobWorker = await syncFolderJob().process(
     {
       onError: async ({ context, error }) => {
         if (context.attempt >= SYNC_FOLDER_MAX_ATTEMPTS) {
-          await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${context.input.folderId}::uuid`.catch((cause: Error) =>
-            log.error("Failed to mark a Mail folder as degraded", { folderId: context.input.folderId, error: cause.message }),
-          );
+          await markFolderDegraded(context.input.folderId);
           log.error("Mail folder sync exhausted retries", {
             folderId: context.input.folderId,
             attempt: context.attempt,
@@ -1499,25 +1598,7 @@ const startSyncFolderJob = async (): Promise<void> => {
         return { action: "retry" };
       },
     },
-    async (ctx) => {
-      try {
-        const data = await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat());
-        if (data.hasMore) ctx.resubmit({ delayMs: 0 });
-      } catch (error) {
-        const code = normalizeSyncErrorCode(error);
-        if (code === "MAILBOX_TRANSPORT_CHANGED") return;
-        if (code === "MAIL_RATE_LIMITED") {
-          ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
-          return;
-        }
-        // A sibling job holds the remote resource: routine contention, not a failed attempt.
-        if (code === "SYNC_BUSY") {
-          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
-          return;
-        }
-        throw error;
-      }
-    },
+    runSyncFolderJob,
   );
 };
 

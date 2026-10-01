@@ -605,9 +605,16 @@ const mapFolder = (entry: ListResponse): RemoteFolder => ({
   rightsSource: "unknown",
 });
 
+// imapflow decodes encoded words, and `=?UTF-8?B?AA==?=` decodes to NUL. Postgres text and
+// JSON cannot hold it, so one such header would reject the whole envelope batch.
+const withoutNul = (value: string): string => value.replaceAll("\u0000", "");
+
+const withoutNulParameters = (parameters: Record<string, string> | undefined): Record<string, string> =>
+  Object.fromEntries(Object.entries(parameters ?? {}).map(([key, value]) => [withoutNul(key), withoutNul(value)]));
+
 const mapAddress = (address: MessageAddressObject): ConnectorAddress | null => {
-  const normalized = address.address?.trim().toLowerCase();
-  return normalized ? { name: address.name?.trim() || null, address: normalized } : null;
+  const normalized = address.address && withoutNul(address.address).trim().toLowerCase();
+  return normalized ? { name: (address.name && withoutNul(address.name).trim()) || null, address: normalized } : null;
 };
 
 const mapAddresses = (addresses: MessageAddressObject[] | undefined): ConnectorAddress[] =>
@@ -618,12 +625,12 @@ const structureToJson = (structure: MessageStructureObject | undefined): Record<
   return {
     part: structure.part ?? null,
     type: structure.type,
-    parameters: structure.parameters ?? {},
+    parameters: withoutNulParameters(structure.parameters),
     id: structure.id ?? null,
     encoding: structure.encoding ?? null,
     size: structure.size ?? null,
     disposition: structure.disposition ?? null,
-    dispositionParameters: structure.dispositionParameters ?? {},
+    dispositionParameters: withoutNulParameters(structure.dispositionParameters),
     childNodes: structure.childNodes?.map((child) => structureToJson(child)) ?? [],
   };
 };
@@ -643,12 +650,19 @@ export const parseEnvelopeHeaders = async (
     protocolFacts: EMPTY_MESSAGE_PROTOCOL_FACTS,
   } satisfies { references: string[]; protocolFacts: ConnectorProtocolFacts };
   if (!headers?.length) return empty;
-  const parsed = await simpleParser(headers, { skipHtmlToText: true, skipTextToHtml: true, skipImageLinks: true });
-  const references = Array.isArray(parsed.references)
-    ? parsed.references.map(String).filter(Boolean)
-    : typeof parsed.references === "string"
-      ? (parsed.references.match(/<[^>]+>/g) ?? parsed.references.split(/\s+/).filter(Boolean))
-      : [];
+  // Protocol facts keep raw header lines, so a raw NUL byte must go before parsing. Decoded
+  // encoded words in References can still produce one afterwards.
+  const source = headers.includes(0) ? Buffer.from(headers.filter((byte) => byte !== 0)) : headers;
+  const parsed = await simpleParser(source, { skipHtmlToText: true, skipTextToHtml: true, skipImageLinks: true });
+  const references = (
+    Array.isArray(parsed.references)
+      ? parsed.references.map(String)
+      : typeof parsed.references === "string"
+        ? (parsed.references.match(/<[^>]+>/g) ?? parsed.references.split(/\s+/))
+        : []
+  )
+    .map(withoutNul)
+    .filter(Boolean);
   const header = (name: string): unknown => rawHeaderText(parsed.headerLines, name) ?? parsed.headers.get(name);
   return {
     references,
@@ -674,11 +688,11 @@ export const mapFetchedEnvelope = async (message: FetchMessageObject, request: E
     },
     providerMessageId: message.emailId ?? null,
     providerThreadId: message.threadId ?? null,
-    messageId: envelope?.messageId?.trim() || null,
-    inReplyTo: envelope?.inReplyTo?.trim() || null,
+    messageId: (envelope?.messageId && withoutNul(envelope.messageId).trim()) || null,
+    inReplyTo: (envelope?.inReplyTo && withoutNul(envelope.inReplyTo).trim()) || null,
     references: parsedHeaders.references,
     protocolFacts: parsedHeaders.protocolFacts,
-    subject: envelope?.subject ?? "",
+    subject: withoutNul(envelope?.subject ?? ""),
     sentAt,
     internalDate: message.internalDate instanceof Date ? message.internalDate : (sentAt ?? new Date(0)),
     sizeBytes: message.size ?? 0,

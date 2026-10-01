@@ -7,6 +7,7 @@ import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
 import { withShortIdDb } from "../lib/short-id";
+import { truncateUtf8 } from "../lib/utf8";
 import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
@@ -1523,6 +1524,12 @@ export const remoteDraftNeedsImport = (params: {
   return params.fullReconciliation;
 };
 
+/** A provider Message-ID that fits `draft_provider_snapshots.stable_message_id`: trimmed, 3 to 998 characters. */
+const storableDraftMessageId = (messageId: string | null): string | null => {
+  const value = truncateUtf8(messageId?.trim() ?? "", 998).trim();
+  return [...value].length >= 3 ? value : null;
+};
+
 export const recordDraftFolderSyncInTransaction = async (params: {
   db: SqlClient;
   mailboxId: string;
@@ -1553,7 +1560,7 @@ export const recordDraftFolderSyncInTransaction = async (params: {
   for (const envelope of params.envelopes) {
     const uid = Number(envelope.remoteRef.uid);
     const messageId =
-      envelope.messageId?.trim().slice(0, 998) || `<remote-draft-${params.folderId}-${params.uidValidity}-${uid}@cloud.invalid>`;
+      storableDraftMessageId(envelope.messageId) ?? `<remote-draft-${params.folderId}-${params.uidValidity}-${uid}@cloud.invalid>`;
     const [known] = await params.db<(DbProjection & { remote_identity_match: boolean })[]>`
       SELECT
         *,
