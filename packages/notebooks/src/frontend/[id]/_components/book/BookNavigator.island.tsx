@@ -3,6 +3,14 @@ import { AppWorkspace, createNavigation, type NavigationItem, Placeholder, useLo
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
+import { notebookWorkspaceMessages } from "../../messages";
+import NavigationVisibilityControls from "../sidebar/NavigationVisibilityControls";
+import {
+  createNavigationHidden,
+  followStoredNavigationHidden,
+  NOTEBOOK_NAVIGATION_ID,
+  setNavigationHidden,
+} from "../sidebar/navigation-visibility";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata, requestBookNavigation } from "./book-state";
 import { bookMessages } from "./messages";
 
@@ -16,6 +24,8 @@ export type BookNavigatorProps = {
   activeTag?: string;
   canWrite?: boolean;
   locked?: boolean;
+  /** The notebook navigation preference: a hidden contents list renders no page titles at all. */
+  navigationHidden: boolean;
 };
 
 /** The notes that contain the selected note, outermost first; `undefined` when it is not in the tree. */
@@ -31,7 +41,11 @@ const ancestorIds = (nodes: BookTreeNode[], selected: string | null): string[] |
 export default function BookNavigator(props: BookNavigatorProps) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
+  const workspaceText = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [state, setState] = createSignal(props);
+  // Book view's contents list is the notebook navigation and follows the same hidden preference.
+  const navigationHidden = createNavigationHidden(props.navigationHidden);
+  followStoredNavigationHidden(navigationHidden);
   // A page load also unfolds the open note, so its sub-notes stay reachable before or without JavaScript.
   // After that, folding belongs to the reader: opening another note only reveals it, and its own
   // sub-notes and every later snapshot of the same note (live refreshes) leave the folds as they are.
@@ -167,11 +181,19 @@ export default function BookNavigator(props: BookNavigatorProps) {
   return (
     <>
       <WorkspaceNavigationProvider navigation={mobileNavigation} label={state().notebookName} />
-      <AppWorkspace.Sidebar resizable>
+      <AppWorkspace.Sidebar
+        id={NOTEBOOK_NAVIGATION_ID}
+        label={workspaceText().navigation}
+        resizable
+        hidden={navigationHidden()}
+        onHiddenChange={setNavigationHidden}
+      >
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>{navigation()}</AppWorkspace.SidebarBody>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
+      {/* Book view has no editor toolbar, so it always offers the visible way back. */}
+      <NavigationVisibilityControls hidden={navigationHidden()} showControl />
     </>
   );
 }

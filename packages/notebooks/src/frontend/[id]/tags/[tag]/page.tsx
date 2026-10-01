@@ -150,6 +150,7 @@ export default ssr<AuthContext>(async (c) => {
           historyIncomplete={false}
           appUrl={appUrl}
           cursor={workspaceCursor}
+          navigationHidden={ctx.navigationHidden}
         />
       </Layout>
     );

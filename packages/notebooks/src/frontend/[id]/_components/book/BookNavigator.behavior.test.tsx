@@ -55,7 +55,15 @@ describe("Book navigation tree", () => {
     const { default: BookNavigator } = await import("./BookNavigator.island");
     const { default: BookController } = await import("./BookController.island");
     const disposeNavigator = render(
-      () => createComponent(BookNavigator, { notebookId: "book01", notebookName: "Handbook", selectedNoteId, tree, tags: [] }),
+      () =>
+        createComponent(BookNavigator, {
+          notebookId: "book01",
+          notebookName: "Handbook",
+          selectedNoteId,
+          tree,
+          tags: [],
+          navigationHidden: false,
+        }),
       dom.root.querySelector("#navigator")!,
     );
     const disposeController = render(
@@ -332,6 +340,62 @@ describe("Book navigation tree", () => {
     } finally {
       documentLoad.mockRestore();
       app.cleanup();
+    }
+  });
+});
+
+describe("Book view with the notebook navigation hidden", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  test("the same toggle hides the contents list and the show control that takes the lost focus brings it back", async () => {
+    const dom = createDomTestHarness();
+    const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+    const { writeNavigationHidden } = await import("../settings/NotebookSettingsStore");
+    const { default: BookNavigator } = await import("./BookNavigator.island");
+    writeNavigationHidden(false);
+    const dispose = render(
+      () =>
+        createComponent(BookNavigator, {
+          notebookId: "book01",
+          notebookName: "Handbook",
+          selectedNoteId: "note02",
+          tree,
+          tags: [],
+          navigationHidden: false,
+        }),
+      dom.root,
+    );
+    const toggle = () => collectContextAwareCommands().find((command) => command.id === "notebooks.navigation.toggle")!;
+    const run = () => (toggle().action as () => void)();
+    const showControl = () => dom.document.querySelector<HTMLButtonElement>('.k2b-icon-button[aria-controls="notebook-navigation"]');
+    try {
+      expect(toggle().title).toBe("Hide notebook navigation");
+      expect(toggle().shortcut).toBe("mod+alt+s");
+      dom.root.querySelector<HTMLElement>('[data-k2b-nav-tree-id="note02"] a')!.focus();
+
+      run();
+      const sidebar = dom.document.getElementById("notebook-navigation")!;
+      expect(sidebar.hidden).toBe(true);
+      expect(sidebar.childElementCount).toBe(0);
+      expect(dom.root.querySelector('[role="tree"]')).toBeNull();
+      expect(toggle().title).toBe("Show notebook navigation");
+      // The focused page title disappeared; focus lands on the visible control instead of the page start.
+      expect(showControl()?.getAttribute("aria-expanded")).toBe("false");
+      expect(dom.document.activeElement).toBe(showControl());
+
+      showControl()!.click();
+      expect(sidebar.hidden).toBe(false);
+      expect(sidebar.querySelector('[role="tree"]')?.textContent).toContain("Setup");
+      expect(showControl()).toBeNull();
+      expect(dom.document.activeElement).toBe(sidebar.querySelector('a[href="/app/notebooks"]'));
+      expect(toggle().title).toBe("Hide notebook navigation");
+    } finally {
+      writeNavigationHidden(false);
+      dispose();
+      dom.cleanup();
     }
   });
 });

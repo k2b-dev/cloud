@@ -149,7 +149,7 @@ test("an empty book shows its sidebar placeholder as one line below the pages he
   expect(await select(html, '[role="tree"]')).toEqual([]);
 });
 
-test("a book page is server-rendered with the start page first and the other pages by title", async () => {
+const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   const page = (shortId: string, title: string, parentId: string | null = null) => ({
     id: `uuid-${shortId}`,
     shortId,
@@ -196,13 +196,41 @@ test("a book page is server-rendered with the start page first and the other pag
   });
   app.get("/app/notebooks/:id/notes/:noteId", ...handler);
   const response = await app.request("https://cloud.example.test/app/notebooks/book01/notes/note04?mode=book", {
-    headers: { "accept-language": "de" },
+    headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
   });
   expect(response.status).toBe(200);
-  const rows = await select(await response.text(), '[role="tree"] [data-k2b-nav-tree-id]');
+  return response.text();
+};
+
+test("a book page is server-rendered with the start page first and the other pages by title", async () => {
+  const rows = await select(await renderBookPage(), '[role="tree"] [data-k2b-nav-tree-id]');
 
   // The start page lives below "Kapitel 2" and is still the first row, listed once.
   expect(rows.map((row) => row.attributes["data-k2b-nav-tree-id"])).toEqual(["note04", "note01", "note03", "note02"]);
+});
+
+test("a book page with a hidden navigation is server-rendered without its contents list", async () => {
+  const html = await renderBookPage({ navigationHidden: true });
+  const [sidebar, ...others] = await select(html, "aside.k2b-app-workspace__sidebar");
+
+  expect(others).toEqual([]);
+  expect(sidebar?.attributes.id).toBe("notebook-navigation");
+  expect(sidebar?.attributes.hidden).toBeDefined();
+  expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
+  expect(await select(html, '[role="tree"]')).toEqual([]);
+  expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
+  // The page itself stays readable, and Book view has no editor toolbar, so it offers the show control.
+  const [article] = await select(html, "#notebook-book-content h1");
+  expect(article?.text).toBe("Überblick");
+  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
+    "Navigation einblenden",
+  ]);
+  // Phones keep the contents in the header menu.
+  expect(html).toContain("data-cloud-workspace-navigation");
+
+  const visible = await renderBookPage({ navigationHidden: false });
+  expect(await select(visible, '[role="tree"] [data-k2b-nav-tree-id]')).toHaveLength(4);
+  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]')).toEqual([]);
 });
 
 test.each(["write", "book"] as const)(

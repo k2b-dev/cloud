@@ -70,10 +70,9 @@ Tab rückt im Notizeditor ein. So verschachtelst du Listen und richtest Code aus
 Blende die Navigation aus, um mit der ganzen Breite zu schreiben oder wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen sollen.
 
 :::reference
-- **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden** oder ziehe den Rand der Navigation fast ganz nach links. Die Navigation verschwindet in beiden Layouts vollständig, auch die Notizliste des Navigators.
-- **Einblenden:** Wähle an derselben Stelle **Navigation einblenden**, drücke **Cmd/Strg+Alt+S** oder tippe in der Cloud-Suche `>` und führe **Notizbuch-Navigation einblenden** aus. Wo der Editor keine Werkzeugleiste zeigt, etwa in einem leeren Notizbuch, in Schreibgeschützt, im Graphen oder bei den Anhängen, steht die Schaltfläche unten links.
+- **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden**, drücke **Cmd/Strg+Alt+S** oder ziehe den Rand der Navigation fast ganz nach links. Die Navigation verschwindet in beiden Layouts und in der Buchansicht vollständig, auch die Notizliste des Navigators und die Seitenliste der Buchansicht.
+- **Einblenden:** Wähle an derselben Stelle **Navigation einblenden**, drücke erneut **Cmd/Strg+Alt+S** oder tippe in der Cloud-Suche `>` und führe **Notizbuch-Navigation einblenden** aus. Wo der Editor keine Werkzeugleiste zeigt, etwa in der Buchansicht, in einem leeren Notizbuch, in Schreibgeschützt, im Graphen oder bei den Anhängen, steht die Schaltfläche unten links.
 - **Bleibt ausgeblendet:** Die Einstellung wird in diesem Browser gespeichert und gilt für alle Notizbücher, auch nach dem Neuladen und in anderen offenen Tabs. Ein Notizbuch mit ausgeblendeter Navigation öffnet ohne sie, Notiztitel erscheinen also auch beim Laden nicht.
-- **Buchansicht:** Die Buchansicht behält ihr eigenes Inhaltsverzeichnis mit den Notiztiteln. Wenn andere deinen Bildschirm sehen, schreibe stattdessen im Editor.
 - **Deine Stelle in der Notiz:** Beim Aus- und Einblenden bleiben der Cursor und der Text oben im Editor, wo sie sind.
 - **Smartphones:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Die Schaltfläche erscheint auf breiteren Bildschirmen, wo die Navigation neben der Notiz steht.
 :::

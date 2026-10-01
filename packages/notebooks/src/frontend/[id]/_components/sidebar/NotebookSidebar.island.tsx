@@ -1,8 +1,7 @@
-import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, createNavigation, IconButton, type NavigationItem, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import { AppWorkspace, Button, createNavigation, type NavigationItem, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, Show } from "solid-js";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -13,6 +12,7 @@ import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import CreateNoteButton from "./CreateNoteButton";
+import NavigationVisibilityControls from "./NavigationVisibilityControls";
 import NotebookNavigator from "./NotebookNavigator";
 import NoteTree, { noteActionItems, useNoteActions } from "./NoteTree";
 import {
@@ -80,21 +80,6 @@ export default function NotebookSidebar(props: Props) {
   const vt = (key: string) => `notebook-sidebar-${notebook().id}-${key}`;
   const navigationHidden = createNavigationHidden(props.ctx.navigationHidden);
   followStoredNavigationHidden(navigationHidden);
-
-  // Every page with the navigation can show it again, also those without the editor toolbar.
-  createEffect(() => {
-    const hidden = navigationHidden();
-    onCleanup(
-      registerContextAwareCommand({
-        id: "notebooks.navigation.toggle",
-        title: hidden ? t().showNavigationCommand : t().hideNavigationCommand,
-        description: t().navigationCommandDescription,
-        icon: hidden ? "ti ti-layout-sidebar-left-expand" : "ti ti-layout-sidebar-left-collapse",
-        shortcut: "mod+alt+s",
-        action: () => setNavigationHidden(!hidden),
-      }),
-    );
-  });
 
   const explainMissingHomepage = () =>
     void prompts.alert(t().noHomepageDescription, {
@@ -387,24 +372,8 @@ export default function NotebookSidebar(props: Props) {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       {/* Views without the editor toolbar, such as an empty notebook, Read-only or
-          the attachments, still need a visible way back. Phones keep the menu. */}
-      <Show when={navigationHidden() && !props.editorToolbar}>
-        <div class="absolute bottom-3 left-3 z-10 hidden lg:flex">
-          <Tooltip.Anchor content={t().showNavigation}>
-            <IconButton
-              label={t().showNavigation}
-              tooltip={false}
-              variant="secondary"
-              size="sm"
-              aria-expanded="false"
-              aria-controls={NOTEBOOK_NAVIGATION_ID}
-              onClick={() => setNavigationHidden(false)}
-            >
-              <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true" />
-            </IconButton>
-          </Tooltip.Anchor>
-        </div>
-      </Show>
+          the attachments, still need a visible way back. */}
+      <NavigationVisibilityControls hidden={navigationHidden()} showControl={!props.editorToolbar} />
     </>
   );
 }
