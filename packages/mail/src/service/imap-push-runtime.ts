@@ -71,8 +71,8 @@ type PermitLease = {
 };
 
 /**
- * One lease extension: the store confirmed it, answered that the lease is no
- * longer this owner's (`rejected`), or did not answer (`failed`).
+ * One lease extension: the store confirmed it, refused it (`rejected`, for
+ * example because another owner holds the lease), or did not answer (`failed`).
  */
 export type LeaseExtension = { lease: string; outcome: "extended" | "rejected" } | { lease: string; outcome: "failed"; error: unknown };
 
@@ -85,7 +85,7 @@ type PermitPool = {
 type ImapPushLeaseLoss = {
   /** `leader` or the permit scope, for example `permit:mailbox`. */
   lease: string;
-  /** `rejected`: the store answered that the lease is gone; `expired`: no extension was confirmed in time. */
+  /** `rejected`: the store refused the extension; `expired`: no extension was confirmed in time. */
   reason: "rejected" | "expired";
   sinceLastExtensionMs: number;
 };
@@ -136,17 +136,25 @@ const extendLock = async (mutex: Mutex, lease: string, lock: Lock, ttlMs: number
   }
 };
 
-const answerWithin = async <T>(ms: number, operation: Promise<T>): Promise<T | null> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Settles with the operation's result, or with `null` once `ms` pass or `stop`
+ * aborts. The operation's signal aborts when it is abandoned this way.
+ */
+const answerWithin = async <T>(ms: number, stop: AbortSignal, operation: (abandoned: AbortSignal) => Promise<T>): Promise<T | null> => {
+  const abandon = new AbortController();
+  const timer = setTimeout(() => abandon.abort(), ms);
+  const onStop = (): void => abandon.abort();
+  stop.addEventListener("abort", onStop, { once: true });
   try {
     return await Promise.race([
-      operation,
+      operation(abandon.signal),
       new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), ms);
+        abandon.signal.addEventListener("abort", () => resolve(null), { once: true });
       }),
     ]);
   } finally {
     clearTimeout(timer);
+    stop.removeEventListener("abort", onStop);
   }
 };
 
@@ -659,7 +667,8 @@ export const runImapPushBinding = async (
 ): Promise<void> => {
   // Start of the last renewal that every lease confirmed. The store set each
   // expiry after this moment, so it is a conservative base for the deadline.
-  let leasesExtendedAt = Date.now();
+  // A monotonic clock keeps a wall-clock step from moving the deadline.
+  let leasesExtendedAt = performance.now();
   const leader = await dependencies.leaderMutex.acquire({ resource: initialPlan.bindingId, ttlMs: LEADER_LEASE_MS });
   if (!leader) return;
   let activeListener: ConnectorChangeListener | null = null;
@@ -669,11 +678,17 @@ export const runImapPushBinding = async (
   let generation: number | null = null;
   let failed = false;
   let activeCloseTask: Promise<void> | null = null;
+  // Acquiring, extending, and releasing the permit run one at a time: an
+  // extension that overlaps a release can make the release fail, and a renewal
+  // that overlaps an acquisition would not cover the new permit.
   let permitOperation = Promise.resolve();
-  const withPermitOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const withPermitOperation = async <T>(operation: () => Promise<T>, abandoned?: AbortSignal): Promise<T> => {
     const previous = permitOperation;
     const next = Promise.withResolvers<void>();
     permitOperation = next.promise;
+    // An abandoned extension no longer holds back the release. At worst its
+    // late write makes that release fail, and the permit runs out with its TTL.
+    abandoned?.addEventListener("abort", () => next.resolve(), { once: true });
     await previous;
     try {
       return await operation();
@@ -681,11 +696,16 @@ export const runImapPushBinding = async (
       next.resolve();
     }
   };
-  const extendActivePermit = (): Promise<LeaseExtension[]> =>
+  const acquireActivePermit = (plan: ImapPushBindingPlan): Promise<PermitLease | null> =>
+    withPermitOperation(async () => {
+      activePermit = await dependencies.permits.acquire(plan);
+      return activePermit;
+    });
+  const extendActivePermit = (abandoned: AbortSignal): Promise<LeaseExtension[]> =>
     withPermitOperation(async () => {
       const permit = activePermit;
-      return permit ? dependencies.permits.extend(permit) : [];
-    });
+      return permit && !abandoned.aborted ? dependencies.permits.extend(permit) : [];
+    }, abandoned);
   const releaseActivePermit = (): Promise<void> =>
     withPermitOperation(async () => {
       const permit = activePermit;
@@ -723,22 +743,32 @@ export const runImapPushBinding = async (
         healthWrite = null;
       });
   };
+  // A state change waits for the heartbeat write in flight, which still
+  // carries the previous state and must not land after the change.
+  const writeHealth = async (patch: ImapPushHealthPatch): Promise<void> => {
+    await healthWrite;
+    await dependencies.updateHealth(initialPlan.bindingId, generation!, patch);
+  };
   const loseLeases = async (lease: string, reason: ImapPushLeaseLoss["reason"], cause?: unknown): Promise<never> => {
     await closeActiveListener();
-    throw new ImapPushLeaseLostError({ lease, reason, sinceLastExtensionMs: Date.now() - leasesExtendedAt }, cause);
+    const sinceLastExtensionMs = Math.round(performance.now() - leasesExtendedAt);
+    throw new ImapPushLeaseLostError({ lease, reason, sinceLastExtensionMs }, cause);
   };
   let pendingLease = "leader";
-  const extendLeases = async (): Promise<LeaseExtension[]> => {
+  const extendLeases = async (abandoned: AbortSignal): Promise<LeaseExtension[]> => {
     pendingLease = "leader";
     const leaderExtension = await extendLock(dependencies.leaderMutex, "leader", leader, LEADER_LEASE_MS);
+    if (abandoned.aborted) return [leaderExtension];
     pendingLease = "permit";
-    return [leaderExtension, ...(await extendActivePermit())];
+    return [leaderExtension, ...(await extendActivePermit(abandoned))];
   };
   /**
    * Extends every lease. A rejection from the store stops the listener at once.
    * A renewal the store did not answer, such as a NATS timeout during a short
    * stall, is retried with backoff until shortly before the last confirmed
    * extension runs out; the listener never runs past that point unconfirmed.
+   * Shutdown and settled work stop waiting at once, because the leases are
+   * released next.
    */
   const renewLeases = async (workSettled: AbortSignal): Promise<void> => {
     const deadline = leasesExtendedAt + Math.min(LEADER_LEASE_MS, CONNECTION_LEASE_MS) - LEASE_RENEWAL_MARGIN_MS;
@@ -747,10 +777,14 @@ export const runImapPushBinding = async (
     let failedLease: string | null = null;
     let lastError: unknown;
     for (let attempt = 0; ; attempt += 1) {
-      const startedAt = Date.now();
+      // Shutdown stops the work instead; settled work releases its leases next.
+      if (signal.aborted) throw signal.reason;
+      if (workSettled.aborted) return;
+      const startedAt = performance.now();
       if (startedAt >= deadline) return loseLeases(failedLease ?? "leader", "expired", lastError);
-      const extensions = await answerWithin(deadline - startedAt, extendLeases());
+      const extensions = await answerWithin(deadline - startedAt, stopRetrying, extendLeases);
       if (!extensions) {
+        if (stopRetrying.aborted) continue;
         return loseLeases(pendingLease, "expired", new Error("The lease store did not answer before the lease ran out"));
       }
       // An extension the store did not answer may still land; a rejection right
@@ -765,7 +799,7 @@ export const runImapPushBinding = async (
             bindingId: initialPlan.bindingId,
             lease: failedLease,
             attempts: attempt + 1,
-            sinceLastExtensionMs: startedAt - leasesExtendedAt,
+            sinceLastExtensionMs: Math.round(startedAt - leasesExtendedAt),
             error: errorDetail(lastError),
           });
         }
@@ -777,14 +811,9 @@ export const runImapPushBinding = async (
       const first = failed.find((extension) => extension.outcome === "failed") ?? failed[0]!;
       failedLease = first.lease;
       if (first.outcome === "failed") lastError = first.error;
-      const delay = Math.min(MAX_RENEWAL_RETRY_DELAY_MS, 500 * 2 ** attempt, Math.max(0, deadline - Date.now()));
-      try {
-        await sleep(delay, stopRetrying);
-      } catch (error) {
-        // Settled work releases its leases next; shutdown stops the work instead.
-        if (signal.aborted) throw error;
-        return;
-      }
+      const delay = Math.min(MAX_RENEWAL_RETRY_DELAY_MS, 500 * 2 ** attempt, Math.max(0, deadline - performance.now()));
+      // An aborted wait ends at the stop checks above.
+      await sleep(delay, stopRetrying).catch(() => undefined);
     }
   };
   signal.addEventListener("abort", abortActiveListener);
@@ -802,7 +831,7 @@ export const runImapPushBinding = async (
 
           if (!plan.capabilities.idle || !dependencies.listen) {
             activeHealthState = "polling";
-            await dependencies.updateHealth(plan.bindingId, generation!, {
+            await writeHealth({
               state: "polling",
               mode: "poll",
               reconnectAttempt,
@@ -822,11 +851,10 @@ export const runImapPushBinding = async (
             continue;
           }
 
-          activePermit = await dependencies.permits.acquire(plan);
-          if (!activePermit) {
+          if (!(await acquireActivePermit(plan))) {
             reconnectAttempt += 1;
             activeHealthState = "reconnecting";
-            await dependencies.updateHealth(plan.bindingId, generation!, {
+            await writeHealth({
               state: "reconnecting",
               mode: "none",
               reconnectAttempt,
@@ -855,7 +883,7 @@ export const runImapPushBinding = async (
             if (activeListener.mode === "poll") {
               await closeActiveListener();
               activeHealthState = "polling";
-              await dependencies.updateHealth(plan.bindingId, generation!, {
+              await writeHealth({
                 state: "polling",
                 mode: "poll",
                 reconnectAttempt,
@@ -877,7 +905,7 @@ export const runImapPushBinding = async (
             }
             connectedAt = Date.now();
             activeHealthState = "listening";
-            await dependencies.updateHealth(plan.bindingId, generation!, {
+            await writeHealth({
               state: "listening",
               mode: activeListener.mode,
               reconnectAttempt,
@@ -908,7 +936,7 @@ export const runImapPushBinding = async (
             if (signal.aborted) return;
             reconnectAttempt = connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS ? 1 : reconnectAttempt + 1;
             activeHealthState = "reconnecting";
-            await dependencies.updateHealth(plan.bindingId, generation!, {
+            await writeHealth({
               state: "reconnecting",
               mode: activeMode,
               reconnectAttempt,

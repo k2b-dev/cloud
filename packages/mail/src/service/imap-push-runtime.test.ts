@@ -55,11 +55,11 @@ class FakeMutex implements Mutex {
   }
 }
 
-/** A lease store whose extensions can time out or be rejected on cue. */
+/** A lease store whose extensions can time out, never answer, or be rejected on cue. */
 class ScriptedMutex extends FakeMutex {
   /** Outcomes for the next extensions; `failing` applies once the script is used up. */
   script: ("timeout" | "rejected")[] = [];
-  failing: "timeout" | null = null;
+  failing: "timeout" | "hang" | null = null;
   extendCalls = 0;
   lastExtendedAt = Date.now();
 
@@ -67,6 +67,7 @@ class ScriptedMutex extends FakeMutex {
     this.extendCalls += 1;
     const step = this.script.shift() ?? this.failing;
     if (step === "timeout") throw new Error("timeout");
+    if (step === "hang") return new Promise<boolean>(() => undefined);
     if (step === "rejected") return false;
     const extended = await super.extend(lock, options);
     if (extended) this.lastExtendedAt = Date.now();
@@ -90,6 +91,7 @@ const advance = async (ms: number): Promise<void> => {
 const startIdleListener = (options: {
   leader: Mutex;
   permitTransport?: Mutex;
+  permits?: Parameters<typeof runImapPushBinding>[1]["permits"];
   updateHealth?: (patch: { state: string; error?: unknown }) => Promise<void>;
 }) => {
   const controller = new AbortController();
@@ -133,7 +135,9 @@ const startIdleListener = (options: {
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
       leaderMutex: options.leader,
-      permits: new FixedImapConnectionPermitPool(options.permitTransport ?? new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
+      permits:
+        options.permits ??
+        new FixedImapConnectionPermitPool(options.permitTransport ?? new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
         if (signal.aborted) throw signal.reason;
       },
@@ -796,6 +800,110 @@ describe("IMAP push lease renewal", () => {
       expect(listener.events.closedAt).toEqual([]);
 
       stuck.resolve();
+      listener.controller.abort(new Error("test shutdown"));
+      expect(await listener.task).toEqual({ error: null });
+    }));
+
+  test("stops waiting for an unanswered renewal on shutdown", () =>
+    withFakeTimers(async () => {
+      const leader = new ScriptedMutex();
+      const listener = startIdleListener({ leader });
+      await listener.listening;
+      leader.failing = "hang";
+
+      await advance(21_000);
+      expect(listener.events.closedAt).toEqual([]);
+      listener.controller.abort(new Error("test shutdown"));
+      await settle();
+      expect(await Promise.race([listener.task, settle().then(() => "still running")])).toEqual({ error: null });
+      expect(await leader.acquire({ resource: plan.bindingId })).not.toBeNull();
+    }));
+
+  test("releases its leases when a permit renewal never answers", () =>
+    withFakeTimers(async () => {
+      const leader = new ScriptedMutex();
+      const permitTransport = new ScriptedMutex();
+      const listener = startIdleListener({ leader, permitTransport });
+      await listener.listening;
+      permitTransport.failing = "hang";
+
+      await advance(60_000);
+      const result = await Promise.race([listener.task, settle().then(() => null)]);
+      expect(result?.error).toBeInstanceOf(ImapPushLeaseLostError);
+      expect((result?.error as ImapPushLeaseLostError).loss).toMatchObject({ lease: "permit", reason: "expired" });
+      expect(await permitTransport.acquire({ resource: `mailbox:${plan.mailboxId}:0` })).not.toBeNull();
+      expect(await leader.acquire({ resource: plan.bindingId })).not.toBeNull();
+    }));
+
+  test("extends a permit that was being acquired when the renewal started", () =>
+    withFakeTimers(async () => {
+      const leader = new ScriptedMutex();
+      const acquiring = Promise.withResolvers<void>();
+      const acquired = Promise.withResolvers<void>();
+      // The leader extensions counted when each permit extension ran.
+      const permitExtensions: number[] = [];
+      const listener = startIdleListener({
+        leader,
+        permits: {
+          acquire: async () => {
+            acquiring.resolve();
+            await acquired.promise;
+            return { locks: [] };
+          },
+          extend: async () => {
+            permitExtensions.push(leader.extendCalls);
+            return [];
+          },
+          release: async () => undefined,
+        },
+      });
+      await acquiring.promise;
+      const callsBefore = leader.extendCalls;
+
+      await advance(20_000);
+      expect(leader.extendCalls).toBe(callsBefore + 1);
+      expect(permitExtensions).toEqual([]);
+      acquired.resolve();
+      await settle();
+      // The renewal that was running covers the new permit, not only the next one.
+      expect(permitExtensions[0]).toBe(callsBefore + 1);
+
+      await listener.listening;
+      listener.controller.abort(new Error("test shutdown"));
+      expect(await listener.task).toEqual({ error: null });
+    }));
+
+  test("keeps the renewal deadline when the wall clock steps back", () =>
+    withFakeTimers(async () => {
+      const leader = new ScriptedMutex();
+      const listener = startIdleListener({ leader });
+      await listener.listening;
+      leader.failing = "timeout";
+
+      await advance(20_000);
+      jest.setSystemTime(Date.now() - 15_000);
+      await advance(40_000);
+      const result = await Promise.race([listener.task, settle().then(() => null)]);
+      expect((result?.error as ImapPushLeaseLostError).loss).toMatchObject({ lease: "leader", reason: "expired" });
+    }));
+
+  test("does not let an older heartbeat write overwrite a newer listener state", () =>
+    withFakeTimers(async () => {
+      const startingWrite = Promise.withResolvers<void>();
+      const committed: string[] = [];
+      const listener = startIdleListener({
+        leader: new FakeMutex(),
+        updateHealth: async (patch) => {
+          if (patch.state === "starting") await startingWrite.promise;
+          committed.push(patch.state);
+        },
+      });
+      await advance(1_000);
+      expect(committed).toEqual([]);
+
+      startingWrite.resolve();
+      await listener.listening;
+      expect(committed.lastIndexOf("starting")).toBeLessThan(committed.indexOf("listening"));
       listener.controller.abort(new Error("test shutdown"));
       expect(await listener.task).toEqual({ error: null });
     }));
