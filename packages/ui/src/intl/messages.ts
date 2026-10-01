@@ -218,6 +218,7 @@ const uiMessages = i18n.define({
       filterActions: "Filter actions",
       info: "Info",
       dismissNotification: "Dismiss notification",
+      notifications: "Notifications",
       interactiveLineChart: "Interactive line chart",
       interactiveChart:
         "Interactive chart. Use arrow keys to inspect, Enter to select, Escape to dismiss. On maps and timelines use Alt with arrow keys to inspect.",
@@ -599,6 +600,7 @@ const uiMessages = i18n.define({
       filterActions: "Filteraktionen",
       info: "Information",
       dismissNotification: "Benachrichtigung schließen",
+      notifications: "Benachrichtigungen",
       interactiveLineChart: "Interaktives Liniendiagramm",
       interactiveChart:
         "Interaktives Diagramm. Pfeiltasten zum Erkunden, Enter zum Auswählen, Escape zum Schließen. In Karten und Zeitleisten Alt mit Pfeiltasten zum Erkunden.",

@@ -12,7 +12,7 @@ import {
   Tooltip,
   toast,
 } from "@k2b/ui";
-import { createSignal, For } from "solid-js";
+import { createSignal, For, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -105,63 +105,98 @@ const BadgesDemo = () => (
 
 const ToastDemo = () => {
   let progressToast: ReturnType<typeof toast> | undefined;
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
+  onCleanup(() => clearInterval(progressTimer));
+
+  const startProgress = () => {
+    clearInterval(progressTimer);
+    progressToast?.dismiss();
+    let done = 0;
+    progressToast = toast("0 of 12 files", {
+      title: "Exporting archive",
+      progress: 0,
+      action: { label: "Cancel", onClick: () => stopProgress("Export cancelled") },
+    });
+    progressTimer = setInterval(() => {
+      done += 1;
+      if (done < 12) {
+        progressToast?.update(`${done} of 12 files`, { progress: done / 12 });
+        return;
+      }
+      clearInterval(progressTimer);
+      progressToast?.update("Archive ready", {
+        variant: "success",
+        title: undefined,
+        progress: null,
+        action: { label: "View prompts", href: "./prompts" },
+      });
+    }, 400);
+  };
+
+  const stopProgress = (message: string) => {
+    clearInterval(progressTimer);
+    progressToast?.update(message, { title: undefined, progress: null, action: null });
+  };
 
   return (
     <DemoCard
       id="toast"
       chip={{ kind: "component", name: "toast", from: "@k2b/ui" }}
-      description="Transient success and error feedback with navigation actions, in-place updates, and explicit dismissal."
-      code={`const exportToast = toast("Preparing archive", {
-  title: "Export",
+      description="One calm line per toast: tone glyph, message, an optional text action, and close. Titles only when passed, longer times for errors and actions, and progress in place."
+      code={`toast.success("Contact created");
+toast.success("Message archived", {
+  action: { label: "Undo", onClick: restore },
+});
+toast.error("Could not save the draft. The server is not reachable.");
+toast("Reload the page to use it.", {
+  title: "New version available",
+  action: { label: "Reload", onClick: () => location.reload() },
   duration: 0,
 });
 
+const exportToast = toast("0 of 12 files", {
+  title: "Exporting archive",
+  progress: 0,
+  action: { label: "Cancel", onClick: cancel },
+});
+exportToast.update("6 of 12 files", { progress: 0.5 });
 exportToast.update("Archive ready", {
   variant: "success",
+  title: undefined,
+  progress: null,
   action: { label: "View prompts", href: "./prompts" },
-  duration: 5_000,
-});
-exportToast.dismiss();
-
-toast.error("Could not save");`}
+});`}
     >
       <div class="ui-demo-row">
-        <Button
-          variant="secondary"
-          onClick={() =>
-            toast.success("Project saved", {
-              action: { label: "View prompts", href: "./prompts" },
-            })
-          }
-        >
-          Success + link
-        </Button>
-        <Button variant="secondary" onClick={() => toast.error("Could not save the project")}>
-          Error toast
+        <Button variant="secondary" onClick={() => toast.success("Contact created")}>
+          Success
         </Button>
         <Button
           variant="secondary"
-          onClick={() => {
-            progressToast?.dismiss();
-            progressToast = toast("Preparing archive", { title: "Export", duration: 0 });
-          }}
+          onClick={() => toast.success("Message archived", { action: { label: "Undo", onClick: () => toast("Message restored") } })}
         >
-          Start sticky toast
+          With action
+        </Button>
+        <Button variant="secondary" onClick={() => toast.error("Could not save the draft. The server is not reachable.")}>
+          Error
         </Button>
         <Button
           variant="secondary"
           onClick={() =>
-            progressToast?.update("Archive ready", {
-              variant: "success",
-              action: { label: "View prompts", href: "./prompts" },
-              duration: 5_000,
+            toast("Reload the page to use it.", {
+              title: "New version available",
+              action: { label: "Reload", onClick: () => window.location.reload() },
+              duration: 0,
             })
           }
         >
-          Update it
+          Title, sticky
         </Button>
-        <Button variant="secondary" onClick={() => progressToast?.dismiss()}>
-          Dismiss it
+        <Button variant="secondary" onClick={startProgress}>
+          Progress
+        </Button>
+        <Button variant="secondary" onClick={() => toast.dismissAll()}>
+          Dismiss all
         </Button>
       </div>
     </DemoCard>

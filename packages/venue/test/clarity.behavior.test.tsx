@@ -251,7 +251,7 @@ describe("Venue clarity behavior", () => {
       }
       return Response.json({ ...dashboard, slots: [lunch] });
     }) as typeof fetch;
-    const toasts = () => [...dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] > [data-tone]")];
+    const toasts = () => [...dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-container] [data-k2b-toast]")];
 
     const { SignupDialog } = await import("../src/frontend/_components/venue-workspace/signup");
     const closes: boolean[] = [];

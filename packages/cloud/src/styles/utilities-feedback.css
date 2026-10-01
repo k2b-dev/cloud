@@ -224,11 +224,21 @@
   }
 }
 
-#ui-toast-container > div {
-  border: 1px solid var(--ui-border-strong);
-  border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface-raised);
-  box-shadow: var(--ui-shadow-float) !important;
+/* Operator banners: a NoticeCard with its close button in the top corner. */
+.k2b-ui .cloud-announcement {
+  position: relative;
+}
+.k2b-ui .cloud-announcement .k2b-notice-card__content {
+  padding-right: 1.75rem;
+}
+.k2b-ui .cloud-announcement .k2b-content-markdown {
+  font-size: inherit;
+  line-height: inherit;
+}
+.k2b-ui .cloud-announcement > .k2b-icon-button {
+  position: absolute;
+  top: 0.4375rem;
+  right: 0.4375rem;
 }
 
 /* Approval prose follows the surrounding review fields, not document typography. */

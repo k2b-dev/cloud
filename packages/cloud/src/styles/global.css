@@ -294,6 +294,11 @@ solid-island {
     border-radius: 0; border: 0; border-bottom: 1px solid var(--ui-border);
     box-shadow: none !important;
   }
+  /* Toasts at the top edge of a phone start below the header instead of
+     covering its menu and search buttons. */
+  :root:has(.cloud-app-canvas .layout-header) {
+    --k2b-toast-offset-top: 2.875rem;
+  }
 
 }
 

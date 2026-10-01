@@ -539,43 +539,80 @@ describe("@k2b/ui touch hit areas on a phone", () => {
   });
 
   test("give a toast's action and close button 44 px hit areas that keep each other's and the next toast's edges", async () => {
-    // "Neu laden" after a notebook session expiry, a short "OK", and a toast with a progress bar, where only the close button dismisses.
-    const toasts = `
-      toast("Live updates need a new sign-in.", { title: "Session expired", duration: 0, action: { label: "Reload", onClick: () => {} } });
-      toast("Saved.", { duration: 0, action: { label: "OK", href: "#ok" } });
-      toast("500 / 1000 records saved", { title: "Import", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });
-    `;
-    expect(await takenPixels("", "22rem", toasts)).toEqual({});
+    // A phone shows two toasts at once. "Neu laden" after a notebook session expiry, a one-line "OK" right before the
+    // close button, and a toast with a progress bar, where only the close button dismisses.
+    const reload = `toast("Live updates need a new sign-in.", { title: "Session expired", duration: 0, action: { label: "Reload", onClick: () => {} } });`;
+    const ok = `toast("Saved.", { duration: 0, action: { label: "OK", href: "#ok" } });`;
+    const progress = `toast("500 / 1000 records saved", { title: "Import", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });`;
+    const close = ["Dismiss notification", true, true, true, true];
+    for (const [toasts, labels] of [
+      [`${reload}\n${ok}`, ["Reload", "OK"]],
+      [`${ok}\n${progress}`, ["OK", "Cancel"]],
+    ] as const) {
+      expect(await takenPixels("", "22rem", toasts)).toEqual({});
 
+      const page = await browser.newPage(phone);
+      try {
+        await page.setContent(phonePage("<main></main>"));
+        await runToasts(page, toasts);
+        const reach = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action, .k2b-toast__close")).map((control) => {
+            const box = control.getBoundingClientRect();
+            const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("a, button") === control;
+            const midX = box.left + box.width / 2;
+            const midY = box.top + box.height / 2;
+            // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
+            return [
+              control.getAttribute("aria-label") ?? control.textContent,
+              reaches(midX - 21, midY),
+              reaches(midX + 21, midY),
+              reaches(midX, midY - 21),
+              reaches(midX, midY + 21),
+            ];
+          }),
+        );
+        expect(reach).toEqual(labels.flatMap((label) => [[label, true, true, true, true], close]));
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
+  test("keep the rail open below the last toast for its shadow, and order a titled progress toast like the upload panel", async () => {
     const page = await browser.newPage(phone);
     try {
       await page.setContent(phonePage("<main></main>"));
-      await runToasts(page, toasts);
-      const reach = await page.evaluate(() =>
-        Array.from(document.querySelectorAll<HTMLElement>(".k2b-toast__action, .k2b-toast__close")).map((control) => {
-          const box = control.getBoundingClientRect();
-          const reaches = (x: number, y: number) => document.elementFromPoint(x, y)?.closest("a, button") === control;
-          const midX = box.left + box.width / 2;
-          const midY = box.top + box.height / 2;
-          // 21 px from the centre in every direction: at least 42 px, which only the 2.75rem hit area reaches.
-          return [
-            control.getAttribute("aria-label") ?? control.textContent,
-            reaches(midX - 21, midY),
-            reaches(midX + 21, midY),
-            reaches(midX, midY - 21),
-            reaches(midX, midY + 21),
-          ];
-        }),
+      await runToasts(
+        page,
+        `toast("6 of 12 files", { title: "Exporting archive", progress: 0.5, action: { label: "Cancel", onClick: () => {} } });`,
       );
-      const close = ["Dismiss notification", true, true, true, true];
-      expect(reach).toEqual([
-        ["Reload", true, true, true, true],
-        close,
-        ["OK", true, true, true, true],
-        close,
-        ["Cancel", true, true, true, true],
-        close,
-      ]);
+      const layout = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        const [rail, card, title, bar, summary, action, close] = [
+          "[data-k2b-toast-container]",
+          ".k2b-toast",
+          ".k2b-toast__title",
+          ".k2b-toast__progress",
+          ".k2b-toast__description",
+          ".k2b-toast__action",
+          ".k2b-toast__close",
+        ].map(box);
+        return {
+          // The rail scrolls and so clips; the toast shadow reaches 24 px below the card in the dark theme.
+          shadowRoom: rail!.bottom - card!.bottom >= 24,
+          order: title!.bottom <= bar!.top && bar!.bottom <= summary!.top,
+          actionOnSummaryLine: action!.top >= bar!.bottom && action!.right === close!.right,
+          barUnderCloseColumn: bar!.right > close!.left,
+          tabular: getComputedStyle(document.querySelector(".k2b-toast__description")!).fontVariantNumeric,
+        };
+      });
+      expect(layout).toEqual({
+        shadowRoom: true,
+        order: true,
+        actionOnSummaryLine: true,
+        barUnderCloseColumn: true,
+        tabular: "tabular-nums",
+      });
     } finally {
       await page.close();
     }
