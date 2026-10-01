@@ -50,7 +50,7 @@ const AppOverviewPanelHeader = (props: Pick<AppOverviewPanelProps, "title" | "de
     <div>
       <h2>{props.title}</h2>
       <Show when={props.description}>
-        <p>{props.description}</p>
+        <p class="k2b-app-overview__panel-description">{props.description}</p>
       </Show>
     </div>
     <Show when={props.toolbar}>

@@ -229,7 +229,7 @@ const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => {
         <div>
           <h3 id={id}>{props.title}</h3>
           <Show when={props.subtitle}>
-            <p>{props.subtitle}</p>
+            <p class="k2b-panel-dialog__section-subtitle">{props.subtitle}</p>
           </Show>
         </div>
         <Show when={props.actions}>

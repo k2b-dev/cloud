@@ -32,7 +32,7 @@ sidebar-first overview.
 Put the page's single primary action, such as a create button or a create
 menu, in `actions`. It sits at the trailing edge of the page header.
 
-Use `AppOverview.Main` for the collection. Its `toolbar` slot suits a search field or one compact filter.
+Use `AppOverview.Main` for the collection. Its `toolbar` slot suits a search field or one compact filter. A field there keeps its own description and error styles.
 
 Use `AppOverview.Cards` when the collection is a small set of objects. It lays
 out as many columns of at least 19rem as fit and collapses to one column on

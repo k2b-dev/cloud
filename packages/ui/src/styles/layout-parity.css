@@ -131,7 +131,7 @@
 }
 
 .k2b-ui .k2b-app-overview__panel-header h2,
-.k2b-ui .k2b-app-overview__panel-header p {
+.k2b-ui .k2b-app-overview__panel-description {
   margin: 0;
 }
 
@@ -140,7 +140,9 @@
   font-weight: 650;
 }
 
-.k2b-ui .k2b-app-overview__panel-header p {
+/* A class, not `p`: the toolbar beside it holds fields with their own
+   description and error styles. */
+.k2b-ui .k2b-app-overview__panel-description {
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
 }
