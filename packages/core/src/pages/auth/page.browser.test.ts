@@ -292,7 +292,8 @@ describe("sign-in page in a browser", () => {
           // Fields span the viewport minus the page padding of 16 px on each side.
           for (const field of page.fields) expect([field.left, field.right], context).toEqual([16, view.width - 16]);
           // At 320 px the German footer takes two rows, which keep their hit areas apart, so the German
-          // password form, the tallest one, scrolls by about 16 px.
+          // password form, the tallest one, scrolls by about 16 px: 44 px targets win over the first-screen fit
+          // on a screen this narrow.
           if (view.width === 320 && locale === "de" && form === "password") continue;
           expect(page.contentHeight, context).toBeLessThanOrEqual(view.height);
           expect(page.scrollHeight, context).toBe(view.height);
@@ -378,7 +379,9 @@ describe("sign-in page in a browser", () => {
           locale === "en" ? ["EN", "Language: English"] : ["DE", "Sprache: Deutsch"],
         );
         // The links and the switch share one row on every phone from 360 px, also in German; at 320 px the German
-        // switch takes a second row.
+        // switch takes a second row. At 360 px the German row needs 327 of its 328 px: a legal label or @k2b/ui's
+        // sm button padding, icon or gap that grows by more than 1 px wraps it there too, still without overlap,
+        // but the German password form then scrolls by about 16 px on a 664 px screen.
         const rows = locale === "de" && width === 320 ? 2 : 1;
         expect(page.footer.height > page.languageSwitch.height ? 2 : 1, context).toBe(rows);
         // Every footer target is finger-sized, also where the footer wraps: no target covers another.
