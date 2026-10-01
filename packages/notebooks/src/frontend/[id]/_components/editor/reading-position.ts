@@ -14,10 +14,6 @@ const lineBox = (view: EditorView, from: number) => {
  * selection and focus are untouched.
  */
 export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): (() => void) => {
-  // A focused editor keeps the line at the top edge in place itself once it
-  // measures; without this it would only notice the new width a frame late.
-  if (view.hasFocus) return () => view.requestMeasure();
-
   // The editor learns about scrolling from scroll events, which arrive with
   // the next frame and are ignored until it knows it is visible. Until it
   // measures, the port's top edge may show only a placeholder gap to it, with
@@ -29,9 +25,15 @@ export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): ((
   const from = view.state.doc.lineAt(pos).from;
   const before = lineBox(view, from);
   // Nothing above the port's top edge can move while the note starts below it.
-  if (!before || before.top >= portTop) return () => {};
-  const within = (portTop - before.top) / before.height;
+  const within = before && before.top < portTop ? (portTop - before.top) / before.height : null;
   return () => {
+    // The editor takes in the new width now instead of a frame late. A
+    // focused one, also one that just got focus from the navigation, scrolls
+    // by itself while it measures, to keep the top of the line at the edge in
+    // place; correcting before that would count the rewrap twice. The layout
+    // read below runs this measure, and the correction only adds the rest.
+    view.requestMeasure();
+    if (within === null) return;
     const after = lineBox(view, from);
     if (!after) return;
     const delta = after.top + within * after.height - scroller.getBoundingClientRect().top;
