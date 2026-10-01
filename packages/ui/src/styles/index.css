@@ -7887,6 +7887,19 @@
   box-shadow: none;
 }
 
+/* Forced colours drop box-shadow. The horizontal list opts out to keep its
+   baseline in CanvasText; its tabs stay in forced colours. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-tabs[data-orientation="horizontal"] .k2b-tabs__list {
+    --k2b-border: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .k2b-ui .k2b-tabs__list > * {
+    forced-color-adjust: auto;
+  }
+}
+
 .k2b-ui .k2b-tabs__list button {
   display: inline-flex;
   min-height: 2rem;

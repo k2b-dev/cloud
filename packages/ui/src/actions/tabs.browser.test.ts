@@ -44,16 +44,16 @@ const lists = () =>
       ),
     ),
   );
+const html = () =>
+  `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+  `<body class="k2b-ui" style="margin:0"><main style="display:grid;gap:1rem;padding:1.5rem">${lists()}</main></body></html>`;
 
 describe("@k2b/ui tab list scrolling", () => {
   for (const options of Object.values(viewports)) {
     test(`at ${options.viewport.width} px the list scrolls only sideways and keeps the selected underline whole`, async () => {
       const page = await browser.newPage(options);
       try {
-        await page.setContent(
-          `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-            `<body class="k2b-ui" style="margin:0"><main style="display:grid;gap:1rem;padding:1.5rem">${lists()}</main></body></html>`,
-        );
+        await page.setContent(html());
         const measured = await page.evaluate(() =>
           Array.from(document.querySelectorAll<HTMLElement>(".k2b-tabs__list")).map((list) => {
             const style = getComputedStyle(list);
@@ -87,4 +87,34 @@ describe("@k2b/ui tab list scrolling", () => {
       }
     });
   }
+
+  test("in forced colours the line baseline stays drawn in CanvasText and the tabs stay forced", async () => {
+    const page = await browser.newPage(viewports.desktop);
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      await page.setContent(html());
+      const measured = await page.evaluate(() => {
+        const probe = document.body.appendChild(document.createElement("i"));
+        probe.style.color = "CanvasText";
+        const canvasText = getComputedStyle(probe).color;
+        const named = (value: string) => value.replaceAll(canvasText, "CanvasText");
+        return Array.from(document.querySelectorAll<HTMLElement>(".k2b-tabs__list")).map((list) => ({
+          list: list.getAttribute("aria-label"),
+          baseline: named(getComputedStyle(list).boxShadow),
+          selectedUnderline: named(getComputedStyle(list.querySelector('[aria-selected="true"]')!).borderBottomColor),
+        }));
+      });
+      expect(measured).toEqual(
+        ["line", "pill"].flatMap((variant) =>
+          [3, 24].map((count) => ({
+            list: `${variant} with ${count} tabs`,
+            baseline: variant === "line" ? "CanvasText 0px -1px 0px 0px inset" : "none",
+            selectedUnderline: "CanvasText",
+          })),
+        ),
+      );
+    } finally {
+      await page.close();
+    }
+  });
 });

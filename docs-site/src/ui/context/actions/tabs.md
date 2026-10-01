@@ -74,7 +74,8 @@ The tab list scrolls horizontally and never vertically; the selected
 underline and focus ring stay whole inside it. Where the platform shows
 scrollbars, the horizontal one is thin. Subtle overflow fades appear only at edges
 with hidden content and disappear when the list fits. Vertical tabs are not
-masked; forced-color mode leaves every orientation unmasked. The active tab
+masked; forced-color mode leaves every orientation unmasked and draws the
+line baseline in the system text color. The active tab
 remains visible. Use
 `trailing` for a fixed action outside the scrollport, such as an IconButton or
 Dropdown trigger. The application owns that action and its menu entries.
