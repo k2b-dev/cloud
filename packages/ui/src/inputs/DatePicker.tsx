@@ -1,6 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import {
@@ -108,12 +109,15 @@ function PickerShell<T>(props: {
   const error = () => resolveMaybeAccessor(props.owner.error);
   let trigger: HTMLButtonElement | undefined;
   let popover: HTMLDivElement | undefined;
+  let triggerRing = true;
 
   const place = () => {
     if (trigger && popover && open()) placeDatePopover(trigger, popover, props.wide ?? false);
   };
 
   const close = () => {
+    // Before hiding, so the popover does not return focus on its own.
+    if (popover?.contains(document.activeElement)) returnFocus(trigger, triggerRing);
     if (popoverIsOpen(popover)) popover?.hidePopover();
     setOpen(false);
   };
@@ -121,6 +125,7 @@ function PickerShell<T>(props: {
   const show = () => {
     if (props.owner.disabled || !popover || popoverIsOpen(popover)) return;
     props.onOpen?.();
+    triggerRing = ringOnReturn(trigger);
     popover.showPopover();
     setOpen(true);
     queueMicrotask(() => {
@@ -214,6 +219,11 @@ function PickerShell<T>(props: {
           popover="auto"
           role="dialog"
           aria-label={typeof props.owner.label === "string" ? props.owner.label : messages().datePicker}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.defaultPrevented) return;
+            event.preventDefault();
+            close();
+          }}
           onToggle={(event) => {
             const nextOpen = event.newState === "open";
             setOpen(nextOpen);

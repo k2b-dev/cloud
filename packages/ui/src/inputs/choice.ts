@@ -1,4 +1,5 @@
 import { createEffect, createSignal, onCleanup, type Setter } from "solid-js";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 
 export type ChoiceOption<T extends string = string> = {
   value: T;
@@ -176,6 +177,7 @@ export function createChoicePopover(disabled: () => boolean): {
   const [open, setOpen] = createSignal(false);
   const [trigger, setTrigger] = createSignal<HTMLElement>();
   const [popover, setPopover] = createSignal<HTMLElement>();
+  let triggerRing = true;
 
   const place = () => {
     const triggerElement = trigger();
@@ -186,6 +188,7 @@ export function createChoicePopover(disabled: () => boolean): {
   const show = () => {
     const popoverElement = popover();
     if (disabled() || !popoverElement || popoverIsOpen(popoverElement)) return;
+    triggerRing = ringOnReturn(trigger());
     popoverElement.showPopover();
     setOpen(true);
     queueMicrotask(place);
@@ -193,9 +196,10 @@ export function createChoicePopover(disabled: () => boolean): {
 
   const hide = (restoreFocus = false) => {
     const popoverElement = popover();
+    // Before hiding, so the popover does not return focus on its own.
+    if (restoreFocus) returnFocus(trigger(), triggerRing);
     if (popoverIsOpen(popoverElement)) popoverElement?.hidePopover();
     setOpen(false);
-    if (restoreFocus) queueMicrotask(() => trigger()?.focus());
   };
 
   createEffect(() => {

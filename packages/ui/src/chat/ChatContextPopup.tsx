@@ -1,5 +1,6 @@
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount, splitProps } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 
 export type ChatContextPopupProps = Omit<
   JSX.ButtonHTMLAttributes<HTMLButtonElement>,
@@ -28,6 +29,7 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   const id = `chat-context-${createUniqueId()}`;
   const [open, setOpen] = createSignal(false);
   let pinned = false;
+  let triggerRing = true;
   let trigger: HTMLButtonElement | undefined;
   let surface: HTMLDivElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -41,6 +43,7 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   const show = () => {
     clear();
     if (!surface || open()) return;
+    triggerRing = ringOnReturn(trigger);
     surface.showPopover();
     setOpen(true);
     position();
@@ -49,9 +52,10 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
   const close = (restoreFocus = false) => {
     clear();
     pinned = false;
+    // Before hiding, so the popover does not return focus on its own.
+    if (restoreFocus) returnFocus(trigger, triggerRing);
     if (open()) surface?.hidePopover();
     setOpen(false);
-    if (restoreFocus) trigger?.focus();
   };
   const preview = (event: PointerEvent) => {
     clear();
@@ -105,6 +109,8 @@ export function ChatContextPopup(props: ChatContextPopupProps): JSX.Element {
         onClick={() => {
           if (pinned) close();
           else {
+            // A hover may have opened the popup before this click or key press pinned it.
+            triggerRing = ringOnReturn(trigger);
             pinned = true;
             show();
           }

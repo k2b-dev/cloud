@@ -12,6 +12,7 @@ import {
   useContext,
 } from "solid-js";
 import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./Button";
 
@@ -415,6 +416,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const [internalOpen, setInternalOpen] = createSignal(false);
   let triggerRef: HTMLButtonElement | undefined;
   let menuRef: HTMLDivElement | undefined;
+  let triggerRing = true;
   let mounted = false;
   let viewportListenersAttached = false;
 
@@ -447,12 +449,14 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     window.removeEventListener("scroll", reposition, true);
   };
   const close = (restoreFocus = true) => {
+    // Before hiding, so the popover does not return focus on its own.
+    if (restoreFocus) returnFocus(triggerRef, triggerRing);
     if (menuRef?.matches(":popover-open")) menuRef.hidePopover();
     detachViewportListeners();
-    if (restoreFocus) queueMicrotask(() => triggerRef?.focus());
   };
   const open = (focus: "first" | "last" | false = "first") => {
     if (props.disabled || !menuRef || menuRef.matches(":popover-open")) return;
+    triggerRing = ringOnReturn(triggerRef);
     menuRef.showPopover();
     // The toggle event arrives a task later; expose the open state before focus moves into the menu.
     setInternalOpen(true);
@@ -482,8 +486,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       focusMenuItem(menuRef, event.key === "Home" ? 0 : -1);
     } else if (event.key === "Escape") {
       event.preventDefault();
+      returnFocus(triggerRef, triggerRing);
       requestOpen(false);
-      queueMicrotask(() => triggerRef?.focus());
     } else if (event.key === "Tab") {
       requestOpen(false);
     }

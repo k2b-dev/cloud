@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { resolveUiMessages } from "../intl/messages";
 import { isPointInsideToast } from "./toast";
@@ -45,6 +46,7 @@ type DialogStackEntry = {
   cancelBehavior: NonNullable<OpenDialogOptions["cancelBehavior"]>;
   initialFocus: NonNullable<OpenDialogOptions["initialFocus"]>;
   opener?: HTMLElement;
+  openerRing: boolean;
   ariaLabel?: string;
   dismissHandler?: () => void | Promise<void>;
   dismissPending?: boolean;
@@ -101,6 +103,16 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
 const schedule = (callback: () => void): void => {
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(callback);
   else queueMicrotask(callback);
+};
+
+/**
+ * Whether focus is still where closing a level left it, on the page or the
+ * dialog: nothing took it before the next frame, neither a close handler nor a
+ * Tab pressed right after Escape.
+ */
+const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
+  const active = document.activeElement;
+  return !active || active === document.body || active === dialog;
 };
 
 export const createDialogCore = (): DialogCore => {
@@ -242,8 +254,9 @@ export const createDialogCore = (): DialogCore => {
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       schedule(() => {
-        const target = top.opener?.isConnected ? top.opener : resolveInitialFocusTarget(previous, dialog);
-        target?.focus();
+        if (!focusUnclaimed(dialog)) return;
+        if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
+        else resolveInitialFocusTarget(previous, dialog)?.focus();
       });
     } else if (dialog) {
       dialog.oncancel = null;
@@ -257,8 +270,10 @@ export const createDialogCore = (): DialogCore => {
       state.element = undefined;
       stopConnectionObserver();
       unlockPageScroll();
+      // After the Escape that closed it: WebKit lights the ring of whatever
+      // that key press leaves focused.
       schedule(() => {
-        if (top.opener?.isConnected) top.opener.focus();
+        if (top.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(top.opener, top.openerRing);
       });
     }
 
@@ -309,6 +324,7 @@ export const createDialogCore = (): DialogCore => {
       cancelBehavior,
       initialFocus,
       opener: activeElement instanceof HTMLElement ? activeElement : undefined,
+      openerRing: ringOnReturn(activeElement),
       ariaLabel: options.ariaLabel,
       modal: true,
     };
@@ -361,6 +377,10 @@ export const createDialogCore = (): DialogCore => {
         applyCancelBehavior(dialog, () => void requestDismiss(entry), cancelBehavior);
 
         if (state.stack.length === 1) {
+          // The native dialog returns focus to the element focused when it
+          // opened, with a ring of the browser's choosing. Opening from a
+          // blurred document leaves the return to popTop and its opener ring.
+          if (activeElement instanceof HTMLElement) activeElement.blur();
           if (typeof dialog.showModal === "function") {
             if (entry.modal) dialog.showModal();
             else dialog.show();

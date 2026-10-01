@@ -69,6 +69,28 @@ Draw the ring with `outline`, or with an inset `box-shadow` sized by
 container. Never change `border-width`, `padding`, `margin`, or the size of a
 control on focus.
 
+## Focus after an overlay closes
+
+When a dialog, prompt, menu, context menu, select list, date picker, sidebar
+preview, lightbox, or floating window closes, focus returns to the control
+that opened it. This is the same for Escape, a close button, or a chosen
+item.
+
+The ring on that control shows whether the keyboard was in use:
+
+- After a keyboard open, the ring is visible, so a keyboard user sees where
+  they are.
+- After a click or tap, the ring is visible once the user works the overlay
+  with the keyboard, for example with arrow keys and Enter to pick an item.
+- After a click or tap and no key other than Escape, the control gets focus
+  back without a ring. Screen readers still announce it, and the next Tab
+  shows the ring again.
+
+A text field that opened an overlay gets focus back as the browser shows it.
+Open overlays through the shared components and `dialogCore` to get this
+behavior. If your own code moves focus back after a pointer action, use
+`element.focus({ focusVisible: false })`.
+
 ## Forced colors
 
 In forced-colors mode, rings use the system color. Controls that show focus
