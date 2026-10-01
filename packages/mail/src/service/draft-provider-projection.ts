@@ -1304,7 +1304,7 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
             execution.folder.path,
             [{ key: snapshot.id, uidValidity: String(snapshot.uid_validity), uid: Number(snapshot.uid) }],
             async (download) => {
-              if (download.expectedSize > MAX_IMPORT_SOURCE_BYTES) {
+              if (download.expectedSize !== null && download.expectedSize > MAX_IMPORT_SOURCE_BYTES) {
                 throw Object.assign(new Error("Remote draft source exceeds the import limit"), { code: "REMOTE_DRAFT_TOO_LARGE" });
               }
               const blob = await storeReadableBlob(download.stream);

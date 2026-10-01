@@ -65,7 +65,8 @@ export type SourceDownloadRequest = {
 };
 
 export type SourceDownload = SourceDownloadRequest & {
-  expectedSize: number;
+  /** The provider's RFC822.SIZE, or null when the FETCH response carried none. */
+  expectedSize: number | null;
   stream: Readable;
 };
 

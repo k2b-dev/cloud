@@ -1,7 +1,7 @@
 import { once } from "node:events";
-import { createRequire } from "node:module";
 import type { Readable, Writable } from "node:stream";
 import type { ImapFlow } from "imapflow";
+import { encodePath, formatDateTime } from "imapflow/lib/tools.js";
 
 type ImapAttribute = { type: string; value: string } | Array<{ type: string; value: string }>;
 type ImapCommandResponse = {
@@ -20,12 +20,6 @@ export type ImapAppendError = Error & { effectPossible: boolean };
 const appendError = (error: unknown, effectPossible: boolean): ImapAppendError => {
   const source = error instanceof Error ? error : new Error("IMAP APPEND failed");
   return Object.assign(source, { effectPossible });
-};
-
-const require = createRequire(import.meta.url);
-const { encodePath, formatDateTime } = require("imapflow/lib/tools.js") as {
-  encodePath(client: ImapFlow, path: string): string;
-  formatDateTime(value: Date | string): string;
 };
 
 const writeChunk = async (client: StreamingImapFlow, bytes: Buffer): Promise<void> => {
@@ -48,7 +42,9 @@ export const appendStream = async (params: {
   const flags = [...new Set(params.flags ?? [])].filter((flag) => /^\\?[A-Za-z0-9_$-]+$/.test(flag));
   const attributes: ImapAttribute[] = [{ type: "ATOM", value: encodePath(params.client, params.path) }];
   if (flags.length > 0) attributes.push(flags.map((flag) => ({ type: "ATOM", value: flag })));
-  if (params.internalDate) attributes.push({ type: "STRING", value: formatDateTime(params.internalDate) });
+  // Like imapflow's own APPEND, an invalid date leaves the internal date to the server.
+  const internalDate = params.internalDate ? formatDateTime(params.internalDate) : undefined;
+  if (internalDate) attributes.push({ type: "STRING", value: internalDate });
   // TEXT keeps the literal marker unquoted. The source itself is supplied only after the server continuation.
   attributes.push({ type: "TEXT", value: `{${params.byteLength}}` });
 
