@@ -72,6 +72,8 @@ const createProvider = (kind: ProviderKind) => {
   // Messages the provider stored but its search does not return yet, like Gmail right after SMTP.
   const unindexed = new Set<StoredMessage>();
   let indexNewMessagesLate = false;
+  // Gmail stores what its own SMTP server sends; a mailbox can also send through another server.
+  let storeSubmissions = kind === "gmail";
   // Searches that fail once the next SMTP submission went through, like a dropped IMAP connection.
   let searchFailuresAfterSubmission = 0;
   let failingSearches = 0;
@@ -186,7 +188,7 @@ const createProvider = (kind: ProviderKind) => {
     }),
     spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (_config, request) => {
       const source = await readAll(request.source);
-      if (kind === "gmail") await store(source, sentPath, ["\\Seen"]);
+      if (storeSubmissions) await store(source, sentPath, ["\\Seen"]);
       failingSearches = searchFailuresAfterSubmission;
       searchFailuresAfterSubmission = 0;
       return { accepted: request.recipients, rejected: [], response: "250 2.0.0 OK", messageId: request.messageId };
@@ -241,6 +243,9 @@ const createProvider = (kind: ProviderKind) => {
     indexEverything: () => {
       indexNewMessagesLate = false;
       unindexed.clear();
+    },
+    stopStoringSubmissions: () => {
+      storeSubmissions = false;
     },
     failSearchesAfterSubmission: (count: number) => {
       searchFailuresAfterSubmission = count;
@@ -760,6 +765,23 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("when Gmail keeps no copy of a submission, Mail appends one on the last attempt only", async () => {
+    const provider = createProvider("gmail");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Other relay");
+      provider.stopStoringSubmissions();
+      const outbox = await send(mailbox, draft.id, draft.revision, "gmail-relay", "sent_sync_pending");
+      const states: (string | null)[] = [];
+      while (states.at(-1) !== "sent" && states.length < 4) states.push(await executeOutboxSubmission(outbox.id));
+      expect(states).toEqual(["sent_sync_pending", "sent_sync_pending", "sent_sync_pending", "sent"]);
+      expect(provider.appends.filter((path) => path === SENT)).toEqual([SENT]);
+      expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual([SENT]);
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("an IMAP failure after SMTP accepted the message keeps the send confirmed and stores the copy later", async () => {
     const provider = createProvider("imap");
     try {
@@ -841,6 +863,23 @@ suite("mail sent message projection", () => {
       ]);
 
       await importCopy(envelope.flags, envelope.labels);
+      // A draft copy someone referenced in a comment keeps that link.
+      const [copy] = await sql<{ id: string }[]>`
+        SELECT id FROM mail.message_contents
+        WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id = ${snapshot!.stable_message_id}
+      `;
+      const [comment] = await sql<{ id: string }[]>`
+        INSERT INTO mail.conversation_comments (short_id, conversation_id, author_kind, author_id, body_markdown, referenced_message_id)
+        VALUES (${newShortId()}, ${inbound.conversation_id}::uuid, 'user', ${userIds[0]!}::uuid, 'See this copy', ${copy!.id}::uuid)
+        RETURNING id
+      `;
+      await rebuildThreads("commented-copy");
+      expect((await conversationMessages(inbound.conversation_id)).map((message) => message.message_id)).toEqual([
+        inbound.messageId,
+        snapshot!.stable_message_id,
+      ]);
+      await sql`DELETE FROM mail.conversation_comments WHERE id = ${comment!.id}::uuid`;
+
       await rebuildThreads("draft-copy");
       expect(await conversationMessages(inbound.conversation_id)).toEqual([{ message_id: inbound.messageId, active_placements: 2 }]);
       const [kept] = await sql<{ state: string }[]>`

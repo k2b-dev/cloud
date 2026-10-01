@@ -2493,8 +2493,9 @@ const recordSentCopy = async (outbox: DbOutboxExecution, sender: DbSenderBinding
 };
 
 /**
- * Gmail stores every message sent through its own SMTP server in Sent Mail. Mail then only
- * looks for that copy and appends one itself only when a later attempt still finds none.
+ * Gmail stores every message sent through its own SMTP server in Sent Mail, and its search can
+ * list that copy only after a while. Mail then only looks for the copy and appends one itself
+ * on the last attempt, when every earlier attempt found none.
  */
 const providerStoresSubmission = (binding: DbPinnedBinding, outbox: DbOutboxExecution): boolean =>
   outbox.selected_identity_transport_revision === null && parseJsonRecord(binding.capabilities).gmailExtensions === true;
@@ -2789,7 +2790,7 @@ const reconcileSentCopy = async (
     mimeByteLength: mime.byteLength,
     assertLeaseActive,
     signal,
-    appendMissing: true,
+    appendMissing: !providerStoresSubmission(binding, outbox) || outbox.attempt >= OUTBOX_MAX_ATTEMPTS,
   });
   if (sentCopy.stored) {
     await recordSentCopy(outbox, sender, sentCopy.uids);
@@ -2807,7 +2808,7 @@ const reconcileSentCopy = async (
 };
 
 const deferSentCopy = async (outbox: DbOutboxExecution, error?: unknown): Promise<void> => {
-  const exhausted = outbox.attempt >= 5;
+  const exhausted = outbox.attempt >= OUTBOX_MAX_ATTEMPTS;
   await sql`
     UPDATE mail.outbox_submissions
     SET

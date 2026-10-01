@@ -246,7 +246,8 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
   // `\Draft` guard imported them from folders such as Gmail's All Mail; the timeline refresh
   // below recomputes the conversations they were in. A message placed anywhere without the
   // `\Draft` flag, even in a placement the provider has since removed, was sent from another
-  // program with the draft's Message-ID and stays.
+  // program with the draft's Message-ID and stays, and so does a copy someone threaded by hand
+  // or referenced in a comment.
   const removedDraftCopies = await db<{ id: string }[]>`
     DELETE FROM mail.message_contents message
     USING mail.draft_provider_snapshots snapshot
@@ -265,6 +266,8 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
         WHERE draft.source_message_id = message.id OR draft.derived_from_message_id = message.id
       )
       AND NOT EXISTS (SELECT 1 FROM mail.automatic_reply_effects effect WHERE effect.message_id = message.id)
+      AND NOT EXISTS (SELECT 1 FROM mail.conversation_thread_overrides thread_override WHERE thread_override.message_id = message.id)
+      AND NOT EXISTS (SELECT 1 FROM mail.conversation_comments referencing_comment WHERE referencing_comment.referenced_message_id = message.id)
     RETURNING message.id
   `;
   await db`SELECT id FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid ORDER BY id FOR SHARE`;
