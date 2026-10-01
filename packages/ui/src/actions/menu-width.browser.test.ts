@@ -387,6 +387,26 @@ describe("@k2b/ui menus size to their entries", () => {
       }
     });
 
+    test(`at ${options.viewport.width} px a context menu stays open through a resize event that keeps the viewport's size`, async () => {
+      const { width, height } = options.viewport;
+      const page = await load(options);
+      try {
+        await contextMenuAt(page, "Note", 100, 100);
+        await settle(page);
+        // Headless Chromium was seen to fire one on a fresh page.
+        await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+        await settle(page);
+        expect(await openMenu(page)).toBeDefined();
+
+        // A real change of the viewport still closes it.
+        await page.setViewportSize({ width: width - 40, height });
+        await settle(page);
+        expect(await openMenu(page)).toBeUndefined();
+      } finally {
+        await page.close();
+      }
+    });
+
     test(`at ${options.viewport.width} px a menu whose entries grow while it is open stays in place inside the viewport`, async () => {
       const page = await load(options);
       const errors: string[] = [];

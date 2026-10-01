@@ -190,7 +190,7 @@ Labels must describe the action without relying on their icons. External links o
 
 Both menus require hydrated browser code. `Dropdown` uses the native Popover API, measures the trigger and menu, and clamps every supported position to an eight-pixel viewport inset. It repositions on viewport resize and ancestor scrolling.
 
-`ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, resize, or scrolling. Closing with Escape restores focus to the trigger.
+`ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, a change of the viewport's size, or scrolling outside the menu. A resize event that leaves the viewport's size unchanged keeps it open. Closing with Escape restores focus to the trigger.
 
 ## Example
 
