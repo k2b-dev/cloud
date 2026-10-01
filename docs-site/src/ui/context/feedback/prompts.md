@@ -49,7 +49,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `confirmText`, `cancelText` | Override action labels. `cancelText: false` hides the cancel button in `prompts.form`. |
 | `confirmationPhrase` | Requires an exact typed phrase before `prompts.confirm` can confirm. |
 | `variant` | Selects `primary`, `success`, or `danger` action treatment. |
-| `size` | Selects `small`, `medium`, `large`, `wide`, or `full`. `full` fills the viewport minus a small margin and goes edge to edge below 48rem, with safe-area padding. Its frame never scrolls, so the content fills the height and scrolls itself when needed. |
+| `size` | Selects `small`, `medium`, `large`, `wide`, or `full`. `full` fills the viewport minus a small margin and goes edge to edge below 48rem, with safe-area padding. Its frame never scrolls: the header stays at the top and the content fills the rest of the height. |
 | `surface` | Uses the standard panel or a caller-owned `bare` surface. |
 | `header` | Set to `false` when a custom dialog owns its header. |
 | `cancelBehavior` | `prompts.alert` can use `"ignore"` to keep Escape and backdrop clicks from closing it. |
@@ -164,6 +164,8 @@ use context Commands so search and Layout Help share the active shortcuts.
 ## Custom dialogs
 
 `prompts.dialog` passes a typed `close(result)` callback to the component. Use it when the standard methods cannot express the content or actions.
+
+Every prompt keeps its header, with the title and close button, in view. When the content is taller than the dialog, only the body scrolls; the action row of `alert`, `success`, `error`, `confirm`, `prompt`, `promptNumber`, and `form` stays below it. In `prompts.dialog`, the component keeps its natural height and scrolls under the header, together with any actions it renders. A root that sets `min-h-0` or its own overflow shrinks to the dialog instead. As a flex column, it can then scroll a list with `min-h-0`, such as `ScrollArea`, above an action row that stays in view. `PanelDialog` with `PanelDialog.Footer` provides that structure ready-made. A child that should fill a `full` dialog sets its own flex sizing, for example `flex-1 min-h-0`.
 
 The standard surface can provide the title and close row:
 

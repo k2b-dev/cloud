@@ -1368,7 +1368,10 @@
   background: var(--k2b-surface);
 }
 
-.k2b-ui .k2b-content-file-view__preview > .k2b-content-code-display {
+/* Code fills the preview frame as its only surface: no second inset frame or
+   margin inside the frame's own border. */
+.k2b-ui .k2b-content-file-view__preview > .k2b-content-code-display,
+.k2b-ui .k2b-content-file-view__preview > .k2b-content-file-view__excerpt > .k2b-content-code-display {
   min-height: 100%;
   margin: 0;
   border-radius: inherit;
@@ -1778,7 +1781,11 @@
   border-top: 1px solid var(--k2b-border);
 }
 
-.k2b-ui .k2b-content-markdown :is(a, code) {
+/* A selector list, not `:is(a, code)`: the stylesheet build lowers `:is()` to
+   `:-webkit-any()`/`:-moz-any()` copies that count as a class, which would
+   outrank `pre code` below and colour fenced code like a link. */
+.k2b-ui .k2b-content-markdown a,
+.k2b-ui .k2b-content-markdown code {
   color: var(--k2b-action);
 }
 
@@ -1842,6 +1849,9 @@
   border: 0;
 }
 
+/* Header cells line up with their column: start-aligned like body cells, or
+   the column's GFM alignment, which marked writes as `align` on every cell. */
+.k2b-ui .k2b-content-markdown th:not([align]) { text-align: start; }
 .k2b-ui .k2b-content-markdown thead { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-content-markdown thead th { border-bottom: 1px solid var(--k2b-border); }
 .k2b-ui .k2b-content-markdown tbody tr + tr > td { border-top: 1px solid var(--k2b-border); }

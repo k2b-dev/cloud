@@ -43,6 +43,9 @@ boundary and bypasses the renderer.
 Embedded components such as `NoticeCard` keep their own paragraph spacing;
 ordinary Markdown paragraphs retain the standard prose spacing.
 
+Links and inline code use the action colour. Code in a fenced block keeps the
+text colour of its block.
+
 ### Highlight known inline tokens
 
 Pass exact `inlineTokens` when an authoring preview needs to distinguish known
@@ -104,5 +107,7 @@ const [source, setSource] = createSignal("# Release notes");
 
 Markdown tables omit the header row when all header cells are blank. Partially
 filled headers stay visible. Tables use rounded borders, alternating row
-backgrounds and horizontal separators. Column alignment and inline formatting
-are preserved. Wide tables scroll within a keyboard-focusable container.
+backgrounds and horizontal separators. Header cells align with their column: at
+the start by default, or with the column's GFM alignment (`:-:`, `--:`).
+Inline formatting is preserved. Wide tables scroll within a keyboard-focusable
+container.
