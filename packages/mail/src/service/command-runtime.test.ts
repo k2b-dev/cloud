@@ -16,6 +16,7 @@ describe("mail mutation failure classification", () => {
 
   test("reconciles transport ambiguity and fails known precondition errors", () => {
     expect(mutationFailureState(Object.assign(new Error("reset"), { code: "ECONNRESET" }))).toBe("ambiguous");
+    expect(mutationFailureState(Object.assign(new Error("Socket timeout"), { code: "ETIMEOUT" }), false)).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("database"), { code: "AMBIGUOUS_LOCAL_PERSISTENCE" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("lease"), { code: "COMMAND_JOB_LEASE_LOST" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("partial state"), { code: "REMOTE_STATE_PARTIAL" }))).toBe("ambiguous");

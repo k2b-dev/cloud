@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import type { Socket } from "bun";
-import type { FetchMessageObject, ListResponse } from "imapflow";
+import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import {
   assertProviderKeywordsSupported,
@@ -15,7 +15,9 @@ import {
   parseEnvelopeHeaders,
   parseReferences,
   renameImapFolder,
+  runImapSession,
   selectUidBatch,
+  trackImapSession,
   transportDiagnostic,
 } from "./imap-smtp";
 
@@ -66,6 +68,62 @@ describe("IMAP client disposal", () => {
       },
     });
     expect(closed).toBe(1);
+  });
+});
+
+describe("IMAP connection failures", () => {
+  // Answers every command except `stalled`, like a provider that stops responding mid-session.
+  const stallingServer = (stalled: string) =>
+    Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open: (socket) => {
+          socket.write("* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] fixture ready\r\n");
+        },
+        data: (socket, data) => {
+          for (const line of data.toString().split("\r\n").filter(Boolean)) {
+            const [tag, command] = line.split(" ");
+            if (command?.toUpperCase() !== stalled) socket.write(`${tag} OK done\r\n`);
+          }
+        },
+      },
+    });
+  const sessionFor = (port: number) =>
+    trackImapSession(
+      new ImapFlow({
+        host: "127.0.0.1",
+        port,
+        secure: false,
+        doSTARTTLS: false,
+        auth: { user: "fixture", pass: "fixture" },
+        logger: false,
+        disableAutoIdle: true,
+        socketTimeout: 1_000,
+      }),
+    );
+
+  test("rejects a command that never gets a reply instead of crashing the process", async () => {
+    const server = stallingServer("SELECT");
+    const session = sessionFor(server.port);
+    try {
+      await expect(runImapSession(session, (client) => client.mailboxOpen("INBOX"))).rejects.toThrow();
+      expect(session.failure()).toMatchObject({ code: "ETIMEOUT" });
+      expect(session.client.usable).toBe(false);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("rejects an operation that completed over a connection that failed", async () => {
+    const server = stallingServer("NOOP");
+    const session = sessionFor(server.port);
+    try {
+      await expect(runImapSession(session, (client) => client.noop())).rejects.toMatchObject({ code: "ETIMEOUT" });
+      expect(session.client.usable).toBe(false);
+    } finally {
+      server.stop(true);
+    }
   });
 });
 

@@ -497,6 +497,8 @@ const isAmbiguousTransportError = (error: unknown): boolean => {
   const code = normalizeCode(error, "");
   return [
     "ETIMEDOUT",
+    // ImapFlow's code for a socket timeout while a command waits for its reply.
+    "ETIMEOUT",
     "ECONNRESET",
     "ECONNABORTED",
     "EPIPE",
