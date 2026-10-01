@@ -1768,7 +1768,7 @@
   .k2b-ui :not(:has(> :not(.k2b-field))):has(> .k2b-field > .k2b-field__description) > .k2b-field:not([data-fill="true"]) > .k2b-field__error {
     grid-row: 4;
   }
-  /* A parent that is no grid, such as a dialog body or a flex column, leaves
+  /* A parent that is not a grid, such as a dialog body or a flex column, leaves
      the field without rows to share. Chromium then sizes the field's rows by
      each control's minimum height alone, so a textarea overflowed its field
      and the actions below it. A start-aligned control measures its content

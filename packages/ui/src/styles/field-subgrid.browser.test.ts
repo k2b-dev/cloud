@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 
 // Fields with a description subgrid their rows. Only a real layout engine
-// shows whether a field keeps its control inside when its parent is no grid,
+// shows whether a field keeps its control inside when its parent is not a grid,
 // as in a form dialog, so the shipped browser build renders real fields here.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -85,12 +85,18 @@ describe("@k2b/ui fields with a description", () => {
     test(`at ${width} px a form dialog holds a multi-line field like a stacked form`, async () => {
       const page = await load(options);
       try {
-        const stacked = await fieldBoxes(page, "#stacked > .k2b-field:last-child");
         // The form resolves only when it closes, so the page must not await it.
         await page.evaluate(() => {
           void (globalThis as unknown as { openForm: () => Promise<unknown> }).openForm();
         });
         await page.locator("dialog textarea").waitFor();
+        // The stacked field takes the dialog field's width, so its description
+        // wraps the same way whatever font the browser falls back to.
+        await page.evaluate(() => {
+          const { width } = document.querySelector("dialog .k2b-field")!.getBoundingClientRect();
+          document.getElementById("stacked")!.style.width = `${width}px`;
+        });
+        const stacked = await fieldBoxes(page, "#stacked > .k2b-field:last-child");
         const dialog = await fieldBoxes(page, "dialog .k2b-field");
         // Same rows as outside a field group, so the control stays inside its field.
         expect(dialog).toEqual(stacked);
