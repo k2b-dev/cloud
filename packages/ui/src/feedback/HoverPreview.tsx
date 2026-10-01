@@ -8,6 +8,8 @@ const SWAP_DELAY = 90;
 const CLOSE_DELAY = 180;
 /** Distance to the region and to the boundary edges. */
 const GAP = 8;
+/** Keys the wiring between a controller and its `<HoverPreview>`. */
+const INTERNALS = Symbol("k2b-hover-preview");
 
 /**
  * Where the card opens. By default it opens to the right of its anchor,
@@ -51,6 +53,8 @@ export type HoverPreviewController<T> = {
   toggle: (value: T) => void;
   /** Closes the card; it reopens for the same anchor only after the pointer left it. */
   close: () => void;
+  /** Wiring for `<HoverPreview>`; not part of the public contract. */
+  readonly [INTERNALS]: Internals<T>;
 };
 
 type Anchor<T> = { value: T; element: HTMLElement; trigger?: () => HTMLElement | null | undefined };
@@ -64,11 +68,16 @@ type Internals<T> = {
   toggled: (open: boolean) => void;
 };
 
-const internals = new WeakMap<object, Internals<unknown>>();
-
 /** Elements that use Space themselves; Space on them never toggles the card. */
-const OWNS_SPACE =
-  "button, input, select, textarea, summary, [contenteditable]:not([contenteditable='false']), [role='button'], [role='checkbox'], [role='switch']";
+const OWNS_SPACE = [
+  "button, input, select, textarea, summary, [contenteditable]:not([contenteditable='false'])",
+  ...["button", "checkbox", "switch", "radio", "option", "menuitem", "menuitemcheckbox", "menuitemradio", "tab", "treeitem"].map(
+    (role) => `[role='${role}']`,
+  ),
+].join(", ");
+
+/** Open light-dismiss popovers, such as a menu or a date picker, close when another one opens. */
+const AUTO_POPOVER = ":is([popover=''], [popover='auto' i]):popover-open";
 
 /**
  * Creates the behavior of one hover preview card shared by a group of anchors,
@@ -81,7 +90,10 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
   const [open, setOpen] = createSignal(false);
   let surface: HTMLElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let pinned = false;
+  /** The anchor whose open delay runs while the card is closed. */
+  let pending: Anchor<T> | undefined;
+  /** The anchor that Space or `toggle()` opened the card for; only it outlasts the pointer leaving. */
+  let pinned: Anchor<T> | undefined;
   let dismissed: Anchor<T> | undefined;
   let ring = true;
   let observer: ResizeObserver | undefined;
@@ -96,7 +108,12 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
   const clear = () => {
     clearTimeout(timer);
     timer = undefined;
+    if (pending && !open()) document.removeEventListener("keydown", escape);
+    pending = undefined;
   };
+  /** A passive card never closes a menu or another popover someone opened on purpose. */
+  const blocked = () =>
+    [...document.querySelectorAll(AUTO_POPOVER)].some((popover) => popover !== surface && !(surface && popover.contains(surface)));
 
   /** The boundary rectangle, never larger than the viewport. */
   const bounds = (within: Element | null | undefined) => {
@@ -130,7 +147,8 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
       return;
     }
     positionTooltipSurface(surface, anchor.element, "right");
-    if ((placement() as { align?: string }).align === "end") {
+    const value = placement();
+    if (!("beside" in value) && value.align === "end") {
       const height = surface.getBoundingClientRect().height;
       const bottom = anchor.element.getBoundingClientRect().bottom;
       surface.style.top = `${Math.round(Math.max(8, Math.min(bottom - height, window.innerHeight - height - 8)))}px`;
@@ -138,7 +156,13 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
   };
 
   const escape = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || !open()) return;
+    if (event.key !== "Escape") return;
+    if (!open()) {
+      // Escape during the open delay works as if the card had opened and closed.
+      if (pending) dismissed = pending;
+      clear();
+      return;
+    }
     // Focus in the card goes back to the trigger: handled here, so the browser
     // neither returns it itself nor lights the ring for this key. A card the
     // pointer opened leaves the key to other handlers, such as an open modeless dialog.
@@ -173,7 +197,7 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
 
   const hide = () => {
     clear();
-    pinned = false;
+    pinned = undefined;
     if (!open()) return;
     setOpen(false);
     listen(false);
@@ -190,46 +214,64 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
     if (anchor && surface?.contains(document.activeElement)) returnFocus(focusTarget(anchor), ring);
     hide();
   };
-  /** Opens the card for `anchor` or moves it there. Returns whether it is open for `anchor`. */
-  const show = (anchor: Anchor<T>): boolean => {
+  /**
+   * Opens the card for `anchor` or moves it there; `pin` keeps it open after
+   * the pointer leaves. Moving the card to another anchor drops an earlier pin.
+   * Returns whether it is open for `anchor`.
+   */
+  const show = (anchor: Anchor<T>, pin: boolean): boolean => {
     clear();
     if (!surface || dismissed === anchor) return false;
     if (options.disabled?.(anchor.value) || !hasRoom()) {
       hide();
       return false;
     }
-    if (open() && current() === anchor) return true;
-    ring = ringOnReturn(focusTarget(anchor));
-    setCurrent(anchor);
-    if (!open()) {
-      try {
-        surface.showPopover();
-      } catch {
-        return false;
+    if (!open() || current() !== anchor) {
+      ring = ringOnReturn(focusTarget(anchor));
+      setCurrent(anchor);
+      if (!open()) {
+        try {
+          surface.showPopover();
+        } catch {
+          return false;
+        }
+        setOpen(true);
+        listen(true);
       }
-      setOpen(true);
-      listen(true);
+      position();
+      pinned = undefined;
     }
-    position();
+    if (pin) pinned = anchor;
     return true;
   };
-  const schedule = (anchor: Anchor<T>, delay: number) => {
+  /** Shows `anchor` after `delay`; a keyboard swap (`follow`) carries an existing pin along. */
+  const schedule = (anchor: Anchor<T>, delay: number, follow = false) => {
     clear();
-    timer = setTimeout(() => show(anchor), delay);
+    if (!open()) {
+      pending = anchor;
+      document.addEventListener("keydown", escape);
+    }
+    timer = setTimeout(() => {
+      if (open()) show(anchor, follow && pinned !== undefined);
+      else if (blocked()) clear();
+      else show(anchor, false);
+    }, delay);
   };
   const leave = () => {
     clear();
     dismissed = undefined;
-    if (pinned) return;
+    if (pinned && pinned === current()) return;
     timer = setTimeout(() => {
+      // Focus holds the card open inside it, and on the anchor where focus opens it.
       const focused = document.activeElement;
-      if (!surface?.contains(focused) && !current()?.element.contains(focused)) hide();
+      const held = surface?.contains(focused) || (options.keyboard === "focus" && current()?.element.contains(focused));
+      if (!held) hide();
     }, CLOSE_DELAY);
   };
   const focusOut = (event: FocusEvent) => {
     const next = event.relatedTarget;
     if (next instanceof Node && (surface?.contains(next) || anchorOf(next))) return;
-    pinned = false;
+    pinned = undefined;
     leave();
   };
 
@@ -256,10 +298,17 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
         if ((open() && current() === entry) || dismissed === entry) return;
         schedule(entry, open() ? SWAP_DELAY : (options.openDelay ?? 250));
       };
+      // The open delay counts from the moment the mouse rests. An open card
+      // swaps on entering another anchor and ignores movement inside it.
+      const pointerMove = (event: PointerEvent) => {
+        if (event.pointerType === "mouse" && !open() && dismissed !== entry) schedule(entry, options.openDelay ?? 250);
+      };
+      // A press acts on the row, such as opening it or its menu; a card about to open stays closed.
+      const pointerDown = () => clear();
       const focusIn = () => {
         if (open()) {
           if (current() === entry) clear();
-          else schedule(entry, SWAP_DELAY);
+          else schedule(entry, SWAP_DELAY, true);
           return;
         }
         clear();
@@ -267,16 +316,22 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
       };
       const keyDown = (event: KeyboardEvent) => {
         if (options.keyboard === "focus" || event.key !== " " || event.defaultPrevented) return;
+        // Shift+Space keeps scrolling up; other modifiers belong to shortcuts.
+        if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
         if (event.target instanceof Element && event.target.matches(OWNS_SPACE)) return;
         event.preventDefault();
-        dismissed = undefined;
+        // A held key toggles once; its repeats only keep the page from scrolling.
+        if (event.repeat) return;
         if (open() && current() === entry) {
-          hide();
+          dismiss();
           return;
         }
-        pinned = show(entry);
+        dismissed = undefined;
+        show(entry, true);
       };
       element.addEventListener("pointerenter", pointerEnter);
+      element.addEventListener("pointermove", pointerMove);
+      element.addEventListener("pointerdown", pointerDown);
       element.addEventListener("pointerleave", leave);
       element.addEventListener("focusin", focusIn);
       element.addEventListener("focusout", focusOut);
@@ -285,6 +340,8 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
         anchors.delete(entry);
         if (current() === entry) hide();
         element.removeEventListener("pointerenter", pointerEnter);
+        element.removeEventListener("pointermove", pointerMove);
+        element.removeEventListener("pointerdown", pointerDown);
         element.removeEventListener("pointerleave", leave);
         element.removeEventListener("focusin", focusIn);
         element.removeEventListener("focusout", focusOut);
@@ -292,7 +349,7 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
       });
     };
 
-  const controller: HoverPreviewController<T> = {
+  return {
     id,
     anchor,
     active: () => (open() ? current()?.value : undefined),
@@ -300,45 +357,42 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
       const entry = [...anchors].find((candidate) => candidate.value === value);
       if (!entry || !surface) return;
       clear();
-      if (open() && pinned && current() === entry) {
+      if (open() && pinned === entry && current() === entry) {
         dismiss();
         return;
       }
       // A hover may have opened the card before this click or key press pinned it.
       ring = ringOnReturn(focusTarget(entry));
       dismissed = undefined;
-      pinned = true;
-      if (show(entry)) surface.focus();
-      else pinned = false;
+      if (show(entry, true)) surface.focus();
     },
     close: dismiss,
-  };
-  internals.set(controller, {
-    current,
-    bind: (element) => {
-      surface = element;
-      observer = new ResizeObserver(() => {
-        if (open()) position();
-      });
-      observer.observe(element);
-    },
-    enterSurface: clear,
-    leave,
-    focusOut,
-    toggled: (visible) => {
-      if (!visible) {
-        // Light dismissal by the browser: an outside click or another popover.
-        clear();
-        pinned = false;
-        if (open()) {
-          setOpen(false);
-          listen(false);
+    [INTERNALS]: {
+      current,
+      bind: (element) => {
+        surface = element;
+        observer = new ResizeObserver(() => {
+          if (open()) position();
+        });
+        observer.observe(element);
+      },
+      enterSurface: clear,
+      leave,
+      focusOut,
+      toggled: (visible) => {
+        if (!visible) {
+          // Light dismissal by the browser: an outside click or another popover.
+          clear();
+          pinned = undefined;
+          if (open()) {
+            setOpen(false);
+            listen(false);
+          }
         }
-      }
-      options.onOpenChange?.(visible);
+        options.onOpenChange?.(visible);
+      },
     },
-  } satisfies Internals<T> as Internals<unknown>);
-  return controller;
+  };
 }
 
 export type HoverPreviewProps<T> = {
@@ -357,17 +411,15 @@ export type HoverPreviewProps<T> = {
  * Native popover owns the top layer and light dismissal.
  */
 export function HoverPreview<T>(props: HoverPreviewProps<T>): JSX.Element {
-  const state = internals.get(props.preview) as Internals<T> | undefined;
-  if (!state) throw new Error("HoverPreview needs a controller from createHoverPreview()");
+  const state = props.preview[INTERNALS];
   let surface!: HTMLDivElement;
   onMount(() => state.bind(surface));
   const content = () => {
     const children = props.children;
     if (typeof children !== "function") return children;
-    const render = children as (value: T) => JSX.Element;
     return (
       <Show when={state.current()} keyed>
-        {(anchor) => render(anchor.value)}
+        {(anchor) => children(anchor.value)}
       </Show>
     );
   };

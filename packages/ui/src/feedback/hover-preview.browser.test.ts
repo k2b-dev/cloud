@@ -11,6 +11,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 // Lives only in memory; its path makes bare imports resolve from this package.
 const entry = resolve(import.meta.dir, "hover-preview.fixture.ts");
 const fixture = `
+import { createEffect } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import { createHoverPreview, HoverPreview } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
@@ -19,12 +20,24 @@ const list = document.getElementById("list");
 list.innerHTML = Array.from({ length: 30 }, (_, i) =>
   '<div class="row" data-id="r' + i + '"><a href="#r' + i + '">Conversation ' + i + '</a><button type="button">More</button></div>'
 ).join("");
+// The row menu of r2 is a light-dismiss popover inside the row, like a Dropdown.
+const more = list.querySelector('.row[data-id="r2"] button');
+more.setAttribute("popovertarget", "menu");
+more.insertAdjacentHTML("afterend", '<div id="menu" popover>Menu</div>');
+// As in Safari, pressing the button does not focus it.
+more.addEventListener("mousedown", (event) => event.preventDefault());
 
 render(() => {
   // r1 is the conversation already open in the reader.
   const preview = createHoverPreview({ openDelay: 200, placement: { beside: () => list, within: () => frame }, disabled: (id) => id === "r1" });
   window.preview = preview;
-  for (const row of list.querySelectorAll(".row")) preview.anchor(row.dataset.id)(row);
+  for (const row of list.querySelectorAll(".row")) {
+    preview.anchor(row.dataset.id)(row);
+    // The documented wiring that tells screen readers the card's state.
+    const link = row.querySelector("a");
+    link.setAttribute("aria-controls", preview.id);
+    createEffect(() => link.setAttribute("aria-expanded", String(preview.active() === row.dataset.id)));
+  }
   return createComponent(HoverPreview, {
     preview,
     label: "Quick look",
@@ -87,6 +100,11 @@ const box = (page: Page, selector: string) =>
     return { top, left, width, height };
   }, selector) as Promise<Box | null>;
 const row = (id: string) => `.row[data-id="${id}"]`;
+const focusLink = (page: Page, id: string) =>
+  page.evaluate((id) => document.querySelector<HTMLElement>(`.row[data-id="${id}"] a`)?.focus(), id);
+const expanded = (page: Page, id: string) =>
+  page.evaluate((id) => document.querySelector(`.row[data-id="${id}"] a`)?.getAttribute("aria-expanded"), id);
+const menuOpen = (page: Page) => page.evaluate(() => document.getElementById("menu")!.matches(":popover-open"));
 const card = ".k2b-hover-preview";
 const shown = (page: Page) =>
   page.evaluate(() => {
@@ -195,9 +213,10 @@ describe("HoverPreview", () => {
   test("Space on the focused row toggles the card and keeps focus there; Enter still follows the row", async () => {
     const page = await load();
     try {
-      await page.evaluate(() => document.querySelector<HTMLElement>('.row[data-id="r6"] a')?.focus());
+      await focusLink(page, "r6");
+      expect(await expanded(page, "r6")).toBe("false");
       await page.keyboard.press("Space");
-      expect(await shown(page)).toBe("r6");
+      expect([await shown(page), await expanded(page, "r6")]).toEqual(["r6", "true"]);
       const focus = () => page.evaluate(() => document.activeElement?.getAttribute("href"));
       expect(await focus()).toBe("#r6");
       expect(await page.evaluate(() => document.getElementById("list")!.scrollTop)).toBe(0);
@@ -220,6 +239,123 @@ describe("HoverPreview", () => {
       await page.keyboard.press("Shift+Tab");
       await page.keyboard.press("Enter");
       expect(await page.evaluate(() => location.hash)).toBe("#r7");
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("only a rest opens the card: a moving mouse, a press, or Escape during the delay keep it closed", async () => {
+    const page = await load();
+    try {
+      // Steady movement across the row never counts as rest.
+      const target = (await box(page, row("r4")))!;
+      for (let step = 0; step <= 12; step++) {
+        await page.mouse.move(target.left + 20 + step * 20, target.top + target.height / 2);
+        await page.clock.runFor(20);
+      }
+      // 260 ms of movement, then 20 ms of rest: the delay counts from the last move.
+      expect(await shown(page)).toBeNull();
+      await page.clock.runFor(179);
+      expect(await shown(page)).toBeNull();
+      await page.clock.runFor(2);
+      expect(await shown(page)).toBe("r4");
+
+      await pointAt(page, "#reader", 0.9);
+      await page.clock.runFor(200);
+      await pointAt(page, row("r5"));
+      await page.clock.runFor(100);
+      await page.keyboard.press("Escape");
+      await page.clock.runFor(1_000);
+      expect(await shown(page)).toBeNull();
+      await pointAt(page, row("r5"), 0.3);
+      await page.clock.runFor(1_000);
+      expect(await shown(page)).toBeNull();
+
+      await pointAt(page, row("r6"));
+      await page.clock.runFor(100);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.clock.runFor(1_000);
+      expect(await shown(page)).toBeNull();
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("never closes a menu someone opened", async () => {
+    const page = await load();
+    try {
+      // Clicking the row's menu button during the delay: the menu stays.
+      await pointAt(page, row("r2"), 0.2);
+      await page.clock.runFor(100);
+      await pointAt(page, `${row("r2")} button`);
+      await page.mouse.down();
+      await page.mouse.up();
+      expect(await menuOpen(page)).toBe(true);
+      await page.clock.runFor(1_000);
+      expect([await menuOpen(page), await shown(page)]).toEqual([true, null]);
+
+      // Resting on other rows while the menu is open opens no card either.
+      await pointAt(page, row("r4"));
+      await page.clock.runFor(1_000);
+      expect([await menuOpen(page), await shown(page)]).toEqual([true, null]);
+      await page.keyboard.press("Escape");
+      expect(await menuOpen(page)).toBe(false);
+      await pointAt(page, row("r4"), 0.3);
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r4");
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("focus in a row keeps no card open that the mouse opened, and a Space pin stays with its row", async () => {
+    const page = await load();
+    try {
+      // After a click or a closed row menu, focus often stays in the row.
+      await focusLink(page, "r3");
+      await pointAt(page, row("r3"));
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r3");
+      await pointAt(page, "#reader", 0.9);
+      await page.clock.runFor(181);
+      expect(await shown(page)).toBeNull();
+
+      await focusLink(page, "r6");
+      await page.keyboard.press("Space");
+      expect([await shown(page), await expanded(page, "r6")]).toEqual(["r6", "true"]);
+      // Passing over another row without swapping keeps the pin.
+      await pointAt(page, row("r8"));
+      await page.clock.runFor(50);
+      await pointAt(page, "#reader", 0.9);
+      await page.clock.runFor(1_000);
+      expect(await shown(page)).toBe("r6");
+      // Swapping to the hovered row drops the pin: that card closes like any hover.
+      await pointAt(page, row("r8"));
+      await page.clock.runFor(90);
+      expect([await shown(page), await expanded(page, "r6"), await expanded(page, "r8")]).toEqual(["r8", "false", "true"]);
+      await pointAt(page, "#reader", 0.9);
+      await page.clock.runFor(181);
+      expect([await shown(page), await expanded(page, "r8")]).toEqual([null, "false"]);
+    } finally {
+      await close(page);
+    }
+  });
+
+  test("Space toggles once per press and leaves Shift+Space to scrolling", async () => {
+    const page = await load();
+    try {
+      await focusLink(page, "r0");
+      await page.keyboard.press("Shift+Space");
+      expect(await shown(page)).toBeNull();
+
+      // Held down: the repeats change nothing and do not scroll the list.
+      await page.keyboard.down(" ");
+      await page.keyboard.down(" ");
+      await page.keyboard.down(" ");
+      await page.keyboard.up(" ");
+      expect(await shown(page)).toBe("r0");
+      expect(await page.evaluate(() => document.getElementById("list")!.scrollTop)).toBe(0);
     } finally {
       await close(page);
     }

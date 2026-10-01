@@ -252,7 +252,9 @@ const HoverPreviewDemo = () => {
   <For each={messages}>
     {(item) => (
       <div ref={preview.anchor(item.id)} role="listitem">
-        <a href={item.href}>{item.subject}</a>
+        <a href={item.href} aria-controls={preview.id} aria-expanded={preview.active() === item.id}>
+          {item.subject}
+        </a>
       </div>
     )}
   </For>
@@ -275,6 +277,8 @@ const HoverPreviewDemo = () => {
                 <a
                   href={`#${item.id}`}
                   aria-current={item.id === opened() ? "true" : undefined}
+                  aria-controls={preview.id}
+                  aria-expanded={preview.active() === item.id}
                   onClick={(event) => {
                     event.preventDefault();
                     setOpened(item.id);

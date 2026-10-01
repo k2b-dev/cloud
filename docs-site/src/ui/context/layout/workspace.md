@@ -560,8 +560,8 @@ Compound icon, label, metadata and action props remain reactive. Applications ow
 the data source: no socket, task lifecycle or subscription belongs in the library.
 
 Use `preview={{ label: "Item details", content: <Details /> }}` for interactive
-secondary information. Fine-pointer hover and keyboard focus open it after a short
-delay. A dedicated details button opens it on touch-capable devices and moves focus
+secondary information. A resting fine pointer and keyboard focus open it after a
+short delay. A dedicated details button opens it on touch-capable devices and moves focus
 into the non-modal dialog. With hover and a fine pointer, this button is hidden
 visually until keyboard focus reaches it. It then overlays the end of the row
 and, while focused, takes the place of the row action before it, which stays

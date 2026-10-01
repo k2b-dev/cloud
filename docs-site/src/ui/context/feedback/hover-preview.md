@@ -75,12 +75,18 @@ of the region, it does not open at all, so it never covers the list.
 
 ### Timing
 
-- A resting mouse opens the card after `openDelay`.
+- A resting mouse opens the card after `openDelay`. The delay starts again
+  while the mouse moves over the anchor, and a press on the anchor cancels it.
+- The card does not open while a menu, date picker, or other light-dismiss
+  popover is open, so it never closes one that someone opened.
 - With the card open, moving to another anchor swaps the content after 90 ms.
 - The card stays open while the pointer moves into it. It closes 180 ms after
   the pointer leaves the anchor and the card.
-- Escape closes the card. It reopens for that anchor only after the pointer
-  left it.
+- Space and `toggle()` pin the card to their anchor: it stays open after the
+  pointer leaves. Hovering another anchor until the card swaps drops the pin,
+  so that card closes like any hovered one.
+- Escape closes the card, also before it opens during the delay. It reopens for
+  that anchor only after the pointer left it.
 - A card placed `beside` a region closes when that region or the page scrolls.
   A card beside its anchor follows it.
 
@@ -91,10 +97,20 @@ users the same information when they open the item.
 
 The card is a non-modal `dialog` named by `label`. With the default
 `keyboard="space"`, Space on a focused anchor toggles the card and focus stays
-on the anchor; Enter keeps its meaning, such as following a link. Space on a
-button, checkbox, or field inside the anchor keeps that control's own meaning.
-While the card is open, focusing another anchor of the group moves the card
-there. With `keyboard="focus"`, focus on an anchor opens the card after the delay.
+on the anchor; Enter keeps its meaning, such as following a link. Holding Space
+toggles once, and Space with a modifier, such as Shift+Space to scroll up,
+leaves the card alone. Space on a button, checkbox, radio, switch, option, menu
+item, tab, tree item, or field inside the anchor keeps that control's own
+meaning. While the card is open, focusing another anchor of the group moves the
+card there, and a pin moves with it. In this mode focus alone never keeps a card
+open that the mouse opened. With `keyboard="focus"`, focus on an anchor opens
+the card after the delay and keeps it open while focus stays there.
+
+Put `aria-controls={preview.id}` and
+`aria-expanded={preview.active() === value}` on the focusable element of each
+anchor, usually its link. Screen readers then announce the row as collapsed or
+expanded when Space toggles the card. Focus stays on the row, so they do not
+read the card itself: it must only repeat what opening the item shows.
 
 `toggle(value)` moves focus into the card so interactive content is reachable.
 Escape with focus inside the card returns it to the trigger and shows the focus
@@ -104,7 +120,8 @@ opened leaves the key to other handlers, such as an open modeless dialog.
 ## Runtime
 
 The card renders on the server as a closed native popover (`popover="auto"`),
-so outside clicks and other popovers dismiss it. Hydration registers the anchors
+so outside clicks and other popovers dismiss it; it never dismisses another
+light-dismiss popover itself. Hydration registers the anchors
 and positions the card in the top layer; it never changes the layout of the
 anchors or anything around them. The card uses the elevated surface, a strong
 border, and inner depth only: no outer shadow and no divider lines. It fades in
@@ -123,7 +140,9 @@ const preview = createHoverPreview<string>({
   <For each={conversations()}>
     {(item) => (
       <div ref={preview.anchor(item.id)} role="listitem" data-peek={preview.active() === item.id}>
-        <a href={item.href}>{item.subject}</a>
+        <a href={item.href} aria-controls={preview.id} aria-expanded={preview.active() === item.id}>
+          {item.subject}
+        </a>
       </div>
     )}
   </For>
