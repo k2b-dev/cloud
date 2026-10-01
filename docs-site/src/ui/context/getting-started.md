@@ -174,6 +174,8 @@ its label, description, control, and error rows, so a longer description in one
 column does not push that column's control down. Keep paired fields direct
 children of the same grid; a wrapper, button, or other sibling in the grid
 returns the fields to their stacked layout, as do flex rows and fill fields.
+A parent that is not a grid, such as a form dialog body or a flex column, keeps
+every field, including a multi-line one, at its stacked height.
 
 ### Icons, tones and navigation
 
