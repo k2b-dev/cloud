@@ -204,6 +204,24 @@ describe("IMAP envelope mapping", () => {
     expect(mapped.sentAt).toEqual(date);
     expect(mapped.internalDate).toEqual(date);
   });
+
+  test("fall back to the sent time when imapflow could not parse the INTERNALDATE", async () => {
+    const date = new Date("2026-07-13T12:00:00.000Z");
+    const mapped = await mapFetchedEnvelope(
+      { seq: 1, uid: 1, internalDate: "not a real date", envelope: { date } } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.internalDate).toEqual(date);
+  });
+
+  test("use a parsed INTERNALDATE as the internal date", async () => {
+    const internalDate = new Date("2026-07-14T08:30:00.000Z");
+    const mapped = await mapFetchedEnvelope(
+      { seq: 1, uid: 1, internalDate, envelope: { date: new Date("2026-07-13T12:00:00.000Z") } } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.internalDate).toEqual(internalDate);
+  });
 });
 
 describe("IMAP References parsing", () => {

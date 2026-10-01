@@ -621,8 +621,8 @@ export const parseReferences = async (headers: Buffer | undefined): Promise<stri
 
 export const mapFetchedEnvelope = async (message: FetchMessageObject, request: EnvelopeBatchRequest): Promise<ConnectorEnvelope> => {
   const envelope = message.envelope;
-  // imapflow keeps a Date header it cannot parse as the raw string. That is no sent time, and
-  // Postgres would reject it for the whole envelope batch.
+  // imapflow keeps a Date header or INTERNALDATE it cannot parse as the raw string. Such a string
+  // is no usable time, and Postgres would reject it for the whole envelope batch.
   const sentAt = envelope?.date instanceof Date ? envelope.date : null;
   const state = splitRemoteFlags(message.flags ?? []);
   const parsedHeaders = await parseEnvelopeHeaders(message.headers);
@@ -641,7 +641,7 @@ export const mapFetchedEnvelope = async (message: FetchMessageObject, request: E
     protocolFacts: parsedHeaders.protocolFacts,
     subject: envelope?.subject ?? "",
     sentAt,
-    internalDate: message.internalDate ? new Date(message.internalDate) : (sentAt ?? new Date(0)),
+    internalDate: message.internalDate instanceof Date ? message.internalDate : (sentAt ?? new Date(0)),
     sizeBytes: message.size ?? 0,
     flags: state.flags,
     labels: [...new Set([...state.keywords, ...(message.labels ?? [])])].sort(),
