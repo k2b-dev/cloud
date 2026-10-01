@@ -380,14 +380,14 @@ export function createHoverPreview<T>(options: HoverPreviewOptions<T> = {}): Hov
       leave,
       focusOut,
       toggled: (visible) => {
-        if (!visible) {
-          // Light dismissal by the browser: an outside click or another popover.
+        // Light dismissal by the browser: an outside click or another popover.
+        // The event of a close this controller made itself arrives later, when
+        // the pointer may already wait on the next anchor; that delay stays.
+        if (!visible && open()) {
           clear();
           pinned = undefined;
-          if (open()) {
-            setOpen(false);
-            listen(false);
-          }
+          setOpen(false);
+          listen(false);
         }
         options.onOpenChange?.(visible);
       },

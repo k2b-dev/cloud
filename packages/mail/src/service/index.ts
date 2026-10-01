@@ -16,6 +16,7 @@ import * as composeTemplates from "./compose-templates";
 import * as contactDirectory from "./contact-directory";
 import * as conversationAssignments from "./conversation-assignments";
 import * as conversationContext from "./conversation-context";
+import * as conversationPreviews from "./conversation-preview";
 import * as conversationReferences from "./conversation-reference";
 import * as conversationSummaries from "./conversation-summary";
 import * as conversations from "./conversations";
@@ -101,6 +102,7 @@ export {
   contactDirectory,
   conversationAssignments,
   conversationContext,
+  conversationPreviews,
   conversationReferences,
   conversationSummaries,
   conversations,

@@ -57,6 +57,7 @@ import {
   mailCommandInputSchema,
   mailConversationContextQuerySchema,
   mailConversationContextSchema,
+  mailConversationPreviewSchema,
   mailConversationSpaceLinkInputSchema,
   mailConversationSpaceSearchQuerySchema,
   mailFocusPageSchema,
@@ -108,6 +109,7 @@ import {
   composeTemplates,
   conversationAssignments,
   conversationContext,
+  conversationPreviews,
   conversationSummaries,
   conversations,
   draftLeases,
@@ -1609,6 +1611,30 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       );
     },
+  )
+  .get(
+    "/mailboxes/:mailboxId/conversations/:conversationId/preview",
+    describeRoute({
+      tags: ["Mail:Conversations"],
+      summary: "Get a conversation's quick look",
+      description:
+        "Returns the stored summary, a plain-text excerpt of the newest message without quoted history, attachment and earlier-message counts, and the assignee name. Reads stored data only: it never hydrates bodies, calls AI, loads remote content, or marks anything as read.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailConversationPreviewSchema, "Conversation quick look"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation not found or not readable"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    async (c) =>
+      respondPublic(
+        c,
+        conversationPreviews.getConversationPreview({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+        }),
+      ),
   )
   .get("/mailboxes/:mailboxId/conversations/:conversationId/summary", v("param", mailboxAndIdParamSchema("conversationId")), async (c) =>
     respondPublic(

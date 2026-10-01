@@ -4,8 +4,10 @@ import { timed } from "@k2b/stdlib/solid";
 import {
   Button,
   ButtonLink,
+  createHoverPreview,
   Dropdown,
   FilterChip,
+  HoverPreview,
   IconButton,
   NoticeCard,
   Placeholder,
@@ -32,18 +34,28 @@ import type { MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 import type { MailListError, MailListMode } from "../../service/workspace";
 import MailBulkActionBar from "./MailBulkActionBar";
+import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
 import { openMailSearchBuilder } from "./MailSearchBuilder";
 import type { MailActionId } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
-import { buildMailListHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
+import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
+import { createMailQuickLookLoader } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 
 const selectedQuickSearchFields = (url: URL): MailQuickSearchField[] => {
   const fields = parseMailQuickSearchFields(url);
   return fields.length > 0 ? fields : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
 };
+
+/** Width of the fixed quick look card, which opens 8px beside the list and keeps 8px to the frame edge. */
+const QUICK_LOOK_WIDTH_REM = 22;
+const QUICK_LOOK_GAP_PX = 8;
+/** A resting mouse opens the card after this many milliseconds and starts its request after the shorter rest. */
+const QUICK_LOOK_OPEN_DELAY = 200;
+const QUICK_LOOK_PREFETCH_DELAY = 80;
 
 const DEFAULT_QUICK_SEARCH_FIELD_SET = new Set<MailQuickSearchField>(DEFAULT_MAIL_QUICK_SEARCH_FIELDS);
 const isDefaultQuickSearch = (fields: MailQuickSearchField[]): boolean =>
@@ -105,7 +117,53 @@ export default function MailConversationList(props: {
         { value: "attachment_name", label: messages().attachmentNames, icon: "ti ti-paperclip" },
       ] satisfies Array<{ value: MailQuickSearchField; label: string; icon: string }>,
   );
+  const rowMessages = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const requestUrl = () => mailRouteUrl(props.requestUrl);
+  let listColumn: HTMLDivElement | undefined;
+  const workspaceFrame = () => listColumn?.closest<HTMLElement>(".mail-workspace") ?? null;
+  const conversationItem = (conversationId: string | undefined) =>
+    conversationId
+      ? props.items.find((item) => item.selectionKind === "conversation" && item.conversationId === conversationId)
+      : undefined;
+  // One quick look card for the list: it opens beside the list column for a
+  // resting mouse or Space, never for the conversation already in the reader
+  // or in selection mode, where a click selects instead of opening, and never
+  // covers the list.
+  const quickLook = createHoverPreview<string>({
+    openDelay: QUICK_LOOK_OPEN_DELAY,
+    placement: { beside: () => listColumn, within: workspaceFrame },
+    disabled: (conversationId) => props.selectionMode || conversationId === props.selectedConversationId,
+  });
+  const quickLookData = createMailQuickLookLoader(() => props.mailboxId);
+  // The request starts once the mouse rests on a row, before the card opens:
+  // a sweep across rows or rows passing under a still pointer while the list
+  // scrolls start none.
+  let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelPrefetch = () => {
+    clearTimeout(prefetchTimer);
+    prefetchTimer = undefined;
+  };
+  onCleanup(cancelPrefetch);
+  /** The same room rule as the card, so rows without room for it start no request. */
+  const roomForQuickLook = () => {
+    const list = listColumn?.getBoundingClientRect();
+    if (!list) return false;
+    const frameRight = Math.min(workspaceFrame()?.getBoundingClientRect().right ?? window.innerWidth, window.innerWidth);
+    const width = QUICK_LOOK_WIDTH_REM * Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return frameRight - list.right >= width + 2 * QUICK_LOOK_GAP_PX;
+  };
+  createEffect(() => {
+    const item = conversationItem(quickLook.active());
+    if (item) quickLookData.load(item);
+  });
+  const quickLookLabel = () => {
+    const item = conversationItem(quickLook.active());
+    return item ? rowMessages().quickLookNamed({ subject: item.subject || rowMessages().noSubject }) : rowMessages().quickLook;
+  };
+  const openFromQuickLook = (item: MailListItem) => {
+    quickLook.close();
+    void props.onNavigateItem(buildMailSelectionHref(requestUrl(), item), item, "pointer");
+  };
   const [searchValue, setSearchValue] = createSignal(props.query);
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const [loadMoreElement, setLoadMoreElement] = createSignal<HTMLDivElement>();
@@ -249,7 +307,15 @@ export default function MailConversationList(props: {
   });
 
   return (
-    <div class="flex h-full min-h-0 flex-col bg-[var(--ui-surface)]">
+    <div
+      ref={(element) => {
+        listColumn = element;
+        // Scroll events do not bubble; a capture listener sees the list's scroller.
+        element.addEventListener("scroll", cancelPrefetch, true);
+      }}
+      class="flex h-full min-h-0 flex-col bg-[var(--ui-surface)]"
+      data-mail-conversation-list
+    >
       <header class="flex shrink-0 flex-col gap-2 p-3">
         <Show
           when={props.canWrite && props.selectionMode}
@@ -514,6 +580,24 @@ export default function MailConversationList(props: {
                       manageTags: props.onManageTags,
                       merge: props.onMergeItem,
                     }}
+                    quickLook={{
+                      id: quickLook.id,
+                      anchor: quickLook.anchor,
+                      active: quickLook.active,
+                      // Every mouse move restarts the rest, so the card usually opens with its data.
+                      prefetch: (item) => {
+                        cancelPrefetch();
+                        if (props.selectionMode || item.conversationId === props.selectedConversationId) return;
+                        prefetchTimer = setTimeout(() => {
+                          prefetchTimer = undefined;
+                          if (roomForQuickLook()) quickLookData.load(item);
+                        }, QUICK_LOOK_PREFETCH_DELAY);
+                      },
+                      release: (item) => {
+                        cancelPrefetch();
+                        if (quickLook.active() !== item.conversationId) quickLookData.cancel(item);
+                      },
+                    }}
                   />
                 )}
               </For>
@@ -551,6 +635,20 @@ export default function MailConversationList(props: {
           </Show>
         </ScrollArea>
       </PullToRefresh>
+      <HoverPreview preview={quickLook} label={quickLookLabel()} size="fixed" class="mail-quick-look-card">
+        {(conversationId) => (
+          <Show when={conversationItem(conversationId)}>
+            {(item) => (
+              <MailConversationQuickLook
+                item={item()}
+                state={quickLookData.state(item())}
+                dateConfig={props.dateConfig}
+                onOpen={() => openFromQuickLook(item())}
+              />
+            )}
+          </Show>
+        )}
+      </HoverPreview>
     </div>
   );
 }

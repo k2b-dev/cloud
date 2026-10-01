@@ -210,6 +210,22 @@ describe("HoverPreview", () => {
     }
   });
 
+  test("a row the pointer rests on right after a close still opens after its delay", async () => {
+    const page = await load();
+    try {
+      await pointAt(page, row("r3"));
+      await page.clock.runFor(200);
+      await page.keyboard.press("Escape");
+      await page.clock.runFor(500);
+      // The browser reports the close only after the pointer arrived on the next row.
+      await pointAt(page, row("r4"));
+      await page.clock.runFor(200);
+      expect(await shown(page)).toBe("r4");
+    } finally {
+      await close(page);
+    }
+  });
+
   test("Space on the focused row toggles the card and keeps focus there; Enter still follows the row", async () => {
     const page = await load();
     try {

@@ -90,6 +90,17 @@ of the region, it does not open at all, so it never covers the list.
 - A card placed `beside` a region closes when that region or the page scrolls.
   A card beside its anchor follows it.
 
+### Loading the content
+
+When the card needs a request, start it once the mouse has rested on an anchor
+for part of `openDelay`: restart that rest on every mouse move and cancel it when
+the pointer leaves or the list scrolls. Every row of a fast sweep fires
+`pointerenter`, and so does every row that passes under a still pointer while
+the list scrolls, so a request per `pointerenter` costs one request per passing
+row. Abort a request when the pointer leaves its anchor before the card opens.
+While a newer version of the same item loads, keep showing the previous answer
+instead of placeholders.
+
 ## Accessibility
 
 Touch and pen input never open the card; it is a mouse affordance. Give touch
