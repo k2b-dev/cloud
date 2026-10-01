@@ -473,6 +473,7 @@
         "@types/bun": "catalog:",
         "@types/d3-force": "3.0.10",
         "@types/sanitize-html": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },

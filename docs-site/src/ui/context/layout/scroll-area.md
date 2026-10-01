@@ -48,6 +48,12 @@ content grows naturally. Keep its toolbar outside the scroll area so controls
 remain fully visible. Notebooks uses this arrangement for its CodeMirror
 editor; its book view inherits the fade from `AppWorkspace.Main`.
 
+The fades cover the edges of the scrollport. An editor that scrolls its own
+cursor into view must keep the cursor line out of them: Notebooks declares
+the fades as `scroll-padding-block` on the scroll area and passes the computed
+padding to CodeMirror's `EditorView.scrollMargins`. Do not add spacer lines or
+scroll manually.
+
 `DetailPanel` also integrates its gutter with the surrounding workspace inset;
 that panel-specific geometry is not part of `ScrollArea`.
 

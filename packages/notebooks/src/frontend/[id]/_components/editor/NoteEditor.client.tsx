@@ -19,6 +19,7 @@ import { inheritPresentationMode, requestedPresentationMode } from "../../../../
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
+import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
@@ -404,6 +405,8 @@ function EditorInstance(props: EditorInstanceProps) {
   addExtension(slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }));
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
+  let scrollPort: HTMLDivElement | undefined;
+  addExtension(fadeScrollMarginsExtension(() => scrollPort));
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
@@ -805,6 +808,8 @@ function EditorInstance(props: EditorInstanceProps) {
         <NoticeCard role="status" tone="warning" title={t().historyIncompleteTitle} detail={t().historyIncompleteDetail} />
       </Show>
       <ScrollArea
+        ref={scrollPort}
+        style={{ "scroll-padding-block": fadeScrollPadding }}
         class={`relative min-h-0 flex-1 cursor-text transition-colors ${
           !props.readOnly && dz.isDragging() ? "ring-2 ring-blue-400 dark:ring-blue-500 ring-inset" : ""
         }`}
