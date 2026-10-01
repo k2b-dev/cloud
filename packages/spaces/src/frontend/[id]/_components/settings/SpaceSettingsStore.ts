@@ -77,20 +77,41 @@ const migrateSettings = (raw: unknown): AllSpacesSettings => {
   };
 };
 
+/**
+ * Browsers ignore a cookie write whose name and value exceed about 4096 bytes, and then every setting
+ * here stops saving without an error. The margin covers browsers that count a little more.
+ */
+const SETTINGS_COOKIE_VALUE_BUDGET = 4000;
+
+const isDefaultSpaceSettings = (settings: SpaceUserSettings) =>
+  settings.view === DEFAULT_SPACE_SETTINGS.view && settings.hideSettings === DEFAULT_SPACE_SETTINGS.hideSettings && !settings.foldedColumns;
+
+/**
+ * Keeps the cookie within its budget: Spaces at their defaults carry no entry, and when it is still
+ * too large, the Spaces written longest ago lose theirs first. Entries are kept in write order.
+ */
+export const fitSettingsCookie = (settings: AllSpacesSettings): AllSpacesSettings => {
+  const entries = Object.entries(settings.spaces).filter(([, space]) => !isDefaultSpaceSettings(withDefaults(space)));
+  const size = (spaces: [string, SpaceUserSettings][]) =>
+    encodeURIComponent(JSON.stringify({ ...settings, spaces: Object.fromEntries(spaces) })).length;
+  while (entries.length > 0 && size(entries) > SETTINGS_COOKIE_VALUE_BUDGET) entries.shift();
+  return { ...settings, spaces: Object.fromEntries(entries) };
+};
+
 /** Read all settings from cookie (client-side) */
 export const readAllSettings = (): AllSpacesSettings => migrateSettings(cookies.readJsonCookie(COOKIE_NAME, DEFAULT_ALL));
 
 /** Write all settings to cookie (1 year expiry) */
-export const writeAllSettings = (settings: AllSpacesSettings) => cookies.writeJsonCookie(COOKIE_NAME, settings);
+export const writeAllSettings = (settings: AllSpacesSettings) => cookies.writeJsonCookie(COOKIE_NAME, fitSettingsCookie(settings));
 
 /** Read settings for a specific space (client-side) */
 export const readSpaceSettings = (spaceId: string): SpaceUserSettings => withDefaults(readAllSettings().spaces[spaceId]);
 
-/** Write settings for a specific space (client-side) */
+/** Write settings for a specific space (client-side); the Space moves to the newest end of the cookie. */
 export const writeSpaceSettings = (spaceId: string, settings: Partial<SpaceUserSettings>) => {
   const all = readAllSettings();
-  all.spaces[spaceId] = withDefaults({ ...all.spaces[spaceId], ...settings });
-  writeAllSettings(all);
+  const { [spaceId]: previous, ...others } = all.spaces;
+  writeAllSettings({ ...all, spaces: { ...others, [spaceId]: withDefaults({ ...previous, ...settings }) } });
 };
 
 /** Set the last opened space id (client-side) */

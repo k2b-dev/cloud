@@ -29,9 +29,9 @@ Ansichten stellen dieselben Einträge passend zur aktuellen Aufgabe dar. Eine gu
 ## Kanban-Board {icon="layout-kanban"}
 
 :::reference
-- **Filter:** Die Leiste über dem Board durchsucht und filtert alle Spalten nach Zuständigkeit, Priorität, Fälligkeitsdatum, Aktivität und Tags. **Mir zugewiesen** zeigt nur deine Arbeit. Solange ein Filter aktiv ist, zeigt jede Spalte, wie viele ihrer Einträge passen, zum Beispiel **2/7**. Filter stehen wie in der Liste in der URL; das Board anderer Personen ändern sie nicht.
+- **Filter:** Die Leiste über dem Board durchsucht und filtert alle Spalten nach Zuständigkeit, Priorität, Fälligkeitsdatum, Aktivität und Tags. **Mir zugewiesen** zeigt nur deine Arbeit. Solange ein Filter aktiv ist, zeigt jede Spalte, wie viele ihrer Einträge passen, zum Beispiel **2/7**. Eine neue Aufgabe, die nicht zum Filter passt, erhöht nur die Anzahl ihrer Spalte, bis du den Filter zurücksetzt. Filter stehen wie in der Liste in der URL; das Board anderer Personen ändern sie nicht.
 - **Spalte einklappen:** Mit der Schaltfläche im Spaltenkopf klappst du eine Spalte, die du gerade nicht brauchst, zu einem schmalen Streifen mit Name und Anzahl ein. Wähle den Streifen, um sie wieder auszuklappen. Auch auf eine eingeklappte Spalte kannst du Karten ziehen; sie landen oben. Eingeklappte Spalten merkt sich dieser Browser für diesen Space und nur für dich.
-- **Tastenkürzel:** Die Tastatur-Schaltfläche am Ende der Leiste listet die Kürzel des Boards.
+- **Tastenkürzel:** Die Tastatur-Schaltfläche am Ende der Leiste öffnet eine Liste der Kürzel des Boards.
 :::
 
 ## Beispiele für die globale Suche {icon="search"}

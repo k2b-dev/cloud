@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, ScrollArea } from "@k2b/ui";
+import { Button, IconButton, prompts, ScrollArea } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -25,7 +25,8 @@ type Props = {
   currentUserId: string;
 };
 
-function KeyboardShortcutsHint(props: { canWrite: boolean }) {
+/** The board's shortcuts as a dialog, so a click or tap shows them as well as a keyboard. */
+function KeyboardShortcutsButton(props: { canWrite: boolean }) {
   const t = useSpaceMessages();
   const shortcuts = () => [
     { keys: ["←", "↑", "→", "↓"], label: t.kanbanShortcutNavigate },
@@ -37,27 +38,33 @@ function KeyboardShortcutsHint(props: { canWrite: boolean }) {
         ]
       : []),
   ];
-  return (
-    <IconButton
-      label={t.keyboardShortcuts}
-      tooltip={
-        <span class="flex flex-col gap-1 py-0.5 text-[11px]">
-          <span class="font-medium">{t.kanbanShortcutsTitle}</span>
+  const openShortcuts = () =>
+    void prompts.dialog<void>(
+      () => (
+        <div class="flex flex-col gap-2 text-sm">
+          <p class="text-xs text-dimmed">{t.kanbanShortcutsTitle}</p>
           <For each={shortcuts()}>
             {(shortcut) => (
-              <span class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4">
                 <span>{shortcut.label}</span>
-                <span class="flex gap-0.5">
+                <span class="flex gap-1">
                   <For each={shortcut.keys}>
-                    {(key) => <kbd class="rounded border border-current/25 px-1 font-mono text-[10px] leading-4 opacity-80">{key}</kbd>}
+                    {(key) => (
+                      <kbd class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] px-1.5 font-mono text-xs leading-5">
+                        {key}
+                      </kbd>
+                    )}
                   </For>
                 </span>
-              </span>
+              </div>
             )}
           </For>
-        </span>
-      }
-    >
+        </div>
+      ),
+      { title: t.keyboardShortcuts, icon: "ti ti-keyboard", size: "small" },
+    );
+  return (
+    <IconButton label={t.keyboardShortcuts} aria-haspopup="dialog" onClick={openShortcuts} data-spaces-kanban-shortcuts>
       <i class="ti ti-keyboard text-base" aria-hidden="true" />
     </IconButton>
   );
@@ -73,7 +80,12 @@ export default function SpacesKanbanRoute(props: Props) {
     // Columns refresh their own pages on view changes; the snapshot reloads for wormholes and filter changes.
     domains: ["wormholes"],
   });
-  const requestedFilter = () => boardFilter(view.requestedFilter());
+  // The server drops tags the Space no longer has, so the board's own column requests must not send them either.
+  const appliedFilter = (filter: FilterState) => {
+    const board = boardFilter(filter);
+    return { ...board, tagIds: board.tagIds.filter((tagId) => props.tags.some((tag) => tag.id === tagId)) };
+  };
+  const requestedFilter = () => appliedFilter(view.requestedFilter());
   const [folded, setFolded] = createSignal(new Set(props.foldedColumns));
 
   const commitFilterPatch = (patch: Partial<FilterState>) => {
@@ -107,7 +119,7 @@ export default function SpacesKanbanRoute(props: Props) {
         onFilterChange={commitFilterPatch}
         onSearchChange={(search) => commitFilterPatch({ search })}
         onClearFilters={clearFilters}
-        actions={<KeyboardShortcutsHint canWrite={props.canWrite} />}
+        actions={<KeyboardShortcutsButton canWrite={props.canWrite} />}
       />
       <Show when={view.error()}>
         {(error) => (
@@ -130,7 +142,7 @@ export default function SpacesKanbanRoute(props: Props) {
               tags={props.tags}
               selectedItemId={props.selectedItemId}
               initialBuckets={current.buckets}
-              filter={boardFilter(view.filter())}
+              filter={appliedFilter(view.filter())}
               folded={folded()}
               onToggleFolded={toggleFolded}
               pageSize={30}

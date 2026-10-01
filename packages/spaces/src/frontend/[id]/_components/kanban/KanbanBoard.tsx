@@ -487,7 +487,9 @@ export default function KanbanBoard(props: Props) {
         sourceBucketKey: resolved.source.bucket.key,
         targetBucketKey: resolved.targetBucket.key,
         targetColumnId,
-        position: movePosition(targetItemsWithoutSource, targetIndexClamped),
+        // A folded column shows no cards to land next to; without a position the server puts the card at
+        // the top of the whole column, above cards an active filter hides.
+        position: props.folded.has(resolved.targetBucket.key) ? {} : movePosition(targetItemsWithoutSource, targetIndexClamped),
         targetIndex: targetIndexClamped,
         targetCompleted: resolved.targetBucket.isDone,
         claimId: resolved.targetBucket.isDone ? ownClaimId(resolved.source.item.claim, props.currentUserId) : undefined,
@@ -812,7 +814,7 @@ export default function KanbanBoard(props: Props) {
   return (
     <div class="flex h-full min-h-0 flex-col">
       <p id={`spaces-kanban-shortcuts-${props.spaceId}`} class="sr-only">
-        {t.kanbanKeyboardHelp}
+        {props.canWrite ? t.kanbanKeyboardHelp : t.kanbanKeyboardHelpReadOnly}
       </p>
       <div
         ref={boardScrollContainer}

@@ -6,7 +6,7 @@ import tailwind from "bun-plugin-tailwind";
 import { type Browser, chromium, type Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { SpaceColumn, SpaceItem } from "@/contracts";
+import { ItemFilterSchema, type SpaceColumn, type SpaceItem } from "@/contracts";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -92,7 +92,7 @@ const bucketsFor = (filter?: (entry: SpaceItem) => boolean): KanbanBucketInitial
 const unfiltered = () => bucketsFor();
 const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
 
-type Scenario = { locale: "en" | "de"; query?: string; folded?: string[]; buckets?: KanbanBucketInitial[] };
+type Scenario = { locale: "en" | "de"; query?: string; folded?: string[]; buckets?: KanbanBucketInitial[]; canWrite?: boolean };
 const serverBody = (scenario: Scenario) =>
   renderToString(() =>
     createComponent(KanbanFixture, {
@@ -105,7 +105,7 @@ const serverBody = (scenario: Scenario) =>
       initialBuckets: scenario.buckets ?? unfiltered(),
       foldedColumns: scenario.folded ?? [],
       selectedItemId: "",
-      canWrite: true,
+      canWrite: scenario.canWrite ?? true,
       currentUserId: me.id,
     }),
   );
@@ -114,6 +114,7 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 const pages = new Map<string, string>();
 const moves: unknown[] = [];
+const filterRequests: unknown[] = [];
 let browser: Browser;
 
 beforeAll(async () => {
@@ -137,8 +138,12 @@ beforeAll(async () => {
         return Response.json({ ...items.find((entry) => entry.id === move[1])!, columnId: body.columnId });
       }
       if (url.pathname === "/api/spaces/Space1/items/filter") {
-        const body = (await request.json()) as { columnIds: string[] };
-        const bucket = unfiltered().find((entry) => entry.columnId === body.columnIds[0])!;
+        // As strict as the real route: the schema answers 400, a tag the Space does not have 404.
+        const parsed = ItemFilterSchema.safeParse(await request.json());
+        filterRequests.push(parsed.success ? parsed.data : null);
+        if (!parsed.success) return Response.json({ message: "Invalid filter" }, { status: 400 });
+        if (parsed.data.tagIds?.some((tagId) => tagId !== "Tag001")) return Response.json({ message: "Tag not found" }, { status: 404 });
+        const bucket = unfiltered().find((entry) => entry.columnId === parsed.data.columnIds?.[0])!;
         return Response.json({ items: bucket.items, total: bucket.total, page: 1, pageSize: 30, totalPages: bucket.totalPages });
       }
       if (url.pathname === "/api/spaces/workspace/view") {
@@ -210,8 +215,8 @@ const layout = (page: Page) =>
       titleOffset: Math.round(
         board.querySelector("article p")!.getBoundingClientRect().top - board.querySelector("article")!.getBoundingClientRect().top,
       ),
-      combinedFilter: visible(window.document.querySelector("[data-spaces-board-toolbar] .\\@4xl\\:hidden")!),
-      separateFilters: visible(window.document.querySelector("[data-spaces-board-toolbar] .\\@4xl\\:flex")!),
+      combinedFilter: visible(window.document.querySelector("[data-spaces-board-filter-menu]")!),
+      separateFilters: visible(window.document.querySelector("[data-spaces-board-chips]")!),
     };
   });
 
@@ -296,8 +301,8 @@ describe("Spaces Kanban board in Chromium", () => {
     }
   }, 30_000);
 
-  test("a card dropped on a folded column moves to the top of that column", async () => {
-    const page = await open(desktop, { locale: "en", folded: ["column:Col003"] });
+  test("a card dropped on a folded column moves to the top of that column, also while a filter hides cards", async () => {
+    const page = await open(desktop, { locale: "en", folded: ["column:Col003"], query: "?assignedTo=unassigned" });
     try {
       moves.splice(0);
       const card = page.locator("article").filter({ hasText: "Ask the bakery" });
@@ -316,7 +321,8 @@ describe("Spaces Kanban board in Chromium", () => {
       const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
       await page.mouse.up();
       await moved;
-      expect(moves).toEqual([{ columnId: "Col003", beforeItemId: "Item06", completed: false }]);
+      // No neighbor: the server puts the card at the top of the whole column, above cards a filter hides.
+      expect(moves).toEqual([{ columnId: "Col003", completed: false }]);
     } finally {
       await page.context().close();
     }
@@ -343,4 +349,122 @@ describe("Spaces Kanban board in Chromium", () => {
       await page.context().close();
     }
   }, 30_000);
+  const allFilters = "?assignedTo=assigned&priority=urgent,high,medium,low&deadline=overdue&activity=inactive&tags=Tag001&q=banners";
+  for (const locale of ["de", "en"] as const) {
+    test(`${locale}: with every filter active, the toolbar keeps every control inside its row`, async () => {
+      // The separate chips start at a 68rem toolbar; the page pads the toolbar by 8 px a side.
+      for (const width of [900, 960, 1040, 1120, 1280]) {
+        const page = await open({ width, height: 800, touch: false }, { locale, query: allFilters });
+        try {
+          const fit = await page.evaluate(() => {
+            const toolbar = window.document.querySelector("[data-spaces-board-toolbar]")!;
+            const right = toolbar.getBoundingClientRect().right;
+            const chips = window.document.querySelector<HTMLElement>("[data-spaces-board-chips]")!;
+            const controls = Array.from(toolbar.querySelectorAll("button, a, input")).filter(
+              (control) => control.getBoundingClientRect().width > 0 && !chips.contains(control),
+            );
+            return {
+              outside: controls.filter((control) => control.getBoundingClientRect().right > right + 0.5).length,
+              separate: getComputedStyle(chips).display !== "none",
+              chipsClipped: chips.scrollWidth > chips.clientWidth,
+              clear: controls.some((control) => control.getAttribute("href") === "/app/spaces/Space1"),
+            };
+          });
+          expect({ width, ...fit }).toEqual({ width, outside: 0, separate: width >= 1120, chipsClipped: false, clear: width >= 1120 });
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 60_000);
+  }
+
+  test("desktop: applying a filter moves no other toolbar control", async () => {
+    const page = await open({ width: 1280, height: 800, touch: false }, { locale: "de" });
+    try {
+      const positions = () =>
+        page.evaluate(() =>
+          Array.from(
+            window.document.querySelectorAll(
+              "[data-spaces-board-toolbar] form, [data-spaces-board-chips] > *, [data-spaces-kanban-shortcuts]",
+            ),
+          ).map((element) => {
+            const rect = element.getBoundingClientRect();
+            return [Math.round(rect.left), Math.round(rect.width)];
+          }),
+        );
+      const before = await positions();
+      await page.getByRole("button", { name: "Zuständigkeit" }).click();
+      await page.getByRole("menuitemradio", { name: "Jemandem zugewiesen" }).click();
+      await page.waitForURL((url) => url.searchParams.get("assignedTo") === "assigned");
+      expect(await positions()).toEqual(before);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("phone: the first filter from the combined menu moves neither the search nor the menu button", async () => {
+    const page = await open(phone, { locale: "de" });
+    try {
+      const positions = () =>
+        page.evaluate(() =>
+          Array.from(
+            window.document.querySelectorAll(
+              "[data-spaces-board-toolbar] form, [data-spaces-board-filter-menu], [data-spaces-kanban-shortcuts]",
+            ),
+          ).map((element) => {
+            const rect = element.getBoundingClientRect();
+            return [Math.round(rect.left), Math.round(rect.width)];
+          }),
+        );
+      const before = await positions();
+      await page.getByRole("button", { name: "Filter" }).tap();
+      await page.getByRole("menuitemradio", { name: "Mir zugewiesen" }).tap();
+      await page.waitForURL((url) => url.searchParams.get("assignedTo") === "me");
+      expect(await positions()).toEqual(before);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("filter values the API would reject do not break a column refresh", async () => {
+    const page = await open(desktop, { locale: "en", query: "?tags=Gone01&assignedTo=bogus&priority=Urgent&deadline=soon" });
+    try {
+      filterRequests.splice(0);
+      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("spaces-data-invalidated", { detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined } }),
+        ),
+      );
+      await refreshed;
+      await page.waitForFunction(() => !window.document.querySelector('[role="region"] button.text-red-600'));
+      // Nothing valid remains of the URL filter, so the board is unfiltered: one plain page per column.
+      expect(filterRequests).toHaveLength(4);
+      for (const request of filterRequests) expect(request).toMatchObject({ assignedTo: "all", deadlineFilter: "all" });
+      expect(
+        filterRequests.some((request) => (request as { tagIds?: string[] }).tagIds || (request as { priority?: string[] }).priority),
+      ).toBe(false);
+      expect(await page.locator('[role="region"] button.text-red-600').count()).toBe(0);
+      expect(await page.locator("[data-spaces-board-chips] [data-active]").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  for (const canWrite of [true, false]) {
+    test(`the shortcuts button opens the list on a tap and names ${canWrite ? "the edit shortcuts" : "no edit shortcuts for a reader"}`, async () => {
+      const page = await open(phone, { locale: "en", canWrite });
+      try {
+        await page.locator("[data-spaces-kanban-shortcuts]").tap();
+        const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+        await dialog.waitFor();
+        expect(await dialog.textContent()).toContain("Open the card");
+        expect((await dialog.textContent())?.includes("Assign it to you")).toBe(canWrite);
+        // The board's own description for screen readers names the same shortcuts.
+        expect((await page.locator("#spaces-kanban-shortcuts-Space1").textContent())?.includes("M assigns")).toBe(canWrite);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
 });

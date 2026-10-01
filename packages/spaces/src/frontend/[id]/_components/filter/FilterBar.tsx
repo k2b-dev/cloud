@@ -196,14 +196,11 @@ export default function FilterBar(props: FilterBarProps) {
       ],
     },
   ];
-  const assignmentLabel = () =>
-    assignmentOptions[0]!.options.find((option) => option.value === props.filter.assignedTo && option.value !== "all")?.label ??
-    t.assignment;
   const boardFilterOptions = (): FilterChipSection[] => [
     prefixed("assigned", t.assignment, assignmentOptions[0]!),
-    prefixed("priority", t.priority, priorityOptions[0]!),
     prefixed("deadline", t.deadline, deadlineOptions[0]!),
     prefixed("activity", t.activityState, activityOptions[0]!),
+    prefixed("priority", t.priority, priorityOptions[0]!),
     ...(props.tags.length > 0 ? [prefixed("tag", t.tags, tagOptions()[0]!)] : []),
   ];
   const boardFilterValue = () => [
@@ -249,34 +246,30 @@ export default function FilterBar(props: FilterBarProps) {
     );
 
   if (props.variant === "board") {
-    // One row in every width: separate chips where the toolbar has room, one combined menu where it does not.
+    // One row in every width: separate chips once the row fits their longest German state with Clear,
+    // one combined menu (with its own reset) below that. A filter moves nothing else: chip labels stay
+    // fixed, chips that count selections come last, and Clear takes the free space after the chips.
+    // Chips that still outgrow the row scroll in their own box, so Clear and the actions stay reachable.
     return (
       <div class="@container" style="view-transition-name: filter-bar">
         <div class="flex items-center gap-2" data-spaces-board-toolbar>
           <SearchInput
-            class="min-w-0 flex-1 @4xl:w-52 @4xl:flex-none"
+            class="min-w-0 flex-1 @min-[68rem]:w-52 @min-[68rem]:flex-none"
             value={props.filter.search}
             busy={props.searchBusy}
             reset={props.searchReset}
             baseUrl={buildFilterUrl(props.baseUrl, {}, props.filter)}
             onSearch={props.onSearchChange}
           />
-          <div class="hidden shrink-0 items-center gap-2 @4xl:flex">
+          <div class="no-scrollbar -m-1 hidden min-w-0 items-center gap-2 overflow-x-auto p-1 @min-[68rem]:flex" data-spaces-board-chips>
             <FilterChip
-              label={assignmentLabel()}
+              label={t.assignment}
               icon="ti ti-user"
               options={assignmentOptions}
               value={[props.filter.assignedTo]}
               onValueChange={(v) => navigate({ assignedTo: (v[0] ?? defaultFilter.assignedTo) as AssignedToFilter })}
               isActive={props.filter.assignedTo !== defaultFilter.assignedTo}
               defaultValue={[defaultFilter.assignedTo]}
-            />
-            <FilterChip
-              label={t.priority}
-              icon="ti ti-flag"
-              options={priorityOptions}
-              value={props.filter.priority}
-              onValueChange={(v) => navigate({ priority: v as Priority[] })}
             />
             <FilterChip
               label={t.deadline}
@@ -296,6 +289,13 @@ export default function FilterBar(props: FilterBarProps) {
               isActive={props.filter.activity !== defaultFilter.activity}
               defaultValue={[defaultFilter.activity]}
             />
+            <FilterChip
+              label={t.priority}
+              icon="ti ti-flag"
+              options={priorityOptions}
+              value={props.filter.priority}
+              onValueChange={(v) => navigate({ priority: v as Priority[] })}
+            />
             {props.tags.length > 0 && (
               <FilterChip
                 label={t.tags}
@@ -306,7 +306,7 @@ export default function FilterBar(props: FilterBarProps) {
               />
             )}
           </div>
-          <div class="shrink-0 @4xl:hidden">
+          <div class="shrink-0 @min-[68rem]:hidden" data-spaces-board-filter-menu>
             <FilterChip
               label={t.filters}
               icon="ti ti-filter"
@@ -322,7 +322,7 @@ export default function FilterBar(props: FilterBarProps) {
               position="bottom-right"
             />
           </div>
-          {clearButton()}
+          {hasFilters() && <div class="hidden shrink-0 @min-[68rem]:flex">{clearButton()}</div>}
           <div class="ml-auto flex shrink-0 items-center gap-1">{props.actions}</div>
         </div>
       </div>

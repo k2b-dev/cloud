@@ -37,3 +37,21 @@ describe("Spaces activity filter URL state", () => {
     expect(parseFilterFromUrl(new URL("https://cloud.test/app/spaces/Space1?activity=unknown")).activity).toBe("all");
   });
 });
+
+describe("Spaces URL filters the filter API would reject", () => {
+  test("fall back to their defaults instead of counting as an active filter", () => {
+    const filter = parseFilterFromUrl(
+      new URL(
+        "https://cloud.test/app/spaces/Space1?view=kanban&assignedTo=bogus&priority=Urgent,high,high,soon&deadline=soon&tags=x,Tag001,Tag001",
+      ),
+    );
+
+    expect(filter.assignedTo).toBe("all");
+    expect(filter.deadlineFilter).toBe("all");
+    expect(filter.priority).toEqual(["high"]);
+    expect(filter.tagIds).toEqual(["Tag001"]);
+    expect(hasActiveFilters(boardFilter(parseFilterFromUrl(new URL("https://cloud.test/app/spaces/Space1?assignedTo=x&deadline=x"))))).toBe(
+      false,
+    );
+  });
+});

@@ -1,12 +1,16 @@
-import type {
-  AssignedToFilter,
-  DeadlineFilter,
-  ItemActivityFilter,
-  ItemGroupBy,
-  ItemSort,
-  ItemStatus,
-  ItemType,
-  Priority,
+import {
+  type AssignedToFilter,
+  AssignedToFilterSchema,
+  type DeadlineFilter,
+  DeadlineFilterSchema,
+  type ItemActivityFilter,
+  type ItemGroupBy,
+  type ItemSort,
+  type ItemStatus,
+  type ItemType,
+  type Priority,
+  PrioritySchema,
+  ResourceShortIdSchema,
 } from "@/contracts";
 
 // =============================================================================
@@ -108,22 +112,32 @@ const collectPreservedParams = (baseUrl: string) => {
   return { path: base.pathname, preserved };
 };
 
+/** The listed values of one parameter that the filter API accepts, once each; a typo or stale link must not become an active filter. */
+const listParam = <T extends string>(value: string | null, accepts: (entry: string) => entry is T): T[] => [
+  ...new Set(value?.split(",").filter(accepts) ?? []),
+];
+const isPriority = (entry: string): entry is Priority => PrioritySchema.safeParse(entry).success;
+const isResourceId = (entry: string): entry is string => ResourceShortIdSchema.safeParse(entry).success;
+
 /**
- * Parse filter state from URL search params
+ * Parse filter state from URL search params. Values the filter API would reject fall back to their
+ * defaults, so a page and the requests it makes later apply the same filter.
  */
 export function parseFilterFromUrl(url: URL): FilterState {
   const params = url.searchParams;
   const activity = params.get(QueryParams.ACTIVITY);
+  const assignedTo = AssignedToFilterSchema.safeParse(params.get(QueryParams.ASSIGNED_TO));
+  const deadline = DeadlineFilterSchema.safeParse(params.get(QueryParams.DEADLINE));
 
   return {
     type: (params.get(QueryParams.TYPE) as ItemType) || defaultFilter.type,
     status: (params.get(QueryParams.STATUS) as ItemStatus) || defaultFilter.status,
     activity: activity === "inactive" || activity === "claimed" ? activity : defaultFilter.activity,
-    priority: (params.get(QueryParams.PRIORITY)?.split(",").filter(Boolean) as Priority[]) || [],
-    tagIds: params.get(QueryParams.TAGS)?.split(",").filter(Boolean) || [],
+    priority: listParam(params.get(QueryParams.PRIORITY), isPriority),
+    tagIds: listParam(params.get(QueryParams.TAGS), isResourceId),
     columnIds: params.get(QueryParams.COLUMNS)?.split(",").filter(Boolean) || [],
-    assignedTo: (params.get(QueryParams.ASSIGNED_TO) as AssignedToFilter) || defaultFilter.assignedTo,
-    deadlineFilter: (params.get(QueryParams.DEADLINE) as DeadlineFilter) || defaultFilter.deadlineFilter,
+    assignedTo: assignedTo.success ? assignedTo.data : defaultFilter.assignedTo,
+    deadlineFilter: deadline.success ? deadline.data : defaultFilter.deadlineFilter,
     search: params.get(QueryParams.SEARCH) || "",
     sort: (params.get(QueryParams.SORT) as ItemSort) || defaultFilter.sort,
     sortDesc: params.get(QueryParams.SORT_DESC) === "true",
