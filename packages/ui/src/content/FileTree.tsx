@@ -347,7 +347,7 @@ export default function FileTree(props: FileTreeProps) {
                             tabIndex={-1}
                             class="k2b-content-file-tree__actions"
                             label={`Actions for ${currentNode().name}`}
-                            title={messages().actions}
+                            tooltip={messages().actions}
                           >
                             <i class="ti ti-dots" aria-hidden="true" />
                             <span class="k2b-sr-only">Actions for {currentNode().name}</span>

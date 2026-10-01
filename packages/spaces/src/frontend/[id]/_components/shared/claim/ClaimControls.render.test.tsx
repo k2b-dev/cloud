@@ -123,7 +123,8 @@ describe("Spaces claim controls", () => {
       const compact = button({ ...props, compact: true }, locale);
       expect(compact).toContain(`aria-label="${label}"`);
       expect(tooltipText(compact)).toBe(label);
-      expect(compact).not.toContain(" title=");
+      // Server HTML keeps the label as native title for a page that never hydrates; hydration replaces it with the tooltip.
+      expect(compact).toContain(` title="${label}"`);
     }
     // The full-width button already shows its label and needs no tooltip.
     expect(button({})).not.toContain('role="tooltip"');

@@ -730,6 +730,17 @@ describe("@k2b/ui complete action migrations", () => {
     expect(explicit).toContain('data-variant="primary"');
   });
 
+  test("server-renders an icon-only control's label as its tooltip and native fallback title", () => {
+    const button = renderToString(() => createComponent(IconButton, { label: "Zoom in", children: "+" }));
+    const link = renderToString(() => createComponent(IconButtonLink, { href: "/items", label: "Back to items", children: "Back" }));
+    const quiet = renderToString(() => createComponent(IconButton, { label: "Close", tooltip: false, children: "x" }));
+
+    expect(button).toMatch(/<span[^>]*role="tooltip"[^>]*>Zoom in<\/span>/);
+    expect(link).toMatch(/<span[^>]*role="tooltip"[^>]*>Back to items<\/span>/);
+    expect(quiet).not.toContain('role="tooltip"');
+    expect(quiet).not.toContain("title=");
+  });
+
   test("keeps icon-button loading labels accessible without overflowing the square control", () => {
     const html = renderToString(() =>
       createComponent(IconButton, {

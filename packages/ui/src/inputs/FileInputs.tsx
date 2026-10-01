@@ -1,6 +1,7 @@
 import { dropzone } from "@k2b/stdlib/solid";
 import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
+import { Tooltip } from "../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import type { FieldProps, ValueFieldProps } from "./field-contract";
@@ -558,16 +559,16 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
                     </For>
                   </Show>
                 </div>
-                <button
+                <Tooltip.Trigger
                   type="button"
                   class="k2b-image-cropper__rotate"
-                  title={messages().rotateRight}
+                  content={messages().rotateRight}
                   aria-label={messages().rotateRight}
                   disabled={disabled() || !crop() || Boolean(error())}
                   onClick={rotateRight}
                 >
                   <i class="ti ti-rotate-clockwise" aria-hidden="true" />
-                </button>
+                </Tooltip.Trigger>
               </div>
             </Show>
           </Show>

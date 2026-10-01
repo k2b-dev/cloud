@@ -1,5 +1,6 @@
 import { highlight } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { Tooltip } from "../../feedback/Tooltip";
 import { createFieldMeta, Field, fieldControlAria } from "../../internal/field";
 import { useUiMessages } from "../../intl/messages";
 import {
@@ -466,10 +467,10 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   const saveControls = (): JSX.Element => (
     <>
       <Show when={props.onSave}>
-        <button
+        <Tooltip.Trigger
           type="button"
           class="k2b-markdown-editor__tool"
-          title={messages().saveShortcut}
+          content={messages().saveShortcut}
           aria-label={messages().save}
           tabIndex={-1}
           disabled={props.disabled || props.saveDisabled || props.saving}
@@ -477,7 +478,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
           onClick={() => props.onSave?.()}
         >
           <i class={props.saving ? "ti ti-loader-2 k2b-spin" : props.saved ? "ti ti-check" : "ti ti-device-floppy"} aria-hidden="true" />
-        </button>
+        </Tooltip.Trigger>
       </Show>
     </>
   );
@@ -522,16 +523,16 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
                 {props.toolbarTrailing}
                 {saveControls()}
                 <Show when={props.onClose}>
-                  <button
+                  <Tooltip.Trigger
                     type="button"
                     class="k2b-markdown-editor__tool"
-                    title={messages().close}
+                    content={messages().close}
                     aria-label={messages().close}
                     tabIndex={props.disabled ? 0 : -1}
                     onClick={() => props.onClose?.()}
                   >
                     <i class="ti ti-x" aria-hidden="true" />
-                  </button>
+                  </Tooltip.Trigger>
                 </Show>
               </>
             }

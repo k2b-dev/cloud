@@ -26,6 +26,7 @@ import {
 } from "solid-js";
 import { Button } from "../actions/Button";
 import { prompts } from "../feedback/prompts";
+import { Tooltip } from "../feedback/Tooltip";
 import { toast } from "../feedback/toast";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
 import { Select } from "../inputs/Select";
@@ -124,6 +125,20 @@ const stripFrontmatter = (text: string): string => {
   return match ? text.trimStart().slice(match[0].length) : text;
 };
 
+/** Icon-only download link with the shared tooltip, for toolbars that style their own controls. */
+function DownloadLink(props: { class: string; href: string; download: string; label: string; icon: string }) {
+  let link: HTMLAnchorElement | undefined;
+  return (
+    <>
+      <a ref={link} class={props.class} href={props.href} download={props.download} aria-label={props.label}>
+        <i class={props.icon} aria-hidden="true" />
+        <span class="k2b-sr-only">{props.label}</span>
+      </a>
+      <Tooltip content={props.label} target={() => link} />
+    </>
+  );
+}
+
 /** Icon-only action, IDE style — sits in the floating top-right cluster of previews. */
 function OverlayAction(props: { icon: string; title: string; onClick?: () => void; href?: string; download?: string }) {
   const classes = "k2b-content-file-view__action";
@@ -131,16 +146,13 @@ function OverlayAction(props: { icon: string; title: string; onClick?: () => voi
     <Show
       when={props.href}
       fallback={
-        <button type="button" class={classes} title={props.title} aria-label={props.title} onClick={props.onClick}>
+        <Tooltip.Trigger type="button" class={classes} content={props.title} aria-label={props.title} onClick={props.onClick}>
           <i class={`ti ${props.icon}`} aria-hidden="true" />
-        </button>
+        </Tooltip.Trigger>
       }
     >
       {(href) => (
-        <a class={classes} href={href()} download={props.download ?? ""} title={props.title} aria-label={props.title}>
-          <i class={`ti ${props.icon}`} aria-hidden="true" />
-          <span class="k2b-sr-only">{props.title}</span>
-        </a>
+        <DownloadLink class={classes} href={href()} download={props.download ?? ""} label={props.title} icon={`ti ${props.icon}`} />
       )}
     </Show>
   );
@@ -177,18 +189,18 @@ const DownloadAction = (props: FileViewRendererProps): JSX.Element => {
 /** Toolbar-styled icon button — reuses the package markdown-editor tool primitive. */
 function EditorToolButton(props: { icon: string; title: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button
+    <Tooltip.Trigger
       type="button"
       class="k2b-markdown-editor__tool"
-      title={props.title}
+      content={props.title}
       aria-label={props.title}
       tabIndex={-1}
       disabled={props.disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={props.onClick}
     >
-      <i class={props.icon} />
-    </button>
+      <i class={props.icon} aria-hidden="true" />
+    </Tooltip.Trigger>
   );
 }
 
@@ -303,15 +315,13 @@ function TextRenderer(props: FileViewRendererProps) {
               <span class="k2b-markdown-editor__trailing">
                 <Show when={props.downloadHref}>
                   {(href) => (
-                    <a
+                    <DownloadLink
                       class="k2b-markdown-editor__tool"
                       href={href()}
                       download={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
-                      title={messages().download}
-                      aria-label={messages().download}
-                    >
-                      <i class="ti ti-download" />
-                    </a>
+                      label={messages().download}
+                      icon="ti ti-download"
+                    />
                   )}
                 </Show>
                 <EditorToolButton

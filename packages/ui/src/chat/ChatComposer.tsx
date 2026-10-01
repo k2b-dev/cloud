@@ -12,6 +12,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
+import { Tooltip } from "../feedback/Tooltip";
 import { SelectChip } from "../inputs/SelectChip";
 import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
@@ -723,7 +724,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         appearance="plain"
                         class="k2b-chat-composer__icon-action"
                         label={messages().addToChat}
-                        title={messages().addToChat}
+                        tooltip={messages().addToChat}
                       >
                         <i class="ti ti-plus" aria-hidden="true" />
                       </Dropdown.Trigger>
@@ -771,18 +772,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 <div class="k2b-chat-composer__submit">
                   <For each={props.contextActions}>
                     {(action) => (
-                      <button
+                      <Tooltip.Trigger
                         type="button"
                         class="k2b-chat-composer__icon-action"
                         data-tone={action.variant === "danger" ? "danger" : undefined}
                         disabled={action.disabled}
                         aria-pressed={action.pressed}
                         aria-label={action.label}
-                        title={action.label}
+                        content={action.label}
                         onClick={() => reportChatFailure(() => executeChatAction(action), props.onError)}
                       >
                         <i class={action.icon ?? "ti ti-dots"} aria-hidden="true" />
-                      </button>
+                      </Tooltip.Trigger>
                     )}
                   </For>
                   <Show when={hasContextUsage() ? (props.contextUsage ?? {}) : undefined}>
@@ -792,7 +793,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                   <Show
                     when={running() && !hasDraft() && props.onStop}
                     fallback={
-                      <button
+                      <Tooltip.Trigger
                         type="button"
                         class="k2b-chat-composer__send"
                         disabled={!canSubmit()}
@@ -809,7 +810,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                                 : messages().steerResponse
                               : messages().sendMessage
                         }
-                        title={
+                        content={
                           running()
                             ? runningSubmitIntent() === "queue"
                               ? messages().queueMessage
@@ -819,19 +820,19 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         onClick={() => void submit()}
                       >
                         <i class={submitting() ? "ti ti-loader-2 k2b-spin" : "ti ti-arrow-up"} aria-hidden="true" />
-                      </button>
+                      </Tooltip.Trigger>
                     }
                   >
-                    <button
+                    <Tooltip.Trigger
                       type="button"
                       class="k2b-chat-composer__stop"
                       disabled={stopping()}
                       aria-label={stopping() ? messages().stopping : messages().stopResponse}
-                      title={stopping() ? messages().stopping : messages().stopResponse}
+                      content={messages().stopResponse}
                       onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
                     >
                       <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />
-                    </button>
+                    </Tooltip.Trigger>
                   </Show>
                 </div>
               </>

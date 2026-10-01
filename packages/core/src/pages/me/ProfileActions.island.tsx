@@ -3,7 +3,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Avatar, Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Avatar, Button, IconButton, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 
@@ -289,17 +289,15 @@ export default function ProfileActions(props: Props) {
                                 {info.type} {info.suffix}
                               </span>
                             </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
+                            <IconButton
                               size="sm"
                               onClick={() => setKeys(keys().filter((_, idx) => idx !== i()))}
                               class="shrink-0 text-red-500 hover:text-red-700 dark:hover:text-red-400"
-                              title={t().removeKey}
-                              aria-label={t().removeNamedSshKey({ name: info.comment || info.type })}
+                              tooltip={t().removeKey}
+                              label={t().removeNamedSshKey({ name: info.comment || info.type })}
                             >
-                              <i class="ti ti-trash text-sm" />
-                            </Button>
+                              <i class="ti ti-trash text-sm" aria-hidden="true" />
+                            </IconButton>
                           </div>
                         );
                       }}

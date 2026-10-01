@@ -3,6 +3,7 @@ import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
+import { IconButton } from "../actions/Button";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ChartCursor } from "./chart-cursor";
@@ -540,6 +541,12 @@ const Chart = (props: ChartProps): JSX.Element => {
         }
       : undefined);
 
+  const control = (label: string, shortcut: string, icon: string, action: () => void) => (
+    <IconButton variant="secondary" label={label} tooltip={`${label} (${shortcut})`} onClick={action}>
+      <i class={`ti ${icon}`} aria-hidden="true" />
+    </IconButton>
+  );
+
   return (
     <Show
       when={!isEmpty(props)}
@@ -607,38 +614,14 @@ const Chart = (props: ChartProps): JSX.Element => {
         </Show>
         <Show when={draggable()}>
           <div class="k2b-chart__controls">
-            <button
-              type="button"
-              class="k2b-button k2b-icon-button"
-              data-variant="secondary"
-              aria-label={labels().zoomIn ?? messages().zoomIn}
-              title={`${labels().zoomIn ?? messages().zoomIn} (+)`}
-              onClick={() => zoom(1)}
-            >
-              <i class="ti ti-plus" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="k2b-button k2b-icon-button"
-              data-variant="secondary"
-              aria-label={labels().zoomOut ?? messages().zoomOut}
-              title={`${labels().zoomOut ?? messages().zoomOut} (-)`}
-              onClick={() => zoom(-1)}
-            >
-              <i class="ti ti-minus" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              class="k2b-button k2b-icon-button"
-              data-variant="secondary"
-              aria-label={
-                interactiveMap() ? (labels().resetMap ?? messages().resetMapView) : (labels().resetTimeline ?? messages().resetTimelineView)
-              }
-              title={`${interactiveMap() ? (labels().resetMap ?? messages().resetMapView) : (labels().resetTimeline ?? messages().resetTimelineView)} (0)`}
-              onClick={reset}
-            >
-              <i class="ti ti-focus-centered" aria-hidden="true" />
-            </button>
+            {control(labels().zoomIn ?? messages().zoomIn, "+", "ti-plus", () => zoom(1))}
+            {control(labels().zoomOut ?? messages().zoomOut, "-", "ti-minus", () => zoom(-1))}
+            {control(
+              interactiveMap() ? (labels().resetMap ?? messages().resetMapView) : (labels().resetTimeline ?? messages().resetTimelineView),
+              "0",
+              "ti-focus-centered",
+              reset,
+            )}
           </div>
         </Show>
       </div>

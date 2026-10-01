@@ -10,11 +10,11 @@ import {
 } from "@k2b/cloud/shared";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
-  Button,
   ButtonLink,
   DataTable,
   dialogCore,
   FilterChip,
+  IconButton,
   LocaleProvider,
   NoticeCard,
   Pagination,
@@ -263,9 +263,9 @@ export default function AiQuotaAdmin(props: {
                       );
                     if (col.id === "details")
                       return (
-                        <Button variant="ghost" size="sm" aria-label={`${t().details}: ${row.label}`} onClick={() => openDetail(row)}>
+                        <IconButton size="sm" label={`${t().details}: ${row.label}`} tooltip={t().details} onClick={() => openDetail(row)}>
                           <i class="ti ti-eye" aria-hidden="true" />
-                        </Button>
+                        </IconButton>
                       );
                     return <span class="text-xs text-dimmed">{row.lastUsed ? new Date(row.lastUsed).toLocaleString(locale()) : "—"}</span>;
                   }}

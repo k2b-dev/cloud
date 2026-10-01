@@ -1,6 +1,7 @@
 import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ssr/nav";
 import { type JSX, Show, splitProps } from "solid-js";
-import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
+import { isServer } from "solid-js/web";
+import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "text" | "subtle" | "input" | "warning" | "danger" | "success" | "ai";
 export type ButtonSize = "xs" | "sm" | "md" | "lg";
@@ -189,8 +190,19 @@ export type IconButtonLinkProps = Omit<ButtonLinkProps, "children"> & {
   label: string;
 };
 
+/**
+ * The native title is only the server-rendered, no-JavaScript hint; the
+ * hydrated tooltip removes it. Without a tooltip, an explicit title stays.
+ */
+export const iconTitle = (title: string | undefined, tooltip: JSX.Element | false | undefined): string | undefined =>
+  tooltip === false || tooltip === undefined ? title : isServer && typeof tooltip === "string" ? tooltip : undefined;
+
 export function IconButton(props: IconButtonProps): JSX.Element {
-  const [local, rest] = splitProps(props, ["children", "class", "label", "loading", "loadingLabel", "tooltip", "variant"]);
+  const [local, rest] = splitProps(props, ["children", "class", "label", "loading", "loadingLabel", "title", "tooltip", "variant"]);
+  const tooltip = useLabelTooltip(
+    () => local.tooltip,
+    () => local.title ?? local.label,
+  );
 
   return (
     <Button
@@ -199,8 +211,8 @@ export function IconButton(props: IconButtonProps): JSX.Element {
       variant={local.variant ?? "ghost"}
       class={`k2b-icon-button ${local.class ?? ""}`}
       aria-label={local.loading ? (local.loadingLabel ?? local.label) : local.label}
-      title={rest.title ?? (local.tooltip === undefined ? local.label : undefined)}
-      tooltip={local.tooltip}
+      title={iconTitle(local.title, tooltip())}
+      tooltip={tooltip()}
     >
       <Show when={!local.loading}>{local.children}</Show>
     </Button>
@@ -208,7 +220,11 @@ export function IconButton(props: IconButtonProps): JSX.Element {
 }
 
 export function IconButtonLink(props: IconButtonLinkProps): JSX.Element {
-  const [local, rest] = splitProps(props, ["children", "class", "label", "tooltip", "variant"]);
+  const [local, rest] = splitProps(props, ["children", "class", "label", "title", "tooltip", "variant"]);
+  const tooltip = useLabelTooltip(
+    () => local.tooltip,
+    () => local.title ?? local.label,
+  );
 
   return (
     <ButtonLink
@@ -216,8 +232,8 @@ export function IconButtonLink(props: IconButtonLinkProps): JSX.Element {
       variant={local.variant ?? "ghost"}
       class={`k2b-icon-button ${local.class ?? ""}`}
       aria-label={local.label}
-      title={rest.title ?? (local.tooltip === undefined ? local.label : undefined)}
-      tooltip={local.tooltip}
+      title={iconTitle(local.title, tooltip())}
+      tooltip={tooltip()}
     >
       {local.children}
     </ButtonLink>

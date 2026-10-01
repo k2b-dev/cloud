@@ -185,7 +185,7 @@ describe("@k2b/ui portable chat family", () => {
     expect(html).toContain('aria-label="Support message"');
     expect(html).toContain('role="alert"');
     expect(html).toContain("Model unavailable");
-    expect(html).toMatch(/class="k2b-chat-composer__send"[^>]*disabled/);
+    expect(html).toMatch(/class="k2b-chat-composer__send ?"[^>]*disabled/);
   });
 
   test("shows only stop while a response is running without a new draft", () => {
@@ -702,7 +702,8 @@ test("keeps context actions available without usage and out of the Plus menu", (
   expect(html).toContain('role="dialog"');
   expect(html).toContain("Compact context");
   expect(html).toContain('aria-expanded="false"');
-  expect(html).not.toContain('role="tooltip"');
+  // Context usage opens a dialog, not a hint; the only tooltip names the send button.
+  expect([...html.matchAll(/role="tooltip"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Send message"]);
 });
 
 test("working plan shows one semantic segment per step and bounded disclosure", () => {
@@ -738,6 +739,6 @@ test("composer context actions expose their toggle state", () => {
     }),
   );
   expect(html).toContain('aria-label="Hide tasks"');
-  expect(html).toContain('title="Hide tasks"');
+  expect(html).toMatch(/role="tooltip"[^>]*>Hide tasks</);
   expect(html).toContain('aria-pressed="true"');
 });

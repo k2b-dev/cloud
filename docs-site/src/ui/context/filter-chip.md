@@ -44,7 +44,7 @@ Changes are emitted immediately. This makes the component suitable for URL-backe
 | `position` | `"bottom-left" \| "bottom-right"` | `"bottom-left"` | Positions the dropdown relative to the trigger. |
 | `defaultValue` | `readonly string[]` | none | A non-empty array resets to a baseline instead of clearing all values. |
 | `disabled` | `boolean` | `false` | Disables the trigger and menu actions. |
-| `iconOnly` | `boolean` | `false` | Shows only the icon while retaining the label for assistive text. |
+| `iconOnly` | `boolean` | `false` | Shows only the icon; the label stays the accessible name and appears as its tooltip. |
 | `variant` | `ButtonVariant` | none | Uses the standard button appearance, for example `input` beside a search field. Omit to keep the default filter field. |
 
 ## Sections and options

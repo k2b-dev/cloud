@@ -9,6 +9,7 @@ import {
   DetailPanel,
   dialogCore,
   IconButton,
+  IconButtonLink,
   IconInput,
   InlineGuidance,
   MultiSelectInput,
@@ -1960,9 +1961,16 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             </Show>
             <Show when={app().publishedAt}>
               <Toolbar.Group>
-                <ButtonLink href={`/apps/${app().id}`} target="_blank" rel="noreferrer" size="xs" aria-label={text("Open live app")}>
+                <IconButtonLink
+                  href={`/apps/${app().id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  size="xs"
+                  variant="primary"
+                  label={text("Open live app")}
+                >
                   <i class="ti ti-external-link" aria-hidden="true" />
-                </ButtonLink>
+                </IconButtonLink>
               </Toolbar.Group>
             </Show>
           </Toolbar>
