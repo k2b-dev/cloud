@@ -328,7 +328,7 @@ contain table overflow inside the table region.
 - Associate labels, descriptions, and errors with inputs.
 - Keep heading order and landmarks meaningful.
 - Return focus when a dialog closes. Shared overlays return it with a ring
-  only when the keyboard opened them; see
+  only when the keyboard opened or worked them; see
   [Focus rings](/en/ui/focus#focus-after-an-overlay-closes).
 - Announce async changes when they are not otherwise visible.
 

@@ -105,6 +105,16 @@ const schedule = (callback: () => void): void => {
   else queueMicrotask(callback);
 };
 
+/**
+ * Whether focus is still where closing a level left it, on the page or the
+ * dialog: nothing took it before the next frame, neither a close handler nor a
+ * Tab pressed right after Escape.
+ */
+const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
+  const active = document.activeElement;
+  return !active || active === document.body || active === dialog;
+};
+
 export const createDialogCore = (): DialogCore => {
   const state: DialogState = { stack: [] };
 
@@ -244,6 +254,7 @@ export const createDialogCore = (): DialogCore => {
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       schedule(() => {
+        if (!focusUnclaimed(dialog)) return;
         if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
         else resolveInitialFocusTarget(previous, dialog)?.focus();
       });
@@ -262,7 +273,7 @@ export const createDialogCore = (): DialogCore => {
       // After the Escape that closed it: WebKit lights the ring of whatever
       // that key press leaves focused.
       schedule(() => {
-        if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
+        if (top.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(top.opener, top.openerRing);
       });
     }
 

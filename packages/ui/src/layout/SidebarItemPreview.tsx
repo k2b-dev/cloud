@@ -98,8 +98,10 @@ export function SidebarItemPreview(props: {
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !open()) return;
-      // Handled here, so the browser neither closes the popover itself nor lights the ring for this key.
-      event.preventDefault();
+      // Focus in the panel goes back to the row: handled here, so the browser neither
+      // returns it itself nor lights the ring for this key. A preview the pointer
+      // opened leaves the key to other handlers, such as an open modeless dialog.
+      if (panel.contains(document.activeElement)) event.preventDefault();
       dismiss();
     };
     const reposition = () => {

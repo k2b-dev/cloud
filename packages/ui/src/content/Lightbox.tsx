@@ -114,6 +114,13 @@ export default function Lightbox(props: LightboxProps) {
     }
   };
 
+  // The browser cancels the dialog itself, as on the Android back gesture;
+  // closing here still returns focus and tells the owner.
+  const handleCancel = (e: Event) => {
+    e.preventDefault();
+    close();
+  };
+
   // Registration and teardown both live in onMount: onCleanup also runs when an
   // SSR render is disposed, where `document` does not exist.
   onMount(() => {
@@ -131,6 +138,7 @@ export default function Lightbox(props: LightboxProps) {
       ref={dialogRef}
       class="k2b-content-lightbox"
       onMouseDown={handleBackdropClick}
+      onCancel={handleCancel}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       aria-label={messages().imageLightbox}
