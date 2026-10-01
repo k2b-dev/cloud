@@ -81,6 +81,7 @@ if (argv.includes("--bootstrap")) {
     "src/frontend/_components/workspace/BaseOverview.behavior.test.tsx",
     "src/frontend/_components/workspace/WorkspaceMetadataRefresh.behavior.test.tsx",
     "src/frontend/_components/workspace/GridsNavigation.behavior.test.tsx",
+    "src/frontend/_components/sidebar/RememberGridsPath.behavior.test.tsx",
     "src/frontend/_components/records-view/records-data-controller.behavior.test.tsx",
     "src/frontend/_components/records-view/records-admin-controller.behavior.test.tsx",
     "src/frontend/_components/records-view/RecordsPrimaryToolbar.behavior.test.tsx",

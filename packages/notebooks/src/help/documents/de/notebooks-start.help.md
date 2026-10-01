@@ -16,6 +16,7 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Inhalte bleiben zuers
 - **Alle Notizbücher:** Öffne ein vorhandenes Notizbuch oder erstelle ein neues, wenn die Inhalte eigene Zugriffsrechte und Einstellungen benötigen.
 - **Favoriten:** Markiere häufig verwendete Notizbücher als Favoriten.
 - **Suche und zuletzt verwendet:** Suche nach einem bekannten Namen oder setze deine letzte Arbeit fort.
+- **Weitermachen, wo du warst:** Öffnest du Notizbücher über die Navigation, landest du im Notizbuch, das du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Wurde es gelöscht oder nicht mehr mit dir geteilt, öffnet sich stattdessen die Übersicht.
 - **Vorlagen:** Wähle eine Vorlage nur, wenn ihre Struktur zum Vorhaben passt. Für neue Anwendungsfälle ist ein leeres Notizbuch der sicherste Ausgangspunkt.
 :::
 
