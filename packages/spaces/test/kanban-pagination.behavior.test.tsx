@@ -78,6 +78,7 @@ describe("Spaces Kanban pagination", () => {
     requests.length = 0;
     const dom = createDomTestHarness();
     const { default: KanbanBoard } = await import("../src/frontend/[id]/_components/kanban/KanbanBoard");
+    const { defaultFilter } = await import("../src/frontend/[id]/_components/filter/types");
     const initial = item("33333333-3333-4333-8333-333333333333", "Initial card");
     const dispose = render(
       () =>
@@ -86,6 +87,9 @@ describe("Spaces Kanban pagination", () => {
           baseUrl: `/app/spaces/${SPACE_ID}?view=kanban`,
           columns: [{ id: COLUMN_ID, spaceId: SPACE_ID, name: "Open", color: null, rank: "1024", isDone: false }],
           tags: [],
+          filter: defaultFilter,
+          folded: new Set<string>(),
+          onToggleFolded: () => undefined,
           selectedItemId: "",
           initialBuckets: [
             {

@@ -85,6 +85,7 @@ describe("Spaces keyboard shortcuts", () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { default: KanbanBoard } = await import("../src/frontend/[id]/_components/kanban/KanbanBoard");
+    const { defaultFilter } = await import("../src/frontend/[id]/_components/filter/types");
     const { attachCommandShortcuts } = await import("../../cloud/src/browser/command-shortcuts");
     const { runContextAwareCommand } = await import("@k2b/cloud/browser/commands");
     const stopKeyboard = attachCommandShortcuts((command) => void runContextAwareCommand(command));
@@ -98,6 +99,9 @@ describe("Spaces keyboard shortcuts", () => {
             { id: "Col002", spaceId: "Space1", name: "Review", color: null, rank: "2048", isDone: false },
           ],
           tags: [],
+          filter: defaultFilter,
+          folded: new Set<string>(),
+          onToggleFolded: () => undefined,
           selectedItemId: "",
           initialBuckets: [
             {

@@ -12,6 +12,7 @@ type SearchInputProps = {
   debounceMs?: number;
   busy?: boolean;
   reset?: number;
+  class?: string;
 };
 
 /**
@@ -60,6 +61,7 @@ export default function SearchInput(props: SearchInputProps) {
   return (
     <form
       role="search"
+      class={props.class}
       action={props.baseUrl ? formUrl().pathname : undefined}
       method="get"
       onFocusIn={() => setFocused(true)}

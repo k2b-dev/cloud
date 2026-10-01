@@ -20,7 +20,7 @@ import {
 import { SpaceUserSettingsSchema } from "@/settings-context";
 import { TaskWorkSchema } from "../../../../work-contracts";
 import { type CalendarFilter, CalendarFilterSchema, writeCalendarFilter } from "../calendar/filter";
-import { buildFilterUrl, type parseFilterFromUrl, QueryParams } from "../filter/types";
+import { boardFilter, buildFilterUrl, type parseFilterFromUrl, QueryParams } from "../filter/types";
 
 type FilterState = ReturnType<typeof parseFilterFromUrl>;
 
@@ -47,6 +47,7 @@ const KanbanBucketInitialSchema = z.object({
   page: z.number().int().positive(),
   totalPages: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
+  unfilteredTotal: z.number().int().nonnegative().optional(),
 });
 
 export const SpaceCommentPageSchema = z.object({
@@ -176,7 +177,9 @@ export const buildSpacesItemLinkBaseUrl = (params: {
       baseUrl:
         params.currentView === "list" || params.currentView === "table"
           ? buildFilterUrl(params.baseSpaceUrl, {}, params.filter)
-          : buildCalendarUrl(params.baseSpaceUrl, params),
+          : params.currentView === "kanban"
+            ? buildFilterUrl(params.baseSpaceUrl, {}, boardFilter(params.filter))
+            : buildCalendarUrl(params.baseSpaceUrl, params),
       hasViewOverride: params.hasViewOverride,
       currentView: params.currentView,
     }),

@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
+import type { ItemListResult } from "../src/contracts";
 import type { SpacesViewSnapshot } from "../src/frontend/[id]/_components/workspace/workspace-types";
 
 const BASE = "/app/spaces/Space1?view=list";
@@ -41,11 +42,17 @@ describe("Spaces list search", () => {
         return pending.promise;
       },
     }));
-    const { useSpacesListQuery } = await import("../src/frontend/[id]/_components/workspace/list-query");
+    const { useSpacesRouteQuery } = await import("../src/frontend/[id]/_components/workspace/route-query");
     const { default: SearchInput } = await import("../src/frontend/[id]/_components/filter/SearchInput");
-    let controller!: ReturnType<typeof useSpacesListQuery>;
+    let controller!: ReturnType<typeof useSpacesRouteQuery<{ itemsResult: ItemListResult }>>;
     const dispose = render(() => {
-      controller = useSpacesListQuery({ initialSource: BASE, initialItemsResult: result(70).itemsResult, currentView: "list" });
+      controller = useSpacesRouteQuery({
+        initialSource: BASE,
+        initialData: { itemsResult: result(70).itemsResult },
+        currentView: "list",
+        read: (snapshot) => (snapshot.kind === "list" ? { itemsResult: snapshot.itemsResult } : null),
+        domains: ["view"],
+      });
       return createComponent(SearchInput, {
         get value() {
           return controller.requestedFilter().search;

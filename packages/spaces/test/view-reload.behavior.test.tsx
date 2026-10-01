@@ -54,17 +54,19 @@ describe("Spaces unavailable-view reloads", () => {
 
   test("the list view reloads at most once for a view that stays unavailable", async () => {
     const dom = createDomTestHarness();
-    const { useSpacesListQuery } = await import("../src/frontend/[id]/_components/workspace/list-query");
+    const { useSpacesRouteQuery } = await import("../src/frontend/[id]/_components/workspace/route-query");
     const path = `/app/spaces/${SPACE_ID}?view=list`;
     await expectOneReloadAcrossLoads(
       dom,
       path,
       () =>
         render(() => {
-          useSpacesListQuery({
+          useSpacesRouteQuery({
             initialSource: path,
-            initialItemsResult: { items: [], page: 1, pageSize: 30, totalPages: 1, total: 0 },
+            initialData: { itemsResult: { items: [], page: 1, pageSize: 30, totalPages: 1, total: 0 } },
             currentView: "list",
+            read: (snapshot) => (snapshot.kind === "list" ? { itemsResult: snapshot.itemsResult } : null),
+            domains: ["view"],
           });
           return dom.document.createTextNode("");
         }, dom.root),
@@ -116,6 +118,7 @@ describe("Spaces unavailable-view reloads", () => {
               tags: [],
               wormholes: [],
               initialBuckets: [],
+              foldedColumns: [],
               selectedItemId: "",
               canWrite: false,
               currentUserId: "77777777-7777-4777-8777-777777777777",

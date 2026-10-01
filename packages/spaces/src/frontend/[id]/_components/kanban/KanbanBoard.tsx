@@ -25,6 +25,7 @@ import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
+import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import ClaimButton from "../shared/claim/ClaimButton";
 import { claimTask, ownClaimId, releaseTask } from "../shared/claim/claim";
@@ -41,6 +42,11 @@ type Props = {
   tags: SpaceTag[];
   selectedItemId?: string;
   initialBuckets: KanbanBucketInitial[];
+  /** The board filter from the URL, with public IDs; it narrows every column the same way. */
+  filter: FilterState;
+  /** Column keys this person folded into narrow strips. */
+  folded: ReadonlySet<string>;
+  onToggleFolded: (bucketKey: string) => void;
   pageSize: number;
   dateConfig?: DateContext;
   canWrite: boolean;
@@ -85,6 +91,9 @@ type TransferContext = {
   previousBuckets: KanbanBucketInitial[];
 };
 
+/** A column page; the first page of a filtered column also carries the column's unfiltered size. */
+type KanbanPage = ItemListResult & { unfilteredTotal?: number };
+
 const boardScrollMemory = new Map<string, { left: number; top: number }>();
 
 const priorityMeta: Record<string, { icon: string; color: string }> = {
@@ -112,18 +121,18 @@ const movePosition = (items: SpaceItem[], insertIndex: number): MovePosition => 
   return before ? { beforeItemId: before.id } : {};
 };
 
-const buildRequest = (params: { bucket: KanbanBucketInitial; page: number; pageSize: number }): ItemFilter => {
-  const { bucket, page, pageSize } = params;
+const buildRequest = (params: { bucket: KanbanBucketInitial; filter: FilterState; page: number; pageSize: number }): ItemFilter => {
+  const { bucket, filter, page, pageSize } = params;
   return {
     type: "all",
     status: bucket.isDone ? "completed" : "active",
-    activity: "all",
-    priority: undefined,
-    tagIds: undefined,
+    activity: filter.activity,
+    priority: filter.priority.length > 0 ? filter.priority : undefined,
+    tagIds: filter.tagIds.length > 0 ? filter.tagIds : undefined,
     columnIds: bucket.columnId ? [bucket.columnId] : undefined,
-    assignedTo: "all",
-    deadlineFilter: "all",
-    search: undefined,
+    assignedTo: filter.assignedTo,
+    deadlineFilter: filter.deadlineFilter,
+    search: filter.search || undefined,
     sort: "column",
     sortDesc: false,
     groupBy: "column",
@@ -132,36 +141,55 @@ const buildRequest = (params: { bucket: KanbanBucketInitial; page: number; pageS
   };
 };
 
+/** Moves a card in or out of a column's counts; a card that matched the filter counts in both. */
+const shiftTotals = (bucket: KanbanBucketInitial, delta: number) => ({
+  total: Math.max(bucket.total + delta, 0),
+  ...(bucket.unfilteredTotal === undefined ? {} : { unfilteredTotal: Math.max(bucket.unfilteredTotal + delta, 0) }),
+});
+
 /**
  * Kanban board with SSR-initialized buckets, drag/drop reordering and explicit per-column "load more".
  */
 export default function KanbanBoard(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
+  // The route mounts a new board for every snapshot, so one board keeps one filter for its lifetime.
+  const filter = props.filter;
+  const filtered = hasActiveFilters(filter);
   const bucketQueries = props.initialBuckets.map((initialBucket) => {
     const source = `${props.spaceId}:${initialBucket.key}`;
-    const initialPage: ItemListResult = {
+    const initialPage: KanbanPage = {
       items: initialBucket.items,
       page: initialBucket.page,
       pageSize: props.pageSize,
       totalPages: initialBucket.totalPages,
       total: initialBucket.total,
+      unfilteredTotal: initialBucket.unfilteredTotal,
     };
-    const pages = query.createInfinite<string, ItemListResult, number, { cursor: string | null }>({
+    const loadColumnPage = async (pageFilter: FilterState, page: number, pageSize: number, abortSignal: AbortSignal) => {
+      const res = await apiClient[":id"].items.filter.$post(
+        {
+          param: { id: props.spaceId },
+          json: buildRequest({ bucket: initialBucket, filter: pageFilter, page, pageSize }),
+        },
+        { init: { signal: abortSignal } },
+      );
+      if (!res.ok) throw new Error(await readResponseError(res, t.loadItemsFailed));
+      const result = await res.json();
+      if (result.page !== page) throw new Error(t.invalidKanbanPage);
+      return result;
+    };
+    const pages = query.createInfinite<string, KanbanPage, number, { cursor: string | null }>({
       source: () => source,
       initial: { source, pages: [initialPage] },
       loadPage: async (_source, { cursor, abortSignal }) => {
-        const res = await apiClient[":id"].items.filter.$post(
-          {
-            param: { id: props.spaceId },
-            json: buildRequest({ bucket: initialBucket, page: cursor ?? 1, pageSize: props.pageSize }),
-          },
-          { init: { signal: abortSignal } },
-        );
-        if (!res.ok) throw new Error(await readResponseError(res, t.loadItemsFailed));
-        const result = await res.json();
-        if (result.page !== (cursor ?? 1)) throw new Error(t.invalidKanbanPage);
-        return result;
+        const page = cursor ?? 1;
+        if (!filtered || page > 1) return loadColumnPage(filter, page, props.pageSize, abortSignal);
+        const [result, unfiltered] = await Promise.all([
+          loadColumnPage(filter, page, props.pageSize, abortSignal),
+          loadColumnPage(defaultFilter, 1, 1, abortSignal),
+        ]);
+        return { ...result, unfilteredTotal: unfiltered.total };
       },
       getNextCursor: (page) => (page.page < page.totalPages ? page.page + 1 : null),
       subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["view"], invalidate),
@@ -180,12 +208,14 @@ export default function KanbanBoard(props: Props) {
           seen.add(item.id);
           return true;
         });
+      const unfilteredTotal = pageList[0]?.unfilteredTotal ?? initialBucket.unfilteredTotal;
       return {
         ...initialBucket,
         items,
         page: lastPage?.page ?? initialBucket.page,
         totalPages: lastPage?.totalPages ?? initialBucket.totalPages,
         total: lastPage?.total ?? initialBucket.total,
+        ...(unfilteredTotal === undefined ? {} : { unfilteredTotal }),
       };
     });
   const [optimisticBuckets, setOptimisticBuckets] = createSignal<KanbanBucketInitial[] | null>(null);
@@ -438,18 +468,14 @@ export default function KanbanBoard(props: Props) {
             current.map((bucket) => {
               const hadItem = bucket.items.some((item) => item.id === itemId);
               const nextItems = bucket.items.filter((item) => item.id !== itemId);
-              let total = bucket.total - (hadItem ? 1 : 0);
+              let delta = hadItem ? -1 : 0;
 
               if (bucket.key === resolved.targetBucket.key) {
                 nextItems.splice(targetIndexClamped, 0, optimisticUpdated);
-                total += 1;
+                delta += 1;
               }
 
-              return {
-                ...bucket,
-                items: nextItems,
-                total: Math.max(total, 0),
-              };
+              return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
             }),
           );
         });
@@ -489,19 +515,15 @@ export default function KanbanBoard(props: Props) {
             current.map((bucket) => {
               const hadItem = bucket.items.some((item) => item.id === updated.id);
               const nextItems = bucket.items.filter((item) => item.id !== updated.id);
-              let total = bucket.total - (hadItem ? 1 : 0);
+              let delta = hadItem ? -1 : 0;
 
               if (bucket.key === ctx?.targetBucketKey) {
                 const insertIndex = clamp(ctx.targetIndex, 0, nextItems.length);
                 nextItems.splice(insertIndex, 0, updated);
-                total += 1;
+                delta += 1;
               }
 
-              return {
-                ...bucket,
-                items: nextItems,
-                total: Math.max(total, 0),
-              };
+              return { ...bucket, items: nextItems, ...shiftTotals(bucket, delta) };
             }),
           );
         });
@@ -540,9 +562,7 @@ export default function KanbanBoard(props: Props) {
           setBuckets((current) =>
             current.map((bucket) => {
               const hadItem = bucket.items.some((item) => item.id === itemId);
-              return hadItem
-                ? { ...bucket, items: bucket.items.filter((item) => item.id !== itemId), total: Math.max(0, bucket.total - 1) }
-                : bucket;
+              return hadItem ? { ...bucket, items: bucket.items.filter((item) => item.id !== itemId), ...shiftTotals(bucket, -1) } : bucket;
             }),
           );
         });
@@ -766,9 +786,32 @@ export default function KanbanBoard(props: Props) {
     return boardDnd.isDragging() && intent?.kind === "wormhole" && intent.wormholeId === wormholeId;
   };
 
+  const bucketColor = (bucket: KanbanBucketInitial) => bucket.color ?? (bucket.isDone ? "#10b981" : "#6b7280");
+  const countText = (bucket: KanbanBucketInitial) =>
+    bucket.unfilteredTotal === undefined ? String(bucket.total) : `${bucket.total}/${bucket.unfilteredTotal}`;
+  const countLabel = (bucket: KanbanBucketInitial) =>
+    bucket.unfilteredTotal === undefined
+      ? t.itemCount({ count: bucket.total })
+      : t.filteredColumnCount({ shown: bucket.total, total: bucket.unfilteredTotal });
+  /** Folding swaps the control under focus for its counterpart, so focus follows it instead of falling to the page. */
+  const toggleFolded = (bucketKey: string) => {
+    props.onToggleFolded(bucketKey);
+    queueMicrotask(() =>
+      boardScrollContainer
+        ?.querySelector<HTMLElement>(`[data-spaces-kanban-fold="${CSS.escape(bucketKey)}"]`)
+        ?.focus({ preventScroll: true }),
+    );
+  };
+  const ColumnCount = (countProps: { bucket: KanbanBucketInitial }) => (
+    <span class="text-[11px] tabular-nums text-dimmed" title={countLabel(countProps.bucket)}>
+      <span aria-hidden="true">{countText(countProps.bucket)}</span>
+      <span class="sr-only">{countLabel(countProps.bucket)}</span>
+    </span>
+  );
+
   return (
-    <div class="flex h-full min-h-0 flex-col gap-2">
-      <p id={`spaces-kanban-shortcuts-${props.spaceId}`} class="px-1 text-[11px] text-dimmed">
+    <div class="flex h-full min-h-0 flex-col">
+      <p id={`spaces-kanban-shortcuts-${props.spaceId}`} class="sr-only">
         {t.kanbanKeyboardHelp}
       </p>
       <div
@@ -790,7 +833,7 @@ export default function KanbanBoard(props: Props) {
             }
           });
         }}
-        class="min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
+        class="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden"
         data-scroll-preserve={`spaces-kanban-board-${props.spaceId}`}
       >
         <div class="flex h-full min-w-max items-stretch gap-[var(--ui-space-shell)]">
@@ -799,217 +842,266 @@ export default function KanbanBoard(props: Props) {
               const canDropInBucket = props.canWrite && !!resolveTargetColumnId(bucket);
 
               return (
-                <section class="flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1">
-                  <header class="flex items-center gap-2 px-1.5 py-1.5">
-                    <span
-                      class="h-2 w-2 shrink-0 rounded-full"
-                      style={`background-color:${bucket.color ?? (bucket.isDone ? "#10b981" : "#6b7280")}`}
-                    />
-                    <h3 class="flex-1 truncate text-xs font-medium">{bucket.label}</h3>
-                    <span class="text-[11px] tabular-nums text-dimmed">{bucket.total}</span>
-                  </header>
+                <Show
+                  when={!props.folded.has(bucket.key)}
+                  fallback={
+                    // A folded column stays a drop target: a card dropped on it lands at the top of the column.
+                    <section class="flex h-full w-10 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1">
+                      <button
+                        type="button"
+                        ref={(element) => {
+                          boardDnd.droppable(element, () => ({
+                            id: `drop:column:${bucket.key}`,
+                            disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
+                            meta: { kind: "column", bucketKey: bucket.key },
+                          }));
+                        }}
+                        data-spaces-kanban-fold={bucket.key}
+                        aria-expanded="false"
+                        aria-label={t.unfoldColumn({ column: bucket.label, count: countLabel(bucket) })}
+                        title={t.unfoldColumn({ column: bucket.label, count: countLabel(bucket) })}
+                        onClick={() => toggleFolded(bucket.key)}
+                        class={`focus-ui flex min-h-0 flex-1 flex-col items-center gap-2 rounded-[var(--ui-radius-control)] px-1 py-1.5 transition-[background-color] ${
+                          isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "hover:bg-[var(--ui-hover)]"
+                        }`}
+                      >
+                        <span class="mt-1 h-2 w-2 shrink-0 rounded-full" style={`background-color:${bucketColor(bucket)}`} />
+                        <span class="text-[11px] tabular-nums text-dimmed" aria-hidden="true">
+                          {countText(bucket)}
+                        </span>
+                        <span class="min-h-0 truncate text-xs font-medium [writing-mode:vertical-rl]" aria-hidden="true">
+                          {bucket.label}
+                        </span>
+                      </button>
+                    </section>
+                  }
+                >
+                  <section class="flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1">
+                    <header class="flex items-center gap-2 px-1.5 py-1">
+                      <span class="h-2 w-2 shrink-0 rounded-full" style={`background-color:${bucketColor(bucket)}`} />
+                      <h3 class="flex-1 truncate text-xs font-medium">{bucket.label}</h3>
+                      <ColumnCount bucket={bucket} />
+                      <IconButton
+                        label={t.foldColumn({ column: bucket.label })}
+                        size="xs"
+                        class="h-6 w-6 text-dimmed"
+                        data-spaces-kanban-fold={bucket.key}
+                        aria-expanded="true"
+                        onClick={() => toggleFolded(bucket.key)}
+                      >
+                        <i class="ti ti-viewport-narrow text-sm" aria-hidden="true" />
+                      </IconButton>
+                    </header>
 
-                  <div
-                    ref={(element) => {
-                      boardDnd.droppable(element, () => ({
-                        id: `drop:column:${bucket.key}`,
-                        disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
-                        meta: { kind: "column", bucketKey: bucket.key },
-                      }));
-                    }}
-                    class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
-                      isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
-                    }`}
-                    data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
-                  >
-                    <Show
-                      when={bucket.items.length > 0}
-                      fallback={
-                        <>
-                          <DropLine bucketKey={bucket.key} index={0} />
-                          <p class="px-2 py-6 text-center text-[11px] text-dimmed">{t.noItems}</p>
-                        </>
-                      }
+                    <div
+                      ref={(element) => {
+                        boardDnd.droppable(element, () => ({
+                          id: `drop:column:${bucket.key}`,
+                          disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
+                          meta: { kind: "column", bucketKey: bucket.key },
+                        }));
+                      }}
+                      class={`flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-[var(--ui-radius-control)] p-1.5 transition-[background-color] ${
+                        isColumnTargetActive(bucket.key) ? "bg-[var(--ui-selected)]" : "bg-transparent"
+                      }`}
+                      data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
                     >
-                      <For each={bucket.items}>
-                        {(item, itemIndex) => {
-                          const priority = item.priority ? priorityMeta[item.priority] : null;
-                          const isSelected = () => item.id === selectedItemId();
-                          const dragId = `drag:item:${item.id}`;
-                          const dropId = `drop:item:${bucket.key}:${item.id}`;
-                          const isDraggingThis = () => boardDnd.activeId() === dragId;
-                          const isMovingThis = () => (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
+                      <Show
+                        when={bucket.items.length > 0}
+                        fallback={
+                          <>
+                            <DropLine bucketKey={bucket.key} index={0} />
+                            <p class="px-2 py-6 text-center text-[11px] text-dimmed">
+                              {bucket.unfilteredTotal ? t.noMatchingItems : t.noItems}
+                            </p>
+                          </>
+                        }
+                      >
+                        <For each={bucket.items}>
+                          {(item, itemIndex) => {
+                            const priority = item.priority ? priorityMeta[item.priority] : null;
+                            const isSelected = () => item.id === selectedItemId();
+                            const dragId = `drag:item:${item.id}`;
+                            const dropId = `drop:item:${bucket.key}:${item.id}`;
+                            const isDraggingThis = () => boardDnd.activeId() === dragId;
+                            const isMovingThis = () => (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
 
-                          return (
-                            <>
-                              <DropLine bucketKey={bucket.key} index={itemIndex()} />
-                              <article
-                                ref={(element) => {
-                                  boardDnd.droppable(element, () => ({
-                                    id: dropId,
-                                    disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
-                                    meta: {
-                                      bucketKey: bucket.key,
-                                      index: itemIndex(),
-                                      kind: "item",
-                                    },
-                                  }));
-                                  boardDnd.draggable(element, () => ({
-                                    id: dragId,
-                                    disabled: !props.canWrite || moveMutation.loading() || transferMutation.loading(),
-                                    focusable: false,
-                                    keyboard: false,
-                                    handleSelector: "[data-dnd-card-handle]",
-                                    meta: { itemId: item.id },
-                                  }));
-                                }}
-                                data-card-index={itemIndex()}
-                                class={`group/card relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] ${
-                                  isSelected()
-                                    ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
-                                    : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
-                                } ${isDraggingThis() ? "opacity-40" : ""}`}
-                              >
-                                <Show when={props.canWrite}>
-                                  <Show
-                                    when={isMovingThis()}
-                                    fallback={
-                                      <button
-                                        type="button"
-                                        data-dnd-card-handle
-                                        aria-label={t.dragItem({ title: item.title })}
-                                        title={t.drag}
-                                        class="focus-ui absolute right-1.5 top-1.5 inline-flex h-5 w-5 cursor-grab items-center justify-center rounded-[var(--ui-radius-control)] text-dimmed opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--ui-hover)] hover:text-primary group-hover/card:opacity-100 group-focus-within/card:opacity-100 active:cursor-grabbing"
-                                        onClick={(event) => {
-                                          event.preventDefault();
-                                          event.stopPropagation();
-                                        }}
-                                      >
-                                        <i class="ti ti-grip-vertical text-[13px]" />
-                                      </button>
-                                    }
-                                  >
-                                    <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
-                                      <i class="ti ti-loader-2 animate-spin text-[11px]" />
+                            return (
+                              <>
+                                <DropLine bucketKey={bucket.key} index={itemIndex()} />
+                                <article
+                                  ref={(element) => {
+                                    boardDnd.droppable(element, () => ({
+                                      id: dropId,
+                                      disabled: !canDropInBucket || moveMutation.loading() || transferMutation.loading(),
+                                      meta: {
+                                        bucketKey: bucket.key,
+                                        index: itemIndex(),
+                                        kind: "item",
+                                      },
+                                    }));
+                                    boardDnd.draggable(element, () => ({
+                                      id: dragId,
+                                      disabled: !props.canWrite || moveMutation.loading() || transferMutation.loading(),
+                                      focusable: false,
+                                      keyboard: false,
+                                      handleSelector: "[data-dnd-card-handle]",
+                                      meta: { itemId: item.id },
+                                    }));
+                                  }}
+                                  data-card-index={itemIndex()}
+                                  class={`group/card relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] ${
+                                    isSelected()
+                                      ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
+                                      : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
+                                  } ${isDraggingThis() ? "opacity-40" : ""}`}
+                                >
+                                  <Show when={props.canWrite}>
+                                    <Show
+                                      when={isMovingThis()}
+                                      fallback={
+                                        <button
+                                          type="button"
+                                          data-dnd-card-handle
+                                          aria-label={t.dragItem({ title: item.title })}
+                                          title={t.drag}
+                                          class="focus-ui absolute right-1.5 top-1.5 inline-flex h-5 w-5 cursor-grab items-center justify-center rounded-[var(--ui-radius-control)] text-dimmed opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--ui-hover)] hover:text-primary group-hover/card:opacity-100 group-focus-within/card:opacity-100 active:cursor-grabbing"
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                          }}
+                                        >
+                                          <i class="ti ti-grip-vertical text-[13px]" />
+                                        </button>
+                                      }
+                                    >
+                                      <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
+                                        <i class="ti ti-loader-2 animate-spin text-[11px]" />
+                                      </div>
+                                    </Show>
+                                  </Show>
+                                  <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
+                                    {/* The wrapper places the button: on touch screens buttons are positioned relative for their larger hit area. */}
+                                    <div class="absolute bottom-1.5 right-1.5 flex">
+                                      <ClaimButton
+                                        claim={item.claim}
+                                        currentUserId={props.currentUserId}
+                                        isAdmin={false}
+                                        compact
+                                        loading={claimingItemId() === item.id}
+                                        disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
+                                        class={`h-6 w-6 ${
+                                          item.claim ? "" : "opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
+                                        }`}
+                                        onClaim={() => void claimCardMutation.mutate(item)}
+                                        onRelease={() => void claimCardMutation.mutate(item)}
+                                        onTakeOver={() => undefined}
+                                      />
                                     </div>
                                   </Show>
-                                </Show>
-                                <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
-                                  <ClaimButton
-                                    claim={item.claim}
-                                    currentUserId={props.currentUserId}
-                                    isAdmin={false}
-                                    compact
-                                    loading={claimingItemId() === item.id}
-                                    disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
-                                    class={`absolute bottom-1.5 right-1.5 h-6 w-6 ${
-                                      item.claim ? "" : "opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
-                                    }`}
-                                    onClaim={() => void claimCardMutation.mutate(item)}
-                                    onRelease={() => void claimCardMutation.mutate(item)}
-                                    onTakeOver={() => undefined}
-                                  />
-                                </Show>
-                                <a
-                                  data-spaces-kanban-card
-                                  data-bucket-key={bucket.key}
-                                  data-item-id={item.id}
-                                  aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
-                                  href={buildItemUrl(props.baseUrl, item.id)}
-                                  onClick={(event) => {
-                                    if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-                                    event.preventDefault();
-                                    const href = buildItemUrl(props.baseUrl, item.id);
-                                    setSelectedItemId(item.id);
-                                    requestSpacesRouteNavigation(href, { scroll: "preserve" });
-                                  }}
-                                  class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
-                                >
-                                  <div class="flex items-start gap-2">
-                                    <Show when={priority}>
-                                      <i class={`ti ${priority!.icon} ${priority!.color} mt-0.5 shrink-0 text-xs`} />
-                                    </Show>
-                                    <p
-                                      class={`break-words text-xs font-medium leading-tight ${item.completedAt ? "line-through text-dimmed" : ""}`}
-                                    >
-                                      {item.title}
-                                    </p>
-                                  </div>
-
-                                  <Show when={item.description}>
-                                    <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{item.description}</p>
-                                  </Show>
-
-                                  <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
-                                    <Show when={item.deadline}>
-                                      <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
-                                        <i class="ti ti-clock text-[10px]" />
-                                        {dates.formatDateRelative(item.deadline!, props.dateConfig)}
-                                      </span>
-                                    </Show>
-                                    <AssigneeAvatars
-                                      assignees={item.assignees ?? []}
-                                      claim={item.claim}
-                                      currentUserId={props.currentUserId}
-                                      max={3}
-                                    />
-                                    <Show when={isInactiveTask(item)}>
-                                      <span
-                                        class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
-                                        title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
+                                  <a
+                                    data-spaces-kanban-card
+                                    data-bucket-key={bucket.key}
+                                    data-item-id={item.id}
+                                    aria-keyshortcuts={props.canWrite ? "Enter M D" : "Enter"}
+                                    href={buildItemUrl(props.baseUrl, item.id)}
+                                    onClick={(event) => {
+                                      if (!shouldHandleDetailClick(event, event.currentTarget)) return;
+                                      event.preventDefault();
+                                      const href = buildItemUrl(props.baseUrl, item.id);
+                                      setSelectedItemId(item.id);
+                                      requestSpacesRouteNavigation(href, { scroll: "preserve" });
+                                    }}
+                                    class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
+                                  >
+                                    <div class="flex items-start gap-2">
+                                      <Show when={priority}>
+                                        <i class={`ti ${priority!.icon} ${priority!.color} mt-0.5 shrink-0 text-xs`} />
+                                      </Show>
+                                      <p
+                                        class={`break-words text-xs font-medium leading-tight ${item.completedAt ? "line-through text-dimmed" : ""}`}
                                       >
-                                        <i class="ti ti-clock-pause text-[10px]" aria-hidden="true" />
-                                        {t.inactive}
-                                      </span>
+                                        {item.title}
+                                      </p>
+                                    </div>
+
+                                    <Show when={item.description}>
+                                      <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{item.description}</p>
                                     </Show>
-                                  </div>
-                                </a>
-                              </article>
-                            </>
-                          );
-                        }}
-                      </For>
-                      <DropLine bucketKey={bucket.key} index={bucket.items.length} />
-                    </Show>
 
-                    <Show when={bucketQuery(bucket.key)?.hasMore()}>
-                      <IconButton
-                        label={t.loadMoreIn({ group: bucket.label })}
-                        size="sm"
-                        onClick={() => void bucketQuery(bucket.key)?.loadMore()}
-                        disabled={bucketQuery(bucket.key)?.loadingMore()}
-                        class="mx-auto mt-1 h-7 w-7"
-                        title={t.loadMore}
-                      >
-                        <i class={`ti ${bucketQuery(bucket.key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`} />
-                      </IconButton>
-                    </Show>
+                                    <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>
+                                      <Show when={item.deadline}>
+                                        <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
+                                          <i class="ti ti-clock text-[10px]" />
+                                          {dates.formatDateRelative(item.deadline!, props.dateConfig)}
+                                        </span>
+                                      </Show>
+                                      <AssigneeAvatars
+                                        assignees={item.assignees ?? []}
+                                        claim={item.claim}
+                                        currentUserId={props.currentUserId}
+                                        max={3}
+                                      />
+                                      <Show when={isInactiveTask(item)}>
+                                        <span
+                                          class="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300"
+                                          title={t.inactiveFor({ days: INACTIVE_ITEM_DAYS })}
+                                        >
+                                          <i class="ti ti-clock-pause text-[10px]" aria-hidden="true" />
+                                          {t.inactive}
+                                        </span>
+                                      </Show>
+                                    </div>
+                                  </a>
+                                </article>
+                              </>
+                            );
+                          }}
+                        </For>
+                        <DropLine bucketKey={bucket.key} index={bucket.items.length} />
+                      </Show>
 
-                    <Show when={bucketQuery(bucket.key)?.error()}>
-                      {(error) => (
-                        <button
-                          type="button"
-                          class="focus-ui mx-1 mb-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-left text-xs text-red-600"
-                          onClick={() => void bucketQuery(bucket.key)?.refresh()}
+                      <Show when={bucketQuery(bucket.key)?.hasMore()}>
+                        <IconButton
+                          label={t.loadMoreIn({ group: bucket.label })}
+                          size="sm"
+                          onClick={() => void bucketQuery(bucket.key)?.loadMore()}
+                          disabled={bucketQuery(bucket.key)?.loadingMore()}
+                          class="mx-auto mt-1 h-7 w-7"
+                          title={t.loadMore}
                         >
-                          {error().message} Retry
-                        </button>
-                      )}
-                    </Show>
+                          <i
+                            class={`ti ${bucketQuery(bucket.key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`}
+                          />
+                        </IconButton>
+                      </Show>
 
-                    <Show when={props.canWrite && bucket.columnId}>
-                      <CreateItemButton
-                        spaceId={props.spaceId}
-                        columns={props.columns}
-                        tags={props.tags}
-                        dateConfig={props.dateConfig}
-                        variant="inline"
-                        defaultType="task"
-                        defaultColumnId={bucket.columnId!}
-                      />
-                    </Show>
-                  </div>
-                </section>
+                      <Show when={bucketQuery(bucket.key)?.error()}>
+                        {(error) => (
+                          <button
+                            type="button"
+                            class="focus-ui mx-1 mb-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-left text-xs text-red-600"
+                            onClick={() => void bucketQuery(bucket.key)?.refresh()}
+                          >
+                            {error().message} Retry
+                          </button>
+                        )}
+                      </Show>
+
+                      <Show when={props.canWrite && bucket.columnId}>
+                        <CreateItemButton
+                          spaceId={props.spaceId}
+                          columns={props.columns}
+                          tags={props.tags}
+                          dateConfig={props.dateConfig}
+                          variant="inline"
+                          defaultType="task"
+                          defaultColumnId={bucket.columnId!}
+                        />
+                      </Show>
+                    </div>
+                  </section>
+                </Show>
               );
             }}
           </For>

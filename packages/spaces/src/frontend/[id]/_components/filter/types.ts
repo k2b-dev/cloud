@@ -180,6 +180,22 @@ export function hasActiveFilters(filter: FilterState): boolean {
   );
 }
 
+/**
+ * The part of the URL filter a Kanban board honors. Columns are the board itself, completion is
+ * decided by each column, and sort, grouping, and paging belong to the list.
+ */
+export function boardFilter(filter: FilterState): FilterState {
+  return {
+    ...defaultFilter,
+    activity: filter.activity,
+    priority: filter.priority,
+    tagIds: filter.tagIds,
+    assignedTo: filter.assignedTo,
+    deadlineFilter: filter.deadlineFilter,
+    search: filter.search,
+  };
+}
+
 // =============================================================================
 // View URL Helpers (for settings overrides)
 // =============================================================================
