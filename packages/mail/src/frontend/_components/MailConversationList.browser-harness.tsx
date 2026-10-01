@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
+import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import type { Mailbox } from "../../contracts";
 import MailConversationList from "./MailConversationList";
@@ -9,11 +10,15 @@ export type MailListHarnessOptions = {
   locale: "en" | "de";
   items: MailListItem[];
   selectedConversationId: string | null;
+  selectionMode?: boolean;
+  sidebarCollapsed?: boolean;
 };
 
 declare global {
   interface Window {
     mountMailList: (options: MailListHarnessOptions) => void;
+    /** Replaces the list items like a live list update: rows keep their identity by id. */
+    setMailItems: (items: MailListItem[]) => void;
     mailNavigations: string[];
   }
 }
@@ -27,10 +32,16 @@ window.mountMailList = (options) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   const dateConfig = { locale: options.locale, timeZone: "Europe/Berlin" } as DateContext;
+  const [list, setList] = createStore({ items: options.items });
+  window.setMailItems = (items) => setList("items", reconcile(items));
   render(
     () => (
       <LocaleProvider locale={options.locale}>
-        <AppWorkspace mobileSurface="flush" class="mail-workspace">
+        <AppWorkspace
+          mobileSurface="flush"
+          class="mail-workspace"
+          layoutState={() => (options.sidebarCollapsed ? { version: 2, sidebarCollapsed: true } : null)}
+        >
           <AppWorkspace.Sidebar class="mail-workspace-navigation">
             <AppWorkspace.SidebarDesktop>
               <AppWorkspace.SidebarBody>
@@ -62,12 +73,12 @@ window.mountMailList = (options) => {
                   requestUrl={`/app/mail/Box001${options.selectedConversationId ? `?conversation=${options.selectedConversationId}` : ""}`}
                   query=""
                   title="Inbox"
-                  items={options.items}
+                  items={list.items}
                   error={null}
                   selectedConversationId={options.selectedConversationId}
                   selectedMessageId={null}
                   selectedConversationIds={new Set()}
-                  selectionMode={false}
+                  selectionMode={options.selectionMode ?? false}
                   nextCursor={null}
                   dateConfig={dateConfig}
                   canWrite

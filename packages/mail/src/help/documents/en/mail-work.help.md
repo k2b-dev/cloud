@@ -68,7 +68,7 @@ Select **Assign** to give the selected conversations to one person. Choose **Ass
 
 With a mouse, rest the pointer on a conversation row for a moment. A quick look opens beside the list with the time of the newest message, the next step, the assignee, tags, the subject, the stored summary if there is one, the start of the newest message without quoted history, the first attachment, and the number of earlier messages. Move the pointer into the card to keep it open; it closes when you move away, scroll the list, or press Esc. With the keyboard, focus a row and press Space to show or hide the quick look; Enter still opens the conversation. Select the card or the row to open the conversation.
 
-A quick look never marks a conversation as read, never creates a summary, and never loads remote images. It does not appear for the conversation that is already open, on touch devices, or when there is no room for it beside the list.
+A quick look never marks a conversation as read, never creates a summary, and never loads remote images. It does not appear for the conversation that is already open, while you select conversations, on touch devices, or when there is no room for it beside the list.
 
 ## Read a complete thread {icon="route"}
 

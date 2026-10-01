@@ -46,6 +46,8 @@ const buildCss = async (entry: string): Promise<string> => {
   return build.outputs[0]!.text();
 };
 
+/** The page's fake clock starts here, so day labels such as "Today" do not depend on when the suite runs. */
+const NOW = Date.UTC(2026, 9, 1, 10, 30);
 const at = (minutesAgo: number) => new Date(Date.UTC(2026, 9, 1, 10, 0) - minutesAgo * 60_000).toISOString();
 const item = (index: number, overrides: Partial<MailListItem> = {}): MailListItem => ({
   id: `Cv${String(index).padStart(4, "0")}`,
@@ -92,17 +94,30 @@ const previews: Record<string, MailConversationPreview> = {
     latestMessage: {
       from: { name: "Mara Example", address: "mara@example.test" },
       excerpt: Array.from({ length: 30 }, (_, line) => `Line ${line} of the newest message.`).join("\n"),
+      body: "synced",
     },
     attachments: { count: 3, firstName: "Offer_stage_technology_v3.pdf" },
     earlierMessageCount: 4,
     assigneeName: "Jonas Sample",
+  },
+  Cv0007: {
+    conversationId: "Cv0007",
+    summary: null,
+    latestMessage: { from: { name: "Person 7", address: "person@example.test" }, excerpt: null, body: "syncing" },
+    attachments: { count: 0, firstName: null },
+    earlierMessageCount: 0,
+    assigneeName: null,
   },
 };
 const previewFor = (id: string): MailConversationPreview =>
   previews[id] ?? {
     conversationId: id,
     summary: null,
-    latestMessage: { from: { name: `Person ${Number(id.slice(2))}`, address: "person@example.test" }, excerpt: "Good morning,\n\nthanks." },
+    latestMessage: {
+      from: { name: `Person ${Number(id.slice(2))}`, address: "person@example.test" },
+      excerpt: "Good morning,\n\nthanks.",
+      body: "synced",
+    },
     attachments: { count: 0, firstName: null },
     earlierMessageCount: 0,
     assigneeName: null,
@@ -127,7 +142,8 @@ const server = Bun.serve({
       return Response.json(previewFor(match[1]));
     }
     return new Response(
-      '<!doctype html><html class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+      // Mail's accent, which Cloud's layout sets for the app.
+      '<!doctype html><html class="light" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
         '<link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0">' +
         '<div id="root" style="position:fixed;inset:56px 8px 8px 56px;display:flex;flex-direction:column"></div>' +
         '<script src="/harness.js"></script></body></html>',
@@ -148,7 +164,14 @@ afterAll(async () => {
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 
 const load = async (
-  options: { context?: BrowserContextOptions; theme?: "light" | "dark"; selectedConversationId?: string | null; locale?: "en" | "de" } = {},
+  options: {
+    context?: BrowserContextOptions;
+    theme?: "light" | "dark";
+    selectedConversationId?: string | null;
+    locale?: "en" | "de";
+    selectionMode?: boolean;
+    sidebarCollapsed?: boolean;
+  } = {},
 ) => {
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   const errors: string[] = [];
@@ -162,17 +185,20 @@ const load = async (
   page.on("requestfailed", (request) => {
     const path = new URL(request.url()).pathname;
     const entry = requests.findLast((candidate) => candidate.path === path && !candidate.aborted);
-    if (entry && request.failure()?.errorText.includes("ABORTED")) entry.aborted = true;
+    // Chromium reports net::ERR_ABORTED, WebKit "Load request cancelled", Firefox NS_BINDING_ABORTED.
+    if (entry && /aborted|cancel/iu.test(request.failure()?.errorText ?? "")) entry.aborted = true;
   });
-  await page.clock.install();
+  await page.clock.install({ time: NOW });
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((harnessOptions: MailListHarnessOptions) => window.mountMailList(harnessOptions), {
     locale: options.locale ?? "en",
     items,
     selectedConversationId: options.selectedConversationId ?? null,
+    selectionMode: options.selectionMode,
+    sidebarCollapsed: options.sidebarCollapsed,
   } satisfies MailListHarnessOptions);
-  await page.clock.pauseAt(Date.now() + 60_000);
+  await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
 };
 const close = (page: Page) => page.context().close();
@@ -227,6 +253,12 @@ const abortReported = async (page: Tracked, path: string) => {
     await Bun.sleep(20);
   }
 };
+/** Requests reach the test after the page made them, so wait for the expected count. */
+const requested = async (page: Tracked, path: string, count: number) => {
+  for (let attempt = 0; attempt < 100 && page.requests.filter((request) => request.path === path).length < count; attempt += 1) {
+    await Bun.sleep(20);
+  }
+};
 const previewPath = (id: string) => `/api/mail/mailboxes/Box001/conversations/${id}/preview`;
 const linkOf = (id: string) => `${row(id)} a.mail-list-row`;
 const expanded = (page: Page, id: string) =>
@@ -251,6 +283,7 @@ describe("Mail quick look", () => {
       expect(await shown(page)).toBe("Question about invoice 2026-0418");
       expect(await expanded(page, "Cv0001")).toBe("true");
       await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__facts`).innerText()).toContain("Today, 10:30");
 
       const surface = (await box(page, card))!;
       const list = (await box(page, "[data-mail-conversation-list]"))!;
@@ -269,12 +302,15 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
-  test("starts the request on pointer enter and aborts it when the row is left before the answer", async () => {
+  test("starts the request once the mouse rests on a row and aborts it when the row is left before the answer", async () => {
     previewDelay = 2_000;
     const page = await load();
     try {
       await pointAt(page, row("Cv0003"));
-      await page.clock.runFor(50);
+      await page.clock.runFor(79);
+      expect(await requests(page)).toEqual([]);
+      await page.clock.runFor(2);
+      await requested(page, previewPath("Cv0003"), 1);
       expect(await requests(page)).toEqual([{ path: previewPath("Cv0003"), aborted: false }]);
       await away(page);
       await abortReported(page, previewPath("Cv0003"));
@@ -421,7 +457,7 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
-  test("never covers the list: no card without room beside it at 1024 px", async () => {
+  test("never covers the list: no card without room beside it at 1024 px, but one beside a collapsed sidebar", async () => {
     const page = await load({ context: { viewport: { width: 1024, height: 768 } } });
     try {
       const list = (await box(page, "[data-mail-conversation-list]"))!;
@@ -435,6 +471,96 @@ describe("Mail quick look", () => {
       expect(await shown(page)).toBeNull();
       expect(await requests(page)).toEqual([]);
     } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("starts no request for rows a sweeping mouse or a scrolling list passes", async () => {
+    const page = await load();
+    try {
+      // A sweep from the second to the eighth row, with a frame between moves.
+      const from = (await box(page, row("Cv0002")))!;
+      const to = (await box(page, row("Cv0008")))!;
+      for (let step = 0; step <= 20; step += 1) {
+        await page.mouse.move(from.left + 120, from.top + 10 + ((to.top - from.top) * step) / 20);
+        await page.clock.runFor(16);
+      }
+      await hovered(page, row("Cv0008"));
+      expect(await requests(page)).toEqual([]);
+      // Only the row where the mouse comes to rest loads.
+      await page.clock.runFor(81);
+      await requested(page, previewPath("Cv0008"), 1);
+      expect(await requests(page)).toEqual([{ path: previewPath("Cv0008"), aborted: false }]);
+
+      // Rows that pass under a still mouse while the list scrolls load nothing.
+      for (let tick = 0; tick < 20; tick += 1) {
+        await page.mouse.wheel(0, 120);
+        await Bun.sleep(30);
+        await page.clock.runFor(30);
+      }
+      const under = await page.evaluate(() => document.querySelector(".mail-list-entry:hover")?.getAttribute("data-conversation-id"));
+      // The list really moved rows under the mouse.
+      expect(under).toBeDefined();
+      expect(under).not.toBe("Cv0008");
+      await page.clock.runFor(500);
+      const loaded = (await requests(page)).slice(1).map((request) => request.path);
+      // At most the row the mouse rests on once the list stands still, which the card opens for anyway.
+      expect(loaded.length).toBeLessThanOrEqual(1);
+      if (loaded.length === 1) expect(loaded[0]).toBe(previewPath(under!));
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("shows no card and starts no request in selection mode, where a click selects", async () => {
+    const page = await load({ selectionMode: true });
+    try {
+      await pointAt(page, row("Cv0002"));
+      await page.clock.runFor(500);
+      expect(await shown(page)).toBeNull();
+      expect(await requests(page)).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("says when the newest message's body is still synchronizing", async () => {
+    const page = await load({ locale: "de" });
+    try {
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe("Der Nachrichteninhalt wird noch synchronisiert");
+      // A body that was still synchronizing is asked for again on the next rest instead of staying cached.
+      await away(page);
+      await page.clock.runFor(400);
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      await requested(page, previewPath("Cv0007"), 2);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("keeps the loaded content while a live update of the conversation loads", async () => {
+    const page = await load();
+    try {
+      await pointAt(page, row("Cv0002"));
+      await page.clock.runFor(201);
+      await settle(page);
+      const before = await page.locator(`${card} .mail-quick-look__text`).innerText();
+      previewDelay = 2_000;
+      await page.evaluate(
+        (next) => window.setMailItems(next),
+        items.map((entry) => (entry.conversationId === "Cv0002" ? { ...entry, revision: entry.revision + 1 } : entry)),
+      );
+      await requested(page, previewPath("Cv0002"), 2);
+      expect(await page.locator(`${card} .mail-quick-look[aria-busy='true']`).count()).toBe(0);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe(before);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0002"))).toHaveLength(2);
+    } finally {
+      previewDelay = 0;
       await close(page);
     }
   }, 30_000);

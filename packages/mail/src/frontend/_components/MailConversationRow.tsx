@@ -32,7 +32,7 @@ type MailConversationRowActions = {
   merge: (item: MailListItem) => void | Promise<void>;
 };
 
-/** The list's quick look card; rows anchor it and start its request when the pointer arrives. */
+/** The list's quick look card; rows anchor it and report mouse rests and leaves for its request. */
 type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | "anchor" | "active"> & {
   prefetch: (item: MailListItem) => void;
   release: (item: MailListItem) => void;
@@ -98,6 +98,9 @@ export default function MailConversationRow(props: {
         "mail-list-entry-peek": peeking(),
       }}
       onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") quickLook?.prefetch(props.item);
+      }}
+      onPointerMove={(event) => {
         if (event.pointerType === "mouse") quickLook?.prefetch(props.item);
       }}
       onPointerLeave={() => quickLook?.release(props.item)}

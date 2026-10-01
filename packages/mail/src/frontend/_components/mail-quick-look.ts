@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailConversationPreview } from "../../contracts";
 import type { MailListItem } from "./mail-navigation";
@@ -15,10 +15,11 @@ export const mailQuickLookKey = (item: QuickLookTarget): string | null =>
   item.conversationId ? `${item.conversationId}:${item.revision}:${item.latestMessageAt}:${item.messageCount}` : null;
 
 /**
- * Loads quick look cards for one mailbox. A request starts when the pointer
- * enters a row, so the card usually has its data when it opens, and stops when
- * the pointer leaves before the answer unless the card is open for that row.
- * Answers stay in a small cache keyed by the conversation's last change.
+ * Loads quick look cards for one mailbox. The list starts a request once the
+ * mouse rests on a row, so the card usually has its data when it opens, and
+ * stops it when the pointer leaves before the answer unless the card is open
+ * for that row. Answers stay in a small cache keyed by the conversation's last
+ * change; while a newer version loads, the card keeps the previous answer.
  */
 export const createMailQuickLookLoader = (mailboxId: () => string) => {
   const [states, setStates] = createSignal<ReadonlyMap<string, MailQuickLookState>>(new Map());
@@ -35,14 +36,20 @@ export const createMailQuickLookLoader = (mailboxId: () => string) => {
       }
       return next;
     });
+  /** An abort or failure never replaces an earlier answer for the same key. */
+  const settle = (key: string, state: MailQuickLookState | null) => {
+    if (untrack(states).get(key)?.status !== "ready") update(key, state);
+  };
 
   const load = (item: QuickLookTarget) => {
     const key = mailQuickLookKey(item);
-    const current = key ? states().get(key) : undefined;
-    if (!key || !item.conversationId || current?.status === "ready" || requests.has(key)) return;
+    if (!key || !item.conversationId || requests.has(key)) return;
+    const current = untrack(states).get(key);
+    // A body that was still synchronizing may have arrived since the last answer.
+    if (current?.status === "ready" && current.data.latestMessage?.body !== "syncing") return;
     const controller = new AbortController();
     requests.set(key, controller);
-    update(key, { status: "loading" });
+    if (current?.status !== "ready") update(key, { status: "loading" });
     void apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].preview
       .$get({ param: { mailboxId: mailboxId(), conversationId: item.conversationId } }, { init: { signal: controller.signal } })
       .then(async (response) => {
@@ -54,7 +61,7 @@ export const createMailQuickLookLoader = (mailboxId: () => string) => {
           if (requests.get(key) === controller) update(key, { status: "ready", data });
         },
         () => {
-          if (requests.get(key) === controller) update(key, controller.signal.aborted ? null : { status: "error" });
+          if (requests.get(key) === controller) settle(key, controller.signal.aborted ? null : { status: "error" });
         },
       )
       .finally(() => {
@@ -68,7 +75,7 @@ export const createMailQuickLookLoader = (mailboxId: () => string) => {
     if (!key || !controller) return;
     requests.delete(key);
     controller.abort();
-    update(key, null);
+    settle(key, null);
   };
 
   return {
@@ -76,7 +83,11 @@ export const createMailQuickLookLoader = (mailboxId: () => string) => {
     cancel,
     state: (item: QuickLookTarget): MailQuickLookState => {
       const key = mailQuickLookKey(item);
-      return (key && states().get(key)) || { status: "loading" };
+      const own = key ? states().get(key) : undefined;
+      if (own && own.status !== "loading") return own;
+      const prefix = `${item.conversationId}:`;
+      const previous = [...states()].findLast(([candidate, state]) => candidate.startsWith(prefix) && state.status === "ready")?.[1];
+      return previous ?? { status: "loading" };
     },
   };
 };

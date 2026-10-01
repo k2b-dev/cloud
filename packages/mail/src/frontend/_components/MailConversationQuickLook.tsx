@@ -2,6 +2,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { mailMessageMessages } from "./mail-message-messages";
 import type { MailListItem } from "./mail-navigation";
 import type { MailQuickLookState } from "./mail-quick-look";
 
@@ -29,13 +30,17 @@ export default function MailConversationQuickLook(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const messageText = createMemo(() => mailMessageMessages.resolve([locale()]).t);
   const data = () => (props.state.status === "ready" ? props.state.data : null);
   const loading = () => props.state.status === "loading";
+  // The day always shows, "Today" included, as in "Yesterday, 16:20".
   const received = () => {
     const at = props.item.latestMessageAt;
-    const day = dates.formatDateRelative(at, props.dateConfig);
     const time = dates.formatTime(at, props.dateConfig);
-    return day === time ? time : `${capitalize(day)}, ${time}`;
+    const relative = dates.formatDateRelative(at, props.dateConfig);
+    const day =
+      relative === time ? new Intl.RelativeTimeFormat(props.dateConfig.locale ?? "en", { numeric: "auto" }).format(0, "day") : relative;
+    return `${capitalize(day)}, ${time}`;
   };
   const statusLabel = () => {
     const status = props.item.workStatus;
@@ -49,6 +54,11 @@ export default function MailConversationQuickLook(props: {
     [sender()?.name ? sender()?.address : null, others().length > 0 ? t().withParticipants({ names: others().join(", ") }) : null]
       .filter(Boolean)
       .join(" · ");
+  const emptyText = () => {
+    if (props.state.status === "error") return t().quickLookUnavailable;
+    const body = data()?.latestMessage?.body;
+    return body === "syncing" ? messageText().bodySyncing : body === "failed" ? messageText().bodySyncFailed : t().noMessageBody;
+  };
   const attachments = () => data()?.attachments ?? { count: 0, firstName: null };
   const earlier = () => data()?.earlierMessageCount ?? 0;
 
@@ -159,10 +169,7 @@ export default function MailConversationQuickLook(props: {
             </For>
           }
         >
-          <Show
-            when={data()?.latestMessage?.excerpt}
-            fallback={<p class="mail-quick-look__quiet">{props.state.status === "error" ? t().quickLookUnavailable : t().noMessageBody}</p>}
-          >
+          <Show when={data()?.latestMessage?.excerpt} fallback={<p class="mail-quick-look__quiet">{emptyText()}</p>}>
             {(excerpt) => <p>{excerpt()}</p>}
           </Show>
         </Show>

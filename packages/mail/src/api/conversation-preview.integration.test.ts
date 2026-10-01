@@ -7,7 +7,7 @@ import type { MailConversationPreview } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "../service/auth";
-import { MAIL_CONVERSATION_PREVIEW_EXCERPT_MAX_LENGTH } from "../service/conversation-preview";
+import { MAIL_CONVERSATION_PREVIEW_EXCERPT_MAX_LENGTH, MAIL_CONVERSATION_PREVIEW_NAME_MAX_LENGTH } from "../service/conversation-preview";
 import { createMailbox } from "../service/mailboxes";
 import app from ".";
 
@@ -69,6 +69,7 @@ suite("Mail conversation quick look", () => {
     from: { name: string; email: string };
     plainText?: string | null;
     html?: string | null;
+    hydrationStatus?: "headers" | "failed" | "complete";
     attachments?: string[];
   }) => {
     uid += 1;
@@ -78,7 +79,7 @@ suite("Mail conversation quick look", () => {
         short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, plain_text, sanitized_html
       ) VALUES (
         ${newShortId()}, ${mailboxId}::uuid, ${`<preview-${uid}-${suffix}@example.test>`}, 'Offer', ${date}, 128,
-        ${`${suffix}${uid.toString(16)}`.padEnd(64, "0")}, 'complete', ${params.plainText ?? null}, ${params.html ?? null}
+        ${`${suffix}${uid.toString(16)}`.padEnd(64, "0")}, ${params.hydrationStatus ?? "complete"}, ${params.plainText ?? null}, ${params.html ?? null}
       ) RETURNING id
     `;
     await sql`
@@ -230,6 +231,7 @@ suite("Mail conversation quick look", () => {
       latestMessage: {
         from: { name: "Mara Beispiel", address: "mara@example.test" },
         excerpt: "Hello Jonas,\n\nhere is version 3.\n\nMara",
+        body: "synced",
       },
       // The newest message's first attachment; the count covers the whole conversation.
       attachments: { count: 3, firstName: "Offer_v3.pdf" },
@@ -265,6 +267,38 @@ suite("Mail conversation quick look", () => {
     });
     const body = (await (await preview("preview-owner-session", conversation.shortId)).json()) as MailConversationPreview;
     expect(body.latestMessage?.excerpt).toBe("Thanks for confirming!");
+  });
+
+  test("tells a body that is still syncing or failed apart from a message without text", async () => {
+    const stateOf = async (hydrationStatus: "headers" | "failed" | "complete") => {
+      const conversation = await insertConversation();
+      await insertMessage({
+        conversationId: conversation.id,
+        minutesAgo: 1,
+        from: { name: "Lea Lorem", email: "lea@example.test" },
+        hydrationStatus,
+      });
+      const body = (await (await preview("preview-owner-session", conversation.shortId)).json()) as MailConversationPreview;
+      return body.latestMessage && { excerpt: body.latestMessage.excerpt, body: body.latestMessage.body };
+    };
+    expect(await stateOf("headers")).toEqual({ excerpt: null, body: "syncing" });
+    expect(await stateOf("failed")).toEqual({ excerpt: null, body: "failed" });
+    expect(await stateOf("complete")).toEqual({ excerpt: null, body: "synced" });
+  });
+
+  test("bounds sender and attachment names like the text", async () => {
+    const conversation = await insertConversation();
+    await insertMessage({
+      conversationId: conversation.id,
+      minutesAgo: 1,
+      from: { name: "Very long name ".repeat(500), email: "long@example.test" },
+      plainText: "Hi",
+      attachments: [`${"a".repeat(5_000)}.pdf`],
+    });
+    const body = (await (await preview("preview-owner-session", conversation.shortId)).json()) as MailConversationPreview;
+    expect(body.latestMessage?.from?.name?.length).toBeLessThanOrEqual(MAIL_CONVERSATION_PREVIEW_NAME_MAX_LENGTH);
+    expect(body.attachments.firstName?.length).toBeLessThanOrEqual(MAIL_CONVERSATION_PREVIEW_NAME_MAX_LENGTH);
+    expect(body.attachments.firstName?.endsWith("…")).toBeTrue();
   });
 
   test("changes nothing: no read marking, revision, activity, hydration, or command", async () => {

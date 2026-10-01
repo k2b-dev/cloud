@@ -68,7 +68,7 @@ Wähle **Zuweisen**, um die ausgewählten Unterhaltungen einer Person zu übertr
 
 Lass den Mauszeiger kurz auf einer Zeile der Unterhaltungsliste ruhen. Neben der Liste öffnet sich eine Kurzansicht mit der Zeit der neuesten Nachricht, dem nächsten Schritt, der Zuweisung, den Tags, dem Betreff, der gespeicherten Zusammenfassung, falls es eine gibt, dem Anfang der neuesten Nachricht ohne zitierten Verlauf, dem ersten Anhang und der Zahl früherer Nachrichten. Bewegst du den Zeiger in die Karte, bleibt sie offen. Sie schließt sich, wenn du den Zeiger wegbewegst, die Liste scrollst oder Esc drückst. Mit der Tastatur fokussierst du eine Zeile und blendest die Kurzansicht mit der Leertaste ein oder aus; Enter öffnet weiterhin die Unterhaltung. Wähle die Karte oder die Zeile, um die Unterhaltung zu öffnen.
 
-Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und lädt keine externen Bilder. Sie erscheint nicht für die bereits geöffnete Unterhaltung, auf Touch-Geräten und wenn neben der Liste kein Platz für sie ist.
+Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und lädt keine externen Bilder. Sie erscheint nicht für die bereits geöffnete Unterhaltung, während du Unterhaltungen auswählst, auf Touch-Geräten und wenn neben der Liste kein Platz für sie ist.
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
 
