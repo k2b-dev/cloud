@@ -1413,7 +1413,7 @@ function MailWorkspaceView(props: {
   };
 
   return (
-    <AppWorkspace mobileSurface="flush">
+    <AppWorkspace mobileSurface="flush" class="mail-workspace">
       <MailSidebar
         mailboxId={data.mailbox.id}
         mailboxName={data.mailbox.name}

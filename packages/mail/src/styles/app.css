@@ -24,6 +24,11 @@
     padding-left: 0.5rem;
   }
 
+  /* The row whose quick look is open keeps its hover tone while the pointer is in the card. */
+  .mail-list-entry-peek {
+    background: var(--ui-hover);
+  }
+
   .mail-list-entry-active,
   .mail-list-entry-active:hover {
     background: color-mix(in srgb, var(--app-accent) 11%, var(--ui-surface));
@@ -642,6 +647,216 @@
 .k2b-ui .mail-search-summary:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);
   outline-offset: 0;
+}
+
+/* Quick look card beside the conversation list. The card is the shared
+   @k2b/ui hover preview (fixed 22rem x 20rem box, inner depth only); Mail sets
+   the plain surface and lays out its content. Unlayered, because the shared
+   card rules are unlayered too. Nothing in the card scrolls: every block is
+   clamped and the message text fades out at the bottom. */
+.k2b-ui [popover].k2b-hover-preview.mail-quick-look-card {
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .mail-quick-look {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.75rem;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-quick-look__facts {
+  display: flex;
+  height: 1.25rem;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.k2b-ui .mail-quick-look__facts > * {
+  flex: none;
+}
+
+/* Last resort when the line is too long even without tags: the assignee name truncates but stays. */
+.k2b-ui .mail-quick-look__facts[data-shrink-assignee] > .mail-quick-look__assignee {
+  flex: 0 1 auto;
+}
+
+.k2b-ui .mail-quick-look__tag-dot {
+  display: inline-block;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  margin-right: 0.25rem;
+  border-radius: 999px;
+  vertical-align: 0.0625rem;
+}
+
+.k2b-ui .mail-quick-look__head {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.k2b-ui .mail-quick-look__subject {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.1875rem;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.k2b-ui .mail-quick-look__from {
+  display: flex;
+  min-width: 0;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-quick-look__from b {
+  max-width: 60%;
+  flex: none;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .mail-quick-look__from span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The stored summary: an accent-tinted inset well, three lines at most. */
+.k2b-ui .mail-quick-look__summary {
+  flex: none;
+  padding: 0.4375rem 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  background: color-mix(in srgb, var(--app-accent) 6%, var(--k2b-surface));
+  box-shadow:
+    inset 0 1px 2px rgb(22 38 29 / 0.08),
+    inset 0 0 0 1px color-mix(in srgb, var(--app-accent) 13%, transparent);
+}
+
+.k2b-ui .mail-quick-look__summary p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.k2b-ui .mail-quick-look__summary b {
+  color: var(--ui-app-accent-text);
+  font-weight: 600;
+}
+
+/* The newest message takes the remaining height and fades out instead of scrolling. */
+.k2b-ui .mail-quick-look__text {
+  min-height: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.75rem), transparent);
+}
+
+.k2b-ui .mail-quick-look__text p {
+  margin: 0;
+}
+
+.k2b-ui .mail-quick-look__text .mail-quick-look__quiet {
+  color: var(--k2b-text-muted);
+  white-space: normal;
+}
+
+.k2b-ui .mail-quick-look__foot {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-quick-look__foot > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .mail-quick-look__foot i {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .mail-quick-look__foot > .mail-quick-look__attachment {
+  flex: 0 1 auto;
+}
+
+.k2b-ui .mail-quick-look__foot > .mail-quick-look__earlier {
+  flex: none;
+}
+
+.k2b-ui .mail-quick-look__attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Loading: placeholders only where the request has not answered, in the same box. */
+.k2b-ui .mail-quick-look__placeholder {
+  display: block;
+  border-radius: 0.25rem;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .mail-quick-look__placeholder--chip {
+  width: 4.5rem;
+  height: 1.25rem;
+}
+
+.k2b-ui .mail-quick-look__placeholder--line {
+  height: 0.625rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.k2b-ui .mail-quick-look__gap {
+  display: block;
+  height: 0.375rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .k2b-ui .mail-quick-look__placeholder {
+    animation: mail-quick-look-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes mail-quick-look-pulse {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 /* Overview edges are clipped by the shell. Keep this outside layers, like the

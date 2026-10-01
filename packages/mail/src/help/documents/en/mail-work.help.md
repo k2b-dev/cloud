@@ -64,6 +64,12 @@ To operate on several conversations, select their checkboxes. Hold Shift while s
 
 Select **Assign** to give the selected conversations to one person. Choose **Assign to me**, **Unassign**, or search the people who can write in this mailbox. Mail confirms how many conversations changed and offers **Undo**, which removes the assignee again rather than restoring the earlier one. The new assignee receives one notification for the whole selection. If a conversation no longer belongs to the mailbox, Mail names how many were not changed.
 
+## Take a quick look before opening {icon="eye"}
+
+With a mouse, rest the pointer on a conversation row for a moment. A quick look opens beside the list with the time of the newest message, the next step, the assignee, tags, the subject, the stored summary if there is one, the start of the newest message without quoted history, the first attachment, and the number of earlier messages. Move the pointer into the card to keep it open; it closes when you move away, scroll the list, or press Esc. With the keyboard, focus a row and press Space to show or hide the quick look; Enter still opens the conversation. Select the card or the row to open the conversation.
+
+A quick look never marks a conversation as read, never creates a summary, and never loads remote images. It does not appear for the conversation that is already open, on touch devices, or when there is no room for it beside the list.
+
 ## Read a complete thread {icon="route"}
 
 Select a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.

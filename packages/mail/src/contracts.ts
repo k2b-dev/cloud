@@ -306,6 +306,25 @@ export const relatedConversationSummarySchema = z
   })
   .strict();
 export const relatedConversationListSchema = z.array(relatedConversationSummarySchema).max(10);
+
+/** The facts of a conversation's quick look; text budgets are documented with `getConversationPreview`. */
+export const mailConversationPreviewSchema = z
+  .object({
+    conversationId: ResourceShortIdSchema,
+    summary: z.string().max(500).nullable(),
+    latestMessage: z
+      .object({
+        from: z.object({ name: z.string().nullable(), address: z.string() }).strict().nullable(),
+        excerpt: z.string().max(1_000).nullable(),
+      })
+      .strict()
+      .nullable(),
+    attachments: z.object({ count: z.number().int().min(0), firstName: z.string().nullable() }).strict(),
+    earlierMessageCount: z.number().int().min(0),
+    assigneeName: z.string().nullable(),
+  })
+  .strict();
+export type MailConversationPreview = z.infer<typeof mailConversationPreviewSchema>;
 export type RelatedConversationSummary = z.infer<typeof relatedConversationSummarySchema>;
 
 export const relatedConversationQuerySchema = z

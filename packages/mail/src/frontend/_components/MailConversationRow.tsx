@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Dropdown, Tooltip, useLocale } from "@k2b/ui";
+import { Dropdown, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
 import { getMailAction, type MailActionId, spamActionForFolder } from "./mail-actions";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
@@ -32,11 +32,18 @@ type MailConversationRowActions = {
   merge: (item: MailListItem) => void | Promise<void>;
 };
 
+/** The list's quick look card; rows anchor it and start its request when the pointer arrives. */
+type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | "anchor" | "active"> & {
+  prefetch: (item: MailListItem) => void;
+  release: (item: MailListItem) => void;
+};
+
 export default function MailConversationRow(props: {
   item: MailListItem;
   requestUrl: URL;
   state: MailConversationRowState;
   actions: MailConversationRowActions;
+  quickLook?: MailConversationRowQuickLook;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
@@ -71,16 +78,29 @@ export default function MailConversationRow(props: {
   const attachmentDownloadHref = () => buildMailAttachmentDownloadHref(props.requestUrl, props.item);
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
+  let link: HTMLAnchorElement | undefined;
+  // Message rows of the message view have no conversation quick look.
+  const quickLookId = props.item.selectionKind === "conversation" ? props.item.conversationId : null;
+  const quickLook = quickLookId ? props.quickLook : undefined;
+  const peeking = () => Boolean(quickLook && quickLook.active() === quickLookId);
 
   return (
     <div
+      ref={(element) => {
+        if (quickLook && quickLookId) quickLook.anchor(quickLookId, () => link)(element);
+      }}
       class="mail-list-entry group relative"
       classList={{
         "mail-list-entry-active": selected(),
         "mail-list-entry-unread": props.item.unread,
         "mail-list-entry-selected": bulkSelected(),
         "mail-list-entry-selection-mode": props.state.selectionMode,
+        "mail-list-entry-peek": peeking(),
       }}
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") quickLook?.prefetch(props.item);
+      }}
+      onPointerLeave={() => quickLook?.release(props.item)}
       role="listitem"
       data-conversation-id={props.item.conversationId ?? undefined}
       data-message-id={props.item.selectionKind === "message" ? props.item.id : undefined}
@@ -103,10 +123,15 @@ export default function MailConversationRow(props: {
         />
       </Show>
       <a
+        ref={link}
         href={buildMailSelectionHref(props.requestUrl, props.item)}
         aria-current={selected() ? "page" : undefined}
+        aria-controls={quickLook?.id}
+        aria-expanded={quickLook ? peeking() : undefined}
+        aria-keyshortcuts={quickLook ? "Space" : undefined}
         class="mail-list-row focus-ui"
-        title={`${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
+        // The open card already names sender and subject; a native tooltip would cover the row.
+        title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
         draggable={props.state.canWrite && Boolean(props.item.conversationId && props.item.sourceFolderId)}
         onClick={(event) => {
           activation = event.detail === 0 ? "keyboard" : "pointer";
