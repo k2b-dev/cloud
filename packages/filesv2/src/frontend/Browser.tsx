@@ -18,7 +18,6 @@ import {
   ScrollArea,
   SegmentedControl,
   TextInput,
-  type ToastHandle,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -58,6 +57,7 @@ import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
+import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { systemEntry, systemEntryLabel } from "./system-files";
@@ -104,6 +104,8 @@ export default function Browser(props: {
   editor?: EditorInfo | null;
   onEdit?: (entry: FileEntry) => void;
   onNavigate: (event: LinkNavigateEvent) => Promise<void>;
+  /** The workspace's upload queue; it outlives this view, so leaving the folder does not stop an upload. */
+  uploads: FilesUploads;
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
@@ -404,7 +406,7 @@ export default function Browser(props: {
   const selectedPaths = createMemo(() => [...selection.selected()]);
   const selected = createMemo(() => entries().filter((row) => selection.selected().has(row.path)));
   let actionLocation: string | null = null;
-  const busy = () => !!props.pending || download.loading() || upload.loading() || action.loading();
+  const busy = () => !!props.pending || download.loading() || action.loading();
   const refresh = async (selectPath?: string | null) => {
     if (!mounted || (actionLocation && actionLocation !== locationKey())) return;
     invalidateBranches = true;
@@ -473,165 +475,85 @@ export default function Browser(props: {
     );
 
   /*
-   * Uploads: Cloud opens a Filegate session per file; folders are recreated from relative paths first.
-   * Progress lives in one toast. Hidden system files inside uploaded folders are asked about once, before
-   * anything is created. Name conflicts are answered once per batch: known ones up front from the current
-   * listing, later ones with the same answer.
+   * Uploads: the workspace's queue opens a Filegate session per file, after recreating dropped folders. This view
+   * only decides what to send: hidden system files inside uploaded folders and names the listing already holds
+   * are each asked about once, before the files join the queue. Files picked while a batch runs join it.
    */
-  const upload = mutation.create({
-    onError: (error) => toast.error(error.message),
-    mutation: async (input: { files: readonly File[]; directories?: readonly string[]; hidden?: number }, { abortSignal }) => {
-      // The target is where the files were dropped or picked; navigating while a question is open does not move it.
-      const base = baseId();
-      const root = folder();
-      const uploadLocation = locationKey();
-      const known = new Set(props.directory.items.filter((item) => !item.directory).map((item) => item.name));
-      let { files, directories = [] } = input;
-      const { hidden = 0 } = input;
-      const system = new Set<string>();
-      for (const path of [...files.map(relativeName), ...directories]) {
-        const entry = systemEntry(path);
-        if (entry) system.add(entry);
+  // Questions still open when this view leaves are closed; files already queued keep uploading.
+  const questions = new AbortController();
+  onCleanup(() => questions.abort());
+  const prepareUpload = async (input: { files: readonly File[]; directories: readonly string[]; hidden: number }) => {
+    // The target is where the files were dropped or picked; navigating while a question is open does not move it.
+    const signal = questions.signal;
+    const base = baseId();
+    const root = folder();
+    const label = root.split("/").at(-1) || baseLabel(props.directory.base, b(), locale());
+    const known = new Set(props.directory.items.filter((item) => !item.directory).map((item) => item.name));
+    let { files, directories } = input;
+    const system = new Set<string>();
+    for (const path of [...files.map(relativeName), ...directories]) {
+      const entry = systemEntry(path);
+      if (entry) system.add(entry);
+    }
+    if (system.size) {
+      const choice = await askSystemFiles([...system], signal);
+      if (!choice || signal.aborted) return;
+      if (choice === "skip") {
+        files = files.filter((file) => !systemEntry(relativeName(file)));
+        // A skipped entry never creates a folder, but the folder it sat in is still part of the upload.
+        directories = [...directories.filter((path) => !systemEntry(path)), ...[...system].map(parentPath)];
       }
-      if (system.size) {
-        const choice = await askSystemFiles([...system], abortSignal);
-        abortSignal.throwIfAborted();
-        if (!choice) return;
-        if (choice === "skip") {
-          files = files.filter((file) => !systemEntry(relativeName(file)));
-          // A skipped entry never creates a folder, but the folder it sat in is still part of the upload.
-          directories = [...directories.filter((path) => !systemEntry(path)), ...[...system].map(parentPath)];
-        }
-      }
-      const conflicts = files.filter((file) => !relativeName(file).includes("/") && known.has(file.name)).length;
-      let policy: "ask" | "overwrite" | "skip" = "ask";
-      const decide = async (name: string, count: number) => {
-        const choice = await prompts.confirm(
-          count > 1 ? b().replaceManyQuestion({ count, total: files.length }) : b().replaceQuestion(name),
-          {
-            title: count > 1 ? b().replaceManyTitle : b().replaceTitle,
-            confirmText: b().replaceAll,
-            cancelText: files.length > count ? b().onlyNew(files.length - count) : b().skip,
-            variant: "danger",
-          },
-        );
-        abortSignal.throwIfAborted();
-        return choice === undefined ? null : choice ? ("overwrite" as const) : ("skip" as const);
-      };
-      if (conflicts) {
-        const decided = await decide(files.find((file) => known.has(file.name))?.name ?? "", conflicts);
-        if (!decided) return;
-        policy = decided;
-      }
-      const folders = new Set<string>(directories);
-      for (const file of files) {
-        const parts = relativeName(file).split("/").slice(0, -1);
-        for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
-      }
-      const handle: ToastHandle = toast(b().uploadingTitle, {
-        title: b().upload,
-        progress: "indeterminate",
-        duration: 0,
-        action: { label: b().cancel, onClick: () => upload.abort() },
-      });
-      let createdFolders = 0;
-      let uploaded = 0;
-      let skipped = 0;
-      let failed = 0;
-      let last: string | null = null;
-      try {
-        for (const path of [...folders].sort()) {
-          const response = await apiClient.bases[":baseId"].directories.$post(
-            { param: { baseId: base }, json: { path: root ? `${root}/${path}` : path } },
-            { init: { signal: abortSignal } },
-          );
-          if (!response.ok && (response.status as number) !== 409) await apiFailure(response, t().unavailable);
-          if (response.ok) createdFolders++;
-        }
-        for (let index = 0; index < files.length; index++) {
-          const file = files[index]!;
-          const path = root ? `${root}/${relativeName(file)}` : relativeName(file);
-          const report = (bytes: number) =>
-            handle.update(
-              b().uploading({
-                done: index,
-                total: files.length,
-                name: file.name,
-                percent: file.size ? Math.floor((bytes / file.size) * 100) : 100,
-              }),
-              {
-                progress: (index + (file.size ? bytes / file.size : 1)) / files.length,
-              },
-            );
-          report(0);
-          let onConflict: "error" | "overwrite" = policy === "overwrite" ? "overwrite" : "error";
-          for (;;) {
-            try {
-              const result = await uploadFile(base, path, file, {
-                onConflict,
-                signal: abortSignal,
-                fallback: b().uploadFailed(file.name),
-                onProgress: report,
-              });
-              uploaded++;
-              last = result.entry.path;
-              break;
-            } catch (error) {
-              if (error instanceof UploadConflict && onConflict === "error") {
-                if (policy === "ask") {
-                  const decided = await decide(error.fileName, 1);
-                  if (!decided) throw new DOMException("cancelled", "AbortError");
-                  policy = decided;
-                }
-                if (policy === "overwrite") {
-                  onConflict = "overwrite";
-                  continue;
-                }
-                skipped++;
-                break;
-              }
-              if (abortSignal.aborted) throw error;
-              failed++;
-              toast.error(error instanceof Error && error.message !== "path_conflict" ? error.message : b().uploadFailed(file.name));
-              break;
-            }
+    }
+    let policy: ReplacePolicy = "ask";
+    const conflicts = files.filter((file) => !relativeName(file).includes("/") && known.has(file.name)).length;
+    if (conflicts) {
+      const decided = await askReplace(b(), files.find((file) => known.has(file.name))?.name ?? "", conflicts, files.length, signal);
+      if (!decided || signal.aborted) return;
+      policy = decided;
+    }
+    const folders = new Set<string>(directories.filter(Boolean));
+    for (const file of files) {
+      const parts = relativeName(file).split("/").slice(0, -1);
+      for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
+    }
+    if (input.hidden) toast(b().hiddenLeftOut(input.hidden), { duration: 8000 });
+    // Only empty folders: nothing to transfer, so they are created like a new folder.
+    if (!files.length) {
+      if (folders.size)
+        runAction(async () => {
+          for (const path of [...folders].sort()) {
+            const response = await apiClient.bases[":baseId"].directories.$post({
+              param: { baseId: base },
+              json: { path: root ? `${root}/${path}` : path },
+            });
+            if (!response.ok && (response.status as number) !== 409) await apiFailure(response, t().unavailable);
           }
-        }
-        handle.update(b().uploadSummary({ uploaded, skipped, failed, hidden }), {
-          variant: failed ? "error" : "success",
-          progress: null,
-          duration: 5000,
-          action: null,
+          await refresh();
         });
-      } catch (error) {
-        handle.update(
-          uploaded
-            ? b().uploadSummary({ uploaded, skipped, failed, hidden })
-            : abortSignal.aborted
-              ? b().uploadCancelled
-              : b().uploadFailed(files[0]?.name ?? ""),
-          {
-            progress: null,
-            duration: 4000,
-            action: null,
-            variant: abortSignal.aborted ? undefined : "error",
-          },
-        );
-        if (!abortSignal.aborted) throw error;
-      } finally {
-        if ((uploaded || createdFolders) && uploadLocation === locationKey()) void refresh(last);
-      }
-    },
-  });
-  onCleanup(() => upload.abort());
-  // `hidden` counts dropped dot-files the browser refused to hand over; the summary names them instead of an error.
+      return;
+    }
+    props.uploads.add(
+      { baseId: base, root, folders: [...folders].sort(), policy, total: files.length },
+      { key: JSON.stringify([base, root]), label },
+      files.map((file) => ({ file, path: relativeName(file) })),
+    );
+  };
+  // A finished upload into the folder on screen refreshes it and highlights the last file.
+  onMount(() =>
+    onCleanup(
+      props.uploads.onSettled((group, last) => {
+        if (group.baseId === baseId() && group.root === folder() && !searching()) void refresh(last);
+      }),
+    ),
+  );
+  // `hidden` counts dropped dot-files the browser refused to hand over; a note names them instead of an error.
   const startUpload = (files: readonly File[], directories: readonly string[] = [], hidden = 0) => {
     if (!files.length && !directories.length) return;
     if (busy() || searching() || !canCreate()) {
       toast(b().uploadUnavailable);
       return;
     }
-    void upload.mutate({ files, directories, hidden });
+    void prepareUpload({ files, directories, hidden });
   };
   let filePicker: HTMLInputElement | undefined;
   let folderPicker: HTMLInputElement | undefined;
@@ -727,9 +649,31 @@ export default function Browser(props: {
       refresh(path);
     });
   };
+  // An empty file has nothing to transfer, so it is created at once like a folder instead of waiting behind an upload.
   const createFile = async () => {
     const name = await askName(b().newFile, b().newFileName);
-    if (name) startUpload([new File([], name)]);
+    if (!name) return;
+    const base = baseId();
+    const path = folder() ? `${folder()}/${name}` : name;
+    runAction(async () => {
+      let onConflict: "error" | "overwrite" = "error";
+      for (;;) {
+        try {
+          const result = await uploadFile(base, path, new File([], name), {
+            onConflict,
+            signal: questions.signal,
+            fallback: t().unavailable,
+          });
+          toast.success(b().documentCreated(name));
+          refresh(result.entry.path);
+          return;
+        } catch (error) {
+          if (!(error instanceof UploadConflict) || onConflict === "overwrite") throw error;
+          if ((await askReplace(b(), name, 1, 1, questions.signal)) !== "overwrite") return;
+          onConflict = "overwrite";
+        }
+      }
+    });
   };
   const editable = (entry: FileEntry) =>
     !!props.onEdit && !entry.directory && (isMarkdown(entry.name) || (!!props.editor && !!editableExtension(entry.name)));

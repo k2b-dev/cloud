@@ -507,3 +507,255 @@
     row-gap: 0.75rem;
   }
 }
+
+/* Upload panel: one flat surface in the toast rail. Space separates header, bar, rows and footer; the only
+   depth is the inset tint of the file in flight. Every size that changes with values is fixed or reserved. */
+.filesv2-upload {
+  --filesv2-upload-row: 2.25rem;
+  /* The panel sets these inline from the batch: visible rows, all rows, and each row's place. */
+  --filesv2-upload-visible: 5;
+  --filesv2-upload-rows: 0;
+  --filesv2-upload-index: 0;
+  display: flex;
+  flex-direction: column;
+}
+.filesv2-upload__head {
+  display: flex;
+  height: 2rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: -0.25rem;
+}
+/* Fixed width with tabular digits: 0 % to 100 % never moves the title. */
+.filesv2-upload__percent {
+  flex: none;
+  width: 3.125rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.filesv2-upload__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-upload:not([data-phase="running"]) .filesv2-upload__title {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+/* Selectors outweigh the @k2b/ui variant rules, which load after this sheet. */
+.k2b-ui .filesv2-upload__head .k2b-icon-button[data-variant="ghost"] {
+  flex: none;
+  color: var(--k2b-text-muted);
+}
+.filesv2-upload__head .k2b-icon-button:last-child {
+  margin-right: -0.375rem;
+}
+.filesv2-upload__toggle i {
+  transition: transform 150ms ease-out;
+}
+.filesv2-upload[data-expanded="false"] .filesv2-upload__toggle i {
+  transform: rotate(180deg);
+}
+
+/* The total by bytes. Failed bytes are hatched, so they never read as uploaded. */
+.filesv2-upload__bar {
+  display: flex;
+  height: 0.375rem;
+  margin-top: 0.375rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--k2b-border);
+}
+.filesv2-upload__bar-done {
+  height: 100%;
+  background: var(--k2b-action-solid);
+  transition: width 200ms linear;
+}
+.filesv2-upload__bar-failed {
+  height: 100%;
+  background: repeating-linear-gradient(135deg, var(--k2b-danger-500) 0 2px, var(--k2b-danger-surface) 2px 4px);
+}
+.filesv2-upload:is([data-phase="done"], [data-phase="errors"]) .filesv2-upload__bar-done {
+  background: var(--k2b-success-500);
+}
+.filesv2-upload[data-phase="cancelled"] .filesv2-upload__bar-done {
+  background: var(--k2b-neutral-400);
+}
+
+/* Up to five fixed rows; only the rows in view are rendered, each at its own offset. */
+.filesv2-upload__scroll {
+  height: calc(var(--filesv2-upload-visible) * var(--filesv2-upload-row));
+  margin: 0.5rem -0.375rem 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--k2b-radius-control);
+  scrollbar-width: thin;
+}
+.filesv2-upload[data-expanded="false"] .filesv2-upload__scroll {
+  display: none;
+}
+.filesv2-upload__scroll:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.filesv2-upload__list {
+  position: relative;
+  height: calc(var(--filesv2-upload-rows) * var(--filesv2-upload-row));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.filesv2-upload-row {
+  position: absolute;
+  top: calc(var(--filesv2-upload-index) * var(--filesv2-upload-row));
+  inset-inline: 0;
+  display: grid;
+  height: var(--filesv2-upload-row);
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.375rem;
+  border-radius: var(--k2b-radius-control);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+/* The only row highlight: a quiet inset tint on the file in flight. */
+.filesv2-upload-row[data-status="working"] {
+  background: var(--k2b-surface-muted);
+  box-shadow: inset 0 1px 2px rgb(9 9 11 / 0.05);
+}
+.filesv2-upload-row__status {
+  display: grid;
+  width: 1rem;
+  height: 1rem;
+  place-items: center;
+  font-size: 0.9375rem;
+  line-height: 1;
+}
+.filesv2-upload-row__status .k2b-progress-ring {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+.filesv2-upload-row:is([data-status="pending"], [data-status="cancelled"], [data-status="skipped"]) .filesv2-upload-row__status {
+  color: var(--k2b-neutral-500);
+}
+.filesv2-upload-row[data-status="success"] .filesv2-upload-row__status {
+  color: var(--k2b-success-text);
+}
+.filesv2-upload-row[data-status="failed"] .filesv2-upload-row__status {
+  color: var(--k2b-danger-text);
+}
+.filesv2-upload-row__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+}
+.filesv2-upload-row__name {
+  display: flex;
+  min-width: 0;
+  color: var(--k2b-text-secondary);
+  white-space: nowrap;
+}
+/* A shared name shows its folder; the folder shortens first, the name stays. */
+.filesv2-upload-row__folder {
+  flex: 0 1 auto;
+  min-width: 1.5rem;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+}
+.filesv2-upload-row__base {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filesv2-upload-row:is([data-status="working"], [data-status="failed"]) .filesv2-upload-row__name {
+  color: var(--k2b-text);
+}
+.filesv2-upload-row[data-status="cancelled"] .filesv2-upload-row__base {
+  color: var(--k2b-text-muted);
+  text-decoration: line-through;
+}
+.filesv2-upload-row__reason {
+  overflow: hidden;
+  color: var(--k2b-danger-text);
+  font-size: 0.6875rem;
+  line-height: 0.9375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .filesv2-upload-row .k2b-icon-button[data-variant="ghost"] {
+  color: var(--k2b-text-muted);
+}
+
+.filesv2-upload__foot {
+  display: flex;
+  height: 1.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  margin-bottom: -0.25rem;
+  font-size: 0.75rem;
+}
+.filesv2-upload__count {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-upload__errors {
+  flex: none;
+  margin: 0;
+  color: var(--k2b-danger-text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-button.filesv2-upload__action[data-variant="text"] {
+  flex: none;
+  margin-left: auto;
+  color: var(--k2b-action);
+  font-size: 0.75rem;
+}
+.k2b-ui .k2b-button.filesv2-upload__action[data-variant="text"]:not(:disabled):hover {
+  color: var(--k2b-action);
+  text-decoration: underline;
+}
+
+/* On touch, rows grow to 2.75rem like other flush action rows, so the retry button's 44 px hit area stays inside
+   its own row. Only the row's text precedes the button, so the area may also reach back over it. */
+@media (any-pointer: coarse) {
+  .filesv2-upload {
+    --filesv2-upload-row: 2.75rem;
+  }
+  .filesv2-upload-row {
+    padding-inline-end: 0.5rem;
+  }
+  .k2b-ui .filesv2-upload .filesv2-upload-row .k2b-button.k2b-icon-button::after {
+    inset-inline-start: min(0px, calc((100% - 2.75rem) / 2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filesv2-upload__toggle i,
+  .filesv2-upload__bar-done {
+    transition: none;
+  }
+}

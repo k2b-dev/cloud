@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult, PublicConfiguration } from "../src/contracts";
+import { browserWithUploads } from "./browser-with-uploads";
 
 const requests: Array<{ kind: string; input: unknown; signal: AbortSignal; resolve: (response: Response) => void }> = [];
 let refreshes = 0;
@@ -152,7 +153,7 @@ describe("Filesv2 interactions", () => {
 
   test("downloads ask Cloud for an exact path once and preserve the directory on failure", async () => {
     const dom = createDomTestHarness();
-    const { default: Browser } = await import("../src/frontend/Browser");
+    const Browser = await browserWithUploads();
     let opened = "";
     const dispose = render(
       () =>
@@ -201,7 +202,7 @@ describe("Filesv2 interactions", () => {
 
   test("a previewed PDF opens in a new tab at its stable address and downloads through a fresh lease", async () => {
     const dom = createDomTestHarness();
-    const { default: Browser } = await import("../src/frontend/Browser");
+    const Browser = await browserWithUploads();
     const pdf = directory.items[2]!;
     const bytes = "%PDF-1.4";
     const originalFetch = globalThis.fetch;
@@ -295,7 +296,7 @@ describe("Filesv2 interactions", () => {
 
   test("the details panel opens a PDF at the same page address as its preview and other files through a lease", async () => {
     const dom = createDomTestHarness();
-    const { default: Browser } = await import("../src/frontend/Browser");
+    const Browser = await browserWithUploads();
     const opened: Array<[string, string | undefined, string | undefined]> = [];
     const tab = { opener: {} as unknown, location: { href: "" }, close() {} };
     dom.window.open = ((url: string | URL, target?: string, features?: string) => {
@@ -381,7 +382,7 @@ describe("Filesv2 interactions", () => {
 
   test("the details panel stops offering the viewer tab once the preview finds a .pdf is no PDF", async () => {
     const dom = createDomTestHarness();
-    const { default: Browser } = await import("../src/frontend/Browser");
+    const Browser = await browserWithUploads();
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(async () => new Response("<html>Demo</html>", { headers: { "content-type": "text/html" } }), {
       preconnect: originalFetch.preconnect,

@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult, EditorLaunch } from "../src/contracts";
+import { browserWithUploads } from "./browser-with-uploads";
 
 const requests: Array<{ kind: string; input: unknown; resolve: (response: Response) => void }> = [];
 if (!isServer) {
@@ -66,7 +67,7 @@ describe("Filesv2 office editing", () => {
 
   test("office files open in the editor and the plus menu creates documents only when Collabora is configured", async () => {
     const dom = createDomTestHarness();
-    const { default: Browser } = await import("../src/frontend/Browser");
+    const Browser = await browserWithUploads();
     const { dialogCore } = await import("@k2b/ui");
     const edited: string[] = [];
     const props = {

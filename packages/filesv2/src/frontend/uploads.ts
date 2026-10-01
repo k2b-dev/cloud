@@ -4,7 +4,6 @@ import { transferUpload } from "../upload-transfer";
 import { apiFailure } from "./file-preview";
 import { browserUploadKey } from "./upload-key";
 
-export type UploadProgress = { done: number; total: number; name: string; percent: number };
 const requestSignal = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
 export class UploadConflict extends Error {
   constructor(readonly fileName: string) {

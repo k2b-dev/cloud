@@ -23,10 +23,16 @@ export type ToastHandle = {
   update: (description: string, options?: ToastOptions) => void;
 };
 
+export type ToastSlot = {
+  dismiss: () => void;
+};
+
 export interface ToastFn {
   (description: string, options?: ToastOptions): ToastHandle;
   success: (description: string, options?: Omit<ToastOptions, "variant">) => ToastHandle;
   error: (description: string, options?: Omit<ToastOptions, "variant">) => ToastHandle;
+  /** Places an application-owned element in the toast rail, in toast chrome; the caller owns its content and lifetime. */
+  custom: (content: HTMLElement) => ToastSlot;
   dismissAll: () => void;
 }
 
@@ -111,11 +117,31 @@ const ensureContainer = (): HTMLElement | null => {
   return container;
 };
 
+/** Moving nodes resets their scroll offsets and drops focus; a custom slot can hold a scrolled list or a focused control. */
+const captureViewState = (container: HTMLElement) => {
+  const focused =
+    document.activeElement instanceof HTMLElement && container.contains(document.activeElement) ? document.activeElement : null;
+  const scrolled = Array.from(container.querySelectorAll<HTMLElement>("*"))
+    .filter((element) => element.scrollTop || element.scrollLeft)
+    .map((element) => [element, element.scrollTop, element.scrollLeft] as const);
+  const railTop = container.scrollTop;
+  return (rail: HTMLElement) => {
+    rail.scrollTop = railTop;
+    for (const [element, top, left] of scrolled) {
+      element.scrollTop = top;
+      element.scrollLeft = left;
+    }
+    if (focused?.isConnected && rail.contains(focused)) focused.focus({ preventScroll: true });
+  };
+};
+
 const promoteToTopLayer = (container: HTMLElement): HTMLElement => {
   if (typeof container.showPopover !== "function" || !container.isConnected) return container;
   let active = container;
+  let restore: ((rail: HTMLElement) => void) | null = null;
   try {
     if (container.matches(":popover-open") || document.querySelector("dialog:modal")) {
+      restore = captureViewState(container);
       const next = container.cloneNode(false) as HTMLElement;
       while (container.firstChild) next.appendChild(container.firstChild);
       const root = container.parentElement ?? getK2bPortalRoot();
@@ -127,6 +153,8 @@ const promoteToTopLayer = (container: HTMLElement): HTMLElement => {
   } catch {
     active.removeAttribute("popover");
   }
+  // Offsets apply only once the rail is rendered again, so after it is shown.
+  restore?.(active);
   return active;
 };
 
@@ -347,6 +375,36 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   return handle;
 };
 
+/*
+ * A custom slot shares the rail, chrome, and enter/leave motion with toasts, so it stacks beside them in the same
+ * corner instead of covering them. It has no timer, close button, or live region of its own, and neither the
+ * five-toast cap nor `dismissAll` removes it: the application that placed it decides when it goes.
+ */
+const showCustom = (content: HTMLElement): ToastSlot => {
+  const initialContainer = ensureContainer();
+  if (!initialContainer) return { dismiss: () => {} };
+  let dismissed = false;
+  const slotElement = document.createElement("div");
+  slotElement.className = "k2b-toast";
+  slotElement.dataset.k2bToast = "";
+  slotElement.dataset.custom = "true";
+  slotElement.append(content);
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    slotElement.dataset.closing = "true";
+    setTimeout(() => {
+      slotElement.remove();
+      hideEmptyContainers();
+    }, ANIMATION_MS);
+  };
+  promoteToTopLayer(initialContainer).appendChild(slotElement);
+  requestAnimationFrame(() => {
+    if (!dismissed) slotElement.dataset.open = "true";
+  });
+  return { dismiss };
+};
+
 export const isPointInsideToast = (x: number, y: number): boolean => {
   if (typeof document === "undefined") return false;
   const containers = Array.from(document.querySelectorAll<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`));
@@ -362,6 +420,7 @@ export const isPointInsideToast = (x: number, y: number): boolean => {
 const toastFn = ((description: string, options?: ToastOptions) => showToast(description, options)) as ToastFn;
 toastFn.success = (description, options) => showToast(description, { ...options, variant: "success" });
 toastFn.error = (description, options) => showToast(description, { ...options, variant: "error" });
+toastFn.custom = showCustom;
 toastFn.dismissAll = () => {
   for (const handle of Array.from(liveToasts)) handle.dismiss();
 };

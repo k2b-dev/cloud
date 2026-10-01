@@ -16,6 +16,7 @@ import {
   toast,
   type ToastHandle,
   type ToastOptions,
+  type ToastSlot,
 } from "@k2b/ui";
 ```
 
@@ -66,6 +67,29 @@ upload.dismiss();
 `update` always replaces the description. Only option keys that are present replace existing options. Changing `variant` also changes the default title and icon unless that update supplies overrides. Updating resets the auto-dismiss timer.
 
 Use `toast.dismissAll()` when navigation or a major context change would make existing messages stale.
+
+## Custom content in the rail
+
+When feedback needs more than a description, a bar, and one action, such as a
+list of files in an upload, `toast.custom(element)` places an
+application-owned element in the same rail. It gets the toast chrome (border,
+radius, surface, shadow, padding) and the same enter and leave motion, and it
+stacks with ordinary toasts in the same corner instead of covering them.
+
+```ts
+const slot = toast.custom(panelElement);
+// later, when the work is done or the user closes it
+slot.dismiss();
+```
+
+The application owns everything inside: layout, a close button, a live region
+for announcements, and when to dismiss. A custom slot has no timer, does not
+dismiss on click, does not count toward the five-toast limit, and
+`toast.dismissAll()` leaves it in place. When a later toast arrives, the rail
+keeps the scroll offsets and the keyboard focus inside the slot, so a
+scrolled list or a focused control stays where it was. In Solid, create the element inside a
+component or effect so it keeps the locale and other context, and call
+`dismiss` from `onCleanup`.
 
 ## Hit-testing the toast rail
 
