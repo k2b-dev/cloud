@@ -17,9 +17,9 @@ describe("the space the Spaces entry opens next", () => {
     const pages: Array<() => void> = [];
     return {
       open: (spaceId: string) => pages.push(render(() => <RememberSpace spaceId={spaceId} />, dom.root)),
-      setVisibility: (next: DocumentVisibilityState, event: "visibilitychange" | "pageshow" = "visibilitychange") => {
+      setVisibility: (next: DocumentVisibilityState, event: "visibilitychange" | "pageshow" | "focus" = "visibilitychange") => {
         visibility = next;
-        if (event === "pageshow") dom.window.dispatchEvent(new dom.window.Event("pageshow"));
+        if (event !== "visibilitychange") dom.window.dispatchEvent(new dom.window.Event(event));
         else dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
       },
       otherTabOpens: (spaceId: string) => setLastSpaceId(spaceId),
@@ -45,17 +45,20 @@ describe("the space the Spaces entry opens next", () => {
     }
   });
 
-  test.each(["visibilitychange", "pageshow"] as const)("takes over again when its page is shown again (%s)", async (event) => {
-    const page = await setup();
-    try {
-      page.open("spaceA");
-      expect(page.last()).toBe("spaceA");
-      page.setVisibility("hidden");
-      page.otherTabOpens("spaceB");
-      page.setVisibility("visible", event);
-      expect(page.last()).toBe("spaceA");
-    } finally {
-      page.cleanup();
-    }
-  });
+  test.each(["visibilitychange", "pageshow", "focus"] as const)(
+    "takes over again when its page is shown or focused again (%s)",
+    async (event) => {
+      const page = await setup();
+      try {
+        page.open("spaceA");
+        expect(page.last()).toBe("spaceA");
+        page.setVisibility("hidden");
+        page.otherTabOpens("spaceB");
+        page.setVisibility("visible", event);
+        expect(page.last()).toBe("spaceA");
+      } finally {
+        page.cleanup();
+      }
+    },
+  );
 });

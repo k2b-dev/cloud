@@ -16,10 +16,14 @@ describe("the base page the Grids entry opens next", () => {
     const { parseLastGridsPath, setLastGridsPath } = await import("./GridsSettingsStore");
     const pages: Array<() => void> = [];
     return {
-      open: (path: string) => pages.push(render(() => <RememberGridsPath path={path} />, dom.root)),
-      setVisibility: (next: DocumentVisibilityState, event: "visibilitychange" | "pageshow" = "visibilitychange") => {
+      open: (path: string) => {
+        dom.window.history.replaceState(null, "", path);
+        pages.push(render(() => <RememberGridsPath />, dom.root));
+      },
+      changeInPlace: (path: string) => dom.window.history.pushState(null, "", path),
+      setVisibility: (next: DocumentVisibilityState, event: "visibilitychange" | "pageshow" | "focus" = "visibilitychange") => {
         visibility = next;
-        if (event === "pageshow") dom.window.dispatchEvent(new dom.window.Event("pageshow"));
+        if (event !== "visibilitychange") dom.window.dispatchEvent(new dom.window.Event(event));
         else dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
       },
       otherTabOpens: (path: string) => setLastGridsPath(path),
@@ -45,15 +49,34 @@ describe("the base page the Grids entry opens next", () => {
     }
   });
 
-  test.each(["visibilitychange", "pageshow"] as const)("takes over again when its page is shown again (%s)", async (event) => {
+  test.each(["visibilitychange", "pageshow", "focus"] as const)(
+    "takes over again when its page is shown or focused again (%s)",
+    async (event) => {
+      const page = await setup();
+      try {
+        page.open("/app/grids/BASE0A");
+        expect(page.last()).toBe("/app/grids/BASE0A");
+        page.setVisibility("hidden");
+        page.otherTabOpens("/app/grids/BASE0B");
+        page.setVisibility("visible", event);
+        expect(page.last()).toBe("/app/grids/BASE0A");
+      } finally {
+        page.cleanup();
+      }
+    },
+  );
+
+  test("records the address shown now, not the one the page was loaded with", async () => {
     const page = await setup();
     try {
-      page.open("/app/grids/BASE0A");
-      expect(page.last()).toBe("/app/grids/BASE0A");
+      page.open("/app/grids/BASE0A/table/TABL01?record=REC001&edit=true");
+      expect(page.last()).toBe("/app/grids/BASE0A/table/TABL01?record=REC001");
+      // The record closes and the trash opens without a page load.
+      page.changeInPlace("/app/grids/BASE0A/table/TABL01?trash=1&form=FORM01");
       page.setVisibility("hidden");
       page.otherTabOpens("/app/grids/BASE0B");
-      page.setVisibility("visible", event);
-      expect(page.last()).toBe("/app/grids/BASE0A");
+      page.setVisibility("visible");
+      expect(page.last()).toBe("/app/grids/BASE0A/table/TABL01?trash=1");
     } finally {
       page.cleanup();
     }

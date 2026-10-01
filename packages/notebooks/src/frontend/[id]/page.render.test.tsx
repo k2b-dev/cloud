@@ -203,9 +203,10 @@ test.each(["write", "book"] as const)(
 );
 
 test.each([
-  ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments", attachmentsHandler],
-  ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas", tagHandler],
-] as const)("the %s page of a notebook also records the notebook", async (_name, route, path, pageHandler) => {
+  ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments", attachmentsHandler, false],
+  ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas", tagHandler, false],
+  ["book-mode tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?mode=book", tagHandler, true],
+] as const)("the %s page of a notebook also records the notebook", async (_name, route, path, pageHandler, bookMode) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -230,7 +231,9 @@ test.each([
   app.get(route, ...pageHandler);
   const response = await app.request(`https://cloud.example.test${path}`);
   expect(response.status).toBe(200);
-  const [island, ...others] = await select(await response.text(), 'solid-island[data-file="RememberNotebook.island.tsx"]');
+  const html = await response.text();
+  expect(await select(html, 'solid-island[data-file="BookController.island.tsx"]')).toHaveLength(bookMode ? 1 : 0);
+  const [island, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
 
   expect(others).toEqual([]);
   expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");

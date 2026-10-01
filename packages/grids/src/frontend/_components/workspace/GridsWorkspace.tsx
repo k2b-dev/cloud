@@ -93,7 +93,7 @@ export default function GridsWorkspace(props: { state: PublicOkWorkspaceState; c
   })();
   return (
     <>
-      <RememberGridsPath path={props.state.rememberPath} />
+      <RememberGridsPath />
       <WorkspaceMetadataRefresh
         baseId={props.state.base.id}
         initialCursor={props.state.metadataEventCursor}

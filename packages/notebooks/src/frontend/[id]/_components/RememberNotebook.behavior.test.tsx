@@ -17,9 +17,9 @@ describe("the notebook the Notebooks entry opens next", () => {
     const tabs: Array<() => void> = [];
     return {
       open: (notebookId: string) => tabs.push(render(() => <RememberNotebook notebookId={notebookId} />, dom.root)),
-      setVisibility: (next: DocumentVisibilityState, event: "visibilitychange" | "pageshow" = "visibilitychange") => {
+      setVisibility: (next: DocumentVisibilityState, event: "visibilitychange" | "pageshow" | "focus" = "visibilitychange") => {
         visibility = next;
-        if (event === "pageshow") dom.window.dispatchEvent(new dom.window.Event("pageshow"));
+        if (event !== "visibilitychange") dom.window.dispatchEvent(new dom.window.Event(event));
         else dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
       },
       otherTabOpens: (notebookId: string) => setLastNotebookId(notebookId),
@@ -58,18 +58,21 @@ describe("the notebook the Notebooks entry opens next", () => {
     }
   });
 
-  test.each(["visibilitychange", "pageshow"] as const)("takes over again when its page is shown again (%s)", async (event) => {
-    const page = await setup();
-    try {
-      page.open("bookAA");
-      page.setVisibility("hidden");
-      // Meanwhile another tab, or the page left by going back, records its notebook.
-      page.otherTabOpens("bookBB");
-      expect(page.last()).toBe("bookBB");
-      page.setVisibility("visible", event);
-      expect(page.last()).toBe("bookAA");
-    } finally {
-      page.cleanup();
-    }
-  });
+  test.each(["visibilitychange", "pageshow", "focus"] as const)(
+    "takes over again when its page is shown or focused again (%s)",
+    async (event) => {
+      const page = await setup();
+      try {
+        page.open("bookAA");
+        page.setVisibility("hidden");
+        // Meanwhile another tab, or the page left by going back, records its notebook.
+        page.otherTabOpens("bookBB");
+        expect(page.last()).toBe("bookBB");
+        page.setVisibility("visible", event);
+        expect(page.last()).toBe("bookAA");
+      } finally {
+        page.cleanup();
+      }
+    },
+  );
 });
