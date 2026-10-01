@@ -3,6 +3,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { DirectoryResult } from "../src/contracts";
+import { browserWithUploads } from "./browser-with-uploads";
 
 const branchRequests: Array<{ input: unknown; signal: AbortSignal; resolve: (response: Response) => void }> = [];
 const favoriteRequests: Array<{ input: unknown; resolve: (response: Response) => void }> = [];
@@ -52,7 +53,7 @@ afterEach(() => {
 
 test("view changes preserve selection; superseded details cannot replace current content; navigation clears selection", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const [directory, setDirectory] = createSignal(initial);
   const [source, setSource] = createSignal("/app/filesv2?base=home");
   const dispose = render(
@@ -164,7 +165,7 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
 
 test("tree branches cannot cross full cloud base identities or accept a superseded branch response", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
   const first = { ...initial, base: { ...initial.base, id: "cloud:groups:first" }, items: [folder] };
   const [directory, setDirectory] = createSignal(first);
@@ -211,7 +212,7 @@ test("tree branches cannot cross full cloud base identities or accept a supersed
 
 test("tree navigation keeps loaded ancestors and current files through folder changes and refreshes", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const folders = ["Bilder", "Finanzen"].map((name) => ({ name, path: name, directory: true, size: 0, modified: "2026-01-01T00:00:00Z" }));
   const root = { ...initial, items: folders };
   const [directory, setDirectory] = createSignal<DirectoryResult>(root);
@@ -252,7 +253,7 @@ test("tree navigation keeps loaded ancestors and current files through folder ch
 
 test("a slow or failed tree root never hides the loaded folder and can be retried", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
   const dispose = render(
     () => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
@@ -283,7 +284,7 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
 
 test("tree query changes reject late ancestor replies and navigation supersedes a pending child", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const folder = { name: "Bilder", path: "Bilder", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
   const [directory, setDirectory] = createSignal<DirectoryResult>(current);
@@ -331,7 +332,7 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
 
 test("list and tree mark their active row with one class; checked rows in select mode are selected, not active", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const folder = (path: string) => ({ name: path.split("/").at(-1)!, path, directory: true, size: 0, modified: "2026-01-01T00:00:00Z" });
   const current: DirectoryResult = {
     ...initial,
@@ -401,7 +402,7 @@ test("list and tree mark their active row with one class; checked rows in select
 
 test("outside select mode Shift+Arrow moves the one active row; in select mode it still extends the range", async () => {
   const dom = createDomTestHarness();
-  const { default: Browser } = await import("../src/frontend/Browser");
+  const Browser = await browserWithUploads();
   const items = ["A.txt", "B.txt", "C.txt"].map((name) => ({ ...initial.items[0]!, name, path: name }));
   const dispose = render(
     () => (

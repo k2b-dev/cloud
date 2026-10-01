@@ -705,6 +705,12 @@
   pointer-events: auto;
 }
 
+/* `toast.custom`: the same chrome and motion around application-owned content, which lays itself out. */
+.k2b-ui [data-k2b-toast-container] > .k2b-toast[data-custom="true"] {
+  display: block;
+  cursor: auto;
+}
+
 .k2b-ui [data-k2b-toast-container] > .k2b-toast[data-open="true"] {
   opacity: 1;
   transform: translateX(0);

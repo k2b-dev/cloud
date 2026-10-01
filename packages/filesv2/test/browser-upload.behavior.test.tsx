@@ -77,6 +77,22 @@ const flush = async () => {
   for (let i = 0; i < 40; i++) await new Promise((resolve) => setTimeout(resolve, 5));
 };
 let cleanup = () => {};
+type BrowserProps = Omit<Parameters<typeof import("../src/frontend/Browser").default>[0], "uploads">;
+/** Browser as the workspace mounts it: with the workspace's upload queue and its panel in the toast rail. */
+async function mountWithUploads(root: HTMLElement, props: BrowserProps) {
+  const { default: Browser } = await import("../src/frontend/Browser");
+  const { createFilesUploads } = await import("../src/frontend/files-uploads");
+  const { UploadSurface } = await import("../src/frontend/UploadPanel");
+  return render(() => {
+    const uploads = createFilesUploads();
+    return (
+      <>
+        <UploadSurface queue={uploads} />
+        <Browser {...props} uploads={uploads} />
+      </>
+    );
+  }, root);
+}
 afterEach(() => {
   cleanup();
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
@@ -112,20 +128,16 @@ test("uploads stream to the session lease without Cloud credentials, then commit
   }) as typeof fetch;
   const dom = createDomTestHarness();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
-  const { default: Browser } = await import("../src/frontend/Browser");
   let created = "";
-  const dispose = render(
-    () => (
-      <Browser
-        directory={initial}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        onNavigate={async () => {}}
-        onChanged={(path) => (created = path ?? "")}
-      />
-    ),
-    dom.root,
-  );
+  const dispose = await mountWithUploads(dom.root, {
+    directory: initial,
+    bases: [initial.base],
+    cloudUrl: "https://cloud.test",
+    onNavigate: async () => {},
+    onChanged: (path) => {
+      created = path ?? "";
+    },
+  });
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -154,20 +166,16 @@ test("an existing name asks before replacing and skipping leaves the file untouc
   openStatus = 409;
   const dom = createDomTestHarness();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
-  const { default: Browser } = await import("../src/frontend/Browser");
   let created = "";
-  const dispose = render(
-    () => (
-      <Browser
-        directory={initial}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        onNavigate={async () => {}}
-        onChanged={(path) => (created = path ?? "")}
-      />
-    ),
-    dom.root,
-  );
+  const dispose = await mountWithUploads(dom.root, {
+    directory: initial,
+    bases: [initial.base],
+    cloudUrl: "https://cloud.test",
+    onNavigate: async () => {},
+    onChanged: (path) => {
+      created = path ?? "";
+    },
+  });
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -206,19 +214,15 @@ async function mountBrowser(directory: () => DirectoryResult = () => initial) {
   globalThis.fetch = emptySession;
   const dom = createDomTestHarness();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
-  const { default: Browser } = await import("../src/frontend/Browser");
-  const dispose = render(
-    () => (
-      <Browser
-        directory={directory()}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        onNavigate={async () => {}}
-        onChanged={() => {}}
-      />
-    ),
-    dom.root,
-  );
+  const dispose = await mountWithUploads(dom.root, {
+    get directory() {
+      return directory();
+    },
+    bases: [initial.base],
+    cloudUrl: "https://cloud.test",
+    onNavigate: async () => {},
+    onChanged: () => {},
+  });
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -385,9 +389,62 @@ test("a loose dot-file WebKit refuses next to a dropped folder is named in the s
   dom.root.querySelector(".filesv2-browser__surface")!.dispatchEvent(event);
   await flush();
   expect(calls).toEqual(["mkdir Documents/Docs", "open Documents/Docs/report.txt 0 error", "commit"]);
-  const toasts = [...dom.document.querySelectorAll("[data-k2b-toast]")];
+  const toasts = [...dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom])")];
   expect(toasts.map((toast) => toast.querySelector(".k2b-toast__description")?.textContent)).toEqual([
-    "1 file uploaded · 1 hidden file left out by the browser, upload it on its own.",
+    "The browser left out 1 hidden file. Upload it on its own.",
   ]);
   expect(toasts.some((toast) => toast.querySelector('[role="alert"]'))).toBeFalse();
+  expect(dom.document.querySelector(".filesv2-upload__title")?.textContent).toBe("Uploaded to “Documents”");
+});
+
+test("files picked while an upload runs join the same batch instead of being refused", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let session = "";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    // Each file gets a fresh session on the file server.
+    const opened = calls.filter((call) => call.startsWith("open")).at(-1)!;
+    if (opened !== session) {
+      session = opened;
+      received = 0;
+    }
+    if (new URL(String(input)).searchParams.has("segments")) return Response.json({ items: [] });
+    if (init?.method === "PUT") {
+      await held;
+      received += (await new Response(init.body as BodyInit).arrayBuffer()).byteLength;
+    }
+    return Response.json({ id: "s1", root: "cloud", size: 6, chunkSize: 4, expires: "2099-01-01T00:00:00Z", state: "open", received });
+  }) as typeof fetch;
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const dispose = await mountWithUploads(dom.root, {
+    directory: initial,
+    bases: [initial.base],
+    cloudUrl: "https://cloud.test",
+    onNavigate: async () => {},
+    onChanged: () => {},
+  });
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File(["abcdef"], "first.txt")] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  Object.defineProperty(input, "files", { configurable: true, value: [new File(["ghijkl"], "second.txt")] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  expect(dom.document.querySelectorAll(".filesv2-upload")).toHaveLength(1);
+  expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("0 of 2 files");
+  expect(dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom])")).toHaveLength(0);
+  release();
+  await flush();
+  expect(calls.filter((call) => call.startsWith("open"))).toEqual([
+    "open Documents/first.txt 6 error",
+    "open Documents/second.txt 6 error",
+  ]);
+  expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("2 of 2 files");
 });

@@ -407,6 +407,43 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("places custom content in the toast rail beside toasts until its owner dismisses it", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { K2B_TOAST_CONTAINER_ID, toast } = await import("../src/feedback/toast");
+
+    toast("Before", { duration: 0 });
+    const content = dom.document.createElement("section");
+    content.textContent = "Uploads";
+    const slot = toast.custom(content);
+    toast("After", { duration: 0 });
+    const rail = dom.document.getElementById(K2B_TOAST_CONTAINER_ID);
+    const cards = [...(rail?.querySelectorAll<HTMLElement>("[data-k2b-toast]") ?? [])];
+    expect(cards.map((card) => card.textContent?.includes("Uploads") ?? false)).toEqual([false, true, false]);
+    const custom = cards[1]!;
+    expect(custom.className).toBe("k2b-toast");
+    expect(custom.dataset.custom).toBe("true");
+    expect(custom.firstElementChild).toBe(content);
+    expect(custom.querySelector(".k2b-toast__close")).toBeNull();
+    await settle();
+    expect(custom.dataset.open).toBe("true");
+
+    // Neither the five-toast cap nor dismissAll removes it; clicking it does not either.
+    for (let index = 0; index < 6; index += 1) toast(`Notice ${index}`, { duration: 0 });
+    custom.click();
+    toast.dismissAll();
+    await Bun.sleep(220);
+    expect(rail?.childElementCount).toBe(1);
+    expect(custom.isConnected).toBe(true);
+
+    slot.dismiss();
+    expect(custom.dataset.closing).toBe("true");
+    await Bun.sleep(220);
+    expect(custom.isConnected).toBe(false);
+    expect(rail?.childElementCount).toBe(0);
+    dom.cleanup();
+  });
+
   test("exposes search as an active-descendant combobox and normalizes form cancellation", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";

@@ -221,29 +221,10 @@ export const browserMessages = i18n.define({
             ? "The file already exists in this folder."
             : `All ${count} files already exist in this folder.`
           : `${count} of ${total} files already exist in this folder.`,
-      uploadingTitle: "Preparing upload…",
-      uploadSummary: ({ uploaded, skipped, failed, hidden }: { uploaded: number; skipped: number; failed: number; hidden: number }) =>
-        [
-          uploaded === 1 ? "1 file uploaded" : `${uploaded} files uploaded`,
-          skipped ? `${skipped} skipped` : null,
-          failed ? `${failed} failed` : null,
-          hidden
-            ? hidden === 1
-              ? "1 hidden file left out by the browser, upload it on its own"
-              : `${hidden} hidden files left out by the browser, upload them on their own`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ") + ".",
       upload: "Upload",
       newFile: "New file",
       newFileName: "File name",
       dropHere: "Drop files to upload them here",
-      uploading: ({ done, total, name, percent }: { done: number; total: number; name: string; percent: number }) =>
-        `Uploading ${done + 1} of ${total}: ${name} (${percent}%)`,
-      uploaded: (n: number) => (n === 1 ? "1 file uploaded." : `${n} files uploaded.`),
-      uploadFailed: (name: string) => `${name} could not be uploaded.`,
-      uploadCancelled: "Upload cancelled.",
       replaceTitle: "Replace file?",
       replaceManyTitle: "Replace files?",
       replaceQuestion: (name: string) => `“${name}” already exists in this folder. Replace it with the uploaded file?`,
@@ -307,6 +288,10 @@ export const browserMessages = i18n.define({
       favoriteRemoved: "Removed from favorites.",
       dragCount: (n: number) => `${n} entries`,
       uploadUnavailable: "Uploads wait until the current action or search is finished.",
+      hiddenLeftOut: (n: number) =>
+        n === 1
+          ? "The browser left out 1 hidden file. Upload it on its own."
+          : `The browser left out ${n} hidden files. Upload them on their own.`,
     },
     de: {
       myFiles: "Meine Dateien",
@@ -530,29 +515,10 @@ export const browserMessages = i18n.define({
             ? "Die Datei existiert bereits in diesem Ordner."
             : `Alle ${count} Dateien existieren bereits in diesem Ordner.`
           : `${count} von ${total} Dateien existieren bereits in diesem Ordner.`,
-      uploadingTitle: "Upload wird vorbereitet …",
-      uploadSummary: ({ uploaded, skipped, failed, hidden }: { uploaded: number; skipped: number; failed: number; hidden: number }) =>
-        [
-          uploaded === 1 ? "1 Datei hochgeladen" : `${uploaded} Dateien hochgeladen`,
-          skipped ? `${skipped} übersprungen` : null,
-          failed ? `${failed} fehlgeschlagen` : null,
-          hidden
-            ? hidden === 1
-              ? "1 versteckte Datei hat der Browser ausgelassen, lade sie separat hoch"
-              : `${hidden} versteckte Dateien hat der Browser ausgelassen, lade sie separat hoch`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ") + ".",
       upload: "Hochladen",
       newFile: "Neue Datei",
       newFileName: "Dateiname",
       dropHere: "Dateien hier ablegen, um sie hochzuladen",
-      uploading: ({ done, total, name, percent }: { done: number; total: number; name: string; percent: number }) =>
-        `Hochladen ${done + 1} von ${total}: ${name} (${percent} %)`,
-      uploaded: (n: number) => (n === 1 ? "1 Datei hochgeladen." : `${n} Dateien hochgeladen.`),
-      uploadFailed: (name: string) => `${name} konnte nicht hochgeladen werden.`,
-      uploadCancelled: "Upload abgebrochen.",
       replaceTitle: "Datei ersetzen?",
       replaceManyTitle: "Dateien ersetzen?",
       replaceQuestion: (name: string) => `„${name}“ existiert bereits in diesem Ordner. Durch die hochgeladene Datei ersetzen?`,
@@ -616,6 +582,10 @@ export const browserMessages = i18n.define({
       favoriteRemoved: "Aus Favoriten entfernt.",
       dragCount: (n: number) => `${n} Einträge`,
       uploadUnavailable: "Uploads warten, bis die laufende Aktion oder Suche beendet ist.",
+      hiddenLeftOut: (n: number) =>
+        n === 1
+          ? "Der Browser hat 1 versteckte Datei ausgelassen. Lade sie separat hoch."
+          : `Der Browser hat ${n} versteckte Dateien ausgelassen. Lade sie separat hoch.`,
     },
   },
 });

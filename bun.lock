@@ -299,6 +299,7 @@
       },
       "devDependencies": {
         "@types/bun": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },

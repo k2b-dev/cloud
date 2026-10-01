@@ -3,6 +3,7 @@ import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { BrowseOptions, DirectoryResult } from "../src/contracts";
+import { browserWithUploads } from "./browser-with-uploads";
 
 const browseChanges: BrowseOptions[] = [];
 const requests: Array<{ kind: string; input: unknown; resolve: (response: Response) => void }> = [];
@@ -58,7 +59,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
     browseChanges.length = 0;
   });
   const mount = async (dom: ReturnType<typeof createDomTestHarness>, changed: string[]) => {
-    const { default: Browser } = await import("../src/frontend/Browser");
+    const Browser = await browserWithUploads();
     const [source, setSource] = createSignal("/app/filesv2?base=cloud%3Agroups%3Ademo&path=Docs");
     const dispose = render(
       () =>
