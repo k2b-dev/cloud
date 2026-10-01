@@ -12,10 +12,11 @@ const entry = resolve(import.meta.dir, "menu-width.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AutocompleteEditor, ContextMenu, Dropdown, FilterChip, Select, SelectChip, SplitButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AutocompleteEditor, Chat, ContextMenu, Dropdown, FilterChip, Select, SelectChip, SplitButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const long = "Gutschrift des Lieferanten für die Rücksendung vom 30. September an das Lager in Konstanz";
 const word = "Lieferantengutschriftsrücksendungsnummernkreisverwaltung";
+const heading = "Abrechnungszeitraumsübersichtsverwaltungseinstellungen";
 const menu = (label, props) =>
   createComponent(Dropdown.Root, {
     ...props,
@@ -25,6 +26,10 @@ const menu = (label, props) =>
   });
 const [filter, setFilter] = createSignal([]);
 const [density, setDensity] = createSignal("compact");
+const [draft, setDraft] = createSignal("");
+// Entries that change while a menu is open, as when they load asynchronously.
+const [late, setLate] = createSignal("Refresh");
+globalThis.growMenus = () => setLate(long);
 
 render(
   () => [
@@ -33,7 +38,7 @@ render(
       items: [
         { label: long, description: "Erstellt eine Gutschrift und bucht sie gegen die offene Rechnung", action: () => {} },
         { label: word, action: () => {} },
-        { label: "Archive", action: () => {} },
+        { sectionLabel: heading, items: [{ label: "Archive", action: () => {} }] },
       ],
     }),
     menu("Exact", { width: "10rem", items: [{ label: long, action: () => {} }] }),
@@ -100,6 +105,40 @@ render(
       items: [{ label: long, action: () => {} }, { label: "Pin", action: () => {} }],
       children: "Shopping note",
     }),
+    // Right-aligned at the right edge, where a growing menu would leave the viewport.
+    createComponent(Dropdown.Root, {
+      class: "row-end",
+      position: "bottom-left",
+      get items() {
+        return [{ label: "Rename", action: () => {} }, { label: late(), action: () => {} }];
+      },
+      get children() {
+        return createComponent(Dropdown.Trigger, { size: "sm", variant: "secondary", children: "Growing" });
+      },
+    }),
+    createComponent(ContextMenu, {
+      label: "Growing note",
+      get items() {
+        return [{ label: "Pin", action: () => {} }, { label: late(), action: () => {} }];
+      },
+      children: "Growing note",
+    }),
+    createComponent(Chat.Composer, {
+      inputLabel: "Chat message",
+      get value() {
+        return draft();
+      },
+      onValueChange: setDraft,
+      onSubmit: () => {},
+      commands: [
+        {
+          name: "gutschrift-fuer-lieferantenruecksendung-anlegen",
+          description: "Erstellt eine Gutschrift für die Rücksendung an den Lieferanten und bucht sie gegen die offene Rechnung",
+          action: () => {},
+        },
+        { name: word.toLowerCase(), description: "Kurz", action: () => {} },
+      ],
+    }),
   ],
   document.getElementById("app"),
 );
@@ -125,7 +164,7 @@ const load = async (options: (typeof viewports)[keyof typeof viewports]) => {
   const page = await browser.newPage(options);
   // Triggers sit at both edges, where a menu is most likely to leave the viewport.
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .narrow-field { width: 12rem }</style></head>` +
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} .narrow-field { width: 12rem } .row-end, .k2b-chat-composer-shell { flex-basis: 100% } .row-end { justify-content: flex-end }</style></head>` +
       `<body class="k2b-ui" style="margin:0"><main id="app" style="display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px"></main></body></html>`,
   );
   await page.addScriptTag({ content: script });
@@ -144,20 +183,24 @@ const triggerBoxes = (page: Page) =>
     }),
   );
 
-/** The open menu's box and whether any of its labels is cut off. */
+/** The open menu's box and whether any of its labels or section headings is cut off. */
 const openMenu = (page: Page) =>
   page.evaluate(() => {
     const menu = document.querySelector<HTMLElement>(".k2b-dropdown__menu:popover-open, .k2b-context-menu");
     if (!menu) return undefined;
     const box = menu.getBoundingClientRect();
     const labels = Array.from(menu.querySelectorAll<HTMLElement>(".k2b-dropdown__copy > *"));
+    const headings = Array.from(menu.querySelectorAll<HTMLElement>(".k2b-dropdown__label"));
     return {
       left: box.left,
       right: box.right,
+      top: box.top,
+      bottom: box.bottom,
       width: Math.round(box.width),
       viewport: window.innerWidth,
+      viewportHeight: window.innerHeight,
       overflows: menu.scrollWidth > menu.clientWidth,
-      cut: labels
+      cut: [...labels, ...headings]
         .filter((label) => label.scrollWidth > label.clientWidth || getComputedStyle(label).textOverflow === "ellipsis")
         .map((label) => label.textContent),
       lines: labels.map((label) =>
@@ -176,6 +219,16 @@ const click = (name: string) => async (page: Page) => {
   await page.getByRole("button", { name, exact: true }).click();
 };
 
+/** Opens a context menu as a right-click at a viewport point would. */
+const contextMenuAt = (page: Page, name: string, x: number, y: number) =>
+  page
+    .getByRole("group", { name, exact: true })
+    .evaluate(
+      (host, [clientX, clientY]) =>
+        host.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX, clientY })),
+      [x, y],
+    );
+
 const cases: Record<string, Case> = {
   // Short entries keep the former 12rem.
   "short dropdown": { open: click("Short"), width: () => 192 },
@@ -192,7 +245,7 @@ const cases: Record<string, Case> = {
   "select chip": { open: click("Density"), width: (viewport) => [161, viewport - 32] },
   "context menu": {
     open: async (page) => {
-      await page.getByRole("group", { name: "Note" }).click({ button: "right" });
+      await page.getByRole("group", { name: "Note", exact: true }).click({ button: "right" });
     },
     // A context menu keeps 0.5rem to each viewport edge.
     width: (viewport) => (viewport > 1000 ? [353, viewport - 17] : viewport - 16),
@@ -303,6 +356,108 @@ describe("@k2b/ui menus size to their entries", () => {
         // "Archive": one line each on a desktop, wrapped on a phone.
         const long = options.viewport.width > 1000 ? 1 : 2;
         expect(lines).toEqual([long, long, long, 1]);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`at ${options.viewport.width} px a context menu opens at the pointer and clamps into the viewport`, async () => {
+      const { width, height } = options.viewport;
+      const page = await load(options);
+      try {
+        // Where it fits, the menu starts at the pointer; on a phone its long
+        // entry fills the viewport less 0.5rem per side.
+        await contextMenuAt(page, "Note", 300, 200);
+        await settle(page);
+        const middle = await openMenu(page);
+        expect(middle?.left).toBeCloseTo(width > 1000 ? 300 : 8, 1);
+        expect(middle?.top).toBeCloseTo(200, 1);
+
+        await page.keyboard.press("Escape");
+        // Near the bottom-right corner it moves up and left to 0.5rem from both edges.
+        await contextMenuAt(page, "Note", width - 4, height - 4);
+        await settle(page);
+        const corner = await openMenu(page);
+        expect(corner?.right).toBeCloseTo(width - 8, 1);
+        expect(corner?.bottom).toBeCloseTo(height - 8, 1);
+        expect(corner?.left).toBeGreaterThanOrEqual(8);
+        expect(corner?.top).toBeGreaterThanOrEqual(8);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`at ${options.viewport.width} px a menu whose entries grow while it is open stays in place inside the viewport`, async () => {
+      const page = await load(options);
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      try {
+        // A right-aligned dropdown keeps its right edge on its trigger's.
+        const trigger = page.getByRole("button", { name: "Growing", exact: true });
+        await trigger.click();
+        await settle(page);
+        const before = await openMenu(page);
+        await page.evaluate(() => (globalThis as unknown as { growMenus: () => void }).growMenus());
+        await settle(page);
+        const after = await openMenu(page);
+        const box = await trigger.boundingBox();
+        if (!before || !after || !box) throw new Error("The growing dropdown did not open.");
+        expect(after.width).toBeGreaterThan(before.width);
+        const width = after.right - after.left;
+        expect(after.left).toBeCloseTo(Math.max(8, Math.min(box.x + box.width - width, after.viewport - width - 8)), 1);
+        expect(after.right).toBeLessThanOrEqual(after.viewport - 8);
+        expect(after.cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+      expect(errors).toEqual([]);
+    });
+
+    test(`at ${options.viewport.width} px a context menu whose entries grow while it is open stays inside the viewport`, async () => {
+      const page = await load(options);
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      try {
+        const x = options.viewport.width - 230;
+        await contextMenuAt(page, "Growing note", x, 100);
+        await settle(page);
+        const before = await openMenu(page);
+        // The short menu fits at the pointer.
+        expect(before?.left).toBeCloseTo(x, 1);
+        await page.evaluate(() => (globalThis as unknown as { growMenus: () => void }).growMenus());
+        await settle(page);
+        const after = await openMenu(page);
+        if (!before || !after) throw new Error("The growing context menu did not open.");
+        expect(after.width).toBeGreaterThan(before.width);
+        expect(after.right).toBeCloseTo(after.viewport - 8, 1);
+        expect(after.top).toBeCloseTo(100, 1);
+        expect(after.cut).toEqual([]);
+      } finally {
+        await page.close();
+      }
+      expect(errors).toEqual([]);
+    });
+
+    test(`at ${options.viewport.width} px slash commands show their whole name and description`, async () => {
+      const page = await load(options);
+      try {
+        await page.getByRole("textbox", { name: "Chat message" }).pressSequentially("/");
+        await page.locator(".k2b-chat-composer__commands").waitFor();
+        await settle(page);
+        const list = await page.evaluate(() => {
+          const list = document.querySelector<HTMLElement>(".k2b-chat-composer__commands")!;
+          const labels = Array.from(list.querySelectorAll<HTMLElement>("[role='option'] > strong, [role='option'] > small"));
+          return {
+            right: list.getBoundingClientRect().right,
+            overflows: list.scrollWidth > list.clientWidth,
+            cut: labels
+              .filter((label) => label.scrollWidth > label.clientWidth || getComputedStyle(label).textOverflow === "ellipsis")
+              .map((label) => label.textContent),
+          };
+        });
+        expect(list.right).toBeLessThanOrEqual(options.viewport.width);
+        expect(list.overflows).toBe(false);
+        expect(list.cut).toEqual([]);
       } finally {
         await page.close();
       }

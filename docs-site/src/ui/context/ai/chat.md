@@ -339,7 +339,8 @@ circle: it keeps the trigger's box and is not interactive.
 
 Use `commands` for local actions or reference choices, and `searchCommands(query,
 signal)` for asynchronous discovery. Commands match at the caret, including in
-the middle of a draft. A reference choice supplies `mention: ChatAttachment`;
+the middle of a draft. A long command name or description wraps in the
+suggestion list instead of ending in an ellipsis. A reference choice supplies `mention: ChatAttachment`;
 control its ranges with `mentions` and `onMentionsChange`. The submitted text is
 untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.

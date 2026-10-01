@@ -432,6 +432,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   let triggerRing = true;
   let mounted = false;
   let viewportListenersAttached = false;
+  let resizeObserver: ResizeObserver | undefined;
 
   const isOpen = () => props.open ?? internalOpen();
   const position = (): DropdownPosition =>
@@ -454,12 +455,18 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     viewportListenersAttached = true;
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
+    // A content-sized menu changes size when its items change while it is open.
+    if (menuRef && typeof ResizeObserver !== "undefined") {
+      resizeObserver ??= new ResizeObserver(reposition);
+      resizeObserver.observe(menuRef);
+    }
   };
   const detachViewportListeners = () => {
     if (!viewportListenersAttached) return;
     viewportListenersAttached = false;
     window.removeEventListener("resize", reposition);
     window.removeEventListener("scroll", reposition, true);
+    resizeObserver?.disconnect();
   };
   const close = (restoreFocus = true) => {
     // Before hiding, so the popover does not return focus on its own.

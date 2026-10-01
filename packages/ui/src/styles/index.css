@@ -4130,6 +4130,7 @@
   font-size: 0.625rem;
   font-weight: 500;
   letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
 }
 
@@ -7209,17 +7210,17 @@
   gap: 0.125rem;
 }
 
-.k2b-ui .k2b-chat-composer__commands strong { font-size: 0.8125rem; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 55%; }
+/* Command names and descriptions wrap instead of truncating, so every entry
+   stays readable on a phone. */
+.k2b-ui .k2b-chat-composer__commands strong { font-size: 0.8125rem; font-weight: 400; overflow-wrap: anywhere; flex-shrink: 0; max-width: 55%; }
 .k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] { opacity: 0.5; cursor: default; }
 
 .k2b-ui .k2b-chat-composer__commands small {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .k2b-ui .k2b-chat-composer__attachments {

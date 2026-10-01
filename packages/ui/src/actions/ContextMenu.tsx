@@ -42,6 +42,8 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
   let menu: HTMLDivElement | undefined;
   let listenersAttached = false;
   let hostRing = true;
+  let anchor = { x: 0, y: 0 };
+  let resizeObserver: ResizeObserver | undefined;
 
   const isOpen = () => position() !== undefined;
   const hostClass = createMemo(() => (typeof props.class === "function" ? props.class(isOpen()) : props.class));
@@ -71,6 +73,19 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     document.removeEventListener("keydown", keyDown);
     window.removeEventListener("resize", closeOnViewportChange);
     window.removeEventListener("scroll", closeOnViewportChange, true);
+    resizeObserver?.disconnect();
+  };
+  /** Clamps the rendered menu into the viewport beside the point that opened it. */
+  const place = () => {
+    if (!isOpen() || !menu?.isConnected) return;
+    const point = dropdownPosition(
+      new DOMRect(anchor.x, anchor.y, 0, 0),
+      menu.getBoundingClientRect(),
+      "bottom-right" satisfies DropdownPosition,
+      { width: window.innerWidth, height: window.innerHeight },
+      0,
+    );
+    setPosition({ x: point.left, y: point.top });
   };
   const close = () => {
     detachOpenListeners();
@@ -89,22 +104,21 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     closeActiveContextMenu?.();
     // Focus may sit on a descendant of the host, as in composite widgets.
     hostRing = ringOnReturn(document.activeElement);
+    anchor = { x, y };
     setPosition({ x, y });
     closeActiveContextMenu = close;
     attachOpenListeners();
     props.onOpen?.();
     // The menu sizes to its entries, so it is measured once rendered and
-    // clamped into the viewport before the next paint.
+    // clamped into the viewport before the next paint, and again whenever its
+    // entries change its size while it is open.
     queueMicrotask(() => {
-      if (!menu?.isConnected) return;
-      const point = dropdownPosition(
-        new DOMRect(x, y, 0, 0),
-        menu.getBoundingClientRect(),
-        "bottom-right" satisfies DropdownPosition,
-        { width: window.innerWidth, height: window.innerHeight },
-        0,
-      );
-      setPosition({ x: point.left, y: point.top });
+      if (!isOpen() || !menu?.isConnected) return;
+      place();
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver ??= new ResizeObserver(place);
+        resizeObserver.observe(menu);
+      }
       focusItem(0);
     });
   };

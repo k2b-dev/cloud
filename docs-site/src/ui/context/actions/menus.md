@@ -88,13 +88,15 @@ hint.
 Menus size to their entries, so a caller does not need to know a width. A menu
 is as wide as its longest label or description, at least `12rem` (`18rem` for
 `variant="touch"`, `13rem` for `FilterChip`, and `10rem` for `SelectChip`), and
-at most the viewport width less `1rem` per side. An entry longer than that
-wraps instead of ending in an ellipsis, and an unbroken word breaks, so every
-label stays readable on a phone. A radio choice reserves its check mark while
-unchecked, so choosing an option never widens an open menu. `ContextMenu`
-follows the same rule with a `13rem` minimum and `0.5rem` to each viewport
-edge, and is measured before it is clamped beside the pointer. Opening a menu
-never moves the trigger or the page around it.
+at most the viewport width less `1rem` per side. An entry or section label
+longer than that wraps instead of ending in an ellipsis, and an unbroken word
+breaks, so every label stays readable on a phone. A radio choice reserves its
+check mark while unchecked, so choosing an option never widens an open menu.
+`ContextMenu` follows the same rule with a `13rem` minimum and `0.5rem` to each
+viewport edge, and is measured before it is clamped beside the pointer. When
+entries change while a menu is open, it keeps its alignment with the trigger or
+pointer and stays inside the viewport. Opening a menu never moves the trigger
+or the page around it.
 
 `width` is an optional exact override as a **CSS length string**, not a class
 name. It sets the menu's `--k2b-dropdown-width`; entries wrap within it, and
