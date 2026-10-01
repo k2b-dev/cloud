@@ -1,5 +1,6 @@
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount } from "solid-js";
 import { positionTooltipSurface } from "../feedback/tooltip-position";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
 
 /** A non-modal, interactive row preview. Native popover owns light dismissal. */
@@ -20,6 +21,7 @@ export function SidebarItemPreview(props: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pinned = false;
   let dismissed = false;
+  let triggerRing = true;
   const clear = () => {
     clearTimeout(timer);
     timer = undefined;
@@ -40,6 +42,7 @@ export function SidebarItemPreview(props: {
   const show = () => {
     clear();
     if (dismissed || open()) return;
+    triggerRing = ringOnReturn(main ?? button);
     panel.showPopover();
     position();
   };
@@ -56,10 +59,10 @@ export function SidebarItemPreview(props: {
       }, 180);
   };
   const dismiss = () => {
-    const restore = panel.contains(document.activeElement);
     dismissed = true;
+    // Before hiding, so the popover does not return focus on its own.
+    if (panel.contains(document.activeElement)) returnFocus(main ?? button, triggerRing);
     close();
-    if (restore) (main ?? button).focus();
   };
   const toggle = () => {
     clear();
@@ -67,6 +70,8 @@ export function SidebarItemPreview(props: {
       dismiss();
       return;
     }
+    // A hover may have opened the preview before this click or key press pinned it.
+    triggerRing = ringOnReturn(main ?? button);
     dismissed = false;
     pinned = true;
     show();
@@ -93,6 +98,8 @@ export function SidebarItemPreview(props: {
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !open()) return;
+      // Handled here, so the browser neither closes the popover itself nor lights the ring for this key.
+      event.preventDefault();
       dismiss();
     };
     const reposition = () => {

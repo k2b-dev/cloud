@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
 
 export type LightboxImage = {
@@ -23,6 +24,8 @@ export default function Lightbox(props: LightboxProps) {
     images.length === 0 ? 0 : Math.max(0, Math.min(value, images.length - 1));
   const [index, setIndex] = createSignal(clampIndex(props.initialIndex ?? 0));
   let dialogRef!: HTMLDialogElement;
+  let opener: HTMLElement | null = null;
+  let openerRing = true;
 
   createEffect(
     (previous: { images: LightboxImage[]; initialIndex: number | undefined }) => {
@@ -57,6 +60,7 @@ export default function Lightbox(props: LightboxProps) {
 
   const close = () => {
     dialogRef.close();
+    returnFocus(opener, openerRing);
     props.onClose();
   };
 
@@ -64,6 +68,8 @@ export default function Lightbox(props: LightboxProps) {
   const handleKeyDown = (e: KeyboardEvent) => {
     switch (e.key) {
       case "Escape":
+        // Handled here, so WebKit does not light the returned focus for this key.
+        e.preventDefault();
         close();
         break;
       case "ArrowLeft":
@@ -111,6 +117,10 @@ export default function Lightbox(props: LightboxProps) {
   // Registration and teardown both live in onMount: onCleanup also runs when an
   // SSR render is disposed, where `document` does not exist.
   onMount(() => {
+    opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    openerRing = ringOnReturn(opener);
+    // The native dialog would return focus with a ring of the browser's choosing.
+    opener?.blur();
     dialogRef.showModal();
     document.addEventListener("keydown", handleKeyDown);
     onCleanup(() => document.removeEventListener("keydown", handleKeyDown));

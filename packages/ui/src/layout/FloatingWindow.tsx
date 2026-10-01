@@ -1,5 +1,6 @@
 import { createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal, render } from "solid-js/web";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { useUiMessages } from "../intl/messages";
 import { FLOATING_WINDOW_VIEWPORT_GAP, type FloatingWindowRect, fitFloatingWindowRect } from "./floating-window-geometry";
@@ -273,6 +274,7 @@ export const openFloatingWindow = (
 ): FloatingWindowClose => {
   if (typeof document === "undefined") throw new Error("Floating windows are browser-only");
   const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const previousRing = ringOnReturn(previousFocus);
   const owner = document.createElement("div");
   owner.className = "k2b-ui";
   document.body.appendChild(owner);
@@ -283,7 +285,7 @@ export const openFloatingWindow = (
     closed = true;
     dispose?.();
     owner.remove();
-    previousFocus?.focus();
+    returnFocus(previousFocus, previousRing);
   };
   dispose = render(
     () => (

@@ -1,5 +1,6 @@
 import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
 import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
 
@@ -40,6 +41,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
   let host: HTMLDivElement | undefined;
   let menu: HTMLDivElement | undefined;
   let listenersAttached = false;
+  let hostRing = true;
 
   const isOpen = () => position() !== undefined;
   const hostClass = createMemo(() => (typeof props.class === "function" ? props.class(isOpen()) : props.class));
@@ -85,6 +87,8 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
   const open = (x: number, y: number) => {
     if (props.disabled) return;
     closeActiveContextMenu?.();
+    // Focus may sit on a descendant of the host, as in composite widgets.
+    hostRing = ringOnReturn(document.activeElement);
     const point = dropdownPosition(
       new DOMRect(x, y, 0, 0),
       // Matches the fixed 13rem `.k2b-context-menu` surface (border-box).
@@ -114,7 +118,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     } else if (event.key === "Escape") {
       event.preventDefault();
       close();
-      host?.focus();
+      returnFocus(host, hostRing);
     } else if (event.key === "Tab") {
       close();
     }
