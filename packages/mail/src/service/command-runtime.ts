@@ -494,18 +494,27 @@ const baselineUids = (command: DbCommandExecution): number[] => {
 };
 
 const isAmbiguousTransportError = (error: unknown): boolean => {
-  const code = normalizeCode(error, "");
-  return [
-    "ETIMEDOUT",
-    "ECONNRESET",
-    "ECONNABORTED",
-    "EPIPE",
-    "ESOCKET",
-    "ECONNECTION",
-    "EHOSTUNREACH",
-    "ENETUNREACH",
-    "IMAP_CONNECTION_CLOSED",
-  ].includes(code);
+  // The raw code, because normalizeCode drops ImapFlow's mixed-case NoConnection.
+  const code = (error as { code?: unknown } | null)?.code;
+  return (
+    typeof code === "string" &&
+    [
+      "ETIMEDOUT",
+      // ImapFlow's code for a socket timeout while a command waits for its reply.
+      "ETIMEOUT",
+      // ImapFlow fails every command of a connection that closed underneath it, such as after a
+      // socket timeout or a reset, with this code.
+      "NoConnection",
+      "ECONNRESET",
+      "ECONNABORTED",
+      "EPIPE",
+      "ESOCKET",
+      "ECONNECTION",
+      "EHOSTUNREACH",
+      "ENETUNREACH",
+      "IMAP_CONNECTION_CLOSED",
+    ].includes(code)
+  );
 };
 
 const RETRYABLE_CONNECTION_CODES = new Set(["ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND"]);

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,11 @@ Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const [{ LocaleProvider }, { default: Quota, quotaState }] = await Promise.all([import("@k2b/ui"), import("./AssistantQuota")]);
 
-const resetsAt = new Date(Date.now() + 5 * 3_600_000 + 60_000).toISOString();
+// A fixed clock keeps the reset time and its relative wording identical on every run.
+const now = new Date("2026-01-15T10:00:00.000Z");
+beforeAll(() => setSystemTime(now));
+afterAll(() => setSystemTime());
+const resetsAt = new Date(now.getTime() + 5 * 3_600_000 + 60_000).toISOString();
 const finite = (scope: string, usedPercent: number | null): AiChatQuotaBalance => ({ scope, unlimited: false, usedPercent, resetsAt });
 const unlimited = (scope: string): AiChatQuotaBalance => ({ scope, unlimited: true, usedPercent: null, resetsAt: null });
 const render = (snapshot: AiChatQuotaSnapshot | null | undefined, error?: Error, locale = "de") =>
@@ -97,7 +101,10 @@ test("several allowances are named and the fullest one decides the ring", () => 
   expect(html).toContain("<dt>Model A</dt>");
   expect(html).toContain("70\u00a0%</dd>");
   expect(html).toContain("20\u00a0%</dd>");
-  expect(html).not.toContain("99");
+  // The other model's allowance appears neither as a share nor as a bar, and does not drive the ring.
+  expect(html).not.toContain("99\u00a0%");
+  expect(html).not.toContain('aria-valuenow="99"');
+  expect(trigger(html)).toContain('stroke-dasharray="70 100"');
   expect(html.match(/role="progressbar"/g)).toHaveLength(2);
   expect(html.match(/Setzt sich in 5 Stunden zurück/g)).toHaveLength(2);
 });
