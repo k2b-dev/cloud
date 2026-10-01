@@ -123,6 +123,7 @@ const flush = async () => {
 const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormholes: SpaceWormhole[] = []) => {
   const dom = createDomTestHarness();
   const { default: KanbanBoard } = await import("../src/frontend/[id]/_components/kanban/KanbanBoard");
+  const { defaultFilter } = await import("../src/frontend/[id]/_components/filter/types");
   const dispose = render(
     () =>
       createComponent(KanbanBoard, {
@@ -134,6 +135,9 @@ const renderBoard = async (initialBuckets: ReturnType<typeof bucket>[], wormhole
           { id: "Col003", spaceId: SPACE_ID, name: "Later", color: null, rank: "3072", isDone: false },
         ],
         tags: [],
+        filter: defaultFilter,
+        folded: new Set<string>(),
+        onToggleFolded: () => undefined,
         selectedItemId: "",
         initialBuckets,
         pageSize: 30,

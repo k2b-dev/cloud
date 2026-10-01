@@ -32,6 +32,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
   let itemSpaceId = SPACE_ID;
   let listedCommentRecurrenceId: string | null | undefined;
   let listedFilter: { tagIds?: string[]; columnIds?: string[] } | undefined;
+  let listedFilters: Array<Record<string, unknown>> = [];
 
   const space = {
     id: SPACE_ID,
@@ -148,9 +149,13 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         permission: { get: async () => permission },
       },
       item: {
-        listFiltered: async (params: { filter?: { tagIds?: string[]; columnIds?: string[] } }) => {
+        listFiltered: async (params: { filter?: { tagIds?: string[]; columnIds?: string[]; pageSize?: number } }) => {
           listedFilter = params.filter;
-          return { items: [item], total: 1, page: 1, pageSize: 50, totalPages: 1 };
+          listedFilters.push(params.filter ?? {});
+          // An unfiltered count request sees the whole column.
+          return params.filter?.pageSize === 1
+            ? { items: [item], total: 4, page: 1, pageSize: 1, totalPages: 4 }
+            : { items: [item], total: 1, page: 1, pageSize: 50, totalPages: 1 };
         },
         get: async (params: { id: string }) => {
           calls.push("item.get");
@@ -195,6 +200,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     loadedOverride = null;
     listedCommentRecurrenceId = undefined;
     listedFilter = undefined;
+    listedFilters = [];
   });
 
   describe("Spaces workspace SSR state", () => {
@@ -253,6 +259,51 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       expect(listedFilter).toMatchObject({ tagIds: [TAG_ID], columnIds: [COLUMN_ID] });
       expect(snapshot.kind).toBe("list");
       if (snapshot.kind === "list") expect(snapshot.itemsResult.items[0]?.id).toBe(ITEM_SHORT_ID);
+    });
+
+    test("narrows every Kanban column by the board filter and reports what the filter hides", async () => {
+      const snapshot = await loadSpacesViewSnapshot({
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=kanban&assignedTo=me&tags=${TAG_SHORT_ID}&q=ship&status=all&sort=title&columns=${COLUMN_SHORT_ID}`,
+      });
+
+      expect(listedFilters).toEqual([
+        expect.objectContaining({
+          status: "active",
+          assignedTo: "me",
+          tagIds: [TAG_ID],
+          search: "ship",
+          columnIds: [COLUMN_ID],
+          sort: "column",
+          pageSize: 30,
+        }),
+        expect.objectContaining({
+          status: "active",
+          assignedTo: "all",
+          tagIds: undefined,
+          search: undefined,
+          columnIds: [COLUMN_ID],
+          pageSize: 1,
+        }),
+      ]);
+      expect(snapshot.kind).toBe("kanban");
+      if (snapshot.kind === "kanban")
+        expect(snapshot.buckets[0]).toMatchObject({ key: `column:${COLUMN_SHORT_ID}`, total: 1, unfilteredTotal: 4 });
+    });
+
+    test("an unfiltered Kanban board loads each column once and has no unfiltered count", async () => {
+      const snapshot = await loadSpacesViewSnapshot({
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=kanban&status=all&sort=title`,
+      });
+
+      expect(listedFilters).toHaveLength(1);
+      expect(snapshot.kind).toBe("kanban");
+      if (snapshot.kind === "kanban") expect(snapshot.buckets[0]?.unfilteredTotal).toBeUndefined();
     });
 
     test("does not block remote calendar ranges on unavailable forecast data", async () => {

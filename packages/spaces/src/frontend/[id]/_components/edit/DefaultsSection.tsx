@@ -4,12 +4,11 @@ import type { Priority } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
 import {
   type EventsDaysAhead,
-  readAllSettings,
   readWidgetSettings,
   type SpaceUserSettings,
   type ViewType,
   type WidgetSettings,
-  writeAllSettings,
+  writeSpaceSettings,
   writeWidgetSettings,
 } from "../settings/SpaceSettingsStore";
 
@@ -24,12 +23,9 @@ function LocalSettingsForm(props: { spaceId: string; initialSettings: SpaceUserS
   ];
 
   const updateSetting = <K extends keyof SpaceUserSettings>(key: K, value: SpaceUserSettings[K]) => {
-    const newSettings = { ...settings(), [key]: value };
-    setSettings(newSettings);
-
-    const allSettings = readAllSettings();
-    allSettings.spaces[props.spaceId] = newSettings;
-    writeAllSettings(allSettings);
+    setSettings({ ...settings(), [key]: value });
+    // Merge into the stored settings: the board writes folded columns to the same entry while this form is open.
+    writeSpaceSettings(props.spaceId, { [key]: value });
   };
 
   return (

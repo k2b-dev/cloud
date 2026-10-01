@@ -26,6 +26,14 @@ Views let the same work appear in the shape that fits the current job. The view 
 - **URL state:** Search and filters live in the URL, so shared links and reloads keep the same view.
 :::
 
+## Kanban board {icon="layout-kanban"}
+
+:::reference
+- **Filters:** The toolbar above the board searches and filters every column by assignment, priority, deadline, activity, and tags. **Assigned to me** shows only your work. While a filter is active, each column shows how many of its items match, for example **2/7**. A new task that does not match the filter only raises its column's count until you clear the filter. Filters stay in the URL like the list's; they never change the board for anyone else.
+- **Fold a column:** Use the fold button in a column header to shrink a column you do not need right now to a narrow strip with its name and count. Select the strip to open it again. You can still drop a card on a folded column; it lands at the top. Folded columns are remembered in this browser for this Space and only for you.
+- **Keyboard shortcuts:** The keyboard button at the end of the toolbar opens a list of the board's shortcuts.
+:::
+
 ## Global search examples {icon="search"}
 
 **Find task work**

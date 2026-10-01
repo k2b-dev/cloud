@@ -11,4 +11,6 @@ export type KanbanBucketInitial = {
   page: number;
   totalPages: number;
   total: number;
+  /** Present only while a board filter is active: the column's size without it. */
+  unfilteredTotal?: number;
 };

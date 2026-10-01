@@ -5,9 +5,13 @@ import { SpaceDetailSchema, SpaceWormholeSchema } from "./contracts";
 export const SpaceViewSchema = z.enum(["list", "table", "kanban", "calendar"]);
 export type ViewType = z.infer<typeof SpaceViewSchema>;
 
+/** Kanban columns one person folded away, by board column key; a bounded per-browser preference. */
+export const MAX_FOLDED_KANBAN_COLUMNS = 50;
+
 export const SpaceUserSettingsSchema = z.object({
   view: SpaceViewSchema,
   hideSettings: z.boolean(),
+  foldedColumns: z.array(z.string().max(64)).max(MAX_FOLDED_KANBAN_COLUMNS).optional(),
 });
 export type SpaceUserSettings = z.infer<typeof SpaceUserSettingsSchema>;
 

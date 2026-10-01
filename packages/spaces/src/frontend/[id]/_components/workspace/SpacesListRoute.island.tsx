@@ -9,7 +9,7 @@ import { buildFilterUrl, defaultFilter, type FilterState, hasActiveFilters } fro
 import ItemsList from "../list";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import ItemsTable from "../table/ItemsTable";
-import { useSpacesListQuery } from "./list-query";
+import { useSpacesRouteQuery } from "./route-query";
 
 type Props = {
   spaceId: string;
@@ -28,10 +28,13 @@ type Props = {
 export default function SpacesListRoute(props: Props) {
   const t = useSpaceMessages();
   const [selectedItemId, setSelectedItemId] = createSignal(props.initialSelectedItemId);
-  const view = useSpacesListQuery({
+  const view = useSpacesRouteQuery({
     initialSource: props.itemLinkBaseUrl,
-    initialItemsResult: props.initialItemsResult,
+    initialData: { itemsResult: props.initialItemsResult },
     currentView: props.currentView,
+    read: (snapshot) =>
+      snapshot.kind === "list" && snapshot.currentView === props.currentView ? { itemsResult: snapshot.itemsResult } : null,
+    domains: ["view"],
   });
   const itemsResult = () => view.current().itemsResult;
   const baseUrl = () => view.current().source;

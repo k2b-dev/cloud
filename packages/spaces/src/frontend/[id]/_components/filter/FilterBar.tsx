@@ -1,4 +1,5 @@
 import { ButtonLink, FilterChip, type FilterChipSection } from "@k2b/ui";
+import type { JSX } from "solid-js";
 import type {
   AssignedToFilter,
   DeadlineFilter,
@@ -22,7 +23,8 @@ type FilterBarProps = {
   tags: SpaceTag[];
   filter: FilterState;
   resultFilter?: FilterState;
-  total: number;
+  /** Matching items; the list shows it, the board shows counts per column instead. */
+  total?: number;
   baseUrl: string;
   hideGroupBy?: boolean;
   onFilterChange?: (patch: Partial<FilterState>) => void;
@@ -30,14 +32,27 @@ type FilterBarProps = {
   searchBusy?: boolean;
   searchReset?: number;
   onClearFilters?: () => void;
+  /** `board` is the one-row Kanban toolbar: only the filters a board honors, and no result count. */
+  variant?: "list" | "board";
+  /** Trailing controls in the board toolbar row. */
+  actions?: JSX.Element;
 };
 
 // Default values for reset
 const VIEW_DEFAULT = [`type:${defaultFilter.type}`, `status:${defaultFilter.status}`, `assigned:${defaultFilter.assignedTo}`];
 const SORT_DEFAULT = [`sort:${defaultFilter.sort}`, `dir:asc`];
 
+/** Prefixes option values so several filters can share one menu. */
+const prefixed = (prefix: string, label: string, section: FilterChipSection): FilterChipSection => ({
+  ...section,
+  label,
+  options: section.options.map((option) => ({ ...option, value: `${prefix}:${option.value}` })),
+});
+const unprefixed = (values: string[], prefix: string) =>
+  values.filter((value) => value.startsWith(`${prefix}:`)).map((value) => value.slice(prefix.length + 1));
+
 /**
- * Filter bar for the items list.
+ * Filter bar for the items list, or the one-row toolbar above a Kanban board.
  */
 export default function FilterBar(props: FilterBarProps) {
   const t = useSpaceMessages();
@@ -171,6 +186,39 @@ export default function FilterBar(props: FilterBarProps) {
     },
   ];
 
+  const assignmentOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.anyone, icon: "ti ti-users" },
+        { value: "me", label: t.assignedToMe, icon: "ti ti-user" },
+        { value: "unassigned", label: t.unassigned, icon: "ti ti-user-off" },
+        { value: "assigned", label: t.assignedToSomeone, icon: "ti ti-user-check" },
+      ],
+    },
+  ];
+  const boardFilterOptions = (): FilterChipSection[] => [
+    prefixed("assigned", t.assignment, assignmentOptions[0]!),
+    prefixed("deadline", t.deadline, deadlineOptions[0]!),
+    prefixed("activity", t.activityState, activityOptions[0]!),
+    prefixed("priority", t.priority, priorityOptions[0]!),
+    ...(props.tags.length > 0 ? [prefixed("tag", t.tags, tagOptions()[0]!)] : []),
+  ];
+  const boardFilterValue = () => [
+    `assigned:${props.filter.assignedTo}`,
+    ...props.filter.priority.map((priority) => `priority:${priority}`),
+    `deadline:${props.filter.deadlineFilter}`,
+    `activity:${props.filter.activity}`,
+    ...props.filter.tagIds.map((tagId) => `tag:${tagId}`),
+  ];
+  const commitBoardFilterValue = (value: string[]) =>
+    navigate({
+      assignedTo: (unprefixed(value, "assigned")[0] ?? defaultFilter.assignedTo) as AssignedToFilter,
+      priority: unprefixed(value, "priority") as Priority[],
+      deadlineFilter: (unprefixed(value, "deadline")[0] ?? defaultFilter.deadlineFilter) as DeadlineFilter,
+      activity: (unprefixed(value, "activity")[0] ?? defaultFilter.activity) as ItemActivityFilter,
+      tagIds: unprefixed(value, "tag"),
+    });
+
   const hasFilters = () =>
     props.hideGroupBy
       ? hasActiveFilters({
@@ -181,6 +229,105 @@ export default function FilterBar(props: FilterBarProps) {
   const resultFilter = () => props.resultFilter ?? props.filter;
   const hasResultFilters = () =>
     hasActiveFilters(props.hideGroupBy ? { ...resultFilter(), groupBy: defaultFilter.groupBy } : resultFilter());
+
+  const clearButton = () =>
+    hasFilters() && (
+      <ButtonLink
+        href={buildFilterUrl(props.baseUrl, defaultFilter, defaultFilter)}
+        onClick={clearFilters}
+        variant="ghost"
+        size="sm"
+        class="shrink-0"
+        aria-label={t.clearFilters}
+      >
+        <i class="ti ti-x" />
+        <span class="hidden sm:inline">{t.clear}</span>
+      </ButtonLink>
+    );
+
+  if (props.variant === "board") {
+    // One row in every width: separate chips once the row fits their longest German state with Clear,
+    // one combined menu (with its own reset) below that. A filter moves nothing else: chip labels stay
+    // fixed, chips that count selections come last, and Clear takes the free space after the chips.
+    // Chips that still outgrow the row scroll in their own box, so Clear and the actions stay reachable.
+    return (
+      <div class="@container" style="view-transition-name: filter-bar">
+        <div class="flex items-center gap-2" data-spaces-board-toolbar>
+          <SearchInput
+            class="min-w-0 flex-1 @min-[68rem]:w-52 @min-[68rem]:flex-none"
+            value={props.filter.search}
+            busy={props.searchBusy}
+            reset={props.searchReset}
+            baseUrl={buildFilterUrl(props.baseUrl, {}, props.filter)}
+            onSearch={props.onSearchChange}
+          />
+          <div class="no-scrollbar -m-1 hidden min-w-0 items-center gap-2 overflow-x-auto p-1 @min-[68rem]:flex" data-spaces-board-chips>
+            <FilterChip
+              label={t.assignment}
+              icon="ti ti-user"
+              options={assignmentOptions}
+              value={[props.filter.assignedTo]}
+              onValueChange={(v) => navigate({ assignedTo: (v[0] ?? defaultFilter.assignedTo) as AssignedToFilter })}
+              isActive={props.filter.assignedTo !== defaultFilter.assignedTo}
+              defaultValue={[defaultFilter.assignedTo]}
+            />
+            <FilterChip
+              label={t.deadline}
+              icon="ti ti-clock"
+              options={deadlineOptions}
+              value={[props.filter.deadlineFilter]}
+              onValueChange={(v) => navigate({ deadlineFilter: (v[0] ?? "all") as DeadlineFilter })}
+              isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
+              defaultValue={[defaultFilter.deadlineFilter]}
+            />
+            <FilterChip
+              label={t.activityState}
+              icon="ti ti-activity"
+              options={activityOptions}
+              value={[props.filter.activity]}
+              onValueChange={(v) => navigate({ activity: (v[0] ?? "all") as ItemActivityFilter })}
+              isActive={props.filter.activity !== defaultFilter.activity}
+              defaultValue={[defaultFilter.activity]}
+            />
+            <FilterChip
+              label={t.priority}
+              icon="ti ti-flag"
+              options={priorityOptions}
+              value={props.filter.priority}
+              onValueChange={(v) => navigate({ priority: v as Priority[] })}
+            />
+            {props.tags.length > 0 && (
+              <FilterChip
+                label={t.tags}
+                icon="ti ti-tag"
+                options={tagOptions()}
+                value={props.filter.tagIds}
+                onValueChange={(v) => navigate({ tagIds: v })}
+              />
+            )}
+          </div>
+          <div class="shrink-0 @min-[68rem]:hidden" data-spaces-board-filter-menu>
+            <FilterChip
+              label={t.filters}
+              icon="ti ti-filter"
+              options={boardFilterOptions()}
+              value={boardFilterValue()}
+              onValueChange={commitBoardFilterValue}
+              isActive={hasActiveFilters({ ...props.filter, search: "" })}
+              defaultValue={[
+                `assigned:${defaultFilter.assignedTo}`,
+                `deadline:${defaultFilter.deadlineFilter}`,
+                `activity:${defaultFilter.activity}`,
+              ]}
+              position="bottom-right"
+            />
+          </div>
+          {hasFilters() && <div class="hidden shrink-0 @min-[68rem]:flex">{clearButton()}</div>}
+          <div class="ml-auto flex shrink-0 items-center gap-1">{props.actions}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div class="flex flex-col gap-2" style="view-transition-name: filter-bar">
@@ -302,23 +449,11 @@ export default function FilterBar(props: FilterBarProps) {
         )}
 
         {/* Clear Filters */}
-        {hasFilters() && (
-          <ButtonLink
-            href={buildFilterUrl(props.baseUrl, defaultFilter, defaultFilter)}
-            onClick={clearFilters}
-            variant="ghost"
-            size="sm"
-            class="shrink-0"
-            aria-label={t.clearFilters}
-          >
-            <i class="ti ti-x" />
-            <span class="hidden sm:inline">{t.clear}</span>
-          </ButtonLink>
-        )}
+        {clearButton()}
 
         <span class="shrink-0 whitespace-nowrap text-xs text-dimmed">
           {resultFilter().search && `${t.resultsFor({ query: resultFilter().search })} `}
-          {props.total === 0 ? t.noItems : t.itemCount({ count: props.total })}
+          {!props.total ? t.noItems : t.itemCount({ count: props.total })}
           {hasResultFilters() && !resultFilter().search && ` (${t.filtered})`}
         </span>
       </div>

@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import ItemDetailRoute from "../detail/ItemDetailRoute.island";
-import { defaultFilter, parseFilterFromUrl } from "../filter/types";
+import { boardFilter, defaultFilter, parseFilterFromUrl } from "../filter/types";
 import SpaceSidebar from "../sidebar/SpaceSidebar";
 import type { SpaceContext } from "../sidebar/types";
 import RememberSpace from "./RememberSpace.island";
@@ -21,7 +21,12 @@ type OkWorkspaceState = Extract<SpacesWorkspaceState, { kind: "ok" }>;
 const routeContext = (state: OkWorkspaceState, initialDetail: SpaceItemDetail | null, dateConfig?: DateContext) => {
   const baseSpaceUrl = `/app/spaces/${state.space.id}`;
   const url = new URL(`${baseSpaceUrl}${state.query ? `?${state.query}` : ""}`, "http://spaces.local");
-  const filter = state.currentView === "list" || state.currentView === "table" ? parseFilterFromUrl(url) : defaultFilter;
+  const filter =
+    state.currentView === "list" || state.currentView === "table"
+      ? parseFilterFromUrl(url)
+      : state.currentView === "kanban"
+        ? boardFilter(parseFilterFromUrl(url))
+        : defaultFilter;
   const itemLinkBaseUrl = buildSpacesItemLinkBaseUrl({
     baseSpaceUrl,
     currentView: state.currentView,
@@ -99,6 +104,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                 tags={state.space.tags}
                 wormholes={state.wormholes}
                 initialBuckets={state.kanbanBuckets}
+                foldedColumns={state.settings.foldedColumns ?? []}
                 selectedItemId={selectedItemId}
                 dateConfig={props.dateConfig}
                 canWrite={state.canWrite}

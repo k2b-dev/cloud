@@ -17,7 +17,7 @@ import { resolveReferenceViews } from "@/service/resource-reference-views";
 import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
 import type { CalendarView, DayWeather } from "../calendar/types";
-import { defaultFilter, type FilterState, parseFilterFromUrl } from "../filter/types";
+import { boardFilter, defaultFilter, type FilterState, hasActiveFilters, parseFilterFromUrl } from "../filter/types";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { isValidView, parseSpaceSettings, type SpaceUserSettings, type ViewType } from "../settings/SpaceSettingsStore";
 import type { SpaceItemDetail, SpacesViewSnapshot, SpacesWorkspaceState } from "./workspace-types";
@@ -74,7 +74,12 @@ const resolveRouteState = (params: WorkspaceRequest): RouteState => {
     settings,
     currentView,
     hasOverride: hasViewOverride,
-    filter: currentView === "list" || currentView === "table" ? parseFilterFromUrl(url) : defaultFilter,
+    filter:
+      currentView === "list" || currentView === "table"
+        ? parseFilterFromUrl(url)
+        : currentView === "kanban"
+          ? boardFilter(parseFilterFromUrl(url))
+          : defaultFilter,
     selectedItemId: url.searchParams.get("item") ?? "",
     selectedOccurrenceId: url.searchParams.get("occurrence"),
     calendarViewParam: url.searchParams.get("cv") as CalendarView | null,
@@ -200,46 +205,63 @@ const loadListItems = async (params: {
   });
 };
 
+/** One Kanban column's page; the board filter only narrows what the URL asks for, never the column or completion. */
+const kanbanColumnFilter = (params: { columnId: string; isDone: boolean; filter: FilterState; page: number; pageSize: number }) => ({
+  type: "all" as const,
+  status: params.isDone ? ("completed" as const) : ("active" as const),
+  activity: params.filter.activity,
+  priority: nonEmpty(params.filter.priority),
+  tagIds: nonEmpty(params.filter.tagIds),
+  columnIds: [params.columnId],
+  assignedTo: params.filter.assignedTo,
+  deadlineFilter: params.filter.deadlineFilter,
+  search: params.filter.search || undefined,
+  sort: "column" as const,
+  sortDesc: false,
+  groupBy: "column" as const,
+  page: params.page,
+  pageSize: params.pageSize,
+});
+
 const loadKanbanBuckets = async (params: {
   currentView: ViewType;
   space: SpaceDetail;
   spaceId: string;
+  filter: FilterState;
   userId: string;
   dateConfig?: DateContext;
 }): Promise<KanbanBucketInitial[]> => {
   if (params.currentView !== "kanban") return [];
+  const filtered = hasActiveFilters(params.filter);
 
   const loadBucket = async (config: {
     key: string;
     label: string;
     color: string | null;
     kind: "column";
-    columnId: string | null;
+    columnId: string;
     isDone: boolean;
-    columnIds?: string[];
   }): Promise<KanbanBucketInitial> => {
-    const result = await spacesService.item.listFiltered({
-      spaceId: params.spaceId,
-      filter: {
-        type: "all",
-        status: config.isDone ? "completed" : "active",
-        activity: "all",
-        priority: undefined,
-        tagIds: undefined,
-        columnIds: config.columnIds && config.columnIds.length > 0 ? config.columnIds : undefined,
-        assignedTo: "all",
-        deadlineFilter: "all",
-        search: undefined,
-        sort: "column",
-        sortDesc: false,
-        groupBy: "column",
-        page: 1,
-        pageSize: KANBAN_PAGE_SIZE,
-      },
-      currentUserId: params.userId,
-      dateConfig: params.dateConfig,
-    });
-    return { ...config, items: result.items, page: result.page, totalPages: result.totalPages, total: result.total };
+    const list = (filter: FilterState, pageSize: number) =>
+      spacesService.item.listFiltered({
+        spaceId: params.spaceId,
+        filter: kanbanColumnFilter({ columnId: config.columnId, isDone: config.isDone, filter, page: 1, pageSize }),
+        currentUserId: params.userId,
+        dateConfig: params.dateConfig,
+      });
+    // A filtered column also reports its unfiltered size, so the count says what the filter hides.
+    const [result, unfiltered] = await Promise.all([
+      list(params.filter, KANBAN_PAGE_SIZE),
+      filtered ? list(defaultFilter, 1) : Promise.resolve(null),
+    ]);
+    return {
+      ...config,
+      items: result.items,
+      page: result.page,
+      totalPages: result.totalPages,
+      total: result.total,
+      ...(unfiltered ? { unfilteredTotal: unfiltered.total } : {}),
+    };
   };
 
   return Promise.all(
@@ -251,7 +273,6 @@ const loadKanbanBuckets = async (params: {
         kind: "column",
         columnId: column.id,
         isDone: column.isDone,
-        columnIds: [column.id],
       }),
     ),
   );
@@ -550,6 +571,7 @@ const loadWorkspaceData = async (params: {
       currentView: params.route.currentView,
       space: params.space,
       spaceId: params.request.spaceId,
+      filter: params.route.filter,
       userId: params.request.user.id,
       dateConfig: params.request.dateConfig,
     }),
@@ -703,6 +725,7 @@ export const loadSpacesViewSnapshot = async (
       currentView: route.currentView,
       space,
       spaceId: params.spaceId,
+      filter: route.filter,
       userId: params.user.id,
       dateConfig: params.dateConfig,
     }),
