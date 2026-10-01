@@ -81,32 +81,54 @@ const authForSmtp = (config: SmtpConnectionConfig): SMTPTransport.Options["auth"
   pass: config.secret.password,
 });
 
-const createImapClient = (config: ProviderConnectionInput, endpoint: ResolvedEndpoint): ImapFlow =>
-  new ImapFlow({
-    host: endpoint.host,
-    port: endpoint.port,
-    secure: endpoint.tlsMode === "implicit",
-    doSTARTTLS: endpoint.tlsMode === "starttls",
-    servername: isIP(endpoint.host) ? undefined : endpoint.host,
-    auth: authForImap(config),
-    clientInfo: { name: "Cloud Mail", vendor: "Cloud", version: "1" },
-    logger: false,
-    logRaw: false,
-    emitLogs: false,
-    disableCompression: true,
-    disableAutoIdle: true,
-    qresync: true,
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 60_000,
-    maxLineLength: 8 * 1024 * 1024,
-    maxLiteralSize: MAX_IMAP_LITERAL_BYTES,
-    tls: {
-      rejectUnauthorized: true,
-      minVersion: "TLSv1.2",
-      lookup: createPinnedLookup(endpoint),
-    },
+export type ImapSession = {
+  client: ImapFlow;
+  /** The cause of a connection that ImapFlow failed and closed, such as a socket timeout. */
+  failure(): Error | null;
+};
+
+/**
+ * Tracks connection failures of an ImapFlow client. ImapFlow reports a dead connection, such as a
+ * command whose reply never arrives before the socket timeout, as an 'error' event and closes the
+ * socket afterwards. An 'error' event without a listener throws and would crash the Mail process,
+ * so every client Mail creates gets this listener before it connects.
+ */
+export const trackImapSession = (client: ImapFlow): ImapSession => {
+  let failure: Error | null = null;
+  client.on("error", (error: Error) => {
+    failure ??= error;
   });
+  return { client, failure: () => failure };
+};
+
+const createImapClient = (config: ProviderConnectionInput, endpoint: ResolvedEndpoint): ImapSession =>
+  trackImapSession(
+    new ImapFlow({
+      host: endpoint.host,
+      port: endpoint.port,
+      secure: endpoint.tlsMode === "implicit",
+      doSTARTTLS: endpoint.tlsMode === "starttls",
+      servername: isIP(endpoint.host) ? undefined : endpoint.host,
+      auth: authForImap(config),
+      clientInfo: { name: "Cloud Mail", vendor: "Cloud", version: "1" },
+      logger: false,
+      logRaw: false,
+      emitLogs: false,
+      disableCompression: true,
+      disableAutoIdle: true,
+      qresync: true,
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 60_000,
+      maxLineLength: 8 * 1024 * 1024,
+      maxLiteralSize: MAX_IMAP_LITERAL_BYTES,
+      tls: {
+        rejectUnauthorized: true,
+        minVersion: "TLSv1.2",
+        lookup: createPinnedLookup(endpoint),
+      },
+    }),
+  );
 
 type DisposableImapClient = Pick<ImapFlow, "close" | "logout" | "usable">;
 
@@ -122,31 +144,48 @@ export const disposeImapClient = async (client: DisposableImapClient): Promise<v
   }
 };
 
-const withImapClient = async <T>(
-  config: ProviderConnectionInput,
+const throwIfAborted = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) {
+    throw signal.reason ?? Object.assign(new Error("IMAP operation was aborted"), { name: "AbortError" });
+  }
+};
+
+/**
+ * Connects, runs one operation, and disposes the client. ImapFlow rejects the commands of a failed
+ * connection, but some, such as NOOP, resolve anyway, so an operation that completed over a failed
+ * connection is rejected with the failure. A rejection of the operation itself stays as it is: it
+ * carries what the operation knows, such as whether an APPEND may already have taken effect.
+ */
+export const runImapSession = async <T>(
+  session: ImapSession,
   fn: (client: ImapFlowWithNamespaces) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> => {
-  const throwIfAborted = (): void => {
-    if (signal?.aborted) {
-      throw signal.reason ?? Object.assign(new Error("IMAP operation was aborted"), { name: "AbortError" });
-    }
-  };
-  throwIfAborted();
-  const endpoint = await resolvePublicEndpoint(config.imap);
-  const client = createImapClient(config, endpoint) as ImapFlowWithNamespaces;
+  const client = session.client as ImapFlowWithNamespaces;
   const abort = (): void => client.close();
   signal?.addEventListener("abort", abort, { once: true });
   try {
     await client.connect();
-    throwIfAborted();
+    throwIfAborted(signal);
     const result = await fn(client);
-    throwIfAborted();
+    throwIfAborted(signal);
+    const failure = session.failure();
+    if (failure) throw failure;
     return result;
   } finally {
     signal?.removeEventListener("abort", abort);
     await disposeImapClient(client);
   }
+};
+
+const withImapClient = async <T>(
+  config: ProviderConnectionInput,
+  fn: (client: ImapFlowWithNamespaces) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> => {
+  throwIfAborted(signal);
+  const endpoint = await resolvePublicEndpoint(config.imap);
+  return runImapSession(createImapClient(config, endpoint), fn, signal);
 };
 
 const capability = (client: ImapFlow, name: string): boolean => client.capabilities.has(name) || client.enabled.has(name);
@@ -1307,7 +1346,7 @@ const listenForChanges = async (
   request: ConnectorChangeListenerRequest,
 ): Promise<ConnectorChangeListener> => {
   const endpoint = await resolvePublicEndpoint(config.imap);
-  const client = createImapClient(config, endpoint);
+  const { client } = createImapClient(config, endpoint);
   try {
     await client.connect();
     return await openImapChangeListener(client, request);

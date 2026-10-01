@@ -113,7 +113,7 @@ const normalizeProviderError = (error: unknown, secrets: readonly string[] = [])
   if (value?.tlsFailed === true || code.includes("CERT") || code.includes("TLS")) {
     return withDetail("Provider TLS verification failed");
   }
-  if (["ETIMEDOUT", "ECONNREFUSED", "ECONNECTION", "ESOCKET", "EHOSTUNREACH", "ENETUNREACH", "EDNS"].includes(code)) {
+  if (["ETIMEDOUT", "ETIMEOUT", "ECONNREFUSED", "ECONNECTION", "ESOCKET", "EHOSTUNREACH", "ENETUNREACH", "EDNS"].includes(code)) {
     return withDetail("Could not connect to the provider endpoint");
   }
   return err.badInput("Provider verification failed");
