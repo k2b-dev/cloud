@@ -97,8 +97,8 @@ describe("@k2b/ui Panes", () => {
         items: [{ id: "one", title: "One", onClose: () => undefined, render: () => "First" }],
       }),
     );
-    expect(html).toContain('title="Close One"');
-    expect(html).toContain('title="Add pane"');
+    expect(html).toMatch(/role="tooltip"[^>]*>Close One</);
+    expect(html).toMatch(/role="tooltip"[^>]*>Add pane</);
     expect(html).toContain("First");
   });
 

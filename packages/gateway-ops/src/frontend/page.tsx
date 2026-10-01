@@ -346,8 +346,9 @@ export default ssr<AuthContext>(async (c) => {
                 if (col.id === "admin") {
                   const adminHref = navOf(app)?.adminHref;
                   return adminHref ? (
-                    <a href={adminHref} class="text-emerald-500 hover:text-emerald-700">
-                      <i class="ti ti-check text-xs" />
+                    <a href={adminHref} class="text-emerald-500 hover:text-emerald-700" title={t.openAppAdmin({ name: app.name })}>
+                      <i class="ti ti-check text-xs" aria-hidden="true" />
+                      <span class="sr-only">{t.openAppAdmin({ name: app.name })}</span>
                     </a>
                   ) : (
                     <Dash />

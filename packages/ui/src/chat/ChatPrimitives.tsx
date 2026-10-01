@@ -1,6 +1,7 @@
 import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
+import { Tooltip } from "../feedback/Tooltip";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
 import { ChatContextPanel, ChatContextPopup } from "./ChatContextPopup";
@@ -261,18 +262,18 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
             <span class="k2b-chat-message__actions" role="group" aria-label={messages().messageActions}>
               <For each={actions()}>
                 {(action) => (
-                  <button
+                  <Tooltip.Trigger
                     type="button"
                     aria-label={action.label}
                     aria-pressed={action.pressed}
                     data-pressed-tone={action.pressedTone}
-                    title={action.label}
+                    content={action.label}
                     data-danger={action.variant === "danger" ? "true" : undefined}
                     disabled={action.disabled || Boolean(busyActionId())}
                     onClick={() => void runAction(action)}
                   >
                     <i class={actionIcon(action)} aria-hidden="true" />
-                  </button>
+                  </Tooltip.Trigger>
                 )}
               </For>
             </span>

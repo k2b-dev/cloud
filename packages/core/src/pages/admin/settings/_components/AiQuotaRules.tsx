@@ -5,6 +5,7 @@ import {
   Button,
   DataTable,
   dialogCore,
+  IconButton,
   LocaleProvider,
   NoticeCard,
   NumberInput,
@@ -193,10 +194,10 @@ export default function AiQuotaRules(props: {
                             }
                           />
                         </Show>
-                        <Button
-                          variant="ghost"
+                        <IconButton
                           size="sm"
-                          aria-label={`${t().remove}: ${grant().principal.type === "authenticated" ? t().allUsers : grant().displayName || principalKey(grant().principal)}`}
+                          label={`${t().remove}: ${grant().principal.type === "authenticated" ? t().allUsers : grant().displayName || principalKey(grant().principal)}`}
+                          tooltip={t().remove}
                           onClick={() =>
                             update((r) => {
                               r.grants.splice(i, 1);
@@ -204,7 +205,7 @@ export default function AiQuotaRules(props: {
                           }
                         >
                           <i class="ti ti-x" aria-hidden="true" />
-                        </Button>
+                        </IconButton>
                       </div>
                     </div>
                   )}

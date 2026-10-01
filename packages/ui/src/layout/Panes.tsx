@@ -1,5 +1,6 @@
 import { type DndCollisionContext, type DndController, type DndDroppableSnapshot, dnd } from "@k2b/stdlib/solid";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { Tooltip } from "../feedback/Tooltip";
 import { useUiMessages } from "../intl/messages";
 import {
   activatePanesItem,
@@ -687,10 +688,10 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
                   </span>
                 </button>
                 <Show when={item().onClose !== undefined}>
-                  <button
+                  <Tooltip.Trigger
                     type="button"
                     class="k2b-panes__close"
-                    title={messages().closeNamed({ name: item().title })}
+                    content={messages().closeNamed({ name: item().title })}
                     aria-label={messages().closeNamed({ name: item().title })}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
@@ -699,7 +700,7 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
                     }}
                   >
                     <i class="ti ti-x" aria-hidden="true" />
-                  </button>
+                  </Tooltip.Trigger>
                 </Show>
               </div>
             );
@@ -709,15 +710,15 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
           {(target) => <PanesDropTargetView target={target()} label={targetLabel(target())} dnd={props.dnd} placement="tab-end" />}
         </Show>
         <Show when={props.canAdd()}>
-          <button
+          <Tooltip.Trigger
             type="button"
             class="k2b-panes__add k2b-panes__add--tab"
             aria-label={messages().addPane}
-            title={messages().addPane}
+            content={messages().addPane}
             onClick={() => props.addItem(props.node().active)}
           >
             <i class="ti ti-plus" aria-hidden="true" />
-          </button>
+          </Tooltip.Trigger>
         </Show>
       </div>
       <Show when={scrollbar().overflow}>

@@ -109,13 +109,11 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
         appearance={props.variant ? "button" : "plain"}
         variant={props.variant}
         iconOnly={props.iconOnly}
-        tooltip={props.variant && props.iconOnly ? props.label : undefined}
         class={props.variant ? props.class : `k2b-filter-chip ${props.class ?? ""}`}
         data-state={active() ? "active" : "idle"}
         data-active={active() ? "true" : undefined}
         data-icon-only={props.iconOnly ? "true" : undefined}
         label={props.label}
-        title={props.iconOnly ? props.label : undefined}
       >
         <i class={props.icon} aria-hidden="true" />
         <Show when={!props.iconOnly}>

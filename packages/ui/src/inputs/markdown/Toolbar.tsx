@@ -1,4 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
+import { Tooltip } from "../../feedback/Tooltip";
 import { useUiMessages } from "../../intl/messages";
 import {
   insertLink,
@@ -88,10 +89,10 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
           tool.kind === "separator" ? (
             <span class="k2b-markdown-editor__separator" aria-hidden="true" />
           ) : (
-            <button
+            <Tooltip.Trigger
               type="button"
               class="k2b-markdown-editor__tool"
-              title={title(tool.id, tool.title)}
+              content={title(tool.id, tool.title)}
               aria-label={title(tool.id, tool.title)}
               aria-pressed={props.activeFormats?.().has(tool.id) ? "true" : undefined}
               disabled={props.disabled}
@@ -103,7 +104,7 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
               }}
             >
               <i class={tool.icon} aria-hidden="true" />
-            </button>
+            </Tooltip.Trigger>
           )
         }
       </For>

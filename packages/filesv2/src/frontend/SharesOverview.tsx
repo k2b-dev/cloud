@@ -5,11 +5,11 @@ import {
   ButtonLink,
   DataTable,
   Format,
+  IconButton,
   Placeholder,
   prompts,
   StatusBadge,
   Tag,
-  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -166,18 +166,15 @@ export default function SharesOverview(props: {
             return (
               <div class="flex items-center justify-end gap-1">
                 <Show when={row.state === "active"}>
-                  <Tooltip.Anchor content={b().revoke}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      class="hover:text-danger"
-                      loading={busy() === row.id}
-                      onClick={() => void revoke(row)}
-                      aria-label={b().revoke}
-                    >
-                      <i class="ti ti-link-off" aria-hidden="true" />
-                    </Button>
-                  </Tooltip.Anchor>
+                  <IconButton
+                    size="sm"
+                    class="hover:text-danger"
+                    loading={busy() === row.id}
+                    onClick={() => void revoke(row)}
+                    label={b().revoke}
+                  >
+                    <i class="ti ti-link-off" aria-hidden="true" />
+                  </IconButton>
                 </Show>
               </div>
             );

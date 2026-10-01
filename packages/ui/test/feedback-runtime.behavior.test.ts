@@ -356,7 +356,7 @@ describe("@k2b/ui feedback runtime", () => {
     dom.document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(surface?.matches(":popover-open")).toBe(false);
     wrapper?.dispatchEvent(new Event("pointerleave"));
-    wrapper?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    wrapper?.querySelector("button")?.focus();
     expect(surface?.matches(":popover-open")).toBe(true);
     wrapper?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     expect(surface?.matches(":popover-open")).toBe(false);

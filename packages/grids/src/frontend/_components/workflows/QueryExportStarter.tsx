@@ -1,5 +1,5 @@
 import { i18n } from "@k2b/stdlib";
-import { Button, DetailPanel, NoticeCard, Select, TextInput, useLocale } from "@k2b/ui";
+import { Button, DetailPanel, IconButton, NoticeCard, Select, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
@@ -509,13 +509,9 @@ export function QueryExportStarter(props: {
                       }
                     />
                   </Show>
-                  <Button
-                    variant="ghost"
-                    aria-label={t().removeParameter}
-                    onClick={() => changeInputs(inputs().filter((item) => item.id !== input().id))}
-                  >
-                    <i class="ti ti-trash" />
-                  </Button>
+                  <IconButton label={t().removeParameter} onClick={() => changeInputs(inputs().filter((item) => item.id !== input().id))}>
+                    <i class="ti ti-trash" aria-hidden="true" />
+                  </IconButton>
                 </div>
               )}
             </Index>

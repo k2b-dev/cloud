@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, createUniqueId, type JSX, Show } from "solid-js";
-import { Button } from "../actions/Button";
+import { Button, IconButton } from "../actions/Button";
 import { CopyButton } from "../actions/CopyButton";
 import { SelectChip } from "../inputs/SelectChip";
 import { useLocale } from "../intl/locale";
@@ -211,15 +211,9 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
               <Paper class="k2b-chart-explorer__detail-paper">
                 <div class="k2b-chart-explorer__detail-header">
                   <span>{messages().chartSelectedDatum}</span>
-                  <Button
-                    variant="text"
-                    size="sm"
-                    aria-label={messages().clearSelection}
-                    title={messages().clearSelection}
-                    onClick={() => select(null)}
-                  >
+                  <IconButton variant="text" size="sm" label={messages().clearSelection} onClick={() => select(null)}>
                     <i class="ti ti-x" aria-hidden="true" />
-                  </Button>
+                  </IconButton>
                 </div>
                 {props.renderDetails ? (
                   props.renderDetails(row())

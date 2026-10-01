@@ -87,7 +87,6 @@ export function SplitButton(props: SplitButtonProps): JSX.Element {
         iconOnly
         label={local.menuLabel}
         size={local.size}
-        title={local.menuLabel}
         variant={local.variant ?? "primary"}
       >
         {local.menuIcon ?? <i class="ti ti-chevron-down" aria-hidden="true" />}

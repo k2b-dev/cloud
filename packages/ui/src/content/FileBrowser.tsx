@@ -275,7 +275,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
                 appearance="plain"
                 class="k2b-content-file-browser__add"
                 label={messages().addFileFolderUpload}
-                title={messages().add}
+                tooltip={messages().add}
               >
                 <i class="ti ti-plus" aria-hidden="true" />
                 <span class="k2b-sr-only">{messages().addFileFolderUpload}</span>

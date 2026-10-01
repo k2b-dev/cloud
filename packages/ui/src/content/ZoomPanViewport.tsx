@@ -1,5 +1,5 @@
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { Button } from "../actions/Button";
+import { Button, IconButton } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { DialogHeader } from "../feedback/prompts";
 import { LocaleProvider, useLocale } from "../intl/locale";
@@ -278,16 +278,9 @@ export function ZoomPanViewport(props: ZoomPanViewportProps): JSX.Element {
   });
 
   const control = (label: string, shortcut: string, icon: string, action: () => void) => (
-    <button
-      type="button"
-      class="k2b-button k2b-icon-button"
-      data-variant="secondary"
-      aria-label={label}
-      title={`${label} (${shortcut})`}
-      onClick={action}
-    >
+    <IconButton variant="secondary" label={label} tooltip={`${label} (${shortcut})`} onClick={action}>
       <i class={`ti ${icon}`} aria-hidden="true" />
-    </button>
+    </IconButton>
   );
 
   return (

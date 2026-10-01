@@ -11,10 +11,10 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
-import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
+import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
-import { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./Button";
+import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
 const selectAction = (item: { action?: () => void }) => item.action;
@@ -333,6 +333,7 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
     "ref",
     "size",
     "tabIndex",
+    "title",
     "tooltip",
     "tooltipDelay",
     "tooltipPlacement",
@@ -341,6 +342,11 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
   ]);
   let target: HTMLButtonElement | undefined;
   const disabled = () => Boolean(context.disabled() || local.disabled);
+  // An icon-only trigger shows its label as a hint, like IconButton.
+  const tooltip = useLabelTooltip(
+    () => local.tooltip,
+    () => (local.iconOnly ? (local.title ?? local.label) : undefined),
+  );
   const register = (element: HTMLButtonElement) => {
     target = element;
     context.registerTrigger(element);
@@ -368,7 +374,8 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
         class={`${local.iconOnly ? "k2b-icon-button" : ""} k2b-dropdown__trigger ${local.class ?? ""}`}
         size={local.size}
         variant={local.variant ?? (local.iconOnly ? "ghost" : undefined)}
-        tooltip={local.tooltip}
+        title={iconTitle(local.title, tooltip())}
+        tooltip={tooltip()}
         tooltipDelay={local.tooltipDelay}
         tooltipPlacement={local.tooltipPlacement}
       >
@@ -392,12 +399,13 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
         onKeyDown={context.triggerKeyDown}
         type={local.type ?? "button"}
         class={`k2b-dropdown__trigger ${local.class ?? ""}`}
+        title={iconTitle(local.title, tooltip())}
       >
         {local.children}
       </button>
-      <Show when={local.tooltip !== false && local.tooltip !== undefined}>
+      <Show when={tooltip() !== false && tooltip() !== undefined}>
         <Tooltip
-          content={local.tooltip as JSX.Element}
+          content={tooltip() as JSX.Element}
           target={() => target}
           delay={local.tooltipDelay}
           disabled={disabled()}

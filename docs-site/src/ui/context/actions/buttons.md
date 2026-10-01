@@ -101,7 +101,9 @@ native document navigation.
 
 All button variants accept `tooltip?: JSX.Element | false`,
 `tooltipDelay?: number` (250ms), and `tooltipPlacement?: "top" | "bottom" | "left" | "right"`
-(default top). Use `false` to omit a tooltip. Content follows the
+(default top). Use `false` to omit a tooltip. `IconButton` and
+`IconButtonLink` show their `label` as the tooltip by default; pass `tooltip`
+for a shorter or richer hint, such as a keyboard shortcut. Content follows the
 [Tooltip contract](/en/ui/feedback/tooltip).
 
 `SplitButton` extends Button props with required `items: readonly DropdownItem[]`
@@ -112,7 +114,7 @@ uses the [navigation event contract](/en/ui/getting-started#icons-tones-and-navi
 
 ## Accessibility
 
-All matching native button or anchor attributes pass through. The default button `type` is `button`, so form submission stays explicit. `IconButton` and `IconButtonLink` require `label`; `SplitButton` requires `menuLabel`. These labels supply the icon-only control's accessible name and title.
+All matching native button or anchor attributes pass through. The default button `type` is `button`, so form submission stays explicit. `IconButton` and `IconButtonLink` require `label`; `SplitButton` requires `menuLabel`. These labels supply the icon-only control's accessible name and tooltip. Render icon-only actions through these components, not through `Button` or `ButtonLink` with an `aria-label`, so every one shows its label.
 
 ### Touch targets
 

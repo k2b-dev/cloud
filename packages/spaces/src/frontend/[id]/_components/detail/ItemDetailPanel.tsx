@@ -11,6 +11,7 @@ import {
   Dropdown,
   type DropdownItem,
   IconButton,
+  IconButtonLink,
   MarkdownView,
   MultiSelectInput,
   prompts,
@@ -932,22 +933,19 @@ export default function ItemDetailPanel(props: Props) {
                   </Dropdown.Trigger>
                 </Dropdown.Root>
               </Show>
-              <Tooltip.Anchor content={t.closeDetails}>
-                <ButtonLink
-                  href={props.baseUrl}
-                  onClick={(event) => {
-                    if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-                    event.preventDefault();
-                    requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
-                  }}
-                  variant="ghost"
-                  size="sm"
-                  class="h-8 w-8 px-0"
-                  aria-label={t.closeItemDetails}
-                >
-                  <i class="ti ti-x" aria-hidden="true" />
-                </ButtonLink>
-              </Tooltip.Anchor>
+              <IconButtonLink
+                href={props.baseUrl}
+                onClick={(event) => {
+                  if (!shouldHandleDetailClick(event, event.currentTarget)) return;
+                  event.preventDefault();
+                  requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
+                }}
+                size="sm"
+                label={t.closeItemDetails}
+                tooltip={t.closeDetails}
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </IconButtonLink>
             </>
           }
           primaryActions={
