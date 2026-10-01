@@ -81,7 +81,6 @@ function RevisionPreview(props: PreviewProps) {
             title={props.entry.name}
             openButtonLabel={t().openInTab}
             openHref={inlinePdfHref(props.baseId, props.entry.path)}
-            buttonLabel={t().retry}
             onDownload={props.onDownload}
             request={readPdf}
           >
