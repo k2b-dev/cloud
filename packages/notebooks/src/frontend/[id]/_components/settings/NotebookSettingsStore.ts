@@ -23,6 +23,8 @@ type AllNotebookSettings = {
   pinnedNotebookIds: string[];
   sidebarMode: NotebookSettings["sidebarMode"];
   detailPanelOpen: boolean;
+  /** Hides the desktop navigation in every notebook, for focused or private writing. */
+  navigationHidden: boolean;
   /** Personal editor preference: Tab moves focus instead of indenting. */
   tabMovesFocus: boolean;
   notebooks: Record<string, Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "navigatorSort" | "treeSort">>>;
@@ -41,6 +43,7 @@ const DEFAULT_ALL: AllNotebookSettings = {
   pinnedNotebookIds: [],
   sidebarMode: "simple",
   detailPanelOpen: false,
+  navigationHidden: false,
   tabMovesFocus: false,
   notebooks: {},
 };
@@ -79,6 +82,7 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
     pinnedNotebookIds: normalizePinnedNotebookIds(parsed.pinnedNotebookIds),
     sidebarMode: isSidebarMode(parsed.sidebarMode) ? parsed.sidebarMode : DEFAULT_ALL.sidebarMode,
     detailPanelOpen: parsed.detailPanelOpen === true,
+    navigationHidden: parsed.navigationHidden === true,
     tabMovesFocus: parsed.tabMovesFocus === true,
     notebooks,
   };
@@ -191,6 +195,16 @@ export const setDetailPanelOpen = (open: boolean) => {
   });
 };
 
+/** Reads and writes the global hidden-navigation preference; SSR reads it through `parseNavigationHidden`. */
+export const readNavigationHidden = (): boolean => readCookie().navigationHidden;
+
+export const writeNavigationHidden = (navigationHidden: boolean) => {
+  writeCookie({
+    ...readCookie(),
+    navigationHidden,
+  });
+};
+
 /** Reads and writes the personal Tab key preference for the note editor. */
 export const readTabMovesFocus = (): boolean => readCookie().tabMovesFocus;
 
@@ -223,6 +237,9 @@ export const parseSettings = (cookieHeader: string | undefined, notebookId: stri
  * Defaults to false — first-time users see the panel closed.
  */
 export const parseDetailPanelOpen = (cookieHeader: string | undefined): boolean => parseCookieHeader(cookieHeader).detailPanelOpen === true;
+
+/** Parses the hidden-navigation preference so the first paint never shows the note tree. */
+export const parseNavigationHidden = (cookieHeader: string | undefined): boolean => parseCookieHeader(cookieHeader).navigationHidden;
 
 /**
  * Parses only the last notebook id from a raw cookie header for SSR redirects.

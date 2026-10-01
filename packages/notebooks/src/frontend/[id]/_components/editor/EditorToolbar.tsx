@@ -7,6 +7,8 @@ import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/events";
+import { readNavigationHidden } from "../settings/NotebookSettingsStore";
+import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import { cycleHeading, insertCallout, insertLinePrefix, insertLink, insertNoteLink, insertTable, wrapSelection } from "./editor-actions";
 
@@ -102,6 +104,9 @@ export default function EditorToolbar(props: Props) {
   const table = withView((v) => void insertTable(v, undefined, locale()));
 
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
+  // The toolbar renders only in the browser, where the cookie holds the same state SSR used.
+  const navigationHidden = createNavigationHidden(readNavigationHidden());
+  const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
   const [showDisconnected, setShowDisconnected] = createSignal(false);
   let disconnectedTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -138,6 +143,27 @@ export default function EditorToolbar(props: Props) {
 
   return (
     <div class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed">
+      {/* The navigation sidebar exists from lg up; phones keep the header's menu. */}
+      <div class="hidden shrink-0 lg:flex">
+        <Tooltip.Anchor content={navigationLabel()}>
+          <IconButton
+            label={navigationLabel()}
+            tooltip={false}
+            size="xs"
+            class="text-dimmed"
+            aria-expanded={!navigationHidden()}
+            aria-controls={NOTEBOOK_NAVIGATION_ID}
+            // A pointer press keeps focus, caret and selection in the note.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setNavigationHidden(!navigationHidden())}
+          >
+            <i
+              class={`ti ${navigationHidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"} text-sm`}
+              aria-hidden="true"
+            />
+          </IconButton>
+        </Tooltip.Anchor>
+      </div>
       <div class="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
         <Btn icon="ti-bold" title={t().bold} onClick={bold} />
         <Btn icon="ti-italic" title={t().italic} onClick={italic} />

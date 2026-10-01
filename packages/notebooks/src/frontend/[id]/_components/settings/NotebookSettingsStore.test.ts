@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   parseDetailPanelOpen,
+  parseNavigationHidden,
   parsePinnedNotebookIds,
   parseSettings,
+  readNavigationHidden,
   readPinnedNotebookIds,
   readSettings,
   readTabMovesFocus,
@@ -10,6 +12,7 @@ import {
   setLastNotebookId,
   setPinnedNotebookIds,
   setTabMovesFocus,
+  writeNavigationHidden,
   writeSettings,
 } from "./NotebookSettingsStore";
 
@@ -94,11 +97,25 @@ describe("NotebookSettingsStore", () => {
     expect(parsePinnedNotebookIds(cookieHeader())).toEqual(["Book02", "Book01"]);
   });
 
+  test("keeps the hidden navigation for every notebook and for server rendering", () => {
+    expect(parseNavigationHidden(cookieHeader())).toBe(false);
+    writeNavigationHidden(true);
+    writeSettings("first", { lastNoteId: "note01", sidebarMode: "navigator" });
+
+    expect(readNavigationHidden()).toBe(true);
+    expect(parseNavigationHidden(cookieHeader())).toBe(true);
+    expect(parseSettings(cookieHeader(), "first").sidebarMode).toBe("navigator");
+
+    writeNavigationHidden(false);
+    expect(parseNavigationHidden(cookieHeader())).toBe(false);
+  });
+
   test("ignores malformed preference values", () => {
     cookie = `${COOKIE_NAME}=${encodeURIComponent(
       JSON.stringify({
         sidebarMode: "broken",
         detailPanelOpen: "yes",
+        navigationHidden: "yes",
         notebooks: { first: { richMode: "broken", navigatorSort: 42, treeSort: "broken", lastNoteId: false } },
       }),
     )}`;
@@ -111,6 +128,7 @@ describe("NotebookSettingsStore", () => {
       treeSort: "title",
     });
     expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
+    expect(parseNavigationHidden(cookieHeader())).toBe(false);
     expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);
   });
 

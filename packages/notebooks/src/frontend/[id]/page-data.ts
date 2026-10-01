@@ -13,7 +13,7 @@ import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
-import { parseDetailPanelOpen, parseSettings } from "./_components/settings/NotebookSettingsStore";
+import { parseDetailPanelOpen, parseNavigationHidden, parseSettings } from "./_components/settings/NotebookSettingsStore";
 import type { NotebookContext } from "./_components/sidebar/types";
 
 type SelectedNote = SelectedNoteRouteState["note"];
@@ -150,6 +150,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     selectedNoteId,
     userId: user.id,
     settings,
+    navigationHidden: parseNavigationHidden(cookieHeader),
     permission,
     attachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),

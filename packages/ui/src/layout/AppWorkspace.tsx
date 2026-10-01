@@ -14,7 +14,7 @@ import {
   useContext,
 } from "solid-js";
 import { useUiMessages } from "../intl/messages";
-import { installAppWorkspaceController } from "./app-workspace-controller";
+import { APP_WORKSPACE_SIDEBAR_HIDE_EVENT, installAppWorkspaceController } from "./app-workspace-controller";
 import {
   APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
@@ -208,6 +208,8 @@ export type AppWorkspaceBottomDrawerProps = {
   resizable?: boolean;
 };
 export type AppWorkspaceSidebarProps = {
+  /** Stable element id, for a toggle elsewhere that names the sidebar in `aria-controls`. */
+  id?: string;
   label?: string;
   children: JSX.Element;
   class?: string;
@@ -223,6 +225,18 @@ export type AppWorkspaceSidebarProps = {
   defaultSize?: number;
   minSize?: number;
   maxSize?: number;
+  /**
+   * Hides the desktop navigation completely: the sidebar renders none of its
+   * children and no resize handle, and main panes with `surface="navigation"`
+   * hide with it. The state is application-owned, like a persisted layout.
+   */
+  hidden?: boolean;
+  /**
+   * Makes the sidebar hideable by dragging its resize handle below half its
+   * minimum width. The controller then requests `true`; showing it again is
+   * the application's control.
+   */
+  onHiddenChange?: (hidden: boolean) => void;
 };
 export type AppWorkspaceSidebarVisibility = "always" | "expanded" | "collapsed";
 export type AppWorkspaceSidebarAccessoryVisibility = "always" | "hover";
@@ -596,27 +610,40 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   const minSize = () => props.minSize ?? (props.collapsible ? APP_WORKSPACE_SIDEBAR_COLLAPSED : APP_WORKSPACE_SIDEBAR_MIN);
   const maxSize = () => props.maxSize ?? APP_WORKSPACE_SIDEBAR_MAX;
   const generatedId = createUniqueId();
-  const domId = `k2b-workspace-sidebar-${generatedId}`;
-  const resolved = children(() => props.children);
+  const domId = () => props.id ?? `k2b-workspace-sidebar-${generatedId}`;
+  // Hidden navigation is not rendered at all, so its labels are neither shown
+  // nor reachable; reading the children lazily keeps them from being created.
+  const resolved = children(() => (props.hidden ? undefined : props.children));
   const slots = createMemo(() => flatten(resolved()).filter(sidebarChildSlot));
   const desktop = createMemo(() => slots().find((slot) => slot.kind === SIDEBAR_DESKTOP));
+  let aside: HTMLElement | undefined;
+  onMount(() => {
+    const requestHide = () => props.onHiddenChange?.(true);
+    aside?.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide);
+    onCleanup(() => aside?.removeEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, requestHide));
+  });
   return (
     <>
       <aside
-        id={domId}
+        ref={aside}
+        id={domId()}
         class={`k2b-app-workspace__sidebar ${props.class ?? ""}`}
         aria-label={props.label}
+        hidden={props.hidden || undefined}
         data-mobile={props.mobile === "stacked" ? "stacked" : undefined}
         data-workspace-resizable={resizable() ? "true" : "false"}
         data-workspace-collapsible={props.collapsible ? "true" : "false"}
+        data-workspace-hideable={props.onHiddenChange ? "true" : undefined}
       >
-        <div class="k2b-app-workspace__sidebar-desktop">{desktop()?.children}</div>
+        <Show when={!props.hidden}>
+          <div class="k2b-app-workspace__sidebar-desktop">{desktop()?.children}</div>
+        </Show>
       </aside>
-      <Show when={resizable()}>
+      <Show when={resizable() && !props.hidden}>
         <ResizeHandle
           kind="sidebar"
           edge="end"
-          controls={domId}
+          controls={domId()}
           defaultSize={defaultSize()}
           minSize={minSize()}
           maxSize={maxSize()}

@@ -1,0 +1,34 @@
+import type { EditorView } from "@codemirror/view";
+
+const lineBox = (view: EditorView, from: number) => {
+  const line = view.state.doc.lineAt(Math.min(from, view.state.doc.length));
+  const top = view.coordsAtPos(line.from, 1)?.top;
+  const bottom = view.coordsAtPos(line.to, -1)?.bottom;
+  return top === undefined || bottom === undefined ? null : { top, height: Math.max(1, bottom - top) };
+};
+
+/**
+ * Showing or hiding a side region rewraps every line of the note. Call this
+ * before the region changes and the returned function right after it, before
+ * the next paint: the text at the top of the scroll port stays there, and the
+ * selection and focus are untouched.
+ */
+export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): (() => void) => {
+  // A focused editor keeps the line at the top edge in place itself once it
+  // measures; without this it would only notice the new width a frame late.
+  if (view.hasFocus) return () => view.requestMeasure();
+
+  const portTop = scroller.getBoundingClientRect().top;
+  const pos = view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + 1, y: portTop + 1 }, false);
+  const from = view.state.doc.lineAt(pos).from;
+  const before = lineBox(view, from);
+  // Nothing above the port's top edge can move while the note starts below it.
+  if (!before || before.top >= portTop) return () => {};
+  const within = (portTop - before.top) / before.height;
+  return () => {
+    const after = lineBox(view, from);
+    if (!after) return;
+    const delta = after.top + within * after.height - scroller.getBoundingClientRect().top;
+    if (Math.abs(delta) >= 1) scroller.scrollTop += delta;
+  };
+};

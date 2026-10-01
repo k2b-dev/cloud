@@ -20,7 +20,7 @@ import { requestedPresentationMode, withPresentationMode } from "../../../lib/pr
 import { buildAttachmentsUrl } from "../../params";
 import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import RememberNotebook from "../_components/RememberNotebook.island";
-import { parseSettings } from "../_components/settings/NotebookSettingsStore";
+import { parseNavigationHidden, parseSettings } from "../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
@@ -99,6 +99,7 @@ export default ssr<AuthContext>(async (c) => {
     selectedNoteId: null,
     userId: user.id,
     settings,
+    navigationHidden: parseNavigationHidden(cookieHeader),
     permission,
     attachmentCount: totalAttachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),

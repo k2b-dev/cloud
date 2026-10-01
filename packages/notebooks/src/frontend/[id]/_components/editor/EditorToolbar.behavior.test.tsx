@@ -45,3 +45,53 @@ describe("editor toolbar keyboard focus", () => {
     }
   });
 });
+
+describe("editor toolbar navigation toggle", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  test("hides and shows the navigation from the first toolbar button without taking focus from the note", async () => {
+    const dom = createDomTestHarness();
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: EditorToolbar } = await import("./EditorToolbar");
+    const { NAVIGATION_VISIBILITY_EVENT } = await import("../sidebar/navigation-visibility");
+    const changes: boolean[] = [];
+    const onChange = (event: Event) => void changes.push((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
+    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="de">
+          <EditorToolbar connected editorView={undefined} notebookId="notebook-1" noteId="note-1" initialPanelOpen={false} />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+
+    try {
+      const buttons = Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".notebooks-editor-toolbar .k2b-icon-button"));
+      const toggle = buttons[0]!;
+      // Far left, directly before Bold.
+      expect(buttons.slice(0, 2).map((button) => button.getAttribute("aria-label"))).toEqual(["Navigation ausblenden", "Fett"]);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
+      expect(toggle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }))).toBe(false);
+
+      toggle.click();
+      expect(changes).toEqual([true]);
+      expect(toggle.getAttribute("aria-label")).toBe("Navigation einblenden");
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(decodeURIComponent(dom.document.cookie)).toContain('"navigationHidden":true');
+
+      toggle.click();
+      expect(changes).toEqual([true, false]);
+      expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
+      expect(decodeURIComponent(dom.document.cookie)).toContain('"navigationHidden":false');
+    } finally {
+      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
+      dispose();
+      dom.cleanup();
+    }
+  });
+});

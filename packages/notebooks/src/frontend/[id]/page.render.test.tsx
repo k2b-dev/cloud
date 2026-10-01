@@ -7,6 +7,7 @@ import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
+import * as routeState from "../../service/route-state";
 import "./_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
@@ -57,7 +58,7 @@ beforeEach(() => {
 });
 afterEach(() => railSnapshot.mockRestore());
 
-const renderEmptyNotebook = async (mode: "write" | "book") => {
+const renderEmptyNotebook = async (mode: "write" | "book", preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -76,7 +77,7 @@ const renderEmptyNotebook = async (mode: "write" | "book") => {
   });
   app.get("/app/notebooks/:id", ...handler);
   const response = await app.request(`https://cloud.example.test/app/notebooks/book01?mode=${mode}`, {
-    headers: { "accept-language": "de" },
+    headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
   });
   expect(response.status).toBe(200);
   return response.text();
@@ -121,6 +122,19 @@ test("an empty notebook centers its main-area placeholder in the work area", asy
   expect(placeholder?.attributes["data-align"]).toBe("center");
   expect(placeholder?.attributes.class?.split(/\s+/)).toContain("flex-1");
   expect(placeholder?.text).toBe("Noch keine Notizen");
+});
+
+test("an empty notebook with a hidden navigation offers a visible control that shows it again", async () => {
+  const hidden = await renderEmptyNotebook("write", { navigationHidden: true });
+  // No editor toolbar here, and the sidebar with the create button is hidden.
+  const [show, ...others] = await select(hidden, 'button[aria-controls="notebook-navigation"]');
+  expect(others).toEqual([]);
+  expect(show?.attributes["aria-label"]).toBe("Navigation einblenden");
+  expect(show?.attributes["aria-expanded"]).toBe("false");
+  expect(show?.attributes.disabled).toBeUndefined();
+
+  const visible = await renderEmptyNotebook("write");
+  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]')).toEqual([]);
 });
 
 test("an empty book shows its sidebar placeholder as one line below the pages heading", async () => {
@@ -237,4 +251,86 @@ test.each([
 
   expect(others).toEqual([]);
   expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");
+});
+
+const renderNotebookWithNotes = async (preferences: Record<string, unknown>) => {
+  const note = (shortId: string, title: string) => ({
+    id: `uuid-${shortId}`,
+    shortId,
+    notebookId: notebook.id,
+    parentId: null,
+    title,
+    position: 0,
+    hasChildren: false,
+    historyIncomplete: false,
+    yjsSnapshotAt: null,
+    contentMd: `# ${title}`,
+    yjsSnapshot: null,
+    createdBy: user.id,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    lockedAt: null,
+    children: [],
+  });
+  spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
+  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
+  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([note("note01", "Private folder"), note("note02", "Team notes")]));
+  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue(null));
+  spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.get("/app/notebooks/:id", ...handler);
+  // The graph view keeps the notebook route without redirecting to a note.
+  const response = await app.request("https://cloud.example.test/app/notebooks/book01?mode=graph", {
+    headers: {
+      "accept-language": "de",
+      cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}`,
+    },
+  });
+  expect(response.status).toBe(200);
+  return response.text();
+};
+
+test("a hidden navigation is server-rendered without the note tree or the navigator's note list", async () => {
+  const html = await renderNotebookWithNotes({ sidebarMode: "navigator", navigationHidden: true });
+  const [sidebar, ...others] = await select(html, "aside.k2b-app-workspace__sidebar");
+
+  expect(others).toEqual([]);
+  expect(sidebar?.attributes.id).toBe("notebook-navigation");
+  expect(sidebar?.attributes.hidden).toBeDefined();
+  expect(sidebar?.text).toBe("");
+  expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
+  expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
+  // The navigator's note list pane hides with the sidebar and renders no rows while hidden.
+  const [pane] = await select(html, '[data-workspace-main-region="notebook-notes"]');
+  expect(pane?.attributes["data-surface"]).toBe("navigation");
+  expect((await select(html, '[data-workspace-main-region="notebook-notes"] *')).filter((element) => element.text.trim())).toEqual([]);
+  expect(await select(html, '[data-workspace-main-region="notebook-notes"] a')).toEqual([]);
+  // The graph has no editor toolbar, so the sidebar offers its own show control.
+  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
+    "Navigation einblenden",
+  ]);
+});
+
+test("a visible navigation is server-rendered with its note tree and the navigator's note list", async () => {
+  const simple = await renderNotebookWithNotes({ sidebarMode: "simple" });
+  const [sidebar] = await select(simple, "aside.k2b-app-workspace__sidebar");
+  expect(sidebar?.attributes.hidden).toBeUndefined();
+  expect(sidebar?.text).toContain("Private folder");
+  expect(await select(simple, '[data-app-workspace-resize="sidebar"]')).toHaveLength(1);
+
+  const navigator = await renderNotebookWithNotes({ sidebarMode: "navigator" });
+  const rows = await select(navigator, '[data-workspace-main-region="notebook-notes"] a');
+  expect(rows.map((row) => row.text).join(" ")).toContain("Private folder");
 });

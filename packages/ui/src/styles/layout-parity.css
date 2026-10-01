@@ -877,6 +877,38 @@
   display: none;
 }
 
+/* Hidden navigation takes the sidebar track and the navigation panes with it,
+   so the work area spans the workspace. */
+.k2b-ui .k2b-app-workspace__sidebar[hidden],
+.k2b-ui
+  .k2b-app-workspace:has(
+    > .k2b-app-workspace__sidebar[hidden],
+    > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[hidden]
+  )
+  > .k2b-app-workspace__content
+  > .k2b-app-workspace__main
+  > :is(
+    .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary),
+    .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary) + .k2b-app-workspace__resize,
+    .k2b-app-workspace__resize:has(+ .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary))
+  ) {
+  display: none;
+}
+
+/* A drag below the hide threshold dims the navigation as a preview. It keeps
+   its width until the release hides it, so the work area changes only once. */
+.k2b-ui .k2b-app-workspace__sidebar[data-workspace-hide-preview="true"],
+.k2b-ui
+  .k2b-app-workspace:has(
+    > .k2b-app-workspace__sidebar[data-workspace-hide-preview="true"],
+    > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar[data-workspace-hide-preview="true"]
+  )
+  > .k2b-app-workspace__content
+  > .k2b-app-workspace__main
+  > .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary) {
+  opacity: 0.5;
+}
+
 .k2b-ui .k2b-app-workspace__resize {
   position: absolute;
   top: 0;
@@ -1215,10 +1247,16 @@
   }
 
   .k2b-ui
-    .k2b-app-workspace:has(> .k2b-app-workspace__sidebar, > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar)
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__sidebar:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+    )
     > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"],
   .k2b-ui
-    .k2b-app-workspace:has(> .k2b-app-workspace__sidebar, > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar)
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__sidebar:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+    )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
     left: var(--k2b-workspace-sidebar-width, 13rem);
@@ -1276,7 +1314,7 @@
      content instead of handing navigation to the host's mobile chrome. */
   /* A viewport cap, not a percentage: the grid row is content-sized, so a
      percentage would be cyclic and collapse the list to one row. */
-  .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] {
+  .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]) {
     display: flex;
     max-height: 50dvh;
     grid-area: mobile;
