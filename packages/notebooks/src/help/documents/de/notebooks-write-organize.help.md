@@ -65,6 +65,18 @@ Tab rückt im Notizeditor ein. So verschachtelst du Listen und richtest Code aus
 - **Tab für den Fokus behalten:** Öffne in den **Einstellungen** den Bereich **Notizbuch – Ansicht und Verhalten** und aktiviere **Tab-Taste bewegt den Fokus statt einzurücken**. Die Auswahl wird in diesem Browser gespeichert und gilt sofort.
 :::
 
+## Navigation ausblenden {icon="layout-sidebar-left-collapse"}
+
+Blende die Navigation aus, um mit der ganzen Breite zu schreiben oder wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen sollen.
+
+:::reference
+- **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden** oder ziehe den Rand der Navigation fast ganz nach links. Die Navigation verschwindet in beiden Layouts vollständig, auch die Notizliste des Navigators.
+- **Einblenden:** Wähle an derselben Stelle **Navigation einblenden**, drücke **Cmd/Strg+Alt+S** oder tippe in der Cloud-Suche `>` und führe **Notizbuch-Navigation einblenden** aus. Kurzbefehl und Aktion funktionieren auch dort, wo der Editor keine Werkzeugleiste zeigt, etwa in Schreibgeschützt.
+- **Bleibt ausgeblendet:** Die Einstellung wird in diesem Browser gespeichert und gilt für alle Notizbücher, auch nach dem Neuladen. Ein Notizbuch mit ausgeblendeter Navigation öffnet ohne sie, Notiztitel erscheinen also auch beim Laden nicht.
+- **Deine Stelle in der Notiz:** Beim Aus- und Einblenden bleiben der Cursor und der Text oben im Editor, wo sie sind.
+- **Smartphones:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Die Schaltfläche erscheint auf breiteren Bildschirmen, wo die Navigation neben der Notiz steht.
+:::
+
 ## Typografische Zeichen {icon="typography"}
 
 Notizbücher zeigen einige getippte Zeichenfolgen als ein Zeichen an, wenn du eine Notiz liest oder bearbeitest. Die Notiz behält die getippten Zeichen, deshalb sehen Suche, Export und Assistant sie unverändert.

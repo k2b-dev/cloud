@@ -65,6 +65,18 @@ Tab indents in the note editor, so you can nest lists and line up code without r
 - **Keep Tab for focus:** In **Settings**, open **Notebook — View & behavior** and turn on **Tab moves focus instead of indenting**. The choice is stored in this browser and applies immediately.
 :::
 
+## Hide the navigation {icon="layout-sidebar-left-collapse"}
+
+Hide the navigation to write with the full width, or when others can see your screen and should not see your notes and folders.
+
+:::reference
+- **Hide:** Select **Hide navigation** at the far left of the editor toolbar, or drag the navigation's edge almost all the way to the left. The navigation disappears completely in both layouts, including the navigator's note list.
+- **Show:** Select **Show navigation** in the same place, press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Show notebook navigation**. The shortcut and the action also work where the editor toolbar is not shown, such as in Read-only.
+- **Stays hidden:** The choice is stored in this browser and applies to every notebook, also after a reload. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
+- **Your place in the note:** Hiding or showing the navigation keeps the cursor and the text at the top of the editor where they are.
+- **Phones:** Small screens keep the navigation in the menu. The button appears on wider screens, where the navigation sits beside the note.
+:::
+
 ## Typographic symbols {icon="typography"}
 
 Notebooks shows some typed sequences as one symbol when you read or edit a note. The note keeps the characters you typed, so search, export, and Assistant see them unchanged.

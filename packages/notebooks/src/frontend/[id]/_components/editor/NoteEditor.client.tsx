@@ -46,11 +46,13 @@ import {
 import { extractTaskProgress } from "../detail/tasks";
 import { extractTocFromMarkdown } from "../detail/toc";
 import { writeSettings } from "../settings/NotebookSettingsStore";
+import { NAVIGATION_VISIBILITY_EVENT, NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT } from "../sidebar/navigation-visibility";
 import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { createNoteNavigationCoordinator, resolveSameNotebookNoteTarget } from "./note-navigation";
+import { keepReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createTabKeyPreference } from "./tab-key-preference";
 
@@ -755,6 +757,25 @@ function EditorInstance(props: EditorInstanceProps) {
     // First emit so the panel reflects the current doc immediately on mount,
     // not only after the first keystroke.
     emitDerivedDocState();
+
+    // Showing or hiding the navigation rewraps the note; the same text stays at the top.
+    let restoreReadingPosition: (() => void) | null = null;
+    const onNavigationWillChange = () => {
+      const view = editorView();
+      restoreReadingPosition = view && scrollPort ? keepReadingPosition(view, scrollPort) : null;
+    };
+    const onNavigationChanged = () => {
+      const restore = restoreReadingPosition;
+      restoreReadingPosition = null;
+      // After every listener of this event, so the navigation has already changed.
+      if (restore) queueMicrotask(restore);
+    };
+    window.addEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
+    window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
+    onCleanup(() => {
+      window.removeEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
+      window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
+    });
 
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);

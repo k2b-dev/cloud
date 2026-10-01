@@ -46,6 +46,8 @@ export type NotebookContext = {
   selectedNoteId: string | null;
   userId: string;
   settings: NotebookSettings;
+  /** Global preference: the desktop navigation is hidden completely. */
+  navigationHidden: boolean;
   permission: string;
   /** Number of attachments in the notebook — gates the sidebar link. */
   attachmentCount: number;

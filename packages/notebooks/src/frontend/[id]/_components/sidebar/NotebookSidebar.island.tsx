@@ -1,7 +1,8 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, createNavigation, type NavigationItem, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -14,6 +15,7 @@ import { writeSettings } from "../settings/NotebookSettingsStore";
 import CreateNoteButton from "./CreateNoteButton";
 import NotebookNavigator from "./NotebookNavigator";
 import NoteTree, { noteActionItems, useNoteActions } from "./NoteTree";
+import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, navigatorStart, setNavigationHidden } from "./navigation-visibility";
 import TagsButton, { openTagsModal } from "./TagsButton";
 import { type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NotebookContext, NoteTreeNode } from "./types";
@@ -68,6 +70,22 @@ export default function NotebookSidebar(props: Props) {
   const homepageHref = () => (homepageNote() ? buildNoteUrl(notebook().id, homepageNote()!.id, props.ctx.presentationMode) : null);
   const homepageIsActive = () => homepageNote()?.id === selectedNoteId();
   const vt = (key: string) => `notebook-sidebar-${notebook().id}-${key}`;
+  const navigationHidden = createNavigationHidden(props.ctx.navigationHidden);
+
+  // Every page with the navigation can show it again, also those without the editor toolbar.
+  createEffect(() => {
+    const hidden = navigationHidden();
+    onCleanup(
+      registerContextAwareCommand({
+        id: "notebooks.navigation.toggle",
+        title: hidden ? t().showNavigationCommand : t().hideNavigationCommand,
+        description: t().navigationCommandDescription,
+        icon: hidden ? "ti ti-layout-sidebar-left-expand" : "ti ti-layout-sidebar-left-collapse",
+        shortcut: "mod+alt+s",
+        action: () => setNavigationHidden(!hidden),
+      }),
+    );
+  });
 
   const explainMissingHomepage = () =>
     void prompts.alert(t().noHomepageDescription, {
@@ -234,7 +252,13 @@ export default function NotebookSidebar(props: Props) {
   return (
     <>
       <WorkspaceNavigationProvider navigation={mobileNavigation} label={notebook().name} />
-      <AppWorkspace.Sidebar resizable>
+      <AppWorkspace.Sidebar
+        id={NOTEBOOK_NAVIGATION_ID}
+        label={t().navigation}
+        resizable
+        hidden={navigationHidden()}
+        onHiddenChange={setNavigationHidden}
+      >
         <Show when={workspaceError()}>
           <div
             role="alert"
@@ -345,9 +369,9 @@ export default function NotebookSidebar(props: Props) {
               canWrite={canWrite}
               favoriteNoteIds={[...favoriteNoteIds()]}
               tags={tags()}
-              initialSortMode={props.ctx.settings.navigatorSort}
+              initialSortMode={navigatorStart(props.ctx).sortMode}
               dateConfig={props.ctx.dateConfig}
-              initialQuery={props.ctx.navigatorQuery}
+              initialQuery={navigatorStart(props.ctx).query}
               presentationMode={props.ctx.presentationMode}
             />
           </Show>
