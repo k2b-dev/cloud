@@ -166,7 +166,7 @@ describe("IMAP connection failures", () => {
 
     test("an aborted operation rejects without crashing the process", async () => {
       const controller = new AbortController();
-      // The abort handler closes the client, like a lost sync lease while the provider still answers LOGIN.
+      // The abort handler closes the client, like a lost sync lease while LOGIN is still unanswered.
       const server = loginServer(() => controller.abort());
       const session = sessionFor(server.port);
       let ran = false;
