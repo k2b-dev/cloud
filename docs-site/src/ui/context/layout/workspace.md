@@ -78,14 +78,20 @@ Set `hidden` on `Sidebar` to hide the desktop navigation completely, for
 focused work or when others can see the screen. A hidden sidebar renders none
 of its children and no resize handle, so its labels are neither visible nor
 reachable, and main panes with `surface="navigation"` hide with it. The work
-area takes the full width. Below 1024 px nothing changes: the host's mobile
-navigation stays available. Pass `onHiddenChange` as well to make a drag of
-the resize handle below half the minimum width hide the sidebar; the shared
-controller previews the hidden state during the drag, requests `true` on
-release, and keeps the width from before the drag for the next time it shows.
+area takes the full width. Below 1024 px the host's mobile navigation menu
+stays available; a `mobile="stacked"` sidebar hides there as well. Pass
+`onHiddenChange` as well to make a drag of the resize handle below half the
+minimum width hide the sidebar; the shared controller dims the sidebar at its
+minimum width as a preview during the drag, requests `true` on release, and
+keeps the width from before the drag for the next time it shows. The work area
+therefore changes width once, when the application applies `hidden`.
 The hidden state belongs to the application like a persisted layout: render it
 on the server so a hidden navigation never paints, and give the control that
 shows it again `aria-expanded` and `aria-controls` with the sidebar's `id`.
+Every view that renders the hidden sidebar needs such a visible control, not
+only the view that hid it. When focus is inside the sidebar or on its resize
+handle as it hides, the focused element disappears; move focus to a defined
+target, such as the work area or the control that shows the sidebar again.
 
 ```tsx
 const [hidden, setHidden] = createSignal(initiallyHidden);

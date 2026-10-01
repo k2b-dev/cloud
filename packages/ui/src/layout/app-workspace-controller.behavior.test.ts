@@ -356,8 +356,14 @@ describe("AppWorkspace resize controller behaviour", () => {
   test("hides a hideable sidebar dragged below half its minimum without persisting the drag", () => {
     const { handle, root, sidebar } = workspace({ hideable: true, sidebarWidth: 240 });
     const written: unknown[] = [];
-    const requests: Event[] = [];
-    sidebar.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, (event) => requests.push(event));
+    // What the layout looks like when the host receives the request.
+    const requests: { preview: string | undefined; width: string }[] = [];
+    sidebar.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, () =>
+      requests.push({
+        preview: sidebar.dataset.workspaceHidePreview,
+        width: root.style.getPropertyValue("--k2b-workspace-sidebar-width"),
+      }),
+    );
     const dispose = installAppWorkspaceController({ root, writeState: (state) => written.push(state) });
     flushFrames();
     const drag = (clientX: number) => {
@@ -374,6 +380,8 @@ describe("AppWorkspace resize controller behaviour", () => {
     expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
     drag(80);
     expect(sidebar.dataset.workspaceHidePreview).toBe("true");
+    // The preview keeps the minimum width, so the work area does not change during the drag.
+    expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("176px");
     // Dragging back out cancels the preview.
     drag(200);
     expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
@@ -382,7 +390,8 @@ describe("AppWorkspace resize controller behaviour", () => {
     expect(sidebar.dataset.workspaceHidePreview).toBe("true");
 
     window.dispatchEvent(new window.PointerEvent("pointerup", { clientX: 20, pointerId: 7 }));
-    expect(requests).toHaveLength(1);
+    // The request arrives in the layout the user saw at release, before the width is restored.
+    expect(requests).toEqual([{ preview: "true", width: "200px" }]);
     expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
     // The width before the drag is what showing the sidebar again restores.
     expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("240px");

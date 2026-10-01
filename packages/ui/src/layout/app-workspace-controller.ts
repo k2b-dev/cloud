@@ -307,8 +307,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingClient = null;
     active.moved ||= client !== active.startClient;
     const requested = active.startSize + (client - active.startClient) * active.direction;
-    // Below half the smallest visible width a hideable sidebar disappears as a
-    // preview; dragging back out restores the live width.
+    // Below half the smallest visible width a hideable sidebar stays at its
+    // minimum and previews hiding; dragging back out resumes the live width.
     const hiding =
       active.kind === "sidebar" && sidebarHideable(active.root) && requested < sizeLimits(active.root, active.handle, active.kind).min / 2;
     if (hiding !== active.hiding) {
@@ -333,11 +333,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     delete finished.root.dataset.workspaceResizeActive;
     delete finished.handle.dataset.workspaceResizeActive;
     if (finished.hiding) {
-      // The width before the drag stays the remembered width, so showing the
-      // sidebar again restores it rather than the minimum the drag passed.
+      // The request comes first, while the layout is still the one on screen,
+      // so the host sees the sidebar disappear in a single change. The width
+      // before the drag then stays the remembered width for the next time it
+      // shows; a host that declines the request gets that width back.
+      sidebarElement(finished.root)?.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_HIDE_EVENT));
       previewSidebarHidden(finished.root, false);
       applySize(finished.root, finished.handle, "sidebar", finished.startSize);
-      sidebarElement(finished.root)?.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_HIDE_EVENT));
     } else if (finished.moved) {
       // A pane's rendered width may have been fitted below the pointer's live
       // preference to keep the main region usable. Persist that preference,

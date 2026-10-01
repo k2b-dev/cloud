@@ -453,9 +453,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
   test("hides the navigation panes and frees the sidebar track with a hidden sidebar", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     const rule = css.match(/\/\* Hidden navigation takes[\s\S]*?\{\s*display: none;\s*\}/)?.[0] ?? "";
+    const preview = css.match(/\/\* A drag below the hide threshold[\s\S]*?\{\s*opacity: 0\.5;\s*\}/)?.[0] ?? "";
 
-    expect(rule).toContain('.k2b-app-workspace__sidebar:is([hidden], [data-workspace-hide-preview="true"])');
+    expect(rule).toContain(".k2b-app-workspace__sidebar[hidden]");
     expect(rule).toContain('.k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary)');
+    // The drag preview only dims, so the work area keeps its width until the release.
+    expect(rule).not.toContain("data-workspace-hide-preview");
+    expect(preview).toContain('.k2b-app-workspace__sidebar[data-workspace-hide-preview="true"]');
     expect(css).toContain('.k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])');
   });
 

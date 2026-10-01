@@ -75,7 +75,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Box = { display: string; left: number; width: number } | null;
+type Box = { display: string; left: number; opacity: string; width: number } | null;
 type Layout = { sidebar: Box; pane: Box; main: Box; workspace: Box; handles: number; privateText: boolean };
 
 const load = async (width: number) => {
@@ -97,7 +97,8 @@ const layout = (page: Page): Promise<Layout> =>
       const element = document.querySelector<HTMLElement>(selector);
       if (!element) return null;
       const rect = element.getBoundingClientRect();
-      return { display: getComputedStyle(element).display, left: Math.round(rect.left), width: Math.round(rect.width) };
+      const style = getComputedStyle(element);
+      return { display: style.display, left: Math.round(rect.left), opacity: style.opacity, width: Math.round(rect.width) };
     };
     return {
       sidebar: box(".k2b-app-workspace__sidebar"),
@@ -143,7 +144,7 @@ describe("hidden workspace navigation", () => {
     }
   });
 
-  test("at 1440 px a drag below half the minimum width hides the navigation and showing it restores the width", async () => {
+  test("at 1440 px a drag below half the minimum width previews and then hides the navigation, and showing it restores the width", async () => {
     const page = await load(1440);
     try {
       const handle = await page.locator('[data-app-workspace-resize="sidebar"]').boundingBox();
@@ -157,9 +158,11 @@ describe("hidden workspace navigation", () => {
       expect(clamped.sidebar?.width).toBe(176);
 
       await page.mouse.move(40, y, { steps: 4 });
+      // The preview dims the navigation in place: the work area keeps its width until the release.
       const preview = await layout(page);
-      expect(preview.sidebar?.display).toBe("none");
-      expect(preview.pane?.display).toBe("none");
+      expect(preview.sidebar).toEqual({ ...clamped.sidebar!, opacity: "0.5" });
+      expect(preview.pane).toEqual({ ...clamped.pane!, opacity: "0.5" });
+      expect(preview.main).toEqual(clamped.main);
 
       await page.mouse.up();
       expect(await page.evaluate(() => (window as unknown as { fixture: { hidden: () => boolean } }).fixture.hidden())).toBe(true);
