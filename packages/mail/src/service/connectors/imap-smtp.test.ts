@@ -10,6 +10,7 @@ import {
   connectSmtpConnection,
   disposeImapClient,
   downloadSelectedSources,
+  listenOnImapSession,
   mapFetchedEnvelope,
   normalizeImapQuotaEvidence,
   parseEnvelopeHeaders,
@@ -125,6 +126,83 @@ describe("IMAP connection failures", () => {
     } finally {
       server.stop(true);
     }
+  });
+
+  describe("during LOGIN", () => {
+    // Greets, answers CAPABILITY and ID, and leaves LOGIN unanswered; `onLogin` decides what happens next.
+    const loginServer = (onLogin: (socket: Socket<undefined>) => void) =>
+      Bun.listen({
+        hostname: "127.0.0.1",
+        port: 0,
+        socket: {
+          open: (socket) => {
+            socket.write("* OK fixture ready\r\n");
+          },
+          data: (socket, data) => {
+            for (const line of data.toString().split("\r\n").filter(Boolean)) {
+              const [tag, command] = line.split(" ");
+              switch (command?.toUpperCase()) {
+                case "CAPABILITY":
+                  socket.write(`* CAPABILITY IMAP4rev1 ID\r\n${tag} OK done\r\n`);
+                  break;
+                case "ID":
+                  socket.write(`* ID NIL\r\n${tag} OK done\r\n`);
+                  break;
+                case "LOGIN":
+                  onLogin(socket);
+                  break;
+                default:
+                  socket.write(`${tag} OK done\r\n`);
+              }
+            }
+          },
+        },
+      });
+
+    // ImapFlow rejects connect() first and then fails the pending LOGIN with an 'error' event. Without a listener
+    // that event throws inside ImapFlow and ends Mail as an unhandled rejection; bun test fails the test on one.
+    // Waiting for the next macrotask lets the microtasks of the close, including that event, run first.
+    const afterClose = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    test("an aborted operation rejects without crashing the process", async () => {
+      const controller = new AbortController();
+      // The abort handler closes the client, like a lost sync lease while LOGIN is still unanswered.
+      const server = loginServer(() => controller.abort());
+      const session = sessionFor(server.port);
+      let ran = false;
+      try {
+        const operation = runImapSession(
+          session,
+          async () => {
+            ran = true;
+          },
+          controller.signal,
+        );
+        await expect(operation).rejects.toMatchObject({ code: "ClosedAfterConnectText" });
+        await afterClose();
+        expect(ran).toBe(false);
+        expect(session.failure()).toMatchObject({ code: "NoConnection" });
+        expect(session.client.usable).toBe(false);
+      } finally {
+        server.stop(true);
+      }
+    });
+
+    test("a change listener rejects without crashing the process", async () => {
+      // The provider drops the connection instead of answering LOGIN.
+      const server = loginServer((socket) => socket.end());
+      const session = sessionFor(server.port);
+      try {
+        await expect(
+          listenOnImapSession(session, { folderPath: "INBOX", uidValidity: "1", highestModseq: null, maxPendingHints: 8 }),
+        ).rejects.toMatchObject({ code: "ClosedAfterConnectText" });
+        await afterClose();
+        expect(session.failure()).toMatchObject({ code: "NoConnection" });
+        expect(session.client.usable).toBe(false);
+      } finally {
+        server.stop(true);
+      }
+    });
   });
 
   test("are tracked on every ImapFlow client Mail creates", async () => {

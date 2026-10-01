@@ -1341,12 +1341,11 @@ const setFolderSubscription = async (config: ProviderConnectionInput, path: stri
     }
   });
 
-const listenForChanges = async (
-  config: ProviderConnectionInput,
+/** Connects and opens a change listener, and closes the client when either step fails. */
+export const listenOnImapSession = async (
+  { client }: ImapSession,
   request: ConnectorChangeListenerRequest,
 ): Promise<ConnectorChangeListener> => {
-  const endpoint = await resolvePublicEndpoint(config.imap);
-  const { client } = createImapClient(config, endpoint);
   try {
     await client.connect();
     return await openImapChangeListener(client, request);
@@ -1354,6 +1353,14 @@ const listenForChanges = async (
     client.close();
     throw error;
   }
+};
+
+const listenForChanges = async (
+  config: ProviderConnectionInput,
+  request: ConnectorChangeListenerRequest,
+): Promise<ConnectorChangeListener> => {
+  const endpoint = await resolvePublicEndpoint(config.imap);
+  return listenOnImapSession(createImapClient(config, endpoint), request);
 };
 
 export const imapSmtpConnector: MailConnector = {
