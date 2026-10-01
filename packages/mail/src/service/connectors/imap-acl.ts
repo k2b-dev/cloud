@@ -1,5 +1,5 @@
-import { createRequire } from "node:module";
 import type { ImapFlow } from "imapflow";
+import { encodePath } from "imapflow/lib/tools.js";
 import type { ConnectorCapabilities, FolderRightsSource } from "../../contracts";
 
 type ImapAttribute = { type: string; value: string };
@@ -11,11 +11,6 @@ type ImapFlowRaw = ImapFlow & {
     attributes?: ImapAttribute[] | false,
     options?: { untagged?: Record<string, (response: ImapUntagged) => Promise<void> | void> },
   ): Promise<ImapCommandResponse>;
-};
-
-const require = createRequire(import.meta.url);
-const { encodePath } = require("imapflow/lib/tools.js") as {
-  encodePath(client: ImapFlow, path: string): string;
 };
 
 type EffectiveFolderRights = {

@@ -74,7 +74,27 @@ describe("streaming IMAP APPEND", () => {
     expect(mock.client.writeBytesCounter).toBe(14);
     expect(mock.nextCalled).toBe(true);
     expect(mock.closed).toBe(false);
-    expect(mock.attributes.at(-1)).toEqual({ type: "TEXT", value: "{12}" });
+    expect(mock.attributes).toEqual([
+      { type: "ATOM", value: "Sent" },
+      [{ type: "ATOM", value: "\\Seen" }],
+      { type: "STRING", value: "12-Jul-2026 12:00:00 +0000" },
+      { type: "TEXT", value: "{12}" },
+    ]);
+  });
+
+  test("leaves the internal date to the server when the given date is invalid", async () => {
+    const mock = mockClient();
+    await appendStream({
+      client: mock.client as never,
+      path: "Sent",
+      source: Readable.from([Buffer.from("body")]),
+      byteLength: 4,
+      internalDate: new Date(Number.NaN),
+    });
+    expect(mock.attributes).toEqual([
+      { type: "ATOM", value: "Sent" },
+      { type: "TEXT", value: "{4}" },
+    ]);
   });
 
   test("fails closed with the source error when the advertised length is wrong", async () => {

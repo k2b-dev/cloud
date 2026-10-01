@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import type { Socket } from "bun";
-import type { ListResponse } from "imapflow";
+import type { FetchMessageObject, ListResponse } from "imapflow";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import {
   assertProviderKeywordsSupported,
@@ -10,6 +10,7 @@ import {
   connectSmtpConnection,
   disposeImapClient,
   downloadSelectedSources,
+  mapFetchedEnvelope,
   normalizeImapQuotaEvidence,
   parseEnvelopeHeaders,
   parseReferences,
@@ -166,6 +167,60 @@ describe("IMAP source downloads", () => {
     });
     await expect(batch).rejects.toMatchObject({ code: "IMAP_CONNECTION_LOST" });
     expect(consumed).toEqual(["message-1"]);
+  });
+
+  test("report no expected size when the FETCH response carried none", async () => {
+    const sizes: Array<number | null> = [];
+    await downloadSelectedSources(
+      {
+        usable: true,
+        mailbox: { uidValidity: 10n } as never,
+        download: async (uid) => ({ meta: { contentType: "message/rfc822" }, content: Readable.from([String(uid)]) }),
+      },
+      requests.slice(0, 1),
+      async (download) => {
+        sizes.push(download.expectedSize);
+      },
+    );
+    expect(sizes).toEqual([null]);
+  });
+});
+
+describe("IMAP envelope mapping", () => {
+  const request = { folderPath: "INBOX", folderStableKey: "inbox", uidValidity: "10", highUid: 1, limit: 1 };
+
+  test("keep a Date header imapflow could not parse out of the sent time", async () => {
+    const mapped = await mapFetchedEnvelope(
+      { seq: 1, uid: 1, envelope: { date: "not a real date", subject: "Hello" } } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.sentAt).toBeNull();
+    expect(mapped.internalDate).toEqual(new Date(0));
+  });
+
+  test("use a parsed Date header as the sent time and internal date fallback", async () => {
+    const date = new Date("2026-07-13T12:00:00.000Z");
+    const mapped = await mapFetchedEnvelope({ seq: 1, uid: 1, envelope: { date } } satisfies FetchMessageObject, request);
+    expect(mapped.sentAt).toEqual(date);
+    expect(mapped.internalDate).toEqual(date);
+  });
+
+  test("fall back to the sent time when imapflow could not parse the INTERNALDATE", async () => {
+    const date = new Date("2026-07-13T12:00:00.000Z");
+    const mapped = await mapFetchedEnvelope(
+      { seq: 1, uid: 1, internalDate: "not a real date", envelope: { date } } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.internalDate).toEqual(date);
+  });
+
+  test("use a parsed INTERNALDATE as the internal date", async () => {
+    const internalDate = new Date("2026-07-14T08:30:00.000Z");
+    const mapped = await mapFetchedEnvelope(
+      { seq: 1, uid: 1, internalDate, envelope: { date: new Date("2026-07-13T12:00:00.000Z") } } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.internalDate).toEqual(internalDate);
   });
 });
 
