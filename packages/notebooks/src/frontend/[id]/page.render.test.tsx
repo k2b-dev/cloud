@@ -10,6 +10,8 @@ import * as noteStore from "../../service/notes";
 import "./_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
+const { default: attachmentsHandler } = await import("./attachments/page");
+const { default: tagHandler } = await import("./tags/[tag]/page");
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "writer",
@@ -187,4 +189,49 @@ test("a book page is server-rendered with the start page first and the other pag
 
   // The start page lives below "Kapitel 2" and is still the first row, listed once.
   expect(rows.map((row) => row.attributes["data-k2b-nav-tree-id"])).toEqual(["note04", "note01", "note03", "note02"]);
+});
+
+test.each(["write", "book"] as const)(
+  "a notebook shown in %s mode records itself as the notebook the Notebooks entry opens next",
+  async (mode) => {
+    const html = await renderEmptyNotebook(mode);
+    const [island, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
+
+    expect(others).toEqual([]);
+    expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");
+  },
+);
+
+test.each([
+  ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments", attachmentsHandler],
+  ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas", tagHandler],
+] as const)("the %s page of a notebook also records the notebook", async (_name, route, path, pageHandler) => {
+  spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
+  spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
+  spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
+  spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
+  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.tag, "listNotesForTag").mockResolvedValue({ items: [], total: 0 }));
+  spies.push(spyOn(notebooksService.tag, "countNotesForTag").mockResolvedValue(0));
+  spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
+  spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
+  spies.push(
+    spyOn(notebooksService.attachment, "listPaginated").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 200, hasNext: false }),
+  );
+  const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
+  app.use("*", async (c, next) => {
+    c.set("actor", { kind: "user", user });
+    c.set("user", user);
+    c.set("runtime", { apps: [] });
+    await next();
+  });
+  app.get(route, ...pageHandler);
+  const response = await app.request(`https://cloud.example.test${path}`);
+  expect(response.status).toBe(200);
+  const [island, ...others] = await select(await response.text(), 'solid-island[data-file="RememberNotebook.island.tsx"]');
+
+  expect(others).toEqual([]);
+  expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");
 });

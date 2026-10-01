@@ -6,7 +6,7 @@ description: Grundbegriffe und die ersten Schritte mit einem Space.
 order: 100
 ---
 
-Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen Personen, Kommentaren und einfacher Planung. Die Spaces-Übersicht zeigt alle Arbeitsbereiche, auf die du zugreifen kannst. Dort kannst du einen Space erstellen, suchen oder erneut öffnen.
+Spaces bündelt gemeinsame Arbeit mit Aufgaben, Terminen, Listen, zuständigen Personen, Kommentaren und einfacher Planung. Die Spaces-Übersicht zeigt alle Arbeitsbereiche, auf die du zugreifen kannst. Dort kannst du einen Space erstellen, suchen oder erneut öffnen. Öffnest du Spaces über die Navigation, landest du im Space, den du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Wurde er gelöscht oder nicht mehr mit dir geteilt, öffnet sich stattdessen die Übersicht.
 
 ## Grundbegriffe {icon="layout-grid"}
 

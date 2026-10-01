@@ -67,6 +67,8 @@ This order keeps mistakes inexpensive. A clear table and a few representative re
 
 ## Find your work in a base {icon="layout-dashboard"}
 
+Opening Grids from the navigation takes you back to the base page you looked at last in this browser, even if that was in another tab. If you can no longer open that base, the overview opens instead.
+
 Use **New** in Edit mode to create a table, view, form, document template, workflow, or App. The menu only offers actions you may use. For table-based resources, select a table; the current table is preselected when eligible. **View** opens the query editor, where you configure and save the view.
 
 **Documents** is always expandable: open **All documents** or select a template to see its generated documents. Base admins manage workflow email templates under **Settings → Email templates**.

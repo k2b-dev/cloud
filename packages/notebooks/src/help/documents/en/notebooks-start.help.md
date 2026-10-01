@@ -16,6 +16,7 @@ Notebooks are Markdown workspaces for knowledge that should stay readable first 
 - **All notebooks:** The overview lists every notebook you can access. Open one to continue working, or create a notebook when the knowledge needs its own access and settings.
 - **Favorites:** Favorite a notebook when it should stay easy to reach from the overview and sidebar.
 - **Search and recents:** Use search for a known name and recents when you want to resume the last workspace.
+- **Back where you left off:** Opening Notebooks from the navigation takes you to the notebook you looked at last in this browser, even if that was in another tab. If it was deleted or is no longer shared with you, the overview opens instead.
 - **Templates:** Choose a template only when its starting structure fits the work. A blank notebook is the safest default for a new use case.
 :::
 

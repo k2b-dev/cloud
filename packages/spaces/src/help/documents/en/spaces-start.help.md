@@ -6,7 +6,7 @@ description: Core concepts and first setup path.
 order: 100
 ---
 
-Spaces is for shared work that needs tasks, events, lists, assignees, comments, and lightweight planning. The Spaces overview lists every work area you can access and is the right place to create, find, or return to a space.
+Spaces is for shared work that needs tasks, events, lists, assignees, comments, and lightweight planning. The Spaces overview lists every work area you can access and is the right place to create, find, or return to a space. Opening Spaces from the navigation takes you to the space you looked at last in this browser, even if that was in another tab; if it was deleted or is no longer shared with you, the overview opens instead.
 
 ## Overview {icon="layout-grid"}
 

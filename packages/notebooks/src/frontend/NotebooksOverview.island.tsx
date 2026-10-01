@@ -21,7 +21,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { setLastNotebookId, setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
+import { setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
 import { notebooksPageMessages } from "./messages";
 import { createNoteCommands } from "./note-commands";
 
@@ -196,10 +196,7 @@ export default function NotebooksOverview(props: Props) {
   const activityItems = createMemo(() => activityResults.pages().flatMap((page) => page.items));
   const activityError = () => activityResults.error()?.message ?? initialActivityError();
 
-  const openNotebook = (notebook: CreatedNotebook) => {
-    setLastNotebookId(notebook.id);
-    navigateTo(`/app/notebooks/${notebook.id}`);
-  };
+  const openNotebook = (notebook: CreatedNotebook) => navigateTo(`/app/notebooks/${notebook.id}`);
 
   const createNotebookMutation = mutations.create<CreatedNotebook, { name: string; description?: string }>({
     mutation: async (input) => {
