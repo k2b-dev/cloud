@@ -20,9 +20,12 @@ export default function LanguageSwitch() {
         { label: "English", choice: "radio", checked: () => !german(), action: () => choose("en") },
       ]}
     >
-      <Dropdown.Trigger variant="ghost" size="sm" class="auth-language-trigger">
-        {german() ? "Deutsch" : "English"}
-        <i class="ti ti-chevron-down" aria-hidden="true" />
+      {/* Below md the language code keeps the footer on one row on a phone; the full name stays the accessible label. */}
+      <Dropdown.Trigger variant="ghost" size="sm" class="auth-language-trigger" label={german() ? "Sprache: Deutsch" : "Language: English"}>
+        <i class="ti ti-language md:hidden" aria-hidden="true" />
+        <span class="hidden md:inline">{german() ? "Deutsch" : "English"}</span>
+        <span class="md:hidden">{german() ? "DE" : "EN"}</span>
+        <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
       </Dropdown.Trigger>
     </Dropdown.Root>
   );

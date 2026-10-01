@@ -7,7 +7,10 @@ import { createPreferenceController } from "./preference-controller";
 /**
  * Labeled language and theme controls for the MinimalLayout footer. The
  * language trigger names the current language; the theme button names the
- * mode it switches to, like every other Cloud preference menu.
+ * mode it switches to, like every other Cloud preference menu. Below `md` both
+ * are compact, the language code and the theme icon with the full names as
+ * accessible labels, so they fit next to the legal links on a phone. CSS picks
+ * the form, so the server response is already final.
  */
 export default function MinimalLayoutPreferences(props: { initialTheme: CloudTheme }) {
   const locale = useLocale();
@@ -35,13 +38,14 @@ export default function MinimalLayoutPreferences(props: { initialTheme: CloudThe
       >
         <Dropdown.Trigger label={`${t().language}: ${languageName()}`} size="sm" tooltip={false} variant="ghost">
           <i class="ti ti-language" aria-hidden="true" />
-          {languageName()}
-          <i class="ti ti-chevron-down" aria-hidden="true" />
+          <span class="hidden md:inline">{languageName()}</span>
+          <span class="md:hidden">{language().toUpperCase()}</span>
+          <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
         </Dropdown.Trigger>
       </Dropdown.Root>
-      <Button onClick={preferences.toggleTheme} size="sm" variant="ghost">
+      <Button aria-label={preferences.themeLabel()} onClick={preferences.toggleTheme} size="sm" variant="ghost">
         <i class={preferences.theme() === "light" ? "ti ti-moon" : "ti ti-sun-high"} aria-hidden="true" />
-        {preferences.themeLabel()}
+        <span class="hidden md:inline">{preferences.themeLabel()}</span>
       </Button>
     </div>
   );
