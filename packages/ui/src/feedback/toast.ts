@@ -117,11 +117,31 @@ const ensureContainer = (): HTMLElement | null => {
   return container;
 };
 
+/** Moving nodes resets their scroll offsets and drops focus; a custom slot can hold a scrolled list or a focused control. */
+const captureViewState = (container: HTMLElement) => {
+  const focused =
+    document.activeElement instanceof HTMLElement && container.contains(document.activeElement) ? document.activeElement : null;
+  const scrolled = Array.from(container.querySelectorAll<HTMLElement>("*"))
+    .filter((element) => element.scrollTop || element.scrollLeft)
+    .map((element) => [element, element.scrollTop, element.scrollLeft] as const);
+  const railTop = container.scrollTop;
+  return (rail: HTMLElement) => {
+    rail.scrollTop = railTop;
+    for (const [element, top, left] of scrolled) {
+      element.scrollTop = top;
+      element.scrollLeft = left;
+    }
+    if (focused?.isConnected && rail.contains(focused)) focused.focus({ preventScroll: true });
+  };
+};
+
 const promoteToTopLayer = (container: HTMLElement): HTMLElement => {
   if (typeof container.showPopover !== "function" || !container.isConnected) return container;
   let active = container;
+  let restore: ((rail: HTMLElement) => void) | null = null;
   try {
     if (container.matches(":popover-open") || document.querySelector("dialog:modal")) {
+      restore = captureViewState(container);
       const next = container.cloneNode(false) as HTMLElement;
       while (container.firstChild) next.appendChild(container.firstChild);
       const root = container.parentElement ?? getK2bPortalRoot();
@@ -133,6 +153,8 @@ const promoteToTopLayer = (container: HTMLElement): HTMLElement => {
   } catch {
     active.removeAttribute("popover");
   }
+  // Offsets apply only once the rail is rendered again, so after it is shown.
+  restore?.(active);
   return active;
 };
 

@@ -85,7 +85,9 @@ slot.dismiss();
 The application owns everything inside: layout, a close button, a live region
 for announcements, and when to dismiss. A custom slot has no timer, does not
 dismiss on click, does not count toward the five-toast limit, and
-`toast.dismissAll()` leaves it in place. In Solid, create the element inside a
+`toast.dismissAll()` leaves it in place. When a later toast arrives, the rail
+keeps the scroll offsets and the keyboard focus inside the slot, so a
+scrolled list or a focused control stays where it was. In Solid, create the element inside a
 component or effect so it keeps the locale and other context, and call
 `dismiss` from `onCleanup`.
 
