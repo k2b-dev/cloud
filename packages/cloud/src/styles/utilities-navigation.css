@@ -994,7 +994,9 @@
    padding or columns with `md:` switches at the same width as the card, also
    with a larger default font size. `(width < 48rem)` is not: the build lowers
    it to `max-width: calc(48rem - .001px)`, which Chromium still matches at
-   48rem. */
+   48rem. Without a frame there is nothing left to clip, so the card also
+   stops clipping: its content then reaches the card edge, and a clipping card
+   would cut the outer focus ring of a full-width button or field. */
 @media not all and (min-width: 48rem) {
   .standalone-card,
   .k2b-ui .k2b-paper.standalone-card {
@@ -1003,6 +1005,7 @@
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+    overflow: visible;
   }
 }
 
