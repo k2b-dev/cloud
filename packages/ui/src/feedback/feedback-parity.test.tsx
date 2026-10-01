@@ -205,8 +205,15 @@ describe("@k2b/ui Cloud feedback parity", () => {
     const narrow = feedbackCss.match(
       /@media \(max-width: 47\.999rem\), \(max-height: 29\.999rem\) \{\s*\.k2b-ui \[data-k2b-toast-container\] \{([^}]*)\}/,
     )?.[1];
-    expect(narrow).toContain("--k2b-toast-rail-top: env(safe-area-inset-top, 0px);");
+    // A host header can push the top rail down; the newest toast sits at the top edge.
+    expect(narrow).toContain("--k2b-toast-rail-top: calc(env(safe-area-inset-top, 0px) + var(--k2b-toast-offset-top, 0px));");
     expect(narrow).toContain("--k2b-toast-rail-bottom: auto;");
+    expect(narrow).toContain("--k2b-toast-rail-direction: column-reverse;");
+    expect(source).toContain("flex-direction:var(--k2b-toast-rail-direction,column);");
+    // A phone uses the full width with a 0.5rem edge.
+    const phone = feedbackCss.match(/@media \(max-width: 47\.999rem\) \{\s*\.k2b-ui \[data-k2b-toast-container\] \{([^}]*)\}/)?.[1];
+    expect(phone).toContain("--k2b-toast-rail-left: env(safe-area-inset-left, 0px);");
+    expect(phone).toContain("--k2b-toast-rail-width: auto;");
   });
 
   test("ships the scoped safe-area and tooltip surface parity styles", async () => {

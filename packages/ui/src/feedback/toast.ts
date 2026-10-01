@@ -9,8 +9,10 @@ export type ToastAction = {
 
 export type ToastOptions = {
   variant?: ToastVariant;
+  /** Milliseconds until the toast closes; `0` keeps it until it is closed. Omit it for the default by variant, length, and action. */
   duration?: number;
   iconClass?: string;
+  /** A short line of context above the message. There is no default title. */
   title?: string;
   action?: ToastAction | null;
   /** Fraction from 0 to 1, or an indeterminate activity indicator. null removes it. */
@@ -36,38 +38,45 @@ export interface ToastFn {
   dismissAll: () => void;
 }
 
-const DEFAULT_DURATION_MS = 3000;
-const MAX_VISIBLE_TOASTS = 5;
+/** Visible toasts on a wide viewport; the rail's narrow layout shows fewer. */
+const MAX_VISIBLE_TOASTS = 3;
+const MAX_VISIBLE_TOASTS_NARROW = 2;
+/** The same media query that moves the rail to the top edge in the stylesheet. */
+const NARROW_RAIL_QUERY = "(max-width: 47.999rem), (max-height: 29.999rem)";
 const ANIMATION_MS = 200;
+/** Reading time: a short message stays 4 s, longer text about 1 s more per 30 characters, up to 12 s. */
+const READ_BASE_MS = 4_000;
+const READ_FREE_CHARACTERS = 40;
+const READ_MS_PER_CHARACTER = 35;
+const READ_MAX_MS = 12_000;
+/** Errors and toasts with an action stay long enough to reach them with a keyboard or a screen magnifier. */
+const REACHABLE_MS = 8_000;
+/** An error longer than this stays until it is closed, so it can be read and copied. */
+const STICKY_ERROR_CHARACTERS = 120;
+/** A live region needs a moment between being found and being written to. */
+const ANNOUNCE_DELAY_MS = 100;
+const ANNOUNCEMENT_LIFETIME_MS = 7_000;
 export const K2B_TOAST_CONTAINER_ID = "k2b-ui-toast-container";
 const CONTAINER_ATTRIBUTE = "data-k2b-toast-container";
+const LIVE_ATTRIBUTE = "data-k2b-toast-live";
 
 type VariantStyle = {
   tone: "info" | "success" | "danger";
   iconClass: string;
-  titleKey: "info" | "success" | "error";
 };
 
 const VARIANT_STYLES: Record<ToastVariant, VariantStyle> = {
-  default: {
-    tone: "info",
-    iconClass: "ti-info-circle",
-    titleKey: "info",
-  },
-  success: {
-    tone: "success",
-    iconClass: "ti-check",
-    titleKey: "success",
-  },
-  error: {
-    tone: "danger",
-    iconClass: "ti-x",
-    titleKey: "error",
-  },
+  default: { tone: "info", iconClass: "ti-info-circle" },
+  success: { tone: "success", iconClass: "ti-circle-check" },
+  error: { tone: "danger", iconClass: "ti-alert-circle" },
 };
 
-/** Default titles follow the document locale, like the other imperative `@k2b/ui` surfaces. */
-const defaultTitle = (variant: ToastVariant): string => resolveUiMessages()[VARIANT_STYLES[variant].titleKey];
+/** How long a toast stays when the caller passes no duration. */
+const defaultDuration = (variant: ToastVariant, text: string, hasAction: boolean): number => {
+  if (variant === "error" && text.length > STICKY_ERROR_CHARACTERS) return 0;
+  const reading = Math.min(READ_MAX_MS, READ_BASE_MS + Math.max(0, text.length - READ_FREE_CHARACTERS) * READ_MS_PER_CHARACTER);
+  return variant === "error" || hasAction ? Math.max(REACHABLE_MS, reading) : reading;
+};
 
 const normalizedIconClass = (iconClass: string): string => {
   const tokens = iconClass
@@ -81,18 +90,57 @@ const applyIconClass = (icon: HTMLElement, iconClass: string): void => {
   icon.className = normalizedIconClass(iconClass);
 };
 
-const applyLiveRegion = (element: HTMLElement, variant: ToastVariant): void => {
-  const isError = variant === "error";
-  element.setAttribute("role", isError ? "alert" : "status");
-  element.setAttribute("aria-live", isError ? "assertive" : "polite");
-  element.setAttribute("aria-atomic", "true");
+type LiveToast = {
+  dismiss: () => void;
+  /** Errors and running progress stay when the rail is full; older confirmations leave first. */
+  keep: () => boolean;
+  progress: () => boolean;
 };
 
-const liveToasts = new Set<ToastHandle>();
+const liveToasts = new Set<LiveToast>();
+
+const VISUALLY_HIDDEN =
+  "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;";
+
+/**
+ * Two persistent, empty live regions beside the rail: polite for every toast, assertive for errors. A region that
+ * already exists when its text arrives is announced reliably, unlike one inserted with its text already inside.
+ * They sit outside the rail because the rail moves into a fresh top-layer element for every toast.
+ */
+const ensureLiveRegions = (root: HTMLElement): HTMLElement => {
+  const existing = Array.from(root.children).find((child) => child.hasAttribute(LIVE_ATTRIBUTE));
+  if (existing instanceof HTMLElement) return existing;
+  const live = document.createElement("div");
+  live.setAttribute(LIVE_ATTRIBUTE, "");
+  live.style.cssText = VISUALLY_HIDDEN;
+  for (const assertive of [false, true]) {
+    const region = document.createElement("div");
+    region.setAttribute("role", assertive ? "alert" : "status");
+    region.setAttribute("aria-live", assertive ? "assertive" : "polite");
+    region.dataset.politeness = assertive ? "assertive" : "polite";
+    live.appendChild(region);
+  }
+  root.appendChild(live);
+  return live;
+};
+
+/** Each announcement is its own line, so a burst of toasts or a repeated message is still read. */
+const announce = (root: HTMLElement | null, text: string, assertive: boolean): void => {
+  if (!root || !text) return;
+  const region = ensureLiveRegions(root).querySelector<HTMLElement>(`[data-politeness="${assertive ? "assertive" : "polite"}"]`);
+  if (!region) return;
+  const line = document.createElement("div");
+  line.textContent = text;
+  setTimeout(() => {
+    region.appendChild(line);
+    setTimeout(() => line.remove(), ANNOUNCEMENT_LIFETIME_MS);
+  }, ANNOUNCE_DELAY_MS);
+};
 
 const ensureContainer = (): HTMLElement | null => {
   if (typeof document === "undefined") return null;
   const root = getK2bPortalRoot();
+  ensureLiveRegions(root);
   let container = root.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
   if (container) return container;
 
@@ -100,18 +148,20 @@ const ensureContainer = (): HTMLElement | null => {
   container.id = K2B_TOAST_CONTAINER_ID;
   container.setAttribute(CONTAINER_ATTRIBUTE, "");
   container.setAttribute("popover", "manual");
+  container.setAttribute("role", "region");
+  container.setAttribute("aria-label", resolveUiMessages().notifications);
   // Keep the source rail geometry inline: it must defeat UA popover defaults
   // even when a consumer has not loaded the optional package stylesheet yet.
-  // The stylesheet only moves the rail to the top edge on narrow viewports
-  // through the two edge variables.
+  // The stylesheet only moves the rail to the top edge, and to the full width
+  // of a phone, through the rail variables.
   container.style.cssText =
-    "position:fixed;left:auto;right:env(safe-area-inset-right,0px);" +
+    "position:fixed;left:var(--k2b-toast-rail-left,auto);right:env(safe-area-inset-right,0px);" +
     "top:var(--k2b-toast-rail-top,auto);bottom:var(--k2b-toast-rail-bottom,env(safe-area-inset-bottom,0px));" +
-    "z-index:50;box-sizing:border-box;display:flex;flex-direction:column;gap:0.5rem;" +
-    "width:min(22rem,calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)));" +
+    "z-index:50;box-sizing:border-box;display:flex;flex-direction:var(--k2b-toast-rail-direction,column);" +
+    "width:var(--k2b-toast-rail-width,min(24rem,calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))));" +
     "height:auto;max-width:100vw;" +
     "max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));" +
-    "margin:0;padding:1rem;border:0;background:transparent;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;" +
+    "margin:0;padding:var(--k2b-toast-rail-padding,0.75rem 1rem);border:0;background:transparent;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;" +
     "pointer-events:none;";
   root.appendChild(container);
   return container;
@@ -174,16 +224,57 @@ const hideEmptyContainers = (): void => {
   }
 };
 
-const renderLead = (lead: HTMLElement, variant: ToastVariant, iconClassOverride?: string): HTMLElement => {
-  const style = VARIANT_STYLES[variant];
-  lead.replaceChildren();
-  lead.className = "k2b-toast__icon";
-  lead.dataset.tone = style.tone;
-  const icon = document.createElement("i");
-  applyIconClass(icon, iconClassOverride ?? style.iconClass);
-  icon.setAttribute("aria-hidden", "true");
-  lead.appendChild(icon);
-  return icon;
+/**
+ * Every toast and custom slot sits in a slot that grows from and collapses to zero height, so its neighbours glide
+ * instead of jumping when it arrives or leaves. The card carries the chrome and `data-open` / `data-closing`.
+ */
+type RailItem = {
+  slot: HTMLElement;
+  open: () => void;
+  close: (onRemoved?: () => void) => void;
+};
+
+const railItem = (card: HTMLElement): RailItem => {
+  const slot = document.createElement("div");
+  slot.className = "k2b-toast-slot";
+  slot.dataset.state = "entering";
+  const clip = document.createElement("div");
+  clip.className = "k2b-toast-slot__clip";
+  clip.appendChild(card);
+  slot.appendChild(clip);
+  return {
+    slot,
+    open: () => {
+      // The entering state must be laid out once before it changes, or nothing transitions.
+      slot.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        if (card.dataset.closing) return;
+        slot.dataset.state = "open";
+        card.dataset.open = "true";
+      });
+    },
+    close: (onRemoved) => {
+      slot.dataset.state = "closing";
+      card.dataset.closing = "true";
+      setTimeout(() => {
+        slot.remove();
+        hideEmptyContainers();
+        onRemoved?.();
+      }, ANIMATION_MS);
+    },
+  };
+};
+
+/** The rail is full: older confirmations leave first, then older errors; running progress and the newest toast stay. */
+const enforceCap = (): void => {
+  const narrow = typeof matchMedia === "function" && matchMedia(NARROW_RAIL_QUERY).matches;
+  const cap = narrow ? MAX_VISIBLE_TOASTS_NARROW : MAX_VISIBLE_TOASTS;
+  while (liveToasts.size > cap) {
+    const older = Array.from(liveToasts).slice(0, -1);
+    const victim = older.find((item) => !item.keep()) ?? older.find((item) => !item.progress());
+    if (!victim) return;
+    victim.dismiss();
+  }
 };
 
 const showToast = (description: string, options?: ToastOptions): ToastHandle => {
@@ -192,47 +283,79 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     const noop = () => {};
     return { dismiss: noop, update: noop };
   }
+  const messages = resolveUiMessages();
+  const doc = initialContainer.ownerDocument;
+  // Focus returns here when a focused toast closes and no other toast can take it.
+  const opener =
+    doc.activeElement instanceof HTMLElement && !doc.activeElement.closest(`[${CONTAINER_ATTRIBUTE}]`) ? doc.activeElement : null;
 
   let dismissed = false;
   let dismissTimer: ReturnType<typeof setTimeout> | null = null;
   let currentVariant: ToastVariant = options?.variant ?? "default";
   let currentProgress = options?.progress ?? null;
-  let currentDuration = options?.duration ?? DEFAULT_DURATION_MS;
-  let remainingDuration = currentDuration;
+  let currentAction = options?.action ?? null;
+  let explicitDuration = options?.duration;
+  let remainingDuration = 0;
   let timerStartedAt = 0;
   let pausedByPointer = false;
   let pausedByFocus = false;
+  let lastAnnouncement = "";
 
-  const toastElement = document.createElement("div");
+  const toastElement = doc.createElement("div");
   toastElement.className = "k2b-toast";
   toastElement.dataset.tone = VARIANT_STYLES[currentVariant].tone;
   toastElement.dataset.k2bToast = "";
 
-  const leadElement = document.createElement("div");
-  let leadIconElement = renderLead(leadElement, currentVariant, options?.iconClass);
+  const leadElement = doc.createElement("div");
+  leadElement.className = "k2b-toast__icon";
+  leadElement.setAttribute("aria-hidden", "true");
+  const leadIconElement = doc.createElement("i");
+  leadElement.appendChild(leadIconElement);
+  const renderLead = (iconClassOverride?: string) => {
+    leadElement.dataset.tone = VARIANT_STYLES[currentVariant].tone;
+    applyIconClass(leadIconElement, iconClassOverride ?? VARIANT_STYLES[currentVariant].iconClass);
+  };
+  renderLead(options?.iconClass);
 
-  const contentElement = document.createElement("div");
+  const contentElement = doc.createElement("div");
   contentElement.className = "k2b-toast__content";
-  applyLiveRegion(contentElement, currentVariant);
-
-  const titleElement = document.createElement("div");
+  const titleElement = doc.createElement("div");
   titleElement.className = "k2b-toast__title";
-  titleElement.textContent = options?.title ?? defaultTitle(currentVariant);
-  const descriptionElement = document.createElement("div");
+  const renderTitle = (title: string | undefined) => {
+    titleElement.textContent = title ?? "";
+    titleElement.hidden = !title;
+  };
+  renderTitle(options?.title);
+  const descriptionElement = doc.createElement("div");
   descriptionElement.className = "k2b-toast__description";
   descriptionElement.textContent = description;
   contentElement.append(titleElement, descriptionElement);
 
-  const closeButton = document.createElement("button");
+  const closeButton = doc.createElement("button");
   closeButton.type = "button";
   closeButton.className = "k2b-toast__close";
-  closeButton.setAttribute("aria-label", options?.dismissLabel ?? resolveUiMessages().dismissNotification);
-  const closeIcon = document.createElement("i");
+  closeButton.setAttribute("aria-label", options?.dismissLabel ?? messages.dismissNotification);
+  const closeIcon = doc.createElement("i");
   closeIcon.className = "ti ti-x";
   closeIcon.setAttribute("aria-hidden", "true");
   closeButton.appendChild(closeIcon);
 
-  toastElement.append(leadElement, contentElement, closeButton);
+  const progressElement = doc.createElement("progress");
+  progressElement.className = "k2b-toast__progress";
+  progressElement.max = 1;
+
+  toastElement.append(leadElement, contentElement, closeButton, progressElement);
+  const item = railItem(toastElement);
+
+  const text = () => [titleElement.textContent, descriptionElement.textContent].filter(Boolean).join(". ");
+  const effectiveDuration = () => explicitDuration ?? defaultDuration(currentVariant, text(), currentAction !== null);
+  /** The error word is read before the message; the action is left out. */
+  const say = () => {
+    const spoken = text();
+    lastAnnouncement = spoken;
+    const isError = currentVariant === "error";
+    announce(item.slot.parentElement?.parentElement ?? null, isError ? `${resolveUiMessages().error}: ${spoken}` : spoken, isError);
+  };
 
   const clearDismissTimer = () => {
     if (dismissTimer === null) return;
@@ -247,62 +370,70 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   };
 
   const resumeDismissTimer = () => {
-    if (dismissed || currentProgress !== null || currentDuration === 0 || remainingDuration <= 0 || pausedByPointer || pausedByFocus)
-      return;
+    if (dismissed || currentProgress !== null || remainingDuration <= 0 || pausedByPointer || pausedByFocus || doc.hidden) return;
     clearDismissTimer();
     timerStartedAt = Date.now();
     dismissTimer = setTimeout(() => dismiss(), remainingDuration);
   };
 
-  const resetDismissTimer = (duration: number) => {
+  const resetDismissTimer = () => {
     clearDismissTimer();
-    currentDuration = duration;
-    remainingDuration = duration;
+    remainingDuration = effectiveDuration();
     resumeDismissTimer();
+  };
+
+  const onVisibilityChange = () => (doc.hidden ? pauseDismissTimer() : resumeDismissTimer());
+
+  /** A focused toast hands focus to its neighbour, or back to where the user was, instead of dropping it on the page. */
+  const moveFocusAway = () => {
+    if (!toastElement.contains(doc.activeElement)) return;
+    const neighbours = [item.slot.nextElementSibling, item.slot.previousElementSibling];
+    const next = neighbours
+      .map((slot) => slot?.querySelector<HTMLElement>(".k2b-toast:not([data-closing]) .k2b-toast__close"))
+      .find((button) => button);
+    const target = next ?? (opener?.isConnected ? opener : null);
+    if (target) target.focus({ preventScroll: true });
+    else (doc.activeElement as HTMLElement | null)?.blur();
   };
 
   const dismiss = () => {
     if (dismissed) return;
     dismissed = true;
     clearDismissTimer();
-    liveToasts.delete(handle);
-    toastElement.dataset.closing = "true";
-    setTimeout(() => {
-      toastElement.remove();
-      hideEmptyContainers();
-    }, ANIMATION_MS);
+    liveToasts.delete(live);
+    doc.removeEventListener("visibilitychange", onVisibilityChange);
+    moveFocusAway();
+    item.close();
   };
 
-  const progressElement = document.createElement("progress");
-  progressElement.className = "k2b-toast__progress";
-  progressElement.max = 1;
   const renderProgress = () => {
     progressElement.hidden = currentProgress === null;
+    toastElement.dataset.progress = String(currentProgress !== null);
     progressElement.setAttribute("aria-label", titleElement.textContent || descriptionElement.textContent || "");
     if (typeof currentProgress === "number")
       progressElement.value = Number.isFinite(currentProgress) ? Math.max(0, Math.min(1, currentProgress)) : 0;
     else progressElement.removeAttribute("value");
   };
-  contentElement.append(progressElement);
   renderProgress();
+
   let actionElement: HTMLAnchorElement | HTMLButtonElement | null = null;
   const renderAction = (action: ToastAction | null | undefined) => {
     actionElement?.remove();
     actionElement = null;
+    currentAction = action ?? null;
     if (!action) return;
     if ("href" in action) {
-      const link = document.createElement("a");
+      const link = doc.createElement("a");
       link.href = action.href;
       actionElement = link;
     } else {
-      const button = document.createElement("button");
+      const button = doc.createElement("button");
       button.type = "button";
       actionElement = button;
     }
     actionElement.className = "k2b-toast__action";
     actionElement.textContent = action.label;
-    actionElement.addEventListener("click", (event) => {
-      event.stopPropagation();
+    actionElement.addEventListener("click", () => {
       if ("onClick" in action) action.onClick();
       else dismiss();
     });
@@ -312,37 +443,38 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
 
   const update = (nextDescription: string, nextOptions?: ToastOptions) => {
     if (dismissed) return;
+    const has = (key: keyof ToastOptions) => nextOptions !== undefined && Object.prototype.hasOwnProperty.call(nextOptions, key);
+    const previousProgress = currentProgress;
     descriptionElement.textContent = nextDescription;
 
     const variantChanged = nextOptions?.variant !== undefined && nextOptions.variant !== currentVariant;
     if (variantChanged) {
       currentVariant = nextOptions.variant!;
       toastElement.dataset.tone = VARIANT_STYLES[currentVariant].tone;
-      leadIconElement = renderLead(leadElement, currentVariant, nextOptions.iconClass);
-      applyLiveRegion(contentElement, currentVariant);
+      renderLead(nextOptions.iconClass);
     } else if (nextOptions?.iconClass !== undefined) {
       applyIconClass(leadIconElement, nextOptions.iconClass);
     }
 
-    if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "title")) {
-      titleElement.textContent = nextOptions.title ?? "";
-    } else if (variantChanged) {
-      titleElement.textContent = defaultTitle(currentVariant);
-    }
-    if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "action")) renderAction(nextOptions.action);
-    if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "duration")) {
-      currentDuration = nextOptions.duration ?? DEFAULT_DURATION_MS;
-    }
-    if (nextOptions && Object.prototype.hasOwnProperty.call(nextOptions, "progress")) currentProgress = nextOptions.progress ?? null;
+    if (has("title")) renderTitle(nextOptions!.title);
+    if (has("action")) renderAction(nextOptions!.action);
+    if (has("duration")) explicitDuration = nextOptions!.duration;
+    if (has("progress")) currentProgress = nextOptions!.progress ?? null;
     if (nextOptions?.dismissLabel) closeButton.setAttribute("aria-label", nextOptions.dismissLabel);
     renderProgress();
-    resetDismissTimer(currentDuration);
+    resetDismissTimer();
+
+    // Progress is announced at its start, half way, and its end, never at every step.
+    const ticking = previousProgress !== null && currentProgress !== null;
+    const halfway =
+      typeof currentProgress === "number" && currentProgress >= 0.5 && !(typeof previousProgress === "number" && previousProgress >= 0.5);
+    if ((!ticking || halfway || variantChanged) && text() !== lastAnnouncement) say();
   };
 
-  toastElement.addEventListener("click", () => {
-    if (currentProgress === null) dismiss();
-  });
-  closeButton.addEventListener("click", (event) => {
+  closeButton.addEventListener("click", () => dismiss());
+  toastElement.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented) return;
+    event.preventDefault();
     event.stopPropagation();
     dismiss();
   });
@@ -363,22 +495,27 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     pausedByFocus = false;
     resumeDismissTimer();
   });
+  doc.addEventListener("visibilitychange", onVisibilityChange);
 
   const handle: ToastHandle = { dismiss, update };
-  liveToasts.add(handle);
-  if (liveToasts.size > MAX_VISIBLE_TOASTS) liveToasts.values().next().value?.dismiss();
-  promoteToTopLayer(initialContainer).appendChild(toastElement);
-  requestAnimationFrame(() => {
-    if (!dismissed) toastElement.dataset.open = "true";
-  });
-  resetDismissTimer(currentDuration);
+  const live: LiveToast = {
+    dismiss,
+    keep: () => currentVariant === "error" || currentProgress !== null,
+    progress: () => currentProgress !== null,
+  };
+  liveToasts.add(live);
+  promoteToTopLayer(initialContainer).appendChild(item.slot);
+  item.open();
+  say();
+  enforceCap();
+  resetDismissTimer();
   return handle;
 };
 
 /*
  * A custom slot shares the rail, chrome, and enter/leave motion with toasts, so it stacks beside them in the same
  * corner instead of covering them. It has no timer, close button, or live region of its own, and neither the
- * five-toast cap nor `dismissAll` removes it: the application that placed it decides when it goes.
+ * toast limit nor `dismissAll` removes it: the application that placed it decides when it goes.
  */
 const showCustom = (content: HTMLElement): ToastSlot => {
   const initialContainer = ensureContainer();
@@ -389,30 +526,22 @@ const showCustom = (content: HTMLElement): ToastSlot => {
   slotElement.dataset.k2bToast = "";
   slotElement.dataset.custom = "true";
   slotElement.append(content);
+  const item = railItem(slotElement);
   const dismiss = () => {
     if (dismissed) return;
     dismissed = true;
-    slotElement.dataset.closing = "true";
-    setTimeout(() => {
-      slotElement.remove();
-      hideEmptyContainers();
-    }, ANIMATION_MS);
+    item.close();
   };
-  promoteToTopLayer(initialContainer).appendChild(slotElement);
-  requestAnimationFrame(() => {
-    if (!dismissed) slotElement.dataset.open = "true";
-  });
+  promoteToTopLayer(initialContainer).appendChild(item.slot);
+  item.open();
   return { dismiss };
 };
 
 export const isPointInsideToast = (x: number, y: number): boolean => {
   if (typeof document === "undefined") return false;
-  const containers = Array.from(document.querySelectorAll<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`));
-  for (const container of containers) {
-    for (const child of Array.from(container.children)) {
-      const rect = child.getBoundingClientRect();
-      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
-    }
+  for (const card of Array.from(document.querySelectorAll<HTMLElement>(`[${CONTAINER_ATTRIBUTE}] [data-k2b-toast]`))) {
+    const rect = card.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return true;
   }
   return false;
 };
@@ -422,7 +551,7 @@ toastFn.success = (description, options) => showToast(description, { ...options,
 toastFn.error = (description, options) => showToast(description, { ...options, variant: "error" });
 toastFn.custom = showCustom;
 toastFn.dismissAll = () => {
-  for (const handle of Array.from(liveToasts)) handle.dismiss();
+  for (const item of Array.from(liveToasts)) item.dismiss();
 };
 
 export const toast: ToastFn = toastFn;

@@ -723,129 +723,190 @@
 /* The rail sits above modal dialogs. On narrow or short viewports, such as a
    phone in portrait or landscape, the bottom edge belongs to dialog footers,
    bottom sheets and primary actions, so toasts move to the top edge there
-   instead of covering them. */
+   instead of covering them, newest at the edge. A host with a fixed header
+   sets `--k2b-toast-offset-top` to its height so toasts do not cover it. */
 @media (max-width: 47.999rem), (max-height: 29.999rem) {
   .k2b-ui [data-k2b-toast-container] {
-    --k2b-toast-rail-top: env(safe-area-inset-top, 0px);
+    --k2b-toast-rail-top: calc(env(safe-area-inset-top, 0px) + var(--k2b-toast-offset-top, 0px));
     --k2b-toast-rail-bottom: auto;
+    --k2b-toast-rail-direction: column-reverse;
+    --k2b-toast-enter-y: -0.375rem;
   }
 }
 
-.k2b-ui [data-k2b-toast-container] > .k2b-toast {
-  display: flex;
-  width: 100%;
-  align-items: stretch;
-  gap: 0.75rem;
-  padding: 0.75rem;
+/* On a phone the toasts use the full width with a 0.5rem edge. */
+@media (max-width: 47.999rem) {
+  .k2b-ui [data-k2b-toast-container] {
+    --k2b-toast-rail-left: env(safe-area-inset-left, 0px);
+    --k2b-toast-rail-width: auto;
+    --k2b-toast-rail-padding: 0.25rem 0.5rem;
+  }
+}
+
+/* Each toast sits in a slot that grows from and collapses to zero height, so
+   neighbours glide into place instead of jumping. The clip hides the card only
+   while it moves, so the open card keeps its shadow. */
+.k2b-ui .k2b-toast-slot {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 180ms ease-out;
+}
+
+.k2b-ui .k2b-toast-slot:not([data-state="open"]) {
+  grid-template-rows: 0fr;
+}
+
+.k2b-ui .k2b-toast-slot__clip {
+  min-height: 0;
+}
+
+.k2b-ui .k2b-toast-slot:not([data-state="open"]) > .k2b-toast-slot__clip {
+  overflow: hidden;
+}
+
+/* One line: tone glyph | message and optional action | close. A floating
+   layer, so it keeps the hairline and the soft toast shadow, like the dialog
+   frame and the upload panel. */
+.k2b-ui [data-k2b-toast-container] .k2b-toast {
+  display: grid;
+  min-height: 2.75rem;
+  grid-template-columns: 1rem minmax(0, 1fr) 2rem;
+  align-items: start;
+  column-gap: 0.625rem;
+  margin-block: 0.25rem;
+  padding: 0.3125rem 0.3125rem 0.3125rem 0.8125rem;
   border: 1px solid var(--k2b-border-strong);
   border-radius: var(--k2b-radius-surface);
   opacity: 0;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-toast);
-  transform: translateX(0.5rem);
+  transform: translateY(var(--k2b-toast-enter-y, 0.375rem));
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out;
-  cursor: pointer;
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
   pointer-events: auto;
 }
 
 /* `toast.custom`: the same chrome and motion around application-owned content, which lays itself out. */
-.k2b-ui [data-k2b-toast-container] > .k2b-toast[data-custom="true"] {
+.k2b-ui [data-k2b-toast-container] .k2b-toast[data-custom="true"] {
   display: block;
-  cursor: auto;
+  padding: 0.75rem;
 }
 
-.k2b-ui [data-k2b-toast-container] > .k2b-toast[data-open="true"] {
+.k2b-ui [data-k2b-toast-container] .k2b-toast[data-open="true"] {
   opacity: 1;
-  transform: translateX(0);
+  transform: none;
 }
 
-.k2b-ui [data-k2b-toast-container] > .k2b-toast[data-closing="true"] {
+.k2b-ui [data-k2b-toast-container] .k2b-toast[data-closing="true"] {
   opacity: 0;
-  transform: translateX(0.5rem);
+  transform: translateY(var(--k2b-toast-enter-y, 0.375rem));
 }
 
+/* A plain glyph in the tone's text colour; each tone has its own shape. */
 .k2b-ui .k2b-toast__icon {
   display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  flex: none;
-  align-self: flex-start;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.5rem;
   place-items: center;
-  border-radius: 999px;
   font-size: 1rem;
+  line-height: 1;
 }
 
 .k2b-ui .k2b-toast__icon[data-tone="info"] {
   color: var(--k2b-info-text);
-  background: var(--k2b-info-surface);
 }
 
 .k2b-ui .k2b-toast__icon[data-tone="success"] {
   color: var(--k2b-success-text);
-  background: var(--k2b-success-surface);
 }
 
 .k2b-ui .k2b-toast__icon[data-tone="danger"] {
   color: var(--k2b-danger-text);
-  background: var(--k2b-danger-surface);
 }
 
+/* Running progress shows a small ring instead of the glyph. */
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__icon > i {
+  display: none;
+}
+
+.k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__icon::before {
+  content: "";
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  border-radius: 999px;
+  animation: k2b-parity-spin 900ms linear infinite;
+}
+
+/* The message and the action share one wrapping line: the action stays in
+   the row while it fits and moves to the end of the next line otherwise. */
 .k2b-ui .k2b-toast__content {
   display: flex;
   min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  align-self: center;
-  gap: 0.125rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+  padding: 0.375rem 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 .k2b-ui .k2b-toast__title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  line-height: 1.25;
+  flex: 1 0 100%;
+  font-weight: 600;
 }
 
 .k2b-ui .k2b-toast__description {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow-wrap: anywhere;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  line-height: 1.375;
 }
 
+.k2b-ui .k2b-toast__title:not([hidden]) + .k2b-toast__description {
+  color: var(--k2b-text-secondary);
+}
+
+/* A text button: 2rem tall to see and press, 1.25rem in the layout, so a
+   one-line toast does not grow. */
 .k2b-ui .k2b-toast__action {
-  align-self: flex-start;
-  margin-top: 0.25rem;
+  display: inline-flex;
+  height: 2rem;
+  flex: none;
+  align-items: center;
+  margin: -0.375rem 0 -0.375rem auto;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
   color: var(--k2b-action);
-  font-size: 0.75rem;
+  background: transparent;
+  font: inherit;
   font-weight: 500;
   text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .k2b-ui .k2b-toast__action:hover {
-  text-decoration: underline;
-}
-
-.k2b-ui .k2b-toast__action:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
+  color: var(--k2b-action-hover);
+  background: var(--k2b-hover);
 }
 
 .k2b-ui .k2b-toast__close {
-  display: inline-flex;
+  display: inline-grid;
   width: 2rem;
   height: 2rem;
-  flex: none;
-  align-self: flex-start;
-  align-items: center;
-  justify-content: center;
-  padding: 0.25rem;
+  place-items: center;
+  padding: 0;
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-muted);
   background: transparent;
+  font-size: 1rem;
   cursor: pointer;
 }
 
@@ -854,17 +915,81 @@
   background: var(--k2b-hover);
 }
 
+.k2b-ui .k2b-toast__action:focus-visible,
 .k2b-ui .k2b-toast__close:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* The bar of the Files upload panel: a rounded track in the border colour and
+   an action-coloured fill, under the text and the close column. */
+.k2b-ui .k2b-toast__progress {
+  display: block;
+  width: auto;
+  height: 0.375rem;
+  min-width: 0;
+  grid-column: 2 / -1;
+  margin: 0.25rem 0.5rem 0.5rem 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  color: var(--k2b-action-solid);
+  background: var(--k2b-border);
+  appearance: none;
+}
+
+.k2b-ui .k2b-toast__progress[hidden] {
+  display: none;
+}
+
+.k2b-ui .k2b-toast__progress::-webkit-progress-bar {
+  background: transparent;
+}
+
+.k2b-ui .k2b-toast__progress::-webkit-progress-value {
+  background: var(--k2b-action-solid);
+  transition: width 200ms linear;
+}
+
+.k2b-ui .k2b-toast__progress::-moz-progress-bar {
+  background: var(--k2b-action-solid);
+}
+
+.k2b-ui .k2b-toast[data-tone="success"] .k2b-toast__progress::-webkit-progress-value {
+  background: var(--k2b-success-500);
+}
+
+.k2b-ui .k2b-toast[data-tone="success"] .k2b-toast__progress::-moz-progress-bar {
+  background: var(--k2b-success-500);
+}
+
+/* Unknown total: a short segment travels along the track. */
+.k2b-ui .k2b-toast__progress:indeterminate {
+  background: linear-gradient(var(--k2b-action-solid), var(--k2b-action-solid)) no-repeat, var(--k2b-border);
+  background-size: 35% 100%, auto;
+  animation: k2b-toast-indeterminate 1.4s ease-in-out infinite;
+}
+
+.k2b-ui .k2b-toast__progress:indeterminate::-moz-progress-bar {
+  background: transparent;
+}
+
+@keyframes k2b-toast-indeterminate {
+  from {
+    background-position: -60% 0, 0 0;
+  }
+
+  to {
+    background-position: 160% 0, 0 0;
+  }
 }
 
 /* Same touch-target rule as `.k2b-button`: a 2.75rem hit area around the
-   text-sized action and the 2rem close button on coarse pointers, without
-   changing the toast. The action ends the content column and the close
-   button has its own column past the 0.75rem gap, so neither area reaches
-   the other. The close button's area stays inside the toast's 0.75rem
-   padding, so it never reaches the next toast. */
+   2rem action and close button on coarse pointers, without changing the
+   toast. The action keeps the 0.625rem column gap to the close button, which
+   is more than the close button's hit area reaches into it, and both areas
+   end at the toast's outer edge, so neither reaches the other or the next
+   toast. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-toast__action,
   .k2b-ui .k2b-toast__close {
@@ -876,6 +1001,23 @@
     content: "";
     position: absolute;
     inset: min(0px, calc((100% - 2.75rem) / 2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-toast-slot,
+  .k2b-ui [data-k2b-toast-container] .k2b-toast,
+  .k2b-ui .k2b-toast__progress::-webkit-progress-value {
+    transition: none;
+  }
+
+  .k2b-ui .k2b-toast[data-progress="true"] .k2b-toast__icon::before {
+    animation-duration: 2.4s;
+  }
+
+  .k2b-ui .k2b-toast__progress:indeterminate {
+    background-position: 0 0, 0 0;
+    animation: none;
   }
 }
 
@@ -953,23 +1095,11 @@
   .k2b-ui .k2b-prompt-search__input > i,
   .k2b-ui .k2b-prompt-search__list > button,
   .k2b-ui .k2b-prompt-search__collapse,
-  .k2b-ui [popover].k2b-tooltip,
-  .k2b-ui [data-k2b-toast-container] > .k2b-toast {
+  .k2b-ui [popover].k2b-tooltip {
     transition: none;
   }
 }
 
-.k2b-ui .k2b-toast__progress {
-  display: block;
-  width: 100%;
-  height: 0.375rem;
-  margin-top: 0.5rem;
-  border: 0;
-  border-radius: 9999px;
-  overflow: hidden;
-  accent-color: var(--k2b-action);
-}
-.k2b-ui .k2b-toast__progress[hidden] { display: none; }
 
 /* Inline progress stays text-sized and inherits the guidance tone. */
 .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__icon {

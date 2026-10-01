@@ -378,9 +378,13 @@ describe("@k2b/ui feedback runtime", () => {
     const rail = dom.document.getElementById(K2B_TOAST_CONTAINER_ID);
     const card = rail?.querySelector<HTMLElement>("[data-k2b-toast]");
     expect(rail?.className).toBe("");
+    expect(rail?.getAttribute("role")).toBe("region");
+    expect(rail?.getAttribute("aria-label")).toBe("Notifications");
     expect(card?.dataset.tone).toBe("success");
     expect(card?.textContent).toContain("Saved");
-    expect(card?.querySelector(".k2b-toast__content")?.getAttribute("role")).toBe("status");
+    expect(card?.querySelector(".k2b-toast__icon i")?.className).toBe("ti ti-circle-check");
+    // The card is not a live region of its own; the rail's persistent regions announce it.
+    expect(card?.querySelector("[role], [aria-live]")).toBeNull();
 
     handle.update("Publish failed", {
       variant: "error",
@@ -390,15 +394,15 @@ describe("@k2b/ui feedback runtime", () => {
       action: { label: "Retry", href: "/retry" },
     });
     expect(card?.dataset.tone).toBe("danger");
-    expect(card?.querySelector(".k2b-toast__content")?.getAttribute("role")).toBe("alert");
-    expect(card?.querySelector(".k2b-toast__content")?.getAttribute("aria-live")).toBe("assertive");
     expect(card?.querySelector(".k2b-toast__icon i")?.className).toBe("ti ti-alert-triangle");
     expect(card?.textContent).toContain("Could not publish");
     expect(card?.querySelector<HTMLAnchorElement>(".k2b-toast__action")?.href).toBe("http://localhost/retry");
 
-    for (let index = 0; index < 6; index += 1) toast(`Notice ${index}`, { duration: 0 });
-    expect(rail?.querySelectorAll("[data-k2b-toast]").length).toBe(7);
-    expect(rail?.querySelectorAll("[data-k2b-toast][data-closing='true']").length).toBe(2);
+    // Three stay visible on a wide screen. Older confirmations leave first, the error stays.
+    for (let index = 0; index < 4; index += 1) toast(`Notice ${index}`, { duration: 0 });
+    const open = () =>
+      Array.from(rail?.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])") ?? [], (item) => item.textContent);
+    expect(open().map((text) => text?.replace("Retry", ""))).toEqual(["Could not publishPublish failed", "Notice 2", "Notice 3"]);
 
     toast.dismissAll();
     await Bun.sleep(220);
@@ -540,35 +544,114 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
-  test("default toast titles follow the document locale and an explicit title wins", async () => {
+  test("a toast shows a title only when the caller passes one", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     const { toast } = await import("../src/feedback/toast");
     const titles = () =>
-      Array.from(dom.document.querySelectorAll("[data-k2b-toast]:not([data-closing]) .k2b-toast__title"), (title) => title.textContent);
+      Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing]) .k2b-toast__title"), (title) =>
+        title.hidden ? null : title.textContent,
+      );
 
-    dom.document.documentElement.setAttribute("lang", "en");
     toast("Note", { duration: 0 });
     toast.success("Saved", { duration: 0 });
-    toast.error("Failed", { duration: 0 });
-    expect(titles()).toEqual(["Info", "Success", "Error"]);
-    toast.dismissAll();
+    const failure = toast.error("Failed", { duration: 0 });
+    expect(titles()).toEqual([null, null, null]);
 
+    failure.update("Back again", { variant: "success" });
+    expect(titles().at(-1)).toBeNull();
+    failure.update("Back again", { title: "Connection restored" });
+    expect(titles().at(-1)).toBe("Connection restored");
+    failure.update("Back again", { title: undefined });
+    expect(titles().at(-1)).toBeNull();
+    toast.dismissAll();
+    dom.cleanup();
+  });
+
+  test("announces through two persistent live regions: the error word first, never the action", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
     dom.document.documentElement.setAttribute("lang", "de");
-    toast("Hinweis", { duration: 0 });
-    toast.success("Gespeichert", { duration: 0 });
-    const failure = toast.error("Fehlgeschlagen", { duration: 0 });
-    expect(titles()).toEqual(["Information", "Erfolg", "Fehler"]);
+    toast.success("Kontakt erstellt", { action: { label: "Rückgängig", onClick: () => {} } });
+    const regions = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-live] > *"));
+    expect(regions.map((region) => [region.getAttribute("role"), region.getAttribute("aria-live"), region.textContent])).toEqual([
+      ["status", "polite", ""],
+      ["alert", "assertive", ""],
+    ]);
+    // Persistent: the regions are outside the rail, which moves into a new top-layer element for every toast.
+    expect(regions[0]?.closest("[data-k2b-toast-container]")).toBeNull();
+    toast.error("Speichern fehlgeschlagen", { title: "Projekt" });
+    await Bun.sleep(150);
+    expect(regions.map((region) => region.textContent)).toEqual(["Kontakt erstellt", "Fehler: Projekt. Speichern fehlgeschlagen"]);
 
-    failure.update("Wieder da", { variant: "success" });
-    expect(titles().at(-1)).toBe("Erfolg");
-    toast.dismissAll();
-
-    toast.success("Saved", { title: "Success", duration: 0 });
-    toast.error("Failed", { title: "Konnte nicht speichern", duration: 0 });
-    expect(titles()).toEqual(["Success", "Konnte nicht speichern"]);
-
+    // Progress is announced at its start, half way and its end, not at every step.
+    const job = toast("Import läuft", { progress: 0.1 });
+    job.update("2 von 10", { progress: 0.2 });
+    job.update("6 von 10", { progress: 0.6 });
+    job.update("8 von 10", { progress: 0.8 });
+    job.update("Import fertig", { progress: null, variant: "success" });
+    await Bun.sleep(150);
+    expect(Array.from(regions[0]!.children, (line) => line.textContent)).toEqual([
+      "Kontakt erstellt",
+      "Import läuft",
+      "6 von 10",
+      "Import fertig",
+    ]);
     dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
+  test("closes only through its close button or Escape, then hands focus on", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const opener = dom.document.createElement("button");
+    dom.root.appendChild(opener);
+    opener.focus();
+    toast.error("Could not save", { duration: 0 });
+    toast("Link copied", { duration: 0 });
+    const [first, second] = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]"));
+
+    // A click on the text keeps it, so an error message can be selected and copied.
+    first!.querySelector<HTMLElement>(".k2b-toast__description")!.click();
+    expect(first!.dataset.closing).toBeUndefined();
+
+    first!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.focus();
+    first!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(first!.dataset.closing).toBe("true");
+    expect(dom.document.activeElement).toBe(second!.querySelector(".k2b-toast__close"));
+
+    second!.querySelector<HTMLButtonElement>(".k2b-toast__close")!.click();
+    expect(second!.dataset.closing).toBe("true");
+    expect(dom.document.activeElement).toBe(opener);
+    await Bun.sleep(220);
+    dom.cleanup();
+  });
+
+  test("defaults the time on screen by variant, length and action", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const timers: number[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((handler: () => void, ms?: number) => {
+      if ((ms ?? 0) >= 1000) timers.push(ms!);
+      return realSetTimeout(handler, ms);
+    }) as typeof setTimeout;
+    try {
+      toast.success("Contact created");
+      toast("Link copied", { action: { label: "Open", href: "/link" } });
+      toast.error("Could not save");
+      toast("x".repeat(100));
+      toast.error("y".repeat(130));
+      toast("Explicit", { duration: 2_000 });
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
+    // The 7 s values are the announcement lines leaving their live region.
+    expect(timers.filter((ms) => ms !== 7_000)).toEqual([4_000, 8_000, 8_000, 6_100, 2_000]);
+    toast.dismissAll();
     dom.cleanup();
   });
 
@@ -612,6 +695,7 @@ describe("@k2b/ui feedback runtime", () => {
     expect(element).not.toBeNull();
     const progress = element.querySelector("progress")!;
     expect(progress.hasAttribute("value")).toBe(false);
+    expect(element.dataset.progress).toBe("true");
     element.click();
     await settle();
     expect(element.dataset.closing).toBeUndefined();
@@ -623,6 +707,7 @@ describe("@k2b/ui feedback runtime", () => {
     expect(element.dataset.closing).toBeUndefined();
     notice.update("Stopped", { progress: null, action: null, duration: 0 });
     expect(progress.hidden).toBe(true);
+    expect(element.dataset.progress).toBe("false");
     expect(element.querySelector(".k2b-toast__action")).toBeNull();
     notice.dismiss();
     await Bun.sleep(220);

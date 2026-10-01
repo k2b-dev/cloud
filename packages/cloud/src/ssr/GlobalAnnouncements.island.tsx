@@ -1,4 +1,4 @@
-import { Button, dialogCore, MarkdownView, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
+import { Button, dialogCore, IconButton, MarkdownView, NoticeCard, PanelDialog, panelDialogOptions, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import {
   ANNOUNCEMENTS_COOKIE,
@@ -19,22 +19,6 @@ type Props = {
 
 const writeCookieState = (state: AnnouncementCookieState) => {
   document.cookie = `${ANNOUNCEMENTS_COOKIE}=${serializeAnnouncementCookieState(state)}; Path=/; Max-Age=${ANNOUNCEMENTS_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
-};
-
-const toneClass = (tone: AnnouncementDisplayEntry["tone"]) => {
-  if (tone === "success")
-    return "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-100";
-  if (tone === "warning")
-    return "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-100";
-  if (tone === "danger") return "border-red-200 bg-red-50 text-red-950 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100";
-  return "border-blue-200 bg-blue-50 text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-100";
-};
-
-const toneIcon = (tone: AnnouncementDisplayEntry["tone"]) => {
-  if (tone === "success") return "ti ti-circle-check";
-  if (tone === "warning") return "ti ti-alert-triangle";
-  if (tone === "danger") return "ti ti-alert-circle";
-  return "ti ti-info-circle";
 };
 
 export default function GlobalAnnouncements(props: Props) {
@@ -113,27 +97,18 @@ export default function GlobalAnnouncements(props: Props) {
       <div class="flex shrink-0 flex-col gap-1">
         <For each={banners()}>
           {(banner) => (
-            <section
-              class={`flex max-h-[min(40vh,14rem)] items-start gap-2 rounded-lg border px-3 py-2 text-xs shadow-sm ${toneClass(banner.tone)}`}
-            >
-              <i class={`${toneIcon(banner.tone)} mt-0.5 shrink-0`} />
-              <div class="min-h-0 min-w-0 flex-1">
-                <p class="font-semibold">{banner.title}</p>
+            <div class="cloud-announcement">
+              <NoticeCard tone={banner.tone} title={banner.title}>
                 <MarkdownView
                   trustedHtml={banner.bodyHtml}
                   headingScale="compact"
                   class="mt-1 max-h-36 overflow-y-auto overscroll-contain pr-1 [&_p]:my-0"
                 />
-              </div>
-              <button
-                type="button"
-                class="ml-auto inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-                aria-label={t().dismissBanner}
-                onClick={() => dismissBanner(banner.version)}
-              >
-                <i class="ti ti-x" />
-              </button>
-            </section>
+              </NoticeCard>
+              <IconButton size="sm" label={t().dismissBanner} onClick={() => dismissBanner(banner.version)}>
+                <i class="ti ti-x" aria-hidden="true" />
+              </IconButton>
+            </div>
           )}
         </For>
       </div>

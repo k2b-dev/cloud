@@ -112,3 +112,24 @@ test("phone header actions keep every visible pixel and Home is finger-sized whe
     homeReach: finger,
   });
 }, 30_000);
+
+test("toasts at the top of a phone start below the header instead of covering it", async () => {
+  for (const authenticated of [true, false]) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 664 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+    try {
+      // The rail reads the offset through @k2b/ui's narrow-viewport rule, like the probe below.
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui"><div class="cloud-app-canvas"><div class="layout-shell-content">${header(authenticated)}</div></div>` +
+          `<div id="probe" style="position:fixed;top:var(--k2b-toast-offset-top,0px)"></div></body></html>`,
+      );
+      const edges = await page.evaluate(() => [
+        Math.round(document.querySelector(".layout-header")!.getBoundingClientRect().bottom),
+        Math.round(document.getElementById("probe")!.getBoundingClientRect().top),
+      ]);
+      expect(edges[1]).toBe(edges[0]!);
+    } finally {
+      await page.close();
+    }
+  }
+});
