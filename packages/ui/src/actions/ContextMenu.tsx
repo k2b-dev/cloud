@@ -43,6 +43,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
   let listenersAttached = false;
   let hostRing = true;
   let anchor = { x: 0, y: 0 };
+  let viewport = { width: 0, height: 0 };
   let resizeObserver: ResizeObserver | undefined;
 
   const isOpen = () => position() !== undefined;
@@ -53,9 +54,15 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     if (menu?.contains(event.target as Node)) return;
     close();
   };
-  const closeOnViewportChange = (event: Event) => {
+  const closeOnScroll = (event: Event) => {
     const target = event.target;
     if (target instanceof Node && menu?.contains(target)) return;
+    close();
+  };
+  // A resize event may leave the viewport's size unchanged; headless Chromium
+  // was seen to fire one on a fresh page. The clamped menu is still in place.
+  const closeOnResize = () => {
+    if (window.innerWidth === viewport.width && window.innerHeight === viewport.height) return;
     close();
   };
   const attachOpenListeners = () => {
@@ -63,16 +70,16 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     listenersAttached = true;
     document.addEventListener("pointerdown", dismiss);
     document.addEventListener("keydown", keyDown);
-    window.addEventListener("resize", closeOnViewportChange);
-    window.addEventListener("scroll", closeOnViewportChange, true);
+    window.addEventListener("resize", closeOnResize);
+    window.addEventListener("scroll", closeOnScroll, true);
   };
   const detachOpenListeners = () => {
     if (!listenersAttached) return;
     listenersAttached = false;
     document.removeEventListener("pointerdown", dismiss);
     document.removeEventListener("keydown", keyDown);
-    window.removeEventListener("resize", closeOnViewportChange);
-    window.removeEventListener("scroll", closeOnViewportChange, true);
+    window.removeEventListener("resize", closeOnResize);
+    window.removeEventListener("scroll", closeOnScroll, true);
     resizeObserver?.disconnect();
   };
   /** Clamps the rendered menu into the viewport beside the point that opened it. */
@@ -105,6 +112,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     // Focus may sit on a descendant of the host, as in composite widgets.
     hostRing = ringOnReturn(document.activeElement);
     anchor = { x, y };
+    viewport = { width: window.innerWidth, height: window.innerHeight };
     setPosition({ x, y });
     closeActiveContextMenu = close;
     attachOpenListeners();
