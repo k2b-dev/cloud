@@ -57,7 +57,7 @@ Commands use the mailbox selected by `cld mail use` unless `--mailbox` or a mail
 ## Address mailboxes and folders
 
 - A **mailbox** is its ID or its exact name: `Mail01`, `"Support"`.
-- A **folder** is `<mailbox>:<path>`, such as `"Support:Projekte / 2025 / Archiv"`. The path uses `/` between folders, spaces around `/` are optional, and letter case is ignored. `folders` shows each folder's path and ID. A folder ID, or a path without the mailbox part, refers to the mailbox from `--mailbox` or `cld mail use`.
+- A **folder** is `<mailbox>:<path>`, such as `"Support:Projekte / 2025 / Archiv"`. The path uses `/` between folders, spaces around `/` are optional, and letter case is ignored. When no path matches, a single name also matches a folder's last name or its role, so `"Support:Sent Mail"` and `"Support:sent"` find Gmail's `[Gmail] / Sent Mail`. `folders` shows each folder's path and ID. A folder ID, or a path without the mailbox part, refers to the mailbox from `--mailbox` or `cld mail use`.
 - **Conversations, messages, and drafts** are their IDs. They belong to the mailbox from `--mailbox` or `cld mail use`.
 - **Tags** are their ID or exact name.
 

@@ -101,6 +101,15 @@ Ein gemeinsamer Entwurf erlaubt eine aktive Bearbeitungssitzung. Der Zusammenarb
 
 Eine weitere Antwort blendet vorhandene Arbeit nicht aus. Der Dialog **Entwurf fortsetzen?** zeigt Verfasser, Änderungszeit und Inhaltsvorschau. So kannst du den richtigen Entwurf fortsetzen oder bewusst einen weiteren erstellen.
 
+## Eine gesendete Nachricht fehlt unter Gesendet {icon="send"}
+
+Mail legt eine gesendete Nachricht in den Gesendet-Ordner der Identität, sobald es die Kopie dort findet. Bei Gmail folgt die Zuordnung zu „Alle Nachrichten“ mit der nächsten Synchronisierung dieses Ordners.
+
+- Zeigt die Nachricht **Gesendet, aber nicht gespeichert**, konnte Mail die Kopie weder ablegen noch finden. Prüfe die Zuordnung des Gesendet-Ordners der Identität und die Rechte des Anbieters für diesen Ordner. Sende die Nachricht nicht erneut.
+- Zeigt eine Unterhaltung neben der gesendeten Nachricht eine zusätzliche Kopie eines Entwurfs, hat eine frühere Version Gmails Entwurfskopie aus „Alle Nachrichten“ übernommen. Eine Person mit Adminrechten entfernt solche Kopien mit **Unterhaltungsprojektion reparieren**.
+
+Für einen einzelnen Ordner im Terminal akzeptiert `cld mail ls "Postfach:Sent Mail"` auch den letzten Namensteil oder die Rolle eines Ordners, etwa `sent`, wenn der Anbieter ihn verschachtelt, zum Beispiel unter `[Gmail]`.
+
 ## Die Suche findet ein erwartetes Ergebnis nicht {icon="search"}
 
 :::steps

@@ -262,6 +262,58 @@ export const materializeOutboundMessage = async (params: {
   return { outboxId: params.outboxId, mailboxId: params.mailboxId, messageId: message.id, conversationId };
 };
 
+/**
+ * A confirmed send carries the Date header Mail wrote into the message, so the local copy
+ * shows when it was sent before any provider copy is synchronized.
+ */
+export const recordOutboundSentAt = async (db: SqlClient, outboxId: string): Promise<void> => {
+  await db`
+    UPDATE mail.message_contents message
+    SET sent_at = COALESCE(message.sent_at, outbox.mime_date)
+    FROM mail.outbox_submissions outbox
+    WHERE outbox.id = ${outboxId}::uuid
+      AND message.id = outbox.message_id
+  `;
+};
+
+/**
+ * Places the sent message in the sender's Sent folder at the UIDs where the outbox found its
+ * provider copy, so Sent shows it without waiting for that folder's next sync. The sync later
+ * reaches the same UIDs and keeps these references. UIDVALIDITY is the one the binding last
+ * verified for the folder; if the provider has changed it since, the next sync retires these
+ * references with every other one of the folder and imports the copy again.
+ */
+export const recordSentCopyPlacement = async (
+  db: SqlClient,
+  params: { outboxId: string; bindingId: string; folderId: string; uids: readonly number[] },
+): Promise<void> => {
+  if (params.uids.length === 0) return;
+  await db`
+    WITH target AS (
+      SELECT outbox.message_id, folder_ref.uid_validity
+      FROM mail.outbox_submissions outbox
+      JOIN mail.binding_folder_refs folder_ref
+        ON folder_ref.binding_id = ${params.bindingId}::uuid
+       AND folder_ref.folder_id = ${params.folderId}::uuid
+      WHERE outbox.id = ${params.outboxId}::uuid
+        AND outbox.message_id IS NOT NULL
+        AND folder_ref.uid_validity IS NOT NULL
+    ),
+    refs AS (
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid, connector_ref)
+      SELECT ${params.folderId}::uuid, target.message_id, target.uid_validity, remote.uid, ${{ source: "outbox" }}::jsonb
+      FROM target
+      CROSS JOIN unnest(${toPgTextArray(params.uids.map(String))}::numeric[]) AS remote(uid)
+      ON CONFLICT (folder_id, uid_validity, uid) DO NOTHING
+      RETURNING id, message_id
+    )
+    INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
+    SELECT refs.id, ${params.folderId}::uuid, refs.message_id, ARRAY['\\Seen']::text[]
+    FROM refs
+    ON CONFLICT (remote_message_ref_id) DO NOTHING
+  `;
+};
+
 export const loadOutboundProjectionByOutbox = async (db: SqlClient, outboxId: string): Promise<OutboundMessageProjection | null> => {
   const [projection] = await db<OutboundMessageProjection[]>`
     SELECT

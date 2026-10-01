@@ -348,6 +348,14 @@ const findCanonicalMessageContent = async (params: {
   return candidates.length === 1 ? candidates[0]!.message_id : null;
 };
 
+/**
+ * A message flagged `\Draft` is still being composed. Gmail lists every draft in All Mail too,
+ * including the ones Mail projects into Drafts; the Drafts folder owns drafts, so no other
+ * folder turns one into a conversation message.
+ */
+const isProviderDraft = (message: Pick<ConnectorEnvelope, "flags" | "labels">): boolean =>
+  message.flags.includes("\\Draft") || message.labels.includes("\\Draft");
+
 type IngestEnvelopeParams = {
   db: typeof sql;
   mailboxId: string;
@@ -1067,7 +1075,7 @@ export const fetchReconcileStep = async (params: {
   }
   const uids = flags.map((entry) => entry.uid);
   const imports = await fetchReconcileImports({
-    window: { low, high, uids },
+    window: { low, high, uids: flags.filter((entry) => !isProviderDraft(entry)).map((entry) => entry.uid) },
     runtime: params.runtime,
     folderPath: params.folderPath,
     folderId: params.folderId,
@@ -1235,6 +1243,7 @@ export const commitSyncBatch = async (params: {
       draftRemoved = projection.removed;
     } else {
       for (const message of params.envelopeBatch?.messages ?? []) {
+        if (isProviderDraft(message)) continue;
         hydratedIds.push(
           await ingestEnvelope({
             db: tx,
@@ -1247,6 +1256,7 @@ export const commitSyncBatch = async (params: {
         );
       }
       for (const message of params.reconcileWindow?.imports ?? []) {
+        if (isProviderDraft(message)) continue;
         hydratedIds.push(
           await ingestEnvelope({
             db: tx,
@@ -1722,7 +1732,9 @@ const newestPendingBody = async (mailboxId: string, retry: boolean): Promise<Hyd
 const nextMailboxHydrationTarget = async (mailboxId: string): Promise<HydrationTarget | null> =>
   (await newestPendingBody(mailboxId, false)) ?? (await newestPendingBody(mailboxId, true));
 
-export const hydrateMessageBatch = async (ctx: JobContext<HydrationInput>): Promise<{ hydrated: boolean }> => {
+export const hydrateMessageBatch = async (
+  ctx: Pick<JobContext<HydrationInput>, "input" | "heartbeat" | "resubmit">,
+): Promise<{ hydrated: boolean }> => {
   let activeClaim: { messageId: string; claimId: string } | null = null;
   return withLeaseHeartbeat({
     intervalMs: 60_000,

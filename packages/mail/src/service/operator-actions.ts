@@ -242,6 +242,24 @@ const rebuildSearchProjection = async (db: SqlClient, mailboxId: string): Promis
 };
 
 const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promise<JsonRecord> => {
+  // Drafts Mail projected to the provider are never conversation messages. Syncs before the
+  // `\Draft` guard imported them from folders such as Gmail's All Mail; the timeline refresh
+  // below recomputes the conversations they were in.
+  const removedDraftCopies = await db<{ id: string }[]>`
+    DELETE FROM mail.message_contents message
+    USING mail.draft_provider_snapshots snapshot
+    WHERE message.mailbox_id = ${mailboxId}::uuid
+      AND snapshot.mailbox_id = message.mailbox_id
+      AND snapshot.direction = 'export'
+      AND lower(snapshot.stable_message_id) = lower(message.message_id)
+      AND NOT EXISTS (SELECT 1 FROM mail.outbox_submissions outbox WHERE outbox.message_id = message.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM mail.drafts draft
+        WHERE draft.source_message_id = message.id OR draft.derived_from_message_id = message.id
+      )
+      AND NOT EXISTS (SELECT 1 FROM mail.automatic_reply_effects effect WHERE effect.message_id = message.id)
+    RETURNING message.id
+  `;
   await db`SELECT id FROM mail.message_contents WHERE mailbox_id = ${mailboxId}::uuid ORDER BY id FOR SHARE`;
   const orphans = await db<
     {
@@ -360,7 +378,11 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       AND participants.conversation_id = conversation.id
     RETURNING conversation.id
   `;
-  return { createdSingletonThreads: orphans.length, refreshedThreads: refreshed.length };
+  return {
+    createdSingletonThreads: orphans.length,
+    refreshedThreads: refreshed.length,
+    removedDraftCopies: removedDraftCopies.length,
+  };
 };
 
 export const executeOperatorAction = async (params: {
