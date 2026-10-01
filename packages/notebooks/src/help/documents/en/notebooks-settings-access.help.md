@@ -31,7 +31,7 @@ In Write, use the book icon in the bottom toolbar to open Book. The detail panel
 
 Book and Read-only show a round pencil button at the bottom right when you hover over the document. Keyboard focus also reveals it; on touch devices it stays visible. Locked notes do not show an edit action.
 
-If no note is selected or the note is locked, Book offers **Open workspace** in the sidebar for editors and admins. Use it to reach settings or create a note.
+If no note is selected or the note is locked, Book offers **Open workspace** in the sidebar for editors and admins. Use it to reach settings or create a note. If you have hidden the navigation, show it first with the button at the bottom left.
 
 To choose the default for editors and admins, open **Notebook — View & behavior** and change **Default view**. Only notebook admins can change it, and the change saves immediately. The initial default is **Write**. A view chosen explicitly in the page URL takes precedence over the notebook default.
 

@@ -70,10 +70,10 @@ Tab indents in the note editor, so you can nest lists and line up code without r
 Hide the navigation to write with the full width, or when others can see your screen and should not see your notes and folders.
 
 :::reference
-- **Hide:** Select **Hide navigation** at the far left of the editor toolbar, press **Cmd/Ctrl+Alt+S**, or drag the navigation's edge almost all the way to the left. The navigation disappears completely in both layouts and in Book view, including the navigator's note list and Book view's list of pages.
+- **Hide:** Select **Hide navigation** at the far left of the editor toolbar, press **Cmd/Ctrl+Alt+S**, type `>` in the Cloud search and run **Hide notebook navigation**, or drag the navigation's edge almost all the way to the left. The navigation disappears completely in both layouts and in Book view, including the navigator's note list and Book view's list of pages.
 - **Show:** Select **Show navigation** in the same place, press **Cmd/Ctrl+Alt+S** again, or type `>` in the Cloud search and run **Show notebook navigation**. Where the editor toolbar is not shown, such as in Book view, in an empty notebook, in Read-only, in the graph, or in the attachments, the button sits in the bottom-left corner.
 - **Stays hidden:** The choice is stored in this browser and applies to every notebook, also after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
-- **Your place in the note:** Hiding or showing the navigation keeps the cursor and the text at the top of the editor where they are.
+- **Your place in the note:** Hiding or showing the navigation keeps the cursor where it is, and the text at the top of the editor or of Book view stays in place.
 - **Phones:** Small screens keep the navigation in the menu. The button appears on wider screens, where the navigation sits beside the note.
 :::
 

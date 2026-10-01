@@ -11,7 +11,14 @@ import { renderToString } from "solid-js/web";
 // lays out the server HTML at desktop and phone widths.
 const { default: BookSurface } = await import("./BookSurface");
 
-const render = (navigationHidden: boolean) =>
+const welcome = "<h1>Welcome</h1><p>Our handbook explains how the team works together.</p>";
+const sentence = "The team agreed on the next steps and noted who follows up with the other departments. ";
+// Meeting notes as a long bullet list. The reader is near the end of a long point, where a rewrap moves the text furthest.
+const point = (index: number) =>
+  index === 20 ? `${sentence.repeat(27)}<span id="reading">Here</span> ${sentence.repeat(3)}` : sentence.repeat((index % 3) + 2);
+const longNote = `<h1>Welcome</h1><p>${sentence}</p><ul>${Array.from({ length: 40 }, (_, index) => `<li>Point ${index + 1}: ${point(index + 1)}</li>`).join("")}</ul>`;
+
+const render = (navigationHidden: boolean, html = welcome) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "en",
@@ -24,7 +31,7 @@ const render = (navigationHidden: boolean) =>
           canWrite: false,
           locked: false,
           historyIncomplete: false,
-          html: "<h1>Welcome</h1><p>Our handbook explains how the team works together.</p>",
+          html,
           noteTitle: "Welcome",
           appUrl: "https://cloud.example.test",
           cursor: null,
@@ -36,9 +43,66 @@ const render = (navigationHidden: boolean) =>
     }),
   );
 
+// Hides and shows the navigation the way Book view's islands do, around the reading position helper.
+const fixtureEntry = resolve(import.meta.dir, "book-reading-position.fixture.ts");
+const fixture = `
+import { keepBookReadingPosition } from ${JSON.stringify(resolve(import.meta.dir, "book-reading-position.ts"))};
+
+const frame = () => new Promise((settle) => requestAnimationFrame(settle));
+
+window.run = async ({ keep }) => {
+  const main = document.querySelector(".notebook-book-main");
+  const article = document.getElementById("notebook-book-content");
+  const sidebar = document.getElementById("notebook-navigation");
+  const contents = Array.from(sidebar.childNodes);
+  const handle = document.querySelector('[data-app-workspace-resize="sidebar"]');
+  const handlePlace = [handle.parentNode, handle.nextSibling];
+  // The widest navigation a reader can drag it to.
+  document.querySelector(".k2b-app-workspace").style.setProperty("--k2b-workspace-sidebar-width", "360px");
+  const reading = document.getElementById("reading");
+  /** Where the line the reader is on sits, relative to the scroll port's top edge. */
+  const offset = () => Math.round(reading.getBoundingClientRect().top - main.getBoundingClientRect().top);
+  main.scrollTop += offset() - 40;
+  await frame();
+  const result = { before: offset(), widths: [Math.round(article.getBoundingClientRect().width)], steps: [] };
+  for (const hidden of [true, false]) {
+    const restore = keep ? keepBookReadingPosition(article, main) : () => {};
+    // A hidden navigation renders an empty sidebar without its resize handle.
+    sidebar.hidden = hidden;
+    if (hidden) {
+      sidebar.replaceChildren();
+      handle.remove();
+    } else {
+      sidebar.append(...contents);
+      handlePlace[0].insertBefore(handle, handlePlace[1]);
+    }
+    await Promise.resolve();
+    restore();
+    // Every painted frame after the change, read before the next paint.
+    const painted = [];
+    for (let i = 0; i < 4; i++) {
+      await frame();
+      painted.push(offset());
+    }
+    result.widths.push(Math.round(article.getBoundingClientRect().width));
+    result.steps.push(painted);
+  }
+  return result;
+};
+`;
+
 let browser: Browser;
 let css: string;
+let script: string;
 beforeAll(async () => {
+  const fixtureBuild = await Bun.build({
+    entrypoints: [fixtureEntry],
+    files: { [fixtureEntry]: fixture },
+    target: "browser",
+    format: "iife",
+  });
+  if (!fixtureBuild.success) throw new AggregateError(fixtureBuild.logs, "Could not bundle the reading position fixture.");
+  script = await fixtureBuild.outputs[0]!.text();
   // The page head's order: the app's stylesheet, then Cloud's global one.
   const stylesheets = [resolve(import.meta.dir, "../../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../../styles.css")];
   const outputs = await Promise.all(
@@ -56,11 +120,11 @@ afterAll(async () => {
 });
 
 /** Book view as the full-page layout places it: a flex column filling the viewport. */
-const load = async (width: number, navigationHidden: boolean): Promise<Page> => {
+const load = async (width: number, navigationHidden: boolean, html?: string): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 800 }, isMobile: width < 1024, hasTouch: width < 1024 });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div style="display:flex;flex-direction:column;height:100vh">${render(navigationHidden)}</div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div style="display:flex;flex-direction:column;height:100vh">${render(navigationHidden, html)}</div></body></html>`,
   );
   return page;
 };
@@ -121,5 +185,41 @@ describe("Book view with the notebook navigation hidden", () => {
       await visiblePage.close();
       await hiddenPage.close();
     }
+  });
+});
+
+type Run = { before: number; widths: number[]; steps: [hidden: number[], shown: number[]] };
+
+const run = async (keep: boolean): Promise<Run> => {
+  // At 1024 px a wide navigation leaves the article narrower than its reading width.
+  const page = await load(1024, false, longNote);
+  try {
+    await page.addScriptTag({ content: script });
+    return (await page.evaluate(`window.run(${JSON.stringify({ keep })})`)) as Run;
+  } finally {
+    await page.close();
+  }
+};
+
+/** The line moves by less than two of the article's 28 px lines; without help it leaves the view. */
+const steady = (offsets: number[], expected: number) => offsets.every((offset) => Math.abs(offset - expected) < 56);
+
+describe("Book view reading position when the navigation hides and shows", () => {
+  test("keeps the text the reader is on in place while the article rewraps, and returns to it exactly", async () => {
+    const result = await run(true);
+    expect(Math.abs(result.before - 40)).toBeLessThanOrEqual(1);
+    expect(result.widths[1]).toBeGreaterThan(result.widths[0]!);
+    expect(result.widths[2]).toBe(result.widths[0]!);
+    const [hidden, shown] = result.steps;
+    expect({ hidden, steady: steady(hidden, result.before) }).toEqual({ hidden, steady: true });
+    // Showing the navigation again restores the reader's first view.
+    expect(shown.every((offset) => Math.abs(offset - result.before) <= 1)).toBe(true);
+    // No later correction either: the first painted frame is the final position.
+    for (const painted of result.steps) expect(new Set(painted).size).toBe(1);
+  });
+
+  test("without it the browser's scroll anchoring lets the text the reader is on move out of view", async () => {
+    const result = await run(false);
+    expect(result.steps.some((painted) => !steady(painted, result.before))).toBe(true);
   });
 });
