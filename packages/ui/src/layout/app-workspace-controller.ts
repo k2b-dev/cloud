@@ -36,6 +36,8 @@ type ActiveResize = {
   startSize: number;
   liveSize: number;
   moved: boolean;
+  /** A hideable sidebar dragged below half its minimum previews the hidden state. */
+  hiding: boolean;
   direction: 1 | -1;
   previousUserSelect: string;
 };
@@ -69,6 +71,18 @@ const rootElements = (root: HTMLElement, selector: string) =>
 const sidebarElement = (root: HTMLElement) => rootElements(root, ".k2b-app-workspace__sidebar")[0] ?? null;
 const mainElement = (root: HTMLElement) => rootElements(root, ".k2b-app-workspace__main")[0] ?? null;
 const sidebarCollapsible = (root: HTMLElement) => sidebarElement(root)?.dataset.workspaceCollapsible === "true";
+const sidebarHideable = (root: HTMLElement) => sidebarElement(root)?.dataset.workspaceHideable === "true";
+/**
+ * Asks the owning `AppWorkspace.Sidebar` to hide. The sidebar's `hidden` prop
+ * stays application state, so the controller only requests the change.
+ */
+export const APP_WORKSPACE_SIDEBAR_HIDE_EVENT = "k2b-app-workspace-sidebar-hide";
+const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
+  const sidebar = sidebarElement(root);
+  if (!sidebar) return;
+  if (hidden) sidebar.dataset.workspaceHidePreview = "true";
+  else delete sidebar.dataset.workspaceHidePreview;
+};
 const isVisible = (element: HTMLElement | null): element is HTMLElement =>
   Boolean(element && !element.hidden && getComputedStyle(element).display !== "none");
 const elementSize = (element: HTMLElement | null, kind: AppWorkspaceResizeKind) => {
@@ -292,13 +306,17 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const client = pendingClient;
     pendingClient = null;
     active.moved ||= client !== active.startClient;
-    active.liveSize = applySize(
-      active.root,
-      active.handle,
-      active.kind,
-      active.startSize + (client - active.startClient) * active.direction,
-      { snapSidebar: active.kind !== "sidebar" },
-    );
+    const requested = active.startSize + (client - active.startClient) * active.direction;
+    // Below half the smallest visible width a hideable sidebar disappears as a
+    // preview; dragging back out restores the live width.
+    const hiding =
+      active.kind === "sidebar" && sidebarHideable(active.root) && requested < sizeLimits(active.root, active.handle, active.kind).min / 2;
+    if (hiding !== active.hiding) {
+      active.hiding = hiding;
+      previewSidebarHidden(active.root, hiding);
+    }
+    if (!hiding)
+      active.liveSize = applySize(active.root, active.handle, active.kind, requested, { snapSidebar: active.kind !== "sidebar" });
     if (active.kind === "sidebar" || active.kind === "detail") reconcilePanes(active.root, layoutState, active);
   };
   const onPointerMove = (event: PointerEvent) => {
@@ -314,7 +332,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     active = null;
     delete finished.root.dataset.workspaceResizeActive;
     delete finished.handle.dataset.workspaceResizeActive;
-    if (finished.moved) {
+    if (finished.hiding) {
+      // The width before the drag stays the remembered width, so showing the
+      // sidebar again restores it rather than the minimum the drag passed.
+      previewSidebarHidden(finished.root, false);
+      applySize(finished.root, finished.handle, "sidebar", finished.startSize);
+      sidebarElement(finished.root)?.dispatchEvent(new CustomEvent(APP_WORKSPACE_SIDEBAR_HIDE_EVENT));
+    } else if (finished.moved) {
       // A pane's rendered width may have been fitted below the pointer's live
       // preference to keep the main region usable. Persist that preference,
       // then fit the visible panes from the updated state. Reapplying it through
@@ -351,6 +375,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       startSize,
       liveSize: startSize,
       moved: false,
+      hiding: false,
       direction: resizeDirection(handle, kind),
       previousUserSelect: document.body.style.userSelect,
     };

@@ -51,6 +51,7 @@ const WorkspaceDemo = () => {
   const [detailOpen, setDetailOpen] = createSignal(true);
   const [drawerOpen, setDrawerOpen] = createSignal(true);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
+  const [navigationHidden, setNavigationHidden] = createSignal(false);
   const togglePane = () => setPaneOpen((open) => !open);
   const toggleDetail = () => setDetailOpen((open) => !open);
   const workspace = (collapsed: boolean) => (
@@ -58,7 +59,13 @@ const WorkspaceDemo = () => {
       layoutState={() => ({ version: 2, sidebarWidth: 208, sidebarCollapsed: collapsed })}
       onLayoutChange={(state) => setSidebarCollapsed(Boolean(state.sidebarCollapsed))}
     >
-      <AppWorkspace.Sidebar collapsible>
+      <AppWorkspace.Sidebar
+        id="ui-workspace-demo-navigation"
+        label="Inventory"
+        collapsible
+        hidden={navigationHidden()}
+        onHiddenChange={setNavigationHidden}
+      >
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody>
             <AppWorkspace.SidebarSection title="Warehouses">
@@ -138,7 +145,16 @@ const WorkspaceDemo = () => {
               <strong>{activeView() === "activity" ? "Recent activity" : `Inventory · ${activeView()}`}</strong>
               <span>Main 1</span>
               <div class="ui-workspace-demo__actions">
-                <Button size="sm" variant="secondary" onClick={() => setSidebarCollapsed(!collapsed)}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-expanded={!navigationHidden()}
+                  aria-controls="ui-workspace-demo-navigation"
+                  onClick={() => setNavigationHidden(!navigationHidden())}
+                >
+                  {navigationHidden() ? "Show navigation" : "Hide navigation"}
+                </Button>
+                <Button size="sm" variant="secondary" disabled={navigationHidden()} onClick={() => setSidebarCollapsed(!collapsed)}>
                   {collapsed ? "Expand navigation" : "Collapse navigation"}
                 </Button>
                 <Button size="sm" variant="secondary" onClick={togglePane}>
@@ -171,16 +187,17 @@ const WorkspaceDemo = () => {
     <DemoCard
       id="workspace"
       chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
-      description="A portable application frame with responsive navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing."
+      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing."
       code={`const [layout, setLayout] = createSignal<AppWorkspaceLayoutState>({ version: 2, sidebarWidth: 208 });
 const [active, setActive] = createSignal("available");
 const [expanded, setExpanded] = createSignal(["items"]);
 const [paneOpen, setPaneOpen] = createSignal(false);
 const [detailOpen, setDetailOpen] = createSignal(true);
 const [drawerOpen, setDrawerOpen] = createSignal(true);
+const [navigationHidden, setNavigationHidden] = createSignal(false);
 
 <AppWorkspace layoutState={layout} onLayoutChange={setLayout}>
-  <AppWorkspace.Sidebar collapsible>
+  <AppWorkspace.Sidebar id="inventory-navigation" collapsible hidden={navigationHidden()} onHiddenChange={setNavigationHidden}>
     <AppWorkspace.SidebarSection
       title="Views"
       actions={

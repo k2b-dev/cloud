@@ -413,6 +413,52 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain("--k2b-workspace-sidebar-width:560px");
   });
 
+  test("renders a hidden sidebar as an empty labelled anchor without creating its content or resize handle", () => {
+    let created = 0;
+    const render = (hidden: boolean) =>
+      renderToString(() =>
+        createComponent(AppWorkspace, {
+          get children() {
+            return createComponent(AppWorkspace.Sidebar, {
+              id: "navigation",
+              label: "Navigation",
+              hidden,
+              onHiddenChange: () => {},
+              get children() {
+                return createComponent(AppWorkspace.SidebarDesktop, {
+                  get children() {
+                    created += 1;
+                    return createComponent(AppWorkspace.SidebarItem, { href: "/private", children: "Private folder" });
+                  },
+                });
+              },
+            });
+          },
+        }),
+      );
+
+    const hidden = render(true);
+    expect(created).toBe(0);
+    expect(hidden).toMatch(/<aside[^>]*id="navigation"[^>]*hidden[^>]*><\/aside>/);
+    expect(hidden).not.toContain("Private folder");
+    expect(hidden).not.toContain("data-app-workspace-resize");
+
+    const visible = render(false);
+    expect(created).toBe(1);
+    expect(visible).toContain("Private folder");
+    expect(visible).toContain('data-workspace-hideable="true"');
+    expect(visible).toContain('aria-controls="navigation"');
+  });
+
+  test("hides the navigation panes and frees the sidebar track with a hidden sidebar", () => {
+    const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    const rule = css.match(/\/\* Hidden navigation takes[\s\S]*?\{\s*display: none;\s*\}/)?.[0] ?? "";
+
+    expect(rule).toContain('.k2b-app-workspace__sidebar:is([hidden], [data-workspace-hide-preview="true"])');
+    expect(rule).toContain('.k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary)');
+    expect(css).toContain('.k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden])');
+  });
+
   test("inherits a server-rendered sidebar width before controller hydration", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
     const rootRule = css.match(/\.k2b-ui \.k2b-app-workspace\s*\{([\s\S]*?)\}/)?.[1];
@@ -824,7 +870,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     test("keeps a stacked sidebar visible above the content below the desktop breakpoint", () => {
       // First rule of its media block, so the shared helper's `}` anchor cannot see it.
-      const stacked = css.match(/\.k2b-app-workspace__sidebar\[data-mobile=stacked\]\{([^}]*)\}/)?.[1] ?? "";
+      // A hidden stacked sidebar stays hidden, so the rule excludes it.
+      const stacked = css.match(/\.k2b-app-workspace__sidebar\[data-mobile=stacked\]:not\(\[hidden\]\)\{([^}]*)\}/)?.[1] ?? "";
       expect(stacked).toContain("display:flex");
       expect(stacked).toContain("grid-area:mobile");
       expect(stacked).toContain("max-height:50dvh");

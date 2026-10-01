@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Window as HappyWindow } from "happy-dom";
-import { installAppWorkspaceController } from "./app-workspace-controller";
+import { APP_WORKSPACE_SIDEBAR_HIDE_EVENT, installAppWorkspaceController } from "./app-workspace-controller";
 import { APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
 
 type Frame = (time: number) => void;
@@ -18,6 +18,7 @@ const globalKeys = [
   "Element",
   "HTMLElement",
   "PointerEvent",
+  "CustomEvent",
   "KeyboardEvent",
   "FocusEvent",
   "MutationObserver",
@@ -72,7 +73,7 @@ const flushFrames = () => {
 };
 
 const workspace = (
-  options: { collapsible?: boolean; height?: number; resizable?: boolean; sidebarWidth?: number; width?: number } = {},
+  options: { collapsible?: boolean; height?: number; hideable?: boolean; resizable?: boolean; sidebarWidth?: number; width?: number } = {},
 ) => {
   const root = document.createElement("div");
   root.dataset.k2bAppWorkspace = "";
@@ -83,12 +84,14 @@ const workspace = (
   sidebar.className = "k2b-app-workspace__sidebar";
   sidebar.dataset.workspaceResizable = "true";
   sidebar.dataset.workspaceCollapsible = options.collapsible ? "true" : "false";
+  if (options.hideable) sidebar.dataset.workspaceHideable = "true";
   setRect(sidebar, { height: 700, width: options.sidebarWidth ?? 176 });
   root.append(sidebar);
 
   const handle = document.createElement("button");
   handle.dataset.appWorkspaceResize = "sidebar";
   handle.dataset.workspaceResizeEdge = "end";
+  handle.dataset.workspaceMinSize = "176";
   sidebar.append(handle);
   document.body.append(root);
 
@@ -112,6 +115,7 @@ beforeEach(() => {
     Element: window.Element,
     HTMLElement: window.HTMLElement,
     PointerEvent: window.PointerEvent,
+    CustomEvent: window.CustomEvent,
     KeyboardEvent: window.KeyboardEvent,
     FocusEvent: window.FocusEvent,
     MutationObserver: window.MutationObserver,
@@ -346,6 +350,61 @@ describe("AppWorkspace resize controller behaviour", () => {
     window.dispatchEvent(new window.PointerEvent("pointerup", { clientX: 351, pointerId: 8 }));
     expect(root.style.getPropertyValue(paneVariable)).toBe("351px");
     expect(written).toHaveLength(1);
+    dispose();
+  });
+
+  test("hides a hideable sidebar dragged below half its minimum without persisting the drag", () => {
+    const { handle, root, sidebar } = workspace({ hideable: true, sidebarWidth: 240 });
+    const written: unknown[] = [];
+    const requests: Event[] = [];
+    sidebar.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, (event) => requests.push(event));
+    const dispose = installAppWorkspaceController({ root, writeState: (state) => written.push(state) });
+    flushFrames();
+    const drag = (clientX: number) => {
+      window.dispatchEvent(new window.PointerEvent("pointermove", { clientX, pointerId: 7 }));
+      flushFrames();
+    };
+
+    handle.dispatchEvent(
+      new window.PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 240, pointerId: 7 }) as unknown as Event,
+    );
+    // Between the minimum and half of it the sidebar stays at its minimum.
+    drag(100);
+    expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("176px");
+    expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
+    drag(80);
+    expect(sidebar.dataset.workspaceHidePreview).toBe("true");
+    // Dragging back out cancels the preview.
+    drag(200);
+    expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
+    expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("200px");
+    drag(20);
+    expect(sidebar.dataset.workspaceHidePreview).toBe("true");
+
+    window.dispatchEvent(new window.PointerEvent("pointerup", { clientX: 20, pointerId: 7 }));
+    expect(requests).toHaveLength(1);
+    expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
+    // The width before the drag is what showing the sidebar again restores.
+    expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("240px");
+    expect(written).toEqual([]);
+    dispose();
+  });
+
+  test("never hides a sidebar without the hideable marker", () => {
+    const { handle, root, sidebar } = workspace({ sidebarWidth: 240 });
+    const requests: Event[] = [];
+    sidebar.addEventListener(APP_WORKSPACE_SIDEBAR_HIDE_EVENT, (event) => requests.push(event));
+    const dispose = installAppWorkspaceController({ root });
+
+    handle.dispatchEvent(
+      new window.PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 240, pointerId: 7 }) as unknown as Event,
+    );
+    window.dispatchEvent(new window.PointerEvent("pointermove", { clientX: 10, pointerId: 7 }));
+    flushFrames();
+    expect(sidebar.dataset.workspaceHidePreview).toBeUndefined();
+    window.dispatchEvent(new window.PointerEvent("pointerup", { clientX: 10, pointerId: 7 }));
+    expect(requests).toEqual([]);
+    expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe("176px");
     dispose();
   });
 

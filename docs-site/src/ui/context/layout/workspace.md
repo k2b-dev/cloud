@@ -74,6 +74,37 @@ Set `collapsible` on `Sidebar` to let the shared resize controller snap it to
 the compact rail. The collapsed flag is part of `AppWorkspaceLayoutState`, so
 the host can restore the same navigation state on the next mount.
 
+Set `hidden` on `Sidebar` to hide the desktop navigation completely, for
+focused work or when others can see the screen. A hidden sidebar renders none
+of its children and no resize handle, so its labels are neither visible nor
+reachable, and main panes with `surface="navigation"` hide with it. The work
+area takes the full width. Below 1024 px nothing changes: the host's mobile
+navigation stays available. Pass `onHiddenChange` as well to make a drag of
+the resize handle below half the minimum width hide the sidebar; the shared
+controller previews the hidden state during the drag, requests `true` on
+release, and keeps the width from before the drag for the next time it shows.
+The hidden state belongs to the application like a persisted layout: render it
+on the server so a hidden navigation never paints, and give the control that
+shows it again `aria-expanded` and `aria-controls` with the sidebar's `id`.
+
+```tsx
+const [hidden, setHidden] = createSignal(initiallyHidden);
+
+<>
+  <AppWorkspace.Sidebar id="project-navigation" label="Navigation" hidden={hidden()} onHiddenChange={setHidden}>
+    <AppWorkspace.SidebarDesktop>{/* navigation */}</AppWorkspace.SidebarDesktop>
+  </AppWorkspace.Sidebar>
+  <IconButton
+    label={hidden() ? "Show navigation" : "Hide navigation"}
+    aria-expanded={!hidden()}
+    aria-controls="project-navigation"
+    onClick={() => setHidden(!hidden())}
+  >
+    <i class={`ti ${hidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"}`} aria-hidden="true" />
+  </IconButton>
+</>;
+```
+
 Set `scrollPreserveKey` on scrolling sidebar bodies when enhanced navigation should restore their position.
 
 Across document navigations, `SidebarBody` restores its own scroll offset
@@ -272,9 +303,10 @@ type AppWorkspaceBottomDrawerProps = {
 
 ```ts
 type AppWorkspaceSidebarProps = {
-  label?: string;
+  id?: string; label?: string;
   children: JSX.Element; class?: string; mobile?: "hidden" | "stacked"; resizable?: boolean; resizeShadow?: boolean;
   collapsible?: boolean; defaultSize?: number; minSize?: number; maxSize?: number;
+  hidden?: boolean; onHiddenChange?: (hidden: boolean) => void;
 };
 
 type AppWorkspaceSidebarBodyProps = {
@@ -389,7 +421,7 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | Detail | 384 | 288 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. Detail widths `sm/md/lg/xl` are 288/384/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 288/384/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
