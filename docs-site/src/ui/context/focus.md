@@ -24,6 +24,11 @@ you render inside these containers, such as a link in a table cell, and
 controls in a `.k2b-ui` root nested inside them. Such a control can keep the
 browser's default ring; the container still draws it inside.
 
+A scrolling area that takes focus itself draws its ring inside its own edge.
+This covers a `ScrollArea`, which Firefox focuses when it holds no focusable
+content, and the keyboard-scrollable body of a `DataTable`, whose ring stays
+visible above a sticky header or footer.
+
 A filled control, such as a primary or danger button, a checked checkbox, or
 a checked switch, draws its inside ring in the color of its label or check
 mark, with a band of its fill left around the ring. The ring therefore stays

@@ -70,6 +70,36 @@ const menu = (label: string) =>
     },
   });
 
+/** Sidebar rows whose actions and preview buttons appear on hover or keyboard focus. */
+const sidebarRows = () => [
+  createComponent(AppWorkspace.SidebarItem, {
+    icon: "ti ti-history",
+    preview: { label: "Recent", trigger: "row", content: "Recent files" },
+    children: "Recent",
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    href: "#retro",
+    preview: { label: "Chat details", content: "Details" },
+    get children() {
+      return [
+        createComponent(AppWorkspace.SidebarItemLabel, { children: "Retrospective notes for the launch" }),
+        createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-arrow-back-up", label: "Reopen chat", visibility: "hover" }),
+      ];
+    },
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    href: "#inbox",
+    icon: "ti ti-inbox",
+    meta: "12",
+    get children() {
+      return [
+        createComponent(AppWorkspace.SidebarItemLabel, { children: "Inbox" }),
+        createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-dots", label: "Inbox actions", visibility: "hover" }),
+      ];
+    },
+  }),
+];
+
 /** A workspace whose main area starts its controls flush at the edge, as board and table views do. */
 const workspace = () =>
   html(() =>
@@ -97,6 +127,12 @@ const workspace = () =>
                                   children: label,
                                 }),
                               );
+                            },
+                          }),
+                          createComponent(AppWorkspace.SidebarSection, {
+                            title: "Chats",
+                            get children() {
+                              return sidebarRows();
                             },
                           }),
                         ];
@@ -547,6 +583,48 @@ describe("@k2b/ui focus rings inside clipping containers", () => {
       });
     }
   }
+});
+
+describe("@k2b/ui sidebar row actions", () => {
+  test("hover reveals each row's action over the row without moving or resizing a box", async () => {
+    const target = await browser.newPage(viewports.desktop);
+    try {
+      await target.setContent(page(`<div style="${scenes.workspace!.frame}">${workspace()}</div>`));
+      const geometry = () =>
+        target.evaluate(() =>
+          Array.from(document.querySelectorAll("main *"), (element) => {
+            const box = element.getBoundingClientRect();
+            return [box.x, box.y, box.width, box.height].map((value) => value.toFixed(2)).join(" ");
+          }),
+        );
+      const rest = await geometry();
+      const rows = target.locator(
+        ".k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-action[data-visibility='hover'])",
+      );
+      const revealed: [string, string[], number][] = [];
+      for (const row of await rows.all()) {
+        await row.hover();
+        const hovered = await geometry();
+        revealed.push([
+          (await row.locator(".k2b-app-workspace__sidebar-item-label").innerText()).trim(),
+          await row.evaluate((element) =>
+            Array.from(element.querySelectorAll<HTMLElement>(":scope > .k2b-app-workspace__sidebar-item-action"))
+              .filter((action) => getComputedStyle(action).opacity === "1" && getComputedStyle(action).pointerEvents !== "none")
+              .map((action) => action.getAttribute("aria-label") ?? ""),
+          ),
+          hovered.filter((box, index) => box !== rest[index]).length,
+        ]);
+        await target.mouse.move(1400, 880);
+      }
+      expect(revealed).toEqual([
+        ["Recent", ["Recent"], 0],
+        ["Retrospective notes for the launch", ["Reopen chat"], 0],
+        ["Inbox", ["Inbox actions"], 0],
+      ]);
+    } finally {
+      await target.close();
+    }
+  });
 });
 
 describe("@k2b/ui focus ring colours inside clipping containers", () => {
