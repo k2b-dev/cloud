@@ -157,14 +157,25 @@ test("footer project popup and mobile group share search and creation; pinned ch
     expect(Array.from(body.querySelectorAll("h2")).map((heading) => heading.textContent)).not.toContain("Chats");
     const footer = dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
     const panel = footer.querySelector<HTMLElement>('[role="dialog"][aria-label="Projects"]')!;
+    const projects = footer.querySelector<HTMLButtonElement>(`button[aria-controls="${panel.id}"]`)!;
+    // Happy DOM lacks the native popover implementation; expose its toggle events.
+    const toggle = (newState: "open" | "closed") => {
+      const event = new Event("toggle");
+      Object.defineProperty(event, "newState", { value: newState });
+      panel.dispatchEvent(event);
+    };
     let closes = 0;
+    panel.showPopover = () => toggle("open");
     panel.hidePopover = () => {
       closes++;
+      toggle("closed");
     };
+    projects.click();
     panel.querySelector<HTMLButtonElement>('[aria-label="Search Projects…"]')!.click();
     expect(searches).toEqual([
       { query: "", scope: { appId: "assistant", tag: "assistant-project", label: "Projects", icon: "ti ti-folders" } },
     ]);
+    projects.click();
     panel.querySelector<HTMLButtonElement>('[aria-label="Create Project"]')!.click();
     expect(created).toBe(1);
     expect(closes).toBe(2);
