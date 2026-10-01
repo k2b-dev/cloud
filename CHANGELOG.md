@@ -3,6 +3,46 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.26.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.25.0...cloud-v0.26.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **assistant:** the exported browser-safe type `AiChatQuotaSnapshot` and `GET /api/ai/quotas` (and `getAiChatQuotas()`) no longer carry money: `unit`, `limit`, `used`, `input`, `output`, and `estimated` are gone. Each balance is now `{ scope, unlimited, usedPercent, resetsAt }`. `usedPercent` is a whole number from 0 to 100, reaches 100 only when the allowance is used up, and is `null` when the allowance is unlimited or cannot be measured. Administrators still configure allowances in money in the admin settings, and the administrator endpoints keep amounts.
+
+### Features
+
+* **assistant:** show chat usage as a quiet ring without money ([#486](https://github.com/k2b-dev/cloud/issues/486)) ([27f6b77](https://github.com/k2b-dev/cloud/commit/27f6b7721c44d5328387c5cdfa99b1473f22a84a))
+* **cloud:** show sign-in and other simple pages without a card on phones ([#481](https://github.com/k2b-dev/cloud/issues/481)) ([d6a805e](https://github.com/k2b-dev/cloud/commit/d6a805e462f968a1c472ef0289fee3d74f8c8a2c))
+* **ui:** add a hover preview card that opens beside its anchor ([#516](https://github.com/k2b-dev/cloud/issues/516)) ([3a05dd3](https://github.com/k2b-dev/cloud/commit/3a05dd3ec8528766bcee25cd8f49f553b19b540a))
+* **ui:** keep focus rings visible inside clipping containers ([#484](https://github.com/k2b-dev/cloud/issues/484)) ([b5051f9](https://github.com/k2b-dev/cloud/commit/b5051f99cd6238c12cd7f99aac1e25803a488b8a))
+
+
+### Bug Fixes
+
+* **cloud:** keep focus rings whole on flat standalone cards on phones ([#498](https://github.com/k2b-dev/cloud/issues/498)) ([ecd61ee](https://github.com/k2b-dev/cloud/commit/ecd61ee52cd56e0015949f7334b76128af449697))
+* **cloud:** keep starting until NATS and JetStream answer instead of staying unhealthy ([#482](https://github.com/k2b-dev/cloud/issues/482)) ([d3c8cdc](https://github.com/k2b-dev/cloud/commit/d3c8cdc61c4d1914756724cdfb91c3f40e7e1ec5))
+* **cloud:** preload the Latin Plex faces so pages keep their first-frame layout ([#483](https://github.com/k2b-dev/cloud/issues/483)) ([82bbf3f](https://github.com/k2b-dev/cloud/commit/82bbf3fa65bcc00178b400f2f28ebba5b5e28823))
+* **cloud:** show each service account's kind the same way in access editors, pickers, and cost limits ([#488](https://github.com/k2b-dev/cloud/issues/488)) ([89f9db9](https://github.com/k2b-dev/cloud/commit/89f9db99f7091d9b1001e27d24197538308f3cc4))
+* keep phone footers on finger-sized targets with a compact language and theme control ([#510](https://github.com/k2b-dev/cloud/issues/510)) ([2a2f564](https://github.com/k2b-dev/cloud/commit/2a2f564fd3ae0bfc5f0f928ec3bcf36dbcd23a4f))
+* let agent and standalone service accounts use their grants in Pulse and Venue ([#494](https://github.com/k2b-dev/cloud/issues/494)) ([3b7480c](https://github.com/k2b-dev/cloud/commit/3b7480c779368c3e6b6198c83ee6db2c958c3027))
+* **mail:** cap agent and standalone tokens by their scopes like every other app ([#492](https://github.com/k2b-dev/cloud/issues/492)) ([b37aad8](https://github.com/k2b-dev/cloud/commit/b37aad8d373644fefbc70d8a078ee37e3104e9c9))
+* **mail:** keep a stuck IMAP connection from crashing the Mail process ([#507](https://github.com/k2b-dev/cloud/issues/507)) ([a987442](https://github.com/k2b-dev/cloud/commit/a987442f847c66a8062b1480bd1b81892e5772db))
+* **mail:** keep IMAP push listeners through short lease-store stalls and record why a lease was lost ([#514](https://github.com/k2b-dev/cloud/issues/514)) ([65a3f5c](https://github.com/k2b-dev/cloud/commit/65a3f5c5fb8e04126aaa15cfef4995b23dbd5aea))
+* **mail:** keep one unstorable envelope value from stalling a folder's sync ([#515](https://github.com/k2b-dev/cloud/issues/515)) ([ffed951](https://github.com/k2b-dev/cloud/commit/ffed951381d5ddb4f26083297c10d0887462eb58))
+* **mail:** move to imapflow 2 and sync messages with an unreadable Date header ([#502](https://github.com/k2b-dev/cloud/issues/502)) ([2e400f1](https://github.com/k2b-dev/cloud/commit/2e400f196e5ab0052ae5f205dddde54a80abc89f)), closes [#464](https://github.com/k2b-dev/cloud/issues/464)
+* **notebooks:** keep the line you type above the editor's bottom fade ([#499](https://github.com/k2b-dev/cloud/issues/499)) ([0ae8d3c](https://github.com/k2b-dev/cloud/commit/0ae8d3c78825d4a3b64c8eb2d92c9b6d9e373875))
+* **notebooks:** list the home note first in the book sidebar ([#478](https://github.com/k2b-dev/cloud/issues/478)) ([93f10a9](https://github.com/k2b-dev/cloud/commit/93f10a980240b582c4f37b6d03341e2c6bccd02d))
+* **ui:** give icon-only controls a tooltip with their label ([#497](https://github.com/k2b-dev/cloud/issues/497)) ([f3119bc](https://github.com/k2b-dev/cloud/commit/f3119bc687158c0209699273e77798ab08b53664))
+* **ui:** keep a just-opened context menu open ([#512](https://github.com/k2b-dev/cloud/issues/512)) ([591c840](https://github.com/k2b-dev/cloud/commit/591c8409414a9a14df0fd224d4fb28db97a3086e))
+* **ui:** keep field errors red inside dialog sections ([#501](https://github.com/k2b-dev/cloud/issues/501)) ([6ee0b0a](https://github.com/k2b-dev/cloud/commit/6ee0b0a8d6494797b375e397bc2069fed82bf2ec))
+* **ui:** keep multi-line fields with a description inside form dialogs ([#508](https://github.com/k2b-dev/cloud/issues/508)) ([ef6738f](https://github.com/k2b-dev/cloud/commit/ef6738f4e1678bb5cee9a3b8022797c3f1c129e6))
+* **ui:** keep the tab list from scrolling vertically ([#500](https://github.com/k2b-dev/cloud/issues/500)) ([fac3137](https://github.com/k2b-dev/cloud/commit/fac3137141f37871555de2381ec4349f1708f0cf))
+* **ui:** return focus without a ring when a pointer opened the overlay ([#496](https://github.com/k2b-dev/cloud/issues/496)) ([5be160b](https://github.com/k2b-dev/cloud/commit/5be160bbc2e62078b0da6bb6ac181d2677c1c7bc))
+* **ui:** reveal the sidebar preview button without shrinking the item label ([#511](https://github.com/k2b-dev/cloud/issues/511)) ([8f0ffa5](https://github.com/k2b-dev/cloud/commit/8f0ffa5a6463705d13bf9328e9f9545426ee4f08))
+* **ui:** show the loading placeholder while a PDF preview loads ([#506](https://github.com/k2b-dev/cloud/issues/506)) ([b94acfd](https://github.com/k2b-dev/cloud/commit/b94acfdbab3b16bf78c9a2be23484996bd55bd05))
+* **ui:** size menus to their content so every label is readable ([#503](https://github.com/k2b-dev/cloud/issues/503)) ([2f38dae](https://github.com/k2b-dev/cloud/commit/2f38daed413d962715fe754be8cf8ebd92709b30))
+
 ## [0.25.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.24.0...cloud-v0.25.0) (2026-09-30)
 
 

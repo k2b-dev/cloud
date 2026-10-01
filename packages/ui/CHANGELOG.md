@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.10.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.9.1...npm-ui-v0.10.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **assistant:** the exported browser-safe type `AiChatQuotaSnapshot` and `GET /api/ai/quotas` (and `getAiChatQuotas()`) no longer carry money: `unit`, `limit`, `used`, `input`, `output`, and `estimated` are gone. Each balance is now `{ scope, unlimited, usedPercent, resetsAt }`. `usedPercent` is a whole number from 0 to 100, reaches 100 only when the allowance is used up, and is `null` when the allowance is unlimited or cannot be measured. Administrators still configure allowances in money in the admin settings, and the administrator endpoints keep amounts.
+
+### Features
+
+* **assistant:** show chat usage as a quiet ring without money ([#486](https://github.com/k2b-dev/cloud/issues/486)) ([27f6b77](https://github.com/k2b-dev/cloud/commit/27f6b7721c44d5328387c5cdfa99b1473f22a84a))
+* **ui:** add a hover preview card that opens beside its anchor ([#516](https://github.com/k2b-dev/cloud/issues/516)) ([3a05dd3](https://github.com/k2b-dev/cloud/commit/3a05dd3ec8528766bcee25cd8f49f553b19b540a))
+* **ui:** keep focus rings visible inside clipping containers ([#484](https://github.com/k2b-dev/cloud/issues/484)) ([b5051f9](https://github.com/k2b-dev/cloud/commit/b5051f99cd6238c12cd7f99aac1e25803a488b8a))
+
+
+### Bug Fixes
+
+* **ui:** give icon-only controls a tooltip with their label ([#497](https://github.com/k2b-dev/cloud/issues/497)) ([f3119bc](https://github.com/k2b-dev/cloud/commit/f3119bc687158c0209699273e77798ab08b53664))
+* **ui:** keep a just-opened context menu open ([#512](https://github.com/k2b-dev/cloud/issues/512)) ([591c840](https://github.com/k2b-dev/cloud/commit/591c8409414a9a14df0fd224d4fb28db97a3086e))
+* **ui:** keep field errors red inside dialog sections ([#501](https://github.com/k2b-dev/cloud/issues/501)) ([6ee0b0a](https://github.com/k2b-dev/cloud/commit/6ee0b0a8d6494797b375e397bc2069fed82bf2ec))
+* **ui:** keep multi-line fields with a description inside form dialogs ([#508](https://github.com/k2b-dev/cloud/issues/508)) ([ef6738f](https://github.com/k2b-dev/cloud/commit/ef6738f4e1678bb5cee9a3b8022797c3f1c129e6))
+* **ui:** keep the tab list from scrolling vertically ([#500](https://github.com/k2b-dev/cloud/issues/500)) ([fac3137](https://github.com/k2b-dev/cloud/commit/fac3137141f37871555de2381ec4349f1708f0cf))
+* **ui:** return focus without a ring when a pointer opened the overlay ([#496](https://github.com/k2b-dev/cloud/issues/496)) ([5be160b](https://github.com/k2b-dev/cloud/commit/5be160bbc2e62078b0da6bb6ac181d2677c1c7bc))
+* **ui:** reveal the sidebar preview button without shrinking the item label ([#511](https://github.com/k2b-dev/cloud/issues/511)) ([8f0ffa5](https://github.com/k2b-dev/cloud/commit/8f0ffa5a6463705d13bf9328e9f9545426ee4f08))
+* **ui:** show the loading placeholder while a PDF preview loads ([#506](https://github.com/k2b-dev/cloud/issues/506)) ([b94acfd](https://github.com/k2b-dev/cloud/commit/b94acfdbab3b16bf78c9a2be23484996bd55bd05))
+* **ui:** size menus to their content so every label is readable ([#503](https://github.com/k2b-dev/cloud/issues/503)) ([2f38dae](https://github.com/k2b-dev/cloud/commit/2f38daed413d962715fe754be8cf8ebd92709b30))
+
 ## [0.9.1](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.9.0...npm-ui-v0.9.1) (2026-09-30)
 
 
