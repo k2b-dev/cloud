@@ -331,6 +331,24 @@ const waitFor = async (ready: () => Promise<boolean>, what: string, timeoutMs = 
   }
 };
 
+/**
+ * The draft projection worker this suite runs exports, imports, and retires drafts under the same
+ * provider lease as sync and hydration. Their jobs wait out that routine contention instead of
+ * failing, and so do the direct calls here.
+ */
+const whenProviderFree = async <T>(work: () => Promise<T>, timeoutMs = 60_000): Promise<T> => {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await work();
+    } catch (error) {
+      const busy = error instanceof Error && "code" in error && error.code === "SYNC_BUSY";
+      if (!busy || Date.now() >= deadline) throw error;
+      await Bun.sleep(25);
+    }
+  }
+};
+
 suite("mail sent message projection", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
@@ -476,7 +494,7 @@ suite("mail sent message projection", () => {
     const syncAll = async (): Promise<void> => {
       for (const path of provider.paths) {
         for (let batch = 0; batch < 20; batch += 1) {
-          const result = await syncFolderBatch(folderId(path), async () => undefined);
+          const result = await whenProviderFree(() => syncFolderBatch(folderId(path), async () => undefined));
           if (!result.hasMore) break;
         }
       }
@@ -486,14 +504,16 @@ suite("mail sent message projection", () => {
 
   type Connected = Awaited<ReturnType<typeof connect>>;
 
-  // Hydrates every pending body in this process, so no job worker races the sync for the provider lease.
+  // Hydrates every pending body in this process, so no hydration worker races the sync for the provider lease.
   const waitForHydration = async (mailbox: Connected): Promise<void> => {
     for (let batch = 0; batch < 20; batch += 1) {
-      const result = await hydrateMessageBatch({
-        input: { mailboxId: mailbox.mailboxId },
-        heartbeat: async () => undefined,
-        resubmit: () => undefined,
-      });
+      const result = await whenProviderFree(() =>
+        hydrateMessageBatch({
+          input: { mailboxId: mailbox.mailboxId },
+          heartbeat: async () => undefined,
+          resubmit: () => undefined,
+        }),
+      );
       if (!result.hydrated) return;
     }
   };
