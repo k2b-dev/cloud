@@ -401,6 +401,25 @@ describe("IMAP envelope mapping", () => {
     expect(mapped.addresses.to).toEqual([{ name: null, address: "recipient@example.test" }]);
     expect(mapped.mimeStructure).toMatchObject({ parameters: { name: "report.pdf" }, dispositionParameters: { filename: "report.pdf" } });
   });
+
+  test("drop NUL characters from Message-IDs, References, and raw protocol headers", async () => {
+    const mapped = await mapFetchedEnvelope(
+      {
+        seq: 1,
+        uid: 1,
+        envelope: { messageId: "<id\u0000@example.test>", inReplyTo: "<\u0000parent@example.test>" },
+        // `PGIAY0BleGFtcGxlLnRlc3Q+` decodes to `<b\0c@example.test>`.
+        headers: Buffer.from(
+          "References: <a@example.test> =?UTF-8?B?PGIAY0BleGFtcGxlLnRlc3Q+?=\r\nList-ID: Li\u0000st <list.example.test>\r\n\r\n",
+        ),
+      } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.messageId).toBe("<id@example.test>");
+    expect(mapped.inReplyTo).toBe("<parent@example.test>");
+    expect(mapped.references).toEqual(["<a@example.test>", "<bc@example.test>"]);
+    expect(mapped.protocolFacts?.list.id).toBe("List <list.example.test>");
+  });
 });
 
 describe("IMAP References parsing", () => {

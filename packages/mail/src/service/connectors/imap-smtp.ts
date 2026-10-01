@@ -650,12 +650,19 @@ export const parseEnvelopeHeaders = async (
     protocolFacts: EMPTY_MESSAGE_PROTOCOL_FACTS,
   } satisfies { references: string[]; protocolFacts: ConnectorProtocolFacts };
   if (!headers?.length) return empty;
-  const parsed = await simpleParser(headers, { skipHtmlToText: true, skipTextToHtml: true, skipImageLinks: true });
-  const references = Array.isArray(parsed.references)
-    ? parsed.references.map(String).filter(Boolean)
-    : typeof parsed.references === "string"
-      ? (parsed.references.match(/<[^>]+>/g) ?? parsed.references.split(/\s+/).filter(Boolean))
-      : [];
+  // Protocol facts keep raw header lines, so a raw NUL byte must go before parsing. Decoded
+  // encoded words in References can still produce one afterwards.
+  const source = headers.includes(0) ? Buffer.from(headers.filter((byte) => byte !== 0)) : headers;
+  const parsed = await simpleParser(source, { skipHtmlToText: true, skipTextToHtml: true, skipImageLinks: true });
+  const references = (
+    Array.isArray(parsed.references)
+      ? parsed.references.map(String)
+      : typeof parsed.references === "string"
+        ? (parsed.references.match(/<[^>]+>/g) ?? parsed.references.split(/\s+/))
+        : []
+  )
+    .map(withoutNul)
+    .filter(Boolean);
   const header = (name: string): unknown => rawHeaderText(parsed.headerLines, name) ?? parsed.headers.get(name);
   return {
     references,
@@ -681,8 +688,8 @@ export const mapFetchedEnvelope = async (message: FetchMessageObject, request: E
     },
     providerMessageId: message.emailId ?? null,
     providerThreadId: message.threadId ?? null,
-    messageId: envelope?.messageId?.trim() || null,
-    inReplyTo: envelope?.inReplyTo?.trim() || null,
+    messageId: (envelope?.messageId && withoutNul(envelope.messageId).trim()) || null,
+    inReplyTo: (envelope?.inReplyTo && withoutNul(envelope.inReplyTo).trim()) || null,
     references: parsedHeaders.references,
     protocolFacts: parsedHeaders.protocolFacts,
     subject: withoutNul(envelope?.subject ?? ""),

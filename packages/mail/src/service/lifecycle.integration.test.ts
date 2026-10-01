@@ -21,7 +21,7 @@ import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { executeMutationCommand } from "./command-runtime";
 import { createActorCommand, createMailCommand, createWorkflowCommand } from "./commands";
-import { imapSmtpConnector } from "./connectors";
+import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
 import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import {
@@ -1511,6 +1511,115 @@ suite("mail lifecycle control plane", () => {
     `;
     expect(message).toEqual({ message_id_bytes: 998, subject_length: 1_000, normalized_subject_bytes: expect.any(Number) });
     expect(message!.normalized_subject_bytes).toBeLessThanOrEqual(2_000);
+    await dropReconcileFolders();
+  });
+
+  const commitEnvelopes = async (params: {
+    fixture: { resourceId: string; folderId: string };
+    uidValidity: string;
+    role: string;
+    messages: ConnectorEnvelope[];
+  }) => {
+    const fence = await claimFence(params.fixture.resourceId, bindingId, "backfill");
+    const beforeCursor = reconcileCursor(params.uidValidity);
+    const highestUid = Math.max(...params.messages.map((message) => Number(message.remoteRef.uid)));
+    return commitSyncBatch({
+      folder: {
+        folder_id: params.fixture.folderId,
+        mailbox_id: mailboxId,
+        remote_resource_id: params.fixture.resourceId,
+        sync_generation: fence.generation,
+        envelope_cursor: beforeCursor,
+        role: params.role,
+      },
+      folderId: params.fixture.folderId,
+      bindingId,
+      secretRevision: 1,
+      fence,
+      status: { uidValidity: params.uidValidity, uidNext: highestUid + 1, highestModseq: null, messages: params.messages.length },
+      beforeCursor,
+      cursor: { ...beforeCursor, highestSeenUid: highestUid },
+      uidValidityChanged: false,
+      envelopeBatch: { nextHighUid: null, messages: params.messages },
+      envelopeKind: "backfill",
+      flagChanges: [],
+      reconcileWindow: null,
+    });
+  };
+
+  const highestSeenUid = async (folderId: string): Promise<string | undefined> => {
+    const [folder] = await sql<{ highest_seen_uid: string }[]>`
+      SELECT envelope_cursor ->> 'highestSeenUid' AS highest_seen_uid FROM mail.folders WHERE id = ${folderId}::uuid
+    `;
+    return folder?.highest_seen_uid;
+  };
+
+  test("a message dated before 1970 is linked to a conversation and the cursor advances", async () => {
+    const fixture = await reconcileFixture({ key: "pre-epoch", uidValidity: "67", localUids: [] });
+    const envelope = reconcileEnvelope(11, "67", fixture.folderId, "pre-epoch");
+    const internalDate = new Date("1969-12-31T23:00:00.000Z");
+    await commitEnvelopes({ fixture, uidValidity: "67", role: "other", messages: [{ ...envelope, sentAt: internalDate, internalDate }] });
+
+    const [link] = await sql<{ position: string; internal_date: Date }[]>`
+      SELECT link.position::text AS position, message.internal_date
+      FROM mail.remote_message_refs ref
+      JOIN mail.message_contents message ON message.id = ref.message_id
+      JOIN mail.conversation_messages link ON link.message_id = ref.message_id
+      WHERE ref.folder_id = ${fixture.folderId}::uuid AND ref.uid = 11
+    `;
+    expect(link).toEqual({ position: "0", internal_date: internalDate });
+    expect(await highestSeenUid(fixture.folderId)).toBe("11");
+    await dropReconcileFolders();
+  });
+
+  test("a reply quoting a Message-ID longer than the stored bound joins the original conversation", async () => {
+    const fixture = await reconcileFixture({ key: "long-reply-id", uidValidity: "68", localUids: [] });
+    const longMessageId = `<${"a".repeat(1_200)}-${suffix}@example.test>`;
+    const original = { ...reconcileEnvelope(11, "68", fixture.folderId, "long-reply-id"), messageId: longMessageId, subject: "Original" };
+    const reply = { ...reconcileEnvelope(12, "68", fixture.folderId, "long-reply-id"), inReplyTo: longMessageId, subject: "Answer" };
+    await commitEnvelopes({ fixture, uidValidity: "68", role: "other", messages: [original, { ...reply, references: [longMessageId] }] });
+
+    const links = await sql<{ uid: string; conversation_id: string }[]>`
+      SELECT ref.uid::text AS uid, link.conversation_id
+      FROM mail.remote_message_refs ref
+      JOIN mail.conversation_messages link ON link.message_id = ref.message_id
+      WHERE ref.folder_id = ${fixture.folderId}::uuid
+      ORDER BY ref.uid
+    `;
+    expect(links.map((link) => link.uid)).toEqual(["11", "12"]);
+    expect(links[1]!.conversation_id).toBe(links[0]!.conversation_id);
+    await dropReconcileFolders();
+  });
+
+  test("a Drafts message whose Message-ID the draft projection cannot hold gets a synthetic ID", async () => {
+    const fixture = await reconcileFixture({ key: "draft-message-id", uidValidity: "69", localUids: [] });
+    const draft = (uid: number, messageId: string) => ({
+      ...reconcileEnvelope(uid, "69", fixture.folderId, "draft-message-id"),
+      messageId,
+      flags: ["\\Draft"],
+    });
+    // 997 bytes followed by a space: shortening to 998 bytes leaves a trailing space.
+    const cutAtSpace = `<${"d".repeat(996)} ${"e".repeat(20)}-${suffix}@example.test>`;
+    const result = await commitEnvelopes({
+      fixture,
+      uidValidity: "69",
+      role: "drafts",
+      messages: [draft(11, "<>"), draft(12, cutAtSpace)],
+    });
+
+    const snapshots = await sql<{ uid: string; stable_message_id: string }[]>`
+      SELECT uid::text AS uid, stable_message_id
+      FROM mail.draft_provider_snapshots
+      WHERE folder_id = ${fixture.folderId}::uuid
+      ORDER BY uid
+    `;
+    expect(snapshots).toEqual([
+      { uid: "11", stable_message_id: `<remote-draft-${fixture.folderId}-69-11@cloud.invalid>` },
+      { uid: "12", stable_message_id: `<${"d".repeat(996)}` },
+    ]);
+    expect(result.draftImportSnapshotIds).toHaveLength(2);
+    expect(await highestSeenUid(fixture.folderId)).toBe("12");
+    await sql`DELETE FROM mail.draft_provider_snapshots WHERE folder_id = ${fixture.folderId}::uuid`;
     await dropReconcileFolders();
   });
 

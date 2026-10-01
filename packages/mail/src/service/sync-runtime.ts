@@ -227,6 +227,10 @@ const upsertAddresses = async (db: typeof sql, messageId: string, message: Conne
   }
 };
 
+// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
+// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
+const MESSAGE_ID_MAX_BYTES = 998;
+
 const findConversation = async (params: {
   db: typeof sql;
   mailboxId: string;
@@ -248,8 +252,13 @@ const findConversation = async (params: {
     if (native) return native.conversation_id;
   }
 
+  // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
   const replyIds = [
-    ...new Set([params.message.inReplyTo, ...params.message.references].filter((value): value is string => Boolean(value))),
+    ...new Set(
+      [params.message.inReplyTo, ...params.message.references]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES)),
+    ),
   ];
   const participants = allParticipantEmails(params.message);
   if (replyIds.length > 0 && participants.length > 0) {
@@ -349,10 +358,6 @@ type IngestEnvelopeParams = {
 };
 
 type AddressRole = keyof ConnectorEnvelope["addresses"];
-
-// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
-// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
-const MESSAGE_ID_MAX_BYTES = 998;
 
 /**
  * Bounds the envelope values the store cannot hold as received. One unusable header must not
@@ -612,12 +617,15 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     if (!conversation) throw new Error("Conversation insert returned no row");
     conversationId = conversation.id;
   }
+  // The position only orders a conversation and must not be negative; a server can report an
+  // INTERNALDATE before 1970.
+  const position = Math.max(0, params.message.internalDate.getTime());
   const [linked] = await params.db<{ message_id: string }[]>`
     INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
     VALUES (
       ${conversationId}::uuid,
       ${messageContentId}::uuid,
-      ${params.message.internalDate.getTime()},
+      ${position},
       ${
         manualConversationId
           ? "manual"

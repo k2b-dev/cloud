@@ -7,7 +7,8 @@ export const databaseErrorCode = (error: unknown): string | null => {
     for (const candidate of [value.errno, value.sqlState, value.code]) {
       if (typeof candidate === "string" || typeof candidate === "number") {
         const code = String(candidate);
-        if (/^\d{5}$/.test(code)) return code;
+        // SQLSTATE: a numeric two-character class and three digits or capitals (22P05, 57P01).
+        if (/^\d{2}[0-9A-Z]{3}$/.test(code)) return code;
       }
     }
     current = value.cause;
@@ -16,13 +17,14 @@ export const databaseErrorCode = (error: unknown): string | null => {
 };
 
 /**
- * Postgres classes 22 (data exception), 23 (integrity constraint violation), and 54 (program
- * limit exceeded, such as an oversized index entry): the same statement with the same data
- * fails the same way again, so a retry cannot succeed.
+ * Errors the same statement with the same data raises again, so a retry cannot succeed: class
+ * 22 (data exception), 23502 (not null) and 23514 (check) violations, and class 54 (program
+ * limit exceeded, such as an oversized index entry). Unique, foreign key, and exclusion
+ * violations stay retryable because a concurrent writer can cause them.
  */
 export const isPermanentDataError = (error: unknown): boolean => {
   const code = databaseErrorCode(error);
-  return code !== null && (code.startsWith("22") || code.startsWith("23") || code.startsWith("54"));
+  return code !== null && (code.startsWith("22") || code === "23502" || code === "23514" || code.startsWith("54"));
 };
 
 export const databaseErrorConstraint = (error: unknown): string | null => {
