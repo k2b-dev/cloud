@@ -377,6 +377,30 @@ describe("IMAP envelope mapping", () => {
     );
     expect(mapped.internalDate).toEqual(internalDate);
   });
+
+  test("drop NUL characters that decoded header words would put into stored text", async () => {
+    const mapped = await mapFetchedEnvelope(
+      {
+        seq: 1,
+        uid: 1,
+        envelope: {
+          subject: "Hel\u0000lo",
+          from: [{ name: "Sen\u0000der", address: "sender@example.test" }],
+          to: [{ name: "\u0000", address: "recipient@example.test" }],
+        },
+        bodyStructure: {
+          type: "application/pdf",
+          parameters: { name: "re\u0000port.pdf" },
+          dispositionParameters: { "file\u0000name": "report.pdf" },
+        },
+      } satisfies FetchMessageObject,
+      request,
+    );
+    expect(mapped.subject).toBe("Hello");
+    expect(mapped.addresses.from).toEqual([{ name: "Sender", address: "sender@example.test" }]);
+    expect(mapped.addresses.to).toEqual([{ name: null, address: "recipient@example.test" }]);
+    expect(mapped.mimeStructure).toMatchObject({ parameters: { name: "report.pdf" }, dispositionParameters: { filename: "report.pdf" } });
+  });
 });
 
 describe("IMAP References parsing", () => {

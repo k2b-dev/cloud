@@ -14,6 +14,16 @@ export const normalizeEmailDomain = (value: string): string | null => {
   return ascii;
 };
 
+/**
+ * Whether `mail.message_addresses.email` can hold the value: 3 to 320 characters, counted
+ * as Postgres counts them (code points). A provider can report any header text as an
+ * envelope address, such as an HTML fragment in a spam `To:` header.
+ */
+export const isStorableMessageAddress = (value: string): boolean => {
+  const length = [...value].length;
+  return length >= 3 && length <= 320;
+};
+
 export const normalizeEmailAddress = (value: string): string | null => {
   const normalized = value.trim().toLowerCase();
   const separator = normalized.lastIndexOf("@");

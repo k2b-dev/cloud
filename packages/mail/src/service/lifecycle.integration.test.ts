@@ -1403,6 +1403,70 @@ suite("mail lifecycle control plane", () => {
     await dropReconcileFolders();
   });
 
+  test("an envelope address the store cannot hold is skipped instead of failing the batch", async () => {
+    const fixture = await reconcileFixture({ key: "invalid-address", uidValidity: "65", localUids: [] });
+    const fence = await claimFence(fixture.resourceId, bindingId, "backfill");
+    const beforeCursor = reconcileCursor("65");
+    const cursor = { ...beforeCursor, highestSeenUid: 12 };
+    const envelope = reconcileEnvelope(11, "65", fixture.folderId, "invalid-address");
+    const overlong = `<p><a href="http://example.test/${"a".repeat(400)}">x</a></p>`;
+    await commitSyncBatch({
+      folder: {
+        folder_id: fixture.folderId,
+        mailbox_id: mailboxId,
+        remote_resource_id: fixture.resourceId,
+        sync_generation: fence.generation,
+        envelope_cursor: beforeCursor,
+        role: "other",
+      },
+      folderId: fixture.folderId,
+      bindingId,
+      secretRevision: 1,
+      fence,
+      status: { uidValidity: "65", uidNext: 13, highestModseq: null, messages: 1 },
+      beforeCursor,
+      cursor,
+      uidValidityChanged: false,
+      envelopeBatch: {
+        nextHighUid: null,
+        messages: [
+          {
+            ...envelope,
+            addresses: {
+              ...envelope.addresses,
+              to: [
+                { name: null, address: overlong },
+                { name: "Short", address: "ab" },
+                { name: "Recipient", address: "recipient@example.test" },
+              ],
+              cc: [{ name: null, address: "a😀" }],
+            },
+          },
+        ],
+      },
+      envelopeKind: "backfill",
+      flagChanges: [],
+      reconcileWindow: null,
+    });
+
+    const addresses = await sql<{ role: string; position: number; display_name: string | null; email: string }[]>`
+      SELECT address.role, address.position, address.display_name, address.email
+      FROM mail.remote_message_refs ref
+      JOIN mail.message_addresses address ON address.message_id = ref.message_id
+      WHERE ref.folder_id = ${fixture.folderId}::uuid AND ref.uid = 11
+      ORDER BY address.role, address.position
+    `;
+    expect(addresses).toEqual([
+      { role: "from", position: 0, display_name: null, email: "sender@example.com" },
+      { role: "to", position: 0, display_name: "Recipient", email: "recipient@example.test" },
+    ]);
+    const [folder] = await sql<{ highest_seen_uid: string }[]>`
+      SELECT envelope_cursor ->> 'highestSeenUid' AS highest_seen_uid FROM mail.folders WHERE id = ${fixture.folderId}::uuid
+    `;
+    expect(folder?.highest_seen_uid).toBe("12");
+    await dropReconcileFolders();
+  });
+
   test("a reconcile request that arrives during a batch survives the batch commit", async () => {
     const fixture = await reconcileFixture({ key: "reconcile-rewind", uidValidity: "63", localUids: [1] });
     const commit = async (beforeLow: number | null, resultLow: number | null) => {

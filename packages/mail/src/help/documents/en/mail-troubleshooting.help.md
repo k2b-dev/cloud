@@ -30,6 +30,8 @@ Access is checked when the page loads and during live updates. If access was rev
 
 Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing. The reader then shows **Body is still synchronizing** and replaces it with the body as soon as synchronization completes, without a page reload. If the conversation list shows **Updates paused**, select **Refresh message** to load the current state.
 
+A sender or recipient entry shorter than 3 or longer than 320 characters, such as a text fragment in a malformed message, cannot be stored as an address. Mail still imports the message and leaves out only that entry; the original header remains under **Headers** in the conversation details.
+
 For provider-shared folders, first confirm that the connected IMAP account still has the required subscription and rights. Mail can rediscover only folders the provider exposes to that account.
 
 ## A folder is missing from the sidebar {icon="folder"}

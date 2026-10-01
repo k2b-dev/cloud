@@ -7,12 +7,13 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { createMailCommand } from "./commands";
+import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import { loadImapPushPlan } from "./imap-push-runtime";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { createProviderConnection, replaceProviderConnection } from "./provider-connections";
-import { claimFence, syncFolderBatch } from "./sync-runtime";
+import { claimFence, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -297,6 +298,68 @@ suite("mail sync recovery", () => {
       queued: false,
       reason: "Mailbox transport is paused",
     });
+  });
+
+  test("a batch the database rejects fails once and waits instead of retrying", async () => {
+    const fixture = await createSyncedMailbox("rejected");
+    const envelope = (subject: string): ConnectorEnvelope => ({
+      remoteRef: { folderStableKey: "INBOX:10", uidValidity: "10", uid: "1", modseq: null },
+      providerMessageId: null,
+      providerThreadId: null,
+      messageId: `<rejected-${suffix}@example.test>`,
+      inReplyTo: null,
+      references: [],
+      subject,
+      sentAt: null,
+      internalDate: new Date("2026-07-01T10:00:00.000Z"),
+      sizeBytes: 42,
+      flags: [],
+      labels: [],
+      addresses: { from: [{ name: null, address: "sender@example.test" }], replyTo: [], to: [], cc: [], bcc: [] },
+      mimeStructure: {},
+    });
+    const runJob = async (subject: string) => {
+      const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
+        ...EMPTY_INBOX,
+        uidNext: 2,
+        highestModseq: null,
+        messages: 1,
+      });
+      const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({
+        messages: [envelope(subject)],
+        nextHighUid: null,
+      });
+      const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([{ uid: 1, modseq: null, flags: [], labels: [] }]);
+      const resubmits: { delayMs?: number }[] = [];
+      try {
+        await runSyncFolderJob({
+          input: { folderId: fixture.folderId },
+          heartbeat: async () => undefined,
+          resubmit: (options) => resubmits.push(options ?? {}),
+        });
+      } finally {
+        status.mockRestore();
+        envelopes.mockRestore();
+        window.mockRestore();
+      }
+      const [folder] = await sql<{ sync_status: string }[]>`SELECT sync_status FROM mail.folders WHERE id = ${fixture.folderId}::uuid`;
+      return { resubmits, syncStatus: folder?.sync_status };
+    };
+
+    // A connector that hands over text Postgres cannot store fails the same way on every attempt.
+    expect(await runJob("Re\u0000port")).toEqual({ resubmits: [{ delayMs: 15 * 60_000 }], syncStatus: "degraded" });
+    expect(await transportState(fixture)).toMatchObject({ resource_status: "degraded", health: "degraded", binding_state: "active" });
+
+    // The next attempt with storable data resumes the folder.
+    expect(await runJob("Report")).toEqual({ resubmits: [], syncStatus: "current" });
+    expect(await transportState(fixture)).toMatchObject({ resource_status: "active", health: "active" });
+    const runs = await sql<{ state: string; error_code: string | null }[]>`
+      SELECT state, error_code FROM mail.sync_runs WHERE remote_resource_id = ${fixture.resourceId}::uuid ORDER BY started_at, id
+    `;
+    expect(runs).toEqual([
+      { state: "failed", error_code: "ERR_POSTGRES_SERVER_ERROR" },
+      { state: "completed", error_code: null },
+    ]);
   });
 
   test("a degraded mailbox stays paused after an administrator pauses synchronization", async () => {

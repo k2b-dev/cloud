@@ -9,7 +9,7 @@ import type { JobContext, Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
-import { normalizeEmailAddress } from "./address-normalization";
+import { isStorableMessageAddress, normalizeEmailAddress } from "./address-normalization";
 import { cleanupPublicAttachmentLinks } from "./attachment-links";
 import { type BindingRediscoveryResult, rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
@@ -17,6 +17,7 @@ import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, FlagChange } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
 import { isAutomaticSubmission } from "./conversation-work-state";
+import { databaseErrorCode, databaseErrorConstraint, isPermanentDataError } from "./database-errors";
 import {
   enqueueDraftImports,
   enqueueDraftProjectionSnapshot,
@@ -337,14 +338,51 @@ const findCanonicalMessageContent = async (params: {
   return candidates.length === 1 ? candidates[0]!.message_id : null;
 };
 
-export const ingestEnvelope = async (params: {
+type IngestEnvelopeParams = {
   db: typeof sql;
   mailboxId: string;
   remoteResourceId: string;
   folderId: string;
   message: ConnectorEnvelope;
   captureWorkflowTriggers?: boolean;
-}): Promise<string> => {
+};
+
+type AddressRole = keyof ConnectorEnvelope["addresses"];
+
+/**
+ * Drops the envelope addresses `mail.message_addresses` cannot hold. One unusable header
+ * value must not reject the whole sync batch: the message and its other addresses stay
+ * importable, and the raw header remains in the message source.
+ */
+const withStorableAddresses = (
+  message: ConnectorEnvelope,
+): { message: ConnectorEnvelope; skipped: { role: AddressRole; length: number }[] } => {
+  const skipped: { role: AddressRole; length: number }[] = [];
+  const keep = (role: AddressRole) =>
+    message.addresses[role].filter((address) => {
+      if (isStorableMessageAddress(address.address)) return true;
+      skipped.push({ role, length: [...address.address].length });
+      return false;
+    });
+  const addresses = { from: keep("from"), replyTo: keep("replyTo"), to: keep("to"), cc: keep("cc"), bcc: keep("bcc") };
+  return skipped.length === 0 ? { message, skipped } : { message: { ...message, addresses }, skipped };
+};
+
+export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
+  const { message, skipped } = withStorableAddresses(params.message);
+  if (skipped.length > 0) {
+    // Lengths only: the rejected values are untrusted header text from the message.
+    log.warn("Mail skipped envelope addresses it cannot store", {
+      folderId: params.folderId,
+      uidValidity: message.remoteRef.uidValidity,
+      uid: message.remoteRef.uid,
+      skipped,
+    });
+  }
+  return ingestStorableEnvelope({ ...params, message });
+};
+
+const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
   const protocolFacts = parseMessageProtocolFacts(params.message.protocolFacts);
   const contentHash = sha256Json({
     remoteResourceId: params.remoteResourceId,
@@ -1474,21 +1512,64 @@ const normalizeSyncErrorCode = (error: unknown): string => {
 };
 
 const SYNC_FOLDER_MAX_ATTEMPTS = 5;
+// Data the database rejects fails the same way on every attempt. The folder waits as long as an
+// errored binding waits for its next verification instead of repeating the failure every minute.
+const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
+
+const markFolderDegraded = async (folderId: string): Promise<void> => {
+  await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid`.catch((cause: Error) =>
+    log.error("Failed to mark a Mail folder as degraded", { folderId, error: cause.message }),
+  );
+};
+
 const syncFolderJob = lazySync((sync) =>
   sync.job<{ folderId: string }>({
     id: "mail:sync-folder",
     delivery: { ackWaitMs: 3 * 60_000, maxAttempts: SYNC_FOLDER_MAX_ATTEMPTS, backoffMs: [5_000, 10_000, 20_000, 40_000] },
   }),
 );
+
+/** Runs one `mail:sync-folder` attempt; exported so tests can drive the job's failure handling. */
+export const runSyncFolderJob = async (ctx: Pick<JobContext<{ folderId: string }>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+  try {
+    const data = await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat());
+    if (data.hasMore) ctx.resubmit({ delayMs: 0 });
+  } catch (error) {
+    const code = normalizeSyncErrorCode(error);
+    if (code === "MAILBOX_TRANSPORT_CHANGED") return;
+    if (code === "MAIL_RATE_LIMITED") {
+      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
+      return;
+    }
+    // A sibling job holds the remote resource: routine contention, not a failed attempt.
+    if (code === "SYNC_BUSY") {
+      ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+      return;
+    }
+    // The failed run and the resource error are already recorded; retries and dead letters
+    // would only repeat them, because the scheduler queues a degraded folder again.
+    if (isPermanentDataError(error)) {
+      await markFolderDegraded(ctx.input.folderId);
+      log.error("Mail folder sync stopped on data the database rejected", {
+        folderId: ctx.input.folderId,
+        sqlState: databaseErrorCode(error),
+        constraint: databaseErrorConstraint(error),
+        recheckInMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS,
+      });
+      ctx.resubmit({ delayMs: SYNC_FOLDER_DATA_ERROR_RECHECK_MS });
+      return;
+    }
+    throw error;
+  }
+};
+
 let syncFolderJobWorker: Worker | undefined;
 const startSyncFolderJob = async (): Promise<void> => {
   syncFolderJobWorker = await syncFolderJob().process(
     {
       onError: async ({ context, error }) => {
         if (context.attempt >= SYNC_FOLDER_MAX_ATTEMPTS) {
-          await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${context.input.folderId}::uuid`.catch((cause: Error) =>
-            log.error("Failed to mark a Mail folder as degraded", { folderId: context.input.folderId, error: cause.message }),
-          );
+          await markFolderDegraded(context.input.folderId);
           log.error("Mail folder sync exhausted retries", {
             folderId: context.input.folderId,
             attempt: context.attempt,
@@ -1499,25 +1580,7 @@ const startSyncFolderJob = async (): Promise<void> => {
         return { action: "retry" };
       },
     },
-    async (ctx) => {
-      try {
-        const data = await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat());
-        if (data.hasMore) ctx.resubmit({ delayMs: 0 });
-      } catch (error) {
-        const code = normalizeSyncErrorCode(error);
-        if (code === "MAILBOX_TRANSPORT_CHANGED") return;
-        if (code === "MAIL_RATE_LIMITED") {
-          ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
-          return;
-        }
-        // A sibling job holds the remote resource: routine contention, not a failed attempt.
-        if (code === "SYNC_BUSY") {
-          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
-          return;
-        }
-        throw error;
-      }
-    },
+    runSyncFolderJob,
   );
 };
 
