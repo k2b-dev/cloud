@@ -907,6 +907,97 @@
 
 /* Tooltip demo: pushes the second trigger to the far edge so the viewport
  * clamping the component performs is actually observable. */
+/* A list beside a reader for the HoverPreview card. */
+.ui-hover-preview-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 16rem) minmax(0, 1fr);
+  min-height: 22rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  overflow: hidden;
+}
+
+.ui-hover-preview-demo__list {
+  display: grid;
+  align-content: start;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: var(--k2b-surface-canvas);
+}
+
+.ui-hover-preview-demo__row > a {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.ui-hover-preview-demo__row > a > span {
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-hover-preview-demo__row:is(:hover, [data-peek="true"]) > a {
+  background: var(--k2b-hover);
+}
+
+.ui-hover-preview-demo__row[data-current="true"] > a {
+  background: var(--k2b-selected);
+}
+
+.ui-hover-preview-demo__row > a:focus-visible {
+  outline: none;
+  box-shadow: var(--k2b-focus-inset);
+}
+
+.ui-hover-preview-demo__reader {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+}
+
+.ui-hover-preview-demo__reader > p {
+  margin: 0;
+}
+
+.ui-hover-preview-demo__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-height: 0;
+  padding: 0.75rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.ui-hover-preview-demo__facts {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.ui-hover-preview-demo__card > strong {
+  font-size: 0.875rem;
+}
+
+.ui-hover-preview-demo__card > span {
+  color: var(--k2b-text-muted);
+}
+
+.ui-hover-preview-demo__card > p {
+  margin: 0.25rem 0 0;
+  color: var(--k2b-text-secondary);
+}
+
 .ui-tooltip-demo {
   display: flex;
   flex-wrap: wrap;

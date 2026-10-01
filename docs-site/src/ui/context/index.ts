@@ -24,6 +24,7 @@ import contentTables from "./content/tables.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
 import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
+import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
 import feedbackPrompts from "./feedback/prompts.md" with { type: "text" };
 import feedbackToast from "./feedback/toast.md" with { type: "text" };
 import feedbackTooltip from "./feedback/tooltip.md" with { type: "text" };
@@ -125,6 +126,7 @@ const catalogContextSources = {
   "feedback/badges": { file: "feedback/badges.md", content: feedbackBadges },
   "feedback/toast": { file: "feedback/toast.md", content: feedbackToast },
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
+  "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "content/charts": { file: "content/charts.md", content: contentCharts },
   "content/tables": { file: "content/tables.md", content: contentTables },

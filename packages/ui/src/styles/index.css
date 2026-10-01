@@ -8597,24 +8597,6 @@
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-accent); outline-offset: var(--k2b-focus-offset); }
-.k2b-ui .k2b-app-workspace__sidebar-preview {
-  font-size: 0.875rem;
-  font-weight: 400;
-  line-height: 1.5;
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  width: 22rem;
-  max-width: calc(100vw - 1rem);
-  max-height: min(32rem, calc(100dvh - 1rem));
-  overflow: hidden;
-  padding: 0;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface);
-  color: var(--k2b-text);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
-}
 .k2b-ui .k2b-app-workspace__sidebar-preview-body {
   max-height: min(calc(32rem - 2px), calc(100dvh - 1rem - 2px));
   padding: 1rem;

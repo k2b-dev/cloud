@@ -185,6 +185,12 @@ const portableSections = [
       page("badges", "Status badges", "ti ti-status-change", "Semantic status presentation in chip, dot, and text forms."),
       page("toast", "Toast", "ti ti-bell", "Scoped transient feedback with updates, actions, and dismissal."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
+      page(
+        "hover-preview",
+        "HoverPreview",
+        "ti ti-id-badge-2",
+        "A card beside a list row or item that a resting mouse opens without opening the item.",
+      ),
       page("prompts", "Prompts", "ti ti-forms", "Alert, confirmation, search, form, and custom dialog flows."),
     ],
   },
@@ -288,7 +294,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 117;
+export const portableUiComponentCount = 118;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
