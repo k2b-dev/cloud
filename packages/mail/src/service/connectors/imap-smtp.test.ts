@@ -107,7 +107,8 @@ describe("IMAP connection failures", () => {
     const server = stallingServer("SELECT");
     const session = sessionFor(server.port);
     try {
-      await expect(runImapSession(session, (client) => client.mailboxOpen("INBOX"))).rejects.toThrow();
+      // ImapFlow fails a command whose connection closed with NoConnection; mail commands classify that code as transport ambiguity.
+      await expect(runImapSession(session, (client) => client.mailboxOpen("INBOX"))).rejects.toMatchObject({ code: "NoConnection" });
       expect(session.failure()).toMatchObject({ code: "ETIMEOUT" });
       expect(session.client.usable).toBe(false);
     } finally {
