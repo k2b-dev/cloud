@@ -22,7 +22,7 @@
  *
  * Phases in order: outbox, workflow-concurrency, workflow-kernel, database-and-standard,
  * sync, evidence-exports, browser-bundle, pdf, process-crashes, recovery-and-cleanup, dom.
- * Every Grids test file runs in exactly one phase; see `verificationPhases` in ./verification.ts.
+ * Every Grids test file runs in exactly one phase; see `verificationPhases` in ./verification-phases.ts.
  */
 import { closeSync, openSync } from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
@@ -30,7 +30,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { jetstreamManager } from "@nats-io/jetstream";
 import { SQL, sql } from "bun";
-import { assertVerificationReport, localVerificationUrl, selectPhases, verificationPhases } from "./verification";
+import { assertVerificationReport, localVerificationUrl, selectPhases } from "./verification";
+import { verificationPhases } from "./verification-phases";
 
 const root = resolve(import.meta.dir, "../../..");
 const argv = process.argv.slice(2);
