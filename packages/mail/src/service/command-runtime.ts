@@ -2428,7 +2428,17 @@ const appendSentCopy = async (params: {
   signal: AbortSignal;
   appendMissing: boolean;
 }): Promise<SentCopy> => {
-  if (params.sender.saves_sent_automatically) return { stored: true, uids: [] };
+  if (params.sender.saves_sent_automatically) {
+    // The provider stores the copy itself. One lookup places it right away when the provider
+    // already lists it; otherwise the folder's next sync places it.
+    const found = await sentMatches({
+      runtime: params.runtime,
+      sentPath: params.sender.sent_path,
+      messageId: params.outbox.stable_message_id,
+      signal: params.signal,
+    }).catch(() => []);
+    return { stored: true, uids: found };
+  }
   if (!params.sender.sent_path) return { stored: false, uids: [] };
   const existing = await sentMatches({
     runtime: params.runtime,

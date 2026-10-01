@@ -244,8 +244,8 @@ const createProvider = (kind: ProviderKind) => {
       indexNewMessagesLate = false;
       unindexed.clear();
     },
-    stopStoringSubmissions: () => {
-      storeSubmissions = false;
+    setStoresSubmissions: (stores: boolean) => {
+      storeSubmissions = stores;
     },
     failSearchesAfterSubmission: (count: number) => {
       searchFailuresAfterSubmission = count;
@@ -790,13 +790,34 @@ suite("mail sent message projection", () => {
     try {
       const mailbox = await connect(provider);
       const draft = await newDraft(mailbox, "Other relay");
-      provider.stopStoringSubmissions();
+      provider.setStoresSubmissions(false);
       const outbox = await send(mailbox, draft.id, draft.revision, "gmail-relay", "sent_sync_pending");
       const states: (string | null)[] = [];
       while (states.at(-1) !== "sent" && states.length < 4) states.push(await executeOutboxSubmission(outbox.id));
       expect(states).toEqual(["sent_sync_pending", "sent_sync_pending", "sent_sync_pending", "sent"]);
       expect(provider.appends.filter((path) => path === SENT)).toEqual([SENT]);
       expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual([SENT]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a provider that saves sent mail itself gets no second copy and its copy shows in Sent at once", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      await sql`
+        UPDATE mail.sender_identity_bindings SET saves_sent_automatically = true
+        WHERE sender_identity_id = ${mailbox.identityId}::uuid
+      `;
+      const draft = await newDraft(mailbox, "Provider copy");
+      provider.setStoresSubmissions(true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-provider-saves");
+      expect(provider.appends).toEqual(["Drafts"]);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+      const projection = await sentProjection(mailbox, outbox.stable_message_id);
+      expect(projection.placements).toEqual(["Sent"]);
+      expect(projection.messages[0]!.sent_at).not.toBeNull();
     } finally {
       provider.restore();
     }
