@@ -125,6 +125,24 @@ describe("IMAP connection failures", () => {
       server.stop(true);
     }
   });
+
+  test("are tracked on every ImapFlow client Mail creates", async () => {
+    // The tests above drive trackImapSession directly; this keeps every production client on that path.
+    const root = `${import.meta.dir}/../..`;
+    const untracked: string[] = [];
+    let tracked = 0;
+    for await (const file of new Bun.Glob("**/*.{ts,tsx}").scan({ cwd: root })) {
+      if (/\.test\.tsx?$/u.test(file)) continue;
+      const source = await Bun.file(`${root}/${file}`).text();
+      const created = source.match(/new ImapFlow\(/gu)?.length ?? 0;
+      const wrapped = source.match(/trackImapSession\(\s*new ImapFlow\(/gu)?.length ?? 0;
+      tracked += wrapped;
+      if (created !== wrapped) untracked.push(file);
+    }
+
+    expect(tracked).toBeGreaterThan(0);
+    expect(untracked).toEqual([]);
+  });
 });
 
 describe("IMAP provider keywords", () => {
