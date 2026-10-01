@@ -50,13 +50,15 @@ export type Options = { integration: boolean; filter?: string; exclude?: string;
 const ignoredTestPaths = ["node_modules/", "dist/", "build/", "_ssr/"];
 const testFiles = new Bun.Glob("**/*.{test,spec}.{ts,tsx,js,jsx}");
 const integrationImport = /scripts\/fixtures\/test-infra/;
-const behaviorTest = /\.behavior\.test\.tsx?$/;
+/** Browser behavior tests, which this runner runs with browser conditions and the Solid DOM preload. */
+export const behaviorTest = /\.behavior\.test\.tsx?$/;
 /** Leaves browser behavior tests out of a package's own `bun test` run; the runner runs them in browser mode. */
 export const behaviorIgnore = "--path-ignore-patterns=**/*.behavior.test.*";
 
 const readPackageJson = (path: string): PackageJson => JSON.parse(readFileSync(path, "utf8")) as PackageJson;
 
-const listTestFiles = async (cwd: string): Promise<string[]> => {
+/** Test files of one workspace, relative to `cwd`, as this runner discovers them. */
+export const listTestFiles = async (cwd: string): Promise<string[]> => {
   const out: string[] = [];
   for await (const path of testFiles.scan({ cwd, onlyFiles: true })) {
     if (!ignoredTestPaths.some((prefix) => path.startsWith(prefix))) out.push(path);

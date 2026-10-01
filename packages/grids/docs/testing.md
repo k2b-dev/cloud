@@ -72,6 +72,15 @@ and DB tests, Sync tests, evidence exports, browser bundling, real PDF rendering
 and text extraction, isolated recovery/cleanup tests, and DOM interaction tests.
 The DOM phase uses the shared Solid preload; it does not launch a browser.
 
+Every Grids test file runs in exactly one phase. The runner finds test files as
+`bun run test` does. Browser behavior tests are found by name
+(`*.behavior.test.{ts,tsx}`, the convention of the root test runner) and run in
+the DOM phase. Files that need a process of their own are listed by name in
+`scripts/verification-phases.ts`; every other test file runs in
+`database-and-standard`.
+The runner and the fast `bun test` subset both fail when a file would run in no
+phase or in more than one, so a new behavior test needs no registration.
+
 The `workflow-concurrency` phase runs before other suites enqueue fixtures. It
 checks ten shared execution/dry-run slots, an eleventh queued run, validation of
 the setting, and a changed limit after restart. Ten simultaneous atomic writes
