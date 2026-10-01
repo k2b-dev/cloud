@@ -20,12 +20,25 @@ const paragraph = view.state.doc.line(79); // "Paragraph 40"
 /** Where paragraph 40 starts, relative to the port's top edge, without making the editor measure. */
 const offset = () => Math.round(port.querySelectorAll(".cm-line")[Array.from(port.querySelectorAll(".cm-line")).findIndex((line) => line.textContent.startsWith("Paragraph 40:"))].getBoundingClientRect().top - port.getBoundingClientRect().top);
 
-window.run = async ({ focus, keep, focusOnHide }) => {
+/** Scrolls paragraph 40 to 40px below the port's top edge; its line stays rendered as the selected one. */
+const scrollToParagraph = () => {
+  port.scrollTop += Math.round(view.coordsAtPos(paragraph.from).top - port.getBoundingClientRect().top) - 40;
+};
+
+window.run = async ({ focus, keep, focusOnHide, unnoticedScroll }) => {
   view.dispatch({ selection: { anchor: paragraph.from + 5 } });
   if (focus) view.focus();
-  for (let i = 0; i < 4; i++) {
-    port.scrollTop += Math.round(view.coordsAtPos(paragraph.from).top - port.getBoundingClientRect().top) - 40;
+  if (unnoticedScroll) {
+    // Scroll events arrive with the next frame, so the editor has not seen
+    // this jump yet when the navigation hides in the same task: it still
+    // renders the start of the note and only a gap at the port's top edge.
     for (let j = 0; j < 3; j++) await frame();
+    scrollToParagraph();
+  } else {
+    for (let i = 0; i < 4; i++) {
+      scrollToParagraph();
+      for (let j = 0; j < 3; j++) await frame();
+    }
   }
   const result = { before: offset(), steps: [] };
   for (const hidden of [true, false]) {
@@ -63,7 +76,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const run = async (options: { focus: boolean; keep: boolean; focusOnHide?: boolean }): Promise<Run> => {
+const run = async (options: { focus: boolean; keep: boolean; focusOnHide?: boolean; unnoticedScroll?: boolean }): Promise<Run> => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 700 } });
   try {
     await page.setContent(
@@ -105,6 +118,22 @@ describe("note reading position when the navigation hides and shows", () => {
     expect(result.selection).toBe(result.caret);
     expect(result.focused).toBe(true);
   });
+
+  // A scroll reaches the editor with the next frame, and not at all while it
+  // does not yet know it is visible (on a busy machine, right after it
+  // mounts); until it measures, the port's top edge is only a gap to it.
+  for (const focusOnHide of [false, true]) {
+    test(`keeps the paragraph steady when an unfocused editor has not noticed the last scroll yet${focusOnHide ? " and hiding moves focus into it" : ""}`, async () => {
+      const result = await run({ focus: false, keep: true, focusOnHide, unnoticedScroll: true });
+      expect(Math.abs(result.before - 40)).toBeLessThanOrEqual(2);
+      for (const painted of result.steps) {
+        expect({ painted, steady: steady(painted, result.before) }).toEqual({ painted, steady: true });
+        expect(new Set(painted).size).toBe(1);
+      }
+      expect(result.selection).toBe(result.caret);
+      expect(result.focused).toBe(focusOnHide);
+    });
+  }
 
   test("without it a focused editor paints the rewrapped note at a different position first", async () => {
     const result = await run({ focus: true, keep: false });

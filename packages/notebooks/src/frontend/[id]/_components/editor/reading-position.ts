@@ -18,6 +18,12 @@ export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): ((
   // measures; without this it would only notice the new width a frame late.
   if (view.hasFocus) return () => view.requestMeasure();
 
+  // The editor learns about scrolling from scroll events, which arrive with
+  // the next frame and are ignored until it knows it is visible. Until it
+  // measures, the port's top edge may show only a placeholder gap to it, with
+  // no line to anchor on. The layout read below runs the requested measure
+  // first, so the anchor is the text that is actually there.
+  view.requestMeasure();
   const portTop = scroller.getBoundingClientRect().top;
   const pos = view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + 1, y: portTop + 1 }, false);
   const from = view.state.doc.lineAt(pos).from;
