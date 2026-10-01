@@ -3,7 +3,6 @@
   "include": ["./src/**/*.ts", "./src/**/*.tsx", "./src/types/**/*.d.ts", "./scripts/**/*.ts", "./test/integration/**/*.ts"],
   "exclude": ["./dist", "./node_modules"],
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@k2b/cloud": ["./src/index.ts"],
       "@k2b/cloud/account/ui": ["./src/account/ui.ts"],

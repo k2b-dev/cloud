@@ -1,4 +1,5 @@
-import ts from "typescript";
+// TypeScript 7.0 ships no JavaScript API; its side-by-side TypeScript 6 package provides the parser.
+import ts from "@typescript/typescript6";
 import { ArtifactPath, ArtifactSource } from "./contracts";
 import { resolveSourceImport } from "./runtime/compile";
 

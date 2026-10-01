@@ -14,7 +14,7 @@ import composePage from "./compose/page";
 import page from "./page";
 
 export default new Hono<AuthContext>()
-  .get("/calendar", auth.requireRole("user", ssr.access), (c) => {
+  .get("/calendar", auth.requireRole("user", ssr.access), async (c) => {
     const href = mailCalendarCommandHref(new URL(c.req.url));
     return href ? c.redirect(href) : ssr.error(c, 400);
   })

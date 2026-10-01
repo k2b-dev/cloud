@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import ts from "typescript";
+import ts from "@typescript/typescript6";
 
 const root = new URL("../../", import.meta.url).pathname;
 const contextRoot = join(root, "docs-site/src/ui/context");

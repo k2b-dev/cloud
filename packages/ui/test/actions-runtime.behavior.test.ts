@@ -23,9 +23,14 @@ const installPopoverStub = (): void => {
     element.dispatchEvent(event);
   };
 
-  prototype.matches = function (selector: string): boolean {
-    return selector === ":popover-open" ? openPopovers.has(this) : matches.call(this, selector);
-  };
+  // `matches` declares type-predicate overloads; the stub only answers the runtime string form.
+  Object.defineProperty(prototype, "matches", {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement, selector: string): boolean {
+      return selector === ":popover-open" ? openPopovers.has(this) : matches.call(this, selector);
+    },
+  });
   prototype.showPopover = function (): void {
     if (openPopovers.has(this)) return;
     openPopovers.add(this);
