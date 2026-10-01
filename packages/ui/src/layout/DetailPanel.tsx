@@ -350,7 +350,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
             <div class="k2b-detail-panel__section-copy">
               <h3 id={headingId}>{props.title}</h3>
               <Show when={props.description}>
-                <p>{props.description}</p>
+                <p class="k2b-detail-panel__section-description">{props.description}</p>
               </Show>
             </div>
             <Show when={props.meta}>
@@ -398,7 +398,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
             <div class="k2b-detail-panel__section-copy">
               <h3 id={headingId}>{props.title}</h3>
               <Show when={props.description}>
-                <p>{props.description}</p>
+                <p class="k2b-detail-panel__section-description">{props.description}</p>
               </Show>
             </div>
             <Show when={props.meta}>

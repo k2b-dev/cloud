@@ -2818,7 +2818,6 @@
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 9%, transparent);
 }
 
-.k2b-ui .k2b-detail-panel__section-header p,
 .k2b-ui .k2b-detail-panel__section-description {
   margin: 0.125rem 0 0;
   color: var(--k2b-text-muted);
@@ -3074,8 +3073,7 @@
 
 .k2b-ui .k2b-panel-dialog__heading h2,
 .k2b-ui .k2b-panel-dialog__heading p,
-.k2b-ui .k2b-panel-dialog__section h3,
-.k2b-ui .k2b-panel-dialog__section p {
+.k2b-ui .k2b-panel-dialog__section h3 {
   margin: 0;
 }
 
@@ -3095,10 +3093,11 @@
   overflow-wrap: anywhere;
 }
 
-.k2b-ui .k2b-panel-dialog__section p {
-  margin-top: 0.125rem;
+/* A class, not `p`: section bodies hold fields, and a bare `p` here would
+   outrank their description and error styles. */
+.k2b-ui .k2b-panel-dialog__section > header .k2b-panel-dialog__section-subtitle {
+  margin: 0.125rem 0 0;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
 }
 
 .k2b-ui .k2b-panel-dialog__actions {

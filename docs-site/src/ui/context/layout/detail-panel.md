@@ -57,7 +57,8 @@ through spacing and a sentence-case title, not a card, divider, or decorative
 background. Pass `icon` for a fixed section icon slot and `tone` to distinguish
 portable `accent`, `neutral`, `success`, `warning`, or `danger` roles through
 text color only. Pass `description` for short supporting context, `meta` for a
-count or state, and `actions` for a normal section. A normal section may omit
+count or state, and `actions` for a normal section. Only the description is
+muted: a field in `actions` keeps its own description and error styles. A normal section may omit
 its body to represent a compact, actionable empty group. Set `collapsible` for
 secondary content. Closed sections show a compact action row; open sections show
 a heading with a collapse button on the right. Their content stays mounted when

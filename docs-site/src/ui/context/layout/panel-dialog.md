@@ -51,6 +51,8 @@ separately.
 `surface="contained"` is the default modal treatment. `surface="floating"` makes the header, footer, and each section separate paper surfaces for settings-style pages.
 
 Use `PanelDialog.Section` for meaningful field groups. Keep the primary save action in `PanelDialog.Footer`.
+Only the section's own subtitle is muted: fields, notices, and paragraphs in the
+section keep their own description, error, and text styles.
 
 Pass `hideable` to a section for optional settings. Closed sections show a flat
 summary row with an eye icon at the trailing edge. Open sections use the normal
