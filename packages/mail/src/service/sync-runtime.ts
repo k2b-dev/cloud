@@ -1140,6 +1140,41 @@ const fetchReconcileImports = async (params: {
   return { messages: batch.messages, truncated };
 };
 
+const reconcileWindowStart = (uid: number): number => {
+  const boundedUid = Math.max(1, Number.isSafeInteger(uid) ? uid : 1);
+  return Math.floor((boundedUid - 1) / RECONCILE_WINDOW_SIZE) * RECONCILE_WINDOW_SIZE + 1;
+};
+
+/**
+ * A message the sync skipped as a draft has no local reference. When the provider reports it
+ * without `\Draft` at the same UID, the folder reconciles from that UID's window to import it.
+ */
+const reconcileRevealedDrafts = async (params: {
+  db: typeof sql;
+  folderId: string;
+  uidValidity: string;
+  changes: FlagChange[];
+  cursor: EnvelopeCursor;
+}): Promise<void> => {
+  const uids = params.changes.filter((change) => !isProviderDraft(change)).map((change) => change.uid);
+  if (uids.length === 0) return;
+  const [revealed] = await params.db<{ uid: string | null }[]>`
+    SELECT min(remote.uid::numeric)::text AS uid
+    FROM jsonb_array_elements_text(${uids}::jsonb) AS remote(uid)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM mail.remote_message_refs ref
+      WHERE ref.folder_id = ${params.folderId}::uuid
+        AND ref.uid_validity = ${params.uidValidity}::numeric
+        AND ref.uid = remote.uid::numeric
+        AND ref.stale_at IS NULL
+    )
+  `;
+  if (revealed?.uid == null) return;
+  const start = reconcileWindowStart(Number(revealed.uid));
+  params.cursor.reconcileNextLow = Math.min(params.cursor.reconcileNextLow ?? start, start);
+};
+
 /** Whether the folder is the mailbox's Drafts folder: the one configured for drafts, else the provider's. */
 const isEffectiveDraftsFolder = async (db: typeof sql, folder: Pick<FolderSyncRow, "mailbox_id" | "role">, folderId: string) => {
   const [effectiveRole] = await db<{ is_drafts: boolean }[]>`
@@ -1288,6 +1323,15 @@ export const commitSyncBatch = async (params: {
           uidValidity: params.status.uidValidity,
           changes: [...params.flagChanges, ...(params.reconcileWindow?.flags ?? [])],
         });
+    if (!isDraftFolder) {
+      await reconcileRevealedDrafts({
+        db: tx,
+        folderId: params.folderId,
+        uidValidity: params.status.uidValidity,
+        changes: params.flagChanges,
+        cursor: params.cursor,
+      });
+    }
     const removed = isDraftFolder
       ? draftRemoved
       : params.reconcileWindow
@@ -2209,8 +2253,7 @@ export const enqueueFolderSync = async (folderId: string): Promise<void> => {
 };
 
 export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {
-  const boundedUid = Math.max(1, Number.isSafeInteger(fromUid) ? fromUid : 1);
-  const reconcileWindowStart = Math.floor((boundedUid - 1) / RECONCILE_WINDOW_SIZE) * RECONCILE_WINDOW_SIZE + 1;
+  const windowStart = reconcileWindowStart(fromUid);
   // Only a cursor rewind: a running sync batch may hold the provider mutex, and
   // the request must survive that contention.
   await sql`
@@ -2221,8 +2264,8 @@ export const enqueueFolderReconciliation = async (folderId: string, fromUid: num
         '{reconcileNextLow}',
         to_jsonb(
           LEAST(
-            COALESCE((envelope_cursor ->> 'reconcileNextLow')::numeric, ${reconcileWindowStart}::numeric),
-            ${reconcileWindowStart}::numeric
+            COALESCE((envelope_cursor ->> 'reconcileNextLow')::numeric, ${windowStart}::numeric),
+            ${windowStart}::numeric
           )
         ),
         true

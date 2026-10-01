@@ -823,8 +823,17 @@ suite("mail sent message projection", () => {
         expect(await executeMaintenanceCommand(rebuild.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
       };
 
-      // Live without the \Draft flag, the message is real mail that kept the draft's Message-ID.
+      // Placed without the \Draft flag, the message is real mail that kept the draft's Message-ID,
+      // even once the provider no longer lists it.
       await importCopy([], []);
+      await sql`
+        UPDATE mail.message_placements placement
+        SET deleted_at = now()
+        FROM mail.message_contents message
+        WHERE message.id = placement.message_id
+          AND message.mailbox_id = ${mailbox.mailboxId}::uuid
+          AND message.message_id = ${snapshot!.stable_message_id}
+      `;
       await rebuildThreads("sent-elsewhere");
       expect((await conversationMessages(inbound.conversation_id)).map((message) => message.message_id)).toEqual([
         inbound.messageId,
