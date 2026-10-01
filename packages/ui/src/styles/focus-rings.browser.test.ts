@@ -70,6 +70,68 @@ const menu = (label: string) =>
     },
   });
 
+/** Sidebar rows whose actions, chevrons, and preview buttons appear on hover or keyboard focus, beside visible actions. */
+const sidebarRows = () => [
+  createComponent(AppWorkspace.SidebarItem, {
+    icon: "ti ti-history",
+    preview: { label: "Recent", trigger: "row", content: "Recent files" },
+    children: "Recent",
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    href: "#retro",
+    preview: { label: "Chat details", content: "Details" },
+    get children() {
+      return [
+        createComponent(AppWorkspace.SidebarItemLabel, { children: "Retrospective notes for the launch" }),
+        createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-arrow-back-up", label: "Reopen chat", visibility: "hover" }),
+      ];
+    },
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    href: "#inbox",
+    icon: "ti ti-inbox",
+    meta: "12",
+    get children() {
+      return [
+        createComponent(AppWorkspace.SidebarItemLabel, { children: "Inbox" }),
+        createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-dots", label: "Inbox actions", visibility: "hover" }),
+      ];
+    },
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    icon: "ti ti-share",
+    preview: { label: "Shared", trigger: "row", content: "Shared files" },
+    get children() {
+      return [
+        createComponent(AppWorkspace.SidebarItemLabel, { children: "Shared" }),
+        createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-dots", label: "Shared actions", visibility: "hover" }),
+      ];
+    },
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    href: "#checklist",
+    preview: { label: "Checklist details", content: "Details" },
+    get children() {
+      return [
+        createComponent(AppWorkspace.SidebarItemLabel, { children: "Release checklist" }),
+        createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-check", label: "Mark checklist done" }),
+      ];
+    },
+  }),
+  createComponent(AppWorkspace.SidebarItem, {
+    href: "#review",
+    preview: { label: "Review details", content: "Details" },
+    get actions() {
+      return createComponent(AppWorkspace.SidebarItemActions, {
+        get children() {
+          return [icon("Pin review"), icon("Share review")];
+        },
+      });
+    },
+    children: "Design review",
+  }),
+];
+
 /** A workspace whose main area starts its controls flush at the edge, as board and table views do. */
 const workspace = () =>
   html(() =>
@@ -97,6 +159,12 @@ const workspace = () =>
                                   children: label,
                                 }),
                               );
+                            },
+                          }),
+                          createComponent(AppWorkspace.SidebarSection, {
+                            title: "Chats",
+                            get children() {
+                              return sidebarRows();
                             },
                           }),
                         ];
