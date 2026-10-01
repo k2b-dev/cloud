@@ -150,7 +150,10 @@ optional. On fine pointers it stays hidden until its own row is hovered
 or keyboard-focused; in a `NavTree`, parent and child rows reveal theirs
 independently. A hover `SidebarItemAction` overlays the end of the row when it
 appears, so the label keeps its width and the text or metadata under the
-button fades out. Hidden metadata and `SidebarItemActions` take no space until
+button fades out. A long label that scrolls on hover stops before the faded
+end. In a row that also shows an always-visible action or a
+`SidebarItemActions` group, the hover action keeps its own slot after them
+instead. Hidden metadata and `SidebarItemActions` take no space until
 revealed. Everything remains visible on touch devices. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
@@ -560,9 +563,10 @@ Use `preview={{ label: "Item details", content: <Details /> }}` for interactive
 secondary information. Fine-pointer hover and keyboard focus open it after a short
 delay. A dedicated details button opens it on touch-capable devices and moves focus
 into the non-modal dialog. With hover and a fine pointer, this button is hidden
-visually until keyboard focus reaches it, and then overlays the end of the row
-like a hover action, taking the place of one while focused. A coarse pointer on
-hybrid devices keeps it visible too, with a hover action revealed beside it. This behavior depends on input capabilities, not screen width. Escape and outside clicks dismiss it. The preview stays mounted
+visually until keyboard focus reaches it. It then overlays the end of the row
+and, while focused, takes the place of the row action before it, which stays
+one Tab stop earlier. A coarse pointer on hybrid devices keeps the button
+visible in the row, as on touch devices, with a hover action revealed beside it. This behavior depends on input capabilities, not screen width. Escape and outside clicks dismiss it. The preview stays mounted
 while closed; live content updates preserve its controls and focus. Do not start
 expensive subscriptions merely because a row exists. The preview can hold an
 explicit action that loads additional details.
@@ -604,7 +608,8 @@ For a row whose only action is opening its preview, set `preview.trigger="row"`
 and omit `href` and `onClick`. Hover and focus still open the same preview;
 clicking the row or its trailing chevron keeps it open. The chevron appears
 over the end of the row on hover or keyboard focus, without narrowing the
-label, and remains visible on touch devices. Keyboard focus on
+label, and remains visible on touch devices. A hover action appears beside it;
+next to an always-visible action, the chevron keeps its own slot instead. Keyboard focus on
 the row or chevron outlines the complete row. Set `preview.align="end"` to align the menu
 bottom edge with the navigation row, constrained to the viewport. The default
 keeps menus vertically centered on their row. Existing previews

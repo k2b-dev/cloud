@@ -3720,9 +3720,10 @@
     display: inline-flex;
   }
 
-  /* A hover action overlays the row's trailing edge: revealing it changes
-     only its opacity, never the label's width. While it shows, the text and
-     count under it fade out, as counts give way on object rows. */
+  /* Hover actions and the row chevron overlay the row's trailing edge:
+     revealing one changes only its opacity, never the label's width. While
+     one shows, the text and count under it fade out, as counts give way on
+     object rows. */
   .k2b-ui .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]) {
     position: relative;
   }
@@ -3738,43 +3739,107 @@
   }
 
   .k2b-ui
+    .k2b-app-workspace__sidebar-item
+    > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:has(~ .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger]) {
+    inset-inline-end: 1.75rem;
+  }
+
+  /* An always-visible action or an actions group holds the row's end, so a
+     hover action or the chevron keeps its own slot after it instead. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:is(
+      [data-has-actions="true"],
+      :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
+    )
+    > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])) {
+    position: static;
+  }
+
+  .k2b-ui
     .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open))
     > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
     opacity: 1;
     pointer-events: auto;
   }
 
-  /* An action preview opens on hover, so its button shows only to the keyboard. */
   .k2b-ui
-    .k2b-app-workspace__sidebar-item
-    > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):not(:focus-visible) {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  /* It then takes the slot of a row action, which stays one Tab stop before it. */
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item
-    > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:has(~ .k2b-app-workspace__sidebar-preview-trigger:focus-visible) {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
+    .k2b-app-workspace__sidebar-item:not(
+      [data-has-actions="true"],
+      :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
+    ):where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
-    > .k2b-app-workspace__sidebar-item-main,
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:focus-visible)
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade: linear-gradient(to left, transparent 1.75rem, #000 2.5rem);
+    --k2b-sidebar-item-fade-inset: 2.5rem;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:not(
+      [data-has-actions="true"],
+      :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
+    ):where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
+      > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
+    ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
+    > .k2b-app-workspace__sidebar-item-main {
+    --k2b-sidebar-item-fade-inset: 4.25rem;
+  }
+
+  /* Without a touch screen, an action preview opens on hover, so its button
+     shows only to the keyboard. It then overlays the row's end and takes the
+     place of the control before it, which stays one Tab stop earlier. */
+  @media not all and (any-pointer: coarse) {
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item
+      > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):not(:focus-visible) {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item
+      > .k2b-app-workspace__sidebar-item-action:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible),
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item
+      > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
+      > :nth-last-child(1 of :not([popover])) {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
+      > .k2b-app-workspace__sidebar-item-main {
+      --k2b-sidebar-item-fade-inset: 2.5rem;
+    }
+  }
+
+  /* The fade inset spans the covered end and a 0.75rem gradient before it. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item-main
+    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta) {
+    mask-image: linear-gradient(
+      to left,
+      transparent calc(var(--k2b-sidebar-item-fade-inset) - 0.75rem),
+      #000 var(--k2b-sidebar-item-fade-inset)
+    );
   }
 
   .k2b-ui
     .k2b-app-workspace__sidebar-item-main
-    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta) {
-    mask-image: var(--k2b-sidebar-item-fade, none);
+    :is(.k2b-app-workspace__sidebar-item-label, .k2b-app-workspace__sidebar-item-description, .k2b-app-workspace__sidebar-item-meta):dir(rtl) {
+    mask-image: linear-gradient(
+      to right,
+      transparent calc(var(--k2b-sidebar-item-fade-inset) - 0.75rem),
+      #000 var(--k2b-sidebar-item-fade-inset)
+    );
+  }
+
+  /* The fading end is padding, which the label text runs into but the
+     marquee measures without, so the text ends where it is fully visible. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-action[data-visibility="hover"])
+    .k2b-app-workspace__sidebar-item-label[data-marquee="true"] {
+    padding-inline-end: var(--k2b-sidebar-item-fade-inset, 0px);
   }
 
   /* Object rows keep their trailing count column in place: revealed actions
@@ -8571,11 +8636,24 @@
     pointer-events: auto;
   }
   .k2b-ui
-    .k2b-app-workspace__sidebar-item:has(.k2b-app-workspace__sidebar-item-description):has(
+    .k2b-app-workspace__sidebar-item:not(
+      [data-has-actions="true"],
+      :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
+    ):has(.k2b-app-workspace__sidebar-item-description):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade: linear-gradient(to left, transparent 1.75rem, #000 2.5rem);
+    --k2b-sidebar-item-fade-inset: 2.5rem;
+  }
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:not(
+      [data-has-actions="true"],
+      :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
+    ):has(.k2b-app-workspace__sidebar-item-description):has(
+      > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
+    ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
+    > .k2b-app-workspace__sidebar-item-main {
+    --k2b-sidebar-item-fade-inset: 4.25rem;
   }
 }
 
@@ -8590,9 +8668,10 @@
 }
 
 /* A touch screen beside a fine pointer cannot hover, so the preview button
-   stays visible at the row's end and a row action reveals beside it. */
+   stays in the row, as on touch devices, and a hover action reveals beside it. */
 @media (any-pointer: coarse) {
-  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):not(:focus-visible) {
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]) {
+    position: static;
     opacity: 1;
     pointer-events: auto;
   }
@@ -8600,16 +8679,6 @@
     .k2b-app-workspace__sidebar-item
     > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:has(~ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])) {
     inset-inline-end: 1.75rem;
-  }
-  .k2b-ui .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])) > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade: linear-gradient(to left, transparent 1.75rem, #000 2.5rem);
-  }
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
-      > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
-    ):has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
-    > .k2b-app-workspace__sidebar-item-main {
-    --k2b-sidebar-item-fade: linear-gradient(to left, transparent 3.5rem, #000 4.25rem);
   }
 }
 

@@ -246,12 +246,15 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
  * The animation needs to know how far to travel, and that is only knowable
  * once the label has been laid out — so it is measured lazily, on the same
  * hover/focus that triggers it, and published as a custom property. Labels
- * that fit get no `data-overflow`, so they never animate.
+ * that fit get no `data-overflow`, so they never animate. A revealed row action
+ * pads the label's fading end, so the text is measured against the content box.
  */
 const measureLabel = (label: HTMLElement) => {
   const text = label.querySelector<HTMLElement>(LABEL_TEXT_SELECTOR);
   if (!text) return;
-  const overflow = Math.max(0, text.scrollWidth - label.clientWidth);
+  const style = getComputedStyle(label);
+  const width = label.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
+  const overflow = Math.max(0, text.scrollWidth - width);
   label.style.setProperty("--k2b-sidebar-label-overflow", `${overflow}px`);
   if (overflow > 2) label.dataset.overflow = "true";
   else delete label.dataset.overflow;

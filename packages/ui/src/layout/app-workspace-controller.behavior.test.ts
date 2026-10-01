@@ -561,6 +561,14 @@ describe("AppWorkspace resize controller behaviour", () => {
     window.dispatchEvent(new window.Event("resize"));
     expect(label.dataset.overflow).toBeUndefined();
     expect(label.style.getPropertyValue("--k2b-sidebar-label-overflow")).toBe("");
+
+    // A revealed row action pads the label's fading end: the text must clear it too.
+    label.style.paddingRight = "40px";
+    Object.defineProperty(text, "scrollWidth", { configurable: true, value: 60 });
+    label.dispatchEvent(new window.PointerEvent("pointerover", { bubbles: true }) as unknown as Event);
+    flushFrames();
+    expect(label.dataset.overflow).toBe("true");
+    expect(label.style.getPropertyValue("--k2b-sidebar-label-overflow")).toBe("20px");
     dispose();
   });
 
