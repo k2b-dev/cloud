@@ -7,6 +7,7 @@ import { Splitter, Streamer } from "@zone-eu/mailsplit";
 import { sql } from "bun";
 import { type AddressObject, type AttachmentStream, type Headers, MailParser, type MessageText } from "mailparser";
 import { withShortIdDb } from "../lib/short-id";
+import { truncateUtf8 } from "../lib/utf8";
 import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors";
@@ -1553,7 +1554,7 @@ export const recordDraftFolderSyncInTransaction = async (params: {
   for (const envelope of params.envelopes) {
     const uid = Number(envelope.remoteRef.uid);
     const messageId =
-      envelope.messageId?.trim().slice(0, 998) || `<remote-draft-${params.folderId}-${params.uidValidity}-${uid}@cloud.invalid>`;
+      truncateUtf8(envelope.messageId?.trim() ?? "", 998) || `<remote-draft-${params.folderId}-${params.uidValidity}-${uid}@cloud.invalid>`;
     const [known] = await params.db<(DbProjection & { remote_identity_match: boolean })[]>`
       SELECT
         *,

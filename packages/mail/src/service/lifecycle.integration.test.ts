@@ -1467,6 +1467,53 @@ suite("mail lifecycle control plane", () => {
     await dropReconcileFolders();
   });
 
+  test("an overlong Message-ID or subject does not exceed an index row and fail the batch", async () => {
+    const fixture = await reconcileFixture({ key: "overlong-index", uidValidity: "66", localUids: [] });
+    const fence = await claimFence(fixture.resourceId, bindingId, "backfill");
+    const cursor = reconcileCursor("66");
+    const envelope = reconcileEnvelope(11, "66", fixture.folderId, "overlong-index");
+    // Incompressible text: index entries larger than a third of a page are rejected.
+    const randomText = (length: number, from: number, span: number) =>
+      Array.from({ length }, () => String.fromCodePoint(from + Math.floor(Math.random() * span))).join("");
+    await commitSyncBatch({
+      folder: {
+        folder_id: fixture.folderId,
+        mailbox_id: mailboxId,
+        remote_resource_id: fixture.resourceId,
+        sync_generation: fence.generation,
+        envelope_cursor: cursor,
+        role: "other",
+      },
+      folderId: fixture.folderId,
+      bindingId,
+      secretRevision: 1,
+      fence,
+      status: { uidValidity: "66", uidNext: 12, highestModseq: null, messages: 1 },
+      beforeCursor: cursor,
+      cursor,
+      uidValidityChanged: false,
+      envelopeBatch: {
+        nextHighUid: null,
+        messages: [{ ...envelope, messageId: `<${randomText(3_000, 0x21, 90)}@example.test>`, subject: randomText(1_000, 0x4e00, 20_000) }],
+      },
+      envelopeKind: "backfill",
+      flagChanges: [],
+      reconcileWindow: null,
+    });
+
+    const [message] = await sql<{ message_id_bytes: number; subject_length: number; normalized_subject_bytes: number }[]>`
+      SELECT octet_length(message.message_id) AS message_id_bytes,
+        char_length(message.subject) AS subject_length,
+        octet_length(message.normalized_subject) AS normalized_subject_bytes
+      FROM mail.remote_message_refs ref
+      JOIN mail.message_contents message ON message.id = ref.message_id
+      WHERE ref.folder_id = ${fixture.folderId}::uuid AND ref.uid = 11
+    `;
+    expect(message).toEqual({ message_id_bytes: 998, subject_length: 1_000, normalized_subject_bytes: expect.any(Number) });
+    expect(message!.normalized_subject_bytes).toBeLessThanOrEqual(2_000);
+    await dropReconcileFolders();
+  });
+
   test("a reconcile request that arrives during a batch survives the batch commit", async () => {
     const fixture = await reconcileFixture({ key: "reconcile-rewind", uidValidity: "63", localUids: [1] });
     const commit = async (beforeLow: number | null, resultLow: number | null) => {

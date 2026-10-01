@@ -8,6 +8,7 @@ import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/st
 import type { JobContext, Worker } from "@k2b/sync";
 import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
+import { truncateUtf8 } from "../lib/utf8";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 import { isStorableMessageAddress, normalizeEmailAddress } from "./address-normalization";
 import { cleanupPublicAttachmentLinks } from "./attachment-links";
@@ -349,14 +350,19 @@ type IngestEnvelopeParams = {
 
 type AddressRole = keyof ConnectorEnvelope["addresses"];
 
+// RFC 5322 caps a header line at 998 characters. Counted in bytes, the lowercased value also
+// fits a Postgres B-tree entry (at most 2704 bytes) in message_contents_message_id_idx.
+const MESSAGE_ID_MAX_BYTES = 998;
+
 /**
- * Drops the envelope addresses `mail.message_addresses` cannot hold. One unusable header
- * value must not reject the whole sync batch: the message and its other addresses stay
- * importable, and the raw header remains in the message source.
+ * Bounds the envelope values the store cannot hold as received. One unusable header must not
+ * reject the whole sync batch: the message stays importable without an address outside the
+ * `mail.message_addresses` bounds and with a shortened Message-ID, and the raw headers remain
+ * in the message source.
  */
-const withStorableAddresses = (
+const storableEnvelope = (
   message: ConnectorEnvelope,
-): { message: ConnectorEnvelope; skipped: { role: AddressRole; length: number }[] } => {
+): { message: ConnectorEnvelope; skipped: { role: AddressRole; length: number }[]; messageIdShortened: boolean } => {
   const skipped: { role: AddressRole; length: number }[] = [];
   const keep = (role: AddressRole) =>
     message.addresses[role].filter((address) => {
@@ -365,18 +371,22 @@ const withStorableAddresses = (
       return false;
     });
   const addresses = { from: keep("from"), replyTo: keep("replyTo"), to: keep("to"), cc: keep("cc"), bcc: keep("bcc") };
-  return skipped.length === 0 ? { message, skipped } : { message: { ...message, addresses }, skipped };
+  const messageId = message.messageId && truncateUtf8(message.messageId, MESSAGE_ID_MAX_BYTES);
+  const messageIdShortened = messageId !== message.messageId;
+  if (skipped.length === 0 && !messageIdShortened) return { message, skipped, messageIdShortened };
+  return { message: { ...message, messageId, addresses }, skipped, messageIdShortened };
 };
 
 export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
-  const { message, skipped } = withStorableAddresses(params.message);
-  if (skipped.length > 0) {
+  const { message, skipped, messageIdShortened } = storableEnvelope(params.message);
+  if (skipped.length > 0 || messageIdShortened) {
     // Lengths only: the rejected values are untrusted header text from the message.
-    log.warn("Mail skipped envelope addresses it cannot store", {
+    log.warn("Mail adjusted envelope values it cannot store", {
       folderId: params.folderId,
       uidValidity: message.remoteRef.uidValidity,
       uid: message.remoteRef.uid,
-      skipped,
+      skippedAddresses: skipped,
+      messageIdShortened,
     });
   }
   return ingestStorableEnvelope({ ...params, message });

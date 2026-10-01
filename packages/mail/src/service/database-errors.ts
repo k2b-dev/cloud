@@ -16,12 +16,13 @@ export const databaseErrorCode = (error: unknown): string | null => {
 };
 
 /**
- * Postgres classes 22 (data exception) and 23 (integrity constraint violation): the same
- * statement with the same data fails the same way again, so a retry cannot succeed.
+ * Postgres classes 22 (data exception), 23 (integrity constraint violation), and 54 (program
+ * limit exceeded, such as an oversized index entry): the same statement with the same data
+ * fails the same way again, so a retry cannot succeed.
  */
 export const isPermanentDataError = (error: unknown): boolean => {
   const code = databaseErrorCode(error);
-  return code !== null && (code.startsWith("22") || code.startsWith("23"));
+  return code !== null && (code.startsWith("22") || code.startsWith("23") || code.startsWith("54"));
 };
 
 export const databaseErrorConstraint = (error: unknown): string | null => {

@@ -5,9 +5,10 @@ const postgresError = (sqlState: string) =>
   Object.assign(new Error("Postgres rejected the statement"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: sqlState });
 
 describe("isPermanentDataError", () => {
-  test("treats data exceptions and constraint violations as permanent", () => {
+  test("treats data exceptions, constraint violations, and exceeded limits as permanent", () => {
     expect(isPermanentDataError(postgresError("23514"))).toBe(true);
     expect(isPermanentDataError(postgresError("22021"))).toBe(true);
+    expect(isPermanentDataError(postgresError("54000"))).toBe(true);
     expect(isPermanentDataError(Object.assign(new Error("wrapped"), { cause: postgresError("23502") }))).toBe(true);
   });
 
