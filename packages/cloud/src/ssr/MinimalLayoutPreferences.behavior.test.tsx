@@ -71,9 +71,12 @@ test("the theme button switches the theme and names the next mode", async () => 
   await mount("en");
   const button = Array.from(dom.root.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Dark mode")!;
 
+  // Phones show only the icon, so the button carries its name as a label too.
+  expect(button.getAttribute("aria-label")).toBe("Dark mode");
+
   button.click();
 
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   expect(document.cookie).toContain("theme=dark");
-  expect(button.textContent?.trim()).toBe("Light mode");
+  expect([button.textContent?.trim(), button.getAttribute("aria-label")]).toEqual(["Light mode", "Light mode"]);
 });

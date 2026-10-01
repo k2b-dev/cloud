@@ -3,7 +3,7 @@ import LanguageSwitch from "./LanguageSwitch.island";
 
 export default function AuthFooter(props: { links: Awaited<ReturnType<typeof listLegalLinks>> }) {
   return (
-    <footer class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-dimmed">
+    <footer class="auth-footer flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-dimmed">
       <span>
         {props.links.map((link, i) => (
           <>

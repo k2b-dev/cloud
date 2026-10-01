@@ -20,11 +20,19 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: MinimalLayout } = await import("./MinimalLayout");
 type MinimalLayoutContextArg = Parameters<typeof MinimalLayout>[0]["c"];
 
+// Core's three legal pages, the longest footer a phone shows.
 const legalApp = {
   id: "legal-probe",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { legalLinks: { "/impressum": "Impressum", "/legal/privacy": "Datenschutz", "/legal/terms": "Nutzungsbedingungen" } },
+    },
+  },
   legalLinks: [
-    { label: "Imprint", href: "/legal/imprint" },
+    { label: "Imprint", href: "/impressum" },
     { label: "Privacy", href: "/legal/privacy" },
+    { label: "Terms", href: "/legal/terms" },
   ],
 };
 
@@ -125,7 +133,7 @@ describe("MinimalLayout footer in a browser", () => {
         // Other pages end with the footer at the bottom of the first screen.
         else expect(Math.abs(footer.bottom - viewport.height), context).toBeLessThan(1);
 
-        expect(controls.map((control) => control.name)).toEqual(["Imprint", "Privacy", "Language: English", "Dark mode"]);
+        expect(controls.map((control) => control.name)).toEqual(["Imprint", "Privacy", "Terms", "Language: English", "Dark mode"]);
         for (const control of controls) {
           const name = `${context} ${control.name}`;
           expect(control.box.left, name).toBeGreaterThanOrEqual(0);
@@ -294,10 +302,15 @@ const coreAssets = async () => {
   };
 };
 
-/** Every element's box in the first frame after DOMContentLoaded and after load, plus Chromium's layout shifts. */
-const firstFrameAndLoad = async (viewport: (typeof viewports)[number]) => {
+type View = { width: number; height: number; isMobile: boolean; hasTouch: boolean };
+/**
+ * Every element's box in the first frame after DOMContentLoaded and after load, plus Chromium's layout shifts and
+ * the footer's controls once the fonts are in.
+ */
+const firstFrameAndLoad = async (viewport: View, locale: "en" | "de" = "en") => {
   const origin = "https://cloud.test";
-  const html = (await (await shareServer.request(`${origin}/share/minimal-layout-probe`)).text()).replace(CONTENT, share);
+  const response = await shareServer.request(`${origin}/share/minimal-layout-probe`, { headers: { Cookie: `cloud.locale=${locale}` } });
+  const html = (await response.text()).replace(CONTENT, share);
   const { stylesheets, file } = await coreAssets();
   const preloads = [...html.matchAll(/<link rel="preload" href="([^"]+)" as="font"/g)].map((match) => match[1]!);
   // Serve the stylesheets only once every preloaded font is served, the order a preload allows, however slow the
@@ -347,20 +360,85 @@ const firstFrameAndLoad = async (viewport: (typeof viewports)[number]) => {
       document.fonts.forEach((font) => {
         if (font.status === "loaded") fonts.push(`${font.family} ${font.weight}`);
       });
-      return { firstFrame: state.firstFrame, loaded: state.boxes(), shifts: state.shifts, fonts };
+      // The closed language menu is rendered but hidden.
+      const visible = Array.from(document.querySelectorAll("footer :is(a[href], button)")).filter((control) => control.checkVisibility());
+      const controls = visible.map((control) => {
+        const { left, right, top, bottom } = control.getBoundingClientRect();
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+        return {
+          name: control.getAttribute("aria-label") ?? control.textContent?.trim() ?? "",
+          text: (control as HTMLElement).innerText.trim(),
+          box: { left, right, top, bottom },
+          reachable: hit === control || control.contains(hit),
+        };
+      });
+      return { firstFrame: state.firstFrame, loaded: state.boxes(), shifts: state.shifts, fonts, controls };
     });
   } finally {
     await tab.close();
   }
 };
 
+const phoneWidths = [360, 375, 390, 430];
+
 describe("standalone page load in a browser", () => {
   test("shows its final layout in the first frame instead of moving when the fonts arrive", async () => {
-    for (const viewport of viewports) {
-      const page = await firstFrameAndLoad(viewport);
-      expect(page.fonts, viewport.name).toEqual(expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600"]));
-      expect(page.loaded, viewport.name).toEqual(page.firstFrame);
-      expect(page.shifts, viewport.name).toEqual([]);
+    const views = [...viewports, ...phoneWidths.map((width) => ({ ...viewports[0], name: `${width}`, width }))];
+    for (const viewport of views) {
+      for (const locale of ["en", "de"] as const) {
+        const context = `${viewport.name} ${locale}`;
+        const page = await firstFrameAndLoad(viewport, locale);
+        expect(page.fonts, context).toEqual(expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600"]));
+        expect(page.loaded, context).toEqual(page.firstFrame);
+        expect(page.shifts, context).toEqual([]);
+      }
     }
-  }, 60_000);
+  }, 120_000);
+
+  test("shows compact language and theme settings on a phone, with finger-sized targets that never overlap", async () => {
+    for (const width of phoneWidths) {
+      for (const locale of ["en", "de"] as const) {
+        const context = `${width} ${locale}`;
+        const { controls } = await firstFrameAndLoad({ ...viewports[0], width }, locale);
+        // The language code and the theme icon; the full names stay the accessible labels and fill the menu.
+        expect(
+          controls.map((control) => [control.name, control.text]),
+          context,
+        ).toEqual(
+          locale === "en"
+            ? [
+                ["Imprint", "Imprint"],
+                ["Privacy", "Privacy"],
+                ["Terms", "Terms"],
+                ["Language: English", "EN"],
+                ["Dark mode", ""],
+              ]
+            : [
+                ["Impressum", "Impressum"],
+                ["Datenschutz", "Datenschutz"],
+                ["Nutzungsbedingungen", "Nutzungsbedingungen"],
+                ["Sprache: Deutsch", "DE"],
+                ["Dunkler Modus", ""],
+              ],
+        );
+        for (const control of controls) {
+          const name = `${context} ${control.name}`;
+          expect(control.box.bottom - control.box.top, name).toBeGreaterThanOrEqual(44);
+          expect([control.box.left >= 0, control.box.right <= width, control.reachable], name).toEqual([true, true, true]);
+        }
+        for (const [index, a] of controls.entries()) {
+          for (const b of controls.slice(index + 1)) {
+            const overlap =
+              Math.min(a.box.right, b.box.right) - Math.max(a.box.left, b.box.left) > 0.5 &&
+              Math.min(a.box.bottom, b.box.bottom) - Math.max(a.box.top, b.box.top) > 0.5;
+            expect(overlap, `${context} ${a.name} / ${b.name}`).toBe(false);
+          }
+        }
+        // English fits one row on every phone. The three German legal links and both settings need about 395 px
+        // besides the page padding, so on a narrower phone the settings take a second row under the links.
+        const rows = [...new Set(controls.map((control) => control.box.top))];
+        expect(rows.length, context).toBe(locale === "de" && width < 430 ? 2 : 1);
+      }
+    }
+  }, 120_000);
 });

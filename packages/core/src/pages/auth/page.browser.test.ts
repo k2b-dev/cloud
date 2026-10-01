@@ -31,7 +31,7 @@ beforeEach(() => {
       async (key) => (key === "freeipa.enable" ? true : key === "app.contact_email" ? "help@cloud.example.test" : undefined) as never,
     ),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
-    // All three legal pages, as Core lists them: with the language switch, the German footer takes two rows on a phone.
+    // All three legal pages, as Core lists them, the longest footer a phone shows.
     spyOn(cloud, "listLegalLinks").mockImplementation(async (locale) =>
       (locale === "de" ? ["Impressum", "Datenschutz", "Nutzungsbedingungen"] : ["Imprint", "Privacy", "Terms"]).map((label, index) => ({
         label,
@@ -123,19 +123,26 @@ const measure = async (view: View, query: string, options: Options = {}) => {
       };
       const card = document.querySelector(".standalone-card")!;
       const style = getComputedStyle(card);
-      // The rows along a link's center line where a tap reaches that link.
+      // The rows where a tap reaches a control, along its center line and both of its edges; a neighbour that
+      // covers only part of it shortens one of them, and the shortest counts.
       const hitRows = (link: Element) => {
         const rect = link.getBoundingClientRect();
-        const x = rect.left + rect.width / 2;
-        const rows: number[] = [];
-        for (let y = Math.floor(rect.top) - 30; y <= rect.bottom + 30; y++) {
-          const hit = document.elementFromPoint(x, y);
-          if (hit && (hit === link || link.contains(hit))) rows.push(y);
-        }
+        const columns = [rect.left + 1, rect.left + rect.width / 2, rect.right - 1].map((x) => {
+          const rows: number[] = [];
+          for (let y = Math.floor(rect.top) - 30; y <= rect.bottom + 30; y++) {
+            const hit = document.elementFromPoint(x, y);
+            if (hit && (hit === link || link.contains(hit))) rows.push(y);
+          }
+          return {
+            top: Math.min(...rows),
+            bottom: Math.max(...rows) + 1,
+            contiguous: rows.length === Math.max(...rows) + 1 - Math.min(...rows),
+          };
+        });
         return {
-          top: Math.min(...rows),
-          bottom: Math.max(...rows) + 1,
-          contiguous: rows.length === Math.max(...rows) + 1 - Math.min(...rows),
+          top: Math.max(...columns.map((column) => column.top)),
+          bottom: Math.min(...columns.map((column) => column.bottom)),
+          contiguous: columns.every((column) => column.contiguous),
         };
       };
       const reset = document.querySelector(".auth-reset-link");
@@ -158,7 +165,16 @@ const measure = async (view: View, query: string, options: Options = {}) => {
           hit: hitRows(link),
         })),
         submit: Array.from(document.querySelectorAll("main button[type=submit]")).map(box),
-        languageSwitch: box(document.querySelector(".auth-language-trigger")!),
+        languageSwitch: (() => {
+          const trigger = document.querySelector(".auth-language-trigger")!;
+          return {
+            name: trigger.getAttribute("aria-label"),
+            text: (trigger as HTMLElement).innerText.trim(),
+            ...box(trigger),
+            hit: hitRows(trigger),
+          };
+        })(),
+        footer: box(document.querySelector("footer")!),
         cardTop: box(card).top,
         // The page without its centering slack: where the footer ends, plus the page padding.
         contentHeight: box(document.querySelector("footer")!).bottom - box(card).top + 32,
@@ -266,7 +282,7 @@ describe("sign-in page in a browser", () => {
   test("is flat on a phone and fits the first screen for every account type, form and language", async () => {
     for (const [form, query] of Object.entries(forms)) {
       for (const locale of ["en", "de"] as const) {
-        for (const view of [phone, { ...phone, width: 320 }]) {
+        for (const view of [phone, { ...phone, width: 375 }, { ...phone, width: 360 }, { ...phone, width: 320 }]) {
           const context = `${form} ${locale} ${view.width}`;
           const page = await measure(view, query, { locale, dark: locale === "de" });
           expect(page.surface, context).toEqual(flat);
@@ -275,6 +291,9 @@ describe("sign-in page in a browser", () => {
           expect(page.fields.length, context).toBeGreaterThan(0);
           // Fields span the viewport minus the page padding of 16 px on each side.
           for (const field of page.fields) expect([field.left, field.right], context).toEqual([16, view.width - 16]);
+          // At 320 px the German footer takes two rows, which keep their hit areas apart, so the German
+          // password form, the tallest one, scrolls by about 16 px.
+          if (view.width === 320 && locale === "de" && form === "password") continue;
           expect(page.contentHeight, context).toBeLessThanOrEqual(view.height);
           expect(page.scrollHeight, context).toBe(view.height);
         }
@@ -344,49 +363,49 @@ describe("sign-in page in a browser", () => {
 
   test("gives the small text links finger-sized hit areas that stop short of their neighbours", async () => {
     for (const locale of ["en", "de"] as const) {
-      const page = await measure(phone, forms.password, { locale });
-      const [reset, ...footer] = page.textLinks;
-      expect([reset!.name, ...footer.map((link) => link.name)], locale).toEqual([
-        ...(locale === "en"
-          ? ["Reset password", "Imprint", "Privacy", "Terms"]
-          : ["Passwort zurücksetzen", "Impressum", "Datenschutz", "Nutzungsbedingungen"]),
-      ]);
-      for (const link of footer) {
-        expect(link.hit.contiguous, `${locale} ${link.name}`).toBe(true);
-        // The German footer wraps: the language switch takes a second row, 4 px below the links, and its own
-        // hit area wins where they meet. The link right above it keeps the 24 px of WCAG's minimum target size;
-        // 44 px would push the switch about 18 px down, and the German password form has 2 px left.
-        const aboveSwitch =
-          link.left < page.languageSwitch.right && link.right > page.languageSwitch.left && link.bottom <= page.languageSwitch.top;
-        expect(link.hit.bottom - link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(aboveSwitch ? 24 : 44);
+      for (const width of [320, 360, 375, 390, 430]) {
+        const context = `${locale} ${width}`;
+        // A taller screen, so a page that scrolls at 320 px still shows the whole hit area of its last row.
+        const page = await measure({ ...phone, width, height: 800 }, forms.password, { locale });
+        const [reset, ...footer] = page.textLinks;
+        expect([reset!.name, ...footer.map((link) => link.name)], context).toEqual([
+          ...(locale === "en"
+            ? ["Reset password", "Imprint", "Privacy", "Terms"]
+            : ["Passwort zurücksetzen", "Impressum", "Datenschutz", "Nutzungsbedingungen"]),
+        ]);
+        // Below md the switch shows the language code; its name stays the full language.
+        expect([page.languageSwitch.text, page.languageSwitch.name], context).toEqual(
+          locale === "en" ? ["EN", "Language: English"] : ["DE", "Sprache: Deutsch"],
+        );
+        // The links and the switch share one row on every phone from 360 px, also in German; at 320 px the German
+        // switch takes a second row.
+        const rows = locale === "de" && width === 320 ? 2 : 1;
+        expect(page.footer.height > page.languageSwitch.height ? 2 : 1, context).toBe(rows);
+        // Every footer target is finger-sized, also where the footer wraps: no target covers another.
+        for (const target of [...footer, page.languageSwitch]) {
+          expect(target.hit.contiguous, `${context} ${target.name}`).toBe(true);
+          expect(target.hit.bottom - target.hit.top, `${context} ${target.name}`).toBeGreaterThanOrEqual(44);
+        }
+        // The footer links' hit areas reach 14 px up and stop short of the secondary actions', which reach 4 px down.
+        const actionsBottom = Math.max(...page.actions.map((action) => action.bottom));
+        for (const link of footer) expect(link.hit.top, `${context} ${link.name}`).toBeGreaterThanOrEqual(actionsBottom + 4);
+        // The reset link sits between the password field and the sign-in button.
+        const password = page.fields.at(-1)!;
+        const submit = page.submit[0]!;
+        expect(reset!.hit.contiguous, context).toBe(true);
+        expect(reset!.hit.bottom - reset!.hit.top, context).toBeGreaterThanOrEqual(30);
+        expect(reset!.hit.top, context).toBeGreaterThan(password.bottom);
+        expect(reset!.hit.bottom, context).toBeLessThan(submit.top - 2);
       }
-      // Only that one link gets the smaller target.
-      expect(
-        footer.filter((link) => link.hit.bottom - link.hit.top < 44).map((link) => link.name),
-        locale,
-      ).toEqual(locale === "de" ? ["Datenschutz"] : []);
-      // The footer links' hit areas reach 14 px up and stop short of the secondary actions', which reach 4 px down.
-      const actionsBottom = Math.max(...page.actions.map((action) => action.bottom));
-      for (const link of footer) expect(link.hit.top, `${locale} ${link.name}`).toBeGreaterThanOrEqual(actionsBottom + 4);
-      expect(
-        footer.filter((link) => link.bottom <= page.languageSwitch.top).length,
-        `${locale}: links in a row above the language switch`,
-      ).toBe(locale === "de" ? 3 : 0);
-      // The reset link sits between the password field and the sign-in button.
-      const password = page.fields.at(-1)!;
-      const submit = page.submit[0]!;
-      expect(reset!.hit.contiguous, locale).toBe(true);
-      expect(reset!.hit.bottom - reset!.hit.top, locale).toBeGreaterThanOrEqual(30);
-      expect(reset!.hit.top, locale).toBeGreaterThan(password.bottom);
-      expect(reset!.hit.bottom, locale).toBeLessThan(submit.top - 2);
     }
-    // A mouse keeps the link's own box.
-    const [reset] = (await measure(desktop, forms.password)).textLinks;
-    expect(reset!.hit.bottom - reset!.hit.top).toBeLessThanOrEqual(Math.ceil(reset!.height) + 1);
-  }, 60_000);
+    // A mouse keeps the link's own box, and a desktop switch names the full language.
+    const wide = await measure(desktop, forms.password, { locale: "de" });
+    expect(wide.textLinks[0]!.hit.bottom - wide.textLinks[0]!.hit.top).toBeLessThanOrEqual(Math.ceil(wide.textLinks[0]!.height) + 1);
+    expect([wide.languageSwitch.text, wide.languageSwitch.name]).toEqual(["Deutsch", "Sprache: Deutsch"]);
+  }, 120_000);
 
   test("shows its final layout in the first frame instead of moving when the fonts arrive", async () => {
-    for (const view of [phone, desktop]) {
+    for (const view of [...[360, 375, 390, 430].map((width) => ({ ...phone, width })), desktop]) {
       for (const locale of ["en", "de"] as const) {
         const context = `${view.width} ${locale}`;
         const page = await firstFrameAndLoad(view, forms.password, locale);
@@ -395,7 +414,7 @@ describe("sign-in page in a browser", () => {
         expect(page.shifts, context).toEqual([]);
       }
     }
-  }, 60_000);
+  }, 120_000);
 
   test("moves focus through the action grid row by row", async () => {
     expect(await tabOrder(phone, forms.password, 3)).toEqual(["Use passkey", "Contact support", "Admin token"]);
