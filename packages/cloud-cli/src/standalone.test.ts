@@ -142,10 +142,15 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
 
     // Exercise the compiled parent AND its internal browser subprocess, from
     // outside the checkout. No installation or user Cloud data is contacted.
-    // Like `cld` by default, the child launches Playwright's Chromium from
+    // Like `cld` by default, the child launches Playwright's Chromium where
+    // Playwright looks for it: PLAYWRIGHT_BROWSERS_PATH, XDG_CACHE_HOME, or
     // HOME. A system Chrome is only used when CLOUD_CLI_CHROMIUM names it: the
     // CI image's Google Chrome needed 9-33 seconds for its first start.
-    const chromium = process.env.CLOUD_CLI_CHROMIUM;
+    const browserEnv: Record<string, string> = { HOME: homedir() };
+    for (const name of ["CLOUD_CLI_CHROMIUM", "PLAYWRIGHT_BROWSERS_PATH", "XDG_CACHE_HOME"]) {
+      const value = process.env[name];
+      if (value) browserEnv[name] = value;
+    }
     const bundle = await cliHostBundle();
     const code = "export default () => 42";
     const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
@@ -179,11 +184,7 @@ test("standalone CLI starts and runs offline without Cloud server configuration"
           "--input-file",
           input,
         ],
-        {
-          HOME: homedir(),
-          XDG_CONFIG_HOME: join(directory, ".config"),
-          ...(chromium ? { CLOUD_CLI_CHROMIUM: chromium } : {}),
-        },
+        { ...browserEnv, XDG_CONFIG_HOME: join(directory, ".config") },
       );
       expect(executed.exitCode, executed.stderr).toBe(0);
       expect(executed.stderr).toBe("");

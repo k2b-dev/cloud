@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { cliHostBundle } from "../artifacts/runtime/cli-bundle";
 import { compileArtifact } from "../artifacts/runtime/compile";
 import { createCliCodeHost } from "./code-host";
@@ -167,6 +167,36 @@ test("closing the CLI host cancels its in-flight server request", async () => {
     expect(aborted).toBe(true);
   } finally {
     await host.close();
+  }
+}, 60000);
+
+test("a stalled startup fails at the deadline and names the step it stopped at", async () => {
+  let requested!: () => void;
+  const runtimeRequested = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+  jest.useFakeTimers();
+  try {
+    // The real child launches Chromium and opens the host page; then the
+    // runtime download never answers, so only the deadline can end startup.
+    const host = createCliCodeHost({
+      fetch: async (input, init) => {
+        if (!String(input).endsWith("host.js")) throw new Error(`Unexpected request ${input}`);
+        requested();
+        return new Promise<Response>((_resolve, reject) =>
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Host closed", "AbortError")), { once: true }),
+        );
+      },
+    });
+    // A startup failure before the runtime request rejects here instead of hanging.
+    await Promise.race([runtimeRequested, host]);
+    // The child sent this step over IPC before it requested the runtime. One
+    // more event loop turn lets this process read it if both arrived together.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    jest.advanceTimersByTime(45_000);
+    await expect(host).rejects.toThrow("Code host startup exceeded 45 seconds while loading the host runtime; no operation was executed");
+  } finally {
+    jest.useRealTimers();
   }
 }, 60000);
 
