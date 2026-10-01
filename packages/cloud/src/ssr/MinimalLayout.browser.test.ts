@@ -160,9 +160,9 @@ const cards = {
     `<main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-10">${renderToString(() =>
       createComponent(Paper, { as: "section" as const, class: `${surface} flex flex-col gap-4 p-6`, children: field() }),
     )}</main>`,
-  // The Cloud `paper` utility at the top of a form page.
+  // The Cloud `paper` utility at the top of a form page, clipping its content to the rounded corners like the Core sign-in card.
   utility: (surface: string) =>
-    `<main class="mx-auto w-full max-w-2xl px-4 py-6"><section class="paper ${surface} p-6">${renderToString(field)}</section></main>`,
+    `<main class="mx-auto w-full max-w-2xl px-4 py-6"><section class="paper ${surface} overflow-hidden p-6">${renderToString(field)}</section></main>`,
 } as const;
 
 const measureCard = async (width: number, card: keyof typeof cards, surface: string, theme: "light" | "dark") => {
@@ -194,6 +194,7 @@ const measureCard = async (width: number, card: keyof typeof cards, surface: str
           shadow: style.boxShadow,
           background: style.backgroundColor,
           padding: style.paddingTop,
+          overflow: style.overflow,
         },
         card: box(section),
         input: box(document.querySelector(".k2b-input-shell")!),
@@ -207,7 +208,8 @@ const measureCard = async (width: number, card: keyof typeof cards, surface: str
 };
 
 describe("standalone card in a browser", () => {
-  const flat = { border: "0px", radius: "0px", shadow: "none", background: "rgba(0, 0, 0, 0)", padding: "0px" };
+  // A flat card no longer clips, so the outer focus ring of a full-width field at its edge stays whole.
+  const flat = { border: "0px", radius: "0px", shadow: "none", background: "rgba(0, 0, 0, 0)", padding: "0px", overflow: "visible" };
 
   test("is flat on a phone: the content sits on the page with the page padding", async () => {
     for (const theme of ["light", "dark"] as const) {
