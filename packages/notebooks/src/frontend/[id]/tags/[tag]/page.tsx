@@ -22,6 +22,7 @@ import { requestedPresentationMode, withPresentationMode } from "../../../../lib
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import BookSurface from "../../_components/book/BookSurface";
 import BookTagContent from "../../_components/book/BookTagContent";
+import RememberNotebook from "../../_components/RememberNotebook.island";
 import { parseNavigationHidden, parseSettings } from "../../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
@@ -133,6 +134,7 @@ export default ssr<AuthContext>(async (c) => {
     ));
     return () => (
       <Layout c={c} fullPage fullWidth title={notebook.name}>
+        <RememberNotebook notebookId={notebook.shortId} />
         <BookSurface
           notebookId={notebook.shortId}
           notebookName={notebook.name}
@@ -234,6 +236,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: `#${tagParam}` },
       ]}
     >
+      <RememberNotebook notebookId={notebook.shortId} />
       <Content />
     </Layout>
   );

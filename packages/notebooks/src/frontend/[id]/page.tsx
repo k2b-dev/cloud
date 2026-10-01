@@ -11,6 +11,7 @@ import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island
 import NoteEditor from "./_components/editor/NoteEditor.client";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
+import RememberNotebook from "./_components/RememberNotebook.island";
 import NotebookNavigatorPane from "./_components/sidebar/NotebookNavigatorPane.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
@@ -32,6 +33,7 @@ export default ssr<AuthContext>(async (c) => {
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
     return () => (
       <Layout c={c} fullPage fullWidth title={data.notebook.name}>
+        <RememberNotebook notebookId={data.notebook.id} />
         <BookSurface
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
@@ -89,6 +91,7 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <link rel="stylesheet" href={katexStylesHref} />
+      <RememberNotebook notebookId={notebook.id} />
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <NotebookCommands
           notebookId={notebook.id}

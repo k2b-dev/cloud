@@ -19,6 +19,7 @@ import { ssr } from "../../../config";
 import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
 import { buildAttachmentsUrl } from "../../params";
 import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
+import RememberNotebook from "../_components/RememberNotebook.island";
 import { parseNavigationHidden, parseSettings } from "../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
@@ -120,6 +121,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.attachments },
       ]}
     >
+      <RememberNotebook notebookId={notebook.shortId} />
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
         <NotebookSidebar ctx={ctx} />

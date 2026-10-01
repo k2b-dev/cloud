@@ -67,6 +67,8 @@ In dieser Reihenfolge bleiben Fehler kostengünstig. Eine klare Tabelle und eini
 
 ## In einer Base zurechtfinden {icon="layout-dashboard"}
 
+Öffnest du Grids über die Navigation, landest du wieder auf der Base-Seite, die du in diesem Browser zuletzt angesehen hast, auch wenn das in einem anderen Tab war. Kannst du diese Base nicht mehr öffnen, erscheint stattdessen die Übersicht.
+
 Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** mit Suche nach Name oder Typ. Der ausgewählte Tab steht in der URL und bleibt beim Teilen, Neuladen sowie Vor- und Zurücknavigieren erhalten. Bases mit Gruppen öffnen standardmäßig **Gruppen**, sonst **Alle Ressourcen**. Formulare öffnen weiterhin ihren Dialog.
 
 Über **Neu** im Bearbeitungsmodus erstellst du Tabellen, Ansichten, Formulare, Dokumentvorlagen, Workflows oder Apps. Die Auswahl zeigt nur erlaubte Aktionen. Bei tabellenbezogenen Ressourcen wählst du eine Tabelle; die aktuelle Tabelle ist vorausgewählt, sofern sie geeignet ist. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
