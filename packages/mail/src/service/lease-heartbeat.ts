@@ -9,10 +9,13 @@
  * work's own outcome. After a deadline the work's outcome stands: work that
  * stopped throws the signal's reason, and work that passed its commit point
  * before the deadline returns what it committed.
+ *
+ * The heartbeat's signal aborts once the work has settled, so a heartbeat that
+ * waits before retrying a renewal can stop instead of delaying the release.
  */
 export const withLeaseHeartbeat = async <T>(params: {
   intervalMs: number;
-  heartbeat: () => Promise<void>;
+  heartbeat: (workSettled: AbortSignal) => Promise<void>;
   deadline?: { ms: number; error: () => Error };
   work: (assertLeaseActive: () => Promise<void>, signal: AbortSignal) => Promise<T>;
 }): Promise<T> => {
@@ -28,6 +31,7 @@ export const withLeaseHeartbeat = async <T>(params: {
   let leaseLost = false;
   let abortReason: unknown;
   const abortController = new AbortController();
+  const workSettled = new AbortController();
   const abort = (reason: unknown): void => {
     if (aborted) return;
     aborted = true;
@@ -39,7 +43,7 @@ export const withLeaseHeartbeat = async <T>(params: {
     heartbeatChain = heartbeatChain.then(async () => {
       if (stopped || aborted) return;
       try {
-        await params.heartbeat();
+        await params.heartbeat(workSettled.signal);
       } catch (error) {
         leaseLost = true;
         abort(error);
@@ -70,6 +74,7 @@ export const withLeaseHeartbeat = async <T>(params: {
     stopped = true;
     clearInterval(timer);
     clearTimeout(deadlineTimer);
+    workSettled.abort();
     await heartbeatChain;
   }
 

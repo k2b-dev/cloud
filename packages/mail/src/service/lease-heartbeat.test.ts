@@ -169,6 +169,35 @@ describe("mail job lease heartbeat", () => {
     }
   });
 
+  test("tells a heartbeat that waits to retry when the work has settled", async () => {
+    jest.useFakeTimers();
+    try {
+      let beats = 0;
+      let finishWork = (): void => undefined;
+      const outcome = withLeaseHeartbeat({
+        intervalMs: 1_000,
+        heartbeat: async (workSettled) => {
+          beats += 1;
+          if (beats === 1) return;
+          // A renewal waiting to retry stops once nothing holds the lease any more.
+          await new Promise<void>((resolve) => workSettled.addEventListener("abort", () => resolve(), { once: true }));
+        },
+        work: () =>
+          new Promise<string>((resolve) => {
+            finishWork = () => resolve("done");
+          }),
+      });
+
+      await flushMicrotasks();
+      await advance(1_000);
+      expect(beats).toBe(2);
+      finishWork();
+      expect(await outcome).toBe("done");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test("returns work that finishes before its deadline", async () => {
     let signal: AbortSignal | undefined;
     const result = await withLeaseHeartbeat({

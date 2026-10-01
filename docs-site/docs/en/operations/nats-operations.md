@@ -174,6 +174,16 @@ the process. When an outage keeps the application from renewing its
 165 seconds after its last successful renewal. Its next start waits for NATS
 again.
 
+A broker can also stall briefly without an outage, for example while a
+snapshot backup freezes its file system. Requests then time out until the
+broker answers again. Short-lived work that hits such a timeout fails and is
+retried as its job or queue allows.
+Long-lived holders of a NATS lease, such as Mail's IMAP push listeners, retry
+renewals that got no answer. They stop only when the lease could run out
+before a renewal succeeds, or when NATS answers that the lease is no longer
+theirs. Stalls that repeat at the times of a backup schedule point to
+that schedule.
+
 ## Alert on dead letters and broker health
 
 Configure health webhooks under **Observability → Webhooks**. The existing
