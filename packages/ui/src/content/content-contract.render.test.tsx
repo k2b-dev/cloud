@@ -531,13 +531,17 @@ describe("@k2b/ui Cloud content contract", () => {
       createComponent(PdfPreview, { request, autoLoad: true, disabled: () => true, buttonLabel: "Retry", title: "Report" }),
     );
 
-    // Nothing has failed before hydration: no retry action and no invitation to render, only the loading state.
-    expect(auto).toMatch(/<span role="status"[^>]*>Loading\.\.\.<\/span>/);
+    // Nothing has failed before hydration: no retry action and no invitation to render, only the loading placeholder.
+    expect(auto).toMatch(
+      /<div [^>]*class="k2b-placeholder k2b-content-pdf-preview__placeholder[^"]*"[^>]*data-state="loading"[^>]*role="status"[^>]*>.*Loading\.\.\.<\/p><\/div>/,
+    );
     expect(auto).not.toContain("Retry");
     expect(auto).not.toContain("Render a PDF preview");
     expect(auto).toMatch(/<a [^>]*href="\/files\/report\.pdf"[^>]*target="_blank"/);
-    // A disabled automatic preview never starts, so it keeps its idle state.
+    // A disabled automatic preview never starts, so it keeps its idle state in the same placeholder.
     expect(disabled).not.toContain("Loading...");
+    expect(disabled).toMatch(/class="k2b-placeholder k2b-content-pdf-preview__placeholder[^"]*"[^>]*data-state="empty"/);
+    expect(disabled).toContain("Render a PDF preview");
     expect(disabled).toContain("Retry");
   });
 

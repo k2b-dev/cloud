@@ -1,5 +1,6 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import Placeholder from "../surfaces/Placeholder";
 
 export type PdfPreviewRequest = () => Promise<Response | Blob>;
 
@@ -48,6 +49,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
   let shownBlob: Blob | null = null;
   let openButton: HTMLElement | undefined;
   let renderButton: HTMLButtonElement | undefined;
+  let errorRetryButton: HTMLButtonElement | undefined;
   let disposed = false;
   let loadGeneration = 0;
   let openGeneration = 0;
@@ -76,7 +78,10 @@ export default function PdfPreview(props: PdfPreviewProps) {
   const load = async () => {
     if (loading() || opening() || props.disabled?.()) return;
     const generation = ++loadGeneration;
-    const retryFocused = props.autoLoad && document.activeElement === renderButton;
+    // A retry the shown document or the loading state removes hands keyboard focus on instead of dropping it.
+    const retryFocused =
+      (props.autoLoad && document.activeElement === renderButton) ||
+      (errorRetryButton?.isConnected && document.activeElement === errorRetryButton);
     setLoading(true);
     setError(null);
     try {
@@ -99,6 +104,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
       shownBlob = null;
       setFailed(true);
       setError(e instanceof Error ? e.message : "PDF preview failed");
+      if (retryFocused && document.activeElement === document.body) errorRetryButton?.focus();
     } finally {
       if (!disposed && generation === loadGeneration) setLoading(false);
     }
@@ -139,9 +145,9 @@ export default function PdfPreview(props: PdfPreviewProps) {
     }
   };
 
-  // With autoLoad, rendering again would show the same document: offer it only until one is shown, e.g. to retry,
-  // and keep it in place while a retry loads.
-  const renderable = () => !props.autoLoad || failed() || (!url() && !loading());
+  // With autoLoad, rendering again would show the same document: offer it only until one is shown. After a failure the
+  // default error state carries it as the retry; beside a caller's error content it stays in place while a retry loads.
+  const renderable = () => !props.autoLoad || (failed() ? Boolean(props.renderError) : !url() && !loading());
   const actions = () => (
     <div class="k2b-content-pdf-preview__actions">
       <Show
@@ -211,6 +217,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
       </Show>
     </div>
   );
+  // Every state before a document is shown uses one placeholder in the viewer's box, so loading changes no layout.
   const content = () => (
     <Show
       when={error()}
@@ -218,11 +225,13 @@ export default function PdfPreview(props: PdfPreviewProps) {
         <Show
           when={url()}
           fallback={
-            <div class="k2b-content-pdf-preview__empty">
-              <span role={loading() ? "status" : undefined}>
-                {loading() ? messages().loading : (props.emptyText ?? messages().renderPdfPreview)}
-              </span>
-            </div>
+            <Placeholder
+              class="k2b-content-pdf-preview__placeholder"
+              state={loading() ? "loading" : "empty"}
+              icon={loading() ? undefined : "ti ti-file-type-pdf"}
+              title={loading() ? messages().loading : undefined}
+              description={loading() ? undefined : (props.emptyText ?? messages().renderPdfPreview)}
+            />
           }
         >
           {(currentUrl) => (
@@ -233,9 +242,27 @@ export default function PdfPreview(props: PdfPreviewProps) {
     >
       {(message) =>
         props.renderError?.(message()) ?? (
-          <div role="alert" class="k2b-content-pdf-preview__error">
-            {message()}
-          </div>
+          <Placeholder
+            class="k2b-content-pdf-preview__placeholder"
+            state="error"
+            description={message()}
+            action={
+              // One retry at a time: the render action moves here only where the toolbar no longer offers it.
+              renderable() ? undefined : (
+                <button
+                  ref={(element) => (errorRetryButton = element)}
+                  type="button"
+                  class="k2b-button"
+                  data-variant="secondary"
+                  data-size="sm"
+                  onClick={() => void load()}
+                  disabled={opening() || props.disabled?.()}
+                >
+                  {props.buttonLabel ?? messages().retry}
+                </button>
+              )
+            }
+          />
         )
       }
     </Show>

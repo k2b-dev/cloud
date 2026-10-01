@@ -1880,21 +1880,24 @@
   color: var(--k2b-danger-text);
 }
 
-.k2b-ui .k2b-content-pdf-preview__empty {
-  @apply flex min-h-0 flex-1 items-center justify-center p-6 text-center text-sm;
-  color: var(--k2b-text-muted);
+/* The placeholder and the document share one box: an iframe's default height
+   where nothing sizes the viewer, the remaining height of a sized column. */
+.k2b-ui :is(.k2b-content-pdf-preview__placeholder, .k2b-content-pdf-preview__frame) {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  width: 100%;
+  height: 150px;
+  min-height: 0;
 }
 
-.k2b-ui .k2b-content-pdf-preview__error {
-  @apply m-4 rounded-md px-3 py-2 text-left text-sm;
-  border: 1px solid color-mix(in srgb, var(--k2b-danger-500) 35%, transparent);
-  color: var(--k2b-danger-text);
-  background: var(--k2b-danger-surface);
+/* A long error scrolls from its top instead of overflowing above the box. */
+.k2b-ui .k2b-content-pdf-preview__placeholder {
+  justify-content: safe center;
+  overflow: auto;
 }
 
 .k2b-ui .k2b-content-pdf-preview__frame {
-  @apply min-h-0 flex-1;
-  width: 100%;
+  display: block;
   border: 0;
   background: #fff;
 }

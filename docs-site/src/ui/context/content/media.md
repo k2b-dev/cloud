@@ -36,15 +36,17 @@ Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. 
 
 `PdfPreview` accepts a `request` function that resolves to a `Blob` or `Response`. A failed response becomes an error state. A Blob with a declared type other than `application/pdf` is rejected.
 
+Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs, and `state="error"` with the message after a failure. The error state never adds a second retry: an on-demand preview retries with its render action in the toolbar. These states and the document share one box, so loading and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. A long error scrolls inside that box from its top. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
+
 The component provides separate actions to render inside the page or open the document in a new tab. `disabled` is a reactive guard for invalid form state or an unavailable renderer.
 
 By default, the open action shows a temporary local copy of the document in a new tab. That copy has no file name and does not survive a reload, and Safari on iOS may download it instead. When the caller can serve the document itself, pass `openHref`: a stable same-origin URL that returns the PDF with `Content-Disposition: inline`. The open action then becomes a plain link to that URL in a new tab without an opener, so the browser's viewer can reload the document and shows the file name from the last path segment. The caller owns the URL, its authorization, and its response headers.
 
 Pass `onDownload` to add a **Download** action. The caller owns the download, for example issuing a fresh attachment URL with the right file name; `disabled` also disables it.
 
-Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows a loading state. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
+Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows the loading placeholder. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
 
-An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request, and the render action only appears until a document is shown, for example to retry a failed request. A retry keeps the action in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
+An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting. After a failed request, the render action moves into the error state as its retry, labeled with `buttonLabel` or **Retry**; beside `renderError` content, it stays in the toolbar and in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
 
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
@@ -54,7 +56,7 @@ Pass a `children` render function to place `actions` and `content` in an existin
 
 For a dialog, put `actions` in `PanelDialog.Header` and `content` in a flex column that fills the remaining body height. Keep explanatory text in `InlineGuidance` above the content. Do not put another preview card inside the dialog.
 
-Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. Errors replace the document, including a previously rendered PDF after a failed reload; they are not centered inside an empty viewer. Keep an accessible alert role in custom error content. A blocked new tab is not a document error: a localized alert beside the actions says so, and the shown document stays.
+Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. It replaces the default error state; the toolbar keeps the render action, which retries. Errors replace the document, including a previously rendered PDF after a failed reload. Keep an accessible alert role in custom error content. A blocked new tab is not a document error: a localized alert beside the actions says so, and the shown document stays.
 
 ## Zoomable content
 
@@ -107,7 +109,7 @@ type ZoomPanViewportProps = {
 
 The lightbox uses a native dialog, labeled navigation controls, arrow keys, Escape, swipe gestures, and visible image position. Captions come from `alt`.
 
-`PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. When a retry shows the document of an automatic preview, focus moves from the removed retry action to the open action.
+`PdfPreview` labels its iframe with `title`. Its actions are native buttons named by their visible labels; with `openHref`, the open action is a native link, which a disabled preview replaces with a disabled button. Keep the open and preview button labels specific when several documents appear on one page; for a stored file, an open label such as "Open in new tab" says where the document appears. The viewer's loading state is a polite status and its error state an alert. When a retry removes the focused retry action, focus moves to the open action once the document is shown, or to the retry of a new error state.
 
 `ZoomPanViewport` is a focusable group with the caller's `label` and a localized description of its keys. With focus on the viewport, `+` and `-` zoom, `0` resets, `F` opens fullscreen, and arrow keys pan when zoomed in. At fit, arrow keys keep scrolling the page. Every control has a localized label and a tooltip with its key. Motion is off under `prefers-reduced-motion`.
 

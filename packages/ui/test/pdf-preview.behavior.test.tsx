@@ -111,12 +111,18 @@ domTest("automatic preview failures stay visible and retry only after an explici
   try {
     await Bun.sleep(0);
     expect(calls).toBe(1);
-    expect(dom.root.textContent).toContain("Renderer unavailable");
-    const retry = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!;
+    // The error takes the viewer's place as the placeholder's error state, which carries the one retry action.
+    const alert = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"][role="alert"]')!;
+    expect(alert.textContent).toBe("Renderer unavailableRetry");
+    expect(labels(dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__actions")!)).toEqual(["Open preview"]);
+    const retry = alert.querySelector("button")!;
     expect(retry.disabled).toBe(false);
+    retry.focus();
     click(retry);
     await Bun.sleep(0);
     expect(calls).toBe(2);
+    // The failed retry shows a new error state; keyboard focus lands on its retry instead of the page.
+    expect(dom.document.activeElement).toBe(dom.root.querySelector('[role="alert"] button'));
   } finally {
     dispose();
     dom.cleanup();
@@ -272,7 +278,60 @@ domTest("an on-demand preview keeps rendering and opens the current document for
   }
 });
 
-domTest("an automatic preview keeps its retry in place while it loads and then moves focus to the open action", async () => {
+domTest(
+  "an automatic preview retries from its error state, shows the loading placeholder, and moves focus to the open action",
+  async () => {
+    const dom = createDomTestHarness();
+    const browser = stubPdfBrowser(dom);
+    const { default: PdfPreview } = await import("../src/content/PdfPreview");
+    let calls = 0;
+    let resolveRetry!: (blob: Blob) => void;
+    const dispose = render(
+      () => (
+        <PdfPreview
+          autoLoad
+          openButtonLabel="Open in new tab"
+          buttonLabel="Try again"
+          request={() => {
+            if (++calls === 1) return Promise.reject(new Error("Network error"));
+            return new Promise<Blob>((resolve) => {
+              resolveRetry = resolve;
+            });
+          }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      await Bun.sleep(0);
+      const open = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button")!;
+      // The render action moves into the error state with the caller's label.
+      expect(labels(dom.root)).toEqual(["Open in new tab", "Try again"]);
+      const retry = dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+      expect(retry.textContent).toBe("Try again");
+      retry.focus();
+      click(retry);
+      // The viewer shows the shared loading placeholder in the same box until the document arrives.
+      const status = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="loading"]')!;
+      expect(status.getAttribute("role")).toBe("status");
+      expect(status.textContent).toBe("Loading...");
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+      await Bun.sleep(0);
+      expect(calls).toBe(2);
+      expect(dom.root.querySelector("iframe")).not.toBeNull();
+      expect(dom.root.querySelector(".k2b-content-pdf-preview__placeholder")).toBeNull();
+      // The removed retry hands keyboard focus to the open action.
+      expect(dom.document.activeElement).toBe(open);
+    } finally {
+      dispose();
+      browser.restore();
+      dom.cleanup();
+    }
+  },
+);
+
+domTest("beside a caller's error content, an automatic preview keeps its own retry in place while it loads", async () => {
   const dom = createDomTestHarness();
   const browser = stubPdfBrowser(dom);
   const { default: PdfPreview } = await import("../src/content/PdfPreview");
@@ -284,6 +343,7 @@ domTest("an automatic preview keeps its retry in place while it loads and then m
         autoLoad
         openButtonLabel="Open in new tab"
         buttonLabel="Try again"
+        renderError={(message) => <aside role="alert">{message}</aside>}
         request={() => {
           if (++calls === 1) return Promise.reject(new Error("Network error"));
           return new Promise<Blob>((resolve) => {
@@ -315,6 +375,57 @@ domTest("an automatic preview keeps its retry in place while it loads and then m
   } finally {
     dispose();
     browser.restore();
+    dom.cleanup();
+  }
+});
+
+domTest("an on-demand preview shows its idle, loading, and error states in one placeholder in the inherited locale", async () => {
+  const dom = createDomTestHarness();
+  dom.document.documentElement.lang = "de";
+  const { createSignal } = await import("solid-js");
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  const [disabled, setDisabled] = createSignal(false);
+  let rejectRender!: (error: Error) => void;
+  const dispose = render(
+    () => (
+      <PdfPreview
+        emptyText="Wähle einen Datensatz."
+        disabled={disabled}
+        request={() =>
+          new Promise<Blob>((_resolve, reject) => {
+            rejectRender = reject;
+          })
+        }
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const viewer = dom.root.querySelector<HTMLElement>(".k2b-content-pdf-preview__placeholder")!;
+    expect(viewer.dataset.state).toBe("empty");
+    expect(viewer.textContent).toBe("Wähle einen Datensatz.");
+    click(dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!);
+    // Idle and loading are the same element, so the status changes without replacing the viewer.
+    expect(dom.root.querySelector(".k2b-content-pdf-preview__placeholder")).toBe(viewer);
+    expect(viewer.dataset.state).toBe("loading");
+    expect(viewer.textContent).toBe("Wird geladen...");
+    rejectRender(new Error("Vorlage fehlt"));
+    await Bun.sleep(0);
+    const error = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"]')!;
+    expect(error.getAttribute("role")).toBe("alert");
+    // The render action stays in the toolbar and is the only retry, so the error state adds no second one.
+    expect(error.textContent).toBe("Vorlage fehlt");
+    expect(error.querySelector("button")).toBeNull();
+    expect(labels(dom.root)).toEqual(["Vorschau öffnen", "PDF anzeigen"]);
+    const retry = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!;
+    click(retry);
+    expect(dom.root.querySelector('.k2b-content-pdf-preview__placeholder[data-state="loading"]')).not.toBeNull();
+    rejectRender(new Error("Vorlage fehlt"));
+    await Bun.sleep(0);
+    setDisabled(true);
+    expect(retry.disabled).toBe(true);
+  } finally {
+    dispose();
     dom.cleanup();
   }
 });
