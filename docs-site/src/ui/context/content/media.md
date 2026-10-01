@@ -36,7 +36,7 @@ Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. 
 
 `PdfPreview` accepts a `request` function that resolves to a `Blob` or `Response`. A failed response becomes an error state. A Blob with a declared type other than `application/pdf` is rejected.
 
-Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs, and `state="error"` with the message and a **Retry** action after a failure. These states and the document share one box, so loading and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
+Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs, and `state="error"` with the message after a failure. The error state never adds a second retry: an on-demand preview retries with its render action in the toolbar. These states and the document share one box, so loading and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. A long error scrolls inside that box from its top. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
 
 The component provides separate actions to render inside the page or open the document in a new tab. `disabled` is a reactive guard for invalid form state or an unavailable renderer.
 
@@ -46,7 +46,7 @@ Pass `onDownload` to add a **Download** action. The caller owns the download, fo
 
 Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled, and shows the loading placeholder. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
 
-An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting. A failed request offers its retry in the error state; beside `renderError` content, the render action is the retry and stays in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
+An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting. After a failed request, the render action moves into the error state as its retry, labeled with `buttonLabel` or **Retry**; beside `renderError` content, it stays in the toolbar and in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
 
 Authentication, request input, server-side rendering, and error sanitization remain with the caller.
 
@@ -56,7 +56,7 @@ Pass a `children` render function to place `actions` and `content` in an existin
 
 For a dialog, put `actions` in `PanelDialog.Header` and `content` in a flex column that fills the remaining body height. Keep explanatory text in `InlineGuidance` above the content. Do not put another preview card inside the dialog.
 
-Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. It replaces the default error state and its **Retry**; the toolbar keeps the render action, which retries. Errors replace the document, including a previously rendered PDF after a failed reload. Keep an accessible alert role in custom error content. A blocked new tab is not a document error: a localized alert beside the actions says so, and the shown document stays.
+Use `renderError(message)` for application-specific recovery, such as a `NoticeCard` with a return-to-form action. It replaces the default error state; the toolbar keeps the render action, which retries. Errors replace the document, including a previously rendered PDF after a failed reload. Keep an accessible alert role in custom error content. A blocked new tab is not a document error: a localized alert beside the actions says so, and the shown document stays.
 
 ## Zoomable content
 

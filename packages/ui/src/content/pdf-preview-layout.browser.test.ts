@@ -17,6 +17,7 @@ const pending = [];
 globalThis.settlePreviews = () => {
   for (const { outcome, resolve, reject } of pending) {
     if (outcome === "ok") resolve(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+    else if (outcome === "long") reject(new Error("The template could not be rendered. ".repeat(24).trim()));
     else reject(new Error("The renderer is unavailable."));
   }
 };
@@ -41,16 +42,19 @@ const composed = (className, outcome) =>
       return box;
     },
   });
+const cases = [
+  ...Object.keys(layouts).flatMap((name) => ["ok", "fail"].map((outcome) => [name, outcome])),
+  // A message taller than the unsized box, as a long renderer error can be.
+  ["composed unsized column", "long"],
+];
 render(
   () =>
-    Object.entries(layouts).flatMap(([name, view]) =>
-      ["ok", "fail"].map((outcome) => {
-        const cell = document.createElement("div");
-        cell.dataset.case = name + " " + outcome;
-        insert(cell, view(outcome));
-        return cell;
-      }),
-    ),
+    cases.map(([name, outcome]) => {
+      const cell = document.createElement("div");
+      cell.dataset.case = name + " " + outcome;
+      insert(cell, layouts[name](outcome));
+      return cell;
+    }),
   document.getElementById("app"),
 );
 `;
@@ -96,7 +100,7 @@ describe("@k2b/ui PdfPreview viewer", () => {
         await page.addScriptTag({ content: script });
         await page.locator('[data-case] [data-state="loading"]').first().waitFor();
         const loading = await viewerBoxes(page);
-        expect(Object.values(loading).map(({ state }) => state)).toEqual(Array(10).fill("loading"));
+        expect(Object.values(loading).map(({ state }) => state)).toEqual(Array(11).fill("loading"));
         await page.evaluate(() => (globalThis as unknown as { settlePreviews: () => void }).settlePreviews());
         await page.locator('[data-case] [data-state="error"]').first().waitFor();
         const settled = await viewerBoxes(page);
@@ -108,6 +112,17 @@ describe("@k2b/ui PdfPreview viewer", () => {
         expect(loading["composed sized column ok"]!.box[3]).toBeGreaterThan(300);
         expect(loading["composed unsized column ok"]!.box[3]).toBe(150);
         expect(loading["composed block ok"]!.box[3]).toBe(150);
+        // A long error scrolls inside that box from its top instead of overflowing above it out of reach.
+        const long = await page.evaluate(() => {
+          const viewer = document.querySelector<HTMLElement>('[data-case="composed unsized column long"] [data-state="error"]')!;
+          const icon = viewer.querySelector(".k2b-placeholder__icon")!;
+          return {
+            overflow: viewer.scrollHeight - viewer.clientHeight,
+            iconOffset: icon.getBoundingClientRect().top - viewer.getBoundingClientRect().top,
+          };
+        });
+        expect(long.overflow).toBeGreaterThan(0);
+        expect(long.iconOffset).toBeGreaterThanOrEqual(0);
       } finally {
         await page.close();
       }

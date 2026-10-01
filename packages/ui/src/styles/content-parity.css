@@ -1890,8 +1890,9 @@
   min-height: 0;
 }
 
+/* A long error scrolls from its top instead of overflowing above the box. */
 .k2b-ui .k2b-content-pdf-preview__placeholder {
-  justify-content: center;
+  justify-content: safe center;
   overflow: auto;
 }
 

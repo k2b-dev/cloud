@@ -145,8 +145,8 @@ export default function PdfPreview(props: PdfPreviewProps) {
     }
   };
 
-  // With autoLoad, rendering again would show the same document: offer it only until one is shown. The default error
-  // state carries its own retry; beside a caller's error content the action stays in place while a retry loads.
+  // With autoLoad, rendering again would show the same document: offer it only until one is shown. After a failure the
+  // default error state carries it as the retry; beside a caller's error content it stays in place while a retry loads.
   const renderable = () => !props.autoLoad || (failed() ? Boolean(props.renderError) : !url() && !loading());
   const actions = () => (
     <div class="k2b-content-pdf-preview__actions">
@@ -247,17 +247,20 @@ export default function PdfPreview(props: PdfPreviewProps) {
             state="error"
             description={message()}
             action={
-              <button
-                ref={(element) => (errorRetryButton = element)}
-                type="button"
-                class="k2b-button"
-                data-variant="secondary"
-                data-size="sm"
-                onClick={() => void load()}
-                disabled={opening() || props.disabled?.()}
-              >
-                {messages().retry}
-              </button>
+              // One retry at a time: the render action moves here only where the toolbar no longer offers it.
+              renderable() ? undefined : (
+                <button
+                  ref={(element) => (errorRetryButton = element)}
+                  type="button"
+                  class="k2b-button"
+                  data-variant="secondary"
+                  data-size="sm"
+                  onClick={() => void load()}
+                  disabled={opening() || props.disabled?.()}
+                >
+                  {props.buttonLabel ?? messages().retry}
+                </button>
+              )
             }
           />
         )

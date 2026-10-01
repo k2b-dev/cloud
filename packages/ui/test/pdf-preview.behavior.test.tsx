@@ -291,6 +291,7 @@ domTest(
         <PdfPreview
           autoLoad
           openButtonLabel="Open in new tab"
+          buttonLabel="Try again"
           request={() => {
             if (++calls === 1) return Promise.reject(new Error("Network error"));
             return new Promise<Blob>((resolve) => {
@@ -304,7 +305,10 @@ domTest(
     try {
       await Bun.sleep(0);
       const open = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button")!;
+      // The render action moves into the error state with the caller's label.
+      expect(labels(dom.root)).toEqual(["Open in new tab", "Try again"]);
       const retry = dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+      expect(retry.textContent).toBe("Try again");
       retry.focus();
       click(retry);
       // The viewer shows the shared loading placeholder in the same box until the document arrives.
@@ -409,8 +413,15 @@ domTest("an on-demand preview shows its idle, loading, and error states in one p
     await Bun.sleep(0);
     const error = dom.root.querySelector<HTMLElement>('.k2b-content-pdf-preview__placeholder[data-state="error"]')!;
     expect(error.getAttribute("role")).toBe("alert");
-    const retry = error.querySelector("button")!;
-    expect(error.textContent).toBe("Vorlage fehltErneut versuchen");
+    // The render action stays in the toolbar and is the only retry, so the error state adds no second one.
+    expect(error.textContent).toBe("Vorlage fehlt");
+    expect(error.querySelector("button")).toBeNull();
+    expect(labels(dom.root)).toEqual(["Vorschau öffnen", "PDF anzeigen"]);
+    const retry = dom.root.querySelector<HTMLButtonElement>(".k2b-content-pdf-preview__actions button:last-child")!;
+    click(retry);
+    expect(dom.root.querySelector('.k2b-content-pdf-preview__placeholder[data-state="loading"]')).not.toBeNull();
+    rejectRender(new Error("Vorlage fehlt"));
+    await Bun.sleep(0);
     setDisabled(true);
     expect(retry.disabled).toBe(true);
   } finally {
