@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-09-29
+updated: 2026-10-01
 ---
 
 # Monorepo development
@@ -354,6 +354,14 @@ bun run test
 import boundaries, package cycles, service API contracts, localization, CSS
 architecture, the application set, formatting) and every package typecheck.
 A new rule is one module under `scripts/checks/`.
+
+Typecheck runs on TypeScript 7, which has no stable compiler API before 7.1.
+Code that parses or checks TypeScript source, such as these rules, imports
+`@typescript/typescript6`; the main `typescript` entry exports only its
+version. The `typescript` package also no longer contains the `tsserver` that
+an editor's workspace TypeScript version used. Use an editor with TypeScript 7
+support, such as the TypeScript 7 extension for VS Code, so its diagnostics
+match `bun run check`.
 
 The root test command runs every workspace in a separate process. It uses each
 package's `test` script when one exists, preserving package-specific builds
