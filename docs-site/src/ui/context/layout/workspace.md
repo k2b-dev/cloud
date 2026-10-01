@@ -560,8 +560,8 @@ Compound icon, label, metadata and action props remain reactive. Applications ow
 the data source: no socket, task lifecycle or subscription belongs in the library.
 
 Use `preview={{ label: "Item details", content: <Details /> }}` for interactive
-secondary information. Fine-pointer hover and keyboard focus open it after a short
-delay. A dedicated details button opens it on touch-capable devices and moves focus
+secondary information. A resting fine pointer and keyboard focus open it after a
+short delay. A dedicated details button opens it on touch-capable devices and moves focus
 into the non-modal dialog. With hover and a fine pointer, this button is hidden
 visually until keyboard focus reaches it. It then overlays the end of the row
 and, while focused, takes the place of the row action before it, which stays
@@ -577,9 +577,11 @@ Loading, empty, error, and populated states then keep the same height. Use
 `<ScrollArea viewportSize="compact">` for the equivalent mobile dialog content.
 The default preview remains content-sized; do not nest another scrollport.
 
-Hover previews use the shared `ScrollArea` internally. Overflowing content fades
-at the top and bottom while the popup border and shadow remain visible. Fades
-follow the current scroll position and disappear when an edge is reached.
+Previews are `HoverPreview` cards (see Feedback): they open beside the row, use
+the same surface, border, and inner depth, and keep their content in the shared
+`ScrollArea`. Overflowing content fades at the top and bottom while the card
+border remains visible. Fades follow the current scroll position and disappear
+when an edge is reached.
 
 Use `SidebarSection` with `collapsible`, `count`, and `defaultOpen={false}` for
 completed items or other secondary groups. `open` and `onOpenChange` support

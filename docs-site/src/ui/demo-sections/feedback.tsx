@@ -1,5 +1,18 @@
-import { Button, ButtonLink, dialogCore, InlineGuidance, NoticeCard, prompts, StatusBadge, TextInput, Tooltip, toast } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import {
+  Button,
+  ButtonLink,
+  createHoverPreview,
+  dialogCore,
+  HoverPreview,
+  InlineGuidance,
+  NoticeCard,
+  prompts,
+  StatusBadge,
+  TextInput,
+  Tooltip,
+  toast,
+} from "@k2b/ui";
+import { createSignal, For } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -183,6 +196,122 @@ const TooltipDemo = () => (
     </div>
   </DemoCard>
 );
+
+const demoMessages = [
+  {
+    id: "invoice",
+    sender: "Paul Probe",
+    subject: "Question about invoice 2026-0418",
+    time: "09:42",
+    status: { tone: "warning" as const, label: "Needs action" },
+    text: "Good morning, the invoice from 12 September lists the hall rent twice. Could you send a corrected copy? We will transfer the amount right away.",
+  },
+  {
+    id: "room",
+    sender: "Lea Lorem",
+    subject: "Room booking for 14 October",
+    time: "Yesterday",
+    status: { tone: "ok" as const, label: "Done" },
+    text: "Thanks for confirming. Do we need our own adapter for the projector, or is one available in the room?",
+  },
+  {
+    id: "minutes",
+    sender: "Tim Test",
+    subject: "Minutes of the September board meeting",
+    time: "Mon",
+    status: null,
+    text: "Here are the minutes for review. Please send corrections by Friday so we can publish them with the newsletter.",
+  },
+];
+
+const HoverPreviewDemo = () => {
+  let list!: HTMLDivElement;
+  let frame!: HTMLDivElement;
+  const [opened, setOpened] = createSignal("invoice");
+  const preview = createHoverPreview<string>({
+    openDelay: 200,
+    placement: { beside: () => list, within: () => frame },
+    disabled: (id) => id === opened(),
+  });
+  const message = (id: string) => demoMessages.find((item) => item.id === id) ?? demoMessages[0]!;
+  return (
+    <DemoCard
+      id="hover-preview"
+      chip={[
+        { kind: "component", name: "createHoverPreview", from: "@k2b/ui" },
+        { kind: "component", name: "HoverPreview", from: "@k2b/ui" },
+      ]}
+      description="Rest the mouse on a row, or press Space on a focused row. One fixed-size card opens beside the list, swaps between rows, and never covers the list; without room beside it, it does not open."
+      code={`const preview = createHoverPreview<string>({
+  openDelay: 200,
+  placement: { beside: () => list, within: () => frame },
+  disabled: (id) => id === openedId(),
+});
+
+<div ref={list} role="list">
+  <For each={messages}>
+    {(item) => (
+      <div ref={preview.anchor(item.id)} role="listitem">
+        <a href={item.href} aria-controls={preview.id} aria-expanded={preview.active() === item.id}>
+          {item.subject}
+        </a>
+      </div>
+    )}
+  </For>
+</div>
+<HoverPreview preview={preview} label="Quick look" size="fixed">
+  {(id) => <MessageCard id={id} />}
+</HoverPreview>`}
+    >
+      <div ref={frame} class="ui-hover-preview-demo">
+        <div ref={list} class="ui-hover-preview-demo__list" role="list" aria-label="Inbox">
+          <For each={demoMessages}>
+            {(item) => (
+              <div
+                ref={preview.anchor(item.id)}
+                role="listitem"
+                class="ui-hover-preview-demo__row"
+                data-current={item.id === opened() ? "true" : undefined}
+                data-peek={preview.active() === item.id ? "true" : undefined}
+              >
+                <a
+                  href={`#${item.id}`}
+                  aria-current={item.id === opened() ? "true" : undefined}
+                  aria-controls={preview.id}
+                  aria-expanded={preview.active() === item.id}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setOpened(item.id);
+                  }}
+                >
+                  <strong>{item.sender}</strong>
+                  <span>{item.subject}</span>
+                </a>
+              </div>
+            )}
+          </For>
+        </div>
+        <div class="ui-hover-preview-demo__reader">
+          <strong>{message(opened()).subject}</strong>
+          <p>{message(opened()).text}</p>
+        </div>
+      </div>
+      <HoverPreview preview={preview} label="Quick look" size="fixed">
+        {(id) => (
+          <div class="ui-hover-preview-demo__card">
+            <div class="ui-hover-preview-demo__facts">
+              <StatusBadge tone="neutral" variant="text" icon={null} label={message(id).time} />
+              {message(id).status && <StatusBadge tone={message(id).status!.tone} label={message(id).status!.label} />}
+            </div>
+            <strong>{message(id).subject}</strong>
+            <span>{message(id).sender}</span>
+            <p>{message(id).text}</p>
+          </div>
+        )}
+      </HoverPreview>
+    </DemoCard>
+  );
+};
 
 const demoProjects = [
   { label: "Atlas", desc: "Customer portal", value: "atlas" },
@@ -405,6 +534,11 @@ const demos: DemoSection = {
   tooltip: () => (
     <DemoGrid columns="one">
       <TooltipDemo />
+    </DemoGrid>
+  ),
+  "hover-preview": () => (
+    <DemoGrid columns="one">
+      <HoverPreviewDemo />
     </DemoGrid>
   ),
   prompts: () => (

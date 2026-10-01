@@ -606,6 +606,72 @@
   overflow-wrap: anywhere;
 }
 
+/* --------------------------------------------------------- hover preview */
+
+/* A card beside a list row or navigation item. Depth stays inside the card: a
+   bottom inner shade instead of an outer shadow, and no divider lines. */
+.k2b-ui {
+  --k2b-hover-preview-depth: inset 0 -1.375rem 1.625rem -1.625rem rgb(15 23 19 / 0.14);
+}
+
+.k2b-ui[data-theme="dark"],
+.k2b-ui.k2b-dark,
+.dark .k2b-ui {
+  --k2b-hover-preview-depth: inset 0 1px 0 rgb(255 255 255 / 0.04), inset 0 -1.375rem 1.625rem -1.625rem rgb(0 0 0 / 0.6);
+}
+
+.k2b-ui [popover].k2b-hover-preview {
+  position: fixed;
+  inset: auto;
+  width: 22rem;
+  max-width: calc(100vw - 1rem);
+  max-height: min(32rem, calc(100dvh - 1rem));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--k2b-border-strong);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-hover-preview-depth);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 110ms,
+    overlay 110ms allow-discrete,
+    display 110ms allow-discrete;
+}
+
+.k2b-ui [popover].k2b-hover-preview:popover-open {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* One box for every anchor: content changes never resize or move the card. */
+.k2b-ui [popover].k2b-hover-preview[data-size="fixed"] {
+  height: 20rem;
+  max-height: calc(100dvh - 1rem);
+}
+
+.k2b-ui [popover].k2b-hover-preview[data-size="fixed"]:popover-open {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui [popover].k2b-hover-preview {
+    transition: none;
+  }
+}
+
 /* ----------------------------------------------------------------- toast */
 
 /* The rail sits above modal dialogs. On narrow or short viewports, such as a
