@@ -100,7 +100,8 @@ export default ssr<AuthContext>(async (c) => {
           <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
         )}
 
-        <NotebookSidebar ctx={ctx} />
+        {/* The writable editor is the one with the toolbar and its navigation toggle. */}
+        <NotebookSidebar ctx={ctx} editorToolbar={editorOwnsWorkspaceSocket} />
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>

@@ -46,7 +46,11 @@ import {
 import { extractTaskProgress } from "../detail/tasks";
 import { extractTocFromMarkdown } from "../detail/toc";
 import { writeSettings } from "../settings/NotebookSettingsStore";
-import { NAVIGATION_VISIBILITY_EVENT, NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT } from "../sidebar/navigation-visibility";
+import {
+  NAVIGATION_FOCUS_EVENT,
+  NAVIGATION_VISIBILITY_EVENT,
+  NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT,
+} from "../sidebar/navigation-visibility";
 import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
@@ -770,11 +774,20 @@ function EditorInstance(props: EditorInstanceProps) {
       // After every listener of this event, so the navigation has already changed.
       if (restore) queueMicrotask(restore);
     };
+    // Hiding the navigation while a tree row had focus hands focus to the note, with its caret.
+    const onNavigationFocusLost = (event: Event) => {
+      const view = editorView();
+      if (!view || props.readOnly) return;
+      event.preventDefault();
+      view.focus();
+    };
     window.addEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
     window.addEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
+    window.addEventListener(NAVIGATION_FOCUS_EVENT, onNavigationFocusLost);
     onCleanup(() => {
       window.removeEventListener(NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT, onNavigationWillChange);
       window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
+      window.removeEventListener(NAVIGATION_FOCUS_EVENT, onNavigationFocusLost);
     });
 
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);

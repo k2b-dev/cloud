@@ -56,7 +56,7 @@ beforeEach(() => {
 });
 afterEach(() => railSnapshot.mockRestore());
 
-const renderEmptyNotebook = async (mode: "write" | "book") => {
+const renderEmptyNotebook = async (mode: "write" | "book", preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -75,7 +75,7 @@ const renderEmptyNotebook = async (mode: "write" | "book") => {
   });
   app.get("/app/notebooks/:id", ...handler);
   const response = await app.request(`https://cloud.example.test/app/notebooks/book01?mode=${mode}`, {
-    headers: { "accept-language": "de" },
+    headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
   });
   expect(response.status).toBe(200);
   return response.text();
@@ -120,6 +120,19 @@ test("an empty notebook centers its main-area placeholder in the work area", asy
   expect(placeholder?.attributes["data-align"]).toBe("center");
   expect(placeholder?.attributes.class?.split(/\s+/)).toContain("flex-1");
   expect(placeholder?.text).toBe("Noch keine Notizen");
+});
+
+test("an empty notebook with a hidden navigation offers a visible control that shows it again", async () => {
+  const hidden = await renderEmptyNotebook("write", { navigationHidden: true });
+  // No editor toolbar here, and the sidebar with the create button is hidden.
+  const [show, ...others] = await select(hidden, 'button[aria-controls="notebook-navigation"]');
+  expect(others).toEqual([]);
+  expect(show?.attributes["aria-label"]).toBe("Navigation einblenden");
+  expect(show?.attributes["aria-expanded"]).toBe("false");
+  expect(show?.attributes.disabled).toBeUndefined();
+
+  const visible = await renderEmptyNotebook("write");
+  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]')).toEqual([]);
 });
 
 test("an empty book shows its sidebar placeholder as one line below the pages heading", async () => {
@@ -254,6 +267,10 @@ test("a hidden navigation is server-rendered without the note tree or the naviga
   expect(pane?.attributes["data-surface"]).toBe("navigation");
   expect((await select(html, '[data-workspace-main-region="notebook-notes"] *')).filter((element) => element.text.trim())).toEqual([]);
   expect(await select(html, '[data-workspace-main-region="notebook-notes"] a')).toEqual([]);
+  // The graph has no editor toolbar, so the sidebar offers its own show control.
+  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
+    "Navigation einblenden",
+  ]);
 });
 
 test("a visible navigation is server-rendered with its note tree and the navigator's note list", async () => {

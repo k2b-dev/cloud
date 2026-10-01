@@ -20,7 +20,7 @@ const paragraph = view.state.doc.line(79); // "Paragraph 40"
 /** Where paragraph 40 starts, relative to the port's top edge, without making the editor measure. */
 const offset = () => Math.round(port.querySelectorAll(".cm-line")[Array.from(port.querySelectorAll(".cm-line")).findIndex((line) => line.textContent.startsWith("Paragraph 40:"))].getBoundingClientRect().top - port.getBoundingClientRect().top);
 
-window.run = async ({ focus, keep }) => {
+window.run = async ({ focus, keep, focusOnHide }) => {
   view.dispatch({ selection: { anchor: paragraph.from + 5 } });
   if (focus) view.focus();
   for (let i = 0; i < 4; i++) {
@@ -31,6 +31,8 @@ window.run = async ({ focus, keep }) => {
   for (const hidden of [true, false]) {
     const restore = keep ? keepReadingPosition(view, port) : () => {};
     sidebar.hidden = hidden;
+    // Hiding the navigation while a tree row had focus hands focus to the note.
+    if (focusOnHide && hidden) view.focus();
     await Promise.resolve();
     restore();
     // Every painted frame after the change, read before the next paint.
@@ -61,7 +63,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const run = async (options: { focus: boolean; keep: boolean }): Promise<Run> => {
+const run = async (options: { focus: boolean; keep: boolean; focusOnHide?: boolean }): Promise<Run> => {
   const page = await browser.newPage({ viewport: { width: 1200, height: 700 } });
   try {
     await page.setContent(
@@ -93,6 +95,16 @@ describe("note reading position when the navigation hides and shows", () => {
       expect(result.focused).toBe(focus);
     });
   }
+
+  test("keeps the paragraph steady when hiding moves focus from the navigation into the editor", async () => {
+    const result = await run({ focus: false, keep: true, focusOnHide: true });
+    for (const painted of result.steps) {
+      expect({ painted, steady: steady(painted, result.before) }).toEqual({ painted, steady: true });
+      expect(new Set(painted).size).toBe(1);
+    }
+    expect(result.selection).toBe(result.caret);
+    expect(result.focused).toBe(true);
+  });
 
   test("without it a focused editor paints the rewrapped note at a different position first", async () => {
     const result = await run({ focus: true, keep: false });
