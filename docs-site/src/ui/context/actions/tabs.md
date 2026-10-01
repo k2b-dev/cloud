@@ -70,7 +70,9 @@ the application owns confirmation, item removal, and the next selected value.
 Delete or Backspace closes the focused tab when a close handler is present.
 Close controls appear on hover, keyboard focus, or touch devices.
 
-The tab list scrolls horizontally. Subtle overflow fades appear only at edges
+The tab list scrolls horizontally and never vertically; the selected
+underline and focus ring stay whole inside it. Where the platform shows
+scrollbars, the horizontal one is thin. Subtle overflow fades appear only at edges
 with hidden content and disappear when the list fits. Vertical tabs are not
 masked; forced-color mode leaves every orientation unmasked. The active tab
 remains visible. Use
