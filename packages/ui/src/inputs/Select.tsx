@@ -13,6 +13,13 @@ export type SelectGroup = {
 };
 export type SelectView = "list" | "grid";
 export type SelectGridSize = "sm" | "md" | "lg";
+/**
+ * `field` draws the boxed form control. `plain` shows the value as text for
+ * property rows: no box, no chevron, and a quiet surface on hover or while
+ * open. Its surface and hit area cover the nearest positioned ancestor, such as
+ * a `DescriptionList` row, so the whole row opens the picker.
+ */
+export type ChoiceAppearance = "field" | "plain";
 export type SelectSourceOption =
   | string
   | {
@@ -54,9 +61,15 @@ export type SelectProps = ValueFieldProps<string | null> & {
   searchPlaceholder?: string;
   clearable?: boolean;
   name?: string;
+  appearance?: ChoiceAppearance;
+  /** Icon class shown before the placeholder while nothing is selected. */
+  placeholderIcon?: string;
 };
 
 type NormalizedOption = ChoiceOption<string>;
+/** The list entry that clears a plain select. It cannot collide with a real option value. */
+const CLEAR_VALUE = "\u0000k2b-select-clear";
+
 const normalize = (option: SelectSourceOption): NormalizedOption =>
   typeof option === "string"
     ? { value: option, label: option }
@@ -109,6 +122,18 @@ export function Select(props: SelectProps): JSX.Element {
         ? [...props.filterOptions(groupedOptions(), query())]
         : filterChoiceOptions(groupedOptions(), query()),
   );
+  const plain = () => props.appearance === "plain";
+  // A plain select has no room for a clear button beside its value, so
+  // clearing becomes the last list entry, named by the placeholder.
+  const clearOption = createMemo<NormalizedOption | undefined>(() =>
+    plain() && props.clearable && !query() ? { value: CLEAR_VALUE, label: props.placeholder ?? messages().clearSelection } : undefined,
+  );
+  const listOptions = createMemo(() => {
+    const clear = clearOption();
+    return clear && !loader.error() ? [...options(), clear] : options();
+  });
+  // Colour dots mark the options, so an empty plain value keeps the column with a hollow dot.
+  const emptyDot = () => plain() && !props.placeholderIcon && sourceOptions().some((option) => option.color);
   const selected = createMemo(() => {
     const current = value();
     if (current === null) return undefined;
@@ -123,28 +148,28 @@ export function Select(props: SelectProps): JSX.Element {
       }
     );
   });
-  const hasClearAction = () => Boolean(props.clearable && selected() && !props.disabled);
+  const hasClearAction = () => Boolean(props.clearable && selected() && !props.disabled && !plain());
   const accessibleLabel = () =>
     props["aria-label"] ?? (typeof props.label === "string" ? undefined : (props.placeholder ?? messages().selectOption));
   const popover = createChoicePopover(() => Boolean(props.disabled));
-  const focusedOption = () => options()[focusedIndex()];
+  const focusedOption = () => listOptions()[focusedIndex()];
   const focus = (index: number) => {
     setFocusedIndex(index);
     optionRefs[index]?.scrollIntoView({ block: "nearest" });
   };
-  const move = (direction: 1 | -1) => focus(nextEnabledChoiceIndex(options(), focusedIndex(), direction));
+  const move = (direction: 1 | -1) => focus(nextEnabledChoiceIndex(listOptions(), focusedIndex(), direction));
   const chooseGroup = (group: string | null) => {
     if (group === activeGroup()) return;
     setSelectedGroup(group);
-    setFocusedIndex(nextEnabledChoiceIndex(options(), -1, 1));
+    setFocusedIndex(nextEnabledChoiceIndex(listOptions(), -1, 1));
     if (isAsync()) loader.load(query(), true);
   };
   const open = () => {
     if (props.disabled) return;
     setQuery("");
     if (isAsync()) loader.load("", true);
-    const selectedIndex = options().findIndex((option) => option.value === value());
-    focus(selectedIndex >= 0 ? selectedIndex : nextEnabledChoiceIndex(options(), -1, 1));
+    const selectedIndex = listOptions().findIndex((option) => option.value === (value() ?? CLEAR_VALUE));
+    focus(selectedIndex >= 0 ? selectedIndex : nextEnabledChoiceIndex(listOptions(), -1, 1));
     popover.show();
     if (isSearchable()) queueMicrotask(() => searchRef?.focus());
   };
@@ -160,6 +185,10 @@ export function Select(props: SelectProps): JSX.Element {
   const select = (option: NormalizedOption) => {
     if (option.disabled) return;
     close(true);
+    if (option.value === CLEAR_VALUE) {
+      commitFieldValue(props, null);
+      return;
+    }
     setCache({ ...cache(), [option.value]: option });
     commitFieldValue(props, option.value);
   };
@@ -199,7 +228,7 @@ export function Select(props: SelectProps): JSX.Element {
       required={props.required}
       disabled={props.disabled}
     >
-      <div class="k2b-choice-control" data-invalid={error() ? "true" : undefined}>
+      <div class="k2b-choice-control" data-appearance={props.appearance ?? "field"} data-invalid={error() ? "true" : undefined}>
         <button
           ref={popover.setTrigger}
           id={meta.controlId}
@@ -220,15 +249,30 @@ export function Select(props: SelectProps): JSX.Element {
           onKeyDown={onKeyDown}
         >
           <Show
-            when={selected()?.color}
-            fallback={<Show when={selected()?.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+            when={selected()}
+            fallback={
+              <Show
+                when={props.placeholderIcon}
+                fallback={<Show when={emptyDot()}>{<span class="k2b-choice-dot" data-empty="true" aria-hidden="true" />}</Show>}
+              >
+                {(icon) => <i class={`${icon()} k2b-choice-trigger__placeholder-icon`} aria-hidden="true" />}
+              </Show>
+            }
           >
-            {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
+            <Show
+              when={selected()?.color}
+              fallback={<Show when={selected()?.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+            >
+              {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
+            </Show>
           </Show>
           <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
             {selected()?.label ?? props.placeholder ?? messages().select}
           </span>
-          <i class={popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} aria-hidden="true" />
+          <i
+            class={`${popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} k2b-choice-trigger__chevron`}
+            aria-hidden="true"
+          />
         </button>
         <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
         <Show when={hasClearAction()}>
@@ -316,7 +360,7 @@ export function Select(props: SelectProps): JSX.Element {
               </div>
             </Show>
             <For
-              each={loader.error() ? [] : options()}
+              each={loader.error() ? [] : listOptions()}
               fallback={
                 <Show when={!loader.loading() && !loader.error()}>
                   <div class="k2b-choice-status">{isSearchable() ? messages().noResults : messages().noOptions}</div>
@@ -331,14 +375,30 @@ export function Select(props: SelectProps): JSX.Element {
                   class="k2b-choice-option"
                   role="option"
                   aria-label={option.label}
-                  aria-selected={option.value === value()}
+                  aria-selected={option.value === (value() ?? CLEAR_VALUE)}
                   data-focused={index() === focusedIndex() ? "true" : undefined}
+                  data-clear={option.value === CLEAR_VALUE ? "true" : undefined}
                   disabled={option.disabled}
                   onPointerMove={() => focus(index())}
                   onClick={() => select(option)}
                 >
-                  <Show when={option.color} fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}>
-                    {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
+                  <Show
+                    when={option.value === CLEAR_VALUE}
+                    fallback={
+                      <Show
+                        when={option.color}
+                        fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+                      >
+                        {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
+                      </Show>
+                    }
+                  >
+                    <Show
+                      when={props.placeholderIcon}
+                      fallback={<Show when={emptyDot()}>{<span class="k2b-choice-dot" data-empty="true" aria-hidden="true" />}</Show>}
+                    >
+                      {(icon) => <i class={icon()} aria-hidden="true" />}
+                    </Show>
                   </Show>
                   <span>
                     <strong>{option.label}</strong>

@@ -19,7 +19,7 @@ Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunäch
 - **Fälligkeitsdatum oder Terminzeit:** Verwende für Aufgaben ein Fälligkeitsdatum und für Termine eine feste Zeit, wenn der Zeitpunkt den nächsten Arbeitsschritt beeinflusst.
 - **Geschätzte Dauer:** Trage eine positive Dauer in ganzen Minuten ein, wenn sie beim Einschätzen oder Einplanen einer Aufgabe hilft. Bei Terminen ergibt sich die Dauer stattdessen aus Start- und Endzeit.
 - **Blockiert durch:** Füge jede noch offene Aufgabe hinzu, die zuerst abgeschlossen werden muss. Eine blockierte Aufgabe kann erst abgeschlossen werden, wenn alle aktiven blockierenden Aufgaben erledigt sind. Abhängigkeiten müssen innerhalb eines Space bleiben und dürfen keinen Zyklus bilden.
-- **Blockiert:** Öffne die Aufgabendetails, um die umgekehrte Richtung zu sehen: alle Aufgaben, die derzeit von dieser Aufgabe abhängen.
+- **Blockiert:** Die Aufgabendetails zeigen die umgekehrte Richtung: alle Aufgaben, die derzeit von dieser Aufgabe abhängen.
 - **Verwandte Aufgaben:** Verknüpfe Aufgaben, die einen gemeinsamen Kontext haben, aber nicht voneinander abhängen. Eine solche Verknüpfung blockiert keine Aufgabe.
 - **Links & Ressourcen:** Hänge Cloud-Ressourcen und externe Seiten an, etwa das GitHub-Issue, das eine Aufgabe umsetzt. Links auf GitHub-Issues und Pull Requests zeigen Titel und Status: offen, geschlossen oder gemergt.
 - **Checkliste:** Teile eine Aufgabe in kleine Schritte auf, wenn Checkbox und Bezeichnung ausreichen. Checklistenpunkte haben bewusst keine Zuständigkeiten, Termine oder eigene Detailansicht.
@@ -27,6 +27,25 @@ Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunäch
 - **Wiederholung:** Verwende wiederkehrende Termine für regelmäßige Besprechungen oder Abläufe. Einmalige Aufgaben bleiben normale Aufgaben.
 - **Tags:** Verwende Tags für Themen, die unabhängig von Zuständigkeiten und Status gelten, zum Beispiel Frontend, Rechtliches, Blockiert oder Besprechung.
 :::
+
+## In den Aufgabendetails planen {icon="list-details"}
+
+Der Block **Planung** oben in den Aufgabendetails zeigt Fälligkeit, Schätzung,
+Priorität, Tags und Abhängigkeiten. Mit Schreibrechten änderst du jeden Wert
+direkt dort: Wähle die Zeile, um ein Datum auszusuchen, die Schätzung in
+Minuten einzutippen und mit Enter zu übernehmen, eine Priorität zu wählen oder
+Tags anzuhaken. **Keine Priorität** am Ende der Liste entfernt die Priorität;
+**Datum löschen** im Kalender entfernt das Fälligkeitsdatum. Der Stift öffnet
+das vollständige Formular.
+
+Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand:
+ein Schloss für eine offene Aufgabe, ein Haken und **erledigt** für eine
+abgeschlossene. Wähle eine Aufgabe, um sie zu öffnen. **+ Aufgabe** sucht im
+Space nach einer weiteren blockierenden Aufgabe, und das × neben einer
+Aufgabe entfernt sie. **Blockiert** listet die Aufgaben, die auf diese warten.
+Ab fünf Einträgen zeigt eine Liste drei, offene zuerst, und fasst den Rest
+unter **N weitere** zusammen. Ohne Schreibrechte siehst du dieselben Werte ohne
+die Bearbeitungsaktionen.
 
 ## Täglicher Arbeitsablauf {icon="route"}
 
@@ -56,9 +75,9 @@ Mit **Ich übernehme** auf einer Karte im Board oder in den Aufgabendetails
 kannst du dabei eine kurze Übergabenotiz hinterlassen. Solange eine Aufgabe
 übernommen ist, zeigt die Karte in jeder Spalte den Avatar der Person mit grünem
 Ring vor den Zuständigen, und der Filter **In Arbeit** listet übernommene
-Aufgaben. In den Details steht diese Person mit demselben Ring und der Zeit, seit
-der sie daran arbeitet, zuerst unter **Zuständig**; ist sie nicht zugewiesen,
-steht das dabei. Eine Übernahme markiert nur, wer gerade daran arbeitet;
+Aufgaben. In den Details steht diese Person mit demselben Ring, dem Hinweis
+**arbeitet daran** und der Zeit, seit der sie daran arbeitet, zuerst unter
+**Zuständig**; ist sie nicht zugewiesen, steht das dabei. Eine Übernahme markiert nur, wer gerade daran arbeitet;
 Zuweisung und Spalte ändern sich nicht. CLI-Worker und Service-Accounts
 übernehmen auf demselben Weg und erscheinen gleich.
 

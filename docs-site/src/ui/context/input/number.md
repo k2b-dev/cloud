@@ -42,6 +42,38 @@ The component keeps the raw text while focused, so intermediate input is not los
 
 `prefix` and `suffix` display short units inside the field. `clearable` adds an explicit empty-state action.
 
+## Edit a number in a property row
+
+Set `appearance="plain"` when the number is a property shown in a
+[`DescriptionList` row](/en/ui/surfaces/details), such as an estimate. The
+value reads as text in the row's type, followed by its `suffix`, and the field
+is exactly as wide as that text. There are no steppers or clear button: a click
+anywhere in the row edits the value, Enter or leaving the field commits, Escape
+restores the current value, and emptying the text clears it. Enter and Escape
+keep focus in the field. The suffix hides while the field is empty, so the
+placeholder reads alone. Commit through `onValueCommit`; leaving the field
+fires it also when the value did not change, but not again right after Enter.
+
+Pass `formatValue` to show a set value in a friendlier form while the field is
+not being edited, such as `90` minutes as **1 h 30 min**. Editing shows the
+plain number with its `suffix`; at rest the formatted text stands alone.
+
+On touch devices the field edits at 16 px like every other input, so iOS does
+not zoom. At rest the value keeps the row's size.
+
+```tsx
+<NumberInput
+  aria-label="Estimate"
+  appearance="plain"
+  placeholder="No estimate"
+  suffix="min"
+  min={1}
+  value={estimate}
+  formatValue={formatDuration}
+  onValueCommit={saveEstimate}
+/>;
+```
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
@@ -69,16 +101,18 @@ type NumberInputProps = Omit<
     activeIcon?: string;
     prefix?: JSX.Element;
     suffix?: JSX.Element;
+    appearance?: ChoiceAppearance;
+    formatValue?: (value: number) => string;
   };
 ```
 
-`onClear` overrides the built-in reset to `null`; the host must then report its own value/commit update. `icon` and `activeIcon` replace the idle and focused icons.
+`appearance` defaults to `"field"`; with `"plain"`, `showSteppers` defaults to `false`. `formatValue` only changes the resting text of a plain field. `onClear` overrides the built-in reset to `null`; the host must then report its own value/commit update. `icon` and `activeIcon` replace the idle and focused icons.
 
 ## Accessibility
 
 Prefer a visible `label`. Without one, the placeholder becomes the accessible name, with **Enter number** as the final fallback.
 
-The input exposes spinbutton semantics and finite minimum, maximum, and current values. The stepper and clear controls have accessible names; override them per instance with `increaseLabel`, `decreaseLabel`, and `clearLabel` when the surrounding product is not English. Descriptions and reactive errors are connected to the field.
+The input exposes spinbutton semantics and finite minimum, maximum, and current values. Its value text includes a string `suffix`, such as **45 min**, or the `formatValue` text; an explicit `aria-valuetext` wins. The stepper and clear controls have accessible names; override them per instance with `increaseLabel`, `decreaseLabel`, and `clearLabel` when the surrounding product is not English. Descriptions and reactive errors are connected to the field.
 
 ## Runtime
 

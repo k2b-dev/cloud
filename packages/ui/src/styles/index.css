@@ -2852,27 +2852,64 @@
   line-height: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-summary {
+/* The closed row and the open header share one geometry: the icon, title,
+   meta, and chevron columns stay put when the section opens, and hover only
+   colours the text. The row keeps no padding or fill of its own, so it starts
+   where the other section headings start. */
+.k2b-ui .k2b-button.k2b-detail-panel__section-summary {
+  min-height: 1.75rem;
+  padding: 0;
+  border: 0;
   border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
 
-.k2b-ui .k2b-detail-panel__section-summary > i {
-  flex: 0 0 auto;
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
-  font-size: 0.75rem;
-  transition: transform 150ms ease;
+.k2b-ui .k2b-detail-panel__section-summary > .k2b-button__label {
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-start;
+  gap: 0.5rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-summary:hover > i {
-  color: var(--k2b-text-secondary);
+.k2b-ui .k2b-button.k2b-detail-panel__section-summary:not(:disabled):hover {
+  background: transparent;
+}
+
+.k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-title,
+.k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-toggle,
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled):hover {
+  color: var(--k2b-text);
 }
 
 .k2b-ui .k2b-detail-panel__section-summary:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);
+}
+
+/* One trailing column for both chevrons: the closed row's icon and the open
+   header's collapse button. */
+.k2b-ui .k2b-detail-panel__section-toggle,
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle {
+  display: grid;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  flex: 0 0 1.75rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled):hover {
+  background: transparent;
 }
 
 .k2b-ui .k2b-detail-panel__section-body {
@@ -8343,7 +8380,10 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
+/* An action stays reachable above a plain control's row-wide hit area. */
 .k2b-ui .k2b-description-list__action {
+  position: relative;
+  z-index: 2;
   grid-area: action;
   align-self: center;
   transition: opacity 120ms ease;
@@ -8371,6 +8411,17 @@
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
   align-self: center;
+}
+/* A row is one layer, so the surface of a plain control in its value paints
+   behind the row's text and above the surrounding surface. The term sits where
+   a one-line value sits, so it stays beside the first entry of a value made of
+   row-height lines, such as wrapping plain pills or a list of linked items. */
+.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
+  isolation: isolate;
+}
+.k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt {
+  align-self: start;
+  padding-block-start: 0.5rem;
 }
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dt,
 .k2b-ui .k2b-description-list:is([data-layout="rows"], [data-layout="compact"]) .k2b-description-list__item dd {
@@ -8409,7 +8460,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-detail-panel__section-summary > i,
   .k2b-ui .k2b-disclosure__chevron {
     transition: none;
   }
@@ -8933,5 +8983,226 @@
   .k2b-ui .k2b-date-time__control input {
     font-size: max(1rem, 16px);
     line-height: 1.125rem;
+  }
+}
+
+/* Plain controls show their value as text. The trigger keeps no box of its
+   own: `::before` paints the quiet surface and `::after` is the hit area, both
+   reaching 0.5rem past the control on each side so the surface does not touch
+   the text. As the direct value of a `DescriptionList` row the control turns
+   static, so both cover the row: the whole row, label included, is the
+   control. Nothing moves between rest, hover, focus, and open. */
+.k2b-ui :is(.k2b-choice-control, .k2b-date-picker, .k2b-number-input)[data-appearance="plain"] {
+  position: relative;
+  isolation: isolate;
+}
+
+.k2b-ui .k2b-description-list__item > dd > .k2b-field > [data-appearance="plain"] {
+  position: static;
+  isolation: auto;
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger) {
+  position: static;
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger),
+.k2b-ui .k2b-number-input[data-appearance="plain"] {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  color: var(--k2b-text);
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+  line-height: 1.25rem;
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger):is(:hover, :focus-visible),
+.k2b-ui .k2b-number-input[data-appearance="plain"]:is(:hover, :focus-within) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger)::before,
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger)::after,
+.k2b-ui .k2b-number-input[data-appearance="plain"]::before,
+.k2b-ui .k2b-number-input[data-appearance="plain"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 -0.5rem;
+  border-radius: var(--k2b-radius-control);
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger)::before,
+.k2b-ui .k2b-number-input[data-appearance="plain"]::before {
+  z-index: -1;
+  transition: background-color 120ms ease-out;
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger)::after,
+.k2b-ui .k2b-number-input[data-appearance="plain"]::after {
+  z-index: 1;
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger:not(:disabled), .k2b-multi-select-trigger:not([data-disabled="true"]), .k2b-date-trigger:not(:disabled)):is(:hover, [aria-expanded="true"])::before,
+.k2b-ui .k2b-number-input[data-appearance="plain"]:not([data-disabled="true"]):is(:hover, :focus-within)::before {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger):focus-visible::before,
+.k2b-ui .k2b-number-input[data-appearance="plain"]:focus-within::before {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* The value reads as text, so a disabled plain control is only inert. */
+.k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger:disabled, .k2b-multi-select-trigger[data-disabled="true"], .k2b-date-trigger:disabled),
+.k2b-ui .k2b-number-input[data-appearance="plain"][data-disabled="true"] {
+  opacity: 1;
+  cursor: default;
+}
+
+.k2b-ui [data-appearance="plain"] :is(.k2b-choice-trigger__chevron, .k2b-multi-select-trigger__chevron, .k2b-date-trigger__chevron, .k2b-date-trigger__icon) {
+  display: none;
+}
+
+.k2b-ui [data-appearance="plain"] :is(.k2b-choice-trigger__value, .k2b-date-trigger__value)[data-placeholder="true"],
+.k2b-ui .k2b-date-picker[data-appearance="plain"] > .k2b-date-trigger[data-placeholder="true"] .k2b-date-trigger__value,
+.k2b-ui .k2b-number-input[data-appearance="plain"] .k2b-number-input__control::placeholder {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-choice-trigger__placeholder-icon {
+  flex: 0 0 auto;
+  color: var(--k2b-text-muted);
+}
+
+/* Plain colour dots match the row's text size. An empty value keeps their column with a ring. */
+.k2b-ui [data-appearance="plain"] > .k2b-choice-trigger > .k2b-choice-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.k2b-ui .k2b-choice-dot[data-empty="true"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong);
+}
+
+.k2b-ui [data-appearance="plain"] > .k2b-multi-select-trigger .k2b-multi-select-trigger__values {
+  flex-wrap: wrap;
+  padding-block: 0.375rem;
+  overflow: visible;
+}
+
+.k2b-ui [data-appearance="plain"] > .k2b-multi-select-trigger .k2b-choice-pill {
+  padding-inline: 0.4375rem;
+}
+
+/* The list ends with clearing, set apart from the values. */
+.k2b-ui .k2b-choice-option[data-clear="true"] {
+  margin-top: 0.25rem;
+}
+
+.k2b-ui .k2b-date-picker[data-appearance="plain"] > .k2b-date-trigger {
+  gap: 0;
+}
+
+.k2b-ui .k2b-date-popover__clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-end: auto;
+  padding: 0.25rem 0;
+  border: 0;
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-date-popover__clear:hover {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-date-popover__clear:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-width);
+}
+
+/* The number field edits in place: as wide as its text, in the row's type.
+   At rest the sizer's text is the visible value, so it can show a formatted
+   value and keep the row's size on touch screens; while editing it only sizes
+   the input above it. Its trailing space separates the value from its suffix
+   and leaves the caret room. */
+.k2b-ui .k2b-number-input[data-appearance="plain"] .k2b-number-input__value {
+  flex: 0 1 auto;
+  gap: 0;
+}
+
+.k2b-ui .k2b-number-input__sizer {
+  display: inline-grid;
+  min-width: 1ch;
+}
+
+.k2b-ui .k2b-number-input__sizer::after {
+  content: attr(data-value) " ";
+  content: attr(data-value) " " / "";
+  white-space: pre;
+}
+
+.k2b-ui .k2b-number-input__sizer[data-placeholder="true"]::after {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-number-input__sizer[data-editing="true"]::after {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-number-input__sizer:not([data-editing="true"]) > .k2b-input {
+  opacity: 0;
+}
+
+.k2b-ui .k2b-number-input__sizer::after,
+.k2b-ui .k2b-number-input__sizer > .k2b-input {
+  width: auto;
+  min-width: 0;
+  grid-area: 1 / 1;
+  font: inherit;
+}
+
+.k2b-ui .k2b-number-input[data-appearance="plain"] .k2b-number-input__control {
+  position: relative;
+  z-index: 2;
+  min-height: 1.25rem;
+  padding: 0;
+  font-weight: inherit;
+  text-align: start;
+}
+
+.k2b-ui .k2b-number-input[data-appearance="plain"] :is(.k2b-input-shell__affix, .k2b-input-shell__affix:first-child, .k2b-input-shell__affix:last-child) {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: inherit;
+}
+
+/* The input always has the touch edit size above, so iOS does not zoom when it
+   takes focus. At rest the sizer's text keeps the row's size. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-number-input__sizer[data-editing="true"]::after,
+  .k2b-ui .k2b-number-input__sizer > .k2b-input {
+    font-size: max(1rem, 16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui [data-appearance="plain"] > :is(.k2b-choice-trigger, .k2b-multi-select-trigger, .k2b-date-trigger)::before,
+  .k2b-ui .k2b-number-input[data-appearance="plain"]::before {
+    transition: none;
   }
 }

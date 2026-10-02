@@ -162,6 +162,74 @@ shrinking holds that container narrower, and shows them again once it has
 room. A flex item that wraps the field needs `min-width: 0` to shrink below its
 pills.
 
+## Show a value in a property row
+
+Set `appearance="plain"` on `Select` or `MultiSelectInput` when the value is a
+property of the item shown around it, such as the priority or labels in a
+detail panel. The default `appearance="field"` keeps the boxed form control.
+A plain trigger shows the value as text: no box, no chevron, the selected
+option's color dot, and `MultiSelectInput` pills that wrap instead of
+collapsing into `+N`. Hover, keyboard focus, and an open list paint a quiet
+surface behind it; nothing moves between those states.
+
+As the direct value of a [`DescriptionList` row](/en/ui/surfaces/details), the
+plain control takes over the whole row: the label opens the list too, and the
+surface covers the row. Elsewhere it covers only the control.
+
+A plain trigger has no room for buttons beside its value:
+
+- a `clearable` `Select` ends its list with an entry named by `placeholder`,
+  such as **No priority**, which clears the value;
+- `MultiSelectInput` pills have no remove button; deselect in the list;
+- the empty value shows `placeholder` in muted text. When the options carry
+  colors, `Select` keeps the dot column with an empty ring. Pass
+  `placeholderIcon`, such as `ti ti-plus`, for an additive empty state like
+  **+ Label**.
+
+A `Select` whose parent keeps `value` at `null` works as an add action: the
+trigger stays the placeholder and `onValueChange` reports each picked option.
+
+```tsx
+<DescriptionList
+  layout="rows"
+  size="sm"
+  items={[
+    {
+      term: "Priority",
+      description: (
+        <Select
+          aria-label="Priority"
+          appearance="plain"
+          placeholder="No priority"
+          clearable
+          options={priorities}
+          value={priority}
+          onValueChange={setPriority}
+        />
+      ),
+    },
+    {
+      term: "Labels",
+      description: (
+        <MultiSelectInput
+          aria-label="Labels"
+          appearance="plain"
+          placeholder="Label"
+          placeholderIcon="ti ti-plus"
+          options={labels}
+          value={labelIds}
+          onValueChange={setLabelIds}
+        />
+      ),
+    },
+  ]}
+/>;
+```
+
+Show read-only values as plain text in the same row instead of a disabled
+plain control. A disabled plain control stays readable and only stops
+reacting.
+
 ## SelectChip
 
 `SelectChip` accepts its current `value` directly or through a Solid accessor.
@@ -242,6 +310,8 @@ type SelectView = "list" | "grid";
 
 type SelectGridSize = "sm" | "md" | "lg";
 
+type ChoiceAppearance = "field" | "plain";
+
 ```
 
 ### Select props
@@ -256,7 +326,7 @@ type SelectProps = ValueFieldProps<string | null> & {
   filterOptions?: (options: readonly SelectOption[], query: string) => readonly SelectOption[];
   groups?: readonly SelectGroup[]; defaultGroup?: string; groupsAriaLabel?: string; allGroupLabel?: string;
   viewToggle?: boolean; defaultView?: SelectView; gridSize?: SelectGridSize; searchPlaceholder?: string;
-  clearable?: boolean; name?: string;
+  clearable?: boolean; name?: string; appearance?: ChoiceAppearance; placeholderIcon?: string;
 };
 
 ```
@@ -281,7 +351,7 @@ type MultiSelectInputProps = ValueFieldProps<string[]> & {
   renderOption?: (option: ChoiceOption<string>) => JSX.Element;
   renderValue?: (option: ChoiceOption<string>) => JSX.Element; searchPlaceholder?: string;
   loadingLabel?: string; noResultsLabel?: string; emptyLabel?: string; retryLabel?: string;
-  clearLabel?: string;
+  clearLabel?: string; appearance?: ChoiceAppearance; placeholderIcon?: string;
 };
 
 ```
@@ -299,7 +369,7 @@ type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & 
 };
 ```
 
-`fetchData` takes precedence over `loadOptions`; either remote source takes precedence over `options`. Debounce is `fetchDebounceMs ?? debounceMs ?? 200` milliseconds. Static `Select` search defaults off; static `MultiSelectInput` search defaults on. Remote search is always enabled. Render callbacks belong to `MultiSelectInput`, not `Select`. They receive normalized `ChoiceOption<string>` objects and return Solid content.
+`fetchData` takes precedence over `loadOptions`; either remote source takes precedence over `options`. Debounce is `fetchDebounceMs ?? debounceMs ?? 200` milliseconds. Static `Select` search defaults off; static `MultiSelectInput` search defaults on. Remote search is always enabled. Render callbacks belong to `MultiSelectInput`, not `Select`. They receive normalized `ChoiceOption<string>` objects and return Solid content. `appearance` defaults to `"field"`; `DatePicker`, `DateTimePicker`, `DateRangePicker`, and `NumberInput` accept the same `ChoiceAppearance`.
 
 `SelectChip.size` uses [ButtonSize](/en/ui/actions/buttons); `position` uses [DropdownPosition](/en/ui/actions/menus#api-reference). `menuWidth` is an optional exact CSS length; without it the menu sizes to its options, at least `10rem`. `SelectChip` does not accept `null`; represent an explicit empty choice with an option of your value type.
 
@@ -321,6 +391,10 @@ grid tiles keep their two-line clamp.
 Option labels must remain clear without icons or colors. If the surrounding
 toolbar already names a `SelectChip`, use the native `"aria-label"` property
 instead of repeating a visible label.
+
+A plain trigger keeps the same combobox semantics and its accessible name.
+Its focus ring is drawn on the row surface. The clear entry is a normal option,
+selected while the value is empty, so arrow keys reach it.
 
 ## Runtime
 

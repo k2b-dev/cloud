@@ -66,3 +66,39 @@
 @media (max-width: 39.999rem) {
   .k2b-ui .spaces-overview-main { padding: 1rem; }
 }
+
+/* Detail panel: linked tasks as the value of a planning row. Each line is as tall as a property row; hover paints the
+   same quiet surface, 0.5rem past the line, behind its text. */
+.spaces-dependencies { display: flex; min-width: 0; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.spaces-dependency { position: relative; isolation: isolate; display: flex; min-width: 0; align-items: center; }
+.k2b-ui .spaces-dependency__link { display: flex; min-width: 0; min-height: 2.25rem; flex: 1; align-items: center; gap: .5rem; padding: 0; border: 0; color: var(--k2b-text); background: transparent; font: inherit; line-height: 1.25rem; text-align: start; text-decoration: none; cursor: pointer; }
+.spaces-dependency__link::before { content: ""; position: absolute; z-index: -1; inset: 0 -.5rem; border-radius: var(--k2b-radius-control); transition: background-color 120ms ease-out; }
+.spaces-dependency:hover .spaces-dependency__link::before { background: var(--k2b-hover); }
+.spaces-dependency__link:focus-visible { outline: none; }
+.spaces-dependency__link:focus-visible::before { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.spaces-dependency__icon { flex: 0 0 .875rem; font-size: .875rem; }
+.spaces-dependency[data-state="open"] .spaces-dependency__icon { color: var(--k2b-warning-text); }
+.spaces-dependency[data-state="waiting"] .spaces-dependency__icon { color: var(--k2b-text-muted); }
+.k2b-ui .spaces-dependency__more { color: var(--k2b-text-muted); }
+.spaces-dependency[data-state="done"] .spaces-dependency__icon { color: var(--k2b-success-text); }
+.spaces-dependency__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-dependency[data-state="done"] .spaces-dependency__title { color: var(--k2b-text-muted); }
+.spaces-dependency__state { flex: none; color: var(--k2b-text-muted); font-size: .6875rem; }
+.spaces-dependency--footer { display: block; }
+.k2b-ui .spaces-dependency__remove { flex: none; margin-inline-end: -.25rem; color: var(--k2b-text-muted); }
+.k2b-ui .spaces-dependency__remove:not(:disabled):hover { color: var(--k2b-danger-text); background: transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .k2b-ui .spaces-dependency__remove { opacity: 0; transition: opacity 120ms ease-out; }
+  .k2b-ui .spaces-dependency:hover .spaces-dependency__remove, .k2b-ui .spaces-dependency:focus-within .spaces-dependency__remove { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spaces-dependency__link::before, .k2b-ui .spaces-dependency__remove { transition: none; }
+}
+
+/* Readers see a priority as its dot and label, like the editable row. */
+.spaces-priority-value { display: inline-flex; align-items: center; gap: .5rem; }
+.spaces-priority-value__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
+
+/* Who is working on a task: a ring behind a small gap, outside the avatar, so it takes no space and nothing moves. The gap
+   is transparent, so it matches any card or panel background, hovered or selected. */
+.k2b-ui .k2b-avatar.spaces-claim-ring { outline: 2px solid var(--k2b-success-text); outline-offset: 2px; }

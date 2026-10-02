@@ -69,7 +69,7 @@ export type { MarkdownEditorProps } from "./markdown/MarkdownEditor";
 export { MarkdownEditor } from "./markdown/MarkdownEditor";
 export type { NumberInputProps } from "./NumberInput";
 export { NumberInput } from "./NumberInput";
-export type { SelectGridSize, SelectGroup, SelectOption, SelectProps, SelectSourceOption, SelectView } from "./Select";
+export type { ChoiceAppearance, SelectGridSize, SelectGroup, SelectOption, SelectProps, SelectSourceOption, SelectView } from "./Select";
 export { Select } from "./Select";
 export type { SelectChipOption, SelectChipProps } from "./SelectChip";
 export { SelectChip } from "./SelectChip";

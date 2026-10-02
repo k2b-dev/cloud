@@ -62,11 +62,21 @@ const item = (id: string, columnId: string, title: string, extra: Partial<SpaceI
   ...extra,
 });
 const me = { id: "11111111-1111-4111-8111-111111111111", displayName: "Robin Example", avatarHash: null };
+const kim = { id: "22222222-2222-4222-8222-222222222222", displayName: "Kim Example", avatarHash: null };
 const items = [
   item("Item01", "Col001", "Order banners for the spring fair", { assignees: [me], priority: "high" }),
   item("Item02", "Col001", "Ask the bakery about a stand"),
   item("Item03", "Col001", "Draft the volunteer schedule", { description: "Two shifts per day, one lead per shift." }),
-  item("Item04", "Col002", "Book the stage", { assignees: [me] }),
+  item("Item04", "Col002", "Book the stage", {
+    assignees: [me, kim],
+    claim: {
+      id: "44444444-4444-4444-8444-444444444444",
+      actor: { kind: "user", id: kim.id },
+      displayName: kim.displayName,
+      avatarHash: null,
+      claimedAt: "2026-10-01T08:00:00.000Z",
+    },
+  }),
   item("Item05", "Col002", "Collect insurance quotes"),
   item("Item06", "Col003", "Proofread the flyer"),
   item("Item07", "Col004", "Reserve the town square"),
@@ -925,6 +935,63 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
         await page.waitForFunction(() => window.document.querySelector("[data-spaces-kanban-column-status]")?.textContent !== "");
         expect(columnOrders).toEqual([{ columnIds: ["Col001", "Col002", "blocked", "Col003", "overdue", "Col004"] }]);
         expect(await columnTitles(page)).toEqual(["To do", "In progress", "Blockiert", "Review", "Überfällig", "Done"]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("the worker's ring on a card stays whole beside the next avatar and keeps the avatar size", async () => {
+    for (const [view, theme] of [
+      [desktop, "light"],
+      [phone, "dark"],
+    ] as const) {
+      const page = await open(view, { locale: "en" }, { theme });
+      try {
+        const card = page.locator('[data-item-id="Item04"]');
+        await card.scrollIntoViewIfNeeded();
+        const area = (await page.locator("article", { has: card }).boundingBox())!;
+        await page.screenshot({
+          path: `/tmp/spaces-kanban-claim-card-${view.width}-${theme}.png`,
+          clip: { x: area.x - 8, y: area.y - 8, width: area.width + 16, height: area.height + 16 },
+        });
+        const stack = await card.evaluate((element) => {
+          const holder = element.querySelector("[data-spaces-claim-badge] .k2b-avatar")!;
+          const holderBox = holder.getBoundingClientRect();
+          const next = holder.closest("[data-spaces-claim-badge]")!.nextElementSibling!.getBoundingClientRect();
+          // No ancestor up to the card clips the ring that reaches 4 px past the avatar.
+          const clipped = [] as string[];
+          for (let node = holder.parentElement; node && node !== element.parentElement; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.overflow === "visible") continue;
+            const box = node.getBoundingClientRect();
+            if (
+              holderBox.left - 4 < box.left ||
+              holderBox.right + 4 > box.right ||
+              holderBox.top - 4 < box.top ||
+              holderBox.bottom + 4 > box.bottom
+            )
+              clipped.push(node.className);
+          }
+          return {
+            clipped,
+            ring: (() => {
+              const style = getComputedStyle(holder);
+              // An outline leaves the gap transparent, so it matches the card when hovered or selected.
+              return [style.outlineStyle, style.outlineWidth, style.outlineOffset, style.boxShadow].join(" ");
+            })(),
+            sizes: [holderBox.width, next.width],
+            // The ring reaches 4 px past the avatar; the next avatar starts at the ring's outer edge.
+            gap: Math.round(next.left - holderBox.right),
+          };
+        });
+        expect(stack.clipped).toEqual([]);
+        expect(stack.ring).toBe("solid 2px 2px none");
+        expect(stack.sizes[0]).toBe(stack.sizes[1]);
+        expect(stack.gap).toBe(4);
+        const before = await layout(page);
+        await card.hover();
+        expect(await layout(page)).toEqual(before);
       } finally {
         await page.context().close();
       }

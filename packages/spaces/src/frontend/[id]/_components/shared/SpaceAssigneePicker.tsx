@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Combobox, type ComboboxOption, IconButton } from "@k2b/ui";
+import { Avatar, Combobox, type ComboboxOption, IconButton, StatusBadge } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
@@ -120,10 +120,14 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
                 <div class="group flex items-center gap-2" data-spaces-claim-holder>
                   <ClaimAvatar claim={holder()} currentUserId={props.currentUserId ?? ""} />
                   <div class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{holder().displayName}</span>
+                    {/* The label says in words what the ring shows, so it does not depend on seeing color. */}
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      <span class="truncate text-sm">{holder().displayName}</span>
+                      <StatusBadge tone="ok" icon={null} label={t.workingOnIt} class="shrink-0" />
+                    </span>
                     {/* Wraps instead of truncating so the "not assigned" marker stays readable in a narrow panel. */}
                     <span class="block text-xs text-dimmed">
-                      {t.workingSince}{" "}
+                      {t.claimedSince}{" "}
                       <time class="whitespace-nowrap" datetime={holder().claimedAt}>
                         {dates.formatDateTime(holder().claimedAt, props.dateConfig)}
                       </time>

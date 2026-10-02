@@ -12,6 +12,7 @@ import {
   IconButton,
   LinkCard,
   MarkdownView,
+  MultiSelectInput,
   NoticeCard,
   Pagination,
   PanelDialog,
@@ -980,6 +981,8 @@ const DiscussionDemo = () => {
 const DetailPanelDemo = () => {
   const [status, setStatus] = createSignal("needs-response");
   const [assignee, setAssignee] = createSignal("unassigned");
+  const [priority, setPriority] = createSignal<string | null>("normal");
+  const [labels, setLabels] = createSignal<string[]>(["bug"]);
 
   return (
     <DemoCard
@@ -1071,8 +1074,40 @@ const DetailPanelDemo = () => {
                             />
                           ),
                         },
-                        { term: "Priority", description: "Normal" },
-                        { term: "Labels", description: <Tag color="var(--k2b-detail-panel-accent)">Bug</Tag> },
+                        {
+                          term: "Priority",
+                          description: (
+                            <Select
+                              aria-label="Request priority"
+                              appearance="plain"
+                              placeholder="No priority"
+                              clearable
+                              value={priority}
+                              onValueChange={setPriority}
+                              options={[
+                                { id: "high", label: "High", color: "#f97316" },
+                                { id: "normal", label: "Normal", color: "#3b82f6" },
+                              ]}
+                            />
+                          ),
+                        },
+                        {
+                          term: "Labels",
+                          description: (
+                            <MultiSelectInput
+                              aria-label="Request labels"
+                              appearance="plain"
+                              placeholder="Label"
+                              placeholderIcon="ti ti-plus"
+                              value={labels}
+                              onValueChange={setLabels}
+                              options={[
+                                { id: "bug", label: "Bug", color: "#dc2626" },
+                                { id: "billing", label: "Billing", color: "#0891b2" },
+                              ]}
+                            />
+                          ),
+                        },
                         { term: "Thread tier", description: "Growth" },
                       ]}
                     />

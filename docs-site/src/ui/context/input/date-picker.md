@@ -38,6 +38,36 @@ clearing reports the complete next value through both `onValueChange` and
 `onValueCommit`. Clearing emits `null` for a single picker or
 `{ start: null, end: null }` for a range.
 
+## Show a date in a property row
+
+Set `appearance="plain"` when the date is a property shown in a
+[`DescriptionList` row](/en/ui/surfaces/details), such as a task's due date.
+The trigger then reads as text, without box, calendar icon, or chevron, and the
+whole row opens the panel; see [plain selects](/en/ui/input/select#show-a-value-in-a-property-row)
+for the shared row behavior. A `clearable` plain picker clears from a
+**Clear date** button in the panel footer instead of beside the value. The
+empty value shows `placeholder` in muted text.
+
+`DatePicker` and `DateTimePicker` accept `renderValue(value)` for the
+trigger content of a set value, for example the date followed by a relative
+hint. The panel and the emitted value are unchanged.
+
+```tsx
+<DateTimePicker
+  aria-label="Due"
+  appearance="plain"
+  placeholder="No due date"
+  clearable
+  value={due}
+  onValueChange={setDue}
+  renderValue={(value) => (
+    <>
+      {formatDateTime(value)} <span class="text-dimmed">· {formatTimeSpan(value)}</span>
+    </>
+  )}
+/>;
+```
+
 ## Presets and ranges
 
 `presets` contains caller-defined labels and complete values. The components do not provide a fixed preset list.
@@ -67,12 +97,16 @@ type DateRangeValue = {
 
 type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   placeholder?: string; value: MaybeAccessor<T>; presets?: readonly DatePreset<T>[]; dateConfig?: DateContext;
-  clearable?: boolean;
+  clearable?: boolean; appearance?: ChoiceAppearance;
 };
 
-type DatePickerProps = DatePickerBaseProps<string | null>;
+type DatePickerProps = DatePickerBaseProps<string | null> & {
+  renderValue?: (value: string) => JSX.Element;
+};
 
-type DateTimePickerProps = DatePickerBaseProps<string | null>;
+type DateTimePickerProps = DatePickerBaseProps<string | null> & {
+  renderValue?: (value: string) => JSX.Element;
+};
 
 type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
   withTime?: boolean; datePresets?: readonly DatePreset<string | null>[];
@@ -82,12 +116,15 @@ type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
 
 `DateContext` is defined under [date and locale options](/en/ui/content/intl#date-and-locale-options). `DatePicker` emits `YYYY-MM-DD`; without a timezone `DateTimePicker` emits `YYYY-MM-DDTHH:mm`, with a timezone it emits an ISO instant in UTC. `DateRangePicker` follows the date contract by default and the datetime contract with `withTime=true`. Empty range endpoints are `null`, not an absent range object. Supply preset values in the same format as the controlled value.
 
-`presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
+`ChoiceAppearance` is `"field" | "plain"` and defaults to `"field"`. `renderValue` only replaces the trigger content of a set value. `presets` applies complete values; `datePresets` picks individual dates in a timed range, and `durationPresets.minutes` adjusts its duration. Clearing is enabled unless `clearable={false}`. Week-start and locale follow `dateConfig`; `withTime` defaults to false.
 
 ## Accessibility
 
 Provide a visible `label` or a specific placeholder. The trigger exposes dialog
 and expanded state, and direct JSX descriptions and errors are connected to it.
+A button's label replaces its content, so the trigger also names its shown
+value, or the placeholder, as its description: a plain picker with
+`aria-label="Due"` reads as **Due** followed by the date.
 
 Calendar navigation has named previous and next controls. Selected days and active duration presets expose pressed state. Time fields receive start and end labels in a range.
 

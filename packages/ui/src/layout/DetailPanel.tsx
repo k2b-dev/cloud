@@ -389,7 +389,10 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
             <Show when={props.meta}>
               <span class="k2b-detail-panel__section-meta">{props.meta}</span>
             </Show>
-            <i class="ti ti-chevron-down" aria-hidden="true" />
+            {/* Same column as the open header's collapse button, so nothing moves between the states. */}
+            <span class="k2b-detail-panel__section-toggle" aria-hidden="true">
+              <i class="ti ti-chevron-down" />
+            </span>
           </Button>
         </div>
         <div hidden={!open()}>
@@ -408,6 +411,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
               ref={collapse}
               variant="ghost"
               size="sm"
+              class="k2b-detail-panel__section-toggle"
               disabled={props.disabled}
               aria-labelledby={headingId}
               aria-expanded={true}

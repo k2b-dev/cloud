@@ -4,7 +4,7 @@ import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   ButtonLink,
-  Combobox,
+  DateTimePicker,
   DescriptionList,
   type DescriptionListItem,
   DetailPanel,
@@ -14,6 +14,7 @@ import {
   IconButtonLink,
   MarkdownView,
   MultiSelectInput,
+  NumberInput,
   prompts,
   Select,
   Tag,
@@ -21,7 +22,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type {
   SpaceColumn,
@@ -42,6 +43,7 @@ import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
 import { claimTask, ownClaimId, promptReleaseNote, releaseTask, takeOverTask } from "../shared/claim/claim";
 import { openEditItemDialog, saveItemFormData } from "../shared/editItem";
+import { deadlinePresets } from "../shared/item-form/date";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import {
   invalidateSpacesData,
@@ -52,6 +54,7 @@ import {
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
 import CommentsSection from "./CommentsSection";
+import DependencyList from "./DependencyList";
 import EventInvitations from "./EventInvitations";
 import ItemLinksSection from "./ItemLinksSection";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
@@ -163,8 +166,6 @@ export default function ItemDetailPanel(props: Props) {
     { value: "low", label: t.low, icon: "ti ti-arrow-down", color: "#3b82f6" },
   ] as const;
   const reconcileAfterWrite = () => void invalidateSpacesData().catch(() => prompts.error(t.itemRefreshFailed));
-  const [selectedPriorityValue, setSelectedPriorityValue] = createSignal<string | null>(props.item.priority);
-  const [selectedTagIds, setSelectedTagIds] = createSignal(props.item.tags?.map((tag) => tag.id) ?? []);
 
   const unlinkReference = mutations.create<void, { type: string; id: string }>({
     mutation: async (ref, { abortSignal }) => {
@@ -231,12 +232,10 @@ export default function ItemDetailPanel(props: Props) {
       }));
   };
 
-  createEffect(() => {
-    setSelectedPriorityValue(props.item.priority);
-    setSelectedTagIds(props.item.tags?.map((tag) => tag.id) ?? []);
-  });
   const isGeneratedOccurrence = () => Boolean(props.recurringContext && !props.recurringContext.isOverride);
-  const canEditItem = () => props.canWrite && !isGeneratedOccurrence();
+  // A memo, so a refreshed item snapshot that keeps the permission does not rebuild the property rows' controls and
+  // take focus from them.
+  const canEditItem = createMemo(() => props.canWrite && !isGeneratedOccurrence());
   const scheduleStart = () => props.recurringContext?.startsAt ?? props.item.startsAt;
   const scheduleEnd = () => props.recurringContext?.endsAt ?? props.item.endsAt;
   const seriesHref = () => {
@@ -333,59 +332,78 @@ export default function ItemDetailPanel(props: Props) {
     onError: (err) => prompts.error(err.message),
   });
 
-  type PriorityIntent = { next: string | null; previous: string | null };
-  const priorityMutation = mutations.create<SpaceItem, PriorityIntent, { previous: string | null }>({
-    onBefore: (intent) => ({ previous: intent.previous }),
-    mutation: (intent) => patchItem({ priority: intent.next }),
-    onSuccess: handleItemUpdated,
-    onError: (err, context) => {
-      if (context) setSelectedPriorityValue(context.previous);
-      prompts.error(err.message);
-    },
-    onAbort: (context) => {
-      if (context) setSelectedPriorityValue(context.previous);
-    },
-  });
-  let prioritySubmitting = false;
-
-  const updatePriority = async (priority: string | null) => {
-    if (prioritySubmitting || priorityMutation.loading()) return;
-    prioritySubmitting = true;
-    const previous = selectedPriorityValue();
-    setSelectedPriorityValue(priority);
-    try {
-      await priorityMutation.mutate({ next: priority, previous });
-    } finally {
-      prioritySubmitting = false;
-    }
+  /**
+   * One planning property edited in place. The row shows the new value at once and falls back to the previous
+   * one when the write fails. Edits made while a save runs are not lost: the last one is saved next, so ticking
+   * two tags in a row keeps both. A failed save drops the waiting edit with it.
+   */
+  const createPropertyEdit = <T,>(current: () => T, patch: (value: T) => Record<string, unknown>) => {
+    const [value, setValue] = createSignal<T>(current());
+    createEffect(() => {
+      const next = current();
+      setValue(() => next);
+    });
+    let saved = false;
+    const mutation = mutations.create<SpaceItem, { next: T; previous: T }, { previous: T }>({
+      onBefore: (intent) => ({ previous: intent.previous }),
+      mutation: (intent) => patchItem(patch(intent.next)),
+      onSuccess: (item) => {
+        saved = true;
+        handleItemUpdated(item);
+      },
+      onError: (err, context) => {
+        if (context) setValue(() => context.previous);
+        prompts.error(err.message);
+      },
+      onAbort: (context) => {
+        if (context) setValue(() => context.previous);
+      },
+    });
+    const same = (left: T, right: T) => JSON.stringify(left) === JSON.stringify(right);
+    let saving = false;
+    let waiting: { next: T } | undefined;
+    const update = async (next: T) => {
+      if (saving) {
+        waiting = { next };
+        setValue(() => next);
+        return;
+      }
+      let intent = { next, previous: value() };
+      if (same(intent.next, intent.previous)) return;
+      saving = true;
+      try {
+        for (;;) {
+          saved = false;
+          setValue(() => intent.next);
+          await mutation.mutate(intent);
+          const queued = waiting;
+          waiting = undefined;
+          if (!saved || !queued || same(queued.next, intent.next)) break;
+          intent = { next: queued.next, previous: intent.next };
+        }
+      } finally {
+        saving = false;
+      }
+    };
+    return { value, update, loading: mutation.loading };
   };
-
-  type TagsIntent = { next: string[]; previous: string[] };
-  const tagsMutation = mutations.create<SpaceItem, TagsIntent, { previous: string[] }>({
-    onBefore: (intent) => ({ previous: intent.previous }),
-    mutation: (intent) => patchItem({ tagIds: intent.next }),
-    onSuccess: handleItemUpdated,
-    onError: (err, context) => {
-      if (context) setSelectedTagIds(context.previous);
-      prompts.error(err.message);
-    },
-    onAbort: (context) => {
-      if (context) setSelectedTagIds(context.previous);
-    },
-  });
-  let tagsSubmitting = false;
-
-  const updateTags = async (tagIds: string[]) => {
-    if (tagsSubmitting || tagsMutation.loading()) return;
-    tagsSubmitting = true;
-    const previous = selectedTagIds();
-    setSelectedTagIds(tagIds);
-    try {
-      await tagsMutation.mutate({ next: tagIds, previous });
-    } finally {
-      tagsSubmitting = false;
-    }
-  };
+  const deadlineEdit = createPropertyEdit(
+    () => props.item.deadline,
+    (deadline) => ({ deadline }),
+  );
+  const estimateEdit = createPropertyEdit(
+    () => props.item.estimatedDurationMinutes,
+    (estimatedDurationMinutes) => ({ estimatedDurationMinutes }),
+  );
+  // The picker reports any option value; the server validates it against the priority list.
+  const priorityEdit = createPropertyEdit<string | null>(
+    () => props.item.priority,
+    (priority) => ({ priority }),
+  );
+  const tagsEdit = createPropertyEdit(
+    () => props.item.tags?.map((tag) => tag.id) ?? [],
+    (tagIds) => ({ tagIds }),
+  );
 
   const completeMutation = mutations.create<boolean, boolean>({
     mutation: async (completed: boolean) => {
@@ -562,8 +580,10 @@ export default function ItemDetailPanel(props: Props) {
 
   const isLoading = () =>
     updateMutation.loading() ||
-    priorityMutation.loading() ||
-    tagsMutation.loading() ||
+    deadlineEdit.loading() ||
+    estimateEdit.loading() ||
+    priorityEdit.loading() ||
+    tagsEdit.loading() ||
     completeMutation.loading() ||
     duplicateMutation.loading() ||
     deleteMutation.loading() ||
@@ -691,7 +711,7 @@ export default function ItemDetailPanel(props: Props) {
     return actions;
   };
 
-  const selectedPriority = () => priorityOptions.find((option) => option.value === selectedPriorityValue());
+  const selectedPriority = () => priorityOptions.find((option) => option.value === priorityEdit.value());
 
   const canShowAssignees = () => canEditItem() || (props.item.assignees?.length ?? 0) > 0;
   const canShowInvitations = () => isEvent() && canEditItem() && props.mailIntegrationAvailable;
@@ -720,28 +740,76 @@ export default function ItemDetailPanel(props: Props) {
     </Show>
   );
 
-  // Planning: schedule facts first, then the classification controls. The priority and tag rows are stable
-  // objects so their controls stay mounted while the item snapshot refreshes after each change.
+  // Planning: schedule facts, the classification, then the task's dependencies. Editors change each property in
+  // place through a plain control, so the whole row opens its picker; readers see the same values as text. The
+  // editable rows are stable objects, so their controls stay mounted while the item snapshot refreshes.
+  const dueRow: DescriptionListItem = {
+    term: t.due,
+    get description() {
+      const due = (deadline: string) => (
+        <span>
+          {dates.formatDateTime(deadline, props.dateConfig)}
+          <span class="text-dimmed"> · {dates.formatTimeSpan(deadline, props.dateConfig)}</span>
+        </span>
+      );
+      return canEditItem() ? (
+        <DateTimePicker
+          aria-label={t.due}
+          appearance="plain"
+          placeholder={t.noDeadline}
+          value={deadlineEdit.value}
+          onValueChange={(deadline) => void deadlineEdit.update(deadline)}
+          renderValue={due}
+          presets={deadlinePresets(props.dateConfig)}
+          dateConfig={props.dateConfig}
+          clearable
+        />
+      ) : (
+        due(props.item.deadline!)
+      );
+    },
+  };
+  const estimateRow: DescriptionListItem = {
+    term: t.estimate,
+    get description() {
+      return canEditItem() ? (
+        <NumberInput
+          aria-label={t.estimate}
+          appearance="plain"
+          placeholder={t.noEstimate}
+          suffix="min"
+          min={1}
+          max={2_147_483_647}
+          allowNegative={false}
+          formatValue={formatEstimatedDuration}
+          value={estimateEdit.value}
+          onValueCommit={(minutes) => void estimateEdit.update(minutes)}
+        />
+      ) : (
+        formatEstimatedDuration(props.item.estimatedDurationMinutes!)
+      );
+    },
+  };
   const priorityRow: DescriptionListItem = {
     term: t.priority,
     get description() {
       return canEditItem() ? (
         <Select
           aria-label={t.priority}
+          appearance="plain"
           placeholder={t.noPriority}
-          icon="ti ti-flag"
-          value={selectedPriorityValue}
+          value={priorityEdit.value}
           options={priorityOptions.map((option) => ({ id: option.value, ...option }))}
-          onValueChange={updatePriority}
-          disabled={isLoading()}
+          onValueChange={(priority) => void priorityEdit.update(priority)}
           clearable
         />
       ) : (
         <Show when={selectedPriority()}>
           {(priority) => (
-            <Tag color={priority().color} icon={priority().icon}>
+            <span class="spaces-priority-value">
+              <span class="spaces-priority-value__dot" style={{ "background-color": priority().color }} aria-hidden="true" />
               {priority().label}
-            </Tag>
+            </span>
           )}
         </Show>
       );
@@ -753,32 +821,62 @@ export default function ItemDetailPanel(props: Props) {
       return canEditItem() ? (
         <MultiSelectInput
           aria-label={t.tags}
-          placeholder={t.noTags}
+          appearance="plain"
+          placeholder={t.addTagShort}
+          placeholderIcon="ti ti-plus"
           searchPlaceholder={t.searchTags}
-          icon="ti ti-tags"
-          value={selectedTagIds}
+          value={tagsEdit.value}
           options={props.tags.map((tag) => ({ id: tag.id, label: tag.name, color: tag.color }))}
-          onValueChange={updateTags}
-          disabled={isLoading()}
-          clearable
+          onValueChange={(tagIds) => void tagsEdit.update(tagIds)}
         />
       ) : (
-        <div class="flex flex-wrap items-center gap-1.5">
-          <For each={props.item.tags ?? []}>
-            {(tag) => (
-              <Tag color={tag.color} size="sm">
-                {tag.name}
-              </Tag>
-            )}
-          </For>
+        <div class="flex flex-wrap items-center gap-1 py-1.5">
+          <For each={props.item.tags ?? []}>{(tag) => <Tag color={tag.color}>{tag.name}</Tag>}</For>
         </div>
       );
     },
   };
+  const blockedByRow: DescriptionListItem = {
+    term: t.blockedBy,
+    get description() {
+      return (
+        <DependencyList
+          kind="blocker"
+          entries={(props.blockedBy ?? []).map((dependency) => dependency.blocker)}
+          href={itemHref}
+          onRemove={canEditItem() ? (id) => void removeBlocker.mutate(id) : undefined}
+          removeDisabled={addBlocker.loading() || removeBlocker.loading()}
+          footer={
+            canEditItem() ? (
+              <Select
+                aria-label={t.addTaskBlocker}
+                appearance="plain"
+                placeholder={t.addBlockerShort}
+                placeholderIcon="ti ti-plus"
+                searchPlaceholder={t.blockerSearchPlaceholder}
+                value={null}
+                fetchData={blockerOptions}
+                onValueChange={(id) => {
+                  if (id) void addBlocker.mutate(id);
+                }}
+                disabled={addBlocker.loading() || removeBlocker.loading()}
+              />
+            ) : undefined
+          }
+        />
+      );
+    },
+  };
+  const blocksRow: DescriptionListItem = {
+    term: t.blocks,
+    get description() {
+      return <DependencyList kind="dependent" entries={(props.blocks ?? []).map((dependency) => dependency.dependent)} href={itemHref} />;
+    },
+  };
   const showPriorityRow = () => canEditItem() || Boolean(selectedPriority());
   const showTagsRow = () => canEditItem() || (props.item.tags?.length ?? 0) > 0;
-  const hasPlanningRows = () =>
-    isEvent() || Boolean(props.item.deadline || props.item.estimatedDurationMinutes) || showPriorityRow() || showTagsRow();
+  const showBlockedByRow = () => !isEvent() && (canEditItem() || (props.blockedBy?.length ?? 0) > 0);
+  const showBlocksRow = () => !isEvent() && (props.blocks?.length ?? 0) > 0;
   const planningItems = (): DescriptionListItem[] => {
     const schedule: DescriptionListItem[] = isEvent()
       ? [
@@ -800,36 +898,16 @@ export default function ItemDetailPanel(props: Props) {
             : []),
         ]
       : [
-          ...(props.item.deadline
-            ? [
-                {
-                  term: t.due,
-                  description: (
-                    <span>
-                      {dates.formatDateTime(props.item.deadline, props.dateConfig)}
-                      <span class="text-dimmed"> · {dates.formatTimeSpan(props.item.deadline, props.dateConfig)}</span>
-                    </span>
-                  ),
-                },
-              ]
-            : []),
-          ...(props.item.estimatedDurationMinutes
-            ? [{ term: t.estimate, description: formatEstimatedDuration(props.item.estimatedDurationMinutes) }]
-            : []),
+          ...(canEditItem() || props.item.deadline ? [dueRow] : []),
+          ...(canEditItem() || props.item.estimatedDurationMinutes ? [estimateRow] : []),
         ];
-    return [...schedule, ...(showPriorityRow() ? [priorityRow] : []), ...(showTagsRow() ? [tagsRow] : [])];
-  };
-
-  // The blocker hint jumps inside the panel without touching the URL and focuses the first active blocker.
-  const blockersListId = `spaces-blockers-${createUniqueId()}`;
-  const jumpToBlockers = (event: MouseEvent & { currentTarget: HTMLAnchorElement }) => {
-    if (!shouldHandleDetailClick(event, event.currentTarget)) return;
-    const list = event.currentTarget.ownerDocument.getElementById(blockersListId);
-    const blocker = list?.querySelector<HTMLElement>("[data-spaces-active-blocker]");
-    if (!list || !blocker) return;
-    event.preventDefault();
-    list.closest("section")?.scrollIntoView({ block: "start" });
-    blocker.focus({ preventScroll: true });
+    return [
+      ...schedule,
+      ...(showPriorityRow() ? [priorityRow] : []),
+      ...(showTagsRow() ? [tagsRow] : []),
+      ...(showBlockedByRow() ? [blockedByRow] : []),
+      ...(showBlocksRow() ? [blocksRow] : []),
+    ];
   };
 
   const relatedTasksSection = () => (
@@ -998,7 +1076,7 @@ export default function ItemDetailPanel(props: Props) {
         />
 
         <DetailPanel.Body scrollPreserveKey={props.scrollPreserveKey}>
-          <Show when={hasPlanningRows() || completionBlocked()}>
+          <Show when={planningItems().length > 0}>
             <DetailPanel.Summary
               title={t.planning}
               actions={
@@ -1007,20 +1085,7 @@ export default function ItemDetailPanel(props: Props) {
                 ) : undefined
               }
             >
-              <div class="flex flex-col gap-1">
-                <Show when={hasPlanningRows()}>
-                  <DescriptionList layout="rows" size="sm" items={planningItems()} />
-                </Show>
-                <Show when={completionBlocked()}>
-                  <DetailPanel.Action
-                    href={`#${blockersListId}`}
-                    onClick={jumpToBlockers}
-                    leading={<i class="ti ti-lock" style={{ color: "var(--k2b-warning-text)" }} aria-hidden="true" />}
-                    title={t.blockedByTasks({ count: activeBlockerCount() })}
-                    trailing={<i class="ti ti-arrow-down" aria-hidden="true" />}
-                  />
-                </Show>
-              </div>
+              <DescriptionList layout="rows" size="sm" items={planningItems()} />
             </DetailPanel.Summary>
           </Show>
 
@@ -1164,97 +1229,8 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <Show
-            when={
-              !isEvent() &&
-              (canEditItem() ||
-                (props.blockedBy?.length ?? 0) > 0 ||
-                (props.blocks?.length ?? 0) > 0 ||
-                relatedTasks().length > 0 ||
-                hasLinks())
-            }
-          >
+          <Show when={!isEvent() && (canEditItem() || relatedTasks().length > 0 || hasLinks())}>
             <DetailPanel.Group label={t.context}>
-              <Show when={canEditItem() || (props.blockedBy?.length ?? 0) > 0}>
-                <DetailPanel.Section
-                  class="scroll-mt-3"
-                  title={t.blockedBy}
-                  icon="ti ti-lock"
-                  tone={activeBlockerCount() > 0 ? "warning" : "neutral"}
-                >
-                  <div id={blockersListId} class="flex flex-col gap-1">
-                    <For each={props.blockedBy ?? []}>
-                      {(dependency) => {
-                        const leading = (
-                          <i
-                            class={`ti ${dependency.blocker.completedAt ? "ti-circle-check text-[var(--k2b-success-text)]" : "ti-lock text-amber-600 dark:text-amber-400"}`}
-                            aria-hidden="true"
-                          />
-                        );
-                        const active = dependency.blocker.completedAt ? undefined : "";
-                        return canEditItem() ? (
-                          <DetailPanel.Action
-                            href={itemHref(dependency.blocker.id)}
-                            data-spaces-active-blocker={active}
-                            leading={leading}
-                            title={dependency.blocker.title}
-                            description={dependency.blocker.completedAt ? t.completed : t.activeBlocker}
-                            menuLabel={t.moreActionsFor({ label: dependency.blocker.title })}
-                            menuItems={[
-                              {
-                                label: t.removeBlocker,
-                                icon: "ti ti-unlink",
-                                disabled: removeBlocker.loading(),
-                                action: () => removeBlocker.mutate(dependency.blocker.id),
-                              },
-                            ]}
-                          />
-                        ) : (
-                          <DetailPanel.Action
-                            href={itemHref(dependency.blocker.id)}
-                            data-spaces-active-blocker={active}
-                            leading={leading}
-                            title={dependency.blocker.title}
-                            description={dependency.blocker.completedAt ? t.completed : t.activeBlocker}
-                            trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                          />
-                        );
-                      }}
-                    </For>
-                    <Show when={canEditItem()}>
-                      <Combobox
-                        aria-label={t.addTaskBlocker}
-                        placeholder={t.blockerSearchPlaceholder}
-                        fetchData={blockerOptions}
-                        onSelect={(option) => addBlocker.mutate(option.id)}
-                        disabled={addBlocker.loading() || removeBlocker.loading()}
-                      />
-                    </Show>
-                  </div>
-                </DetailPanel.Section>
-              </Show>
-              <Show when={(props.blocks?.length ?? 0) > 0}>
-                <DetailPanel.Section title={t.blocks} icon="ti ti-git-branch" tone="neutral" meta={props.blocks?.length}>
-                  <div class="flex flex-col gap-1">
-                    <For each={props.blocks ?? []}>
-                      {(dependency) => (
-                        <DetailPanel.Action
-                          href={itemHref(dependency.dependent.id)}
-                          leading={
-                            <i
-                              class={`ti ${dependency.dependent.completedAt ? "ti-circle-check text-[var(--k2b-success-text)]" : "ti-lock text-amber-600 dark:text-amber-400"}`}
-                              aria-hidden="true"
-                            />
-                          }
-                          title={dependency.dependent.title}
-                          description={dependency.dependent.completedAt ? t.completed : t.blockedByThisTask}
-                          trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                        />
-                      )}
-                    </For>
-                  </div>
-                </DetailPanel.Section>
-              </Show>
               {relatedTasksSection()}
               {linksSection()}
             </DetailPanel.Group>
