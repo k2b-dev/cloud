@@ -80,9 +80,10 @@ const render = (
   locale = "en",
   accountSection?: "sign-in" | "registration",
   documentation?: { base: string; topic: string },
+  group = "user",
 ) => {
   const entries: SettingFieldDef[] = Object.entries(CORE_SETTINGS)
-    .filter(([key]) => key.startsWith("user."))
+    .filter(([key]) => key.startsWith(`${group}.`))
     .map(([key, def]) => ({
       key,
       label: def.label,
@@ -94,7 +95,7 @@ const render = (
       isCustom: false,
       valueSource: "default",
       resetValueSource: "default",
-      group: "user",
+      group,
       templateVars: "templateVars" in def ? [...def.templateVars] : undefined,
     }));
   return renderToString(() =>
@@ -124,6 +125,15 @@ describe("account category administration", () => {
     expect(links("accounts/change-notices")).toBe(1);
     expect(html).toContain('aria-label="Documentation (English, opens in a new tab)"');
     expect(html).toContain('aria-label="Documentation for Follow-up notices (English, opens in a new tab)"');
+  });
+
+  test("sections that only point to an anchor in the page's article add no link of their own", () => {
+    const html = render(true, "en", undefined, { base: "http://localhost:4187", topic: "freeipa" }, "freeipa");
+    expect(html).toContain("k2b-settings-section");
+    expect(html.match(/href="http:\/\/localhost:4187\/en\/docs\/operations\/freeipa[^"]*"/g)).toEqual([
+      'href="http://localhost:4187/en/docs/operations/freeipa"',
+    ]);
+    expect(html).not.toContain("Documentation for ");
   });
 
   test("sign-in and registration each render only their owned settings", () => {

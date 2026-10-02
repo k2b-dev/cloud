@@ -16,9 +16,9 @@ const widgetMessages = i18n.define({
       mirroredHostgroups: ({ count, value }: { count: number; value: string }) =>
         `${value} hostgroup${count === 1 ? "" : "s"} mirrored from FreeIPA`,
       mirroredHosts: ({ count }: { count: string }) => `Out of ${count} mirrored hosts`,
-      groups: "groups",
-      inGroups: "in groups",
-      ungrouped: "ungrouped",
+      groups: "Groups",
+      inGroups: "In groups",
+      ungrouped: "Ungrouped",
       title: "IPA hosts",
     },
     de: {
@@ -29,8 +29,8 @@ const widgetMessages = i18n.define({
       mirroredHostgroups: ({ count, value }) => `${value} Hostgruppe${count === 1 ? "" : "n"} aus FreeIPA gespiegelt`,
       mirroredHosts: ({ count }) => `Von ${count} gespiegelten Hosts`,
       groups: "Gruppen",
-      inGroups: "in Gruppen",
-      ungrouped: "nicht gruppiert",
+      inGroups: "In Gruppen",
+      ungrouped: "Nicht gruppiert",
       title: "IPA-Hosts",
     },
   },

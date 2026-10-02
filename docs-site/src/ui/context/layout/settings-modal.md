@@ -56,16 +56,23 @@ create another outer surface.
 
 `SettingsSection` groups one coherent set of page settings. It renders like
 `SettingsGroup`: a heading, an optional subtitle, and its fields directly on
-the page surface, with no card, header rule, or lines between fields. Space
-separates sections and fields, so the page stays the only frame. Header
-actions wrap below the heading on narrow screens instead of squeezing the
-subtitle. Keep `PanelDialog.Section` inside dialogs; it intentionally has a
-different containment contract.
+the page surface, with no card, header rule, or lines between fields. About
+2rem of space separates sections, so the page stays the only frame, and the
+page title sits one size step above the section titles. Header actions stay
+beside the heading while it keeps about 16rem and wrap below it otherwise, so
+a single icon action still fits on a phone. The section icon and its heading
+always share a line. Keep `PanelDialog.Section` inside dialogs; it
+intentionally has a different containment contract.
 
 Put a shared action, such as a documentation link, once in the page
 `actions`. Give a section its own action only when it leads somewhere the page
-action does not, and prefer a compact `IconButtonLink` with a label that names
+action does not, such as a different article rather than an anchor in the
+page's article, and prefer a compact `IconButtonLink` with a label that names
 the section.
+
+A `SettingsSection` used outside a `SettingsPage`, for example between framed
+blocks on a detail page, still draws no card. Wrap it in `Paper` there when
+its neighbours are framed.
 
 Inside `SettingsModal`, use `SettingsGroup` for a flat form group and
 `SettingsCollection` for compact entity management. Neither component owns a

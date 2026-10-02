@@ -333,7 +333,7 @@ export default ssr<AuthContext>(async (c) => {
         <StatGrid columns={4}>
           <StatCell label={t.definitions} value={formatNumber(summary.total, { locale })} sub={t.durableCatalog} />
           <StatCell
-            label={t.active}
+            label={t.activeDefinitions}
             value={formatNumber(summary.active, { locale })}
             sub={t.latestAppCatalogs}
             accent={{ tone: "emerald", icon: "ti ti-check" }}

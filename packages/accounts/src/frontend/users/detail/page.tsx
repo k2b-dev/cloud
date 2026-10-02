@@ -307,7 +307,10 @@ export default ssr<AuthContext>(async (c) => {
 
           <AccountsFactGrid facts={facts} viewTransitionName="accounts-user-facts" />
           {(linux.user.identity || linux.user.provider === "ipa" || (linux.config.enabled && linux.user.profile === "user")) && (
-            <LinuxIdentity initial={linux} />
+            // The section draws no card of its own; Paper matches the framed blocks around it.
+            <Paper class="p-4">
+              <LinuxIdentity initial={linux} />
+            </Paper>
           )}
 
           {isIpaUser && (ipa?.sshFingerprints.length ?? 0) > 0 && (

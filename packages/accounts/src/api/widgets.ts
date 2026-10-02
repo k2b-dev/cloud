@@ -14,14 +14,14 @@ const widgetMessages = i18n.define({
       pendingRequest: "Pending request",
       pendingRequests: "Pending requests",
       needsReview: "needs review",
-      open: "open",
+      open: "Open",
       expiring: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 account expires within 30 days", other: `${count} accounts expire within 30 days` }),
       expiryBreakdown: ({ ipa, local, guests }: { ipa: number; local: number; guests: number }) =>
         `${ipa} FreeIPA · ${local} local · ${guests} guest`,
-      accounts: "accounts",
-      groups: "groups",
-      queue: "queue",
+      accounts: "Accounts",
+      groups: "Groups",
+      queue: "Queue",
       adminQueue: "Admin queue",
     },
     de: {
@@ -30,7 +30,7 @@ const widgetMessages = i18n.define({
       pendingRequest: "Offene Anfrage",
       pendingRequests: "Offene Anfragen",
       needsReview: "zu prüfen",
-      open: "offen",
+      open: "Offen",
       expiring: ({ count }) =>
         i18n.plural(count, "de", {
           one: "1 Konto läuft innerhalb von 30 Tagen ab",

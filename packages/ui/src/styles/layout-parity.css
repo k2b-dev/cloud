@@ -207,7 +207,7 @@
 
 .k2b-ui .k2b-settings-page__heading h1 {
   color: var(--k2b-text);
-  font-size: 0.9375rem;
+  font-size: 1.0625rem;
   font-weight: 650;
   line-height: 1.3;
 }
@@ -260,12 +260,18 @@
   min-width: 0;
 }
 
-.k2b-ui .k2b-settings-page__body > .k2b-settings-section:not(:first-child),
+/* Sections sit 2rem apart: the body's 0.75rem gap plus this margin, or the
+   margin alone when sections follow each other outside a page body. */
 .k2b-ui .k2b-settings-section + .k2b-settings-section {
-  margin-top: 1.5rem;
+  margin-top: 2rem;
 }
 
-/* Actions wrap below the heading before the subtitle gets squeezed. */
+.k2b-ui .k2b-settings-page__body > .k2b-settings-section:not(:first-child) {
+  margin-top: 1.25rem;
+}
+
+/* Actions wrap below the heading before the subtitle gets squeezed. The icon
+   and the heading always share a line. */
 .k2b-ui .k2b-settings-section__header {
   display: flex;
   min-width: 0;
@@ -277,14 +283,19 @@
 
 .k2b-ui .k2b-settings-section__header > i {
   flex-shrink: 0;
+  width: 0.9375rem;
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
   font-size: 0.9375rem;
+  text-align: center;
 }
 
+/* The heading claims 16rem before actions may share its line, but never more
+   than the room beside the icon (its 0.9375rem plus the 0.625rem gap), so a
+   narrow header wraps the actions and not the heading. */
 .k2b-ui .k2b-settings-section__heading {
-  min-width: 0;
-  flex: 1 1 16rem;
+  min-width: min(16rem, 100% - 1.5625rem);
+  flex: 1 1 0;
 }
 
 .k2b-ui .k2b-settings-section__heading h2,
@@ -1060,8 +1071,7 @@
 }
 
 @media (max-width: 39.999rem) {
-  .k2b-ui .k2b-settings-page__actions,
-  .k2b-ui .k2b-settings-section__actions {
+  .k2b-ui .k2b-settings-page__actions {
     width: 100%;
     justify-content: flex-start;
   }

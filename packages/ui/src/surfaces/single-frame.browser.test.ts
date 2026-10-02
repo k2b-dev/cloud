@@ -14,7 +14,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { Button } = await import("../actions/Button");
+const { Button, IconButton } = await import("../actions/Button");
 const { default: DetailPanel } = await import("../layout/DetailPanel");
 const { SettingsField, SettingsPage, SettingsSection } = await import("../layout/Settings");
 const { NoticeCard } = await import("./NoticeCard");
@@ -64,6 +64,11 @@ const markup = () =>
           }),
           createComponent(SettingsSection, {
             title: "Webhooks",
+            subtitle: "Endpoints that receive project events.",
+            icon: "ti ti-webhook",
+            get actions() {
+              return createComponent(IconButton, { size: "sm", label: "Webhook documentation", children: "?" });
+            },
             get children() {
               return createComponent(Placeholder, { surface: "paper", description: "No webhooks yet", class: "nested-placeholder" });
             },
@@ -105,10 +110,10 @@ const markup = () =>
     }),
   ]);
 
-const open = async (viewport: { width: number; height: number }, theme: "light" | "dark") => {
+const open = async (viewport: { width: number; height: number }, theme: "light" | "dark", rootFontSize = 16) => {
   const page = await browser.newPage({ viewport });
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+    `<!doctype html><html style="font-size:${rootFontSize}px"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui" data-theme="${theme}" style="margin:0;padding:1rem;background:var(--k2b-surface-muted)">` +
       `<div style="display:flex;height:40rem;flex-direction:column">${markup()}</div></body></html>`,
   );
@@ -131,6 +136,7 @@ const measure = () => {
     fieldRules: Array.from(document.querySelectorAll(".k2b-settings-field")).map((element) => getComputedStyle(element).borderTopStyle),
     heading: box(".k2b-settings-section__heading").bottom,
     actions: box(".k2b-settings-section__actions").top,
+    sectionGap: box(".k2b-settings-section + .k2b-settings-section").top - box(".k2b-settings-section").bottom,
     notice: frame(".k2b-notice-card"),
     noticeDetailSize: style(".k2b-notice-card__description").fontSize,
     noticeDetailOpacity: style(".k2b-notice-card__description").opacity,
@@ -174,6 +180,7 @@ describe("@k2b/ui one frame per surface", () => {
           expect(result.groupGap).toBe(0);
 
           expect(result.statLabel).toEqual({ transform: "none", tracking: "normal" });
+          expect(result.sectionGap).toBe(32);
 
           // Actions share the heading row on a desktop and wrap below it on a phone.
           if (name === "phone") expect(result.actions).toBeGreaterThanOrEqual(result.heading);
@@ -184,4 +191,45 @@ describe("@k2b/ui one frame per surface", () => {
       });
     }
   }
+
+  /** Where each section's icon, heading and actions sit relative to each other. */
+  const headerRows = () =>
+    Array.from(document.querySelectorAll(".k2b-settings-section__header")).map((header) => {
+      const box = (selector: string) => header.querySelector(selector)!.getBoundingClientRect();
+      const heading = box(".k2b-settings-section__heading");
+      return {
+        iconBesideHeading: heading.top < box(":scope > i").bottom,
+        actionsBesideHeading: box(".k2b-settings-section__actions").top < heading.bottom,
+      };
+    });
+
+  // 320px is the WCAG reflow width; a 20px root font is a common low-vision default.
+  for (const [name, viewport, rootFontSize] of [
+    ["a 320px phone", { width: 320, height: 640 }, 16],
+    ["a 390px phone with a 20px root font", { width: 390, height: 844 }, 20],
+  ] as const) {
+    test(`a section icon and its heading share a line on ${name}`, async () => {
+      const page = await open(viewport, "light", rootFontSize);
+      try {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+        const rows = await page.evaluate(headerRows);
+        expect(rows.map((row) => row.iconBesideHeading)).toEqual([true, true]);
+        expect(rows[0]!.actionsBesideHeading).toBe(false);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("a single icon action stays on the heading row of a 390px phone", async () => {
+    const page = await open(viewports.phone, "light");
+    try {
+      expect(await page.evaluate(headerRows)).toEqual([
+        { iconBesideHeading: true, actionsBesideHeading: false },
+        { iconBesideHeading: true, actionsBesideHeading: true },
+      ]);
+    } finally {
+      await page.close();
+    }
+  });
 });

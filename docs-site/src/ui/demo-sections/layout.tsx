@@ -695,7 +695,7 @@ const SettingsPageDemo = () => {
         { kind: "component", name: "SettingsPage", from: "@k2b/ui" },
         { kind: "component", name: "SettingsSection", from: "@k2b/ui" },
       ]}
-      description="A flat full-page settings shell: one heading, sections separated by space instead of cards and lines, a scrolling body, optional actions, and a fixed save footer. Section actions wrap below the heading on narrow screens."
+      description="A flat full-page settings shell: one heading, sections separated by space instead of cards and lines, a scrolling body, optional actions, and a fixed save footer. Section actions wrap below the heading only when they do not fit beside it."
       code={`<SettingsPage
   title="Project settings"
   subtitle="Identity and defaults"

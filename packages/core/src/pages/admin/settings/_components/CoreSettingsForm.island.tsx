@@ -597,9 +597,11 @@ export default function CoreSettingsForm(props: Props) {
   );
 
   // The page header links the page's article; a section links only an article of its own.
+  // An anchor into the page's article is the same article, so it gets no second link.
+  const article = (topic: string) => settingsDocumentationHref(props.documentationBase, topic)?.split("#")[0];
   const sectionHasOwnDocumentation = (sectionId: string) => {
-    const href = settingsDocumentationHref(props.documentationBase, sectionId);
-    return Boolean(href) && href !== settingsDocumentationHref(props.documentationBase, props.documentationTopic ?? "");
+    const own = article(sectionId);
+    return Boolean(own) && own !== article(props.documentationTopic ?? "");
   };
 
   const renderFieldSections = (entries: SettingFieldDef[]) =>
