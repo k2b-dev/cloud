@@ -74,10 +74,14 @@ type EnvelopeCursor = {
   reconcileNextLow: number | null;
   lastFullReconcileAt: string | null;
   // The fields below arrived after the first cursors were stored, so a stored cursor can lack them.
-  /** High UID of the next newest-first reconcile window; null starts again at the newest message. */
+  /** High UID of the next newest-first reconcile window below the newest one; null starts again at the newest message. */
   sweepNextHigh?: number | null;
+  /** The next batch continues with the older window at sweepNextHigh; see fetchReconcileStep. */
+  sweepOlderDue?: boolean;
   /** The folder's message count shows that messages left it; the newest-first windows look for them. */
   vanishedSearch?: boolean;
+  /** The current search retired a message; see checkVanishedMessages. */
+  searchRetired?: boolean;
   /** Live local UIDs plus uncounted remote messages minus STATUS MESSAGES while nothing is missing; 0 on a consistent server. */
   countOffset?: number;
   /** Remote messages the local count leaves out: outside Drafts, the drafts Mail never imports. */
@@ -1100,6 +1104,7 @@ const fetchReconcileWindow = async (params: {
   folderId: string;
   uidValidity: string;
   draftsFolder: boolean;
+  fetchedUids: ReadonlySet<number>;
   signal: AbortSignal;
 }): Promise<ReconcileWindow> => {
   const flags = await imapSmtpConnector.fetchUidWindow(
@@ -1118,8 +1123,11 @@ const fetchReconcileWindow = async (params: {
     });
   }
   const imports = await fetchReconcileImports({
-    // The Drafts folder imports its drafts; every other folder never fetches them.
-    uids: (params.draftsFolder ? flags : flags.filter((entry) => !isProviderDraft(entry))).map((entry) => entry.uid),
+    // The Drafts folder imports its drafts; every other folder never fetches them. This batch
+    // imports the UIDs its envelope step fetched already.
+    uids: (params.draftsFolder ? flags : flags.filter((entry) => !isProviderDraft(entry)))
+      .map((entry) => entry.uid)
+      .filter((uid) => !params.fetchedUids.has(uid)),
     newestFirst: params.newestFirst,
     runtime: params.runtime,
     folderPath: params.folderPath,
@@ -1149,6 +1157,8 @@ export const fetchReconcileStep = async (params: {
   uidValidity: string;
   /** The Drafts folder imports its drafts; every other folder never fetches them. */
   draftsFolder: boolean;
+  /** UIDs this batch's envelope step fetched: they have no local record until the batch commits. */
+  fetchedUids: ReadonlySet<number>;
   signal: AbortSignal;
 }): Promise<ReconcileWindow | null> => {
   const { cursor } = params;
@@ -1172,17 +1182,24 @@ export const fetchReconcileStep = async (params: {
     if (cursor.reconcileNextLow == null) cursor.lastFullReconcileAt = new Date().toISOString();
     return { ...window, completesWalk: cursor.reconcileNextLow == null };
   }
-  // Newest first, one window per batch: while messages are known to have left the folder until
-  // the search finds them, and once backfill finished on every batch of a server without
-  // CONDSTORE, which reports flag changes no other way. Mail keeps no flags of drafts, so the
-  // Drafts folder needs no such window.
-  const sweep = cursor.vanishedSearch
-    ? cursor.sweepNextHigh != null
-    : cursor.backfillComplete && params.highestModseq == null && !params.draftsFolder;
-  if (!sweep) return null;
-  const high = Math.min(cursor.sweepNextHigh ?? cursor.highestSeenUid, cursor.highestSeenUid);
+  // Newest first, one window per batch. While messages are known to have left the folder, the
+  // windows search for them until the counts match. A server without CONDSTORE reports flag
+  // changes no other way, so once backfill finished every sync reconciles the newest window, where
+  // most changes happen, and a continuation batch then reconciles the next older window: the
+  // older windows take turns. Mail keeps no flags of drafts, so the Drafts folder needs no sweep.
+  let high: number;
+  if (cursor.vanishedSearch) {
+    if (cursor.sweepNextHigh == null) return null;
+    high = Math.min(cursor.sweepNextHigh, cursor.highestSeenUid);
+  } else if (cursor.backfillComplete && params.highestModseq == null && !params.draftsFolder) {
+    high = cursor.sweepOlderDue ? Math.min(cursor.sweepNextHigh ?? 0, cursor.highestSeenUid) : cursor.highestSeenUid;
+  } else {
+    cursor.sweepOlderDue = false;
+    return null;
+  }
   if (high < 1) {
     cursor.sweepNextHigh = null;
+    cursor.sweepOlderDue = false;
     return null;
   }
   const low = await newestFirstWindowLow({
@@ -1194,7 +1211,14 @@ export const fetchReconcileStep = async (params: {
     skippedDrafts: params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0),
   });
   const window = await fetchReconcileWindow({ ...params, low, high, newestFirst: true });
-  cursor.sweepNextHigh = window.low > 1 ? window.low - 1 : null;
+  if (cursor.vanishedSearch || cursor.sweepOlderDue || window.low === 1) {
+    cursor.sweepNextHigh = window.low > 1 ? window.low - 1 : null;
+    cursor.sweepOlderDue = false;
+  } else {
+    // The newest window: the older windows' turn continues below it.
+    if (cursor.sweepNextHigh == null || cursor.sweepNextHigh >= window.low) cursor.sweepNextHigh = window.low - 1;
+    cursor.sweepOlderDue = true;
+  }
   return window;
 };
 
@@ -1351,9 +1375,11 @@ const countLiveUids = async (
  * search through the reconcile windows, which ends as soon as the counts match again.
  *
  * Only a recount changes the skipped drafts, and only the counts themselves move the offset:
- * a higher remote count lowers it at once, a difference a complete search leaves raises it. So
- * an offset that absorbed a message removed during a search drops again once the full
- * reconciliation retires that message, and no later removal is hidden behind it.
+ * a higher remote count lowers it at once, a difference a complete search leaves raises it. A
+ * message that leaves while a search runs, or before the next count check, is no such
+ * difference: a search that retired a message and still leaves one searches again, so only a
+ * search that found nothing to retire raises the offset. Should a removal still race such a
+ * search, the next full reconciliation retires the message and lowers the offset again.
  *
  * New mail Mail has not imported yet is in this batch's count but not in Mail's, so a folder that
  * receives mail before every sync is compared with the count of the batch that imported the UIDs
@@ -1398,23 +1424,26 @@ const checkVanishedMessages = async (params: {
     cursor.vanishedSearch = false;
     return;
   }
-  if (!cursor.vanishedSearch) {
+  if (cursor.vanishedSearch && cursor.sweepNextHigh != null) return;
+  // A search that retired a message and still leaves a difference missed a message that left
+  // meanwhile, in a window it had already searched or after it ended: it searches again.
+  if (!cursor.vanishedSearch || cursor.searchRetired) {
     cursor.vanishedSearch = true;
+    cursor.searchRetired = false;
     cursor.sweepNextHigh = cursor.highestSeenUid;
+    cursor.sweepOlderDue = false;
     return;
   }
-  if (cursor.sweepNextHigh == null) {
-    // Every window was searched and the counts still differ: this server counts differently. A
-    // draft count the server refused may still include drafts that left, so the offset then takes
-    // over the skipped drafts instead of counting on them.
-    if (draftsCounted) {
-      cursor.countOffset = gap;
-    } else {
-      cursor.countOffset = local - messages;
-      cursor.remoteUncounted = 0;
-    }
-    cursor.vanishedSearch = false;
+  // Every window was searched, none retired a message, and the counts still differ: this server
+  // counts differently. A draft count the server refused may still include drafts that left, so
+  // the offset then takes over the skipped drafts instead of counting on them.
+  if (draftsCounted) {
+    cursor.countOffset = gap;
+  } else {
+    cursor.countOffset = local - messages;
+    cursor.remoteUncounted = 0;
   }
+  cursor.vanishedSearch = false;
 };
 
 const reconcileWindowStart = (uid: number): number => {
@@ -1625,6 +1654,7 @@ export const commitSyncBatch = async (params: {
             existingUids: params.reconcileWindow.uids,
           })
         : 0;
+    if (params.cursor.vanishedSearch && removed > 0) params.cursor.searchRetired = true;
     // A completed walk leaves Mail's messages in line with the provider's, but for removals while
     // it ran, so the gap it leaves is at most the folder's offset. An offset above it holds a
     // message removed during an earlier search, and a removal right after this walk would hide
@@ -1851,6 +1881,7 @@ export const syncFolderBatch = async (
           folderId,
           uidValidity: status.uidValidity,
           draftsFolder,
+          fetchedUids: new Set(envelopeBatch?.messages.map((message) => Number(message.remoteRef.uid)) ?? []),
           signal,
         });
         if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
@@ -1879,7 +1910,8 @@ export const syncFolderBatch = async (
           !cursor.backfillComplete ||
           cursor.flagNextLow != null ||
           cursor.reconcileNextLow != null ||
-          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null);
+          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
+          cursor.sweepOlderDue === true;
         return {
           hasMore,
           syncPending: cursor.incrementalNextHigh != null || cursor.flagNextLow != null,

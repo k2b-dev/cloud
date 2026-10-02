@@ -357,7 +357,25 @@ suite("mail sync of changes made in other clients", () => {
     expect(await mailbox.placements(id("busy-fifth"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
-  test("a message removed while the search runs is found once the full reconciliation retired the one it missed", async () => {
+  test("two messages deleted one sync apart both leave the folder, and later removals are still found", async () => {
+    const mailbox = await connect("apart", true);
+    const uids = ["apart-1", "apart-2", "apart-3", "apart-4"].map((name) => mailbox.remote.put("archive", id(name)));
+    await mailbox.sync("archive");
+
+    mailbox.remote.remove("archive", uids[0]!);
+    await mailbox.sync("archive");
+    mailbox.remote.remove("archive", uids[1]!);
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("apart-1"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    expect(await mailbox.placements(id("apart-2"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+
+    mailbox.remote.remove("archive", uids[2]!);
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("apart-3"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    expect(await mailbox.placements(id("apart-4"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+  });
+
+  test("a message removed right after the search listed the folder is found by the next sync", async () => {
     const mailbox = await connect("raced", true);
     mailbox.remote.put("archive", id("raced-kept"));
     const first = mailbox.remote.put("archive", id("raced-first"));
@@ -366,27 +384,47 @@ suite("mail sync of changes made in other clients", () => {
     await mailbox.sync("archive");
 
     // Another client removes a second message right after the search listed the folder: the
-    // search ends one message short and the folder's offset absorbs that message for now.
+    // search ends one message short, and the next sync searches again instead of taking the
+    // difference for the server's way of counting.
     mailbox.remote.remove("archive", first);
     mailbox.remote.afterNextWindow(() => mailbox.remote.remove("archive", during));
     await mailbox.sync("archive");
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("raced-first"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
-
-    // The full reconciliation retires it and drops the offset, so a removal right after the
-    // walk, before any further count check, is found as well.
-    await sql`
-      UPDATE mail.folders
-      SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
-      WHERE id = ${mailbox.folderId("archive")}::uuid
-    `;
-    await mailbox.sync("archive");
     expect(await mailbox.placements(id("raced-during"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
 
     mailbox.remote.remove("archive", later);
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("raced-later"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
     expect(await mailbox.placements(id("raced-kept"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+  });
+
+  test("a message removed in a window the search already passed is found by the next sync", async () => {
+    const mailbox = await connect("raced-windows", true);
+    // 5,000 skipped drafts make every search window span 5,000 UIDs: the folder needs four.
+    const oldest = mailbox.remote.put("archive", id("windows-oldest"), [], 1);
+    for (let uid = 2; uid <= 5_001; uid += 1) mailbox.remote.put("archive", id(`windows-draft-${uid}`), ["\\Draft"], uid);
+    mailbox.remote.put("archive", id("windows-kept"), [], 9_000);
+    const newest = mailbox.remote.put("archive", id("windows-newest"), [], 18_000);
+    await mailbox.sync("archive", 40);
+
+    // The newest message goes right after the search listed its window, and the search walks on
+    // down to the oldest one.
+    mailbox.remote.remove("archive", oldest);
+    mailbox.remote.afterNextWindow(() => mailbox.remote.remove("archive", newest));
+    mailbox.remote.resetCalls();
+    await mailbox.sync("archive");
+    expect(mailbox.remote.calls.windows).toEqual([
+      ["archive", 13_001, 18_000],
+      ["archive", 8_001, 13_000],
+      ["archive", 3_001, 8_000],
+      ["archive", 1, 3_000],
+    ]);
+    expect(await mailbox.placements(id("windows-oldest"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("windows-newest"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    expect(await mailbox.placements(id("windows-kept"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
   test("a server without CONDSTORE still delivers read and flag changes made in another client", async () => {
@@ -456,7 +494,54 @@ suite("mail sync of changes made in other clients", () => {
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("bounded-recent"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
     // 5,000 skipped drafts: the window spans 5,000 UIDs instead of the two messages Mail holds.
-    expect(mailbox.remote.calls.windows).toEqual([["archive", 7_001, 12_000]]);
+    // The next older window follows in the same turn.
+    expect(mailbox.remote.calls.windows).toEqual([
+      ["archive", 7_001, 12_000],
+      ["archive", 2_001, 7_000],
+    ]);
+  });
+
+  test("without CONDSTORE, every sync reconciles the newest window and the older windows take turns", async () => {
+    const mailbox = await connect("newest-flags", false);
+    // 5,000 skipped drafts make every window span 5,000 UIDs: the folder needs four.
+    mailbox.remote.put("archive", id("turns-oldest"), [], 1);
+    for (let uid = 2; uid <= 5_001; uid += 1) mailbox.remote.put("archive", id(`turns-draft-${uid}`), ["\\Draft"], uid);
+    const middle = mailbox.remote.put("archive", id("turns-middle"), [], 9_000);
+    const newest = mailbox.remote.put("archive", id("turns-newest"), [], 18_000);
+    await mailbox.sync("archive", 40);
+
+    mailbox.remote.resetCalls();
+    await mailbox.sync("archive");
+    mailbox.remote.setFlags("archive", newest, ["\\Seen"]);
+    mailbox.remote.setFlags("archive", middle, ["\\Flagged"]);
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("turns-newest"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
+    await mailbox.sync("archive");
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("turns-middle"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Flagged"] }]);
+    expect(mailbox.remote.calls.windows).toEqual([
+      ["archive", 13_001, 18_000],
+      ["archive", 8_001, 13_000],
+      ["archive", 13_001, 18_000],
+      ["archive", 3_001, 8_000],
+      ["archive", 13_001, 18_000],
+      ["archive", 1, 3_000],
+      ["archive", 13_001, 18_000],
+      ["archive", 8_001, 13_000],
+    ]);
+  });
+
+  test("without CONDSTORE, the first sync and new mail fetch each message once", async () => {
+    const mailbox = await connect("single-fetch", false);
+    for (let index = 1; index <= 650; index += 1) mailbox.remote.put("archive", id(`single-${index}`));
+    await mailbox.sync("archive");
+    expect(mailbox.remote.calls.envelopes).toBe(4);
+
+    mailbox.remote.put("archive", id("single-new"));
+    mailbox.remote.resetCalls();
+    await mailbox.sync("archive");
+    expect(mailbox.remote.calls.envelopes).toBe(1);
+    expect(await mailbox.placements(id("single-new"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
   test("a draft that leaves a folder Mail skips drafts in costs a draft count, not a search", async () => {
@@ -569,6 +654,7 @@ suite("mail sync of changes made in other clients", () => {
     const first = mailbox.remote.put("drafts", id("raced-draft-first"), ["\\Draft"]);
     const during = mailbox.remote.put("drafts", id("raced-draft-during"), ["\\Draft"]);
     const later = mailbox.remote.put("drafts", id("raced-draft-later"), ["\\Draft"]);
+    const hidden = mailbox.remote.put("drafts", id("raced-draft-hidden"), ["\\Draft"]);
     const conflicted = mailbox.remote.put("drafts", id("raced-draft-conflicted"), ["\\Draft"]);
     await mailbox.sync("drafts");
     const state = async (uid: number) => {
@@ -585,21 +671,33 @@ suite("mail sync of changes made in other clients", () => {
     `;
     await mailbox.sync("drafts");
 
-    // A second draft goes right after the search listed the folder: the offset absorbs it.
+    // A second draft goes right after the search listed the folder: the next sync searches again.
     mailbox.remote.remove("drafts", first);
     mailbox.remote.afterNextWindow(() => mailbox.remote.remove("drafts", during));
     await mailbox.sync("drafts");
     await mailbox.sync("drafts");
     expect(await state(first)).toBe("needs_attention");
+    expect(await state(during)).toBe("needs_attention");
 
-    // The full reconciliation retires it, and a removal before the next count check is found.
+    // A search that found nothing to retire can still race a removal and raise the offset, here
+    // by two. A draft deleted then hides behind it until the full reconciliation retires it.
+    await sql`
+      UPDATE mail.folders
+      SET envelope_cursor = jsonb_set(envelope_cursor, '{countOffset}', '1'::jsonb)
+      WHERE id = ${mailbox.folderId("drafts")}::uuid
+    `;
+    mailbox.remote.remove("drafts", hidden);
+    await mailbox.sync("drafts");
+    expect(await state(hidden)).not.toBe("needs_attention");
+
+    // The walk lowers the offset again, and a removal before the next count check is found.
     await sql`
       UPDATE mail.folders
       SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
       WHERE id = ${mailbox.folderId("drafts")}::uuid
     `;
     await mailbox.sync("drafts");
-    expect(await state(during)).toBe("needs_attention");
+    expect(await state(hidden)).toBe("needs_attention");
     mailbox.remote.remove("drafts", later);
     await mailbox.sync("drafts");
     expect(await state(later)).toBe("needs_attention");
