@@ -81,8 +81,14 @@ const SOURCE_TIERS: ReadonlyArray<(folder: MailActionFolder | undefined) => bool
  * that is the folder in view. A view that spans folders takes it out of every ordinary folder it is
  * filed in and leaves Junk, Trash, Gmail's All Mail, Sent, and Drafts alone, unless the conversation
  * is only there. The newest message's folder never decides: it is often Sent or All Mail.
+ *
+ * Gmail, recognized by its All Mail folder, files one message under many labels, and one move changes
+ * the message everywhere: a move out of a label removes that label, and a move to Trash or Spam takes
+ * the message out of every label. A view that spans folders therefore acts on one folder there, the
+ * Inbox when the conversation is in it, and Archive only ever leaves the Inbox.
  */
 export const mailMoveSourceFolderIds = (params: {
+  actionId: MailActionId;
   viewFolderId: string | null;
   activeFolderIds: readonly string[];
   folders: readonly MailActionFolder[];
@@ -90,11 +96,14 @@ export const mailMoveSourceFolderIds = (params: {
   const active = [...new Set(params.activeFolderIds)];
   if (params.viewFolderId && active.includes(params.viewFolderId)) return [params.viewFolderId];
   const folders = new Map(params.folders.map((folder) => [folder.id, folder]));
-  for (const inTier of SOURCE_TIERS) {
-    const tier = active.filter((folderId) => inTier(folders.get(folderId)));
-    if (tier.length > 0) return tier;
-  }
-  return [];
+  const tierIndex = SOURCE_TIERS.findIndex((inTier) => active.some((folderId) => inTier(folders.get(folderId))));
+  if (tierIndex < 0) return [];
+  const tier = active.filter((folderId) => SOURCE_TIERS[tierIndex]!(folders.get(folderId)));
+  const labels = params.folders.some((folder) => folder.providerRole === "all" && folder.discoveryState === "active");
+  if (!labels) return tier;
+  const inbox = tier.find((folderId) => folders.get(folderId)?.role === "inbox");
+  if (params.actionId === "archive" && tierIndex === 0) return inbox ? [inbox] : [];
+  return [inbox ?? tier[0]!];
 };
 
 const ROLE_DESTINATIONS: Partial<Record<MailActionId, string>> = { archive: "archive", junk: "junk", trash: "trash", not_spam: "inbox" };
@@ -125,7 +134,7 @@ export const spamActionForConversation = (params: {
   activeFolderIds: readonly string[];
   folders: readonly MailActionFolder[];
 }): "junk" | "not_spam" => {
-  const sources = mailMoveSourceFolderIds(params);
+  const sources = mailMoveSourceFolderIds({ ...params, actionId: "junk" });
   const junk = new Set(params.folders.flatMap((folder) => (folder.role === "junk" ? [folder.id] : [])));
   return sources.length > 0 && sources.every((folderId) => junk.has(folderId)) ? "not_spam" : "junk";
 };

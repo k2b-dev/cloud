@@ -853,7 +853,12 @@ function MailWorkspaceView(props: {
         ? item.unreadFolderIds
         : ["mark_unread", "flag", "unflag"].includes(actionId)
           ? item.activeFolderIds
-          : mailMoveSourceFolderIds({ viewFolderId: data.folderId, activeFolderIds: item.activeFolderIds, folders: data.folders });
+          : mailMoveSourceFolderIds({
+              actionId,
+              viewFolderId: data.folderId,
+              activeFolderIds: item.activeFolderIds,
+              folders: data.folders,
+            });
     return {
       conversationId: item.conversationId,
       label: item.subject || t().noSubject,
@@ -879,6 +884,7 @@ function MailWorkspaceView(props: {
           ),
         ]
       : mailMoveSourceFolderIds({
+          actionId,
           viewFolderId: data.folderId,
           activeFolderIds: data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
           folders: data.folders,
