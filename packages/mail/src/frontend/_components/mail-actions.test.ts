@@ -3,6 +3,7 @@ import {
   buildMailActionInput,
   getMailAction,
   MAIL_ACTION_IDS,
+  type MailActionId,
   mailMoveSourceFolderIds,
   mailRoleDestinationFolderId,
   spamActionForConversation,
@@ -61,32 +62,63 @@ describe("Mail actions", () => {
       folder("drafts", "drafts"),
       folder("projects", "other"),
       folder("trash", "trash"),
-      folder("all-mail", "all"),
     ];
+    const sources = (actionId: MailActionId, viewFolderId: string | null, activeFolderIds: string[], list = folders) =>
+      mailMoveSourceFolderIds({ actionId, viewFolderId, activeFolderIds, folders: list });
 
     test("the folder in view, even when the newest reply sits in Sent", () => {
-      expect(mailMoveSourceFolderIds({ viewFolderId: "inbox", activeFolderIds: ["inbox", "sent"], folders })).toEqual(["inbox"]);
-      expect(mailMoveSourceFolderIds({ viewFolderId: "sent", activeFolderIds: ["inbox", "sent"], folders })).toEqual(["sent"]);
+      expect(sources("archive", "inbox", ["inbox", "sent"])).toEqual(["inbox"]);
+      expect(sources("archive", "sent", ["inbox", "sent"])).toEqual(["sent"]);
     });
 
-    test("every ordinary folder when the view spans folders, without the copies in Sent, Trash, or All Mail", () => {
-      expect(mailMoveSourceFolderIds({ viewFolderId: null, activeFolderIds: ["sent", "inbox", "all-mail", "trash"], folders })).toEqual([
-        "inbox",
-      ]);
-      expect(mailMoveSourceFolderIds({ viewFolderId: null, activeFolderIds: ["inbox", "projects", "drafts"], folders })).toEqual([
-        "inbox",
-        "projects",
-      ]);
+    test("every ordinary folder when the view spans folders, without the copies in Sent or Trash", () => {
+      expect(sources("archive", null, ["sent", "inbox", "trash"])).toEqual(["inbox"]);
+      expect(sources("archive", null, ["inbox", "projects", "drafts"])).toEqual(["inbox", "projects"]);
     });
 
-    test("Trash, then All Mail, then Sent, when the conversation lives only there", () => {
-      expect(mailMoveSourceFolderIds({ viewFolderId: null, activeFolderIds: ["sent", "trash", "all-mail"], folders })).toEqual(["trash"]);
-      expect(mailMoveSourceFolderIds({ viewFolderId: null, activeFolderIds: ["sent", "all-mail"], folders })).toEqual(["all-mail"]);
-      expect(mailMoveSourceFolderIds({ viewFolderId: null, activeFolderIds: ["sent"], folders })).toEqual(["sent"]);
+    test("Trash, then Sent, when the conversation lives only there", () => {
+      expect(sources("archive", null, ["sent", "trash"])).toEqual(["trash"]);
+      expect(sources("archive", null, ["sent"])).toEqual(["sent"]);
     });
 
     test("the conversation's own folders when a search result is not in the folder in view", () => {
-      expect(mailMoveSourceFolderIds({ viewFolderId: "inbox", activeFolderIds: ["projects", "sent"], folders })).toEqual(["projects"]);
+      expect(sources("archive", "inbox", ["projects", "sent"])).toEqual(["projects"]);
+    });
+
+    describe("on Gmail, where labels are folders and one move changes the message everywhere", () => {
+      const gmail = [
+        folder("inbox", "inbox"),
+        folder("sent", "sent"),
+        folder("important", "other"),
+        folder("starred", "other"),
+        folder("work", "other"),
+        folder("spam", "junk"),
+        folder("trash", "trash"),
+        folder("all-mail", "all"),
+      ];
+      const labelled = ["inbox", "important", "starred", "work", "all-mail", "sent"];
+
+      test("Archive in a view that spans folders only leaves the Inbox and keeps every other label", () => {
+        expect(sources("archive", null, labelled, gmail)).toEqual(["inbox"]);
+        expect(sources("archive", null, ["work", "starred", "all-mail"], gmail)).toEqual([]);
+      });
+
+      test("Delete, Spam, and Move act once, from the Inbox when the conversation is there", () => {
+        expect(sources("trash", null, labelled, gmail)).toEqual(["inbox"]);
+        expect(sources("junk", null, labelled, gmail)).toEqual(["inbox"]);
+        expect(sources("move", null, labelled, gmail)).toEqual(["inbox"]);
+        expect(sources("trash", null, ["work", "important", "all-mail"], gmail)).toEqual(["work"]);
+      });
+
+      test("Spam, Trash, and All Mail as before when the conversation lives only there", () => {
+        expect(sources("archive", null, ["sent", "all-mail"], gmail)).toEqual(["all-mail"]);
+        expect(sources("trash", null, ["spam"], gmail)).toEqual(["spam"]);
+        expect(spamActionForConversation({ viewFolderId: null, activeFolderIds: ["spam"], folders: gmail })).toBe("not_spam");
+      });
+
+      test("the label in view, like any folder", () => {
+        expect(sources("archive", "work", labelled, gmail)).toEqual(["work"]);
+      });
     });
   });
 

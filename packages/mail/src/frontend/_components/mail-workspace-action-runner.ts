@@ -117,7 +117,9 @@ export const runMailWorkspaceAction = async (
     execution.targets ??= mergeConversationTargets(options.targets ?? host.resolveTargets(actionId));
     targets = execution.targets;
     if (targets.length === 0) {
-      if (!options.silent) await host.showMissingTarget();
+      // Rows the caller named that are gone by now, such as a dragged row a live update removed,
+      // leave nothing to do; only an action without a conversation asks the user to pick one.
+      if (!options.silent && !options.targets) await host.showMissingTarget();
       return;
     }
     if (actionId === "move" && !execution.destinationResolved) {
