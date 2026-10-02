@@ -11,7 +11,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "dialog-scroll.fixture.ts");
 const fixture = `
 import { createComponent } from "solid-js/web";
-import { BottomSheet, bottomSheetOptions, dialogCore, PanelDialog, panelDialogFixedOptions, panelDialogOptions, panelDialogWideOptions, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { BottomSheet, bottomSheetOptions, dialogCore, PanelDialog, panelDialogFixedOptions, panelDialogOptions, panelDialogWideOptions, panelDialogWorkspaceOptions, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 /** Content several viewports tall that ends in a marker the test scrolls to. */
 const long = () => {
@@ -97,6 +97,7 @@ window.openVariant = {
   "panel dialog": panel(panelDialogOptions),
   "wide panel dialog": panel(panelDialogWideOptions),
   "fixed panel dialog": panel(panelDialogFixedOptions),
+  "workspace panel dialog": panel(panelDialogWorkspaceOptions),
   "bottom sheet": () =>
     void dialogCore.open(
       (close, { requestDismiss }) =>
@@ -133,6 +134,7 @@ const footers: Record<string, string> = {
   "panel dialog": ".k2b-panel-dialog__footer",
   "wide panel dialog": ".k2b-panel-dialog__footer",
   "fixed panel dialog": ".k2b-panel-dialog__footer",
+  "workspace panel dialog": ".k2b-panel-dialog__footer",
   "bottom sheet": ".k2b-panel-dialog__footer",
 };
 const variants = [...Object.keys(footers), "custom dialog", "full custom dialog"];
@@ -204,6 +206,28 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
         }
       });
     }
+
+    // A workspace is a work area: a floating card on a desktop, the whole
+    // screen on a phone instead of a narrow card with a wide margin.
+    test(`a workspace panel dialog frame at ${options.viewport.width} px`, async () => {
+      const page = await open(options, "workspace panel dialog");
+      try {
+        const frame = await page.evaluate(() => {
+          const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
+          const box = dialog.getBoundingClientRect();
+          const style = getComputedStyle(dialog);
+          return {
+            edgeToEdge: box.left === 0 && box.top === 0 && box.width === innerWidth && box.height === innerHeight,
+            radius: style.borderTopLeftRadius,
+            border: style.borderTopStyle,
+          };
+        });
+        if (options.viewport.width < 768) expect(frame).toEqual({ edgeToEdge: true, radius: "0px", border: "none" });
+        else expect(frame).toEqual({ edgeToEdge: false, radius: "14px", border: "solid" });
+      } finally {
+        await page.close();
+      }
+    });
 
     // Content without a header, body, or footer structure cannot shrink, so
     // the frame itself stays the scroll container that reaches its end.

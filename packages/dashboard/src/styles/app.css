@@ -168,14 +168,15 @@
   }
 }
 
-/* Keep editor spacing and responsive rows in the app-owned stylesheet. */
+/* Keep editor spacing and responsive rows in the app-owned stylesheet. The
+   dialog section already tints the list, so rows draw no surface of their own. */
 .dashboard-widget-setting {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "identity actions" "layout layout";
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem;
+  padding-block: 0.25rem;
 }
 
 .dashboard-widget-setting__identity { grid-area: identity; }

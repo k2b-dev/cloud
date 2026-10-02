@@ -238,8 +238,10 @@
   padding: 0 0 0.5rem;
 }
 
+/* Same quiet icon as the PanelDialog header: both headers sit flat on the
+   dialog surface and differ only in their title size. */
 .k2b-ui .k2b-dialog__header > i {
-  color: var(--k2b-action);
+  color: var(--k2b-text-muted);
 }
 
 .k2b-ui .k2b-dialog__header h2 {

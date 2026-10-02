@@ -36,7 +36,8 @@ describe("@k2b/ui Cloud feedback parity", () => {
     const header = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__header \{([^}]*)\}/)?.[1] ?? "";
     const title = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading h2 \{([^}]*)\}/g)?.at(-1) ?? "";
     const subtitle = indexCss.match(/\.k2b-ui \.k2b-panel-dialog__heading p \{([^}]*)\}/)?.[1] ?? "";
-    expect(header).toContain("padding: 1.25rem 1.5rem");
+    expect(header).toContain("padding: 1.25rem 1.25rem 1rem var(--k2b-panel-dialog-inset, 1.5rem)");
+    expect(header).not.toContain("background");
     expect(title).toContain("font-size: 1.25rem");
     expect(title).toContain("font-weight: 600");
     expect(title).toContain("overflow-wrap: anywhere");

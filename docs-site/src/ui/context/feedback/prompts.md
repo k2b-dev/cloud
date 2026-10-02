@@ -45,7 +45,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 
 | Property | Purpose |
 | --- | --- |
-| `title`, `icon` | Name the dialog and add a Tabler icon. |
+| `title`, `icon` | Name the dialog and add a muted Tabler icon. The header sits flat on the dialog surface, like the `PanelDialog` header. |
 | `confirmText`, `cancelText` | Override action labels. `cancelText: false` hides the cancel button in `prompts.form`. |
 | `confirmationPhrase` | Requires an exact typed phrase before `prompts.confirm` can confirm. |
 | `variant` | Selects `primary`, `success`, or `danger` action treatment. |
