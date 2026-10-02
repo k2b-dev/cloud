@@ -283,8 +283,8 @@ export default ssr<AuthContext>(async (c) => {
                 class="m-3"
               />
             ) : null}
-            <DataTable.Header title={t.apps} subtitle={t.registeredApps({ count: appRows.length })} />
             <DataTable
+              ariaLabel={t.apps}
               rows={appRows}
               columns={appColumns}
               getRowId={(app) => app.id}

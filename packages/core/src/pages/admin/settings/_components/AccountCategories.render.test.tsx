@@ -75,9 +75,15 @@ test("login categories use the shared segmented radio control", () => {
   expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
   expect(html).toContain("Firmenaccount");
 });
-const render = (enabled: boolean, locale = "en", accountSection?: "sign-in" | "registration") => {
+const render = (
+  enabled: boolean,
+  locale = "en",
+  accountSection?: "sign-in" | "registration",
+  documentation?: { base: string; topic: string },
+  group = "user",
+) => {
   const entries: SettingFieldDef[] = Object.entries(CORE_SETTINGS)
-    .filter(([key]) => key.startsWith("user."))
+    .filter(([key]) => key.startsWith(`${group}.`))
     .map(([key, def]) => ({
       key,
       label: def.label,
@@ -89,7 +95,7 @@ const render = (enabled: boolean, locale = "en", accountSection?: "sign-in" | "r
       isCustom: false,
       valueSource: "default",
       resetValueSource: "default",
-      group: "user",
+      group,
       templateVars: "templateVars" in def ? [...def.templateVars] : undefined,
     }));
   return renderToString(() =>
@@ -103,6 +109,8 @@ const render = (enabled: boolean, locale = "en", accountSection?: "sign-in" | "r
           entries,
           accountSection,
           approvalState: enabled ? "setup-required" : "disabled",
+          documentationBase: documentation?.base,
+          documentationTopic: documentation?.topic,
         });
       },
     }),
@@ -110,6 +118,24 @@ const render = (enabled: boolean, locale = "en", accountSection?: "sign-in" | "r
 };
 
 describe("account category administration", () => {
+  test("the page header links its article once and sections link only articles of their own", () => {
+    const html = render(true, "en", "registration", { base: "http://localhost:4187", topic: "registration" });
+    const links = (path: string) => html.split(`href="http://localhost:4187/en/docs/${path}"`).length - 1;
+    expect(links("accounts/registration")).toBe(1);
+    expect(links("accounts/change-notices")).toBe(1);
+    expect(html).toContain('aria-label="Documentation (English, opens in a new tab)"');
+    expect(html).toContain('aria-label="Documentation for Follow-up notices (English, opens in a new tab)"');
+  });
+
+  test("sections that only point to an anchor in the page's article add no link of their own", () => {
+    const html = render(true, "en", undefined, { base: "http://localhost:4187", topic: "freeipa" }, "freeipa");
+    expect(html).toContain("k2b-settings-section");
+    expect(html.match(/href="http:\/\/localhost:4187\/en\/docs\/operations\/freeipa[^"]*"/g)).toEqual([
+      'href="http://localhost:4187/en/docs/operations/freeipa"',
+    ]);
+    expect(html).not.toContain("Documentation for ");
+  });
+
   test("sign-in and registration each render only their owned settings", () => {
     const login = render(true, "en", "sign-in");
     const registration = render(true, "en", "registration");

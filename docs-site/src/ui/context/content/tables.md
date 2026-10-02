@@ -11,6 +11,12 @@ Use `StructuredDataPreview` for one small metadata object. Wrap the table in
 or pagination. The standalone `DataPanel` export remains available for panels
 whose content is not a table.
 
+When a page shows a single dataset, the page heading already names it. Render
+the table without a `DataTable.Header` that repeats the page title, give it an
+`ariaLabel`, and put the count in the page subtitle or a statistic. Keep row
+actions quiet: a ghost button or a row menu, with the danger tone reserved for
+the confirmation.
+
 ## Import
 
 ```tsx

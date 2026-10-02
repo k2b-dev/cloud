@@ -10,7 +10,7 @@ describe("IPA Hosts widget localization", () => {
     if (body.blocks[1]?.kind !== "pills") throw new Error("Expected pills block");
     expect(body.blocks[1].pills.slice(0, 2)).toMatchObject([
       { label: "Gruppen", value: 3 },
-      { label: "in Gruppen", value: 10 },
+      { label: "In Gruppen", value: 10 },
     ]);
   });
 

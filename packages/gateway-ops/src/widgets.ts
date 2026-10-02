@@ -47,7 +47,7 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
           tone: unhealthy === 0 ? "emerald" : health.status === "error" ? "red" : "amber",
         },
         { label: t.routes, value: formatNumber(snapshot?.routeCount ?? 0, { locale }) },
-        { label: t.requestsShort, value: formatNumber(snapshot?.stats.totalRequests ?? 0, { locale }) },
+        { label: t.requests, value: formatNumber(snapshot?.stats.totalRequests ?? 0, { locale }) },
         ...(snapshot && snapshot.stats.noRouteCount > 0
           ? [{ label: t.unmatched, value: formatNumber(snapshot.stats.noRouteCount, { locale }), tone: "amber" as const }]
           : []),

@@ -52,8 +52,8 @@ export type SettingsSectionProps = {
 };
 
 /**
- * A full-page settings group. Dialogs keep using PanelDialog.Section; this
- * component owns the quieter, observability-style paper used on admin pages.
+ * A full-page settings group: a heading, optional actions and its fields on the
+ * page surface without a card. Dialogs keep using PanelDialog.Section.
  */
 export function SettingsSection(props: SettingsSectionProps): JSX.Element {
   const headingId = `k2b-settings-section-${createUniqueId()}`;

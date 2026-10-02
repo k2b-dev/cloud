@@ -75,8 +75,9 @@ The content owns its layout: wrap form controls in a column with a gap.
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. The group owns the
-same normal surface as the summary and the one-pixel gaps between its sections;
-sections outside a group stay flat. Pass `label` when the shared context benefits from an
+same quiet surface as the summary, without a border or lines between its
+sections: spacing and the section headings separate them. Sections outside a
+group stay flat. Pass `label` when the shared context benefits from an
 accessible group name. Do not wrap every standalone section or manufacture
 groups only for decoration.
 

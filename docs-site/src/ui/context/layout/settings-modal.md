@@ -36,9 +36,9 @@ import {
 
 ## Compose a full settings page
 
-Keep the page flat: place section cards directly in `SettingsPage`, and put
-save state in `footer`. Do not wrap a dedicated route in `PanelDialog` merely
-to create another outer surface.
+Keep the page flat: place sections directly in `SettingsPage`, and put save
+state in `footer`. Do not wrap a dedicated route in `PanelDialog` merely to
+create another outer surface.
 
 ```tsx
 <SettingsPage
@@ -54,10 +54,25 @@ to create another outer surface.
 </SettingsPage>
 ```
 
-`SettingsSection` is the page-level paper surface for a coherent settings
-group. It provides one accessible section heading, optional actions, and the
-same compact rhythm as Cloud admin data panels. Keep `PanelDialog.Section`
-inside dialogs; it intentionally has a different containment contract.
+`SettingsSection` groups one coherent set of page settings. It renders like
+`SettingsGroup`: a heading, an optional subtitle, and its fields directly on
+the page surface, with no card, header rule, or lines between fields. About
+2rem of space separates sections, so the page stays the only frame, and the
+page title sits one size step above the section titles. Header actions stay
+beside the heading while it keeps about 16rem and wrap below it otherwise, so
+a single icon action still fits on a phone. The section icon and its heading
+always share a line. Keep `PanelDialog.Section` inside dialogs; it
+intentionally has a different containment contract.
+
+Put a shared action, such as a documentation link, once in the page
+`actions`. Give a section its own action only when it leads somewhere the page
+action does not, such as a different article rather than an anchor in the
+page's article, and prefer a compact `IconButtonLink` with a label that names
+the section.
+
+A `SettingsSection` used outside a `SettingsPage`, for example between framed
+blocks on a detail page, still draws no card. Wrap it in `Paper` there when
+its neighbours are framed.
 
 Inside `SettingsModal`, use `SettingsGroup` for a flat form group and
 `SettingsCollection` for compact entity management. Neither component owns a

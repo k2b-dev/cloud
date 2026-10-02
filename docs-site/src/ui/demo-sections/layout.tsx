@@ -12,6 +12,7 @@ import {
   IconButton,
   LinkCard,
   MarkdownView,
+  NoticeCard,
   Pagination,
   PanelDialog,
   PanelHeader,
@@ -20,6 +21,7 @@ import {
   type PanesLayout,
   type PanesNode,
   Paper,
+  Placeholder,
   PullToRefresh,
   removePanesItem,
   ScrollArea,
@@ -693,7 +695,7 @@ const SettingsPageDemo = () => {
         { kind: "component", name: "SettingsPage", from: "@k2b/ui" },
         { kind: "component", name: "SettingsSection", from: "@k2b/ui" },
       ]}
-      description="A flat full-page settings shell with accessible paper sections, one heading, a scrolling body, optional actions, and a fixed save footer."
+      description="A flat full-page settings shell: one heading, sections separated by space instead of cards and lines, a scrolling body, optional actions, and a fixed save footer. Section actions wrap below the heading only when they do not fit beside it."
       code={`<SettingsPage
   title="Project settings"
   subtitle="Identity and defaults"
@@ -712,6 +714,15 @@ const SettingsPageDemo = () => {
     <SettingsField label="Endpoint" description="Public service URL" error={() => undefined} changed={changed}>
       {(control) => <TextInput aria-label="Endpoint" aria-describedby={control.describedBy()} value={endpoint()} onValueChange={setEndpoint} />}
     </SettingsField>
+  </SettingsSection>
+  <SettingsSection
+    title="Webhooks"
+    subtitle="Endpoints that receive project events"
+    icon="ti ti-webhook"
+    actions={<Button size="sm" variant="secondary">Add webhook</Button>}
+  >
+    <NoticeCard tone="info" title="Signed deliveries" detail="Each request carries a signature header." />
+    <Placeholder icon="ti ti-webhook" description="No webhooks yet" />
   </SettingsSection>
 </SettingsPage>`}
     >
@@ -740,6 +751,19 @@ const SettingsPageDemo = () => {
                 <TextInput aria-label="Endpoint" aria-describedby={control.describedBy()} value={endpoint()} onValueChange={setEndpoint} />
               )}
             </SettingsField>
+          </SettingsSection>
+          <SettingsSection
+            title="Webhooks"
+            subtitle="Endpoints that receive project events"
+            icon="ti ti-webhook"
+            actions={
+              <Button size="sm" variant="secondary">
+                Add webhook
+              </Button>
+            }
+          >
+            <NoticeCard tone="info" title="Signed deliveries" detail="Each request carries a signature header." />
+            <Placeholder icon="ti ti-webhook" description="No webhooks yet" />
           </SettingsSection>
         </SettingsPage>
       </div>

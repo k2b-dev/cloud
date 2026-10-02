@@ -652,7 +652,6 @@ export function WorkflowLauncherManager(props: {
             fallback={
               <Placeholder
                 state="error"
-                surface="paper"
                 align="left"
                 title={t().couldNotLoadRunOptions}
                 description={loadMut.error()?.message}

@@ -165,10 +165,11 @@ describe("DetailPanel", () => {
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Document context"');
     expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="accent"');
     expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="warning"');
-    expect(groupRule).toContain("gap: 1px");
-    expect(groupRule).toContain("border: 1px solid var(--k2b-border)");
-    expect(groupedSectionRule).toContain("background: var(--k2b-surface)");
-    expect(groupedSectionRule?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
+    // One quiet surface like the summary: no border, no 1px rules between sections.
+    expect(groupRule).not.toContain("gap: 1px");
+    expect(groupRule).not.toContain("border:");
+    expect(groupRule?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
+    expect(groupedSectionRule).not.toContain("background");
     expect(sectionIconRule).not.toContain("background");
   });
 

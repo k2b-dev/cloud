@@ -172,10 +172,7 @@ export default function PasskeysSettings(props: Props) {
         </Button>
       </div>
 
-      <Show
-        when={passkeys().length > 0}
-        fallback={<Placeholder surface="paper" icon="ti ti-fingerprint" description={<>{t().noPasskeys}</>} />}
-      >
+      <Show when={passkeys().length > 0} fallback={<Placeholder icon="ti ti-fingerprint" description={<>{t().noPasskeys}</>} />}>
         <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
           <For each={passkeys()}>
             {(passkey) => (

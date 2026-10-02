@@ -4,7 +4,7 @@ import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/
 import { getDefaultGroupScope, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, DescriptionList, LinkCard, LogEntriesTable, Paper, ProgressBar, StatCell, StatusBadge, Tag } from "@k2b/ui";
+import { ButtonLink, DescriptionList, LinkCard, LogEntriesTable, Paper, ProgressBar, StatCell, StatGrid, StatusBadge, Tag } from "@k2b/ui";
 import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../config";
 import AccountsWorkspace from "./AccountsWorkspace";
@@ -131,9 +131,21 @@ export default ssr<AuthContext>(async (c) => {
           {/* Admin */}
           {isAdmin && summary ? (
             <>
-              <div class="pt-2">
-                <h2 class="text-sm font-semibold text-primary">{t.administration}</h2>
-                <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
+              <div class="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 pt-2">
+                <div class="min-w-0 flex-[1_1_16rem]">
+                  <h2 class="text-sm font-semibold text-primary">{t.administration}</h2>
+                  <p class="mt-1 text-xs text-dimmed">{t.administrationDescription}</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1">
+                  <ButtonLink href="/admin/settings?tab=account-operations" variant="subtle" size="sm">
+                    <i class="ti ti-tool" aria-hidden="true" />
+                    {t.operations}
+                  </ButtonLink>
+                  <ButtonLink href="/admin/settings?tab=user" variant="subtle" size="sm">
+                    <i class="ti ti-settings" aria-hidden="true" />
+                    {t.settings}
+                  </ButtonLink>
+                </div>
               </div>
 
               <Paper class="px-4 py-3">
@@ -185,61 +197,40 @@ export default ssr<AuthContext>(async (c) => {
                   </div>
                   <span class="text-xs text-dimmed">{t.basedOnRuns({ count: summary.runHealthWindow })}</span>
                 </Paper>
-                <div class="grid grid-cols-2 gap-2">
-                  <Paper class="overflow-hidden">
-                    <StatCell
-                      label={t.accounts}
-                      value={totalAccounts}
-                      sub={t.sourceCounts({ freeIpa: summary.ipaAccountsTotal, local: summary.localAccountsTotal })}
-                      accent={{ tone: "blue", icon: "ti ti-users" }}
-                    />
-                  </Paper>
-                  <Paper class="overflow-hidden">
-                    <StatCell
-                      label={t.groups}
-                      value={summary.groupsTotal}
-                      sub={t.sourceCounts({ freeIpa: summary.ipaGroupsTotal, local: summary.localGroupsTotal })}
-                    />
-                  </Paper>
-                  <Paper class="overflow-hidden">
-                    <StatCell
-                      label={t.requests}
-                      value={summary.openRequests}
-                      href={summary.openRequests > 0 ? "/app/accounts/requests" : undefined}
-                      sub={summary.openRequests > 0 ? t.pendingReview : t.nonePending}
-                      accent={
-                        summary.openRequests > 0
-                          ? {
-                              tone: "amber",
-                              icon: "ti ti-clock",
-                              text: t.open,
-                            }
-                          : undefined
-                      }
-                    />
-                  </Paper>
-                  <Paper class="overflow-hidden">
-                    <StatCell
-                      label={t.expiring30d}
-                      value={expiringTotal}
-                      sub={expiringTotal > 0 ? t.accountCount({ count: expiringTotal }) : t.noneSoon}
-                      accent={expiringTotal > 0 ? { tone: "amber", icon: "ti ti-calendar-due" } : undefined}
-                    />
-                  </Paper>
-                </div>
-              </div>
-
-              {/* Operations */}
-              <div class="flex flex-col gap-2">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-xs text-dimmed">{t.operations}</span>
-                  <a href="/admin/settings?tab=user" class="text-xs text-dimmed transition-colors hover:text-primary">
-                    {t.settings}
-                  </a>
-                </div>
-                <ButtonLink href="/admin/settings?tab=account-operations" variant="secondary">
-                  {t.operations}
-                </ButtonLink>
+                <StatGrid columns={2}>
+                  <StatCell
+                    label={t.accounts}
+                    value={totalAccounts}
+                    sub={t.sourceCounts({ freeIpa: summary.ipaAccountsTotal, local: summary.localAccountsTotal })}
+                    accent={{ tone: "blue", icon: "ti ti-users" }}
+                  />
+                  <StatCell
+                    label={t.groups}
+                    value={summary.groupsTotal}
+                    sub={t.sourceCounts({ freeIpa: summary.ipaGroupsTotal, local: summary.localGroupsTotal })}
+                  />
+                  <StatCell
+                    label={t.requests}
+                    value={summary.openRequests}
+                    href={summary.openRequests > 0 ? "/app/accounts/requests" : undefined}
+                    sub={summary.openRequests > 0 ? t.pendingReview : t.nonePending}
+                    accent={
+                      summary.openRequests > 0
+                        ? {
+                            tone: "amber",
+                            icon: "ti ti-clock",
+                            text: t.open,
+                          }
+                        : undefined
+                    }
+                  />
+                  <StatCell
+                    label={t.expiring30d}
+                    value={expiringTotal}
+                    sub={expiringTotal > 0 ? t.accountCount({ count: expiringTotal }) : t.noneSoon}
+                    accent={expiringTotal > 0 ? { tone: "amber", icon: "ti ti-calendar-due" } : undefined}
+                  />
+                </StatGrid>
               </div>
 
               {/* Activity */}

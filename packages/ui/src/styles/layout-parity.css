@@ -207,7 +207,7 @@
 
 .k2b-ui .k2b-settings-page__heading h1 {
   color: var(--k2b-text);
-  font-size: 0.9375rem;
+  font-size: 1.0625rem;
   font-weight: 650;
   line-height: 1.3;
 }
@@ -236,7 +236,7 @@
   flex: 1;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 0 1rem 1rem;
+  padding: 0.75rem 1rem 1rem;
   overflow-y: auto;
 }
 
@@ -253,34 +253,49 @@
   padding: 0.75rem 1rem;
 }
 
+/* A settings section is a heading and its fields on the page surface, like
+   `SettingsGroup` in the modal: no card, no header rule and no lines between
+   fields. Space separates sections, so the page panel stays the only frame. */
 .k2b-ui .k2b-settings-section {
   min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
-  box-shadow: var(--k2b-shadow-surface);
 }
 
+/* Sections sit 2rem apart: the body's 0.75rem gap plus this margin, or the
+   margin alone when sections follow each other outside a page body. */
+.k2b-ui .k2b-settings-section + .k2b-settings-section {
+  margin-top: 2rem;
+}
+
+.k2b-ui .k2b-settings-page__body > .k2b-settings-section:not(:first-child) {
+  margin-top: 1.25rem;
+}
+
+/* Actions wrap below the heading before the subtitle gets squeezed. The icon
+   and the heading always share a line. */
 .k2b-ui .k2b-settings-section__header {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--k2b-border);
+  gap: 0.5rem 0.625rem;
+  padding: 0 0 0.25rem;
 }
 
 .k2b-ui .k2b-settings-section__header > i {
   flex-shrink: 0;
+  width: 0.9375rem;
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
   font-size: 0.9375rem;
+  text-align: center;
 }
 
+/* The heading claims 16rem before actions may share its line, but never more
+   than the room beside the icon (its 0.9375rem plus the 0.625rem gap), so a
+   narrow header wraps the actions and not the heading. */
 .k2b-ui .k2b-settings-section__heading {
-  min-width: 0;
-  flex: 1;
+  min-width: min(16rem, 100% - 1.5625rem);
+  flex: 1 1 0;
 }
 
 .k2b-ui .k2b-settings-section__heading h2,
@@ -290,15 +305,15 @@
 
 .k2b-ui .k2b-settings-section__heading h2 {
   color: var(--k2b-text);
-  font-size: 0.875rem;
-  font-weight: 650;
+  font-size: 0.9375rem;
+  font-weight: 600;
   line-height: 1.35;
 }
 
 .k2b-ui .k2b-settings-section__heading p {
   margin-top: 0.125rem;
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 
@@ -315,16 +330,12 @@
   min-width: 0;
 }
 
-.k2b-ui .k2b-settings-section__body > .k2b-settings-field + .k2b-settings-field {
-  border-top: 1px solid var(--k2b-border);
+.k2b-ui .k2b-settings-section__body > .k2b-settings-field {
+  padding: 0.75rem 0;
 }
 
 .k2b-ui .k2b-settings-section__body > :not(.k2b-settings-field) {
-  margin: 0.75rem;
-}
-
-.k2b-ui .k2b-settings-section__body > :not(.k2b-settings-field) + .k2b-settings-field {
-  border-top: 1px solid var(--k2b-border);
+  margin: 0.75rem 0;
 }
 
 /* Narrow surfaces stack one scrolling category row above the panel, with the
@@ -1060,8 +1071,7 @@
 }
 
 @media (max-width: 39.999rem) {
-  .k2b-ui .k2b-settings-page__actions,
-  .k2b-ui .k2b-settings-section__actions {
+  .k2b-ui .k2b-settings-page__actions {
     width: 100%;
     justify-content: flex-start;
   }
@@ -1383,8 +1393,7 @@
   :is(
     .k2b-app-workspace,
     .k2b-settings,
-    .k2b-settings-page,
-    .k2b-settings-section
+    .k2b-settings-page
   ) {
   --k2b-focus-offset: calc(-1 * var(--k2b-focus-width));
   --k2b-focus-on-fill: currentColor;
@@ -1394,8 +1403,7 @@
   :where(
     .k2b-app-workspace,
     .k2b-settings,
-    .k2b-settings-page,
-    .k2b-settings-section
+    .k2b-settings-page
   )
   :where(:focus-visible) {
   outline-offset: var(--k2b-focus-offset);

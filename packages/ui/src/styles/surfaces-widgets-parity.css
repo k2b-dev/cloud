@@ -216,32 +216,31 @@
 .k2b-ui .k2b-not-found__copy h1 { margin: 0; color: var(--k2b-text); font-size: 1.125rem; font-weight: 500; line-height: 1.75rem; }
 .k2b-ui .k2b-not-found__copy p { margin: 0.25rem 0 0; color: var(--k2b-text-muted); font-size: 0.875rem; line-height: 1.25rem; }
 
-/* ------------------------------------------------------------ NoticeCard -- */
+/* ------------------------------------------------------------ NoticeCard --
+ * The tone tint alone separates a notice from its host, so a notice inside a
+ * framed section is not a second box. The neutral tint is translucent so it
+ * stays visible on white and on muted hosts alike. The transparent border
+ * keeps an outline in forced colours, where the tint disappears.
+ */
 .k2b-ui .k2b-notice-card {
   display: block;
   line-height: 1.5;
   padding: 0.75rem;
-  border: 1px solid var(--k2b-border);
+  border: 1px solid transparent;
   border-radius: var(--k2b-radius-surface);
   color: var(--k2b-text-secondary);
-  background: var(--k2b-surface-muted);
+  background: color-mix(in srgb, var(--k2b-text) 6%, transparent);
 }
-.k2b-ui .k2b-notice-card[data-tone="info"] { border-color: color-mix(in srgb, var(--k2b-accent-500) 42%, var(--k2b-border)); color: var(--k2b-info-text); background: var(--k2b-info-surface); }
-.k2b-ui .k2b-notice-card[data-tone="success"] { border-color: color-mix(in srgb, var(--k2b-success-500) 42%, var(--k2b-border)); color: var(--k2b-success-text); background: var(--k2b-success-surface); }
-.k2b-ui .k2b-notice-card[data-tone="warning"] { border-color: #fde68a; color: #78350f; background: #fffbeb; }
-.k2b-ui .k2b-notice-card[data-tone="danger"] { border-color: #fecaca; color: #7f1d1d; background: #fef2f2; }
-.k2b-ui[data-theme="dark"] .k2b-notice-card[data-tone="warning"],
-.k2b-ui.k2b-dark .k2b-notice-card[data-tone="warning"],
-.dark .k2b-ui .k2b-notice-card[data-tone="warning"] { border-color: rgb(245 158 11 / 0.3); color: #fef3c7; background: rgb(69 26 3 / 0.25); }
-.k2b-ui[data-theme="dark"] .k2b-notice-card[data-tone="danger"],
-.k2b-ui.k2b-dark .k2b-notice-card[data-tone="danger"],
-.dark .k2b-ui .k2b-notice-card[data-tone="danger"] { border-color: rgb(239 68 68 / 0.3); color: #fee2e2; background: rgb(69 10 10 / 0.25); }
+.k2b-ui .k2b-notice-card[data-tone="info"] { color: var(--k2b-info-text); background: var(--k2b-info-surface); }
+.k2b-ui .k2b-notice-card[data-tone="success"] { color: var(--k2b-success-text); background: var(--k2b-success-surface); }
+.k2b-ui .k2b-notice-card[data-tone="warning"] { color: var(--k2b-warning-text); background: var(--k2b-warning-surface); }
+.k2b-ui .k2b-notice-card[data-tone="danger"] { color: var(--k2b-danger-text); background: var(--k2b-danger-surface); }
 .k2b-ui .k2b-notice-card__inner { display: flex; align-items: flex-start; gap: 0.5rem; }
 /* Glyph and detail inherit the tone colour rather than a neutral. */
-.k2b-ui .k2b-notice-card__icon { flex: 0 0 auto; margin-top: 0.125rem; color: inherit; font-size: 0.875rem; }
+.k2b-ui .k2b-notice-card__icon { flex: 0 0 auto; margin-top: 0.1875rem; color: inherit; font-size: 0.875rem; }
 .k2b-ui .k2b-notice-card__content { min-width: 0; }
-.k2b-ui .k2b-notice-card__title { margin: 0; color: inherit; font-size: 0.75rem; font-weight: 600; }
-.k2b-ui .k2b-notice-card__description { margin: 0.125rem 0 0; color: inherit; font-size: 0.6875rem; line-height: 1rem; opacity: 0.9; }
+.k2b-ui .k2b-notice-card__title { margin: 0; color: inherit; font-size: 0.8125rem; font-weight: 600; line-height: 1.25rem; }
+.k2b-ui .k2b-notice-card__description { margin: 0.125rem 0 0; color: inherit; font-size: 0.75rem; line-height: 1.125rem; }
 .k2b-ui .k2b-notice-card__body { min-width: 0; color: inherit; font-size: 0.75rem; line-height: 1.25rem; }
 .k2b-ui .k2b-notice-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
 @media (min-width: 48rem) {
@@ -261,6 +260,13 @@
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
   line-height: 1rem;
+}
+/* `surface="paper"` frames a standalone page area. Inside a surface that
+   already frames it, the placeholder keeps its layout but draws no second box. */
+.k2b-ui :is(.k2b-paper, .k2b-settings-section, .k2b-panel-dialog, .k2b-dialog, .k2b-detail-panel) .k2b-placeholder[data-surface="paper"] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 .k2b-ui .k2b-placeholder[data-align="center"] { align-items: center; text-align: center; }
 .k2b-ui .k2b-placeholder[data-align="left"] { align-items: flex-start; text-align: left; }
@@ -450,17 +456,17 @@
 .k2b-ui .k2b-stat-cell[data-size="sm"] { padding: 0.625rem 0.75rem; }
 .k2b-ui .k2b-stat-cell--link { padding-right: 1.75rem; transition: background-color 120ms ease; }
 .k2b-ui .k2b-stat-cell--link:hover { background: var(--k2b-hover); }
+/* Micro labels stay in sentence case: capitals with tracking read as an admin
+   template and truncate long German compounds early. The value is the anchor. */
 .k2b-ui .k2b-stat-cell__label {
   overflow: hidden;
-  color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  letter-spacing: 0.05em;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
-.k2b-ui .k2b-stat-cell__label[data-size="sm"] { font-size: 0.625rem; }
+.k2b-ui .k2b-stat-cell__label[data-size="sm"] { font-size: 0.6875rem; }
 .k2b-ui .k2b-stat-cell__value {
   overflow: hidden;
   color: var(--k2b-text);
@@ -678,7 +684,7 @@
 .k2b-ui .k2b-widget__heading { min-width: 0; flex: 1; }
 .k2b-ui .k2b-widget__title,
 .k2b-ui .k2b-widget__meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k2b-ui .k2b-widget__title { color: var(--k2b-text-secondary); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; transition: color 120ms ease; }
+.k2b-ui .k2b-widget__title { color: var(--k2b-text-secondary); font-size: 0.75rem; font-weight: 500; transition: color 120ms ease; }
 .k2b-ui .k2b-widget__meta { color: var(--k2b-text-muted); font-size: 0.625rem; }
 .k2b-ui .k2b-widget__chevron { flex: 0 0 auto; color: var(--k2b-text-muted); font-size: 0.75rem; transition: color 120ms ease; }
 .k2b-ui .k2b-widget__body { display: flex; min-height: 0; flex: 1; flex-direction: column; padding: 0; }
@@ -753,7 +759,7 @@
 }
 .k2b-ui a.k2b-widget-pill { transition: opacity 120ms ease; }
 .k2b-ui a.k2b-widget-pill:hover { opacity: 0.8; }
-.k2b-ui .k2b-widget-pill__label { font-size: 0.625rem; letter-spacing: 0.05em; text-transform: uppercase; }
+.k2b-ui .k2b-widget-pill__label { font-size: 0.75rem; font-weight: 500; }
 .k2b-ui .k2b-widget-pill[data-tone="zinc"] .k2b-widget-pill__label { color: var(--k2b-text-muted); }
 .k2b-ui .k2b-widget-pill__value { font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-widget-pill[data-tone="emerald"] { color: var(--k2b-success-text); background: #d1fae5; }
@@ -776,7 +782,7 @@
 /* ------------------------------------------------------------ WidgetStat -- */
 .k2b-ui .k2b-widget-stat { display: flex; flex: 0 0 auto; flex-direction: column; gap: 0.25rem; padding: 1rem; }
 .k2b-ui .k2b-widget-stat[data-grow="true"] { flex: 1; justify-content: center; }
-.k2b-ui .k2b-widget-stat__label { color: var(--k2b-text-muted); font-size: 0.625rem; font-weight: 400; letter-spacing: 0.05em; text-transform: uppercase; }
+.k2b-ui .k2b-widget-stat__label { color: var(--k2b-text-secondary); font-size: 0.75rem; font-weight: 500; }
 .k2b-ui .k2b-widget-stat__value {
   margin-top: 0;
   color: var(--k2b-text);

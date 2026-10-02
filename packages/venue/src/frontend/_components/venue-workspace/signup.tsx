@@ -204,7 +204,6 @@ export function SignupDialog(props: {
               when={hasShiftTemplates()}
               fallback={
                 <Placeholder
-                  surface="paper"
                   variant="panel"
                   title={t().noShiftsAvailable}
                   description={t().noShiftsAvailableDescription}
@@ -240,7 +239,6 @@ export function SignupDialog(props: {
                       each={shownDays()}
                       fallback={
                         <Placeholder
-                          surface="paper"
                           variant="panel"
                           title={
                             onlyFree() && loadedSlots().length > 0

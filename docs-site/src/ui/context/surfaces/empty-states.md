@@ -18,6 +18,13 @@ where the first row would be.
 control layout independently. Name non-default layout choices in examples so
 different states are not mistaken for different component implementations.
 
+Use `surface="paper"` only when the placeholder stands alone in a page area,
+such as an empty list that replaces a table. Inside a surface that already
+frames it, such as a section, dialog, detail panel, or `Paper`, leave
+`surface` at its default. One frame per surface: a paper placeholder inside
+`Paper`, `SettingsSection`, `PanelDialog`, a prompt dialog, or `DetailPanel`
+keeps its layout but draws no border, background, or shadow of its own.
+
 Use `NotFoundState` when a requested page or resource cannot be shown. Display
 a code such as `404` only when it accurately describes the result.
 
@@ -43,7 +50,7 @@ import {
 | `action` | `JSX.Element` | none | Adds a recovery or creation action. |
 | `state` | `"empty" \| "loading" \| "error"` | `"empty"` | Selects state semantics and default icon. |
 | `variant` | `"compact" \| "inline" \| "panel"` | `"compact"` | Chooses stacked section spacing, one list row, or a larger work-area treatment. |
-| `surface` | `"none" \| "paper"` | `"none"` | Adds the shared paper surface. |
+| `surface` | `"none" \| "paper"` | `"none"` | Adds the shared paper surface for a standalone page area. |
 | `align` | `"center" \| "left"` | `"center"` | Aligns the content. |
 | `class` | `string` | none | Adds classes to the root element. |
 

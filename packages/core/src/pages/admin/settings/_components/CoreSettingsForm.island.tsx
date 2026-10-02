@@ -41,6 +41,7 @@ import {
   NumberInput,
   PanelDialog,
   Panes,
+  Placeholder,
   panelDialogOptions,
   panelDialogWideOptions,
   prompts,
@@ -72,6 +73,7 @@ import type { ApprovalAvailability } from "../../../app-approval/availability";
 import { appApprovalMessages } from "../../../app-approval/messages";
 import CacheNotice from "../../CacheNotice.island";
 import { adminMessages } from "../../messages";
+import { settingsDocumentationHref } from "../documentation";
 import { accountSettingsSection } from "./account-settings";
 import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { aiSettingsMessages } from "./ai-settings-messages";
@@ -594,13 +596,25 @@ export default function CoreSettingsForm(props: Props) {
     </>
   );
 
+  // The page header links the page's article; a section links only an article of its own.
+  // An anchor into the page's article is the same article, so it gets no second link.
+  const article = (topic: string) => settingsDocumentationHref(props.documentationBase, topic)?.split("#")[0];
+  const sectionHasOwnDocumentation = (sectionId: string) => {
+    const own = article(sectionId);
+    return Boolean(own) && own !== article(props.documentationTopic ?? "");
+  };
+
   const renderFieldSections = (entries: SettingFieldDef[]) =>
     groupSettingEntries(entries, t()).map((section) => (
       <SettingsSection
         title={section.title}
         subtitle={section.subtitle}
         icon={section.icon}
-        actions={<DocumentationLink base={props.documentationBase} topic={section.id} />}
+        actions={
+          sectionHasOwnDocumentation(section.id) ? (
+            <DocumentationLink base={props.documentationBase} topic={section.id} section={section.title} />
+          ) : undefined
+        }
       >
         <Show when={section.id === "user.appApproval" && props.approvalState}>
           <p class="text-xs text-dimmed">{appApprovalMessages.resolve([locale()]).t.savedConfiguration}</p>
@@ -1723,12 +1737,12 @@ function AiSettingsPanel(props: {
           <Show
             when={!profilesState().error && profiles().length > 0}
             fallback={
-              <NoticeCard
-                class="m-3"
-                tone={profilesState().error ? "danger" : "info"}
-                title={profilesState().error ? t().profilesNeedAttention : t().noProviders}
-                detail={profilesState().error ?? t().noProvidersDescription}
-              />
+              <Show
+                when={profilesState().error}
+                fallback={<Placeholder icon="ti ti-sparkles" title={t().noProviders} description={t().noProvidersDescription} />}
+              >
+                {(error) => <NoticeCard class="m-3" tone="danger" title={t().profilesNeedAttention} detail={error()} />}
+              </Show>
             }
           >
             <AiProfilesTable

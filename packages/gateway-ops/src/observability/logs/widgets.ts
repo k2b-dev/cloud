@@ -41,9 +41,9 @@ export const loggingErrorsWidgetHandler = async (c: Context<AuthContext>) => {
     {
       kind: "pills",
       pills: [
-        { label: t.warningsShort, value: formatNumber(summary.warnings24h, { locale }), tone: summary.warnings24h > 0 ? "amber" : "zinc" },
-        { label: t.volumeShort, value: formatNumber(summary.total24h, { locale }) },
-        { label: t.sourcesShort, value: formatNumber(summary.sources, { locale }), tone: "blue" },
+        { label: t.warnings, value: formatNumber(summary.warnings24h, { locale }), tone: summary.warnings24h > 0 ? "amber" : "zinc" },
+        { label: t.entries, value: formatNumber(summary.total24h, { locale }) },
+        { label: t.sources, value: formatNumber(summary.sources, { locale }), tone: "blue" },
       ],
     },
   ];
