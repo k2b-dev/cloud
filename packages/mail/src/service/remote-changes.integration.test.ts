@@ -80,6 +80,8 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused?: boole
     };
   };
   const calls = { windows: [] as [string, number, number][], envelopes: 0, draftCounts: 0 };
+  /** Runs once after the next window listed the folder, like a change another client makes meanwhile. */
+  let afterNextWindow: (() => void) | null = null;
   const spies = [
     spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (_config, path) => ({
       uidValidity: folder(path).uidValidity,
@@ -102,10 +104,14 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused?: boole
     spyOn(imapSmtpConnector, "fetchFlagChanges").mockResolvedValue([]),
     spyOn(imapSmtpConnector, "fetchUidWindow").mockImplementation(async (_config, path, _uidValidity, low, high) => {
       calls.windows.push([path, low, high]);
-      return [...folder(path).entries.entries()]
+      const listed = [...folder(path).entries.entries()]
         .filter(([uid]) => uid >= low && uid <= high)
         .map(([uid, message]) => ({ uid, modseq: null, flags: [...message.flags].sort(), labels: [] }))
         .sort((left, right) => left.uid - right.uid);
+      const change = afterNextWindow;
+      afterNextWindow = null;
+      change?.();
+      return listed;
     }),
     spyOn(imapSmtpConnector, "countDraftMessages").mockImplementation(async (_config, path) => {
       calls.draftCounts += 1;
@@ -129,6 +135,9 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused?: boole
       return placed;
     },
     remove: (path: string, uid: number) => folder(path).entries.delete(uid),
+    afterNextWindow: (change: () => void) => {
+      afterNextWindow = change;
+    },
     setFlags: (path: string, uid: number, flags: string[]) => {
       folder(path).entries.get(uid)!.flags = new Set(flags);
     },
@@ -301,13 +310,46 @@ suite("mail sync of changes made in other clients", () => {
       { role: "inbox", deleted: false, flags: ["\\Seen"] },
     ]);
     expect(await mailbox.placements(id("old"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
-    // The search starts at the newest window and stops as soon as the count matches again.
-    expect(mailbox.remote.calls.windows).toEqual([["archive", 7_001, 12_000]]);
+    // The search starts at the newest window and stops as soon as the count matches again. A
+    // window spans messages, not UIDs, so these three sparse messages need one window.
+    expect(mailbox.remote.calls.windows).toEqual([["archive", 1, 12_000]]);
 
     // With nothing missing, the next sync only compares the counts.
     mailbox.remote.resetCalls();
     await mailbox.sync("archive");
     expect(mailbox.remote.calls).toEqual({ windows: [], envelopes: 0, draftCounts: 0 });
+  });
+
+  test("a message removed while the search runs is found once the full reconciliation retired the one it missed", async () => {
+    const mailbox = await connect("raced", true);
+    mailbox.remote.put("archive", id("raced-kept"));
+    const first = mailbox.remote.put("archive", id("raced-first"));
+    const during = mailbox.remote.put("archive", id("raced-during"));
+    const later = mailbox.remote.put("archive", id("raced-later"));
+    await mailbox.sync("archive");
+
+    // Another client removes a second message right after the search listed the folder: the
+    // search ends one message short and the folder's offset absorbs that message for now.
+    mailbox.remote.remove("archive", first);
+    mailbox.remote.afterNextWindow(() => mailbox.remote.remove("archive", during));
+    await mailbox.sync("archive");
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("raced-first"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+
+    // The full reconciliation retires it, and the offset drops again with the counts.
+    await sql`
+      UPDATE mail.folders
+      SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
+      WHERE id = ${mailbox.folderId("archive")}::uuid
+    `;
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("raced-during"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    await mailbox.sync("archive");
+
+    mailbox.remote.remove("archive", later);
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("raced-later"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    expect(await mailbox.placements(id("raced-kept"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
   test("a server without CONDSTORE still delivers read and flag changes made in another client", async () => {
@@ -319,6 +361,29 @@ suite("mail sync of changes made in other clients", () => {
     mailbox.remote.setFlags("archive", uid, ["\\Flagged", "\\Seen"]);
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("unread"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Flagged", "\\Seen"] }]);
+  });
+
+  test("without CONDSTORE, one window per sync covers a folder with sparse UIDs and rewrites no unchanged message", async () => {
+    const mailbox = await connect("sparse-flags", false);
+    const old = mailbox.remote.put("archive", id("sparse-old"), [], 1);
+    const recent = mailbox.remote.put("archive", id("sparse-recent"), ["\\Seen"], 12_000);
+    await mailbox.sync("archive");
+    const versions = () =>
+      sql<{ uid: string; version: string }[]>`
+        SELECT uid::text AS uid, xmin::text AS version
+        FROM mail.remote_message_refs
+        WHERE folder_id = ${mailbox.folderId("archive")}::uuid AND stale_at IS NULL
+        ORDER BY uid
+      `;
+    const before = await versions();
+    expect(before.map((row) => Number(row.uid))).toEqual([old, recent]);
+
+    mailbox.remote.setFlags("archive", old, ["\\Seen"]);
+    mailbox.remote.resetCalls();
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("sparse-old"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
+    expect(mailbox.remote.calls.windows).toEqual([["archive", 1, 12_000]]);
+    expect(await versions()).toEqual(before);
   });
 
   test("a draft that leaves a folder Mail skips drafts in costs a draft count, not a search", async () => {
@@ -390,13 +455,58 @@ suite("mail sync of changes made in other clients", () => {
     expect(missing).toEqual({ state: "needs_attention", last_error_code: "REMOTE_DRAFT_MISSING" });
   });
 
-  test("every eligible folder gets its turn when more folders are due than one scheduler run queues", async () => {
+  test("Mail's own draft retirement and drafts it cannot track do not hide a draft deleted in another client", async () => {
+    const mailbox = await connect("draft-states", true);
+    const retired = mailbox.remote.put("drafts", id("draft-retired"), ["\\Draft"]);
+    const conflicted = mailbox.remote.put("drafts", id("draft-conflicted"), ["\\Draft"]);
+    const deleted = mailbox.remote.put("drafts", id("draft-deleted"), ["\\Draft"]);
+    await mailbox.sync("drafts");
+    const setState = (uid: number, state: string) => sql`
+      UPDATE mail.draft_provider_snapshots
+      SET state = ${state}
+      WHERE folder_id = ${mailbox.folderId("drafts")}::uuid AND uid = ${uid}
+    `;
+
+    // Mail retires a draft revision: the server keeps it until Mail removes it.
+    await setState(retired, "retiring");
+    // An import that stopped on a conflict leaves its draft on the server.
+    await setState(conflicted, "conflict");
+    mailbox.remote.resetCalls();
+    await mailbox.sync("drafts");
+    mailbox.remote.remove("drafts", retired);
+    await setState(retired, "retired");
+    await mailbox.sync("drafts");
+    expect(mailbox.remote.calls.windows).toEqual([]);
+
+    mailbox.remote.remove("drafts", deleted);
+    await mailbox.sync("drafts");
+    const [missing] = await sql<{ state: string; last_error_code: string | null }[]>`
+      SELECT state, last_error_code FROM mail.draft_provider_snapshots
+      WHERE folder_id = ${mailbox.folderId("drafts")}::uuid AND uid = ${deleted}
+    `;
+    expect(missing).toEqual({ state: "needs_attention", last_error_code: "REMOTE_DRAFT_MISSING" });
+  });
+
+  test("every Inbox is queued on every scheduler run, and the other folders take the remaining places in turn", async () => {
     await connect("scheduler", true);
     const eligible = await submitDueFolderSyncs(100_000);
-    expect(eligible.length).toBeGreaterThanOrEqual(ROLES.length);
-    const limit = Math.ceil(eligible.length / 3);
+    const inboxes = (
+      await sql<{ id: string }[]>`
+        SELECT id FROM mail.folders
+        WHERE role = 'inbox' AND id::text IN (SELECT jsonb_array_elements_text(${eligible}::jsonb))
+      `
+    )
+      .map((folder) => folder.id)
+      .sort();
+    const others = eligible.length - inboxes.length;
+    expect(inboxes.length).toBeGreaterThan(0);
+    expect(others).toBeGreaterThanOrEqual(ROLES.length - 1);
     const queued = new Set<string>();
-    for (let run = 0; run < 3; run += 1) for (const folderId of await submitDueFolderSyncs(limit)) queued.add(folderId);
+    for (let run = 0; run < 3; run += 1) {
+      const folderIds = await submitDueFolderSyncs(inboxes.length + Math.ceil(others / 3));
+      expect(folderIds.slice(0, inboxes.length).sort()).toEqual(inboxes);
+      for (const folderId of folderIds) queued.add(folderId);
+    }
     expect([...queued].sort()).toEqual([...eligible].sort());
   });
 });

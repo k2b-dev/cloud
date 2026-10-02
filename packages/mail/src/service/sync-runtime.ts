@@ -773,11 +773,14 @@ const applyFlagChanges = async (params: {
        AND rmr.uid_validity = ${params.uidValidity}::numeric
        AND rmr.uid = incoming.uid
     ),
+    -- A reconcile window lists every message it covers, on a server without CONDSTORE once a
+    -- minute: only a reference whose modseq changed is written.
     refreshed AS (
       UPDATE mail.remote_message_refs rmr
       SET modseq = matched.modseq, last_seen_at = now()
       FROM matched
       WHERE rmr.id = matched.id
+        AND rmr.modseq IS DISTINCT FROM matched.modseq
       RETURNING rmr.id
     ),
     changed AS (
@@ -1162,17 +1165,64 @@ export const fetchReconcileStep = async (params: {
     return window;
   }
   // Newest first, one window per batch: while messages are known to have left the folder until
-  // the search finds them, and on every batch of a server without CONDSTORE, which reports flag
-  // changes no other way. Mail keeps no flags of drafts, so the Drafts folder needs no such window.
-  if (cursor.vanishedSearch ? cursor.sweepNextHigh == null : params.highestModseq != null || params.draftsFolder) return null;
+  // the search finds them, and once backfill finished on every batch of a server without
+  // CONDSTORE, which reports flag changes no other way. Mail keeps no flags of drafts, so the
+  // Drafts folder needs no such window.
+  const sweep = cursor.vanishedSearch
+    ? cursor.sweepNextHigh != null
+    : cursor.backfillComplete && params.highestModseq == null && !params.draftsFolder;
+  if (!sweep) return null;
   const high = Math.min(cursor.sweepNextHigh ?? cursor.highestSeenUid, cursor.highestSeenUid);
   if (high < 1) {
     cursor.sweepNextHigh = null;
     return null;
   }
-  const window = await fetchReconcileWindow({ ...params, low: Math.max(1, high - RECONCILE_WINDOW_SIZE + 1), high, newestFirst: true });
+  const low = await newestFirstWindowLow({
+    folderId: params.folderId,
+    uidValidity: params.uidValidity,
+    draftsFolder: params.draftsFolder,
+    high,
+  });
+  const window = await fetchReconcileWindow({ ...params, low, high, newestFirst: true });
   cursor.sweepNextHigh = window.low > 1 ? window.low - 1 : null;
   return window;
+};
+
+/**
+ * Low UID of the newest-first window that ends at `high`: the window reaches down to the
+ * RECONCILE_WINDOW_SIZE-th live local UID, or to the first UID when fewer are left. A window
+ * spans messages rather than UIDs, so a folder whose UIDs are spread thin, such as an Inbox that
+ * is emptied regularly, needs no more windows than its message count requires. Once backfill
+ * finished, the provider lists about as many messages in the window as Mail holds there.
+ */
+const newestFirstWindowLow = async (params: { folderId: string; uidValidity: string; draftsFolder: boolean; high: number }) => {
+  const [row] = params.draftsFolder
+    ? await sql<{ uid: string }[]>`
+        SELECT live.uid::text AS uid
+        FROM (
+          SELECT DISTINCT snapshot.uid
+          FROM mail.draft_provider_snapshots snapshot
+          WHERE snapshot.folder_id = ${params.folderId}::uuid
+            AND snapshot.uid_validity = ${params.uidValidity}::numeric
+            AND snapshot.uid <= ${params.high}::numeric
+            AND snapshot.state IN ('active', 'appending', 'external', 'importing', 'retiring')
+        ) AS live
+        ORDER BY live.uid DESC
+        OFFSET ${RECONCILE_WINDOW_SIZE - 1}
+        LIMIT 1
+      `
+    : await sql<{ uid: string }[]>`
+        SELECT rmr.uid::text AS uid
+        FROM mail.remote_message_refs rmr
+        WHERE rmr.folder_id = ${params.folderId}::uuid
+          AND rmr.uid_validity = ${params.uidValidity}::numeric
+          AND rmr.stale_at IS NULL
+          AND rmr.uid <= ${params.high}::numeric
+        ORDER BY rmr.uid DESC
+        OFFSET ${RECONCILE_WINDOW_SIZE - 1}
+        LIMIT 1
+      `;
+  return row ? Number(row.uid) : 1;
 };
 
 // UIDs the provider still lists but that have no live local record: a gap left
@@ -1236,7 +1286,11 @@ const fetchReconcileImports = async (params: {
   return { messages: batch.messages, uids, truncated };
 };
 
-/** Live local UIDs of the folder: message references, or in the Drafts folder the drafts Mail tracks there. */
+/**
+ * Live local UIDs of the folder: message references, or in the Drafts folder the drafts Mail
+ * tracks there, in the states a reconcile window can retire. A retiring draft is still on the
+ * server until Mail removes it.
+ */
 const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder: boolean): Promise<number> => {
   const [row] = draftsFolder
     ? await sql<{ count: number }[]>`
@@ -1244,7 +1298,7 @@ const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder
         FROM mail.draft_provider_snapshots
         WHERE folder_id = ${folderId}::uuid
           AND uid_validity = ${uidValidity}::numeric
-          AND state IN ('active', 'appending', 'external', 'importing')
+          AND state IN ('active', 'appending', 'external', 'importing', 'retiring')
       `
     : await sql<{ count: number }[]>`
         SELECT count(*)::int AS count
@@ -1259,9 +1313,14 @@ const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder
 /**
  * An IMAP server reports a removed message only to a client that has the folder open, so the
  * folder's message count shows that messages left it: a delete or a move in another client.
- * Once every UID is imported, the live local UIDs plus the remote messages Mail does not count
- * match STATUS MESSAGES up to the folder's offset. More local UIDs start a newest-first search
- * through the reconcile windows, which ends as soon as the counts match again.
+ * Once every UID is imported, the live local UIDs plus the drafts Mail skips outside the Drafts
+ * folder match STATUS MESSAGES up to the folder's offset. More local UIDs start a newest-first
+ * search through the reconcile windows, which ends as soon as the counts match again.
+ *
+ * Only a recount changes the skipped drafts, and only the counts themselves move the offset:
+ * a higher remote count lowers it at once, a difference a complete search leaves raises it. So
+ * an offset that absorbed a message removed during a search drops again once the full
+ * reconciliation retires that message, and no later removal is hidden behind it.
  */
 const checkVanishedMessages = async (params: {
   cursor: EnvelopeCursor;
@@ -1276,29 +1335,24 @@ const checkVanishedMessages = async (params: {
   if (status.uidNext - 1 !== cursor.highestSeenUid) return;
   const local = await countLiveUids(params.folderId, status.uidValidity, params.draftsFolder);
   const offset = cursor.countOffset ?? 0;
-  let uncounted = cursor.remoteUncounted ?? 0;
+  let uncounted = params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0);
   let gap = local + uncounted - status.messages;
-  if (gap > offset && !cursor.vanishedSearch) {
-    // A draft Mail never imported may be what left: count the drafts before searching. Without
-    // that count the search still runs; it only costs more windows.
-    uncounted = params.draftsFolder
-      ? 0
-      : await params.countDrafts().catch((error: unknown) => {
-          log.warn("Mail could not count a folder's drafts and searches it for removed messages", {
-            folderId: params.folderId,
-            code: providerErrorCode(error, "DRAFT_COUNT_FAILED"),
-          });
-          return uncounted;
-        });
+  if (gap !== offset && !cursor.vanishedSearch && !params.draftsFolder) {
+    // A skipped draft may have left or lost its flag: count the drafts before the counts decide.
+    // Without that count the search still runs; it only costs more windows.
+    uncounted = await params.countDrafts().catch((error: unknown) => {
+      log.warn("Mail could not count a folder's drafts and searches it for removed messages", {
+        folderId: params.folderId,
+        code: providerErrorCode(error, "DRAFT_COUNT_FAILED"),
+      });
+      return uncounted;
+    });
     gap = local + uncounted - status.messages;
   }
-  // More remote messages than Mail counts, such as a new draft it skips.
-  if (gap < offset) {
-    uncounted += offset - gap;
-    gap = offset;
-  }
   cursor.remoteUncounted = uncounted;
-  if (gap === offset) {
+  // The provider lists more messages than Mail counts: the folder's count runs that much higher.
+  if (gap < offset) cursor.countOffset = gap;
+  if (gap <= offset) {
     cursor.vanishedSearch = false;
     return;
   }
@@ -2392,19 +2446,20 @@ export const submitDueHydrationWork = async (): Promise<number> => {
   return mailboxes.length;
 };
 
-// Each minute queues at most this many folder syncs. The scheduler takes them in turn by folder
-// id, so with more eligible folders every folder still gets a sync every few minutes.
+// Each minute queues at most this many folder syncs. Every Inbox goes first; the other folders
+// take the remaining places in turn by folder id, so with more eligible folders every folder
+// still gets a sync every few minutes.
 const DUE_FOLDER_SYNCS_PER_RUN = 500;
 const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
 
 /**
- * Queues the next page of eligible folder syncs after the folder the previous run stopped at,
- * wrapping around to the first folder. Returns the queued folder ids, Inboxes first.
+ * Queues every eligible Inbox, then the next eligible folders after the one the previous run
+ * stopped at, wrapping around to the first folder. Returns the queued folder ids in that order.
  */
 export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Promise<string[]> => {
   const after = (await redis.get(DUE_FOLDER_CURSOR_KEY)) ?? "00000000-0000-0000-0000-000000000000";
-  const folders = await sql<{ id: string; role: string }[]>`
-    SELECT f.id, f.role
+  const folders = await sql<{ id: string }[]>`
+    SELECT f.id
     FROM mail.folders f
     JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
     JOIN mail.mailboxes m ON m.id = rr.mailbox_id
@@ -2424,16 +2479,13 @@ export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Pr
           AND pc.status = 'active'
           AND pc.encrypted_secret IS NOT NULL
       )
-    ORDER BY f.id <= ${after}::uuid, f.id
+    ORDER BY f.role <> 'inbox', f.id <= ${after}::uuid, f.id
     LIMIT ${limit}
   `;
   const last = folders.at(-1);
   if (last) await redis.set(DUE_FOLDER_CURSOR_KEY, last.id);
-  const ids = [...folders.filter((folder) => folder.role === "inbox"), ...folders.filter((folder) => folder.role !== "inbox")].map(
-    (folder) => folder.id,
-  );
-  for (const id of ids) await submitSyncFolderJob(id);
-  return ids;
+  for (const folder of folders) await submitSyncFolderJob(folder.id);
+  return folders.map((folder) => folder.id);
 };
 
 const submitDueWork = async (): Promise<{

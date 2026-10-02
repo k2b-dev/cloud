@@ -36,7 +36,7 @@ For provider-shared folders, first confirm that the connected IMAP account still
 
 ## A change from another mail app does not show yet {icon="lifebuoy"}
 
-Mail checks every synchronized folder about once a minute; Inbox usually updates right away. A message you delete or move in another mail app or on your phone leaves its old folder at the next check, in every folder. Read and flag changes from other apps arrive the same way, also from providers without change tracking, such as Microsoft 365. When an installation synchronizes more than 500 folders, Mail checks them in turns, so a folder can take a few minutes.
+Mail checks every synchronized folder about once a minute; Inbox usually updates right away. A message you delete or move in another mail app or on your phone leaves its old folder at the next check, in every folder. Read and flag changes from other apps arrive the same way. With a provider that does not report such changes, a folder with more than a few thousand messages can take a few minutes longer. When an installation synchronizes more than 500 folders, Mail still checks every Inbox each minute and the other folders in turns, so those can take a few minutes.
 
 To check a mailbox right away, open **Mailbox tools > Mailbox health** and select **Sync now**.
 

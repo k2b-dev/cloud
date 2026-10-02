@@ -36,7 +36,7 @@ Prüfe bei geteilten Anbieterordnern zuerst, ob das verbundene IMAP-Konto weiter
 
 ## Eine Änderung aus einem anderen E-Mail-Programm erscheint noch nicht {icon="lifebuoy"}
 
-Mail prüft jeden synchronisierten Ordner etwa einmal pro Minute; der Posteingang aktualisiert sich meist sofort. Eine Nachricht, die du in einem anderen E-Mail-Programm oder auf dem Smartphone löschst oder verschiebst, verschwindet bei der nächsten Prüfung aus ihrem bisherigen Ordner, in jedem Ordner. Änderungen am Lesestatus und an Markierungen aus anderen Programmen kommen ebenso an, auch bei Anbietern ohne Änderungsverfolgung wie Microsoft 365. Synchronisiert eine Installation mehr als 500 Ordner, prüft Mail sie abwechselnd; ein Ordner kann dann einige Minuten brauchen.
+Mail prüft jeden synchronisierten Ordner etwa einmal pro Minute; der Posteingang aktualisiert sich meist sofort. Eine Nachricht, die du in einem anderen E-Mail-Programm oder auf dem Smartphone löschst oder verschiebst, verschwindet bei der nächsten Prüfung aus ihrem bisherigen Ordner, in jedem Ordner. Änderungen am Lesestatus und an Markierungen aus anderen Programmen kommen ebenso an. Bei einem Anbieter, der solche Änderungen nicht meldet, kann das in einem Ordner mit mehr als einigen tausend Nachrichten einige Minuten länger dauern. Synchronisiert eine Installation mehr als 500 Ordner, prüft Mail weiterhin jeden Posteingang jede Minute und die übrigen Ordner abwechselnd; diese können dann einige Minuten brauchen.
 
 Um ein Postfach sofort zu prüfen, öffne **Postfachwerkzeuge > Postfachstatus** und wähle **Jetzt synchronisieren**.
 
