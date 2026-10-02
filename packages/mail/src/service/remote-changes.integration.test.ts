@@ -45,7 +45,7 @@ const fixtureVerification = (account: string): ConnectorVerification => ({
  * An in-memory IMAP account whose folders other clients change. A server with CONDSTORE reports
  * an unchanged HIGHESTMODSEQ, so only new UIDs and the folder's message count show a change.
  */
-const createProvider = (params: { condstore: boolean; draftSearchRefused?: boolean }) => {
+const createProvider = (params: { condstore: boolean; draftSearchRefused: boolean }) => {
   const folders = new Map<string, RemoteFolder>(
     ROLES.map((role, index) => [role, { role, uidValidity: String(500 + index), nextUid: 1, entries: new Map() }]),
   );
@@ -135,6 +135,9 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused?: boole
       return placed;
     },
     remove: (path: string, uid: number) => folder(path).entries.delete(uid),
+    refuseDraftCount: (refused: boolean) => {
+      params.draftSearchRefused = refused;
+    },
     afterNextWindow: (change: () => void) => {
       afterNextWindow = change;
     },
@@ -418,6 +421,27 @@ suite("mail sync of changes made in other clients", () => {
     expect(await mailbox.placements(id("sparse-old"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
     expect(mailbox.remote.calls.windows).toEqual([["archive", 1, 12_000]]);
     expect(await versions()).toEqual(before);
+  });
+
+  test("a draft count the server refused once does not hide a later removal", async () => {
+    const mailbox = await connect("refused-once", true);
+    mailbox.remote.put("archive", id("once-kept"));
+    const removed = mailbox.remote.put("archive", id("once-removed"));
+    mailbox.remote.put("archive", id("once-other"));
+    const draft = mailbox.remote.put("archive", id("once-draft"), ["\\Draft"]);
+    await mailbox.sync("archive");
+
+    // The draft leaves while the server refuses to count drafts: the search finds nothing to retire.
+    mailbox.remote.remove("archive", draft);
+    mailbox.remote.refuseDraftCount(true);
+    await mailbox.sync("archive");
+    await mailbox.sync("archive");
+
+    mailbox.remote.refuseDraftCount(false);
+    mailbox.remote.remove("archive", removed);
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("once-removed"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    expect(await mailbox.placements(id("once-kept"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
   test("a sweep window lists at most a window's worth of messages Mail keeps no record of", async () => {

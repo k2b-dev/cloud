@@ -1370,16 +1370,19 @@ const checkVanishedMessages = async (params: {
   const offset = cursor.countOffset ?? 0;
   let uncounted = params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0);
   let gap = local + uncounted - messages;
-  if (gap !== offset && !cursor.vanishedSearch && !params.draftsFolder) {
+  let draftsCounted = params.draftsFolder;
+  if (gap !== offset && !params.draftsFolder && !(cursor.vanishedSearch && cursor.sweepNextHigh != null)) {
     // A skipped draft may have left or lost its flag: count the drafts before the counts decide.
     // Without that count the search still runs; it only costs more windows.
-    uncounted = await params.countDrafts(cursor.highestSeenUid).catch((error: unknown) => {
+    const counted = await params.countDrafts(cursor.highestSeenUid).catch((error: unknown) => {
       log.warn("Mail could not count a folder's drafts and searches it for removed messages", {
         folderId: params.folderId,
         code: providerErrorCode(error, "DRAFT_COUNT_FAILED"),
       });
-      return uncounted;
+      return null;
     });
+    if (counted != null) uncounted = counted;
+    draftsCounted = counted != null;
     gap = local + uncounted - messages;
   }
   cursor.remoteUncounted = uncounted;
@@ -1395,8 +1398,15 @@ const checkVanishedMessages = async (params: {
     return;
   }
   if (cursor.sweepNextHigh == null) {
-    // Every window was searched and the counts still differ: this server counts differently.
-    cursor.countOffset = gap;
+    // Every window was searched and the counts still differ: this server counts differently. A
+    // draft count the server refused may still include drafts that left, so the offset then takes
+    // over the skipped drafts instead of counting on them.
+    if (draftsCounted) {
+      cursor.countOffset = gap;
+    } else {
+      cursor.countOffset = local - messages;
+      cursor.remoteUncounted = 0;
+    }
     cursor.vanishedSearch = false;
   }
 };
