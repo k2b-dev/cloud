@@ -1778,17 +1778,8 @@ suite("mail lifecycle control plane", () => {
     }
   });
 
-  test("a reconcile window fetches drafts only in the Drafts folder, and there only the ones it does not track", async () => {
+  test("a reconcile window fetches drafts only in the Drafts folder", async () => {
     const fixture = await reconcileFixture({ key: "reconcile-drafts", uidValidity: "64", localUids: [1] });
-    // Drafts get no message reference: the Drafts folder knows a UID by its draft snapshot.
-    await sql`
-      INSERT INTO mail.draft_provider_snapshots (
-        mailbox_id, direction, state, stable_message_id, remote_resource_id, binding_id, folder_id, uid_validity, uid
-      ) VALUES (
-        ${mailboxId}::uuid, 'import', 'external', ${`<tracked-draft-${suffix}@example.com>`},
-        ${fixture.resourceId}::uuid, ${bindingId}::uuid, ${fixture.folderId}::uuid, 64, 3
-      )
-    `;
     const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([
       { uid: 1, modseq: null, flags: [], labels: [] },
       { uid: 2, modseq: null, flags: ["\\Draft"], labels: [] },
@@ -1812,11 +1803,10 @@ suite("mail lifecycle control plane", () => {
           signal: AbortSignal.timeout(10_000),
         });
       }
-      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [1, 2, 4, 5]]);
+      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [2, 3, 4, 5]]);
     } finally {
       envelopes.mockRestore();
       window.mockRestore();
-      await sql`DELETE FROM mail.draft_provider_snapshots WHERE folder_id = ${fixture.folderId}::uuid`;
       await dropReconcileFolders();
     }
   });

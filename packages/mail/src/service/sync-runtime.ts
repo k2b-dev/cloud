@@ -958,6 +958,8 @@ type ReconcileWindow = {
   flags: FlagChange[];
   /** Envelopes for window UIDs that have no live local reference; re-imported through the backfill path. */
   imports: ConnectorEnvelope[];
+  /** The window ends a walk through the folder's UIDs up to its newest one. */
+  completesWalk?: boolean;
 };
 
 const loadSyncFolder = async (folderId: string): Promise<FolderSyncRow | null> => {
@@ -1123,7 +1125,10 @@ const fetchReconcileWindow = async (params: {
     folderPath: params.folderPath,
     folderId: params.folderId,
     uidValidity: params.uidValidity,
-    draftsFolder: params.draftsFolder,
+    // A draft never gets a message reference, so a walk hands every draft to the draft projection
+    // again, which re-checks one without a usable modseq. A newest-first window only looks for
+    // removed messages, so it fetches just the drafts Mail does not track yet.
+    trackedDrafts: params.draftsFolder && params.newestFirst,
     signal: params.signal,
   });
   const low = imports.truncated && params.newestFirst ? imports.uids[0]! : params.low;
@@ -1164,13 +1169,8 @@ export const fetchReconcileStep = async (params: {
       newestFirst: false,
     });
     cursor.reconcileNextLow = window.high < params.currentHighUid ? window.high + 1 : null;
-    if (cursor.reconcileNextLow == null) {
-      cursor.lastFullReconcileAt = new Date().toISOString();
-      // A positive offset may hold a message removed while a search ran, and a removal right
-      // after this walk would hide behind it. The next count check learns a real one again.
-      if ((cursor.countOffset ?? 0) > 0) cursor.countOffset = 0;
-    }
-    return window;
+    if (cursor.reconcileNextLow == null) cursor.lastFullReconcileAt = new Date().toISOString();
+    return { ...window, completesWalk: cursor.reconcileNextLow == null };
   }
   // Newest first, one window per batch: while messages are known to have left the folder until
   // the search finds them, and once backfill finished on every batch of a server without
@@ -1217,7 +1217,7 @@ const newestFirstWindowLow = async (params: {
   remoteMessages: number;
   skippedDrafts: number;
 }): Promise<number> => {
-  const local = await countLiveUids(params.folderId, params.uidValidity, params.draftsFolder, Number.MAX_SAFE_INTEGER);
+  const local = await countLiveUids(sql, params.folderId, params.uidValidity, params.draftsFolder, Number.MAX_SAFE_INTEGER);
   if (Math.max(params.skippedDrafts, params.remoteMessages - local) >= RECONCILE_WINDOW_SIZE) {
     return Math.max(1, params.high - RECONCILE_WINDOW_SIZE + 1);
   }
@@ -1261,18 +1261,18 @@ const fetchReconcileImports = async (params: {
   folderPath: string;
   folderId: string;
   uidValidity: string;
-  draftsFolder: boolean;
+  /** Whether a draft snapshot in the folder counts as a live local record. */
+  trackedDrafts: boolean;
   signal: AbortSignal;
 }): Promise<{ messages: ConnectorEnvelope[]; uids: number[]; truncated: boolean }> => {
   if (params.uids.length === 0) return { messages: [], uids: [], truncated: false };
-  // A draft never gets a message reference: the Drafts folder knows a UID by its draft snapshot.
   const missing = await sql<{ uid: string }[]>`
     SELECT remote.uid
     FROM jsonb_array_elements_text(${params.uids}::jsonb) AS remote(uid)
     WHERE NOT EXISTS (
       SELECT 1
       FROM mail.remote_message_refs rmr
-      WHERE NOT ${params.draftsFolder}::boolean
+      WHERE NOT ${params.trackedDrafts}::boolean
         AND rmr.folder_id = ${params.folderId}::uuid
         AND rmr.uid_validity = ${params.uidValidity}::numeric
         AND rmr.uid = remote.uid::numeric
@@ -1281,7 +1281,7 @@ const fetchReconcileImports = async (params: {
     AND NOT EXISTS (
       SELECT 1
       FROM mail.draft_provider_snapshots snapshot
-      WHERE ${params.draftsFolder}::boolean
+      WHERE ${params.trackedDrafts}::boolean
         AND snapshot.folder_id = ${params.folderId}::uuid
         AND snapshot.uid_validity = ${params.uidValidity}::numeric
         AND snapshot.uid = remote.uid::numeric
@@ -1316,9 +1316,15 @@ const fetchReconcileImports = async (params: {
  * tracks there, in the states a reconcile window can retire. A retiring draft is still on the
  * server until Mail removes it.
  */
-const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder: boolean, maxUid: number): Promise<number> => {
+const countLiveUids = async (
+  db: typeof sql,
+  folderId: string,
+  uidValidity: string,
+  draftsFolder: boolean,
+  maxUid: number,
+): Promise<number> => {
   const [row] = draftsFolder
-    ? await sql<{ count: number }[]>`
+    ? await db<{ count: number }[]>`
         SELECT count(DISTINCT uid)::int AS count
         FROM mail.draft_provider_snapshots
         WHERE folder_id = ${folderId}::uuid
@@ -1326,7 +1332,7 @@ const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder
           AND uid <= ${maxUid}::numeric
           AND state IN ('active', 'appending', 'external', 'importing', 'retiring')
       `
-    : await sql<{ count: number }[]>`
+    : await db<{ count: number }[]>`
         SELECT count(*)::int AS count
         FROM mail.remote_message_refs
         WHERE folder_id = ${folderId}::uuid
@@ -1366,7 +1372,7 @@ const checkVanishedMessages = async (params: {
   const current = status.uidNext - 1 === cursor.highestSeenUid;
   const messages = current ? status.messages : cursor.countedMessages;
   if (messages == null) return;
-  const local = await countLiveUids(params.folderId, status.uidValidity, params.draftsFolder, cursor.highestSeenUid);
+  const local = await countLiveUids(sql, params.folderId, status.uidValidity, params.draftsFolder, cursor.highestSeenUid);
   const offset = cursor.countOffset ?? 0;
   let uncounted = params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0);
   let gap = local + uncounted - messages;
@@ -1619,6 +1625,19 @@ export const commitSyncBatch = async (params: {
             existingUids: params.reconcileWindow.uids,
           })
         : 0;
+    // A completed walk leaves Mail's messages in line with the provider's, but for removals while
+    // it ran, so the gap it leaves is at most the folder's offset. An offset above it holds a
+    // message removed during an earlier search, and a removal right after this walk would hide
+    // behind it.
+    if (
+      params.reconcileWindow?.completesWalk &&
+      params.cursor.backfillComplete &&
+      params.status.uidNext - 1 === params.cursor.highestSeenUid
+    ) {
+      const local = await countLiveUids(tx, params.folderId, params.status.uidValidity, isDraftFolder, params.cursor.highestSeenUid);
+      const gap = local + (isDraftFolder ? 0 : (params.cursor.remoteUncounted ?? 0)) - params.status.messages;
+      if (gap < (params.cursor.countOffset ?? 0)) params.cursor.countOffset = gap;
+    }
     await tx`
       UPDATE mail.folders
       SET

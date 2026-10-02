@@ -500,23 +500,27 @@ suite("mail sync of changes made in other clients", () => {
   test("a Drafts folder with more drafts than one envelope batch finishes its reconciliation", async () => {
     const mailbox = await connect("many-drafts", true);
     for (let index = 1; index <= 250; index += 1) mailbox.remote.put("drafts", id(`draft-${index}`), ["\\Draft"]);
-    // Backfill and the first reconciliation end; the drafts it already tracks need no second import.
+    // Backfill and the first reconciliation end.
     await mailbox.sync("drafts", 10);
     const [tracked] = await sql<{ count: number }[]>`
       SELECT count(DISTINCT uid)::int AS count FROM mail.draft_provider_snapshots WHERE folder_id = ${mailbox.folderId("drafts")}::uuid
     `;
     expect(tracked?.count).toBe(250);
 
-    // The next full reconciliation lists the drafts again and fetches no envelopes for them.
+    // The next full reconciliation hands every draft to the draft projection again, one envelope
+    // batch per window, and ends after the second window instead of repeating the first.
     await sql`
       UPDATE mail.folders
       SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
       WHERE id = ${mailbox.folderId("drafts")}::uuid
     `;
     mailbox.remote.resetCalls();
-    expect(await mailbox.sync("drafts", 3)).toBe(1);
-    expect(mailbox.remote.calls.windows).toHaveLength(1);
-    expect(mailbox.remote.calls.envelopes).toBe(0);
+    expect(await mailbox.sync("drafts", 5)).toBe(2);
+    expect(mailbox.remote.calls.windows).toEqual([
+      ["drafts", 1, 250],
+      ["drafts", 201, 250],
+    ]);
+    expect(mailbox.remote.calls.envelopes).toBe(2);
 
     // A draft deleted in another client leaves Mail's Drafts at the next sync.
     mailbox.remote.remove("drafts", 250);
@@ -558,6 +562,48 @@ suite("mail sync of changes made in other clients", () => {
       WHERE folder_id = ${mailbox.folderId("drafts")}::uuid AND uid = ${deleted}
     `;
     expect(missing).toEqual({ state: "needs_attention", last_error_code: "REMOTE_DRAFT_MISSING" });
+  });
+
+  test("a completed walk lowers an offset a raced search raised, also below zero", async () => {
+    const mailbox = await connect("raced-drafts", true);
+    const first = mailbox.remote.put("drafts", id("raced-draft-first"), ["\\Draft"]);
+    const during = mailbox.remote.put("drafts", id("raced-draft-during"), ["\\Draft"]);
+    const later = mailbox.remote.put("drafts", id("raced-draft-later"), ["\\Draft"]);
+    const conflicted = mailbox.remote.put("drafts", id("raced-draft-conflicted"), ["\\Draft"]);
+    await mailbox.sync("drafts");
+    const state = async (uid: number) => {
+      const [snapshot] = await sql<{ state: string }[]>`
+        SELECT state FROM mail.draft_provider_snapshots
+        WHERE folder_id = ${mailbox.folderId("drafts")}::uuid AND uid = ${uid}
+      `;
+      return snapshot?.state;
+    };
+    // A draft that stopped on a conflict stays on the server but out of Mail's count: offset -1.
+    await sql`
+      UPDATE mail.draft_provider_snapshots SET state = 'conflict'
+      WHERE folder_id = ${mailbox.folderId("drafts")}::uuid AND uid = ${conflicted}
+    `;
+    await mailbox.sync("drafts");
+
+    // A second draft goes right after the search listed the folder: the offset absorbs it.
+    mailbox.remote.remove("drafts", first);
+    mailbox.remote.afterNextWindow(() => mailbox.remote.remove("drafts", during));
+    await mailbox.sync("drafts");
+    await mailbox.sync("drafts");
+    expect(await state(first)).toBe("needs_attention");
+
+    // The full reconciliation retires it, and a removal before the next count check is found.
+    await sql`
+      UPDATE mail.folders
+      SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
+      WHERE id = ${mailbox.folderId("drafts")}::uuid
+    `;
+    await mailbox.sync("drafts");
+    expect(await state(during)).toBe("needs_attention");
+    mailbox.remote.remove("drafts", later);
+    await mailbox.sync("drafts");
+    expect(await state(later)).toBe("needs_attention");
+    expect(await state(conflicted)).toBe("conflict");
   });
 
   test("every Inbox is queued on every scheduler run, and the other folders take the remaining places in turn", async () => {
