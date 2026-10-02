@@ -1,4 +1,4 @@
-import type { MailActionCommand } from "./mail-action-outcomes";
+import type { MailActionCommand, MailActionQueuedCommand } from "./mail-action-outcomes";
 import type { MailActionId } from "./mail-actions";
 import { executeMailBulkAction, type MailBulkTarget } from "./mail-bulk-actions";
 import type { MailListOptimisticField } from "./mail-list-optimistic";
@@ -58,7 +58,7 @@ export type MailWorkspaceActionRunnerHost = {
   followOutcomes: (params: {
     actionId: MailActionId;
     destinationFolderId: string | null;
-    conversations: { conversationId: string; label: string; sourceFolderIds: readonly string[]; commands: MailActionCommand[] }[];
+    conversations: { conversationId: string; label: string; commands: MailActionQueuedCommand[] }[];
   }) => void;
   pruneSelection: (succeededConversationIds: ReadonlySet<string>) => void;
   removesActiveConversation: (actionId: MailActionId, succeededConversationIds: ReadonlySet<string>) => boolean;
@@ -75,17 +75,18 @@ export const mailOptimisticFields = (actionId: MailActionId): MailListOptimistic
   actionId === "mark_read" || actionId === "mark_unread" ? ["unread"] : actionId === "flag" || actionId === "unflag" ? ["flagged"] : [];
 
 /**
- * One target per conversation. In a message list, several selected rows can belong to one
- * conversation; the action runs once on the union of their folders.
+ * One target per conversation, with its own copy of the folders. In a message list, several
+ * selected rows can belong to one conversation; the action runs once on the union of their folders.
+ * The copy keeps the action on the folders it started from while the list store updates.
  */
 const mergeConversationTargets = (targets: readonly MailBulkTarget[]): MailBulkTarget[] => {
   const merged = new Map<string, MailBulkTarget>();
   for (const target of targets) {
     const existing = merged.get(target.conversationId);
-    merged.set(
-      target.conversationId,
-      existing ? { ...existing, sourceFolderIds: [...new Set([...existing.sourceFolderIds, ...target.sourceFolderIds])] } : target,
-    );
+    merged.set(target.conversationId, {
+      ...(existing ?? target),
+      sourceFolderIds: [...new Set([...(existing?.sourceFolderIds ?? []), ...target.sourceFolderIds])],
+    });
   }
   return [...merged.values()];
 };
@@ -137,7 +138,7 @@ export const runMailWorkspaceAction = async (
 
     host.applyOptimistic(actionId, targets);
     optimisticApplied = true;
-    const queued = new Map<string, MailActionCommand[]>();
+    const queued = new Map<string, MailActionQueuedCommand[]>();
     const result = await executeMailBulkAction({
       actionId,
       targets,
@@ -157,7 +158,10 @@ export const runMailWorkspaceAction = async (
           idempotencyKey,
           signal,
         });
-        queued.set(target.conversationId, [...(queued.get(target.conversationId) ?? []), ...commands]);
+        queued.set(target.conversationId, [
+          ...(queued.get(target.conversationId) ?? []),
+          ...commands.map((command) => ({ ...command, sourceFolderId })),
+        ]);
       },
     });
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -176,7 +180,7 @@ export const runMailWorkspaceAction = async (
         destinationFolderId: destinationFolderId ?? null,
         conversations: targets.flatMap((target) => {
           const commands = queued.get(target.conversationId);
-          return commands ? [{ ...target, commands }] : [];
+          return commands ? [{ conversationId: target.conversationId, label: target.label, commands }] : [];
         }),
       });
 

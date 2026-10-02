@@ -1173,9 +1173,11 @@ function MailWorkspaceView(props: {
   const showActionFailures = (report: MailActionFailureReport) => {
     const [first] = report.failures;
     if (!first || disposed) return;
-    // An unclear outcome must be checked, not repeated. The others repeat on the folders the action
-    // started from, whatever view is open by now.
-    const retryTargets = report.failures.flatMap(({ code, ...target }) => (code === "needs_attention" ? [] : [target]));
+    // An unclear outcome must be checked, not repeated. The others repeat only in the folders where
+    // they failed, whatever view is open by now.
+    const retryTargets = report.failures.flatMap(({ code, ...target }) =>
+      code === "needs_attention" || target.sourceFolderIds.length === 0 ? [] : [target],
+    );
     const more = report.failures.length - 1;
     toast.error(`${first.label}: ${failureReason(first.code)}${more > 0 ? ` (${t().moreNotApplied({ count: more })})` : ""}`, {
       title:

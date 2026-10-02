@@ -190,29 +190,54 @@ describe("Mail workspace action runner", () => {
         return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
       },
       followOutcomes: ({ conversations }) => {
-        for (const conversation of conversations) followed.push(`${conversation.conversationId}=${conversation.sourceFolderIds.join("+")}`);
+        for (const conversation of conversations)
+          followed.push(`${conversation.conversationId}=${conversation.commands.map((command) => command.sourceFolderId).join("+")}`);
       },
     });
 
     await runMailWorkspaceAction("archive", {}, fixture.host, signal());
     expect(submitted.sort()).toEqual(["one:inbox", "one:projects", "two:inbox"]);
-    expect(followed).toEqual(["one=inbox+projects", "two=inbox"]);
+    expect(followed.map((entry) => entry.split("=")[0])).toEqual(["one", "two"]);
+    expect(followed[0]?.split("=")[1]?.split("+").sort()).toEqual(["inbox", "projects"]);
     expect(fixture.events).toContain("success:2");
   });
 
-  test("follows the commands a partly submitted conversation already queued", async () => {
+  test("follows the commands a partly submitted conversation already queued, with their folder", async () => {
+    const followed: string[] = [];
     const fixture = host({
       resolveTargets: () => [target("one", ["inbox", "projects"])],
       submit: async ({ sourceFolderId }) => {
         if (sourceFolderId === "projects") throw new Error("provider rejected");
         return [{ id: "archive-inbox", state: "queued" }];
       },
+      followOutcomes: ({ conversations }) => {
+        for (const conversation of conversations)
+          for (const command of conversation.commands) followed.push(`${command.id}@${command.sourceFolderId}`);
+      },
     });
 
     await runMailWorkspaceAction("archive", {}, fixture.host, signal());
     expect(fixture.events).toContain("failures:1");
-    // The Inbox commands can still fail later, so they are followed like any other.
-    expect(fixture.events).toContain("follow:archive-inbox");
+    // The Inbox commands can still fail later; Try again would then repeat the Inbox only, never the
+    // Projects request whose outcome is unknown.
+    expect(followed).toEqual(["archive-inbox@inbox"]);
+  });
+
+  test("keeps the folders the action started from while the list updates them", async () => {
+    const listFolders = ["inbox"];
+    const submitted: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [{ conversationId: "one", label: "one", sourceFolderIds: listFolders }],
+      submit: async ({ sourceFolderId }) => {
+        submitted.push(sourceFolderId);
+        // The list store reconciles the same row after a navigation, in place.
+        listFolders.splice(0, listFolders.length, "sent", "inbox");
+        return [];
+      },
+    });
+
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(submitted).toEqual(["inbox"]);
   });
 
   test("leaves conversations alone that already sit in the folder Archive moves to", async () => {

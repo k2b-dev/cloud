@@ -2,26 +2,26 @@ import { describe, expect, test } from "bun:test";
 import { createMailActionOutcomes, MAIL_ACTION_OUTCOME_TTL_MS } from "./mail-action-outcomes";
 
 describe("Mail action outcomes", () => {
+  // Archive two conversations: one message in the Inbox, and one conversation filed in the Inbox and Projects.
   const archiveTwo = (outcomes: ReturnType<typeof createMailActionOutcomes>, now = Date.now()) =>
     outcomes.follow({
       actionId: "archive",
       destinationFolderId: null,
       conversations: [
-        { conversationId: "c1", label: "Quarterly report", sourceFolderIds: ["inbox"], commands: [{ id: "m1", state: "queued" }] },
+        { conversationId: "c1", label: "Quarterly report", commands: [{ id: "m1", state: "queued", sourceFolderId: "inbox" }] },
         {
           conversationId: "c2",
           label: "Team lunch",
-          sourceFolderIds: ["inbox", "projects"],
           commands: [
-            { id: "m2", state: "queued" },
-            { id: "m3", state: "queued" },
+            { id: "m2", state: "queued", sourceFolderId: "inbox" },
+            { id: "m3", state: "queued", sourceFolderId: "projects" },
           ],
         },
       ],
       now,
     });
 
-  test("reports a queued archive that fails later, once every command finished", () => {
+  test("reports a queued archive that fails later, once every command finished, with the folder where it failed", () => {
     const outcomes = createMailActionOutcomes();
     expect(archiveTwo(outcomes)).toBeNull();
     expect(outcomes.pendingCommandIds()).toEqual(["m1", "m2", "m3"]);
@@ -38,12 +38,13 @@ describe("Mail action outcomes", () => {
     ).toEqual([]);
     expect(outcomes.pendingCommandIds()).toEqual(["m3"]);
 
+    // Projects was archived, so Try again repeats the change in the Inbox only.
     expect(outcomes.apply(["m3"], [{ id: "m3", state: "confirmed", code: null }])).toEqual([
       {
         actionId: "archive",
         destinationFolderId: null,
         conversationCount: 2,
-        failures: [{ conversationId: "c2", label: "Team lunch", sourceFolderIds: ["inbox", "projects"], code: "REMOTE_MESSAGE_MISSING" }],
+        failures: [{ conversationId: "c2", label: "Team lunch", sourceFolderIds: ["inbox"], code: "REMOTE_MESSAGE_MISSING" }],
       },
     ]);
     expect(outcomes.hasPending()).toBe(false);
@@ -100,12 +101,7 @@ describe("Mail action outcomes", () => {
       actionId: "mark_read",
       destinationFolderId: null,
       conversations: [
-        {
-          conversationId: "c1",
-          label: "Quarterly report",
-          sourceFolderIds: ["inbox"],
-          commands: [{ id: "m1", state: "failed", code: null }],
-        },
+        { conversationId: "c1", label: "Quarterly report", commands: [{ id: "m1", state: "failed", code: null, sourceFolderId: "inbox" }] },
       ],
     });
     expect(report?.failures).toEqual([{ conversationId: "c1", label: "Quarterly report", sourceFolderIds: ["inbox"], code: "failed" }]);
@@ -145,10 +141,25 @@ describe("Mail action outcomes", () => {
         failures: [
           { conversationId: "c1", label: "Quarterly report", sourceFolderIds: ["inbox"], code: "PROVIDER_RIGHTS_CHANGED" },
           // Its other change never finished, so it is unclear and not offered again.
-          { conversationId: "c2", label: "Team lunch", sourceFolderIds: ["inbox", "projects"], code: "needs_attention" },
+          { conversationId: "c2", label: "Team lunch", sourceFolderIds: ["inbox"], code: "needs_attention" },
         ],
       },
     ]);
     expect(outcomes.hasPending()).toBe(false);
+  });
+
+  test("calls a conversation unclear at expiry when no request could check its commands in time", () => {
+    const outcomes = createMailActionOutcomes();
+    archiveTwo(outcomes, 0);
+    // Only m1 was ever asked about and still waits for the mailbox; m2 and m3 were never checked.
+    expect(outcomes.apply(["m1"], [{ id: "m1", state: "queued", code: null }], 1)).toEqual([]);
+    expect(outcomes.apply([], [], MAIL_ACTION_OUTCOME_TTL_MS)).toEqual([
+      {
+        actionId: "archive",
+        destinationFolderId: null,
+        conversationCount: 2,
+        failures: [{ conversationId: "c2", label: "Team lunch", sourceFolderIds: [], code: "needs_attention" }],
+      },
+    ]);
   });
 });
