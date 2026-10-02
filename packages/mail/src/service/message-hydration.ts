@@ -11,7 +11,6 @@ import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
-import { isTransientDatabaseError } from "./database-errors";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
 import { type MailCollaborationEvent, publishMailCollaborationEvent } from "./events";
 import { assertMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
@@ -19,7 +18,6 @@ import { createBlobReadable, type StoredBlob, storeReadableBlob } from "./messag
 import { extractMessageProtocolFacts, parseMessageProtocolFacts, readMessageRootHeaders } from "./message-protocol";
 import { parseMessageReceiptSource, recordMessageReceipt } from "./message-receipts";
 import { assessMessageSourceSize } from "./message-source-size";
-import { isTransientProviderFailure } from "./provider-errors";
 import { splitSearchText } from "./search-chunks";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
@@ -1003,17 +1001,10 @@ export const hydrateMessageFromSource = async (params: {
         WHERE id = ${params.messageId}::uuid AND hydration_claim_id = ${claimId}::uuid
       `;
     } else {
-      // A lost provider or database connection says nothing about the message, so it never uses
-      // up the last attempt: the body stays in the retry queue that the sync works through.
-      const transient = isTransientProviderFailure(error) || isTransientDatabaseError(error);
       const [failed] = await sql<{ mailbox_id: string; hydration_attempt: number }[]>`
         UPDATE mail.message_contents
         SET
           hydration_status = 'failed',
-          hydration_attempt = CASE
-            WHEN ${transient} THEN LEAST(hydration_attempt, ${MAX_HYDRATION_ATTEMPTS - 1})
-            ELSE hydration_attempt
-          END,
           hydration_error_code = ${normalizeErrorCode(error)},
           hydration_claim_id = NULL,
           hydration_claimed_at = NULL

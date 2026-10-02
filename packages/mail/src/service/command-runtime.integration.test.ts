@@ -371,6 +371,25 @@ suite("mail command runtime provider safety", () => {
     }
   }, 15_000);
 
+  test("a delete whose provider stays unreachable fails after its last attempt instead of waiting forever", async () => {
+    const message = await inboxMessage("unreachable-delete-exhausted", 424252);
+    const timeout = () => Object.assign(new Error("Connection timed out"), { code: "CONNECT_TIMEOUT" });
+    const provider = deletingProvider(message.rfcMessageId, [timeout(), timeout(), timeout(), timeout(), timeout()]);
+    try {
+      const commandId = await deleteCommand(message.id, "unreachable-delete-exhausted");
+      const states: (string | null)[] = [];
+      for (let run = 0; run < 5; run += 1) states.push(await executeMutationCommand(commandId));
+      expect(states).toEqual(["queued", "queued", "queued", "queued", "failed"]);
+      const [row] = await sql<{ attempt: number; last_error_code: string | null; provider_effect_started_at: Date | null }[]>`
+        SELECT attempt, last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${commandId}::uuid
+      `;
+      expect(row).toEqual({ attempt: 5, last_error_code: "CONNECT_TIMEOUT", provider_effect_started_at: null });
+      expect(provider.remove).not.toHaveBeenCalled();
+    } finally {
+      provider.restore();
+    }
+  }, 15_000);
+
   test("an ambiguous command whose provider effect never started runs fresh instead of needing attention", async () => {
     const message = await inboxMessage("unstarted-ambiguous-delete", 424251);
     const provider = deletingProvider(message.rfcMessageId);

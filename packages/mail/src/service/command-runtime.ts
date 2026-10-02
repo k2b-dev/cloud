@@ -1591,9 +1591,12 @@ const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive:
   }
 };
 
+/** Attempts a command gets to reconcile an unknown outcome, or to reach a provider that keeps failing before its effect. */
+const MUTATION_MAX_ATTEMPTS = 5;
+
 const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: LeaseAssertion): Promise<CommandState | null> => {
   try {
-    if (claimed.previousState === "ambiguous" && claimed.command.attempt >= 5) {
+    if (claimed.previousState === "ambiguous" && claimed.command.attempt >= MUTATION_MAX_ATTEMPTS) {
       await commandState(
         claimed.command,
         "needs_attention",
@@ -1610,7 +1613,9 @@ const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: Le
     // An effect an earlier attempt started still needs reconciliation, even when this attempt failed before its own.
     const providerEffectStarted =
       claimed.earlierEffectStarted || (await providerEffectStartedForAttempt(claimed.command).catch(() => true));
-    await commandState(claimed.command, mutationFailureState(error, providerEffectStarted), error);
+    const state = mutationFailureState(error, providerEffectStarted);
+    // A provider that stays unreachable fails the command after its last attempt instead of holding it forever.
+    await commandState(claimed.command, state === "queued" && claimed.command.attempt >= MUTATION_MAX_ATTEMPTS ? "failed" : state, error);
   }
   const [state] = await sql<{ state: CommandState }[]>`
     SELECT state FROM mail.commands WHERE id = ${claimed.command.id}::uuid
@@ -2676,8 +2681,8 @@ const persistSmtpFailure = async (params: {
     return;
   }
   if (params.messageUnread) {
-    // Nothing was transmitted, so the outcome is known: retry a connection failure, fail anything else.
-    if (isTransientProviderFailure(error) && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
+    // Nothing was transmitted, so the outcome is known: retry what pre-dispatch retries too, fail anything else.
+    if (isRetryablePreDispatchError(error) && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
       await scheduleOutboxRetry({
         outbox,
         command,
@@ -2791,12 +2796,18 @@ const giveUpUnknownOutbox = async (outbox: DbOutboxExecution, command: DbCommand
 };
 
 const reconcileUnknownOutbox = async (outbox: DbOutboxExecution, command: DbCommandExecution, signal: AbortSignal): Promise<void> => {
+  // A synced copy proves the send without the provider, so it settles the delivery even when the
+  // pinned binding, credentials, or sender can no longer be loaded. Otherwise such a failure would
+  // give up, and the copy would reopen the delivery for the next check again and again.
+  if (await hasSyncedSentCopy(sql, outbox.id)) {
+    await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent" });
+    return;
+  }
   const binding = await loadPinnedBinding(command);
   const sender = await loadSenderBinding(command, outbox.sender_identity_id);
   const runtime = await loadPinnedRuntime(binding);
-  const synced = await hasSyncedSentCopy(sql, outbox.id);
-  const matches = synced ? [] : await sentMatches({ runtime, sentPath: sender.sent_path, messageId: outbox.stable_message_id, signal });
-  if (synced || matches.length > 0) {
+  const matches = await sentMatches({ runtime, sentPath: sender.sent_path, messageId: outbox.stable_message_id, signal });
+  if (matches.length > 0) {
     await recordSentCopy(outbox, sender, matches);
     await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent" });
     return;

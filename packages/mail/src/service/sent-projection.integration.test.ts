@@ -897,6 +897,14 @@ suite("mail sent message projection", () => {
       expect(provider.submissions()).toBe(1);
       expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
 
+      // A worker lease lost while SMTP still connects is retried like the same loss before dispatch.
+      const interrupted = await newDraft(mailbox, "Lease lost");
+      provider.failNextSubmission("COMMAND_JOB_LEASE_LOST", false);
+      const leaseLost = await send(mailbox, interrupted.id, interrupted.revision, "smtp-lease-lost", "scheduled");
+      expect(await delivery(leaseLost.id)).toMatchObject({ state: "scheduled", last_error_code: "OUTBOX_PREDISPATCH_RETRY" });
+      expect(await sendRetryNow(leaseLost.id)).toBe("sent");
+      expect(provider.submissions()).toBe(2);
+
       const rejected = await newDraft(mailbox, "SMTP certificate");
       provider.failNextSubmission("ETLS", false);
       const failed = await send(mailbox, rejected.id, rejected.revision, "smtp-certificate", "failed");
@@ -906,7 +914,7 @@ suite("mail sent message projection", () => {
         command_state: "failed",
         draft_state: "draft",
       });
-      expect(provider.submissions()).toBe(1);
+      expect(provider.submissions()).toBe(2);
     } finally {
       provider.restore();
     }
@@ -949,7 +957,17 @@ suite("mail sent message projection", () => {
       expect(checks).toEqual(["unknown", "unknown", "unknown", "needs_attention"]);
 
       await mailbox.syncAll();
+      // The synced copy's body is hydrated here, so no hydration worker holds the provider lease the check needs.
+      await waitForHydration(mailbox);
       expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+      // Replaced credentials no longer match the send's pinned binding; the synced copy needs none.
+      await sql`
+        UPDATE mail.provider_connections connection
+        SET secret_revision = connection.secret_revision + 1
+        FROM mail.outbox_submissions submission
+        JOIN mail.provider_bindings binding ON binding.id = submission.selected_binding_id
+        WHERE submission.id = ${outbox.id}::uuid AND connection.id = binding.connection_id
+      `;
       expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
       expect(await delivery(outbox.id)).toEqual({
         state: "reconciled_accepted",

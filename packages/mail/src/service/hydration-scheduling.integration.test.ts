@@ -404,36 +404,6 @@ suite("mail body hydration scheduling", () => {
     expect(fetched.filter((messageId) => messageId === failing || messageId === fresh)).toEqual([failing, fresh]);
   });
 
-  test("a body whose download keeps breaking stays in the retry queue and hydrates once the connection holds", async () => {
-    const fixture = await createSyncedMailbox("resetting-body");
-    let resetting = "";
-    await withDownloadsHeld(async () => {
-      await deliver(fixture, 1);
-      resetting = await newestMessageId(fixture);
-      broken.add(resetting);
-    });
-    const downloads = (): number => fetched.filter((messageId) => messageId === resetting).length;
-    // Each `mail:sync-due` tick retries it; more resets than hydration attempts must not end it for good.
-    await waitFor(async () => {
-      if (downloads() >= 7) return true;
-      await submitDueHydrationWork();
-      return false;
-    });
-    await waitFor(async () => (await hydrationState(resetting))?.hydration_status === "failed");
-    expect(await hydrationState(resetting)).toEqual({
-      hydration_status: "failed",
-      hydration_attempt: 4,
-      hydration_error_code: "ECONNRESET",
-    });
-
-    broken.delete(resetting);
-    await waitFor(async () => {
-      if ((await hydrationState(resetting))?.hydration_status === "complete") return true;
-      await submitDueHydrationWork();
-      return false;
-    });
-  });
-
   test("a batch that fails at the provider does not hold back the next sync's new mail", async () => {
     const fixture = await createSyncedMailbox("provider-failure");
     const sentinel = await createSyncedMailbox("sentinel-provider");

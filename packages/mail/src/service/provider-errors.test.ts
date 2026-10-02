@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { isBrokenProviderConnection, isTransientProviderFailure } from "./provider-errors";
+import { isTransientProviderFailure } from "./provider-errors";
 
 const failure = (code: string) => Object.assign(new Error(code), { code });
 
 describe("provider connection failures", () => {
-  test("count a server that could not be reached as transient, but not as a broken connection", () => {
+  test("count a server that could not be reached or a connection that broke mid-command as transient", () => {
     for (const code of [
       "ECONNREFUSED",
       "EAI_AGAIN",
@@ -14,16 +14,15 @@ describe("provider connection failures", () => {
       "CONNECT_TIMEOUT",
       "GREETING_TIMEOUT",
       "UPGRADE_TIMEOUT",
+      "ETIMEOUT",
+      "NoConnection",
+      "EConnectionClosed",
+      "ECONNRESET",
+      "ESOCKET",
+      "ECONNECTION",
+      "ETIMEDOUT",
     ]) {
       expect(isTransientProviderFailure(failure(code)), code).toBe(true);
-      expect(isBrokenProviderConnection(failure(code)), code).toBe(false);
-    }
-  });
-
-  test("count a connection that broke mid-command as transient and broken", () => {
-    for (const code of ["ETIMEOUT", "NoConnection", "EConnectionClosed", "ECONNRESET", "ESOCKET", "ECONNECTION", "ETIMEDOUT"]) {
-      expect(isTransientProviderFailure(failure(code)), code).toBe(true);
-      expect(isBrokenProviderConnection(failure(code)), code).toBe(true);
     }
   });
 

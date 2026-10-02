@@ -28,7 +28,7 @@ Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Wurd
 5. Fehlen Ordner oder haben sie sich geändert, wähle für die aktive Verbindung **Neu erkennen**.
 :::
 
-Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert** und ersetzt den Hinweis durch den Inhalt, sobald die Synchronisierung abgeschlossen ist, ohne dass du die Seite neu laden musst. Bricht die Verbindung zum Mailserver immer wieder ab, versucht Mail etwa einmal pro Minute weiter, den Inhalt zu laden, bis es gelingt. Zeigt die Konversationsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
+Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert** und ersetzt den Hinweis durch den Inhalt, sobald die Synchronisierung abgeschlossen ist, ohne dass du die Seite neu laden musst. Zeigt die Konversationsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
 
 Ein Absender- oder Empfängereintrag mit weniger als 3 oder mehr als 320 Zeichen, etwa ein Textfragment aus einer fehlerhaften Nachricht, lässt sich nicht als Adresse speichern. Mail übernimmt die Nachricht trotzdem und lässt nur diesen Eintrag weg; der ursprüngliche Header bleibt in den Details der Unterhaltung unter **Header** sichtbar.
 
@@ -135,7 +135,7 @@ Zeigt **Status > Reparatur- und Projektionsabdeckung** eine Lücke, kann eine Pe
 - **Arbeit wiederholen** erscheint nur bei fehlgeschlagenen Wartungslesevorgängen beim Anbieter, wenn noch keine Anbieterwirkung begonnen hat.
 - **Arbeit abbrechen** erscheint nur, solange geeignete Wartungsarbeit vorgemerkt ist oder fehlgeschlagen ist.
 
-Ein Verschieben, Löschen, eine Markierungsänderung oder ein Ordnervorgang, der den Mailserver vor dem Start nicht erreichen konnte, benötigt keine Aufmerksamkeit: Mail wartet und führt ihn aus, sobald der Server wieder erreichbar ist.
+Ein Verschieben, Löschen, eine Markierungsänderung oder ein Ordnervorgang, der den Mailserver vor dem Start nicht erreichen konnte, benötigt keine Aufmerksamkeit: Mail versucht es über einige Minuten mehrmals erneut. Bleibt der Server unerreichbar, schlägt die Aktion fehl, ohne auf dem Server etwas zu ändern, und du kannst sie später wiederholen.
 
 Wiederhole weder Verschieben, Löschen, eine Markierungsänderung, einen Ordnervorgang noch den Versand, wenn Mail ein unklares Ergebnis meldet. Kann der Abgleich das entfernte Ergebnis nicht nachweisen, bleibt der Befehl im Zustand **Aufmerksamkeit erforderlich**, bis der Anbieter manuell geprüft wurde.
 
