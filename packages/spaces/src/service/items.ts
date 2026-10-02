@@ -24,11 +24,11 @@ import type {
 } from "@/contracts";
 import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { withShortId } from "../lib/short-id";
+import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
-import { descriptionPreview } from "./description-preview";
 import { publishSpaceEvent } from "./events";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { rank } from "./rank";
