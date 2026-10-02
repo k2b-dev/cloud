@@ -60,11 +60,13 @@ In a contained dialog a section is its 14 px title and optional 12 px
 subtitle above one softly tinted, borderless group that holds its content.
 There is no card, border, or divider. The section `icon` shows only in
 floating placement.
-Fields inside the group (text, textarea, select, multi-select, combobox,
-date, tags, color, and input-style buttons) turn to the base surface so they
-stand out from the tint; hover, focus, invalid, and autofill states stay as
-they are. Switches, checkboxes, notices, and code keep their own look.
-About 24 px separates a section from its neighbours.
+Fields inside the group (text, textarea, number, select, multi-select,
+combobox, date, tags, color, and input-style buttons and checkbox cards) turn
+to the base surface so they stand out from the tint, disabled ones included;
+hover, focus, invalid, and autofill states stay as they are. Switches,
+checkboxes, segmented controls, notices, and code keep their own look.
+About 24 px separates a section from its neighbours. A section placed first in
+a grid row keeps its top aligned with the next column.
 Only the section's own subtitle is muted: fields, notices, and paragraphs in the
 section keep their own description, error, and text styles.
 
@@ -72,6 +74,10 @@ A section that is alone in the body, directly or inside a form that is the
 body's only child, has nothing to be grouped against. It drops the tint and
 its fields sit on the dialog surface. Sections wrapped one by one, for example
 in grid columns, keep their groups.
+
+A section inside another section's group adds a heading, not a second group.
+Its title and content line up with the fields around it, and its fields stay
+white.
 
 Pass `hideable` to a section for optional settings. A closed section shows
 only its title row with an eye icon at the trailing edge. Opening it keeps the
@@ -101,6 +107,8 @@ their own.
 
 Use `PanelDialog.Tabs` only for local views within the editor. Its `value` may
 be direct or an accessor; the application updates it through `onValueChange`.
+Between header and body the tabs share the dialog's horizontal inset; inside
+the body or a section they start at the content edge.
 
 ## Close ownership
 

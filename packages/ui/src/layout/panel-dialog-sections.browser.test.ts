@@ -17,6 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: PanelDialog } = await import("./PanelDialog");
 const { TextInput } = await import("../inputs/TextInput");
 const { Switch } = await import("../inputs/Switch");
+const { NumberInput } = await import("../inputs/NumberInput");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const viewports = {
@@ -33,6 +34,7 @@ afterAll(async () => {
 });
 
 const text = (label: string) => createComponent(TextInput, { label, value: "Autumn market" });
+const locked = (label: string) => createComponent(NumberInput, { label, value: 3, disabled: true, onValueChange: () => {} });
 const section = (title: string, children: () => JSX.Element, hideable?: { defaultOpen: boolean }) =>
   hideable
     ? createComponent(PanelDialog.Section, {
@@ -76,7 +78,7 @@ const markup = () =>
   [
     dialog("grouped", () => [
       text("Loose"),
-      section("General", () => [text("Name"), text("Identifier")]),
+      section("General", () => [text("Name"), text("Identifier"), locked("Seats")]),
       section("Visibility", () => createComponent(Switch, { label: "Visible to all members", value: true })),
       section("Closed", () => text("Hidden"), { defaultOpen: false }),
       section("Open", () => text("Shown"), { defaultOpen: true }),
@@ -85,6 +87,26 @@ const markup = () =>
     dialog("lone-form", () => section("Name", () => text("Title"))),
     dialog("wrapped", () => [text("Search"), section("Message", () => text("Id")), section("Source", () => text("Size"))]),
     dialog("floating", () => [section("Trigger", () => text("Event")), section("Action", () => text("Target"))], "floating"),
+    dialog("columns", () => [
+      section("Client", () => text("Name")),
+      section("Access", () => text("Who")),
+      section("Scopes", () => text("Claims")),
+    ]),
+    dialog("nested", () => [
+      section("Costs", () => [text("Currency"), section("How costs are counted", () => text("Unit"), { defaultOpen: true })]),
+      section("Advanced", () => text("Limit")),
+    ]),
+    dialog("tabs", () => [
+      createComponent(PanelDialog.Tabs, {
+        value: "overview",
+        onValueChange: () => {},
+        options: [
+          { value: "overview", label: "Overview" },
+          { value: "source", label: "Source" },
+        ],
+      }),
+      section("Message", () => text("Subject")),
+    ]),
   ].join("");
 
 const open = async (viewport: { width: number; height: number }) => {
@@ -110,6 +132,17 @@ const open = async (viewport: { width: number; height: number }) => {
       grid.append(column);
     }
     wrapped.append(grid);
+    // A section first in a grid row beside a column of further sections, as
+    // the OAuth client and notification dialogs place them.
+    const columns = document.querySelector("#columns .k2b-panel-dialog__body")!;
+    const [client, ...rest] = Array.from(columns.children);
+    const row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:0.75rem";
+    const aside = document.createElement("aside");
+    aside.style.cssText = "display:flex;flex-direction:column;gap:0.75rem";
+    aside.append(...rest);
+    row.append(client!, aside);
+    columns.append(row);
   });
   return page;
 };
@@ -176,6 +209,25 @@ const measure = () => {
     wrapped: Array.from(scope("wrapped").querySelectorAll(".k2b-panel-dialog__section-body")).map(
       (element) => style(element).backgroundColor,
     ),
+    columnTops: Array.from(scope("columns").querySelectorAll("#columns .k2b-panel-dialog__body > div > *")).map(
+      (element) => box(element).top,
+    ),
+    nested: (() => {
+      const outer = scope("nested").querySelector(".k2b-panel-dialog__section")!;
+      const inner = outer.querySelector(".k2b-panel-dialog__section-body .k2b-panel-dialog__section")!;
+      const innerBody = inner.querySelector(":scope > .k2b-panel-dialog__section-body")!;
+      const fieldLeft = box(outer.querySelector(".k2b-panel-dialog__section-body > .k2b-field .k2b-input-shell")!).left;
+      return {
+        tint: style(innerBody).backgroundColor,
+        well: well(innerBody),
+        titleAligned: box(inner.querySelector("h3")!).left === fieldLeft,
+        fieldAligned: box(innerBody.querySelector(".k2b-input-shell")!).left === fieldLeft,
+        gap: box(inner).top - box(outer.querySelector(".k2b-panel-dialog__section-body > .k2b-field")!).bottom,
+      };
+    })(),
+    tabsAligned:
+      box(scope("tabs").querySelector(".k2b-panel-dialog__body [role=tab]")!).left ===
+      box(scope("tabs").querySelector(".k2b-panel-dialog__section-body")!).left,
     floating: Array.from(scope("floating").querySelectorAll(".k2b-panel-dialog__section")).map((element) => ({
       border: style(element).borderTopStyle,
       background: style(element).backgroundColor,
@@ -224,6 +276,15 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
 
         // Sections wrapped one per column keep their groups.
         expect(result.wrapped).toEqual([result.muted, result.muted]);
+
+        // A section first in a grid row keeps its top aligned with the next column.
+        expect(result.columnTops[0]).toBe(result.columnTops[1]);
+
+        // A section inside a group adds a heading, not a second group.
+        expect(result.nested).toEqual({ tint: transparent, well: result.surface, titleAligned: true, fieldAligned: true, gap: 16 });
+
+        // Tabs inside the body start at the body inset like the groups.
+        expect(result.tabsAligned).toBe(true);
 
         // Floating placement keeps white cards with their icons.
         for (const section of result.floating) {
