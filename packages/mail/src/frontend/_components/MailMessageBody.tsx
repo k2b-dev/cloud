@@ -69,7 +69,10 @@ export default function MailMessageBody(props: {
   let disposed = false;
   // Loaded images stay here so a (re)loaded frame document can receive them all.
   const frameImages: FrameImage[] = [];
-  const plainSegments = createMemo(() => splitPlainMessageSegments(props.plainText ?? ""));
+  // Split only when the text itself changes: a refreshed message snapshot with
+  // the same body must keep its segments, and with them any opened quote.
+  const plainText = createMemo(() => props.plainText ?? "");
+  const plainSegments = createMemo(() => splitPlainMessageSegments(plainText()));
   const remoteImageIds = createMemo(() => {
     if (props.format !== "html" || props.linksDisabled) return [];
     const stored = new Set(props.remoteContent.imageIds.map((id) => id.toLowerCase()));
@@ -85,7 +88,7 @@ export default function MailMessageBody(props: {
       channel,
       props.linksDisabled,
       localized.locale,
-      localized.t.showQuotedText,
+      { show: localized.t.showQuotedText, hide: localized.t.hideQuotedText },
     );
   });
   let plainBody: HTMLDivElement | undefined;
@@ -256,9 +259,17 @@ export default function MailMessageBody(props: {
             <For each={plainSegments()}>
               {(segment) =>
                 segment.kind === "quote" ? (
-                  <details class="text-secondary">
-                    <summary class="w-fit cursor-pointer select-none rounded-[var(--ui-radius-control)] px-2 py-1 text-xs font-medium hover:bg-[var(--ui-hover)]">
-                      {messages().showQuotedText}
+                  <details class="group/quote text-secondary">
+                    <summary class="focus-ui inline-flex w-fit cursor-pointer select-none list-none items-center gap-1.5 rounded-[var(--ui-radius-control)] py-1 pl-1.5 pr-2 text-xs font-medium transition-colors hover:bg-[var(--ui-hover)] hover:text-primary [&::-webkit-details-marker]:hidden">
+                      <i
+                        class="ti ti-chevron-right text-sm transition-transform group-open/quote:rotate-90 motion-reduce:transition-none"
+                        aria-hidden="true"
+                      />
+                      {/* Both labels share one grid cell, so switching them never resizes the toggle. */}
+                      <span class="inline-grid">
+                        <span class="[grid-area:1/1] group-open/quote:invisible">{messages().showQuotedText}</span>
+                        <span class="invisible [grid-area:1/1] group-open/quote:visible">{messages().hideQuotedText}</span>
+                      </span>
                     </summary>
                     <pre class="mt-2 whitespace-pre-wrap break-words border-l-2 border-default pl-3 font-sans text-sm">
                       <PlainText value={segment.text} linksDisabled={props.linksDisabled} />

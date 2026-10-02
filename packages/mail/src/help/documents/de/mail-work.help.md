@@ -84,6 +84,8 @@ Mail passt Nachrichtentexte standardmäßig an das aktuelle Farbschema an: siche
 
 HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie ausdrücklich lädst.
 
+Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen in der Unterhaltung eintreffen.
+
 Die oberen Aktionen wirken auf die aktive Anbieterablage der Unterhaltung:
 
 - **Archivieren** verschiebt sie in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung deshalb aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **Alle Nachrichten**.

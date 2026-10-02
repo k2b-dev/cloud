@@ -84,6 +84,8 @@ Mail adapts message bodies to the current theme by default: safe HTML in light m
 
 HTML messages keep a bounded set of layout, typography, color, spacing, and table styles. Scripts, forms, embedded objects, external stylesheets, and other active content are removed. Remote images remain blocked separately until you choose to load them.
 
+Mail collapses the quoted history of earlier messages. Select **Show quoted text** to expand it and **Hide quoted text** to collapse it again. An expanded quote stays open while new activity or other live updates arrive in the conversation.
+
 The top actions operate on the conversation's active provider placement:
 
 - **Archive** moves it to the mapped archive folder. Gmail has no archive folder, so without a mapping Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.

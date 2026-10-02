@@ -33,26 +33,32 @@ describe("MailMessageBody sizing", () => {
       "test-channel",
       false,
       "de",
-      "Zitierten Text anzeigen",
+      { show: "Zitierten Text anzeigen", hide: "Zitierten Text ausblenden" },
     );
 
     expect(document).toContain('<html lang="de">');
-    expect(document).toContain('summary.textContent = "Zitierten Text anzeigen"');
+    expect(document).toContain('const quotedTextLabels = {"show":"Zitierten Text anzeigen","hide":"Zitierten Text ausblenden"}');
     expect(document).toContain('blockquote[type="cite"], .gmail_quote, .yahoo_quoted');
   });
 
+  test("shows quoted text behind a chevron toggle instead of the native disclosure marker", () => {
+    const document = buildMessageDocument('<blockquote type="cite">Earlier message</blockquote>', "test-channel");
+
+    expect(document).toContain("details.mail-quoted-history > summary::-webkit-details-marker { display: none; }");
+    expect(document).toContain("list-style: none");
+    expect(document).toContain('path.setAttribute("d", "M9 6l6 6l-6 6")');
+    expect(document).toContain("details.mail-quoted-history[open] > summary > svg { transform: rotate(90deg); }");
+  });
+
   test("escapes iframe language and quote labels at their output boundaries", () => {
-    const document = buildMessageDocument(
-      "<p>Safe content</p>",
-      "test-channel",
-      false,
-      'de\" onload=\"alert(1)',
-      "</script><script>alert(1)</script>",
-    );
+    const document = buildMessageDocument("<p>Safe content</p>", "test-channel", false, 'de\" onload=\"alert(1)', {
+      show: "</script><script>alert(1)</script>",
+      hide: "Hide",
+    });
 
     expect(document).toContain('<html lang="de&quot; onload=&quot;alert(1)">');
-    expect(document).toContain('summary.textContent = "\\u003c/script>\\u003cscript>alert(1)\\u003c/script>"');
-    expect(document).not.toContain('summary.textContent = "</script>');
+    expect(document).toContain('{"show":"\\u003c/script>\\u003cscript>alert(1)\\u003c/script>","hide":"Hide"}');
+    expect(document).not.toContain("<script>alert(1)");
   });
 
   test("allows only the app-owned iframe bridge script", () => {

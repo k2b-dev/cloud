@@ -145,6 +145,52 @@ test.skipIf(isServer)(
   },
 );
 
+test.skipIf(isServer)("an opened quoted block stays open when a live update refreshes the conversation", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const hydrated: MessageDetail = {
+    ...envelopeOnly,
+    hydrationStatus: "complete",
+    plainText: "Sounds good.\n\nOn Monday Ada wrote:\n> Shall we meet on Friday?",
+    sourceAvailable: true,
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([hydrated]);
+  const [activity, setActivity] = createSignal<ComponentProps<typeof MailConversationReaderComponent>["activity"]>([]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+        get activity() {
+          return activity();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const quote = () => dom.root.querySelector<HTMLDetailsElement>('[data-mail-message-id="Msg001"] details');
+    await waitFor(() => quote() !== null);
+    const card = dom.root.querySelector('[data-mail-message-id="Msg001"]');
+    const opened = quote()!;
+    opened.open = true;
+
+    // Live invalidations reload activity and reconcile the detail snapshot.
+    setActivity([]);
+    setMessages([{ ...hydrated }]);
+    await Bun.sleep(5);
+
+    // The card stays mounted, so an HTML body keeps its frame document too.
+    expect(dom.root.querySelector('[data-mail-message-id="Msg001"]')).toBe(card);
+    expect(quote()).toBe(opened);
+    expect(quote()?.open).toBe(true);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("reply and forward Commands name an untitled conversation instead of quoting an empty subject", async () => {
   const dom = createDomTestHarness();
   const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");

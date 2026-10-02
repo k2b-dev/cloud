@@ -76,6 +76,7 @@ describe("HTML mail message locale", () => {
 
     expect(html).toContain("lang=&quot;de&quot;");
     expect(html).toContain("Zitierten Text anzeigen");
+    expect(html).toContain("Zitierten Text ausblenden");
     expect(html).not.toContain("Show quoted text");
   });
 });

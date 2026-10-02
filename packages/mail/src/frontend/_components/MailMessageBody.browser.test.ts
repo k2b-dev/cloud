@@ -10,6 +10,7 @@ const html = [
   "<p>Hello</p>",
   ...remoteIds.map((id, index) => `<p>Remote ${index}</p><img alt="remote-${index}" data-mail-remote-image="${id}">`),
   '<img alt="cid-0" src="cid:Logo%40Example.com"><img alt="cid-1" src="cid:banner@example.com">',
+  '<blockquote type="cite"><p>Earlier message</p></blockquote>',
 ].join("");
 
 const buildHarness = async (): Promise<string> => {
@@ -113,6 +114,37 @@ const imageStates = (frame: Frame) =>
   frame.evaluate(() => Object.fromEntries(Array.from(document.images).map((image) => [image.alt, image.naturalWidth > 0])));
 
 describe("HTML mail message frame", () => {
+  test("toggles quoted text with a chevron that keeps the toggle in place", async () => {
+    await withOpenedMessage(false, async ({ frame, errors }) => {
+      const summary = frame.locator("details.mail-quoted-history > summary");
+      const state = () =>
+        summary.evaluate((element) => {
+          const visible = [...element.querySelectorAll(".mail-quoted-labels > span")].filter(
+            (label) => getComputedStyle(label).visibility === "visible",
+          );
+          const box = element.getBoundingClientRect();
+          return {
+            open: (element.parentElement as HTMLDetailsElement).open,
+            display: getComputedStyle(element).display,
+            chevron: getComputedStyle(element.querySelector("svg")!).transform,
+            label: visible.map((label) => label.textContent).join(""),
+            box: { x: box.x, y: box.y, width: box.width, height: box.height },
+          };
+        });
+
+      const closed = await state();
+      expect(closed).toMatchObject({ open: false, display: "inline-flex", chevron: "none", label: "Show quoted text" });
+
+      await summary.click();
+      const opened = await state();
+      expect(opened).toMatchObject({ open: true, label: "Hide quoted text" });
+      expect(opened.chevron).not.toBe("none");
+      expect(opened.box).toEqual(closed.box);
+      expect(await frame.getByText("Earlier message").isVisible()).toBeTrue();
+      expect(errors).toEqual([]);
+    });
+  }, 30_000);
+
   test("shows allowed remote and inline images without reloading the frame", async () => {
     await withOpenedMessage(true, async ({ page, frame, errors }) => {
       await visibleImages(frame, 7);
