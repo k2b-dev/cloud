@@ -527,6 +527,7 @@ const AMBIGUOUS_COMMAND_CODES = new Set([
   "COMMAND_JOB_LEASE_LOST",
   "REMOTE_CREATE_SUBSCRIBE_PARTIAL",
   "REMOTE_FLAGS_UNCONFIRMED",
+  "REMOTE_MOVE_UNCONFIRMED",
   "REMOTE_STATE_PARTIAL",
   "REMOTE_STATE_UNCONFIRMED",
   "REMOTE_SUBSCRIPTION_UNCONFIRMED",
@@ -929,11 +930,12 @@ type FreshMove = { command: DbCommandExecution; target: MutationTarget; source: 
 
 const MISSING_REMOTE_MESSAGE: RemoteMessageState = { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
 
-/** Records the destination's UIDNEXT before a move: every destination UID from there on is new. */
-const storeMoveBaseline = async (commands: DbCommandExecution[], uidNext: number): Promise<void> => {
+/** Records the destination's UIDNEXT before a move: every destination UID of that generation from there on is new. */
+const storeMoveBaseline = async (commands: DbCommandExecution[], status: { uidValidity: string; uidNext: number }): Promise<void> => {
+  const baseline = { destinationUidValidity: status.uidValidity, destinationUidNext: status.uidNext };
   await sql`
     UPDATE mail.commands command
-    SET transport_metadata = command.transport_metadata || ${{ destinationUidNext: uidNext }}::jsonb
+    SET transport_metadata = command.transport_metadata || ${baseline}::jsonb
     FROM unnest(
       ${toPgUuidArray(commands.map((entry) => entry.id))}::uuid[],
       ${toPgIntArray(commands.map((entry) => entry.attempt))}::int[]
@@ -942,9 +944,14 @@ const storeMoveBaseline = async (commands: DbCommandExecution[], uidNext: number
   `;
 };
 
-/** The lowest destination UID a move can have created; 0 for a move that recorded none. */
-const destinationUidFloor = (command: DbCommandExecution): number => {
-  const value = parseJsonRecord(command.transport_metadata).destinationUidNext;
+/**
+ * The lowest destination UID a move can have created, given the destination's current UIDVALIDITY;
+ * 0 for a move that recorded none or when the destination got a new generation since.
+ */
+const destinationUidFloor = (command: DbCommandExecution, uidValidity: string): number => {
+  const metadata = parseJsonRecord(command.transport_metadata);
+  const value = metadata.destinationUidNext;
+  if (metadata.destinationUidValidity !== uidValidity) return 0;
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
 };
 
@@ -1011,7 +1018,7 @@ const moveMessageSet = async (params: {
   const status = await imapSmtpConnector.getFolderStatus(runtime, destination.folder_path);
   await storeMoveBaseline(
     moves.map((move) => move.command),
-    status.uidNext,
+    status,
   );
   const current = await imapSmtpConnector.getMessageStates(runtime, sourceSet(moves));
   await assertLeaseActive();
@@ -1029,6 +1036,8 @@ const moveMessageSet = async (params: {
     }
   }
   if (started.length === 0) return;
+  // Marking the effects took a database round trip per move; the set must still hold the lease to move.
+  await assertLeaseActive();
   const result = await imapSmtpConnector.moveMessages(runtime, sourceSet(started), destination.folder_path);
   await assertLeaseActive();
   // A refused or partly failed move leaves some messages in the source: exactly those did not move.
@@ -1045,10 +1054,17 @@ const moveMessageSet = async (params: {
       );
       continue;
     }
-    const destinationRef = confirmedDestinationRef(destination, {
-      destinationUid: result.destinationUids.get(uid) ?? null,
-      destinationUidValidity: result.destinationUidValidity,
-    });
+    const destinationUid = result.destinationUids.get(uid) ?? null;
+    // After a refused move, a message gone from the source may have been deleted by another client
+    // instead of moved. Without COPYUID evidence, reconciliation looks for it in the destination.
+    if (!result.completed && destinationUid === null) {
+      await fail(
+        move.command,
+        commandError("Provider refused the move and did not report this message's new place", "REMOTE_MOVE_UNCONFIRMED"),
+      );
+      continue;
+    }
+    const destinationRef = confirmedDestinationRef(destination, { destinationUid, destinationUidValidity: result.destinationUidValidity });
     try {
       await persistMutationOutcome(async () => {
         if (
@@ -1234,7 +1250,12 @@ const reconcileTransferMutation = async (params: {
   if ((command.kind !== "copy" && command.kind !== "move") || !target.destinationFolderId || !source.message_id) return false;
   const destination = await loadDestinationFolder(command, target.destinationFolderId);
   const matches = await imapSmtpConnector.findMessageById(runtime, destination.folder_path, source.message_id);
-  const newUid = matches.find((uid) => uid >= destinationUidFloor(command) && !baselineUids(command).includes(uid)) ?? null;
+  // A move recorded the destination's UIDNEXT instead of the UIDs a search found before it.
+  const floor =
+    parseJsonRecord(command.transport_metadata).destinationUidNext === undefined
+      ? 0
+      : destinationUidFloor(command, (await imapSmtpConnector.getFolderStatus(runtime, destination.folder_path)).uidValidity);
+  const newUid = matches.find((uid) => uid >= floor && !baselineUids(command).includes(uid)) ?? null;
   const successful = command.kind === "copy" ? Boolean(newUid) : Boolean(newUid && !sourceState.exists);
   if (!successful) return false;
   // The destination UID is proven but its generation is not, so the folder sync owns the placement.
@@ -3420,11 +3441,20 @@ const runMoveSet = async (commandIds: string[], jobHeartbeat?: () => Promise<voi
           const member = await claimCommand(commandId, ["move"], ["queued"]);
           if (member) claimed.push(member);
         }
-        await executeFreshMoves(
-          claimed.map((member) => member.command),
-          assertLeaseActive,
-          fail,
-        );
+        // An earlier change of the same message can have become pending again since the set was chosen.
+        const ready: DbCommandExecution[] = [];
+        for (const member of claimed) {
+          if (!(await hasEarlierActiveMessageMutation(member.command.id))) ready.push(member.command);
+          else {
+            await requeueCommand(
+              member.command,
+              "queued",
+              "MESSAGE_MUTATION_PREDECESSOR_ACTIVE",
+              "An earlier change to this message is still pending",
+            );
+          }
+        }
+        await executeFreshMoves(ready, assertLeaseActive, fail);
       });
       if (outcome.busyRetryAfterMs !== null) {
         await requeueCommand(head.command, "queued", "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or changed");

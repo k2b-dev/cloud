@@ -21,6 +21,7 @@ describe("mail mutation failure classification", () => {
     expect(mutationFailureState(Object.assign(new Error("partial state"), { code: "REMOTE_STATE_PARTIAL" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("unconfirmed state"), { code: "REMOTE_STATE_UNCONFIRMED" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("unconfirmed flags"), { code: "REMOTE_FLAGS_UNCONFIRMED" }))).toBe("ambiguous");
+    expect(mutationFailureState(Object.assign(new Error("unconfirmed move"), { code: "REMOTE_MOVE_UNCONFIRMED" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("unconfirmed subscription"), { code: "REMOTE_SUBSCRIPTION_UNCONFIRMED" }))).toBe(
       "ambiguous",
     );

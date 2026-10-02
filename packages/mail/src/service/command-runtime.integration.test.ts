@@ -413,7 +413,11 @@ suite("mail command runtime provider safety", () => {
    * Every provider step records the configuration it ran with, so a test sees whether the steps shared the
    * session `withSession` opened.
    */
-  const movingProvider = async (rfcMessageId: string, options: { afterBaseline?: () => Promise<void>; afterMove?: Error } = {}) => {
+  const movingProvider = async (
+    rfcMessageId: string,
+    options: { afterBaseline?: () => Promise<void>; afterMove?: Error; destination?: { uidValidity: string; uid: number } } = {},
+  ) => {
+    const destination = options.destination ?? { uidValidity: "20", uid: 31 };
     await sql`
       UPDATE mail.provider_bindings SET capabilities = capabilities || '{"move": true}'::jsonb WHERE id = ${bindingId}::uuid
     `;
@@ -433,11 +437,11 @@ suite("mail command runtime provider safety", () => {
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (config) => {
       configs.push(config);
       await options.afterBaseline?.();
-      return { uidValidity: "20", uidNext: 31, highestModseq: null, messages: 0 };
+      return { uidValidity: destination.uidValidity, uidNext: 31, highestModseq: null, messages: 0 };
     });
     const find = spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (config) => {
       configs.push(config);
-      return moved ? [31] : [];
+      return moved ? [destination.uid] : [];
     });
     const move = spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (config, messages) => {
       configs.push(config);
@@ -452,6 +456,11 @@ suite("mail command runtime provider safety", () => {
       steps: () => configs,
       recover: () => {
         options.afterMove = undefined;
+      },
+      /** The provider recreates the destination with a new UIDVALIDITY, where the message got a low UID. */
+      renumberDestination: () => {
+        destination.uidValidity = "21";
+        destination.uid = 1;
       },
       restore: async () => {
         move.mockRestore();
@@ -543,6 +552,24 @@ suite("mail command runtime provider safety", () => {
       expect(provider.runs()).toHaveLength(2);
       expect(new Set(provider.steps().slice(4)).size).toBe(1);
       expect(provider.steps()[4]).not.toBe(provider.steps()[0]);
+    } finally {
+      await provider.restore();
+    }
+  }, 15_000);
+
+  test("a move whose destination got a new UIDVALIDITY before reconciliation still finds its message", async () => {
+    const message = await inboxMessage("renumbered-destination-move", 424263);
+    const provider = await movingProvider(message.rfcMessageId, {
+      afterMove: Object.assign(new Error("Connection not available"), { code: "NoConnection" }),
+    });
+    try {
+      const commandId = await moveCommand(message.id, "renumbered-destination-move");
+      expect(await executeMutationCommand(commandId)).toBe("ambiguous");
+      provider.recover();
+      // UID 1 lies below the UIDNEXT recorded before the move, but in an older generation of the folder.
+      provider.renumberDestination();
+      expect(await executeMutationCommand(commandId)).toBe("reconciled");
+      expect(provider.move).toHaveBeenCalledTimes(1);
     } finally {
       await provider.restore();
     }

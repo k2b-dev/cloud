@@ -132,8 +132,9 @@ suite("mail provider lease fairness", () => {
   const flagWindows: string[] = [];
   // Every UID MOVE, by mailbox label, with the number of messages it carried.
   const moveSets: Array<{ label: string; uids: number }> = [];
-  // Messages the server refuses to move, by Message-ID.
+  // Messages the server refuses to move, and messages another client deletes while a move runs, by Message-ID.
   const refusedMoves = new Set<string>();
+  const vanishingMoves = new Set<string>();
   let hydrationStarted = false;
   const ensureHydrationRuntime = async (): Promise<void> => {
     if (hydrationStarted) return;
@@ -516,14 +517,16 @@ suite("mail provider lease fairness", () => {
         const destinationUids = new Map<number, number>();
         for (const uid of messages.uids) {
           const message = source.entries.get(uid);
-          if (!message || refusedMoves.has(message.messageId)) continue;
+          // Another client deletes this message just before the server takes the move.
+          if (message && vanishingMoves.has(message.messageId)) source.entries.delete(uid);
+          if (!message || refusedMoves.has(message.messageId) || vanishingMoves.has(message.messageId)) continue;
           source.entries.delete(uid);
           source.modseq += 1;
           destinationUids.set(uid, store(config.username, destinationPath, message));
         }
         const completed = messages.uids.every((uid) => !source.entries.has(uid));
-        // Without UIDPLUS the server reports no COPYUID.
-        if (!account.uidplus) return { completed, destinationUidValidity: null, destinationUids: new Map() };
+        // Without UIDPLUS the server reports no COPYUID, and imapflow drops it when the server refuses the move.
+        if (!account.uidplus || !completed) return { completed, destinationUidValidity: null, destinationUids: new Map() };
         return { completed, destinationUidValidity: folderOf(config.username, destinationPath).uidValidity, destinationUids };
       }),
       spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, path, requests, consume) => {
@@ -687,15 +690,17 @@ suite("mail provider lease fairness", () => {
     expect(folderOf(mailbox.account, INBOX).entries.size).toBe(100);
   }, 120_000);
 
-  test("a set move that partly fails confirms the moved messages and leaves the others where they are", async () => {
+  test("a set move that partly fails proves each moved message and leaves the others where they are", async () => {
     const mailbox = await connect("partial");
-    const messageIds = await deliverAndSync(mailbox, 6, "partial");
-    const [gone, refusedFirst, refusedSecond, ...movable] = messageIds;
-    // One message disappeared from the server before its turn, and the server refuses to move two others.
+    const messageIds = await deliverAndSync(mailbox, 7, "partial");
+    const [gone, refusedFirst, refusedSecond, vanished, ...movable] = messageIds;
+    // One message disappeared from the server before its turn, the server refuses to move two
+    // others, and another client deletes one while the move runs.
     const inbox = folderOf(mailbox.account, INBOX);
     for (const [uid, message] of inbox.entries) if (message.messageId === gone) inbox.entries.delete(uid);
     refusedMoves.add(refusedFirst!);
     refusedMoves.add(refusedSecond!);
+    vanishingMoves.add(vanished!);
     try {
       const moves = await queueMoves(mailbox, messageIds, "partial-move", { startTogether: true });
       await waitFor(async () => (await pending(moves)) === 0, "the partly failing moves");
@@ -703,13 +708,18 @@ suite("mail provider lease fairness", () => {
       expect(results.get(gone!)).toEqual({ state: "failed", code: "REMOTE_MESSAGE_MISSING" });
       expect(results.get(refusedFirst!)).toEqual({ state: "needs_attention", code: "REMOTE_MOVE_FAILED" });
       expect(results.get(refusedSecond!)).toEqual({ state: "needs_attention", code: "REMOTE_MOVE_FAILED" });
-      for (const messageId of movable) expect(results.get(messageId)).toEqual({ state: "confirmed", code: null });
-      // One UID MOVE carried the five messages the server still had.
-      expect(moveSets.filter((entry) => entry.label === "partial").map((entry) => entry.uids)).toEqual([5]);
-      expect(await placedIn(mailbox, ARCHIVE, movable)).toBe(3);
+      // The refused MOVE reported no new UIDs, so each message gone from the source is looked up in
+      // the destination: the moved ones are found, the deleted one is not.
+      for (const messageId of movable) expect(results.get(messageId)).toEqual({ state: "reconciled", code: null });
+      expect(results.get(vanished!)).toEqual({ state: "needs_attention", code: "AMBIGUOUS_MUTATION" });
+      // One UID MOVE carried the six messages the server still had.
+      expect(moveSets.filter((entry) => entry.label === "partial").map((entry) => entry.uids)).toEqual([6]);
       expect(await placedIn(mailbox, INBOX, [refusedFirst!, refusedSecond!])).toBe(2);
+      await runFolderSyncJob(mailbox.folderId(ARCHIVE));
+      expect(await placedIn(mailbox, ARCHIVE, movable)).toBe(3);
     } finally {
       refusedMoves.clear();
+      vanishingMoves.clear();
     }
   }, 60_000);
 
