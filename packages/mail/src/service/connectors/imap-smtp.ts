@@ -9,6 +9,7 @@ import {
   type ListResponse,
   type MessageAddressObject,
   type MessageStructureObject,
+  type StatusObject,
 } from "imapflow";
 import { simpleParser } from "mailparser";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -981,26 +982,36 @@ const fetchEnvelopeBatch = async (
     signal,
   );
 
+/**
+ * A folder's STATUS as the sync reads it. A mailbox without persistent mod-sequences (NOMODSEQ)
+ * reports HIGHESTMODSEQ 0, which offers no flag change either: it counts as no mod-sequence.
+ */
+export const folderStatusSnapshot = (
+  status: Pick<StatusObject, "uidValidity" | "uidNext" | "highestModseq" | "messages">,
+): FolderStatusSnapshot => {
+  if (!status.uidValidity || !status.uidNext) {
+    throw Object.assign(new Error("Provider folder status is incomplete"), { code: "INCOMPLETE_FOLDER_STATUS" });
+  }
+  return {
+    uidValidity: status.uidValidity.toString(),
+    uidNext: status.uidNext,
+    highestModseq: status.highestModseq ? status.highestModseq.toString() : null,
+    messages: status.messages ?? 0,
+  };
+};
+
 const getFolderStatus = async (config: ProviderConnectionInput, folderPath: string, signal?: AbortSignal): Promise<FolderStatusSnapshot> =>
   withImapClient(
     config,
-    async (client) => {
-      const status = await client.status(folderPath, {
-        messages: true,
-        uidNext: true,
-        uidValidity: true,
-        highestModseq: true,
-      });
-      if (!status.uidValidity || !status.uidNext) {
-        throw Object.assign(new Error("Provider folder status is incomplete"), { code: "INCOMPLETE_FOLDER_STATUS" });
-      }
-      return {
-        uidValidity: status.uidValidity.toString(),
-        uidNext: status.uidNext,
-        highestModseq: status.highestModseq?.toString() ?? null,
-        messages: status.messages ?? 0,
-      };
-    },
+    async (client) =>
+      folderStatusSnapshot(
+        await client.status(folderPath, {
+          messages: true,
+          uidNext: true,
+          uidValidity: true,
+          highestModseq: true,
+        }),
+      ),
     signal,
   );
 

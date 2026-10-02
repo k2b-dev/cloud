@@ -320,6 +320,20 @@ suite("mail sync of changes made in other clients", () => {
     expect(mailbox.remote.calls).toEqual({ windows: [], envelopes: 0, draftCounts: 0 });
   });
 
+  test("a message removed while new mail arrives leaves its folder in the same sync", async () => {
+    const mailbox = await connect("busy", true);
+    mailbox.remote.put("archive", id("busy-kept"));
+    const removed = mailbox.remote.put("archive", id("busy-removed"));
+    await mailbox.sync("archive");
+
+    // A folder that receives mail before every sync still compares its counts once the mail is in.
+    mailbox.remote.remove("archive", removed);
+    mailbox.remote.put("archive", id("busy-new"));
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("busy-removed"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
+    expect(await mailbox.placements(id("busy-new"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+  });
+
   test("a message removed while the search runs is found once the full reconciliation retired the one it missed", async () => {
     const mailbox = await connect("raced", true);
     mailbox.remote.put("archive", id("raced-kept"));

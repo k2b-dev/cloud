@@ -1188,6 +1188,7 @@ export const fetchReconcileStep = async (params: {
     draftsFolder: params.draftsFolder,
     high,
     remoteMessages: params.remoteMessages,
+    skippedDrafts: params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0),
   });
   const window = await fetchReconcileWindow({ ...params, low, high, newestFirst: true });
   cursor.sweepNextHigh = window.low > 1 ? window.low - 1 : null;
@@ -1200,10 +1201,10 @@ export const fetchReconcileStep = async (params: {
  * spans messages rather than UIDs, so a folder whose UIDs are spread thin, such as an Inbox that
  * is emptied regularly, needs no more windows than its message count requires.
  *
- * The provider also lists the messages Mail keeps no record of, such as the drafts it skips
- * outside the Drafts folder. While those reach a window's size, a window spans
- * RECONCILE_WINDOW_SIZE UIDs instead, so one window never lists much more than two windows'
- * worth of messages.
+ * The provider also lists the messages Mail keeps no record of: the drafts it skips outside the
+ * Drafts folder, and any other surplus of the remote count. While either reaches a window's size,
+ * a window spans RECONCILE_WINDOW_SIZE UIDs instead, so one window never lists much more than two
+ * windows' worth of messages.
  */
 const newestFirstWindowLow = async (params: {
   folderId: string;
@@ -1211,9 +1212,12 @@ const newestFirstWindowLow = async (params: {
   draftsFolder: boolean;
   high: number;
   remoteMessages: number;
+  skippedDrafts: number;
 }): Promise<number> => {
   const local = await countLiveUids(params.folderId, params.uidValidity, params.draftsFolder);
-  if (params.remoteMessages - local >= RECONCILE_WINDOW_SIZE) return Math.max(1, params.high - RECONCILE_WINDOW_SIZE + 1);
+  if (Math.max(params.skippedDrafts, params.remoteMessages - local) >= RECONCILE_WINDOW_SIZE) {
+    return Math.max(1, params.high - RECONCILE_WINDOW_SIZE + 1);
+  }
   const [row] = params.draftsFolder
     ? await sql<{ uid: string }[]>`
         SELECT live.uid::text AS uid
@@ -1346,11 +1350,11 @@ const checkVanishedMessages = async (params: {
   folderId: string;
   draftsFolder: boolean;
   countDrafts: () => Promise<number>;
-}): Promise<void> => {
+}): Promise<boolean> => {
   const { cursor, status } = params;
-  if (!cursor.backfillComplete || cursor.incrementalNextHigh != null || cursor.reconcileNextLow != null) return;
+  if (!cursor.backfillComplete || cursor.incrementalNextHigh != null || cursor.reconcileNextLow != null) return false;
   // Messages Mail has not imported yet would hide a removed one.
-  if (status.uidNext - 1 !== cursor.highestSeenUid) return;
+  if (status.uidNext - 1 !== cursor.highestSeenUid) return false;
   const local = await countLiveUids(params.folderId, status.uidValidity, params.draftsFolder);
   const offset = cursor.countOffset ?? 0;
   let uncounted = params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0);
@@ -1372,18 +1376,19 @@ const checkVanishedMessages = async (params: {
   if (gap < offset) cursor.countOffset = gap;
   if (gap <= offset) {
     cursor.vanishedSearch = false;
-    return;
+    return true;
   }
   if (!cursor.vanishedSearch) {
     cursor.vanishedSearch = true;
     cursor.sweepNextHigh = cursor.highestSeenUid;
-    return;
+    return true;
   }
   if (cursor.sweepNextHigh == null) {
     // Every window was searched and the counts still differ: this server counts differently.
     cursor.countOffset = gap;
     cursor.vanishedSearch = false;
   }
+  return true;
 };
 
 const reconcileWindowStart = (uid: number): number => {
@@ -1764,7 +1769,7 @@ export const syncFolderBatch = async (
             : structuredClone(beforeCursor);
         const draftsFolder = await isEffectiveDraftsFolder(sql, folder, folderId);
 
-        await checkVanishedMessages({
+        const countsCompared = await checkVanishedMessages({
           cursor,
           status,
           folderId,
@@ -1828,12 +1833,16 @@ export const syncFolderBatch = async (
 
         await enqueueDraftImports(result.draftImportSnapshotIds);
         await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
+        // New mail kept this batch from comparing the counts. Once it is imported, the next batch
+        // compares them, so a folder that receives mail before every sync still notices removals.
+        const compareCounts = !countsCompared && envelope.kind === "incremental" && cursor.incrementalNextHigh == null;
         const hasMore =
           cursor.incrementalNextHigh != null ||
           !cursor.backfillComplete ||
           cursor.flagNextLow != null ||
           cursor.reconcileNextLow != null ||
-          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null);
+          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
+          compareCounts;
         return {
           hasMore,
           syncPending: cursor.incrementalNextHigh != null || cursor.flagNextLow != null,

@@ -13,6 +13,7 @@ import {
   countDraftUids,
   disposeImapClient,
   downloadSelectedSources,
+  folderStatusSnapshot,
   fetchRemoteMessageState,
   type ImapSession,
   imapSmtpConnector,
@@ -658,6 +659,21 @@ describe("IMAP message state", () => {
       messageId: null,
       modseq: null,
     });
+  });
+});
+
+describe("IMAP folder status", () => {
+  test("reports a mailbox without persistent mod-sequences as one without CONDSTORE", () => {
+    const status = { uidValidity: 7n, uidNext: 42, messages: 3 };
+    expect(folderStatusSnapshot({ ...status, highestModseq: 0n }).highestModseq).toBeNull();
+    expect(folderStatusSnapshot({ ...status, highestModseq: 9n }).highestModseq).toBe("9");
+    expect(folderStatusSnapshot(status)).toEqual({ uidValidity: "7", uidNext: 42, highestModseq: null, messages: 3 });
+  });
+
+  test("rejects a status without UIDVALIDITY or UIDNEXT", () => {
+    expect(() => folderStatusSnapshot({ uidValidity: 7n, messages: 3 })).toThrow(
+      expect.objectContaining({ code: "INCOMPLETE_FOLDER_STATUS" }),
+    );
   });
 });
 
