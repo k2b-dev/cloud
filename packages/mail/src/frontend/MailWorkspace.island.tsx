@@ -1146,6 +1146,9 @@ function MailWorkspaceView(props: {
   // A queued action runs later. Follow its commands so a change the mail server did not make still
   // reaches the user who was told it was queued.
   const actionOutcomes = createMailActionOutcomes();
+  // The longest wait between two outcome requests, and the longest one request may take, so a stalled
+  // response cannot keep following past its lifetime.
+  const outcomePollMaxMs = 30_000;
   let outcomePollTimer: ReturnType<typeof setTimeout> | null = null;
   let outcomePollAttempt = 0;
   const failureReason = (code: string): string => {
@@ -1200,7 +1203,10 @@ function MailWorkspaceView(props: {
     let outcomes: MailActionCommand[] | null = null;
     if (commandIds.length > 0) {
       try {
-        const response = await apiClient.mailboxes[":mailboxId"].commands.outcomes.$post({ param: { mailboxId }, json: { commandIds } });
+        const response = await apiClient.mailboxes[":mailboxId"].commands.outcomes.$post(
+          { param: { mailboxId }, json: { commandIds } },
+          { init: { signal: AbortSignal.timeout(outcomePollMaxMs) } },
+        );
         if (response.ok) outcomes = await response.json();
       } catch {
         // The next poll asks again.
@@ -1215,7 +1221,7 @@ function MailWorkspaceView(props: {
     if (restart) outcomePollAttempt = 0;
     if (outcomePollTimer && !restart) return;
     if (outcomePollTimer) clearTimeout(outcomePollTimer);
-    outcomePollTimer = setTimeout(() => void pollActionOutcomes(), Math.min(1_000 * 2 ** outcomePollAttempt, 30_000));
+    outcomePollTimer = setTimeout(() => void pollActionOutcomes(), Math.min(1_000 * 2 ** outcomePollAttempt, outcomePollMaxMs));
     outcomePollAttempt += 1;
   };
   onCleanup(() => {
