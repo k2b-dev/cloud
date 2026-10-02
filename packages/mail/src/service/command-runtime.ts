@@ -1,7 +1,7 @@
 import { lazySync } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
-import type { Worker } from "@k2b/sync";
+import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { sql } from "bun";
 import { z } from "zod";
@@ -35,7 +35,12 @@ import { buildMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from
 import { type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isTransientProviderFailure } from "./provider-errors";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
-import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
+import {
+  acquireProviderLease,
+  MAIL_PROVIDER_OPERATION_LEASE_MS,
+  mailProviderOperationMutex,
+  providerBusyRetryAfterMs,
+} from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { enqueueFolderSync } from "./sync-runtime";
@@ -1109,6 +1114,7 @@ const FOLDER_COMMAND_KINDS = ["create_folder", "rename_folder", "delete_folder",
 type FolderCommandKind = (typeof FOLDER_COMMAND_KINDS)[number];
 
 const isFolderCommandKind = (kind: string): kind is FolderCommandKind => FOLDER_COMMAND_KINDS.includes(kind as FolderCommandKind);
+const MUTATION_COMMAND_KINDS: string[] = ["set_flags", "change_message_state", "move", "copy", "delete", ...FOLDER_COMMAND_KINDS];
 
 type DbFolderCommandTarget = {
   folder_id: string;
@@ -1475,7 +1481,23 @@ const reconcileFolderOperation = async (
   );
 };
 
-const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<void> => {
+/**
+ * Takes the provider lease for one command of the mailbox. Commands wait behind folder syncs and
+ * go before hydration; the mailbox keeps one place in line across its commands.
+ */
+const acquireCommandLease = (command: DbCommandExecution, resource: string) =>
+  acquireProviderLease({
+    resource,
+    waiter: `commands:${command.mailbox_id}`,
+    priority: "command",
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
+
+/** How soon a command that found the provider lease busy is tried again, or `null` when it ran. */
+type LeaseOutcome = { busyRetryAfterMs: number | null };
+const RAN: LeaseOutcome = { busyRetryAfterMs: null };
+
+const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<LeaseOutcome> => {
   const { command } = claimed;
   if (!(await commandStillAuthorized(command, "admin"))) {
     await commandState(
@@ -1483,13 +1505,10 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
       claimed.previousState === "ambiguous" ? "needs_attention" : "failed",
       Object.assign(new Error("Mailbox administration access was revoked before folder execution"), { code: "ACCESS_REVOKED" }),
     );
-    return;
+    return RAN;
   }
   const operation = await prepareFolderOperation(command);
-  const lock = await mailProviderOperationMutex().acquire({
-    resource: operation.binding.remote_resource_id,
-    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
-  });
+  const { lock, retryAfterMs } = await acquireCommandLease(command, operation.binding.remote_resource_id);
   if (!lock) {
     await requeueCommand(
       command,
@@ -1497,7 +1516,7 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
       "REMOTE_RESOURCE_BUSY",
       "Remote mailbox is currently being synchronized or administered",
     );
-    return;
+    return { busyRetryAfterMs: retryAfterMs };
   }
   try {
     await withLeaseHeartbeat({
@@ -1538,9 +1557,10 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
       .release(lock)
       .catch(() => false);
   }
+  return RAN;
 };
 
-const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<void> => {
+const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<LeaseOutcome> => {
   if (await hasEarlierActiveMessageMutation(claimed.command.id)) {
     await requeueCommand(
       claimed.command,
@@ -1548,13 +1568,10 @@ const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive:
       "MESSAGE_MUTATION_PREDECESSOR_ACTIVE",
       "An earlier change to this message is still pending",
     );
-    return;
+    return RAN;
   }
   const binding = await loadPinnedBinding(claimed.command);
-  const lock = await mailProviderOperationMutex().acquire({
-    resource: binding.remote_resource_id,
-    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
-  });
+  const { lock, retryAfterMs } = await acquireCommandLease(claimed.command, binding.remote_resource_id);
   if (!lock) {
     await requeueCommand(
       claimed.command,
@@ -1562,7 +1579,7 @@ const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive:
       "REMOTE_RESOURCE_BUSY",
       "Remote mailbox is currently being synchronized or changed",
     );
-    return;
+    return { busyRetryAfterMs: retryAfterMs };
   }
   try {
     await withLeaseHeartbeat({
@@ -1589,12 +1606,16 @@ const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive:
       .release(lock)
       .catch(() => false);
   }
+  return RAN;
 };
 
 /** Attempts a command gets to reconcile an unknown outcome, or to reach a provider that keeps failing before its effect. */
 const MUTATION_MAX_ATTEMPTS = 5;
 
-const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: LeaseAssertion): Promise<CommandState | null> => {
+type MutationRun = { state: CommandState | null } & LeaseOutcome;
+
+const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: LeaseAssertion): Promise<MutationRun> => {
+  let outcome = RAN;
   try {
     if (claimed.previousState === "ambiguous" && claimed.command.attempt >= MUTATION_MAX_ATTEMPTS) {
       await commandState(
@@ -1605,9 +1626,9 @@ const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: Le
         }),
       );
     } else if (isFolderCommandKind(claimed.command.kind)) {
-      await runFolderOperation(claimed, assertLeaseActive);
+      outcome = await runFolderOperation(claimed, assertLeaseActive);
     } else {
-      await runMessageMutation(claimed, assertLeaseActive);
+      outcome = await runMessageMutation(claimed, assertLeaseActive);
     }
   } catch (error) {
     // An effect an earlier attempt started still needs reconciliation, even when this attempt failed before its own.
@@ -1620,14 +1641,14 @@ const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: Le
   const [state] = await sql<{ state: CommandState }[]>`
     SELECT state FROM mail.commands WHERE id = ${claimed.command.id}::uuid
   `;
-  return state?.state ?? null;
+  return { state: state?.state ?? null, ...outcome };
 };
 
 const executeMutationCommandWithHeartbeat = async (
   commandId: string,
   heartbeat?: (fence: { id: string; attempt: number }) => Promise<void>,
-): Promise<CommandState | null> => {
-  const claimed = await claimCommand(commandId, ["set_flags", "change_message_state", "move", "copy", "delete", ...FOLDER_COMMAND_KINDS]);
+): Promise<MutationRun | null> => {
+  const claimed = await claimCommand(commandId, MUTATION_COMMAND_KINDS);
   if (!claimed) return null;
   const work = (assertLeaseActive: LeaseAssertion) => runClaimedMutation(claimed, assertLeaseActive);
   if (!heartbeat) return work(noLeaseAssertion);
@@ -1639,7 +1660,7 @@ const executeMutationCommandWithHeartbeat = async (
 };
 
 export const executeMutationCommand = async (commandId: string): Promise<CommandState | null> =>
-  executeMutationCommandWithHeartbeat(commandId);
+  (await executeMutationCommandWithHeartbeat(commandId))?.state ?? null;
 
 type DbOutboxExecution = {
   id: string;
@@ -2929,8 +2950,19 @@ export const executeOutboxSubmissionWithHeartbeat = async (
 ): Promise<string | null> => {
   const remoteResourceId = await loadOutboxRemoteResourceId(outboxId);
   if (!remoteResourceId) return null;
-  const lock = await mailProviderOperationMutex().acquire({ resource: remoteResourceId, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
-  if (!lock) throw Object.assign(new Error("Remote mailbox is currently being synchronized or changed"), { code: "REMOTE_RESOURCE_BUSY" });
+  // A send is a user command: it waits behind folder syncs and goes before hydration.
+  const { lock, retryAfterMs } = await acquireProviderLease({
+    resource: remoteResourceId,
+    waiter: `outbox:${outboxId}`,
+    priority: "command",
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+  });
+  if (!lock) {
+    throw Object.assign(new Error("Remote mailbox is currently being synchronized or changed"), {
+      code: "REMOTE_RESOURCE_BUSY",
+      retryAfterMs,
+    });
+  }
   let claim: OutboxClaim | null = null;
   try {
     claim = await claimOutbox(outboxId);
@@ -3071,26 +3103,95 @@ const recoverStaleExecutions = async (): Promise<number> => {
   return result;
 };
 
+// An ambiguous outcome is checked again after a short pause. A command that went back to the
+// queue for another reason, such as a pending earlier change of the same message or a provider
+// failure before its effect, waits longer. A busy provider lease is no reason to wait: the
+// lease line decides when the mailbox's next try comes.
+const AMBIGUOUS_COMMAND_RECHECK_SECONDS = 2;
+const REQUEUED_COMMAND_RETRY_SECONDS = 30;
+// While its next command waits for such a retry, and once more after it finds no command left,
+// the mailbox's job looks for new commands this often: a command created meanwhile joins that
+// job instead of starting its own.
+const MAILBOX_COMMAND_POLL_MS = 2_000;
+// Mailboxes whose commands one Mail process runs at once. Each holds at most one provider lease
+// and one provider connection, and commands of one mailbox still run one after another.
+const MAILBOX_COMMAND_CONCURRENCY = 4;
+
+/** The mailbox's next mutation command in creation order, and how long until it may run. */
+const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wait_ms: number } | null> => {
+  const [next] = await sql<{ id: string; wait_ms: number }[]>`
+    SELECT id, GREATEST(0, CEIL(EXTRACT(EPOCH FROM (due_at - now())) * 1000))::int AS wait_ms
+    FROM (
+      SELECT
+        id,
+        created_at,
+        CASE
+          WHEN state = 'ambiguous' THEN updated_at + make_interval(secs => ${AMBIGUOUS_COMMAND_RECHECK_SECONDS})
+          WHEN last_error_code IS NULL OR last_error_code = 'REMOTE_RESOURCE_BUSY' THEN created_at
+          ELSE updated_at + make_interval(secs => ${REQUEUED_COMMAND_RETRY_SECONDS})
+        END AS due_at
+      FROM mail.commands
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND state IN ('queued', 'ambiguous')
+        AND kind = ANY(${toPgTextArray(MUTATION_COMMAND_KINDS)}::text[])
+    ) pending
+    ORDER BY GREATEST(due_at, now()), created_at, id
+    LIMIT 1
+  `;
+  return next ?? null;
+};
+
+/**
+ * Runs the mailbox's next due mutation command and returns when its job should run again, or
+ * `null` when no command is left. Each turn runs one command, so with a backlog the mailbox
+ * goes behind the other mailboxes' turns, and between two commands a waiting folder sync takes
+ * the provider lease.
+ */
+const runMailboxCommandTurn = async (
+  mailboxId: string,
+  heartbeat?: (fence: { id: string; attempt: number }) => Promise<void>,
+): Promise<{ retryAfterMs: number | null }> => {
+  const next = await nextMailboxMutation(mailboxId);
+  if (!next) return { retryAfterMs: null };
+  if (next.wait_ms > 0) return { retryAfterMs: Math.min(next.wait_ms, MAILBOX_COMMAND_POLL_MS) };
+  const run = await executeMutationCommandWithHeartbeat(next.id, heartbeat);
+  return { retryAfterMs: run?.busyRetryAfterMs ?? 0 };
+};
+
+/** `idle` marks the mailbox job's last look for new commands after it found none left. */
+type MailboxCommandsJobInput = { mailboxId: string; idle?: boolean };
+
 const mutationJob = lazySync((sync) =>
-  sync.job<{ commandId: string }>({
+  sync.job<MailboxCommandsJobInput>({
     id: "mail:execute-command",
     delivery: { ackWaitMs: MUTATION_JOB_LEASE_MS, maxAttempts: 5, backoffMs: [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000] },
   }),
 );
+/** Runs one turn of a mailbox's `mail:execute-command` job; exported so tests can drive it. */
+export const runMailboxCommandsJob = async (
+  ctx: Pick<JobContext<MailboxCommandsJobInput>, "input" | "heartbeat" | "resubmit">,
+): Promise<void> => {
+  // A job queued by an earlier release names one command instead of its mailbox. The
+  // commands-due schedule queues that mailbox within a minute.
+  if (typeof ctx.input.mailboxId !== "string") return;
+  const { mailboxId } = ctx.input;
+  const turn = await runMailboxCommandTurn(mailboxId, async (fence) => {
+    try {
+      await ctx.heartbeat();
+    } catch (cause) {
+      throw Object.assign(new Error("Mail command job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
+    }
+    await heartbeatCommandFence(fence);
+  });
+  if (turn.retryAfterMs !== null) ctx.resubmit({ delayMs: turn.retryAfterMs, input: { mailboxId } });
+  // A command created while this turn found none left joined this job. Looking once more
+  // before the job ends runs it within the poll interval instead of with the next schedule.
+  else if (!ctx.input.idle) ctx.resubmit({ delayMs: MAILBOX_COMMAND_POLL_MS, input: { mailboxId, idle: true } });
+};
+
 let mutationJobWorker: Worker | undefined;
 const startMutationJob = async (): Promise<void> => {
-  mutationJobWorker = await mutationJob().process({}, async (ctx) => {
-    const state = await executeMutationCommandWithHeartbeat(ctx.input.commandId, async (fence) => {
-      try {
-        await ctx.heartbeat();
-      } catch (cause) {
-        throw Object.assign(new Error("Mail command job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
-      }
-      await heartbeatCommandFence(fence);
-    });
-    if (state === "ambiguous") ctx.resubmit({ delayMs: 2_000 });
-    else if (state === "queued") ctx.resubmit({ delayMs: 30_000 });
-  });
+  mutationJobWorker = await mutationJob().process({ concurrency: MAILBOX_COMMAND_CONCURRENCY }, runMailboxCommandsJob);
 };
 
 const outboxJob = lazySync((sync) =>
@@ -3115,7 +3216,7 @@ const startOutboxJob = async (): Promise<void> => {
     } catch (error) {
       // A sibling job holds the remote resource: routine contention, not a failed attempt.
       if ((error as { code?: unknown } | null)?.code === "REMOTE_RESOURCE_BUSY") {
-        ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+        ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
         return;
       }
       throw error;
@@ -3159,8 +3260,11 @@ const startOutboxJob = async (): Promise<void> => {
   });
 };
 
-const submitMutationJob = async (commandId: string): Promise<void> => {
-  await (commandTasks.run(() => mutationJob().submit({ coalesce: true, key: `command:${commandId}`, input: { commandId } })) ??
+// One coalesced job per mailbox runs its commands one after another. Only a command created in
+// the moment the job's last look finds none left joins the finishing job; the commands-due
+// schedule queues the mailbox again within a minute.
+const submitMailboxCommandsJob = async (mailboxId: string): Promise<void> => {
+  await (commandTasks.run(() => mutationJob().submit({ coalesce: true, key: `mailbox:${mailboxId}`, input: { mailboxId } })) ??
     Promise.resolve());
 };
 
@@ -3187,8 +3291,9 @@ export const enqueueMailCommand = async (commandId: string, kind: MailCommand["k
     }
     return;
   }
-  if (["set_flags", "change_message_state", "move", "copy", "delete", ...FOLDER_COMMAND_KINDS].includes(kind)) {
-    await submitMutationJob(commandId);
+  if (MUTATION_COMMAND_KINDS.includes(kind)) {
+    const [command] = await sql<{ mailbox_id: string }[]>`SELECT mailbox_id FROM mail.commands WHERE id = ${commandId}::uuid`;
+    if (command) await submitMailboxCommandsJob(command.mailbox_id);
     return;
   }
   if (isOperatorMaintenanceKind(kind)) {
@@ -3196,22 +3301,20 @@ export const enqueueMailCommand = async (commandId: string, kind: MailCommand["k
   }
 };
 
-const submitDueCommands = async (): Promise<{ commands: number; maintenance: number; outbox: number; recovered: number }> => {
+const submitDueCommands = async (): Promise<{ mailboxes: number; maintenance: number; outbox: number; recovered: number }> => {
   const recovered = await recoverStaleExecutions();
   const maintenance = await submitDueMaintenanceCommands();
-  const commands = await sql<{ id: string; kind: MailCommand["kind"] }[]>`
-    SELECT id, kind
+  const mailboxes = await sql<{ mailbox_id: string }[]>`
+    SELECT mailbox_id
     FROM mail.commands
     WHERE state IN ('queued', 'ambiguous')
-      AND kind IN (
-        'set_flags', 'change_message_state', 'move', 'copy', 'delete',
-        'create_folder', 'rename_folder', 'delete_folder', 'set_folder_subscription'
-      )
-    ORDER BY created_at, id
+      AND kind = ANY(${toPgTextArray(MUTATION_COMMAND_KINDS)}::text[])
+    GROUP BY mailbox_id
+    ORDER BY min(created_at), mailbox_id
     LIMIT 500
   `;
-  for (const command of commands) {
-    await submitMutationJob(command.id);
+  for (const mailbox of mailboxes) {
+    await submitMailboxCommandsJob(mailbox.mailbox_id);
   }
   const outboxes = await sql<{ id: string }[]>`
     SELECT id
@@ -3227,7 +3330,7 @@ const submitDueCommands = async (): Promise<{ commands: number; maintenance: num
     await submitOutboxJob(outbox.id);
   }
   return {
-    commands: commands.length,
+    mailboxes: mailboxes.length,
     maintenance: maintenance.queued,
     outbox: outboxes.length,
     recovered: recovered + maintenance.recovered,
@@ -3247,6 +3350,15 @@ const stopCommandJobs = async (): Promise<void> => {
   mutationJobWorker = undefined;
   outboxJobWorker = undefined;
 };
+
+/** Starts only the command and send workers, without the commands-due schedule, for integration tests. */
+export const startCommandWorkers = async (): Promise<void> => {
+  commandTasks.open();
+  await startMutationJob();
+  await startOutboxJob();
+};
+
+export const stopCommandWorkers = stopCommandJobs;
 
 const commandRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {

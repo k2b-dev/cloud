@@ -1,7 +1,7 @@
 import { lazySync } from "@k2b/cloud";
 import { createRuntimeTaskTracker, stopRuntimeJobs } from "@k2b/cloud/services";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
-import type { Worker } from "@k2b/sync";
+import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { sql } from "bun";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { commandStillAuthorized, type StoredCommandAuthorization } from "./comma
 import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
+import { providerBusyRetryAfterMs } from "./provider-operation-lock";
 import { enqueueFolderSync, enqueueMailboxHydration, enqueueMailboxSync, executeBindingRediscovery } from "./sync-runtime";
 
 const MAINTENANCE_JOB_LEASE_MS = 6 * 60_000;
@@ -277,11 +278,14 @@ const executeMaintenanceWork = async (
   return { bindings: discoveries };
 };
 
-export const executeMaintenanceCommand = async (
+/** A run's state, and how soon a run that found the provider lease busy should try again. */
+type MaintenanceRun = { state: CommandState; busyRetryAfterMs: number | null };
+
+const runMaintenanceCommand = async (
   commandId: string,
-  jobHeartbeat: () => Promise<void> = async () => undefined,
-  options: { enqueueWork?: boolean } = {},
-): Promise<CommandState | null> => {
+  jobHeartbeat: () => Promise<void>,
+  options: { enqueueWork?: boolean },
+): Promise<MaintenanceRun | null> => {
   const command = await claimMaintenanceCommand(commandId);
   if (!command) return null;
   try {
@@ -302,7 +306,7 @@ export const executeMaintenanceCommand = async (
         ),
     });
     await finishMaintenanceCommand({ command, state: "confirmed", result });
-    return "confirmed";
+    return { state: "confirmed", busyRetryAfterMs: null };
   } catch (error) {
     const code = errorCode(error);
     if (code === "SYNC_BUSY" || code === "MAIL_RATE_LIMITED") {
@@ -320,32 +324,50 @@ export const executeMaintenanceCommand = async (
           updated_at = now()
         WHERE id = ${command.id}::uuid AND attempt = ${command.attempt} AND state = 'executing'
       `;
-      return "queued";
+      return { state: "queued", busyRetryAfterMs: code === "SYNC_BUSY" ? providerBusyRetryAfterMs(error) : null };
     }
     await finishMaintenanceCommand({ command, state: "failed", error });
-    return "failed";
+    return { state: "failed", busyRetryAfterMs: null };
   }
 };
 
+export const executeMaintenanceCommand = async (
+  commandId: string,
+  jobHeartbeat: () => Promise<void> = async () => undefined,
+  options: { enqueueWork?: boolean } = {},
+): Promise<CommandState | null> => (await runMaintenanceCommand(commandId, jobHeartbeat, options))?.state ?? null;
+
+type MaintenanceJobInput = { commandId: string; continuationAttempt?: number };
+
 const maintenanceJob = lazySync((sync) =>
-  sync.job<{ commandId: string; continuationAttempt?: number }>({
+  sync.job<MaintenanceJobInput>({
     id: "mail:execute-maintenance-command",
     delivery: { ackWaitMs: MAINTENANCE_JOB_LEASE_MS, maxAttempts: 1 },
   }),
 );
 let maintenanceJobWorker: Worker | undefined;
 
-const startMaintenanceJob = async (): Promise<void> => {
-  maintenanceJobWorker = await maintenanceJob().process({}, async (ctx) => {
-    const state = await executeMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat());
-    if (state === "queued") {
-      const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
-      ctx.resubmit({
-        delayMs: expBackoff(attempt, { baseMs: 2_000, maxMs: 60_000 }),
-        input: { ...ctx.input, continuationAttempt: attempt },
-      });
-    }
+/** Runs one `mail:execute-maintenance-command` attempt; exported so tests can drive its retries. */
+export const runMaintenanceJob = async (
+  ctx: Pick<JobContext<MaintenanceJobInput>, "input" | "attempt" | "heartbeat" | "resubmit">,
+): Promise<void> => {
+  const run = await runMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat(), {});
+  if (run?.state !== "queued") return;
+  // A busy provider lease is routine: the lease line says when to try again, and waiting does
+  // not count as a failed attempt. A rate limit backs off.
+  if (run.busyRetryAfterMs !== null) {
+    ctx.resubmit({ delayMs: run.busyRetryAfterMs });
+    return;
+  }
+  const attempt = (ctx.input.continuationAttempt ?? 0) + ctx.attempt;
+  ctx.resubmit({
+    delayMs: expBackoff(attempt, { baseMs: 2_000, maxMs: 60_000 }),
+    input: { ...ctx.input, continuationAttempt: attempt },
   });
+};
+
+const startMaintenanceJob = async (): Promise<void> => {
+  maintenanceJobWorker = await maintenanceJob().process({}, runMaintenanceJob);
 };
 
 export const enqueueMaintenanceCommand = async (commandId: string): Promise<void> => {

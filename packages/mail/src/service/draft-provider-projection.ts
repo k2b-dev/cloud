@@ -26,7 +26,12 @@ import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-
 import { assessMessageSourceSize } from "./message-source-size";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
+import {
+  acquireProviderLease,
+  MAIL_PROVIDER_OPERATION_LEASE_MS,
+  mailProviderOperationMutex,
+  providerBusyRetryAfterMs,
+} from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
 type ProjectionState =
@@ -518,11 +523,14 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
     folderId: roleFolder.data.id,
     rights: snapshot.state === "retiring" ? ["read", "delete_messages"] : ["read", "insert"],
   });
-  const lock = await mailProviderOperationMutex().acquire({
+  // Saving a draft to the provider ranks with user commands.
+  const { lock, retryAfterMs } = await acquireProviderLease({
     resource: initial.execution.remoteResourceId!,
+    waiter: `draft-export:${snapshotId}`,
+    priority: "command",
     ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
   });
-  if (!lock) throw Object.assign(new Error("Mail provider resource is busy"), { code: "SYNC_BUSY" });
+  if (!lock) throw Object.assign(new Error("Mail provider resource is busy"), { code: "SYNC_BUSY", retryAfterMs });
   try {
     await withDraftProjectionLeases({
       lock,
@@ -1278,11 +1286,14 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
     folderId: snapshot.folder_id,
     rights: ["read"],
   });
-  const lock = await mailProviderOperationMutex().acquire({
+  // Importing a draft that another program saved is background work, like body hydration.
+  const { lock, retryAfterMs } = await acquireProviderLease({
     resource: current.execution.remoteResourceId!,
+    waiter: `draft-import:${snapshotId}`,
+    priority: "background",
     ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
   });
-  if (!lock) throw Object.assign(new Error("Mail provider resource is busy"), { code: "SYNC_BUSY" });
+  if (!lock) throw Object.assign(new Error("Mail provider resource is busy"), { code: "SYNC_BUSY", retryAfterMs });
   try {
     await withDraftProjectionLeases({
       lock,
@@ -1448,7 +1459,7 @@ const startExportJob = async (): Promise<void> => {
         if (code === "MAILBOX_TRANSPORT_CHANGED") return;
         // A sibling job holds the remote resource: routine contention, not a failed attempt.
         if (code === "SYNC_BUSY") {
-          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+          ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
           return;
         }
         throw error;
@@ -1485,7 +1496,7 @@ const startImportJob = async (): Promise<void> => {
         if (code === "MAILBOX_TRANSPORT_CHANGED") return;
         // A sibling job holds the remote resource: routine contention, not a failed attempt.
         if (code === "SYNC_BUSY") {
-          ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+          ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
           return;
         }
         throw error;

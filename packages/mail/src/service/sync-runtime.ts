@@ -6,7 +6,7 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
 import type { JobContext, Worker } from "@k2b/sync";
-import { sql } from "bun";
+import { redis, sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
@@ -40,7 +40,12 @@ import { normalizeMailSubject } from "./message-threading";
 import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
-import { mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
+import {
+  acquireProviderLease,
+  mailProviderOperationMutex,
+  type ProviderLeasePriority,
+  providerBusyRetryAfterMs,
+} from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
@@ -87,12 +92,20 @@ type FenceClaim = {
 
 type SyncBatchResult = {
   hasMore: boolean;
+  /**
+   * New mail or flag changes still wait for the next batch, so it ranks as a folder sync;
+   * otherwise only older mail or reconciliation windows remain.
+   */
+  syncPending: boolean;
   imported: number;
   flagsUpdated: number;
   removed: number;
 };
 
 type SyncLock = NonNullable<Awaited<ReturnType<ReturnType<typeof mailProviderOperationMutex>["acquire"]>>>;
+
+const hydrationJobKey = (input: HydrationInput): string =>
+  "mailboxId" in input ? `mailbox:${input.mailboxId}` : `message:${input.messageId}`;
 
 const retryAfterMs = (error: unknown, fallback: number): number => {
   const value = Number((error as { retryAfterMs?: unknown } | null)?.retryAfterMs);
@@ -1445,12 +1458,25 @@ export const commitSyncBatch = async (params: {
   return result;
 };
 
-export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Promise<void>): Promise<SyncBatchResult> => {
+/**
+ * Imports one batch of the folder. A sync that checks for new mail goes before commands and
+ * hydration of the same mailbox; a batch that continues with older mail is `background` work.
+ */
+export const syncFolderBatch = async (
+  folderId: string,
+  jobHeartbeat: () => Promise<void>,
+  priority: Extract<ProviderLeasePriority, "sync" | "background"> = "sync",
+): Promise<SyncBatchResult> => {
   const folder = await loadSyncFolder(folderId);
-  if (!folder) return { hasMore: false, imported: 0, flagsUpdated: 0, removed: 0 };
+  if (!folder) return { hasMore: false, syncPending: false, imported: 0, flagsUpdated: 0, removed: 0 };
 
-  const lock = await mailProviderOperationMutex().acquire({ resource: folder.remote_resource_id, ttlMs: SYNC_LEASE_MS });
-  if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY" });
+  const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+    resource: folder.remote_resource_id,
+    waiter: `sync-folder:${folderId}`,
+    priority,
+    ttlMs: SYNC_LEASE_MS,
+  });
+  if (!lock) throw Object.assign(new Error("Mail sync resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
   let runId: string | null = null;
   let selectedBindingId: string | null = null;
   let selectedSecretRevision: number | null = null;
@@ -1472,7 +1498,7 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
       },
       work: async (_assertLeaseActive, signal) => {
         const refreshedFolder = await loadSyncFolder(folderId);
-        if (!refreshedFolder) return { hasMore: false, imported: 0, flagsUpdated: 0, removed: 0 };
+        if (!refreshedFolder) return { hasMore: false, syncPending: false, imported: 0, flagsUpdated: 0, removed: 0 };
         Object.assign(folder, refreshedFolder);
         await waitForMailProviderSlot(folder.remote_resource_id, signal);
         const execution = await resolveMailExecution({
@@ -1563,7 +1589,13 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
         await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
         const hasMore =
           cursor.incrementalNextHigh != null || !cursor.backfillComplete || cursor.flagNextLow != null || cursor.reconcileNextLow != null;
-        return { hasMore, imported: result.hydratedIds.length, flagsUpdated: result.flagsUpdated, removed: result.removed };
+        return {
+          hasMore,
+          syncPending: cursor.incrementalNextHigh != null || cursor.flagNextLow != null,
+          imported: result.hydratedIds.length,
+          flagsUpdated: result.flagsUpdated,
+          removed: result.removed,
+        };
       },
     });
   } catch (error) {
@@ -1592,7 +1624,7 @@ export const syncFolderBatch = async (folderId: string, jobHeartbeat: () => Prom
       .catch(() => false);
   }
   // Queued only after the provider lease is released: a hydration job that starts while this
-  // sync still holds it finds the resource busy and waits 5-30 seconds before its next try.
+  // sync still holds it finds the resource busy and has to try again.
   if (batch.imported > 0) await submitHydrationJob({ mailboxId: folder.mailbox_id });
   return batch;
 };
@@ -1612,28 +1644,42 @@ const markFolderDegraded = async (folderId: string): Promise<void> => {
   );
 };
 
+/** `backfill` marks a continuation that only imports older mail or reconciliation windows. */
+type SyncFolderJobInput = { folderId: string; backfill?: boolean };
+
+// A sync requested while the folder's job continues with older mail joins that job and keeps its
+// input. This marker lets the job's next batch rank as a folder sync again; it outlasts a long
+// batch and a few retries.
+const SYNC_REQUEST_MARKER_MS = 10 * 60_000;
+const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
+
 const syncFolderJob = lazySync((sync) =>
-  sync.job<{ folderId: string }>({
+  sync.job<SyncFolderJobInput>({
     id: "mail:sync-folder",
     delivery: { ackWaitMs: 3 * 60_000, maxAttempts: SYNC_FOLDER_MAX_ATTEMPTS, backoffMs: [5_000, 10_000, 20_000, 40_000] },
   }),
 );
 
 /** Runs one `mail:sync-folder` attempt; exported so tests can drive the job's failure handling. */
-export const runSyncFolderJob = async (ctx: Pick<JobContext<{ folderId: string }>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>, "input" | "heartbeat" | "resubmit">): Promise<void> => {
+  const { folderId } = ctx.input;
+  let backfill = ctx.input.backfill === true;
   try {
-    const data = await syncFolderBatch(ctx.input.folderId, () => ctx.heartbeat());
-    if (data.hasMore) ctx.resubmit({ delayMs: 0 });
+    // A sync requested meanwhile joined this job. Its next batch checks for new mail before it
+    // continues with older mail, so it ranks as a folder sync.
+    if ((await redis.send("GETDEL", [syncRequestKey(folderId)])) != null) backfill = false;
+    const data = await syncFolderBatch(folderId, () => ctx.heartbeat(), backfill ? "background" : "sync");
+    if (data.hasMore) ctx.resubmit({ delayMs: 0, input: { folderId, backfill: !data.syncPending } });
   } catch (error) {
     const code = normalizeSyncErrorCode(error);
     if (code === "MAILBOX_TRANSPORT_CHANGED") return;
     if (code === "MAIL_RATE_LIMITED") {
-      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000) });
+      ctx.resubmit({ delayMs: retryAfterMs(error, 5_000), input: { folderId, backfill } });
       return;
     }
     // A sibling job holds the remote resource: routine contention, not a failed attempt.
     if (code === "SYNC_BUSY") {
-      ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+      ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error), input: { folderId, backfill } });
       return;
     }
     // The failed run and the resource error are already recorded; retries and dead letters
@@ -1817,8 +1863,15 @@ export const hydrateMessageBatch = async (
           ? await nextMailboxHydrationTarget(ctx.input.mailboxId)
           : await requestedHydrationTarget(ctx.input.messageId);
       if (!message) return { hydrated: false };
-      const lock = await mailProviderOperationMutex().acquire({ resource: message.remote_resource_id, ttlMs: SYNC_LEASE_MS });
-      if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY" });
+      // A mailbox's pending bodies wait for its folder syncs and commands. A body someone waits
+      // for, such as one a workflow step needs, ranks with commands.
+      const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+        resource: message.remote_resource_id,
+        waiter: `hydrate:${hydrationJobKey(ctx.input)}`,
+        priority: "messageId" in ctx.input ? "command" : "background",
+        ttlMs: SYNC_LEASE_MS,
+      });
+      if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
       let batch: HydrationBatch;
       try {
         batch = await withLeaseHeartbeat<HydrationBatch>({
@@ -1985,7 +2038,7 @@ const startHydrationJob = async (): Promise<void> => {
         return;
       }
       if (code === "SYNC_BUSY") {
-        ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+        ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
         return;
       }
       // A mailbox job does not wait out a retry backoff: its coalesced key would absorb the job
@@ -2048,8 +2101,14 @@ export const executeBindingRediscovery = async (
       AND (state IN ('active', 'degraded') OR (${allowCredentialRevision} AND state = 'pending'))
   `;
   if (!binding) throw Object.assign(new Error("Provider binding is unavailable for rediscovery"), { code: "BINDING_UNAVAILABLE" });
-  const lock = await mailProviderOperationMutex().acquire({ resource: binding.remote_resource_id, ttlMs: SYNC_LEASE_MS });
-  if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY" });
+  // Rediscovery decides which folders sync at all, so it ranks with folder syncs.
+  const { lock, retryAfterMs: busyRetryAfterMs } = await acquireProviderLease({
+    resource: binding.remote_resource_id,
+    waiter: `rediscover:${bindingId}`,
+    priority: "sync",
+    ttlMs: SYNC_LEASE_MS,
+  });
+  if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
   try {
     return await withLeaseHeartbeat({
       intervalMs: 30_000,
@@ -2090,7 +2149,7 @@ const startRediscoveryJob = async (): Promise<void> => {
         return;
       }
       if (code === "SYNC_BUSY") {
-        ctx.resubmit({ delayMs: providerBusyRetryDelayMs() });
+        ctx.resubmit({ delayMs: providerBusyRetryAfterMs(error) });
         return;
       }
       if (ctx.attempt >= REDISCOVERY_MAX_ATTEMPTS) {
@@ -2108,13 +2167,14 @@ const startRediscoveryJob = async (): Promise<void> => {
 };
 
 const submitSyncFolderJob = async (folderId: string): Promise<void> => {
-  await (syncTasks.run(() => syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } })) ??
-    Promise.resolve());
+  await (syncTasks.run(async () => {
+    await redis.send("SET", [syncRequestKey(folderId), "1", "PX", String(SYNC_REQUEST_MARKER_MS)]);
+    await syncFolderJob().submit({ coalesce: true, key: `folder:${folderId}`, input: { folderId } });
+  }) ?? Promise.resolve());
 };
 
 const submitHydrationJob = async (input: HydrationInput): Promise<void> => {
-  const key = "mailboxId" in input ? `mailbox:${input.mailboxId}` : `message:${input.messageId}`;
-  await (syncTasks.run(() => hydrationJob().submit({ coalesce: true, key, input })) ?? Promise.resolve());
+  await (syncTasks.run(() => hydrationJob().submit({ coalesce: true, key: hydrationJobKey(input), input })) ?? Promise.resolve());
 };
 
 const submitRediscoveryJob = async (bindingId: string, allowCredentialRevision: boolean): Promise<void> => {
