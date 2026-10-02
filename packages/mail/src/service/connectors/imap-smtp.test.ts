@@ -662,15 +662,18 @@ describe("IMAP message state", () => {
 });
 
 describe("IMAP draft count", () => {
-  const client = (capabilities: string[], result: number[] | false) => {
+  const client = (capabilities: string[], result: number[] | { count?: number } | false) => {
     const queries: unknown[] = [];
+    const options: unknown[] = [];
     return {
       queries,
+      options,
       client: {
         capabilities: new Map(capabilities.map((name) => [name, true])),
         enabled: new Set<string>(),
-        search: async (query: unknown) => {
+        search: async (query: unknown, searchOptions: unknown) => {
           queries.push(query);
+          options.push(searchOptions);
           return result;
         },
       } as never,
@@ -681,6 +684,13 @@ describe("IMAP draft count", () => {
     const imap = client(["IMAP4rev1"], [3, 9, 12]);
     expect(await countDraftUids(imap.client)).toBe(3);
     expect(imap.queries).toEqual([{ draft: true }]);
+  });
+
+  test("asks a server with ESEARCH for the count instead of every UID", async () => {
+    const imap = client(["IMAP4rev1", "ESEARCH"], { count: 60_000 });
+    expect(await countDraftUids(imap.client)).toBe(60_000);
+    expect(imap.options).toEqual([{ uid: true, returnOptions: ["COUNT"] }]);
+    await expect(countDraftUids(client(["IMAP4rev1", "ESEARCH"], {}).client)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
   });
 
   test("counts Gmail's drafts by their Drafts label", async () => {

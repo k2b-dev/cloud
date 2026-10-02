@@ -1360,13 +1360,15 @@ const normalizeMessageId = (value: string | null | undefined): string => value?.
 
 /**
  * Counts the selected folder's drafts: messages flagged `\Draft`, on Gmail the ones with its Drafts
- * label. A search the server refused is an error, not zero drafts.
+ * label. A server with ESEARCH answers with the count alone; any other lists the UIDs. A search
+ * the server refused is an error, not zero drafts.
  */
 export const countDraftUids = async (client: Pick<ImapFlow, "search" | "capabilities" | "enabled">): Promise<number> => {
   const gmail = client.capabilities.has("X-GM-EXT-1") || client.enabled.has("X-GM-EXT-1");
-  const uids = await client.search(gmail ? { gmraw: "in:drafts" } : { draft: true }, { uid: true });
-  if (!Array.isArray(uids)) throw Object.assign(new Error("Provider did not answer the draft search"), { code: "IMAP_SEARCH_FAILED" });
-  return uids.length;
+  const result = await client.search(gmail ? { gmraw: "in:drafts" } : { draft: true }, { uid: true, returnOptions: ["COUNT"] });
+  if (Array.isArray(result)) return result.length;
+  if (result && typeof result.count === "number") return result.count;
+  throw Object.assign(new Error("Provider did not answer the draft search"), { code: "IMAP_SEARCH_FAILED" });
 };
 
 const countDraftMessages = async (

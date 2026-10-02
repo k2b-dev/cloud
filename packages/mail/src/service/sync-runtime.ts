@@ -1161,7 +1161,12 @@ export const fetchReconcileStep = async (params: {
       newestFirst: false,
     });
     cursor.reconcileNextLow = window.high < params.currentHighUid ? window.high + 1 : null;
-    if (cursor.reconcileNextLow == null) cursor.lastFullReconcileAt = new Date().toISOString();
+    if (cursor.reconcileNextLow == null) {
+      cursor.lastFullReconcileAt = new Date().toISOString();
+      // A positive offset may hold a message removed while a search ran, and a removal right
+      // after this walk would hide behind it. The next count check learns a real one again.
+      if ((cursor.countOffset ?? 0) > 0) cursor.countOffset = 0;
+    }
     return window;
   }
   // Newest first, one window per batch: while messages are known to have left the folder until
@@ -1182,6 +1187,7 @@ export const fetchReconcileStep = async (params: {
     uidValidity: params.uidValidity,
     draftsFolder: params.draftsFolder,
     high,
+    remoteMessages: params.remoteMessages,
   });
   const window = await fetchReconcileWindow({ ...params, low, high, newestFirst: true });
   cursor.sweepNextHigh = window.low > 1 ? window.low - 1 : null;
@@ -1192,10 +1198,22 @@ export const fetchReconcileStep = async (params: {
  * Low UID of the newest-first window that ends at `high`: the window reaches down to the
  * RECONCILE_WINDOW_SIZE-th live local UID, or to the first UID when fewer are left. A window
  * spans messages rather than UIDs, so a folder whose UIDs are spread thin, such as an Inbox that
- * is emptied regularly, needs no more windows than its message count requires. Once backfill
- * finished, the provider lists about as many messages in the window as Mail holds there.
+ * is emptied regularly, needs no more windows than its message count requires.
+ *
+ * The provider also lists the messages Mail keeps no record of, such as the drafts it skips
+ * outside the Drafts folder. While those reach a window's size, a window spans
+ * RECONCILE_WINDOW_SIZE UIDs instead, so one window never lists much more than two windows'
+ * worth of messages.
  */
-const newestFirstWindowLow = async (params: { folderId: string; uidValidity: string; draftsFolder: boolean; high: number }) => {
+const newestFirstWindowLow = async (params: {
+  folderId: string;
+  uidValidity: string;
+  draftsFolder: boolean;
+  high: number;
+  remoteMessages: number;
+}): Promise<number> => {
+  const local = await countLiveUids(params.folderId, params.uidValidity, params.draftsFolder);
+  if (params.remoteMessages - local >= RECONCILE_WINDOW_SIZE) return Math.max(1, params.high - RECONCILE_WINDOW_SIZE + 1);
   const [row] = params.draftsFolder
     ? await sql<{ uid: string }[]>`
         SELECT live.uid::text AS uid

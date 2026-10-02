@@ -336,7 +336,8 @@ suite("mail sync of changes made in other clients", () => {
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("raced-first"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
 
-    // The full reconciliation retires it, and the offset drops again with the counts.
+    // The full reconciliation retires it and drops the offset, so a removal right after the
+    // walk, before any further count check, is found as well.
     await sql`
       UPDATE mail.folders
       SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
@@ -344,7 +345,6 @@ suite("mail sync of changes made in other clients", () => {
     `;
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("raced-during"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
-    await mailbox.sync("archive");
 
     mailbox.remote.remove("archive", later);
     await mailbox.sync("archive");
@@ -384,6 +384,21 @@ suite("mail sync of changes made in other clients", () => {
     expect(await mailbox.placements(id("sparse-old"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
     expect(mailbox.remote.calls.windows).toEqual([["archive", 1, 12_000]]);
     expect(await versions()).toEqual(before);
+  });
+
+  test("a sweep window lists at most a window's worth of messages Mail keeps no record of", async () => {
+    const mailbox = await connect("skipped-many", false);
+    mailbox.remote.put("archive", id("bounded-old"), [], 1);
+    for (let uid = 2; uid <= 5_001; uid += 1) mailbox.remote.put("archive", id(`bounded-draft-${uid}`), ["\\Draft"], uid);
+    const recent = mailbox.remote.put("archive", id("bounded-recent"), [], 12_000);
+    await mailbox.sync("archive", 40);
+
+    mailbox.remote.setFlags("archive", recent, ["\\Seen"]);
+    mailbox.remote.resetCalls();
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("bounded-recent"))).toEqual([{ role: "archive", deleted: false, flags: ["\\Seen"] }]);
+    // 5,000 skipped drafts: the window spans 5,000 UIDs instead of the two messages Mail holds.
+    expect(mailbox.remote.calls.windows).toEqual([["archive", 7_001, 12_000]]);
   });
 
   test("a draft that leaves a folder Mail skips drafts in costs a draft count, not a search", async () => {
