@@ -18,7 +18,7 @@ const failureCode = (outcome: MailActionCommand): string => (outcome.state === "
 
 export type MailActionFailure = { conversationId: string; label: string; code: string };
 
-/** A followed action whose commands all finished, at least one of them without the change. */
+/** A followed action that ended with at least one conversation the mail server did not change. */
 export type MailActionFailureReport = {
   actionId: MailActionId;
   destinationFolderId: string | null;
@@ -38,12 +38,15 @@ type FollowedAction = {
 const record = (conversation: FollowedConversation, outcome: MailActionCommand): void => {
   if (PENDING_STATES.has(outcome.state)) return;
   conversation.pending.delete(outcome.id);
-  if (FAILED_STATES.has(outcome.state)) conversation.failureCode ??= failureCode(outcome);
+  if (!FAILED_STATES.has(outcome.state)) return;
+  // An unclear outcome outranks a definite failure: the user has to check it, not repeat it.
+  if (outcome.state === "needs_attention" || conversation.failureCode === null) conversation.failureCode = failureCode(outcome);
 };
 
-/** `"pending"` while a command runs; then the failure report, or `null` when every change was made. */
-const settled = (action: FollowedAction): MailActionFailureReport | null | "pending" => {
-  if (action.conversations.some((conversation) => conversation.pending.size > 0)) return "pending";
+const isPending = (action: FollowedAction): boolean => action.conversations.some((conversation) => conversation.pending.size > 0);
+
+/** The failure report of a finished action, or `null` when every change it saw was made. */
+const failureReport = (action: FollowedAction): MailActionFailureReport | null => {
   const failures = action.conversations.flatMap((conversation) =>
     conversation.failureCode
       ? [{ conversationId: conversation.conversationId, label: conversation.label, code: conversation.failureCode }]
@@ -65,6 +68,7 @@ const settled = (action: FollowedAction): MailActionFailureReport | null | "pend
  */
 export const createMailActionOutcomes = () => {
   const actions = new Set<FollowedAction>();
+  let rotation = 0;
 
   return {
     /**
@@ -92,44 +96,44 @@ export const createMailActionOutcomes = () => {
           return followed;
         }),
       };
-      const report = settled(action);
-      if (report === "pending") actions.add(action);
-      return report === "pending" ? null : report;
-    },
-
-    /** The oldest pending commands, at most one request's worth. */
-    pendingCommandIds: (limit = MAX_COMMAND_OUTCOME_IDS): string[] => {
-      const ids: string[] = [];
-      for (const action of actions) {
-        for (const conversation of action.conversations) {
-          for (const id of conversation.pending) {
-            if (ids.length >= limit) return ids;
-            ids.push(id);
-          }
-        }
-      }
-      return ids;
+      if (!isPending(action)) return failureReport(action);
+      actions.add(action);
+      return null;
     },
 
     /**
-     * Applies the outcomes the server reported for the `requested` commands. A requested command
-     * the server no longer knows counts as finished. Returns the actions that ended with a failure
-     * and forgets actions followed for longer than the TTL.
+     * The pending commands to ask about next, at most one request's worth. Successive calls rotate
+     * through all of them, so commands that keep waiting cannot hide a later command's failure.
+     */
+    pendingCommandIds: (limit = MAX_COMMAND_OUTCOME_IDS): string[] => {
+      const ids = [...actions].flatMap((action) => action.conversations.flatMap((conversation) => [...conversation.pending]));
+      if (ids.length <= limit) return ids;
+      const start = rotation % ids.length;
+      rotation = start + limit;
+      return [...ids.slice(start), ...ids.slice(0, start)].slice(0, limit);
+    },
+
+    /**
+     * Applies the outcomes the server reported for the `requested` commands; a requested command
+     * the server no longer knows counts as finished. Call it with nothing requested when the request
+     * failed, so following still ends after the TTL. Returns the reports of actions that finished or
+     * expired with a failure; an expired action reports the failures it saw and drops the commands
+     * that still wait.
      */
     apply: (requested: readonly string[], outcomes: readonly MailActionCommand[], now = Date.now()): MailActionFailureReport[] => {
+      const asked = new Set(requested);
       const byId = new Map(outcomes.map((outcome) => [outcome.id, outcome]));
       const reports: MailActionFailureReport[] = [];
       for (const action of actions) {
         for (const conversation of action.conversations) {
-          for (const id of requested) {
-            if (conversation.pending.has(id)) record(conversation, byId.get(id) ?? { id, state: "confirmed", code: null });
+          for (const id of [...conversation.pending]) {
+            if (asked.has(id)) record(conversation, byId.get(id) ?? { id, state: "confirmed", code: null });
           }
         }
-        const report = settled(action);
-        if (report !== "pending") {
-          actions.delete(action);
-          if (report) reports.push(report);
-        } else if (now - action.startedAt >= MAIL_ACTION_OUTCOME_TTL_MS) actions.delete(action);
+        if (isPending(action) && now - action.startedAt < MAIL_ACTION_OUTCOME_TTL_MS) continue;
+        actions.delete(action);
+        const report = failureReport(action);
+        if (report) reports.push(report);
       }
       return reports;
     },

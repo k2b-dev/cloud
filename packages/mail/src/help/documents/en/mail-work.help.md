@@ -94,7 +94,7 @@ The top actions take the conversation out of the folder you are viewing, such as
 
 These actions require write access and the corresponding folder mapping. If Mail reports that the conversation has no active provider placement, refresh the mailbox or ask an administrator to review folder discovery and mappings.
 
-Mail queues every action and the mail server applies it moments later. If the server does not make the change, for example because the message was moved in another email client, Mail names the conversation that stayed as it was and offers **Try again**.
+Mail queues every action and the mail server applies it moments later. If the server does not make the change, for example because the message was moved in another email client, Mail names the conversation that stayed as it was and offers **Try again**. If it is unclear whether the server made the change, Mail asks you to check the conversation instead of repeating it.
 
 Select **Mail commands** above the conversation list to search the same actions that appear in buttons and menus. Common commands also have keyboard shortcuts. Open **Configure keyboard shortcuts** from Mail commands to change or disable them on this device. Shortcuts do not run while you are typing in an input or message editor.
 

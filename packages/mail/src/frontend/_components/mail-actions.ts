@@ -58,7 +58,14 @@ export const getMailAction = (id: MailActionId): MailActionDescriptor => {
   return action;
 };
 
-type MailActionFolder = { id: string; role: string; providerRole: string; configuredRole: string | null };
+type MailActionFolder = {
+  id: string;
+  role: string;
+  providerRole: string;
+  configuredRole: string | null;
+  selectable: boolean;
+  discoveryState: string;
+};
 
 // Where a conversation is filed, in the order an action takes it out of: ordinary folders, then
 // Junk and Trash, then Gmail's All Mail, then the mailbox's own copies in Sent and Drafts.
@@ -93,18 +100,20 @@ export const mailMoveSourceFolderIds = (params: {
 const ROLE_DESTINATIONS: Partial<Record<MailActionId, string>> = { archive: "archive", junk: "junk", trash: "trash", not_spam: "inbox" };
 
 /**
- * The folder an Archive, Spam, Not spam, or Delete action moves to, chosen as the server chooses it:
- * the configured folder, the one folder with that role, or Gmail's All Mail for Archive. `null` when
- * that is unclear; the server then decides and reports.
+ * The folder an Archive, Spam, Not spam, or Delete action moves to, chosen as the server's
+ * `resolveRoleFolder` chooses it among active, selectable folders: the folder configured for the
+ * role, else the one folder whose provider role it is, else Gmail's All Mail for Archive. `null`
+ * when that is unclear; the server then decides and reports.
  */
 export const mailRoleDestinationFolderId = (actionId: MailActionId, folders: readonly MailActionFolder[]): string | null => {
   const role = ROLE_DESTINATIONS[actionId];
   if (!role) return null;
-  const configured = folders.find((folder) => folder.configuredRole === role);
+  const usable = folders.filter((folder) => folder.selectable && folder.discoveryState === "active");
+  const configured = usable.find((folder) => folder.configuredRole === role);
   if (configured) return configured.id;
-  const claimed = folders.filter((folder) => folder.role === role);
+  const claimed = usable.filter((folder) => folder.providerRole === role);
   if (claimed.length === 0 && role === "archive") {
-    const allMail = folders.filter((folder) => folder.providerRole === "all");
+    const allMail = usable.filter((folder) => folder.providerRole === "all");
     return allMail.length === 1 ? allMail[0]!.id : null;
   }
   return claimed.length === 1 ? claimed[0]!.id : null;

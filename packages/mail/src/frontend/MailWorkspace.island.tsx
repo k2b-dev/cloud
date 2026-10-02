@@ -29,7 +29,7 @@ import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
 import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
-import { createMailActionOutcomes, type MailActionFailureReport } from "./_components/mail-action-outcomes";
+import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import {
   buildMailActionInput,
   MAIL_ACTION_MISSING_DESTINATION,
@@ -1203,14 +1203,17 @@ function MailWorkspaceView(props: {
   const pollActionOutcomes = async () => {
     outcomePollTimer = null;
     const commandIds = actionOutcomes.pendingCommandIds();
+    let outcomes: MailActionCommand[] | null = null;
     if (commandIds.length > 0) {
       try {
         const response = await apiClient.mailboxes[":mailboxId"].commands.outcomes.$post({ param: { mailboxId }, json: { commandIds } });
-        if (response.ok) for (const report of actionOutcomes.apply(commandIds, await response.json())) showActionFailures(report);
+        if (response.ok) outcomes = await response.json();
       } catch {
         // The next poll asks again.
       }
     }
+    // Applied after a failed request too, so following still ends after its lifetime.
+    for (const report of actionOutcomes.apply(outcomes ? commandIds : [], outcomes ?? [])) showActionFailures(report);
     if (!disposed && actionOutcomes.hasPending()) scheduleActionOutcomePoll();
   };
   // Commands usually finish within seconds; one that waits for the mailbox is asked about less often.
@@ -1546,7 +1549,9 @@ function MailWorkspaceView(props: {
         onOpenSubscriptions={() => void openSubscriptions()}
         onOpenSettings={() => void openSettings()}
         onMoveConversation={(input) => {
-          const item = data.listItems.find((candidate) => candidate.conversationId === input.conversationId);
+          // The dragged row, not the first row of its conversation: in a message list, rows of one
+          // conversation can sit in different folders.
+          const item = data.listItems.find((candidate) => candidate.id === input.itemId);
           const target = item ? actionTargetForItem(item, "move") : null;
           return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
         }}

@@ -135,7 +135,7 @@ export default function MailConversationRow(props: {
         class="mail-list-row focus-ui"
         // The open card already names sender and subject; a native tooltip would cover the row.
         title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
-        draggable={props.state.canWrite && Boolean(props.item.conversationId)}
+        draggable={props.state.canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
         onClick={(event) => {
           activation = event.detail === 0 ? "keyboard" : "pointer";
           if (event.defaultPrevented || event.button !== 0 || event.altKey) return;
@@ -151,10 +151,10 @@ export default function MailConversationRow(props: {
         }}
         onDragStart={(event) => {
           const transfer = event.dataTransfer;
-          if (!props.item.conversationId || !transfer) return event.preventDefault();
+          if (!props.item.conversationId || props.item.activeFolderIds.length === 0 || !transfer) return event.preventDefault();
           transfer.effectAllowed = "move";
-          // The drop resolves the source folders the same way the Move action does.
-          transfer.setData("application/x-cloud-mail-conversation", JSON.stringify({ conversationId: props.item.conversationId }));
+          // The drop resolves this row's source folders the same way the Move action does.
+          transfer.setData("application/x-cloud-mail-conversation", JSON.stringify({ itemId: props.item.id }));
         }}
       >
         <span class="sr-only">

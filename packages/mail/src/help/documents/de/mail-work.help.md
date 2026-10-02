@@ -94,7 +94,7 @@ Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansieh
 
 Diese Aktionen erfordern Schreibzugriff und die entsprechende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung keine aktive Anbieterablage besitzt, aktualisiere das Postfach oder bitte eine Person mit Adminrechten, Ordnererkennung und Zuordnungen zu prüfen.
 
-Mail reiht jede Aktion ein, und der Mailserver führt sie Augenblicke später aus. Nimmt der Server die Änderung nicht vor, etwa weil die Nachricht in einem anderen E-Mail-Programm verschoben wurde, nennt Mail die unveränderte Unterhaltung und bietet **Erneut versuchen** an.
+Mail reiht jede Aktion ein, und der Mailserver führt sie Augenblicke später aus. Nimmt der Server die Änderung nicht vor, etwa weil die Nachricht in einem anderen E-Mail-Programm verschoben wurde, nennt Mail die unveränderte Unterhaltung und bietet **Erneut versuchen** an. Ist unklar, ob der Server die Änderung vorgenommen hat, bittet Mail dich, die Unterhaltung zu prüfen, statt die Aktion zu wiederholen.
 
 Wähle **Mail-Befehle** über der Unterhaltungsliste, um dieselben Aktionen zu durchsuchen, die in Schaltflächen und Menüs erscheinen. Häufige Befehle haben auch Tastaturkürzel. Unter **Tastaturkürzel konfigurieren** in den Mail-Befehlen kannst du sie auf diesem Gerät ändern oder deaktivieren. Kürzel werden nicht ausgeführt, während du in einem Eingabefeld oder Nachrichteneditor schreibst.
 

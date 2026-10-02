@@ -14,6 +14,8 @@ describe("Mail actions", () => {
     role,
     providerRole,
     configuredRole,
+    selectable: true,
+    discoveryState: "active",
   });
 
   test("defines every action exactly once", () => {
@@ -94,5 +96,13 @@ describe("Mail actions", () => {
     const ambiguous = [folder("archive-a", "archive"), folder("archive-b", "archive")];
     expect(mailRoleDestinationFolderId("archive", ambiguous)).toBeNull();
     expect(mailRoleDestinationFolderId("archive", [...ambiguous, folder("chosen", "archive", "other", "archive")])).toBe("chosen");
+    expect(
+      mailRoleDestinationFolderId("archive", [...ambiguous.slice(0, 1), { ...folder("gone", "archive"), discoveryState: "missing" }]),
+    ).toBe("archive-a");
+
+    // Like the server, a provider Archive folder configured as Junk still claims Archive by its provider role.
+    const reassigned = [folder("provider-archive", "junk", "archive", "junk"), folder("all-mail", "all")];
+    expect(mailRoleDestinationFolderId("archive", reassigned)).toBe("provider-archive");
+    expect(mailRoleDestinationFolderId("junk", reassigned)).toBe("provider-archive");
   });
 });

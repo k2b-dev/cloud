@@ -180,6 +180,21 @@ describe("Mail workspace action runner", () => {
     expect(submittedPlacements).toBe(1);
   });
 
+  test("follows the commands a partly submitted conversation already queued", async () => {
+    const fixture = host({
+      resolveTargets: () => [target("one", ["inbox", "projects"])],
+      submit: async ({ sourceFolderId }) => {
+        if (sourceFolderId === "projects") throw new Error("provider rejected");
+        return [{ id: "archive-inbox", state: "queued" }];
+      },
+    });
+
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(fixture.events).toContain("failures:1");
+    // The Inbox commands can still fail later, so they are followed like any other.
+    expect(fixture.events).toContain("follow:archive-inbox");
+  });
+
   test("leaves conversations alone that already sit in the folder Archive moves to", async () => {
     const submitted: string[] = [];
     const fixture = host({

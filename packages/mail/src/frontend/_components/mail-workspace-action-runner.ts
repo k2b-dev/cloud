@@ -152,16 +152,16 @@ export const runMailWorkspaceAction = async (
     );
     const succeeded = new Set(result.succeededConversationIds);
     host.pruneSelection(succeeded);
-    // A silent action was not the user's choice, so its later outcome is not announced either.
+    // A silent action was not the user's choice, so its later outcome is not announced either. A
+    // conversation that failed for one folder still follows the commands queued for the others.
     if (!options.silent)
       host.followOutcomes({
         actionId,
         destinationFolderId: destinationFolderId ?? null,
-        conversations: targets.flatMap((target) =>
-          succeeded.has(target.conversationId)
-            ? [{ conversationId: target.conversationId, label: target.label, commands: queued.get(target.conversationId) ?? [] }]
-            : [],
-        ),
+        conversations: targets.flatMap((target) => {
+          const commands = queued.get(target.conversationId);
+          return commands ? [{ conversationId: target.conversationId, label: target.label, commands }] : [];
+        }),
       });
 
     if (succeeded.size > 0) {
