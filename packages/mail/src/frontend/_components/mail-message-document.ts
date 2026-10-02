@@ -60,10 +60,12 @@ export const buildMessageDocument = (
     table { max-width: 100%; border-collapse: collapse; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; }
     a { color: #1677c8; }
-    details.mail-quoted-history { margin-top: 12px; color: color-mix(in srgb, currentColor 65%, transparent); }
-    details.mail-quoted-history > summary { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; border-radius: 6px; color: #52525b; font-size: 12px; font-weight: 500; line-height: 16px; list-style: none; cursor: pointer; user-select: none; transition: background-color 120ms ease, color 120ms ease; }
+    details.mail-quoted-history { margin-top: 12px; }
+    details.mail-quoted-history > :not(summary),
+    details.mail-quoted-history > summary { color: color-mix(in srgb, currentColor 65%, transparent); }
+    details.mail-quoted-history > summary { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; border-radius: 6px; font-size: 12px; font-weight: 500; line-height: 16px; list-style: none; cursor: pointer; user-select: none; transition: background-color 120ms ease, color 120ms ease; }
     details.mail-quoted-history > summary::-webkit-details-marker { display: none; }
-    details.mail-quoted-history > summary:hover { background: #f4f4f5; color: #18181b; }
+    details.mail-quoted-history > summary:hover { background: color-mix(in srgb, currentColor 6%, transparent); color: inherit; }
     details.mail-quoted-history > summary:focus-visible { outline: 2px solid #1677c8; outline-offset: 1px; }
     details.mail-quoted-history > summary > svg { flex: none; width: 14px; height: 14px; transition: transform 160ms ease; }
     details.mail-quoted-history[open] > summary > svg { transform: rotate(90deg); }
@@ -114,6 +116,8 @@ export const buildMessageDocument = (
       };
       const quoteSelectors = 'blockquote[type="cite"], .gmail_quote, .yahoo_quoted';
       const candidates = [...document.querySelectorAll(quoteSelectors)].filter((node) => !node.parentElement?.closest("details.mail-quoted-history"));
+      // The parent remembers opened quotes and reopens them after a reload.
+      const quotes = [];
       for (const node of candidates) {
         if (node.parentElement?.closest(quoteSelectors)) continue;
         const details = document.createElement("details");
@@ -122,7 +126,13 @@ export const buildMessageDocument = (
         summary.append(quoteChevron(), quoteLabels());
         node.replaceWith(details);
         details.append(summary, node);
+        const index = quotes.push(details) - 1;
+        details.addEventListener("toggle", () => post("quote", { index, open: details.open }));
       }
+      const openQuotes = (indexes) => {
+        if (!Array.isArray(indexes)) return;
+        for (const index of indexes) if (Number.isSafeInteger(index) && quotes[index]) quotes[index].open = true;
+      };
       for (const link of document.querySelectorAll("a[href]")) {
         if (linksDisabled) {
           link.removeAttribute("href");
@@ -162,6 +172,7 @@ export const buildMessageDocument = (
         if (event.source !== parent || !data || data.source !== "cloud-mail-host" || data.channel !== channel) return;
         if (data.type === "measure") reportHeight();
         if (data.type === "images") showImages(data.value);
+        if (data.type === "quotes") openQuotes(data.value);
       });
       if (root) new ResizeObserver(reportHeight).observe(root);
       reportHeight();

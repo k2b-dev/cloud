@@ -10,7 +10,8 @@ const html = [
   "<p>Hello</p>",
   ...remoteIds.map((id, index) => `<p>Remote ${index}</p><img alt="remote-${index}" data-mail-remote-image="${id}">`),
   '<img alt="cid-0" src="cid:Logo%40Example.com"><img alt="cid-1" src="cid:banner@example.com">',
-  '<blockquote type="cite"><p>Earlier message</p></blockquote>',
+  // Quoted history inside a dark cell: the toggle must follow the cell's text color.
+  '<table><tr><td style="background: #18181b; color: #fafafa"><blockquote type="cite"><p>Earlier message</p></blockquote></td></tr></table>',
 ].join("");
 
 const buildHarness = async (): Promise<string> => {
@@ -110,6 +111,23 @@ const visibleImages = (frame: Frame, count: number) =>
     count,
   );
 
+// The host's messages reach the frame in order. Reopening the quote through the
+// same channel and seeing its toggle come back proves every earlier message ran.
+const settleFrame = (page: Page) =>
+  page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const target = document.querySelector("iframe")!.contentWindow!;
+        const listener = (event: MessageEvent) => {
+          if (event.source !== target || event.data?.type !== "quote") return;
+          removeEventListener("message", listener);
+          resolve();
+        };
+        addEventListener("message", listener);
+        target.postMessage({ source: "cloud-mail-host", channel: "mail-message-Msg001", type: "quotes", value: [0] }, "*");
+      }),
+  );
+
 const imageStates = (frame: Frame) =>
   frame.evaluate(() => Object.fromEntries(Array.from(document.images).map((image) => [image.alt, image.naturalWidth > 0])));
 
@@ -141,6 +159,83 @@ describe("HTML mail message frame", () => {
       expect(opened.chevron).not.toBe("none");
       expect(opened.box).toEqual(closed.box);
       expect(await frame.getByText("Earlier message").isVisible()).toBeTrue();
+      expect(errors).toEqual([]);
+    });
+  }, 30_000);
+
+  test("draws the quote toggle in the text color around it", async () => {
+    await withOpenedMessage(false, async ({ frame }) => {
+      const summary = frame.locator("details.mail-quoted-history > summary");
+      const colors = () =>
+        summary.evaluate((element) => {
+          const probe = document.createElement("span");
+          probe.style.color = "color-mix(in srgb, #fafafa 65%, transparent)";
+          element.parentElement!.append(probe);
+          const dimmed = getComputedStyle(probe).color;
+          probe.remove();
+          return { toggle: getComputedStyle(element).color, dimmed };
+        });
+
+      const resting = await colors();
+      expect(resting.toggle).toBe(resting.dimmed);
+      await summary.hover();
+      await frame.waitForFunction(
+        () => getComputedStyle(document.querySelector("details.mail-quoted-history > summary")!).color === "rgb(250, 250, 250)",
+      );
+    });
+  }, 30_000);
+
+  test("keeps opened quoted text open when the frame document reloads", async () => {
+    await withOpenedMessage(false, async ({ page, frame, errors }) => {
+      await visibleImages(frame, 2);
+      await frame.locator("details.mail-quoted-history > summary").click();
+      await page.waitForFunction(() => window.mailMessageBodyTrace.quoteToggles === 1);
+
+      // Solid's list reconciliation can move a message article; a moved frame reloads its document.
+      await page.evaluate(() => {
+        const root = document.getElementById("root")!;
+        root.append(root.firstElementChild!);
+      });
+      await page.waitForFunction(() => window.mailMessageBodyTrace.loads.length === 2);
+      const reloaded = page.frames().find((candidate) => candidate !== page.mainFrame())!;
+      await reloaded.waitForFunction(() => document.querySelector<HTMLDetailsElement>("details.mail-quoted-history")?.open === true);
+      await visibleImages(reloaded, 2);
+      expect(await reloaded.getByText("Earlier message").isVisible()).toBeTrue();
+      expect(errors).toEqual([]);
+    });
+  }, 30_000);
+
+  test("follows a changed security verdict on the mounted message", async () => {
+    await withOpenedMessage(false, async ({ page, frame, errors }) => {
+      await visibleImages(frame, 2);
+
+      await page.evaluate(() => window.updateMailMessageBody({ linksDisabled: true }));
+      await page.waitForFunction(() => window.mailMessageBodyTrace.loads.length === 2);
+      const quarantined = page.frames().find((candidate) => candidate !== page.mainFrame())!;
+      await settleFrame(page);
+      expect(await quarantined.evaluate(() => document.querySelectorAll("img[src]").length)).toBe(0);
+      expect(await page.getByRole("button", { name: "Load images" }).count()).toBe(0);
+
+      await page.evaluate(() => window.updateMailMessageBody({ linksDisabled: false }));
+      await page.waitForFunction(() => window.mailMessageBodyTrace.loads.length === 3);
+      const cleared = page.frames().find((candidate) => candidate !== page.mainFrame())!;
+      await visibleImages(cleared, 2);
+      expect(errors).toEqual([]);
+    });
+  }, 30_000);
+
+  test("loads remote images once a sender rule arrives as a live update", async () => {
+    await withOpenedMessage(false, async ({ page, frame, errors }) => {
+      await visibleImages(frame, 2);
+      await page.evaluate(
+        (remoteIds) =>
+          window.updateMailMessageBody({
+            remoteContent: { imageIds: remoteIds, allowedByRule: true, sender: "sender@example.com", domain: "example.com" },
+          }),
+        remoteIds,
+      );
+      await visibleImages(frame, 7);
+      expect((await page.evaluate(() => window.mailMessageBodyTrace)).loads).toHaveLength(1);
       expect(errors).toEqual([]);
     });
   }, 30_000);

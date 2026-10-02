@@ -1,6 +1,6 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, prompts, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MessageRemoteContent, RemoteContentRule } from "../../service/remote-content";
 import { readApiError } from "./api-response";
@@ -67,8 +67,11 @@ export default function MailMessageBody(props: {
   let remoteController: AbortController | null = null;
   let remoteLoadedBytes = 0;
   let disposed = false;
-  // Loaded images stay here so a (re)loaded frame document can receive them all.
+  // Loaded images and opened quotes stay here so a reloaded frame document gets
+  // them back. The frame reloads whenever the reader moves this message in the
+  // DOM or a new security verdict changes the document.
   const frameImages: FrameImage[] = [];
+  const openQuotes = new Set<number>();
   // Split only when the text itself changes: a refreshed message snapshot with
   // the same body must keep its segments, and with them any opened quote.
   const plainText = createMemo(() => props.plainText ?? "");
@@ -192,6 +195,12 @@ export default function MailMessageBody(props: {
     if (data.type === "selection" && typeof data.value === "string") {
       props.onSelectionChange(data.value.slice(0, 10_000));
     }
+    if (data.type === "quote" && data.value && typeof data.value === "object") {
+      const quote = data.value as { index?: unknown; open?: unknown };
+      if (typeof quote.index !== "number" || !Number.isSafeInteger(quote.index) || quote.index < 0) return;
+      if (quote.open === true) openQuotes.add(quote.index);
+      if (quote.open === false) openQuotes.delete(quote.index);
+    }
   };
 
   const requestFrameMeasurement = () => {
@@ -199,48 +208,76 @@ export default function MailMessageBody(props: {
   };
 
   const handleFrameLoad = () => {
+    if (openQuotes.size > 0) {
+      frame?.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "quotes", value: [...openQuotes] }, "*");
+    }
     sendFrameImages(frameImages);
     requestFrameMeasurement();
   };
+
+  const loadCidImages = async (signal: AbortSignal) => {
+    const referenced = new Set(referencedContentIds(props.html ?? ""));
+    let selectedBytes = 0;
+    const selected = props.attachments
+      .filter((attachment) => {
+        if (!attachment.contentId || !attachment.contentType.toLowerCase().startsWith("image/")) return false;
+        if (!referenced.has(normalizeContentId(attachment.contentId))) return false;
+        if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) return false;
+        if (selectedBytes + attachment.sizeBytes > MAX_INLINE_IMAGE_BYTES) return false;
+        selectedBytes += attachment.sizeBytes;
+        return true;
+      })
+      .slice(0, MAX_INLINE_IMAGE_COUNT);
+    for (const attachment of selected) {
+      const response = await fetch(
+        `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}?inline=true`,
+        { credentials: "same-origin", signal },
+      );
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      if (disposed || signal.aborted) return;
+      showFrameImage({ kind: "cid", id: normalizeContentId(attachment.contentId!), image: blob });
+    }
+  };
+
+  // The message stays mounted across live updates, so images follow the
+  // current security verdict: a quarantined body drops loaded images and stops
+  // pending requests, and a cleared one loads its inline images again.
+  const imagesAllowed = () => props.format === "html" && !props.linksDisabled;
+  createEffect(
+    on(imagesAllowed, (allowed) => {
+      if (!allowed) {
+        remoteController?.abort();
+        remoteController = null;
+        remoteLoadedBytes = 0;
+        frameImages.length = 0;
+        setLoadedRemoteIds(new Set<string>());
+        setRemoteLoading(false);
+        return;
+      }
+      const controller = new AbortController();
+      onCleanup(() => controller.abort());
+      void loadCidImages(controller.signal).catch((error) => {
+        if (!controller.signal.aborted) console.warn("Could not load inline email image", error);
+      });
+    }),
+  );
+  // A sender or domain rule saved elsewhere reaches this message as a live update.
+  createEffect(
+    on(
+      () => imagesAllowed() && props.remoteContent.allowedByRule,
+      (autoLoad) => {
+        if (autoLoad) void loadRemoteImages();
+      },
+    ),
+  );
 
   onMount(() => {
     window.addEventListener("message", receiveMessage);
     requestAnimationFrame(requestFrameMeasurement);
     if (props.format === "plain" && props.plainText) document.addEventListener("selectionchange", reportPlainSelection);
-    const controller = new AbortController();
-    const loadCidImages = async () => {
-      const referenced = new Set(referencedContentIds(props.html ?? ""));
-      let selectedBytes = 0;
-      const selected = props.attachments
-        .filter((attachment) => {
-          if (!attachment.contentId || !attachment.contentType.toLowerCase().startsWith("image/")) return false;
-          if (!referenced.has(normalizeContentId(attachment.contentId))) return false;
-          if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) return false;
-          if (selectedBytes + attachment.sizeBytes > MAX_INLINE_IMAGE_BYTES) return false;
-          selectedBytes += attachment.sizeBytes;
-          return true;
-        })
-        .slice(0, MAX_INLINE_IMAGE_COUNT);
-      for (const attachment of selected) {
-        const response = await fetch(
-          `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}?inline=true`,
-          { credentials: "same-origin", signal: controller.signal },
-        );
-        if (!response.ok) continue;
-        const blob = await response.blob();
-        if (disposed || controller.signal.aborted) return;
-        showFrameImage({ kind: "cid", id: normalizeContentId(attachment.contentId!), image: blob });
-      }
-    };
-    if (props.format === "html" && !props.linksDisabled) {
-      void loadCidImages().catch((error) => {
-        if (!controller.signal.aborted) console.warn("Could not load inline email image", error);
-      });
-      if (props.remoteContent.allowedByRule) void loadRemoteImages();
-    }
     onCleanup(() => {
       disposed = true;
-      controller.abort();
       allowRemoteContent.abort();
       remoteController?.abort();
       frameImages.length = 0;

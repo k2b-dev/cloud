@@ -191,6 +191,54 @@ test.skipIf(isServer)("an opened quoted block stays open when a live update refr
   }
 });
 
+test.skipIf(isServer)("a retained message card follows live delivery updates", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const delivery: NonNullable<MessageDetail["delivery"]> = {
+    submissionId: "Sub001",
+    draftId: "Dra001",
+    state: "undo_window",
+    attempt: 0,
+    maxAttempts: 3,
+    scheduledAt: now,
+    undoUntil: null,
+    acceptedAt: null,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    acceptedRecipients: [],
+    rejectedRecipients: [],
+  };
+  const outgoing: MessageDetail = { ...envelopeOnly, hydrationStatus: "complete", plainText: "See you Friday.", delivery };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([outgoing]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
+    const header = () => card().querySelector("button[aria-expanded]")!.textContent ?? "";
+    await waitFor(() => card() !== null);
+    const mounted = card();
+    expect(header()).not.toContain("Sending");
+
+    setMessages([{ ...outgoing, delivery: { ...delivery, state: "sending", attempt: 1 } }]);
+    await waitFor(() => header().includes("Sending · 1/3"));
+
+    setMessages([{ ...outgoing, delivery: { ...delivery, state: "sent", attempt: 1 } }]);
+    await waitFor(() => !header().includes("Sending"));
+    expect(card()).toBe(mounted);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("reply and forward Commands name an untitled conversation instead of quoting an empty subject", async () => {
   const dom = createDomTestHarness();
   const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
