@@ -253,7 +253,7 @@ suite("mail command runtime provider safety", () => {
       messageId: `<unsafe-move-${suffix}@example.com>`,
       modseq: "1",
     });
-    const move = spyOn(imapSmtpConnector, "move").mockRejectedValue(new Error("an unsafe move reached the provider"));
+    const move = spyOn(imapSmtpConnector, "moveMessages").mockRejectedValue(new Error("an unsafe move reached the provider"));
     const copy = spyOn(imapSmtpConnector, "copy").mockRejectedValue(new Error("an unsafe move reached the provider"));
     try {
       const command = await createActorCommand({
@@ -420,20 +420,29 @@ suite("mail command runtime provider safety", () => {
     let moved = false;
     const configs: unknown[] = [];
     const session = spyOn(imapSmtpConnector, "withSession");
+    const remoteState = () => ({ exists: !moved, flags: [], keywords: [], messageId: rfcMessageId, modseq: "1" });
     const state = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async (config) => {
       configs.push(config);
+      return remoteState();
+    });
+    const states = spyOn(imapSmtpConnector, "getMessageStates").mockImplementation(async (config, messages) => {
+      configs.push(config);
       if (moved && options.afterMove) throw options.afterMove;
-      return { exists: !moved, flags: [], keywords: [], messageId: rfcMessageId, modseq: "1" };
+      return new Map(moved ? [] : messages.uids.map((uid) => [uid, remoteState()] as const));
+    });
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (config) => {
+      configs.push(config);
+      await options.afterBaseline?.();
+      return { uidValidity: "20", uidNext: 31, highestModseq: null, messages: 0 };
     });
     const find = spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (config) => {
       configs.push(config);
-      if (!moved) await options.afterBaseline?.();
       return moved ? [31] : [];
     });
-    const move = spyOn(imapSmtpConnector, "move").mockImplementation(async (config) => {
+    const move = spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (config, messages) => {
       configs.push(config);
       moved = true;
-      return { destinationUidValidity: "20", destinationUid: 31 };
+      return { completed: true, destinationUidValidity: "20", destinationUids: new Map(messages.uids.map((uid) => [uid, 31])) };
     });
     return {
       move,
@@ -447,6 +456,8 @@ suite("mail command runtime provider safety", () => {
       restore: async () => {
         move.mockRestore();
         find.mockRestore();
+        status.mockRestore();
+        states.mockRestore();
         state.mockRestore();
         session.mockRestore();
         await sql`
@@ -479,8 +490,8 @@ suite("mail command runtime provider safety", () => {
     try {
       const commandId = await moveCommand(message.id, "one-session-move");
       expect(await executeMutationCommand(commandId)).toBe("confirmed");
-      // Identity check, destination search, second identity check, MOVE, and the source check share the session.
-      expect(provider.steps()).toHaveLength(5);
+      // The destination's UIDNEXT, the identity check, MOVE, and the source check share the session.
+      expect(provider.steps()).toHaveLength(4);
       expect(new Set(provider.steps()).size).toBe(1);
       expect(provider.runs()).toHaveLength(1);
       expect(provider.steps()[0]).not.toBe(provider.runs()[0]);
@@ -530,8 +541,8 @@ suite("mail command runtime provider safety", () => {
       expect(await executeMutationCommand(commandId)).toBe("reconciled");
       expect(provider.move).toHaveBeenCalledTimes(1);
       expect(provider.runs()).toHaveLength(2);
-      expect(new Set(provider.steps().slice(5)).size).toBe(1);
-      expect(provider.steps()[5]).not.toBe(provider.steps()[0]);
+      expect(new Set(provider.steps().slice(4)).size).toBe(1);
+      expect(provider.steps()[4]).not.toBe(provider.steps()[0]);
     } finally {
       await provider.restore();
     }

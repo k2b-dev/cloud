@@ -331,6 +331,7 @@ describe("Shared IMAP sessions", () => {
       return session;
     };
   const inboxMessage = { folderPath: "INBOX", uidValidity: "10", uid: 7 };
+  const inboxSet = { folderPath: "INBOX", uidValidity: "10", uids: [7] };
 
   test("run the steps of a move over one connection and close it afterwards", async () => {
     const { server, stats } = mailServer();
@@ -339,14 +340,14 @@ describe("Shared IMAP sessions", () => {
         const identity = await imapSmtpConnector.getMessageState(session, inboxMessage);
         const baseline = await imapSmtpConnector.findMessageById(session, "Archive", MESSAGE_ID);
         await imapSmtpConnector.getMessageState(session, inboxMessage);
-        const moved = await imapSmtpConnector.move(session, inboxMessage, "Archive");
+        const moved = await imapSmtpConnector.moveMessages(session, inboxSet, "Archive");
         const source = await imapSmtpConnector.getMessageState(session, inboxMessage);
         return { identity: identity.messageId, baseline, moved, sourceExists: source.exists };
       });
       expect(steps).toEqual({
         identity: MESSAGE_ID,
         baseline: [],
-        moved: { destinationUidValidity: "20", destinationUid: 3 },
+        moved: { completed: true, destinationUidValidity: "20", destinationUids: new Map([[7, 3]]) },
         sourceExists: false,
       });
       expect({ connections: stats.connections, logins: stats.logins, logouts: stats.logouts }).toEqual({
@@ -365,7 +366,7 @@ describe("Shared IMAP sessions", () => {
     try {
       const sourceExists = await withSharedImapSession(config, sessionFor(server.port, 1_000, created), async (session) => {
         await imapSmtpConnector.getMessageState(session, inboxMessage);
-        await imapSmtpConnector.move(session, inboxMessage, "Archive");
+        await imapSmtpConnector.moveMessages(session, inboxSet, "Archive");
         // The runtime checks its lease between the steps; by then the close has arrived.
         const client = created[0]!.client;
         if (client.usable) await new Promise((resolve) => client.once("close", resolve));
@@ -443,6 +444,270 @@ describe("Shared IMAP sessions", () => {
       expect(stats.connections).toBe(1);
     } finally {
       server.stop(true);
+    }
+  });
+});
+
+describe("IMAP set moves", () => {
+  type Folder = "INBOX" | "Archive";
+  type Stored = { uid: number; deleted: boolean };
+
+  const parseUidSet = (set: string): number[] =>
+    set.split(",").flatMap((part) => {
+      const [low, high] = part.split(":").map(Number);
+      return Array.from({ length: (high ?? low!) - low! + 1 }, (_, index) => low! + index);
+    });
+
+  // INBOX (UIDVALIDITY 10) holds `inbox`, Archive (UIDVALIDITY 20) starts empty. `refuse` lists UIDs
+  // the server cannot move or copy: UID MOVE moves the others and answers NO, UID COPY copies none.
+  // `flaggedElsewhere` are INBOX messages another client already flagged \Deleted.
+  const setServer = (options: { capabilities: string; inbox: number[]; refuse?: number[]; flaggedElsewhere?: number[] }) => {
+    const refuse = new Set(options.refuse ?? []);
+    const folders: Record<Folder, Stored[]> = {
+      INBOX: options.inbox.map((uid) => ({ uid, deleted: options.flaggedElsewhere?.includes(uid) ?? false })),
+      Archive: [],
+    };
+    const nextUid: Record<Folder, number> = { INBOX: Math.max(0, ...options.inbox) + 1, Archive: 1 };
+    const uidplus = options.capabilities.includes("UIDPLUS");
+    const commands: string[] = [];
+    const sets: string[] = [];
+    // Removes messages from the selected folder and answers each removal with its sequence number.
+    const expunge = (folder: Folder, removed: Set<number>): string => {
+      let responses = "";
+      for (let index = folders[folder].length - 1; index >= 0; index -= 1) {
+        if (removed.has(folders[folder][index]!.uid)) responses += `* ${index + 1} EXPUNGE\r\n`;
+      }
+      folders[folder] = folders[folder].filter((message) => !removed.has(message.uid));
+      return responses;
+    };
+    const copy = (uids: number[]): { source: number[]; destination: number[] } => {
+      const destination = uids.map(() => nextUid.Archive++);
+      folders.Archive.push(...destination.map((uid) => ({ uid, deleted: false })));
+      return { source: uids, destination };
+    };
+    const copyUid = (copied: { source: number[]; destination: number[] }): string =>
+      uidplus && copied.source.length > 0 ? `[COPYUID 20 ${copied.source.join(",")} ${copied.destination.join(",")}] ` : "";
+    const server = Bun.listen<{ selected: Folder }>({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open: (socket) => {
+          socket.data = { selected: "INBOX" };
+          socket.write(`* OK [CAPABILITY ${options.capabilities}] fixture ready\r\n`);
+        },
+        data: (socket, data) => {
+          for (const line of data.toString().split("\r\n").filter(Boolean)) {
+            const [tag, ...words] = line.split(" ");
+            const uidCommand = words[0]?.toUpperCase() === "UID";
+            const command = (uidCommand ? `UID ${words[1]}` : (words[0] ?? "")).toUpperCase();
+            const set = uidCommand ? (words[2] ?? "") : "";
+            const name = (words.at(-1) ?? "").replaceAll('"', "");
+            const selected = folders[socket.data.selected];
+            commands.push(command);
+            if (uidCommand) sets.push(set);
+            const requested = uidCommand ? parseUidSet(set).filter((uid) => selected.some((message) => message.uid === uid)) : [];
+            if (command === "LOGIN") {
+              socket.write(`${tag} OK [CAPABILITY ${options.capabilities}] logged in\r\n`);
+            } else if (command === "LIST") {
+              socket.write(`* LIST () "/" ${name || '""'}\r\n${tag} OK done\r\n`);
+            } else if (command === "SELECT" || command === "EXAMINE") {
+              const folder: Folder = name === "Archive" ? "Archive" : "INBOX";
+              socket.data.selected = folder;
+              socket.write(
+                `* FLAGS (\\Seen \\Deleted)\r\n* ${folders[folder].length} EXISTS\r\n* OK [UIDVALIDITY ${folder === "INBOX" ? 10 : 20}] ok\r\n` +
+                  `* OK [UIDNEXT ${nextUid[folder]}] ok\r\n${tag} OK [READ-WRITE] done\r\n`,
+              );
+            } else if (command === "STATUS") {
+              socket.write(
+                `* STATUS Archive (MESSAGES ${folders.Archive.length} UIDNEXT ${nextUid.Archive} UIDVALIDITY 20)\r\n${tag} OK done\r\n`,
+              );
+            } else if (command === "UID FETCH") {
+              let responses = "";
+              for (const [index, message] of selected.entries()) {
+                if (!requested.includes(message.uid)) continue;
+                const flags = message.deleted ? "\\Deleted" : "";
+                responses += `* ${index + 1} FETCH (UID ${message.uid} FLAGS (${flags}) ENVELOPE (NIL "Set" NIL NIL NIL NIL NIL NIL NIL "<set-${message.uid}@example.test>"))\r\n`;
+              }
+              socket.write(`${responses}${tag} OK done\r\n`);
+            } else if (command === "UID MOVE") {
+              const copied = copy(requested.filter((uid) => !refuse.has(uid)));
+              const moved = `${copyUid(copied) ? `* OK ${copyUid(copied)}moved\r\n` : ""}${expunge("INBOX", new Set(copied.source))}`;
+              socket.write(
+                `${moved}${tag} ${requested.some((uid) => refuse.has(uid)) ? "NO some messages could not be moved" : "OK done"}\r\n`,
+              );
+            } else if (command === "UID COPY") {
+              // COPY copies every message or none.
+              if (requested.some((uid) => refuse.has(uid))) socket.write(`${tag} NO copy failed\r\n`);
+              else socket.write(`${tag} OK ${copyUid(copy(requested))}done\r\n`);
+            } else if (command === "UID STORE") {
+              for (const message of selected) if (requested.includes(message.uid)) message.deleted = true;
+              socket.write(`${tag} OK done\r\n`);
+            } else if (command === "UID EXPUNGE") {
+              const removed = new Set(
+                selected.filter((message) => message.deleted && requested.includes(message.uid)).map((message) => message.uid),
+              );
+              socket.write(`${expunge(socket.data.selected, removed)}${tag} OK done\r\n`);
+            } else if (command === "EXPUNGE") {
+              const removed = new Set(selected.filter((message) => message.deleted).map((message) => message.uid));
+              socket.write(`${expunge(socket.data.selected, removed)}${tag} OK done\r\n`);
+            } else if (command === "LOGOUT") {
+              socket.write(`* BYE\r\n${tag} OK done\r\n`);
+              socket.end();
+            } else {
+              socket.write(`${tag} OK done\r\n`);
+            }
+          }
+        },
+      },
+    });
+    const inboxUids = (): number[] => folders.INBOX.map((message) => message.uid);
+    return { server, commands, sets, inboxUids, archived: () => folders.Archive.length };
+  };
+
+  const config: ProviderConnectionInput = {
+    name: "Set move fixture",
+    email: "set@example.test",
+    username: "set@example.test",
+    imap: { host: "imap.example.test", port: 993, tlsMode: "implicit" },
+    smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" },
+    secret: { kind: "password", password: "fixture" },
+  };
+  const sessionFor = (port: number) => async () =>
+    trackImapSession(
+      new ImapFlow({
+        host: "127.0.0.1",
+        port,
+        secure: false,
+        doSTARTTLS: false,
+        auth: { user: "fixture", pass: "fixture" },
+        logger: false,
+        disableAutoIdle: true,
+        socketTimeout: 2_000,
+      }),
+    );
+  const inboxSet = (uids: number[]) => ({ folderPath: "INBOX", uidValidity: "10", uids });
+  const range = (low: number, high: number): number[] => Array.from({ length: high - low + 1 }, (_, index) => low + index);
+
+  test("move 300 messages with one UID MOVE and map every one through COPYUID", async () => {
+    const uids = [...range(1, 150), ...range(201, 350)];
+    const fixture = setServer({ capabilities: "IMAP4rev1 MOVE UIDPLUS", inbox: uids });
+    try {
+      const result = await withSharedImapSession(config, sessionFor(fixture.server.port), async (session) => {
+        const moved = await imapSmtpConnector.moveMessages(session, inboxSet([...uids].reverse()), "Archive");
+        const remaining = await imapSmtpConnector.getMessageStates(session, inboxSet(uids));
+        return { moved, remaining: remaining.size };
+      });
+      expect(result.moved.completed).toBe(true);
+      expect(result.moved.destinationUidValidity).toBe("20");
+      expect(result.moved.destinationUids.size).toBe(300);
+      expect(result.moved.destinationUids.get(201)).toBe(151);
+      expect(result.remaining).toBe(0);
+      expect(fixture.commands.filter((command) => command === "UID MOVE")).toHaveLength(1);
+      expect(fixture.sets[fixture.commands.filter((command) => command.startsWith("UID ")).indexOf("UID MOVE")]).toBe("1:150,201:350");
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("leave the messages a refused UID MOVE did not move in the source, where the check finds them", async () => {
+    const fixture = setServer({ capabilities: "IMAP4rev1 MOVE UIDPLUS", inbox: range(1, 5), refuse: [3, 4] });
+    try {
+      const result = await withSharedImapSession(config, sessionFor(fixture.server.port), async (session) => {
+        const moved = await imapSmtpConnector.moveMessages(session, inboxSet(range(1, 5)), "Archive");
+        const remaining = await imapSmtpConnector.getMessageStates(session, inboxSet(range(1, 5)));
+        return { completed: moved.completed, remaining: [...remaining.keys()] };
+      });
+      expect(result).toEqual({ completed: false, remaining: [3, 4] });
+      expect(fixture.archived()).toBe(3);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("without MOVE, copy, flag, and expunge exactly the moved messages", async () => {
+    const fixture = setServer({ capabilities: "IMAP4rev1 UIDPLUS", inbox: [1, 2, 3, 9], flaggedElsewhere: [9] });
+    try {
+      const moved = await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.moveMessages(session, inboxSet([1, 2, 3]), "Archive"),
+      );
+      expect(moved).toEqual({
+        completed: true,
+        destinationUidValidity: "20",
+        destinationUids: new Map([
+          [1, 1],
+          [2, 2],
+          [3, 3],
+        ]),
+      });
+      expect(fixture.commands.filter((command) => command.startsWith("UID ") || command === "EXPUNGE")).toEqual([
+        "UID COPY",
+        "UID STORE",
+        "UID EXPUNGE",
+      ]);
+      // A message another client flagged for deletion stays: only UID EXPUNGE of the moved UIDs ran.
+      expect(fixture.inboxUids()).toEqual([9]);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("without MOVE, change nothing when the provider refuses the copy", async () => {
+    const fixture = setServer({ capabilities: "IMAP4rev1 UIDPLUS", inbox: [1, 2, 3], refuse: [2] });
+    try {
+      const moved = await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.moveMessages(session, inboxSet([1, 2, 3]), "Archive"),
+      );
+      expect(moved.completed).toBe(false);
+      expect(fixture.commands).not.toContain("UID STORE");
+      expect(fixture.commands).not.toContain("UID EXPUNGE");
+      expect(fixture.inboxUids()).toEqual([1, 2, 3]);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("without MOVE and UIDPLUS, refuse before the provider changes anything", async () => {
+    const fixture = setServer({ capabilities: "IMAP4rev1", inbox: [1, 2] });
+    try {
+      const move = withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.moveMessages(session, inboxSet([1, 2]), "Archive"),
+      );
+      await expect(move).rejects.toMatchObject({ code: "SAFE_MOVE_UNSUPPORTED" });
+      expect(fixture.commands).not.toContain("UID COPY");
+      expect(fixture.inboxUids()).toEqual([1, 2]);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("move without UIDPLUS and report no destination UIDs", async () => {
+    const fixture = setServer({ capabilities: "IMAP4rev1 MOVE", inbox: [1, 2] });
+    try {
+      const moved = await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.moveMessages(session, inboxSet([1, 2]), "Archive"),
+      );
+      expect(moved).toEqual({ completed: true, destinationUidValidity: null, destinationUids: new Map() });
+      expect(fixture.inboxUids()).toEqual([]);
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("read the state of a set with one UID FETCH and leave out UIDs the folder no longer has", async () => {
+    const fixture = setServer({ capabilities: "IMAP4rev1 MOVE UIDPLUS", inbox: [1, 2, 5] });
+    try {
+      const states = await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+        imapSmtpConnector.getMessageStates(session, inboxSet([1, 2, 3, 5])),
+      );
+      expect([...states.entries()].map(([uid, state]) => [uid, state.messageId])).toEqual([
+        [1, "<set-1@example.test>"],
+        [2, "<set-2@example.test>"],
+        [5, "<set-5@example.test>"],
+      ]);
+      expect(fixture.commands.filter((command) => command === "UID FETCH")).toHaveLength(1);
+      expect(fixture.sets).toEqual(["1:3,5"]);
+    } finally {
+      fixture.server.stop(true);
     }
   });
 });

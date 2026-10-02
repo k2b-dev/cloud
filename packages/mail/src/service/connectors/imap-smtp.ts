@@ -43,8 +43,10 @@ import type {
   MailConnector,
   RemoteAppendResult,
   RemoteCopyResult,
+  RemoteMessageSet,
   RemoteMessageState,
   RemoteMessageStateChange,
+  RemoteMoveResult,
   RemoteMutationTarget,
   SendRequest,
   SendResult,
@@ -806,10 +808,9 @@ const splitRemoteFlags = (values: Iterable<string>): { flags: string[]; keywords
 const projectedKeywords = (keywords: readonly string[], labels: Iterable<string> | undefined): string[] =>
   [...new Set([...keywords, ...(labels ?? [])])].sort();
 
-/** Reads a selected message's state. imapflow asks for Gmail labels only when the server offers X-GM-EXT-1. */
-export const fetchRemoteMessageState = async (client: Pick<ImapFlow, "fetchOne">, uid: number): Promise<RemoteMessageState> => {
-  const message = await client.fetchOne(uid, { uid: true, flags: true, labels: true, envelope: true }, { uid: true });
-  if (!message) return { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
+const MESSAGE_STATE_QUERY = { uid: true, flags: true, labels: true, envelope: true } as const;
+
+const existingMessageState = (message: FetchMessageObject): RemoteMessageState => {
   const state = splitRemoteFlags(message.flags ?? []);
   return {
     exists: true,
@@ -818,6 +819,26 @@ export const fetchRemoteMessageState = async (client: Pick<ImapFlow, "fetchOne">
     messageId: message.envelope?.messageId?.trim() || null,
     modseq: message.modseq?.toString() ?? null,
   };
+};
+
+/** Reads a selected message's state. imapflow asks for Gmail labels only when the server offers X-GM-EXT-1. */
+export const fetchRemoteMessageState = async (client: Pick<ImapFlow, "fetchOne">, uid: number): Promise<RemoteMessageState> => {
+  const message = await client.fetchOne(uid, MESSAGE_STATE_QUERY, { uid: true });
+  if (!message) return { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
+  return existingMessageState(message);
+};
+
+/** A UID set in its shortest form, such as `3:5,9`. */
+export const imapUidSet = (uids: readonly number[]): string => {
+  const sorted = [...new Set(uids)].sort((left, right) => left - right);
+  const ranges: string[] = [];
+  for (let start = 0; start < sorted.length; ) {
+    let end = start;
+    while (end + 1 < sorted.length && sorted[end + 1] === sorted[end]! + 1) end += 1;
+    ranges.push(end === start ? String(sorted[start]) : `${sorted[start]}:${sorted[end]}`);
+    start = end + 1;
+  }
+  return ranges.join(",");
 };
 
 export const selectUidBatch = async (params: {
@@ -1320,16 +1341,34 @@ const copy = async (config: ProviderConnectionInput, target: RemoteMutationTarge
     return mapCopyResult(result, target.uid);
   });
 
-const move = async (config: ProviderConnectionInput, target: RemoteMutationTarget, destinationPath: string): Promise<RemoteCopyResult> =>
-  withSelectedMailbox(config, target, async (client) => {
-    // MOVE, or COPY plus UID EXPUNGE through UIDPLUS. Without either the source
-    // would survive the move, so there is no safe path.
-    if (!capability(client, "MOVE") && !capability(client, "UIDPLUS")) {
+const mapMoveResult = (result: Awaited<ReturnType<ImapFlow["messageMove"]>>): RemoteMoveResult =>
+  result
+    ? {
+        completed: true,
+        destinationUidValidity: result.uidValidity ? result.uidValidity.toString() : null,
+        destinationUids: result.uidMap ?? new Map(),
+      }
+    : { completed: false, destinationUidValidity: null, destinationUids: new Map() };
+
+const moveMessages = async (
+  config: ProviderConnectionInput,
+  source: RemoteMessageSet,
+  destinationPath: string,
+): Promise<RemoteMoveResult> =>
+  withSelectedMailbox(config, source, async (client) => {
+    const uids = imapUidSet(source.uids);
+    if (capability(client, "MOVE")) return mapMoveResult(await client.messageMove(uids, destinationPath, { uid: true }));
+    // Without MOVE the messages are copied, flagged \Deleted and expunged. Only UID EXPUNGE removes
+    // exactly these messages; a plain EXPUNGE would also remove what other clients flagged.
+    if (!capability(client, "UIDPLUS")) {
       throw Object.assign(new Error("Provider cannot move a message without losing the source"), { code: "SAFE_MOVE_UNSUPPORTED" });
     }
-    const result = await client.messageMove(target.uid, destinationPath, { uid: true });
-    if (!result) throw Object.assign(new Error("Remote message move failed"), { code: "REMOTE_MOVE_FAILED" });
-    return mapCopyResult(result, target.uid);
+    // COPY copies all messages or none, so a refused copy left both folders as they were and
+    // nothing may be expunged. imapflow's own fallback would expunge the source anyway.
+    const copied = await client.messageCopy(uids, destinationPath, { uid: true });
+    if (!copied) return mapMoveResult(false);
+    const expunged = await client.messageDelete(uids, { uid: true });
+    return { ...mapMoveResult(copied), completed: expunged === true };
   });
 
 const deleteMessage = async (config: ProviderConnectionInput, target: RemoteMutationTarget): Promise<void> =>
@@ -1437,6 +1476,16 @@ const findMessageById = async (
 const getMessageState = async (config: ProviderConnectionInput, target: RemoteMutationTarget): Promise<RemoteMessageState> =>
   withSelectedMailbox(config, target, (client) => fetchRemoteMessageState(client, target.uid));
 
+const getMessageStates = async (config: ProviderConnectionInput, messages: RemoteMessageSet): Promise<Map<number, RemoteMessageState>> =>
+  withSelectedMailbox(config, messages, async (client) => {
+    const requested = new Set(messages.uids);
+    const states = new Map<number, RemoteMessageState>();
+    for await (const message of client.fetch(imapUidSet(messages.uids), MESSAGE_STATE_QUERY, { uid: true })) {
+      if (requested.has(message.uid)) states.set(message.uid, existingMessageState(message));
+    }
+    return states;
+  });
+
 const createFolder = async (config: ProviderConnectionInput, path: string, subscribe: boolean): Promise<void> =>
   withImapClient(config, async (client) => {
     await client.mailboxCreate(path);
@@ -1524,11 +1573,12 @@ export const imapSmtpConnector: MailConnector = {
   setFlags,
   changeMessageState,
   copy,
-  move,
+  moveMessages,
   delete: deleteMessage,
   appendSource,
   findMessageById,
   getMessageState,
+  getMessageStates,
   createFolder,
   renameFolder,
   deleteFolder,

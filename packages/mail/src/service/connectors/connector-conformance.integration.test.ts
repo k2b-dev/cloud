@@ -143,7 +143,10 @@ const exerciseImapContract = async (params: { connector: MailConnector; config: 
     await params.connector.renameFolder(params.config, destinationPath, renamedPath);
     destinationRenamed = true;
 
-    await params.connector.move(params.config, sourceTarget, renamedPath);
+    const sourceSet = { folderPath: sourcePath, uidValidity: sourceTarget.uidValidity, uids: [sourceUid] };
+    const moved = await params.connector.moveMessages(params.config, sourceSet, renamedPath);
+    expect(moved.completed).toBe(true);
+    expect((await params.connector.getMessageStates(params.config, sourceSet)).size).toBe(0);
     const movedStatus = await params.connector.getFolderStatus(params.config, renamedPath);
     const movedUid = await findUid({ ...params, folderPath: renamedPath, messageId });
     await params.connector.delete(params.config, {

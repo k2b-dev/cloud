@@ -117,6 +117,24 @@ export type RemoteCopyResult = {
   destinationUid: number | null;
 };
 
+/** Messages of one folder generation, addressed by UID. */
+export type RemoteMessageSet = {
+  folderPath: string;
+  uidValidity: string;
+  uids: number[];
+};
+
+export type RemoteMoveResult = {
+  /**
+   * Whether the provider accepted the move. A refused move may still have moved some of the
+   * messages, so only a check of the source tells which ones are gone.
+   */
+  completed: boolean;
+  destinationUidValidity: string | null;
+  /** The destination UID of each moved source UID that the provider reported through COPYUID. */
+  destinationUids: Map<number, number>;
+};
+
 export type RemoteAppendResult = {
   uidValidity: string | null;
   uid: number | null;
@@ -239,7 +257,11 @@ export interface MailConnector {
     change: RemoteMessageStateChange,
   ): Promise<RemoteMessageState>;
   copy(config: ProviderConnectionInput, target: RemoteMutationTarget, destinationPath: string): Promise<RemoteCopyResult>;
-  move(config: ProviderConnectionInput, target: RemoteMutationTarget, destinationPath: string): Promise<RemoteCopyResult>;
+  /**
+   * Moves the messages of `source` with one UID MOVE, or without MOVE with UID COPY, a \Deleted flag,
+   * and UID EXPUNGE of exactly those UIDs, which needs UIDPLUS.
+   */
+  moveMessages(config: ProviderConnectionInput, source: RemoteMessageSet, destinationPath: string): Promise<RemoteMoveResult>;
   delete(config: ProviderConnectionInput, target: RemoteMutationTarget): Promise<void>;
   appendSource(
     config: ProviderConnectionInput,
@@ -252,6 +274,8 @@ export interface MailConnector {
   ): Promise<RemoteAppendResult>;
   findMessageById(config: ProviderConnectionInput, folderPath: string, messageId: string, signal?: AbortSignal): Promise<number[]>;
   getMessageState(config: ProviderConnectionInput, target: RemoteMutationTarget): Promise<RemoteMessageState>;
+  /** Reads the state of every message of `messages` with one UID FETCH; a UID the folder no longer has is missing from the result. */
+  getMessageStates(config: ProviderConnectionInput, messages: RemoteMessageSet): Promise<Map<number, RemoteMessageState>>;
   createFolder(config: ProviderConnectionInput, path: string, subscribe: boolean): Promise<void>;
   renameFolder(config: ProviderConnectionInput, path: string, newPath: string): Promise<void>;
   deleteFolder(config: ProviderConnectionInput, path: string): Promise<void>;

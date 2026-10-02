@@ -1,6 +1,6 @@
 import { lazySync } from "@k2b/cloud";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, stopRuntimeResources } from "@k2b/cloud/services";
-import { toPgTextArray } from "@k2b/cloud/services/postgres";
+import { toPgIntArray, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { JobContext, Worker } from "@k2b/sync";
 import { expBackoff } from "@k2b/sync/retry";
 import { sql } from "bun";
@@ -9,7 +9,7 @@ import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../co
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
-import { imapSmtpConnector, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
+import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
@@ -341,7 +341,11 @@ type ClaimedCommand = {
   earlierEffectStarted: boolean;
 };
 
-const claimCommand = async (commandId: string, allowedKinds: string[]): Promise<ClaimedCommand | null> =>
+const claimCommand = async (
+  commandId: string,
+  allowedKinds: string[],
+  claimableStates: CommandState[] = ["queued", "ambiguous"],
+): Promise<ClaimedCommand | null> =>
   sql.begin(async (tx) => {
     const [current] = await tx<(DbCommandExecution & { provider_effect_started_at: Date | string | null })[]>`
       SELECT
@@ -354,7 +358,7 @@ const claimCommand = async (commandId: string, allowedKinds: string[]): Promise<
       WHERE id = ${commandId}::uuid
       FOR UPDATE
     `;
-    if (!current || !allowedKinds.includes(current.kind) || !["queued", "ambiguous"].includes(current.state)) return null;
+    if (!current || !allowedKinds.includes(current.kind) || !claimableStates.includes(current.state)) return null;
     if (current.actor_kind === "workflow") {
       const [run] = await tx<{ id: string }[]>`
         SELECT run.id
@@ -736,16 +740,20 @@ const stateChangeMatches = (
   );
 };
 
+const assertRemoteIdentity = (current: RemoteMessageState, source: DbRemoteMessage): void => {
+  if (!current.exists) throw Object.assign(new Error("Remote message no longer exists"), { code: "REMOTE_MESSAGE_MISSING" });
+  if (source.message_id && current.messageId?.trim().toLowerCase() !== source.message_id.trim().toLowerCase()) {
+    throw Object.assign(new Error("Remote UID no longer identifies the expected message"), { code: "REMOTE_IDENTITY_MISMATCH" });
+  }
+};
+
 const assertRemoteMessageIdentity = async (
   runtime: MutationRuntime,
   source: DbRemoteMessage,
   target: RemoteMutationTarget,
 ): Promise<RemoteMessageState> => {
   const current = await imapSmtpConnector.getMessageState(runtime, target);
-  if (!current.exists) throw Object.assign(new Error("Remote message no longer exists"), { code: "REMOTE_MESSAGE_MISSING" });
-  if (source.message_id && current.messageId?.trim().toLowerCase() !== source.message_id.trim().toLowerCase()) {
-    throw Object.assign(new Error("Remote UID no longer identifies the expected message"), { code: "REMOTE_IDENTITY_MISMATCH" });
-  }
+  assertRemoteIdentity(current, source);
   return current;
 };
 
@@ -869,35 +877,20 @@ const confirmedDestinationRef = (
     ? { uid: result.destinationUid, uidValidity: result.destinationUidValidity }
     : null;
 
-const assertMoveSourceRemoved = async (runtime: MutationRuntime, target: RemoteMutationTarget): Promise<void> => {
-  const sourceAfter = await imapSmtpConnector.getMessageState(runtime, target);
-  if (sourceAfter.exists) {
-    throw Object.assign(new Error("Provider did not confirm source removal after move"), { code: "MOVE_RECONCILIATION_FAILED" });
-  }
-};
-
-const executeTransferMutation = async (params: {
+const executeCopyMutation = async (params: {
   command: DbCommandExecution;
   runtime: MutationRuntime;
   source: DbRemoteMessage;
   target: MutationTarget;
   remoteTarget: RemoteMutationTarget;
-  capabilities: JsonRecord;
   assertLeaseActive: LeaseAssertion;
   assertAuthorized: LeaseAssertion;
   beginEffect: LeaseAssertion;
 }): Promise<void> => {
   const { command, runtime, source, target } = params;
-  if (command.kind !== "copy" && command.kind !== "move") {
-    throw Object.assign(new Error("Unsupported actor command kind"), { code: "UNSUPPORTED_COMMAND" });
-  }
+  if (command.kind !== "copy") throw Object.assign(new Error("Unsupported actor command kind"), { code: "UNSUPPORTED_COMMAND" });
   if (!target.destinationFolderId) throw Object.assign(new Error("Destination folder is missing"), { code: "INVALID_COMMAND_TARGET" });
-  // Without MOVE or UIDPLUS the provider can only copy and mark the source deleted, which leaves the
-  // message in both folders. Refuse before any provider effect instead of reporting a partial move.
-  if (command.kind === "move" && params.capabilities.move !== true && params.capabilities.uidplus !== true) {
-    throw Object.assign(new Error("Provider cannot move a message without losing the source"), { code: "SAFE_MOVE_UNSUPPORTED" });
-  }
-  requireRights(source.effective_rights, command.kind === "move" ? ["read", "move"] : ["read"]);
+  requireRights(source.effective_rights, ["read"]);
   const destination = await loadDestinationFolder(command, target.destinationFolderId);
   requireRights(destination.effective_rights, ["insert"]);
 
@@ -906,12 +899,8 @@ const executeTransferMutation = async (params: {
   await storeMutationBaseline(command, baseline);
   await params.assertAuthorized();
   await params.beginEffect();
-  const result =
-    command.kind === "copy"
-      ? await imapSmtpConnector.copy(runtime, params.remoteTarget, destination.folder_path)
-      : await imapSmtpConnector.move(runtime, params.remoteTarget, destination.folder_path);
+  const result = await imapSmtpConnector.copy(runtime, params.remoteTarget, destination.folder_path);
   await params.assertLeaseActive();
-  if (command.kind === "move") await assertMoveSourceRemoved(runtime, params.remoteTarget);
   const destinationRef = confirmedDestinationRef(destination, result);
   await persistMutationOutcome(async () => {
     if (
@@ -931,7 +920,168 @@ const executeTransferMutation = async (params: {
   });
 };
 
+const commandError = (message: string, code: string): Error => Object.assign(new Error(message), { code });
+
+/** Settles one command of a move set whose own step failed; the rest of the set goes on. */
+type MoveFailure = (command: DbCommandExecution, error: unknown) => Promise<void>;
+
+type FreshMove = { command: DbCommandExecution; target: MutationTarget; source: DbRemoteMessage };
+
+const MISSING_REMOTE_MESSAGE: RemoteMessageState = { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
+
+/** Records the destination's UIDNEXT before a move: every destination UID from there on is new. */
+const storeMoveBaseline = async (commands: DbCommandExecution[], uidNext: number): Promise<void> => {
+  await sql`
+    UPDATE mail.commands command
+    SET transport_metadata = command.transport_metadata || ${{ destinationUidNext: uidNext }}::jsonb
+    FROM unnest(
+      ${toPgUuidArray(commands.map((entry) => entry.id))}::uuid[],
+      ${toPgIntArray(commands.map((entry) => entry.attempt))}::int[]
+    ) AS fence(id, attempt)
+    WHERE command.id = fence.id AND command.attempt = fence.attempt AND command.state = 'executing'
+  `;
+};
+
+/** The lowest destination UID a move can have created; 0 for a move that recorded none. */
+const destinationUidFloor = (command: DbCommandExecution): number => {
+  const value = parseJsonRecord(command.transport_metadata).destinationUidNext;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
+};
+
+/**
+ * Moves the messages of fresh move commands that share their source and destination folder over
+ * one session: one UIDNEXT of the destination as the baseline, one FETCH to check the messages,
+ * one UID MOVE, and one FETCH for the messages that stayed in the source. Each command keeps its
+ * own authorization check, effect marker, and outcome, as if it ran alone. A command whose own step
+ * fails goes to `fail` and the others go on; a failure of the whole set, such as a connection lost
+ * during MOVE, is thrown.
+ */
+const executeFreshMoves = async (commands: DbCommandExecution[], assertLeaseActive: LeaseAssertion, fail: MoveFailure): Promise<void> => {
+  const authorized: DbCommandExecution[] = [];
+  for (const command of commands) {
+    if (await commandStillAuthorized(command, "write")) authorized.push(command);
+    else await fail(command, commandError("Mailbox write access was revoked before execution", "ACCESS_REVOKED"));
+  }
+  const [first] = authorized;
+  if (!first) return;
+  const binding = await loadPinnedBinding(first);
+  const runtime = await loadPinnedRuntime(binding);
+  // Without MOVE or UIDPLUS the provider can only copy and mark the source deleted, which leaves the
+  // message in both folders. Refuse before any provider effect instead of reporting a partial move.
+  const capabilities = parseJsonRecord(binding.capabilities);
+  if (capabilities.move !== true && capabilities.uidplus !== true) {
+    throw commandError("Provider cannot move a message without losing the source", "SAFE_MOVE_UNSUPPORTED");
+  }
+  const moves: FreshMove[] = [];
+  for (const command of authorized) {
+    try {
+      const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
+      const source = await loadRemoteMessage(command, target);
+      requireRights(source.effective_rights, ["read", "move"]);
+      moves.push({ command, target, source });
+    } catch (error) {
+      await fail(command, error);
+    }
+  }
+  const [head] = moves;
+  if (!head) return;
+  if (!head.target.destinationFolderId) throw commandError("Destination folder is missing", "INVALID_COMMAND_TARGET");
+  const destination = await loadDestinationFolder(head.command, head.target.destinationFolderId);
+  requireRights(destination.effective_rights, ["insert"]);
+  // One connection carries every provider step of the set, from the identity check to the verification.
+  await imapSmtpConnector.withSession(runtime, (session) =>
+    moveMessageSet({ runtime: session, moves, destination, assertLeaseActive, fail }),
+  );
+};
+
+const moveMessageSet = async (params: {
+  runtime: MutationRuntime;
+  moves: FreshMove[];
+  destination: DbDestinationFolder;
+  assertLeaseActive: LeaseAssertion;
+  fail: MoveFailure;
+}): Promise<void> => {
+  const { runtime, moves, destination, assertLeaseActive, fail } = params;
+  const sourceSet = (members: FreshMove[]): RemoteMessageSet => ({
+    folderPath: moves[0]!.source.folder_path,
+    uidValidity: String(moves[0]!.source.uid_validity),
+    uids: members.map((move) => Number(move.source.uid)),
+  });
+  await assertLeaseActive();
+  const status = await imapSmtpConnector.getFolderStatus(runtime, destination.folder_path);
+  await storeMoveBaseline(
+    moves.map((move) => move.command),
+    status.uidNext,
+  );
+  const current = await imapSmtpConnector.getMessageStates(runtime, sourceSet(moves));
+  await assertLeaseActive();
+  const started: FreshMove[] = [];
+  for (const move of moves) {
+    try {
+      const state = current.get(Number(move.source.uid)) ?? MISSING_REMOTE_MESSAGE;
+      assertRemoteIdentity(state, move.source);
+      assertRemoteMessagePrecondition(state, move.target.expectedRemoteState);
+      // Checks the command's lease, workflow run, and access once more and marks its effect.
+      await beginProviderEffect(move.command);
+      started.push(move);
+    } catch (error) {
+      await fail(move.command, error);
+    }
+  }
+  if (started.length === 0) return;
+  const result = await imapSmtpConnector.moveMessages(runtime, sourceSet(started), destination.folder_path);
+  await assertLeaseActive();
+  // A refused or partly failed move leaves some messages in the source: exactly those did not move.
+  const remaining = await imapSmtpConnector.getMessageStates(runtime, sourceSet(started));
+  let destinationSyncQueued = false;
+  for (const move of started) {
+    const uid = Number(move.source.uid);
+    if (remaining.has(uid)) {
+      await fail(
+        move.command,
+        result.completed
+          ? commandError("Provider did not confirm source removal after move", "MOVE_RECONCILIATION_FAILED")
+          : commandError("Remote message move failed", "REMOTE_MOVE_FAILED"),
+      );
+      continue;
+    }
+    const destinationRef = confirmedDestinationRef(destination, {
+      destinationUid: result.destinationUids.get(uid) ?? null,
+      destinationUidValidity: result.destinationUidValidity,
+    });
+    try {
+      await persistMutationOutcome(async () => {
+        if (
+          !(await updateMutationProjection({
+            command: move.command,
+            source: move.source,
+            destination,
+            destinationUid: destinationRef?.uid ?? null,
+            destinationUidValidity: destinationRef?.uidValidity ?? null,
+          }))
+        ) {
+          return;
+        }
+        // The destination placement is unknown locally, so the folder sync has to make the message visible again.
+        if (!destinationRef && !destinationSyncQueued) {
+          await enqueueFolderSync(destination.folder_id);
+          destinationSyncQueued = true;
+        }
+        await commandState(move.command, "confirmed");
+      });
+    } catch (error) {
+      await fail(move.command, error);
+    }
+  }
+};
+
 const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActive: LeaseAssertion): Promise<void> => {
+  // A move runs as a set of one, exactly like the moves the mailbox's job runs together.
+  if (command.kind === "move") {
+    return executeFreshMoves([command], assertLeaseActive, async (_command, error) => {
+      throw error;
+    });
+  }
   if (!(await commandStillAuthorized(command, "write"))) {
     await commandState(
       command,
@@ -947,20 +1097,19 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
   const remote = remoteTarget(source);
   // One connection carries every provider step of the command, from the identity checks to the verification.
   await imapSmtpConnector.withSession(runtime, (session) =>
-    executeMutationSteps({ command, binding, runtime: session, target, source, remote, assertLeaseActive }),
+    executeMutationSteps({ command, runtime: session, target, source, remote, assertLeaseActive }),
   );
 };
 
 const executeMutationSteps = async (params: {
   command: DbCommandExecution;
-  binding: DbPinnedBinding;
   runtime: MutationRuntime;
   target: MutationTarget;
   source: DbRemoteMessage;
   remote: RemoteMutationTarget;
   assertLeaseActive: LeaseAssertion;
 }): Promise<void> => {
-  const { command, binding, runtime, target, source, remote, assertLeaseActive } = params;
+  const { command, runtime, target, source, remote, assertLeaseActive } = params;
   const assertAuthorized = async (): Promise<void> => {
     await assertLeaseActive();
     if (!(await commandStillAuthorized(command, "write"))) {
@@ -985,7 +1134,7 @@ const executeMutationSteps = async (params: {
   if (command.kind === "set_flags") return executeSetFlagsMutation(steps);
   if (command.kind === "change_message_state") return executeMessageStateMutation(steps);
   if (command.kind === "delete") return executeDeleteMutation(steps);
-  return executeTransferMutation({ ...steps, target, remoteTarget: remote, capabilities: parseJsonRecord(binding.capabilities) });
+  return executeCopyMutation({ ...steps, target, remoteTarget: remote });
 };
 
 const loadReconciliationSource = async (command: DbCommandExecution, target: MutationTarget): Promise<DbRemoteMessage> => {
@@ -1085,7 +1234,7 @@ const reconcileTransferMutation = async (params: {
   if ((command.kind !== "copy" && command.kind !== "move") || !target.destinationFolderId || !source.message_id) return false;
   const destination = await loadDestinationFolder(command, target.destinationFolderId);
   const matches = await imapSmtpConnector.findMessageById(runtime, destination.folder_path, source.message_id);
-  const newUid = matches.find((uid) => !baselineUids(command).includes(uid)) ?? null;
+  const newUid = matches.find((uid) => uid >= destinationUidFloor(command) && !baselineUids(command).includes(uid)) ?? null;
   const successful = command.kind === "copy" ? Boolean(newUid) : Boolean(newUid && !sourceState.exists);
   if (!successful) return false;
   // The destination UID is proven but its generation is not, so the folder sync owns the placement.
@@ -1586,27 +1735,15 @@ const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive:
   return RAN;
 };
 
-const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<LeaseOutcome> => {
-  if (await hasEarlierActiveMessageMutation(claimed.command.id)) {
-    await requeueCommand(
-      claimed.command,
-      claimedState(claimed),
-      "MESSAGE_MUTATION_PREDECESSOR_ACTIVE",
-      "An earlier change to this message is still pending",
-    );
-    return RAN;
-  }
-  const binding = await loadPinnedBinding(claimed.command);
-  const { lock, retryAfterMs } = await acquireCommandLease(claimed.command, binding.remote_resource_id);
-  if (!lock) {
-    await requeueCommand(
-      claimed.command,
-      claimedState(claimed),
-      "REMOTE_RESOURCE_BUSY",
-      "Remote mailbox is currently being synchronized or changed",
-    );
-    return { busyRetryAfterMs: retryAfterMs };
-  }
+/** Runs `work` while the mailbox's commands hold the provider lease of `remoteResourceId`, or returns how soon to try again. */
+const withMutationLease = async (
+  command: DbCommandExecution,
+  remoteResourceId: string,
+  assertJobLeaseActive: LeaseAssertion,
+  work: (assertLeaseActive: LeaseAssertion) => Promise<void>,
+): Promise<LeaseOutcome> => {
+  const { lock, retryAfterMs } = await acquireCommandLease(command, remoteResourceId);
+  if (!lock) return { busyRetryAfterMs: retryAfterMs };
   try {
     await withLeaseHeartbeat({
       intervalMs: JOB_HEARTBEAT_INTERVAL_MS,
@@ -1621,10 +1758,9 @@ const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive:
           await assertJobLeaseActive();
           await assertMutexLeaseActive();
         };
-        await waitForMailProviderSlot(binding.remote_resource_id, signal);
+        await waitForMailProviderSlot(remoteResourceId, signal);
         await assertLeaseActive();
-        if (reconcilesEarlierEffect(claimed)) await reconcileMutation(claimed.command);
-        else await executeFreshMutation(claimed.command, assertLeaseActive);
+        await work(assertLeaseActive);
       },
     });
   } finally {
@@ -1635,10 +1771,45 @@ const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive:
   return RAN;
 };
 
+const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<LeaseOutcome> => {
+  if (await hasEarlierActiveMessageMutation(claimed.command.id)) {
+    await requeueCommand(
+      claimed.command,
+      claimedState(claimed),
+      "MESSAGE_MUTATION_PREDECESSOR_ACTIVE",
+      "An earlier change to this message is still pending",
+    );
+    return RAN;
+  }
+  const binding = await loadPinnedBinding(claimed.command);
+  const outcome = await withMutationLease(claimed.command, binding.remote_resource_id, assertJobLeaseActive, async (assertLeaseActive) => {
+    if (reconcilesEarlierEffect(claimed)) await reconcileMutation(claimed.command);
+    else await executeFreshMutation(claimed.command, assertLeaseActive);
+  });
+  if (outcome.busyRetryAfterMs !== null) {
+    await requeueCommand(
+      claimed.command,
+      claimedState(claimed),
+      "REMOTE_RESOURCE_BUSY",
+      "Remote mailbox is currently being synchronized or changed",
+    );
+  }
+  return outcome;
+};
+
 /** Attempts a command gets to reconcile an unknown outcome, or to reach a provider that keeps failing before its effect. */
 const MUTATION_MAX_ATTEMPTS = 5;
 
 type MutationRun = { state: CommandState | null } & LeaseOutcome;
+
+/** Settles a claimed command whose run failed: retried, reconciled, or finished, depending on whether its effect may have started. */
+const settleFailedMutation = async (claimed: ClaimedCommand, error: unknown): Promise<void> => {
+  // An effect an earlier attempt started still needs reconciliation, even when this attempt failed before its own.
+  const providerEffectStarted = claimed.earlierEffectStarted || (await providerEffectStartedForAttempt(claimed.command).catch(() => true));
+  const state = mutationFailureState(error, providerEffectStarted);
+  // A provider that stays unreachable fails the command after its last attempt instead of holding it forever.
+  await commandState(claimed.command, state === "queued" && claimed.command.attempt >= MUTATION_MAX_ATTEMPTS ? "failed" : state, error);
+};
 
 const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: LeaseAssertion): Promise<MutationRun> => {
   let outcome = RAN;
@@ -1657,12 +1828,7 @@ const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: Le
       outcome = await runMessageMutation(claimed, assertLeaseActive);
     }
   } catch (error) {
-    // An effect an earlier attempt started still needs reconciliation, even when this attempt failed before its own.
-    const providerEffectStarted =
-      claimed.earlierEffectStarted || (await providerEffectStartedForAttempt(claimed.command).catch(() => true));
-    const state = mutationFailureState(error, providerEffectStarted);
-    // A provider that stays unreachable fails the command after its last attempt instead of holding it forever.
-    await commandState(claimed.command, state === "queued" && claimed.command.attempt >= MUTATION_MAX_ATTEMPTS ? "failed" : state, error);
+    await settleFailedMutation(claimed, error);
   }
   const [state] = await sql<{ state: CommandState }[]>`
     SELECT state FROM mail.commands WHERE id = ${claimed.command.id}::uuid
@@ -1670,9 +1836,11 @@ const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: Le
   return { state: state?.state ?? null, ...outcome };
 };
 
+type CommandFence = { id: string; attempt: number };
+
 const executeMutationCommandWithHeartbeat = async (
   commandId: string,
-  heartbeat?: (fence: { id: string; attempt: number }) => Promise<void>,
+  heartbeat?: (fence: CommandFence) => Promise<void>,
 ): Promise<MutationRun | null> => {
   const claimed = await claimCommand(commandId, MUTATION_COMMAND_KINDS);
   if (!claimed) return null;
@@ -1866,6 +2034,19 @@ const heartbeatCommandFence = async (fence: { id: string; attempt: number }): Pr
       WHERE id = ${fence.id}::uuid
     `;
   });
+};
+
+/** Renews the heartbeat of the commands of a move set that are still executing; settled ones keep their outcome. */
+const heartbeatExecutingCommands = async (fences: CommandFence[]): Promise<void> => {
+  await sql`
+    UPDATE mail.commands command
+    SET worker_heartbeat_at = now(), updated_at = now()
+    FROM unnest(
+      ${toPgUuidArray(fences.map((fence) => fence.id))}::uuid[],
+      ${toPgIntArray(fences.map((fence) => fence.attempt))}::int[]
+    ) AS fence(id, attempt)
+    WHERE command.id = fence.id AND command.attempt = fence.attempt AND command.state = 'executing'
+  `;
 };
 
 const heartbeatOutboxFence = async (loaded: { outbox: DbOutboxExecution; command: DbCommandExecution }): Promise<void> => {
@@ -3168,19 +3349,124 @@ const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wai
 };
 
 /**
- * Runs the mailbox's next due mutation command and returns when its job should run again, or
- * `null` when no command is left. Each turn runs one command, so with a backlog the mailbox
- * goes behind the other mailboxes' turns, and between two commands a waiting folder sync takes
- * the provider lease.
+ * Moves one turn carries at most. Their UID set takes at most 550 octets, ten digits and a comma
+ * per UID, far inside the 8,192-octet command line RFC 7162 asks clients to stay under. The tighter
+ * bound is the provider lease: each move still claims, marks, and settles its own command row while
+ * the set holds the lease, a few database round trips each, so 50 moves keep one turn to about two
+ * seconds. That is how long a folder sync that starts waiting during the turn waits.
  */
-const runMailboxCommandTurn = async (
-  mailboxId: string,
-  heartbeat?: (fence: { id: string; attempt: number }) => Promise<void>,
-): Promise<{ retryAfterMs: number | null }> => {
+const MOVE_SET_LIMIT = 50;
+
+/**
+ * The commands that move together with `headId`, the mailbox's next command, in creation order:
+ * queued moves from the same source folder to the same destination over the same binding, whose
+ * message has no earlier pending change. Empty when `headId` is not such a move.
+ */
+const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string[]> => {
+  const rows = await sql<{ id: string }[]>`
+    WITH pending AS MATERIALIZED (
+      SELECT
+        id, kind, state, created_at, last_error_code, selected_binding_id, selected_secret_revision,
+        target->>'remoteMessageRefId' AS message_ref,
+        target->>'sourceFolderId' AS source_folder_id,
+        target->>'destinationFolderId' AS destination_folder_id
+      FROM mail.commands
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND state IN ('queued', 'executing', 'ambiguous')
+        AND kind IN ('set_flags', 'change_message_state', 'move', 'copy', 'delete')
+    )
+    SELECT candidate.id
+    FROM pending head
+    JOIN pending candidate
+      ON candidate.kind = 'move'
+     AND candidate.state = 'queued'
+     AND (candidate.last_error_code IS NULL OR candidate.last_error_code = 'REMOTE_RESOURCE_BUSY')
+     AND candidate.selected_binding_id = head.selected_binding_id
+     AND candidate.selected_secret_revision = head.selected_secret_revision
+     AND candidate.source_folder_id = head.source_folder_id
+     AND candidate.destination_folder_id = head.destination_folder_id
+    WHERE head.id = ${headId}::uuid
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pending earlier
+        WHERE earlier.message_ref = candidate.message_ref
+          AND (earlier.created_at, earlier.id) < (candidate.created_at, candidate.id)
+      )
+    ORDER BY candidate.id = head.id DESC, candidate.created_at, candidate.id
+    LIMIT ${MOVE_SET_LIMIT}
+  `;
+  return rows[0]?.id === headId ? rows.map((row) => row.id) : [];
+};
+
+/**
+ * Runs a set of fresh moves under one provider lease and over one session. Each move is claimed and
+ * settled as its own command, so idempotency, activity, and reconciliation stay those of one move.
+ */
+const runMoveSet = async (commandIds: string[], jobHeartbeat?: () => Promise<void>): Promise<LeaseOutcome> => {
+  const [headId, ...restIds] = commandIds;
+  const head = headId ? await claimCommand(headId, ["move"], ["queued"]) : null;
+  if (!head) return RAN;
+  // The others are claimed once the set holds the provider lease, so a busy lease puts back one command, not the set.
+  const claimed: ClaimedCommand[] = [head];
+  const fail: MoveFailure = async (command, error) => {
+    const member = claimed.find((entry) => entry.command.id === command.id);
+    if (member) await settleFailedMutation(member, error);
+  };
+  const work = async (assertJobLeaseActive: LeaseAssertion): Promise<LeaseOutcome> => {
+    try {
+      const binding = await loadPinnedBinding(head.command);
+      const outcome = await withMutationLease(head.command, binding.remote_resource_id, assertJobLeaseActive, async (assertLeaseActive) => {
+        for (const commandId of restIds) {
+          const member = await claimCommand(commandId, ["move"], ["queued"]);
+          if (member) claimed.push(member);
+        }
+        await executeFreshMoves(
+          claimed.map((member) => member.command),
+          assertLeaseActive,
+          fail,
+        );
+      });
+      if (outcome.busyRetryAfterMs !== null) {
+        await requeueCommand(head.command, "queued", "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or changed");
+      }
+      return outcome;
+    } catch (error) {
+      // The set failed as a whole: each command that is still executing settles as if it had failed alone.
+      for (const member of claimed) await settleFailedMutation(member, error);
+      return RAN;
+    }
+  };
+  if (!jobHeartbeat) return work(noLeaseAssertion);
+  return withLeaseHeartbeat({
+    intervalMs: JOB_HEARTBEAT_INTERVAL_MS,
+    heartbeat: async () => {
+      await jobHeartbeat();
+      await heartbeatExecutingCommands(claimed.map((member) => member.command));
+    },
+    work,
+  });
+};
+
+/**
+ * Runs the mailbox's next due mutation command, together with the moves that can go with it, and
+ * returns when its job should run again, or `null` when no command is left. Each turn takes the
+ * provider lease once, so with a backlog the mailbox goes behind the other mailboxes' turns, and
+ * between two turns a waiting folder sync takes the provider lease.
+ */
+const runMailboxCommandTurn = async (mailboxId: string, jobHeartbeat?: () => Promise<void>): Promise<{ retryAfterMs: number | null }> => {
   const next = await nextMailboxMutation(mailboxId);
   if (!next) return { retryAfterMs: null };
   if (next.wait_ms > 0) return { retryAfterMs: Math.min(next.wait_ms, MAILBOX_COMMAND_POLL_MS) };
-  const run = await executeMutationCommandWithHeartbeat(next.id, heartbeat);
+  const moveSet = await pendingMoveSet(mailboxId, next.id);
+  if (moveSet.length > 1) return { retryAfterMs: (await runMoveSet(moveSet, jobHeartbeat)).busyRetryAfterMs ?? 0 };
+  const run = await executeMutationCommandWithHeartbeat(
+    next.id,
+    jobHeartbeat &&
+      (async (fence) => {
+        await jobHeartbeat();
+        await heartbeatCommandFence(fence);
+      }),
+  );
   return { retryAfterMs: run?.busyRetryAfterMs ?? 0 };
 };
 
@@ -3201,13 +3487,12 @@ export const runMailboxCommandsJob = async (
   // commands-due schedule queues that mailbox within a minute.
   if (typeof ctx.input.mailboxId !== "string") return;
   const { mailboxId } = ctx.input;
-  const turn = await runMailboxCommandTurn(mailboxId, async (fence) => {
+  const turn = await runMailboxCommandTurn(mailboxId, async () => {
     try {
       await ctx.heartbeat();
     } catch (cause) {
       throw Object.assign(new Error("Mail command job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST", cause });
     }
-    await heartbeatCommandFence(fence);
   });
   if (turn.retryAfterMs !== null) ctx.resubmit({ delayMs: turn.retryAfterMs, input: { mailboxId } });
   // A command created while this turn found none left joined this job. Looking once more
