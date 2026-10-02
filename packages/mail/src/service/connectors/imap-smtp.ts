@@ -697,7 +697,7 @@ export const mapFetchedEnvelope = async (message: FetchMessageObject, request: E
     internalDate: message.internalDate instanceof Date ? message.internalDate : (sentAt ?? new Date(0)),
     sizeBytes: message.size ?? 0,
     flags: state.flags,
-    labels: [...new Set([...state.keywords, ...(message.labels ?? [])])].sort(),
+    labels: projectedKeywords(state.keywords, message.labels),
     addresses: {
       from: mapAddresses(envelope?.from),
       replyTo: mapAddresses(envelope?.replyTo),
@@ -714,6 +714,28 @@ const splitRemoteFlags = (values: Iterable<string>): { flags: string[]; keywords
   const keywords: string[] = [];
   for (const value of values) (value.startsWith("\\") ? flags : keywords).push(value);
   return { flags: [...new Set(flags)].sort(), keywords: [...new Set(keywords)].sort() };
+};
+
+/**
+ * The keywords Mail stores for a message: its IMAP keywords plus, on Gmail, its labels. Every read
+ * of a message's state uses this, so a state read before a change compares like with like against
+ * what sync stored.
+ */
+const projectedKeywords = (keywords: readonly string[], labels: Iterable<string> | undefined): string[] =>
+  [...new Set([...keywords, ...(labels ?? [])])].sort();
+
+/** Reads a selected message's state. imapflow asks for Gmail labels only when the server offers X-GM-EXT-1. */
+export const fetchRemoteMessageState = async (client: Pick<ImapFlow, "fetchOne">, uid: number): Promise<RemoteMessageState> => {
+  const message = await client.fetchOne(uid, { uid: true, flags: true, labels: true, envelope: true }, { uid: true });
+  if (!message) return { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
+  const state = splitRemoteFlags(message.flags ?? []);
+  return {
+    exists: true,
+    flags: state.flags,
+    keywords: projectedKeywords(state.keywords, message.labels),
+    messageId: message.envelope?.messageId?.trim() || null,
+    modseq: message.modseq?.toString() ?? null,
+  };
 };
 
 export const selectUidBatch = async (params: {
@@ -927,7 +949,7 @@ const fetchFlagChanges = async (
             uid: message.uid,
             modseq: message.modseq?.toString() ?? null,
             flags: state.flags,
-            labels: [...new Set([...state.keywords, ...(message.labels ?? [])])].sort(),
+            labels: projectedKeywords(state.keywords, message.labels),
           });
         }
         assertSelectedMailbox(client, uidValidity);
@@ -964,7 +986,7 @@ const fetchUidWindow = async (
             uid: message.uid,
             modseq: message.modseq?.toString() ?? null,
             flags: state.flags,
-            labels: [...new Set([...state.keywords, ...(message.labels ?? [])])].sort(),
+            labels: projectedKeywords(state.keywords, message.labels),
           });
         }
         assertSelectedMailbox(client, uidValidity);
@@ -1184,16 +1206,7 @@ const changeMessageState = async (
           throw Object.assign(new Error("Provider did not confirm the remote state removal"), { code: "REMOTE_STATE_UNCONFIRMED" });
         changedState = true;
       }
-      const message = await client.fetchOne(target.uid, { uid: true, flags: true, envelope: true }, { uid: true });
-      if (!message) return { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
-      const state = splitRemoteFlags(message.flags ?? []);
-      return {
-        exists: true,
-        flags: state.flags,
-        keywords: state.keywords,
-        messageId: message.envelope?.messageId?.trim() || null,
-        modseq: message.modseq?.toString() ?? null,
-      };
+      return await fetchRemoteMessageState(client, target.uid);
     } catch (cause) {
       if (!changedState) throw cause;
       throw Object.assign(new Error("Remote message state may have changed before the operation failed"), {
@@ -1292,19 +1305,7 @@ const findMessageById = async (
   );
 
 const getMessageState = async (config: ProviderConnectionInput, target: RemoteMutationTarget): Promise<RemoteMessageState> =>
-  withSelectedMailbox(config, target, async (client) => {
-    const message = await client.fetchOne(target.uid, { uid: true, flags: true, envelope: true }, { uid: true });
-    const state = message ? splitRemoteFlags(message.flags ?? []) : { flags: [], keywords: [] };
-    return message
-      ? {
-          exists: true,
-          flags: state.flags,
-          keywords: state.keywords,
-          messageId: message.envelope?.messageId?.trim() || null,
-          modseq: message.modseq?.toString() ?? null,
-        }
-      : { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
-  });
+  withSelectedMailbox(config, target, (client) => fetchRemoteMessageState(client, target.uid));
 
 const createFolder = async (config: ProviderConnectionInput, path: string, subscribe: boolean): Promise<void> =>
   withImapClient(config, async (client) => {
