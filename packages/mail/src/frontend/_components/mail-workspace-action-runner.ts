@@ -58,7 +58,7 @@ export type MailWorkspaceActionRunnerHost = {
   followOutcomes: (params: {
     actionId: MailActionId;
     destinationFolderId: string | null;
-    conversations: { conversationId: string; label: string; commands: MailActionCommand[] }[];
+    conversations: { conversationId: string; label: string; sourceFolderIds: readonly string[]; commands: MailActionCommand[] }[];
   }) => void;
   pruneSelection: (succeededConversationIds: ReadonlySet<string>) => void;
   removesActiveConversation: (actionId: MailActionId, succeededConversationIds: ReadonlySet<string>) => boolean;
@@ -73,6 +73,22 @@ export type MailWorkspaceActionRunnerHost = {
 
 export const mailOptimisticFields = (actionId: MailActionId): MailListOptimisticField[] =>
   actionId === "mark_read" || actionId === "mark_unread" ? ["unread"] : actionId === "flag" || actionId === "unflag" ? ["flagged"] : [];
+
+/**
+ * One target per conversation. In a message list, several selected rows can belong to one
+ * conversation; the action runs once on the union of their folders.
+ */
+const mergeConversationTargets = (targets: readonly MailBulkTarget[]): MailBulkTarget[] => {
+  const merged = new Map<string, MailBulkTarget>();
+  for (const target of targets) {
+    const existing = merged.get(target.conversationId);
+    merged.set(
+      target.conversationId,
+      existing ? { ...existing, sourceFolderIds: [...new Set([...existing.sourceFolderIds, ...target.sourceFolderIds])] } : target,
+    );
+  }
+  return [...merged.values()];
+};
 
 export const removeDestinationPlacements = (targets: readonly MailBulkTarget[], destinationFolderId: string): MailBulkTarget[] =>
   targets
@@ -97,7 +113,7 @@ export const runMailWorkspaceAction = async (
   let optimisticApplied = false;
 
   try {
-    execution.targets ??= options.targets ?? host.resolveTargets(actionId);
+    execution.targets ??= mergeConversationTargets(options.targets ?? host.resolveTargets(actionId));
     targets = execution.targets;
     if (targets.length === 0) {
       if (!options.silent) await host.showMissingTarget();
@@ -160,7 +176,7 @@ export const runMailWorkspaceAction = async (
         destinationFolderId: destinationFolderId ?? null,
         conversations: targets.flatMap((target) => {
           const commands = queued.get(target.conversationId);
-          return commands ? [{ conversationId: target.conversationId, label: target.label, commands }] : [];
+          return commands ? [{ ...target, commands }] : [];
         }),
       });
 

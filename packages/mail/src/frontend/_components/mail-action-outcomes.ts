@@ -16,7 +16,8 @@ const FAILED_STATES = new Set<MailCommandOutcome["state"]>(["failed", "cancelled
 /** Why a command did not complete: its error code, or its state when the state says more. */
 const failureCode = (outcome: MailActionCommand): string => (outcome.state === "failed" ? (outcome.code ?? "failed") : outcome.state);
 
-export type MailActionFailure = { conversationId: string; label: string; code: string };
+/** A conversation the action did not change, with the folders the action started from, so Try again repeats it there. */
+export type MailActionFailure = { conversationId: string; label: string; sourceFolderIds: readonly string[]; code: string };
 
 /** A followed action that ended with at least one conversation the mail server did not change. */
 export type MailActionFailureReport = {
@@ -26,7 +27,13 @@ export type MailActionFailureReport = {
   failures: MailActionFailure[];
 };
 
-type FollowedConversation = { conversationId: string; label: string; pending: Set<string>; failureCode: string | null };
+type FollowedConversation = {
+  conversationId: string;
+  label: string;
+  sourceFolderIds: readonly string[];
+  pending: Set<string>;
+  failureCode: string | null;
+};
 
 type FollowedAction = {
   actionId: MailActionId;
@@ -45,12 +52,13 @@ const record = (conversation: FollowedConversation, outcome: MailActionCommand):
 
 const isPending = (action: FollowedAction): boolean => action.conversations.some((conversation) => conversation.pending.size > 0);
 
-/** The failure report of a finished action, or `null` when every change it saw was made. */
+/**
+ * The failure report of a finished or expired action, or `null` when every change it saw was made.
+ * A failed conversation whose other commands never finished counts as unclear, like `needs_attention`.
+ */
 const failureReport = (action: FollowedAction): MailActionFailureReport | null => {
-  const failures = action.conversations.flatMap((conversation) =>
-    conversation.failureCode
-      ? [{ conversationId: conversation.conversationId, label: conversation.label, code: conversation.failureCode }]
-      : [],
+  const failures = action.conversations.flatMap(({ conversationId, label, sourceFolderIds, pending, failureCode }) =>
+    failureCode ? [{ conversationId, label, sourceFolderIds, code: pending.size > 0 ? "needs_attention" : failureCode }] : [],
   );
   return failures.length > 0
     ? {
@@ -78,7 +86,12 @@ export const createMailActionOutcomes = () => {
     follow: (params: {
       actionId: MailActionId;
       destinationFolderId: string | null;
-      conversations: readonly { conversationId: string; label: string; commands: readonly MailActionCommand[] }[];
+      conversations: readonly {
+        conversationId: string;
+        label: string;
+        sourceFolderIds: readonly string[];
+        commands: readonly MailActionCommand[];
+      }[];
       now?: number;
     }): MailActionFailureReport | null => {
       const action: FollowedAction = {
@@ -89,6 +102,7 @@ export const createMailActionOutcomes = () => {
           const followed: FollowedConversation = {
             conversationId: conversation.conversationId,
             label: conversation.label,
+            sourceFolderIds: conversation.sourceFolderIds,
             pending: new Set(conversation.commands.map((command) => command.id)),
             failureCode: null,
           };

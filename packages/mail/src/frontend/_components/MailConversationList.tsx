@@ -37,7 +37,7 @@ import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
 import { openMailSearchBuilder } from "./MailSearchBuilder";
-import type { MailActionId } from "./mail-actions";
+import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
@@ -77,7 +77,8 @@ export default function MailConversationList(props: {
   dateConfig: DateContext;
   canWrite: boolean;
   canAdmin: boolean;
-  junkFolderIds: string[];
+  /** The folder in view, which decides the folder actions start from; `null` in views across folders. */
+  viewFolderId: string | null;
   folders: MailFolderView[];
   localTags: LocalTag[];
   savedViews: SavedConversationView[];
@@ -118,6 +119,8 @@ export default function MailConversationList(props: {
       ] satisfies Array<{ value: MailQuickSearchField; label: string; icon: string }>,
   );
   const rowMessages = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const spamAction = (item: MailListItem) =>
+    spamActionForConversation({ viewFolderId: props.viewFolderId, activeFolderIds: item.activeFolderIds, folders: props.folders });
   const requestUrl = () => mailRouteUrl(props.requestUrl);
   let listColumn: HTMLDivElement | undefined;
   const workspaceFrame = () => listColumn?.closest<HTMLElement>(".mail-workspace") ?? null;
@@ -402,7 +405,7 @@ export default function MailConversationList(props: {
               props.selectedConversationIds.size > 0 &&
               props.items
                 .filter((item) => item.conversationId && props.selectedConversationIds.has(item.conversationId))
-                .every((item) => Boolean(item.sourceFolderId && props.junkFolderIds.includes(item.sourceFolderId)))
+                .every((item) => spamAction(item) === "not_spam")
             }
             busy={props.loading}
             onClear={props.onClearSelection}
@@ -570,7 +573,7 @@ export default function MailConversationList(props: {
                       selectedConversationIds: props.selectedConversationIds,
                       selectionMode: props.selectionMode,
                       canWrite: props.canWrite,
-                      junkFolderIds: props.junkFolderIds,
+                      spamAction: spamAction(item),
                       dateConfig: props.dateConfig,
                     }}
                     actions={{

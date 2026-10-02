@@ -1,7 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Dropdown, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
-import { getMailAction, type MailActionId, spamActionForFolder } from "./mail-actions";
+import { getMailAction, type MailActionId } from "./mail-actions";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
@@ -20,7 +20,7 @@ type MailConversationRowState = {
   selectedConversationIds: ReadonlySet<string>;
   selectionMode: boolean;
   canWrite: boolean;
-  junkFolderIds: string[];
+  spamAction: "junk" | "not_spam";
   dateConfig: DateContext;
 };
 
@@ -301,13 +301,11 @@ export default function MailConversationRow(props: {
                 icon: "ti ti-tags",
                 action: () => props.actions.manageTags(props.item),
               },
-              ...(["archive", "move", spamActionForFolder(props.item.sourceFolderId, props.state.junkFolderIds), "trash"] as const).map(
-                (actionId) => ({
-                  label: actionLabel(actionId),
-                  icon: getMailAction(actionId).icon,
-                  action: () => props.actions.itemAction(props.item, actionId),
-                }),
-              ),
+              ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => ({
+                label: actionLabel(actionId),
+                icon: getMailAction(actionId).icon,
+                action: () => props.actions.itemAction(props.item, actionId),
+              })),
               {
                 label: t().mergeWithConversation,
                 icon: "ti ti-git-merge",

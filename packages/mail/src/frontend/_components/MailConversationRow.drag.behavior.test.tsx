@@ -107,7 +107,7 @@ if (!isServer) {
               selectedConversationIds: new Set<string>(),
               selectionMode: false,
               canWrite: true,
-              junkFolderIds: [],
+              spamAction: "junk",
               dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
             }}
             actions={{ navigate: () => {}, toggleSelection: () => {}, itemAction: () => {}, manageTags: () => {}, merge: () => {} }}

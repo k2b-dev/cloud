@@ -119,8 +119,16 @@ export const mailRoleDestinationFolderId = (actionId: MailActionId, folders: rea
   return claimed.length === 1 ? claimed[0]!.id : null;
 };
 
-export const spamActionForFolder = (folderId: string | null, junkFolderIds: readonly string[]): "junk" | "not_spam" =>
-  folderId && junkFolderIds.includes(folderId) ? "not_spam" : "junk";
+/** The spam action a conversation offers: Not spam when every folder the action takes it out of is Junk. */
+export const spamActionForConversation = (params: {
+  viewFolderId: string | null;
+  activeFolderIds: readonly string[];
+  folders: readonly MailActionFolder[];
+}): "junk" | "not_spam" => {
+  const sources = mailMoveSourceFolderIds(params);
+  const junk = new Set(params.folders.flatMap((folder) => (folder.role === "junk" ? [folder.id] : [])));
+  return sources.length > 0 && sources.every((folderId) => junk.has(folderId)) ? "not_spam" : "junk";
+};
 
 export const buildMailActionInput = (params: {
   actionId: MailActionId;

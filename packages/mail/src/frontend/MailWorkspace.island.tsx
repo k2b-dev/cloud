@@ -36,6 +36,7 @@ import {
   type MailActionId,
   mailMoveSourceFolderIds,
   mailRoleDestinationFolderId,
+  spamActionForConversation,
 } from "./_components/mail-actions";
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
@@ -691,17 +692,15 @@ function MailWorkspaceView(props: {
   const selectedFlagged = createMemo(
     () => selectedListItem()?.flagged ?? data.detailMessages.some((message) => message.flags.includes("\\Flagged")),
   );
-  const selectedInJunk = createMemo(() => {
-    const folderIds = mailMoveSourceFolderIds({
-      viewFolderId: data.folderId,
-      activeFolderIds:
-        selectedListItem()?.activeFolderIds ?? data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
-      folders: data.folders,
-    });
-    return (
-      folderIds.length > 0 && folderIds.every((folderId) => data.folders.some((folder) => folder.id === folderId && folder.role === "junk"))
-    );
-  });
+  const selectedInJunk = createMemo(
+    () =>
+      spamActionForConversation({
+        viewFolderId: data.folderId,
+        activeFolderIds:
+          selectedListItem()?.activeFolderIds ?? data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
+        folders: data.folders,
+      }) === "not_spam",
+  );
   const selectedConversationRevision = createMemo(() => selectedListItem()?.revision ?? data.collaborationState?.revision ?? null);
   const canShowDetails = createMemo(() => Boolean(data.selectedConversationId));
 
@@ -1174,13 +1173,9 @@ function MailWorkspaceView(props: {
   const showActionFailures = (report: MailActionFailureReport) => {
     const [first] = report.failures;
     if (!first || disposed) return;
-    // An unclear outcome must be checked, not repeated; the others can be tried again from the list.
-    const retryable = new Set(report.failures.flatMap((failure) => (failure.code === "needs_attention" ? [] : [failure.conversationId])));
-    const retryTargets = () =>
-      data.listItems.flatMap((item) => {
-        const target = item.conversationId && retryable.has(item.conversationId) ? actionTargetForItem(item, report.actionId) : null;
-        return target ? [target] : [];
-      });
+    // An unclear outcome must be checked, not repeated. The others repeat on the folders the action
+    // started from, whatever view is open by now.
+    const retryTargets = report.failures.flatMap(({ code, ...target }) => (code === "needs_attention" ? [] : [target]));
     const more = report.failures.length - 1;
     toast.error(`${first.label}: ${failureReason(first.code)}${more > 0 ? ` (${t().moreNotApplied({ count: more })})` : ""}`, {
       title:
@@ -1188,14 +1183,11 @@ function MailWorkspaceView(props: {
           ? t().changeNotApplied
           : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount }),
       action:
-        retryTargets().length > 0
+        retryTargets.length > 0
           ? {
               label: t().tryAgain,
-              onClick: () => {
-                const targets = retryTargets();
-                if (targets.length > 0)
-                  void runAction(report.actionId, { targets, destinationFolderId: report.destinationFolderId ?? undefined });
-              },
+              onClick: () =>
+                void runAction(report.actionId, { targets: retryTargets, destinationFolderId: report.destinationFolderId ?? undefined }),
             }
           : null,
     });
@@ -1588,7 +1580,7 @@ function MailWorkspaceView(props: {
                     dateConfig={props.dateConfig}
                     canWrite={canWrite()}
                     canAdmin={canAdmin()}
-                    junkFolderIds={data.folders.filter((folder) => folder.role === "junk").map((folder) => folder.id)}
+                    viewFolderId={data.folderId}
                     folders={data.folders}
                     localTags={data.localTags}
                     savedViews={data.savedViews}

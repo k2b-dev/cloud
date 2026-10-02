@@ -180,6 +180,26 @@ describe("Mail workspace action runner", () => {
     expect(submittedPlacements).toBe(1);
   });
 
+  test("acts once per conversation when several selected rows belong to it", async () => {
+    const submitted: string[] = [];
+    const followed: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [target("one", ["inbox"]), target("one", ["inbox", "projects"]), target("two", ["inbox"])],
+      submit: async ({ target: item, sourceFolderId }) => {
+        submitted.push(`${item.conversationId}:${sourceFolderId}`);
+        return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
+      },
+      followOutcomes: ({ conversations }) => {
+        for (const conversation of conversations) followed.push(`${conversation.conversationId}=${conversation.sourceFolderIds.join("+")}`);
+      },
+    });
+
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(submitted.sort()).toEqual(["one:inbox", "one:projects", "two:inbox"]);
+    expect(followed).toEqual(["one=inbox+projects", "two=inbox"]);
+    expect(fixture.events).toContain("success:2");
+  });
+
   test("follows the commands a partly submitted conversation already queued", async () => {
     const fixture = host({
       resolveTargets: () => [target("one", ["inbox", "projects"])],

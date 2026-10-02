@@ -5,7 +5,7 @@ import {
   MAIL_ACTION_IDS,
   mailMoveSourceFolderIds,
   mailRoleDestinationFolderId,
-  spamActionForFolder,
+  spamActionForConversation,
 } from "./mail-actions";
 
 describe("Mail actions", () => {
@@ -44,10 +44,14 @@ describe("Mail actions", () => {
     ).toMatchObject({ kind: "move_to_role", sourceFolderId: "junk", role: "inbox" });
   });
 
-  test("uses not-spam only for messages currently shown from junk", () => {
-    expect(spamActionForFolder("junk-folder", ["junk-folder"])).toBe("not_spam");
-    expect(spamActionForFolder("inbox-folder", ["junk-folder"])).toBe("junk");
-    expect(spamActionForFolder(null, ["junk-folder"])).toBe("junk");
+  test("offers Not spam only when the action would take the conversation out of Junk", () => {
+    const folders = [folder("inbox", "inbox"), folder("sent", "sent"), folder("junk", "junk")];
+    expect(spamActionForConversation({ viewFolderId: "junk", activeFolderIds: ["junk"], folders })).toBe("not_spam");
+    expect(spamActionForConversation({ viewFolderId: "inbox", activeFolderIds: ["inbox"], folders })).toBe("junk");
+    expect(spamActionForConversation({ viewFolderId: null, activeFolderIds: [], folders })).toBe("junk");
+    // A view across folders, such as Needs action: the newest message in Junk next to an older reply in Sent.
+    expect(spamActionForConversation({ viewFolderId: null, activeFolderIds: ["sent", "junk"], folders })).toBe("not_spam");
+    expect(spamActionForConversation({ viewFolderId: null, activeFolderIds: ["inbox", "junk"], folders })).toBe("junk");
   });
 
   describe("take a conversation out of", () => {

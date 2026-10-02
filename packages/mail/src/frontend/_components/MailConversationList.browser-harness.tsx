@@ -83,7 +83,7 @@ window.mountMailList = (options) => {
                   dateConfig={dateConfig}
                   canWrite
                   canAdmin={false}
-                  junkFolderIds={[]}
+                  viewFolderId={null}
                   folders={[]}
                   localTags={[]}
                   savedViews={[]}
