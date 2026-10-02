@@ -732,7 +732,10 @@ describe("Spaces item detail groups", () => {
     expect(summary).toContain("Aug 12, 2026, 12:00");
     expect(summary).toContain('<span class="text-dimmed"> · ');
     expect(summary).toContain('value="45"');
-    expect(summary).toContain(">min</span>");
+    // At rest the estimate reads as a duration, as readers see it; the minutes suffix shows while editing.
+    expect(summary).toContain('data-value="45 min"');
+    expect(summary).toContain('aria-valuetext="45 min"');
+    expect(summary).not.toContain(">min</span>");
     expect(summary).toContain(">High</span>");
     expect(summary).toContain(">Release</span>");
     // The description list term names each control; the options popovers carry the same name.

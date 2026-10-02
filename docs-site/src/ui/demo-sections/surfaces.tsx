@@ -209,9 +209,12 @@ const CardsDemo = () => (
   </DemoCard>
 );
 
+const formatDuration = (minutes: number) =>
+  minutes < 60 ? `${minutes} min` : minutes % 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes / 60} h`;
+
 const DetailsDemo = () => {
   const [due, setDue] = createSignal<string | null>("2026-10-06T17:00");
-  const [estimate, setEstimate] = createSignal<number | null>(45);
+  const [estimate, setEstimate] = createSignal<number | null>(90);
   const [priority, setPriority] = createSignal<string | null>("medium");
   const [labels, setLabels] = createSignal<string[]>(["hardware"]);
 
@@ -240,7 +243,7 @@ const DetailsDemo = () => {
   size="sm"
   items={[
     { term: "Due", description: <DateTimePicker aria-label="Due" appearance="plain" placeholder="No due date" clearable value={due} onValueChange={setDue} /> },
-    { term: "Estimate", description: <NumberInput aria-label="Estimate" appearance="plain" placeholder="No estimate" suffix="min" min={1} value={estimate} onValueCommit={setEstimate} /> },
+    { term: "Estimate", description: <NumberInput aria-label="Estimate" appearance="plain" placeholder="No estimate" suffix="min" min={1} formatValue={formatDuration} value={estimate} onValueCommit={setEstimate} /> },
     { term: "Priority", description: <Select aria-label="Priority" appearance="plain" placeholder="No priority" clearable options={priorities} value={priority} onValueChange={setPriority} /> },
     { term: "Labels", description: <MultiSelectInput aria-label="Labels" appearance="plain" placeholder="Label" placeholderIcon="ti ti-plus" options={labelOptions} value={labels} onValueChange={setLabels} /> },
   ]}
@@ -325,6 +328,7 @@ const DetailsDemo = () => {
                     placeholder="No estimate"
                     suffix="min"
                     min={1}
+                    formatValue={formatDuration}
                     value={estimate}
                     onValueCommit={setEstimate}
                   />

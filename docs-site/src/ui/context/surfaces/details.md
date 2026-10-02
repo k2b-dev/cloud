@@ -24,14 +24,21 @@ focus, or an open picker paints a quiet surface 0.5rem past the row on both
 sides, behind the label and value; focus adds the ring to that surface. A click
 on the label opens the picker or edits the number. Nothing in the list moves
 between these states, and an item `action` stays clickable above the row.
+Because the surface reaches past the row, keep 0.5rem of room on both sides,
+as a `DetailPanel.Summary` or a section inside a `DetailPanel.Group` does. A
+list flush against a scrolling or clipping edge cuts off the surface and its
+ring.
 
 Mix property rows with plain text rows freely. For people who cannot edit, render
 the same value as text, such as the dot and label of a priority or the
 [`Tag`](/en/ui/input/tag-editor) chips of labels, instead of a disabled control.
 The row then has no hover surface.
 
-A value that lists several entries, such as linked items, may be taller than
-one line. The term stays on the value's first line.
+In `layout="rows"`, the term sits where a one-line value sits. A value made
+of row-height lines, such as wrapping plain pills or a list of linked items,
+keeps the term beside its first line. Plain text that wraps starts at the top
+of the row, so the term sits slightly below its first line; keep row values
+short and move long text to its own section.
 
 ## Import
 

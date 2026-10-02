@@ -272,12 +272,14 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
           <Show
             when={selected().length > 0}
             fallback={
-              <span class="k2b-choice-trigger__value" data-placeholder="true">
+              <>
                 <Show when={props.placeholderIcon}>
                   {(icon) => <i class={`${icon()} k2b-choice-trigger__placeholder-icon`} aria-hidden="true" />}
                 </Show>
-                {props.placeholder ?? messages().select}
-              </span>
+                <span class="k2b-choice-trigger__value" data-placeholder="true">
+                  {props.placeholder ?? messages().select}
+                </span>
+              </>
             }
           >
             <span

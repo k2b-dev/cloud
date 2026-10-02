@@ -975,14 +975,18 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
           }
           return {
             clipped,
-            ring: getComputedStyle(holder).boxShadow,
+            ring: (() => {
+              const style = getComputedStyle(holder);
+              // An outline leaves the gap transparent, so it matches the card when hovered or selected.
+              return [style.outlineStyle, style.outlineWidth, style.outlineOffset, style.boxShadow].join(" ");
+            })(),
             sizes: [holderBox.width, next.width],
             // The ring reaches 4 px past the avatar; the next avatar starts at the ring's outer edge.
             gap: Math.round(next.left - holderBox.right),
           };
         });
         expect(stack.clipped).toEqual([]);
-        expect(stack.ring).toMatch(/0px 0px 0px 2px[\s\S]*0px 0px 0px 4px/);
+        expect(stack.ring).toBe("solid 2px 2px none");
         expect(stack.sizes[0]).toBe(stack.sizes[1]);
         expect(stack.gap).toBe(4);
         const before = await layout(page);

@@ -99,8 +99,6 @@
 .spaces-priority-value { display: inline-flex; align-items: center; gap: .5rem; }
 .spaces-priority-value__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
 
-/* Who is working on a task: a ring behind a small gap, outside the avatar, so it takes no space and nothing moves. */
-.k2b-ui .k2b-avatar.spaces-claim-ring { box-shadow: 0 0 0 2px var(--k2b-surface), 0 0 0 4px var(--k2b-success-text); }
-@media (forced-colors: active) {
-  .k2b-ui .k2b-avatar.spaces-claim-ring { outline: 2px solid CanvasText; outline-offset: 2px; }
-}
+/* Who is working on a task: a ring behind a small gap, outside the avatar, so it takes no space and nothing moves. The gap
+   is transparent, so it matches any card or panel background, hovered or selected. */
+.k2b-ui .k2b-avatar.spaces-claim-ring { outline: 2px solid var(--k2b-success-text); outline-offset: 2px; }

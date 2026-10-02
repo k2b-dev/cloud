@@ -2885,10 +2885,9 @@
   color: var(--k2b-text);
 }
 
-/* The row has no padding, so its ring sits just outside it, in the section's inset. */
 .k2b-ui .k2b-detail-panel__section-summary:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-width);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* One trailing column for both chevrons: the closed row's icon and the open
@@ -8414,8 +8413,9 @@
   align-self: center;
 }
 /* A row is one layer, so the surface of a plain control in its value paints
-   behind the row's text and above the surrounding surface. The term stays on
-   the value's first line when the value wraps or lists several entries. */
+   behind the row's text and above the surrounding surface. The term sits where
+   a one-line value sits, so it stays beside the first entry of a value made of
+   row-height lines, such as wrapping plain pills or a list of linked items. */
 .k2b-ui .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
   isolation: isolate;
 }
@@ -9078,12 +9078,6 @@
   color: var(--k2b-text-muted);
 }
 
-.k2b-ui .k2b-choice-trigger__value[data-placeholder="true"] {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
 .k2b-ui .k2b-choice-trigger__placeholder-icon {
   flex: 0 0 auto;
   color: var(--k2b-text-muted);
@@ -9141,8 +9135,11 @@
   outline-offset: var(--k2b-focus-width);
 }
 
-/* The number field edits in place: as wide as its text, in the row's type. */
-/* The sizer's trailing space separates the value from its suffix and leaves the caret room. */
+/* The number field edits in place: as wide as its text, in the row's type.
+   At rest the sizer's text is the visible value, so it can show a formatted
+   value and keep the row's size on touch screens; while editing it only sizes
+   the input above it. Its trailing space separates the value from its suffix
+   and leaves the caret room. */
 .k2b-ui .k2b-number-input[data-appearance="plain"] .k2b-number-input__value {
   flex: 0 1 auto;
   gap: 0;
@@ -9155,8 +9152,20 @@
 
 .k2b-ui .k2b-number-input__sizer::after {
   content: attr(data-value) " ";
-  visibility: hidden;
+  content: attr(data-value) " " / "";
   white-space: pre;
+}
+
+.k2b-ui .k2b-number-input__sizer[data-placeholder="true"]::after {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-number-input__sizer[data-editing="true"]::after {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-number-input__sizer:not([data-editing="true"]) > .k2b-input {
+  opacity: 0;
 }
 
 .k2b-ui .k2b-number-input__sizer::after,
@@ -9182,9 +9191,10 @@
   font-size: inherit;
 }
 
-/* The touch edit size above also applies in place, so iOS does not zoom. */
+/* The input always has the touch edit size above, so iOS does not zoom when it
+   takes focus. At rest the sizer's text keeps the row's size. */
 @media (pointer: coarse) {
-  .k2b-ui .k2b-number-input__sizer::after,
+  .k2b-ui .k2b-number-input__sizer[data-editing="true"]::after,
   .k2b-ui .k2b-number-input__sizer > .k2b-input {
     font-size: max(1rem, 16px);
   }

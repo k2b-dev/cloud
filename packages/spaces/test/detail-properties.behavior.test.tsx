@@ -122,7 +122,10 @@ describe("Spaces detail planning rows", () => {
     dom.root.className = "k2b-ui";
     const dispose = await mount(dom, { canWrite: false });
     const titles = () =>
-      Array.from(dom.root.querySelectorAll('[data-spaces-dependencies="blocker"] a .spaces-dependency__title'), (title) => title.textContent);
+      Array.from(
+        dom.root.querySelectorAll('[data-spaces-dependencies="blocker"] a .spaces-dependency__title'),
+        (title) => title.textContent,
+      );
 
     expect(titles()).toEqual(["Step 1", "Step 2", "Step 3"]);
     const toggle = dom.root.querySelector<HTMLButtonElement>(".spaces-dependency__more")!;
@@ -142,38 +145,74 @@ describe("Spaces detail planning rows", () => {
     dom.cleanup();
   });
 
-  test("shows a new priority at once, ignores a second pick while saving, and falls back when the save fails", async () => {
+  const priorityRow = (dom: DomTestHarness) => {
+    const row = Array.from(dom.root.querySelectorAll(".k2b-description-list__item")).find(
+      (candidate) => candidate.querySelector("dt")?.textContent === "Priority",
+    )!;
+    const trigger = row.querySelector<HTMLButtonElement>(".k2b-choice-trigger")!;
+    return {
+      value: () => trigger.querySelector(".k2b-choice-trigger__value")?.textContent,
+      pick: (label: string) => {
+        trigger.click();
+        Array.from(row.querySelectorAll<HTMLButtonElement>("[role='option']"))
+          .find((option) => option.textContent === label)!
+          .click();
+      },
+    };
+  };
+  const waitFor = async (check: () => boolean) => {
+    for (let step = 0; step < 40 && !check(); step += 1) await Bun.sleep(5);
+  };
+
+  test("shows a new priority at once, saves the last pick after the running save, and falls back when a save fails", async () => {
     patches.length = 0;
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
     installPopoverApi(dom);
     const dispose = await mount(dom);
-    const row = Array.from(dom.root.querySelectorAll(".k2b-description-list__item")).find(
-      (candidate) => candidate.querySelector("dt")?.textContent === "Priority",
-    )!;
-    const trigger = row.querySelector<HTMLButtonElement>(".k2b-choice-trigger")!;
-    const value = () => trigger.querySelector(".k2b-choice-trigger__value")?.textContent;
-    const pick = (label: string) => {
-      trigger.click();
-      Array.from(row.querySelectorAll<HTMLButtonElement>("[role='option']"))
-        .find((option) => option.textContent === label)!
-        .click();
-    };
+    const priority = priorityRow(dom);
 
-    expect(value()).toBe("Medium");
-    pick("Low");
+    expect(priority.value()).toBe("Medium");
+    priority.pick("Low");
     await flush();
-    expect(value()).toBe("Low");
+    expect(priority.value()).toBe("Low");
     expect(patches.map((patch) => patch.json)).toEqual([{ priority: "low" }]);
 
-    pick("Urgent");
+    // A pick while the first save runs shows at once and waits for it.
+    priority.pick("Urgent");
     await flush();
+    expect(priority.value()).toBe("Urgent");
     expect(patches).toHaveLength(1);
-    expect(value()).toBe("Low");
 
+    patches[0]!.response.resolve(Response.json({ ...item, priority: "low" }));
+    await waitFor(() => patches.length === 2);
+    expect(patches.map((patch) => patch.json)).toEqual([{ priority: "low" }, { priority: "urgent" }]);
+    expect(priority.value()).toBe("Urgent");
+
+    patches[1]!.response.resolve(Response.json({ message: "Priority could not be saved" }, { status: 500 }));
+    await waitFor(() => priority.value() === "Low");
+    expect(priority.value()).toBe("Low");
+    dispose();
+    dom.cleanup();
+  });
+
+  test("drops a waiting pick when the running save fails", async () => {
+    patches.length = 0;
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    installPopoverApi(dom);
+    const dispose = await mount(dom);
+    const priority = priorityRow(dom);
+
+    priority.pick("Low");
+    await flush();
+    priority.pick("Urgent");
+    await flush();
     patches[0]!.response.resolve(Response.json({ message: "Priority could not be saved" }, { status: 500 }));
-    for (let step = 0; step < 20 && value() !== "Medium"; step += 1) await Bun.sleep(5);
-    expect(value()).toBe("Medium");
+    await waitFor(() => priority.value() === "Medium");
+    await flush();
+    expect(priority.value()).toBe("Medium");
+    expect(patches).toHaveLength(1);
     dispose();
     dom.cleanup();
   });

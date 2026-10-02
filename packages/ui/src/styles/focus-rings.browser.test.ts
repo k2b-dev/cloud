@@ -228,15 +228,31 @@ const detail = () =>
         }),
         createComponent(DetailPanel.Body, {
           get children() {
-            return createComponent(DetailPanel.Section, {
-              title: "Actions",
-              get children() {
-                return [
-                  createComponent(DetailPanel.Action, { title: "Open in new tab", href: "#open" }),
-                  createComponent(DetailPanel.Action, { title: "Move to…", onClick: () => {} }),
-                ];
-              },
-            });
+            return [
+              createComponent(DetailPanel.Section, {
+                title: "Actions",
+                get children() {
+                  return [
+                    createComponent(DetailPanel.Action, { title: "Open in new tab", href: "#open" }),
+                    createComponent(DetailPanel.Action, { title: "Move to…", onClick: () => {} }),
+                  ];
+                },
+              }),
+              // Standalone collapsible sections sit flush with the scrolling body, closed and open.
+              createComponent(DetailPanel.Section, {
+                title: "Recent activity",
+                icon: "ti ti-history",
+                collapsible: true,
+                children: "Edited",
+              }),
+              createComponent(DetailPanel.Section, {
+                title: "Information",
+                icon: "ti ti-info-circle",
+                collapsible: true,
+                defaultOpen: true,
+                children: "Created yesterday",
+              }),
+            ];
           },
         }),
       ];

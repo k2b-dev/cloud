@@ -171,7 +171,9 @@ describe("@k2b/ui plain controls", () => {
       dom.root,
     );
     const trigger = dom.root.querySelector<HTMLElement>(".k2b-multi-select-trigger")!;
-    expect(trigger.querySelector(".k2b-choice-trigger__placeholder-icon")).not.toBeNull();
+    // The icon sits beside the placeholder text, as in Select, so the text keeps its ellipsis.
+    expect(trigger.querySelector(":scope > .k2b-choice-trigger__placeholder-icon")).not.toBeNull();
+    expect(trigger.querySelector(".k2b-choice-trigger__value .k2b-choice-trigger__placeholder-icon")).toBeNull();
     expect(trigger.textContent).toBe("Tag");
 
     setValue(["a", "b", "c"]);
@@ -214,6 +216,14 @@ describe("@k2b/ui plain controls", () => {
     const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
     expect(trigger.querySelector(".k2b-date-trigger__value")?.textContent).toBe("due 2026-10-06T17:00");
     expect(dom.root.querySelector(".k2b-date-trigger__clear")).toBeNull();
+    // The name replaces a button's content, so the shown date reaches assistive technology as the description.
+    const description = () =>
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => dom.document.getElementById(id)?.textContent)
+        .join(" ");
+    expect(trigger.getAttribute("aria-label")).toBe("Due");
+    expect(description()).toBe("due 2026-10-06T17:00");
 
     trigger.click();
     const clear = dom.root.querySelector<HTMLButtonElement>(".k2b-date-popover__clear")!;
@@ -221,6 +231,7 @@ describe("@k2b/ui plain controls", () => {
     clear.click();
     expect(commits).toEqual([null]);
     expect(trigger.querySelector(".k2b-date-trigger__value")?.textContent).toBe("No due date");
+    expect(description()).toBe("No due date");
     expect(dom.root.querySelector(".k2b-date-popover__clear")).toBeNull();
     // Applying a time is localized with the rest of the panel.
     expect(dom.root.querySelector(".k2b-date-apply")?.textContent).toBe("Apply");
@@ -229,11 +240,12 @@ describe("@k2b/ui plain controls", () => {
     dom.cleanup();
   });
 
-  test("a plain NumberInput edits in place: Enter commits, Escape restores, no steppers or clear button", async () => {
+  test("a plain NumberInput edits in place: Enter commits, Escape restores, focus stays, no steppers or clear button", async () => {
     const dom = createDomTestHarness();
     const { NumberInput } = await import("../src/inputs/NumberInput");
     const [value, setValue] = createSignal<number | null>(45);
     const commits: Array<number | null> = [];
+    const keys: string[] = [];
     const dispose = render(
       () =>
         createComponent(NumberInput, {
@@ -244,6 +256,8 @@ describe("@k2b/ui plain controls", () => {
           clearable: true,
           min: 1,
           value,
+          // Solid's bound form of an event handler reaches the input too.
+          onKeyDown: [(tag: string, event: KeyboardEvent) => keys.push(`${tag} ${event.key}`), "estimate"],
           onValueCommit: (next) => {
             commits.push(next);
             setValue(next);
@@ -253,45 +267,98 @@ describe("@k2b/ui plain controls", () => {
     );
     const shell = dom.root.querySelector<HTMLElement>(".k2b-number-input")!;
     const input = shell.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
+    const sizer = () => shell.querySelector<HTMLElement>(".k2b-number-input__sizer")!;
+    const key = (name: string) => {
+      const event = new dom.window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }) as unknown as Event;
+      input.dispatchEvent(event);
+      return event;
+    };
     expect(shell.dataset.appearance).toBe("plain");
     expect(shell.querySelector(".k2b-number-input__step")).toBeNull();
     expect(shell.querySelector(".k2b-input-shell__clear")).toBeNull();
-    expect(shell.querySelector<HTMLElement>(".k2b-number-input__sizer")?.dataset.value).toBe("45");
+    expect(sizer().dataset.value).toBe("45");
+    expect(sizer().dataset.editing).toBeUndefined();
     expect(shell.querySelector(".k2b-input-shell__affix")?.textContent).toBe("min");
+    // The unit is part of the value people hear.
+    expect(input.getAttribute("aria-valuetext")).toBe("45 min");
 
     // A click beside the text edits the value.
     shell.click();
     expect(dom.document.activeElement).toBe(input);
+    expect(sizer().dataset.editing).toBe("true");
 
     input.value = "90";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(shell.querySelector<HTMLElement>(".k2b-number-input__sizer")?.dataset.value).toBe("90");
-    input.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }) as unknown as Event);
+    expect(sizer().dataset.value).toBe("90");
+    expect(input.getAttribute("aria-valuetext")).toBe("90 min");
+    expect(key("Enter").defaultPrevented).toBe(true);
+    expect(commits).toEqual([90]);
+    expect(keys).toEqual(["estimate Enter"]);
+    // Focus stays in the field, and leaving it does not commit the same text again.
+    expect(dom.document.activeElement).toBe(input);
+    input.blur();
     expect(commits).toEqual([90]);
 
     input.focus();
     input.value = "5";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    const escape = new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }) as unknown as Event;
-    input.dispatchEvent(escape);
+    const escape = key("Escape");
     expect(escape.defaultPrevented).toBe(true);
     expect(input.value).toBe("90");
-    expect(commits.at(-1)).toBe(90);
+    expect(dom.document.activeElement).toBe(input);
+    expect(commits).toEqual([90]);
 
     // Escape without an edit reaches an enclosing panel.
-    input.focus();
-    const idle = new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }) as unknown as Event;
-    input.dispatchEvent(idle);
-    expect(idle.defaultPrevented).toBe(false);
+    expect(key("Escape").defaultPrevented).toBe(false);
 
     // Clearing the text clears the value, and the empty field shows only its placeholder.
-    input.focus();
     input.value = "";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.blur();
     expect(commits.at(-1)).toBeNull();
     expect(shell.querySelector(".k2b-input-shell__affix")).toBeNull();
-    expect(shell.querySelector<HTMLElement>(".k2b-number-input__sizer")?.dataset.value).toBe("No estimate");
+    expect(sizer().dataset.value).toBe("No estimate");
+    expect(sizer().dataset.placeholder).toBe("true");
+    expect(input.hasAttribute("aria-valuetext")).toBe(false);
+    dispose();
+    dom.cleanup();
+  });
+
+  test("a plain NumberInput shows its formatted value at rest and the raw number while editing", async () => {
+    const dom = createDomTestHarness();
+    const { NumberInput } = await import("../src/inputs/NumberInput");
+    const [value, setValue] = createSignal<number | null>(90);
+    const dispose = render(
+      () =>
+        createComponent(NumberInput, {
+          "aria-label": "Estimate",
+          appearance: "plain",
+          suffix: "min",
+          formatValue: (minutes: number) => (minutes % 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60} min` : `${minutes / 60} h`),
+          value,
+          onValueCommit: setValue,
+        }),
+      dom.root,
+    );
+    const shell = dom.root.querySelector<HTMLElement>(".k2b-number-input")!;
+    const input = shell.querySelector<HTMLInputElement>('[role="spinbutton"]')!;
+    const sizer = () => shell.querySelector<HTMLElement>(".k2b-number-input__sizer")!;
+    const suffix = () => shell.querySelector(".k2b-input-shell__affix")?.textContent ?? null;
+
+    // At rest the formatted text carries the unit, so the suffix waits for editing.
+    expect(sizer().dataset.value).toBe("1 h 30 min");
+    expect(suffix()).toBeNull();
+    expect(input.getAttribute("aria-valuetext")).toBe("1 h 30 min");
+
+    input.focus();
+    expect(sizer().dataset.value).toBe("90");
+    expect(suffix()).toBe("min");
+    input.value = "480";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.blur();
+    expect(value()).toBe(480);
+    expect(sizer().dataset.value).toBe("8 h");
+    expect(input.getAttribute("aria-valuetext")).toBe("8 h");
     dispose();
     dom.cleanup();
   });

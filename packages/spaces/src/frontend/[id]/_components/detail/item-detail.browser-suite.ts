@@ -259,6 +259,25 @@ describe("Spaces item detail in Chromium", () => {
           expect(new Set(columns.terms).size).toBe(1);
           expect(new Set(columns.values).size).toBe(1);
 
+          // At rest the estimate reads at the row's size, on touch screens too, where its input edits at 16 px.
+          const type = await page.evaluate(() => {
+            const rows = Array.from(window.document.querySelectorAll(".k2b-detail-panel__summary .k2b-description-list__item"));
+            const value = (term: string) => rows.find((row) => row.querySelector("dt")?.textContent === term)!;
+            const sizer = value("Schätzung").querySelector(".k2b-number-input__sizer")!;
+            const input = sizer.querySelector("input")!;
+            return {
+              estimate: getComputedStyle(sizer, "::after").fontSize,
+              text: getComputedStyle(sizer, "::after").content,
+              unit: value("Schätzung").querySelector(".k2b-input-shell__affix")?.textContent ?? null,
+              due: getComputedStyle(value("Fällig").querySelector(".k2b-date-trigger__value")!).fontSize,
+              input: { size: getComputedStyle(input).fontSize, opacity: getComputedStyle(input).opacity },
+            };
+          });
+          expect(type.estimate).toBe(type.due);
+          expect(type.text).toContain("45 min");
+          expect(type.unit).toBeNull();
+          expect(type.input).toEqual({ size: view.touch ? "16px" : type.due, opacity: "0" });
+
           // The collapsed details row starts where every other section heading starts.
           const headings = await page.evaluate(() =>
             Array.from(
@@ -308,13 +327,14 @@ describe("Spaces item detail in Chromium", () => {
             const avatar = holder.querySelector(".k2b-avatar")!;
             const other = window.document.querySelectorAll(".k2b-detail-panel .k2b-avatar")[1]!;
             return {
-              ring: getComputedStyle(avatar).boxShadow,
+              ring: (({ outlineStyle, outlineWidth, outlineOffset, boxShadow }) =>
+                [outlineStyle, outlineWidth, outlineOffset, boxShadow].join(" "))(getComputedStyle(avatar)),
               size: avatar.getBoundingClientRect().width,
               otherSize: other.getBoundingClientRect().width,
               label: holder.querySelector(".k2b-status-badge")?.textContent,
             };
           });
-          expect(worker.ring).toMatch(/0px 0px 0px 2px[\s\S]*0px 0px 0px 4px/);
+          expect(worker.ring).toBe("solid 2px 2px none");
           expect(worker.size).toBe(worker.otherSize);
           expect(worker.label).toBe("arbeitet daran");
         } finally {
@@ -338,9 +358,33 @@ describe("Spaces item detail in Chromium", () => {
       await clickLabel(page, "Estimate");
       await page.keyboard.press("ControlOrMeta+a");
       await page.keyboard.type("90");
+      // Counts the item snapshots the panel has applied: a task after their body is read, so after the render.
+      await page.evaluate(() => {
+        const state = window as unknown as { __detailLoads: number };
+        state.__detailLoads = 0;
+        const json = Response.prototype.json;
+        Response.prototype.json = async function (this: Response) {
+          const body = await json.call(this);
+          if (this.url.includes("/items/Item01/detail"))
+            setTimeout(() => {
+              state.__detailLoads += 1;
+            });
+          return body;
+        };
+      });
       await page.keyboard.press("Enter");
       await writesReach(2);
       expect(writes[1]?.body).toEqual({ estimatedDurationMinutes: 90 });
+      // Enter keeps focus in the field, also once the panel shows the reloaded item; once focus leaves, the estimate
+      // reads as a duration.
+      await page.waitForFunction(() => (window as unknown as { __detailLoads: number }).__detailLoads > 0);
+      expect(await page.evaluate(() => window.document.activeElement?.getAttribute("role"))).toBe("spinbutton");
+      await page.getByRole("spinbutton", { name: "Estimate" }).blur();
+      expect(
+        await planningRow(page, "Estimate")
+          .locator(".k2b-number-input__sizer")
+          .evaluate((sizer) => (sizer as HTMLElement).dataset.value),
+      ).toBe("1 h 30 min");
 
       await clickLabel(page, "Priority");
       await page.getByRole("option", { name: "No priority" }).click();

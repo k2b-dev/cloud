@@ -122,6 +122,9 @@ type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
 
 Provide a visible `label` or a specific placeholder. The trigger exposes dialog
 and expanded state, and direct JSX descriptions and errors are connected to it.
+A button's label replaces its content, so the trigger also names its shown
+value, or the placeholder, as its description: a plain picker with
+`aria-label="Due"` reads as **Due** followed by the date.
 
 Calendar navigation has named previous and next controls. Selected days and active duration presets expose pressed state. Time fields receive start and end labels in a range.
 

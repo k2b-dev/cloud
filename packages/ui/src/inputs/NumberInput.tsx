@@ -34,9 +34,16 @@ export type NumberInputProps = Omit<
     /**
      * `plain` edits the value in place for property rows: no box and no steppers
      * or clear button. The field sizes to its text, Enter commits, Escape
-     * restores the current value, and clearing the text clears the value.
+     * restores the current value, and clearing the text clears the value. Focus
+     * stays in the field.
      */
     appearance?: ChoiceAppearance;
+    /**
+     * Text for a set value while a plain field is not being edited, such as
+     * `90` as "1 h 30 min". It also names the value for assistive technology.
+     * The suffix then shows only while editing.
+     */
+    formatValue?: (value: number) => string;
   };
 
 function fractionDigits(value: number): number {
@@ -61,6 +68,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     "description",
     "disableSteppers",
     "error",
+    "formatValue",
     "icon",
     "id",
     "increaseLabel",
@@ -147,19 +155,39 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     if (focused()) return;
     if (parse(raw()) !== value()) setRaw(display(value()));
   });
+  // Enter already committed the current text, so leaving the field does not commit it twice.
+  let committedOnEnter = false;
   const onKeyDown: JSX.EventHandler<HTMLInputElement, KeyboardEvent> = (event) => {
-    if (typeof local.onKeyDown === "function") local.onKeyDown(event);
+    const handler = local.onKeyDown;
+    if (typeof handler === "function") handler(event);
+    else if (Array.isArray(handler)) handler[0](handler[1], event);
     if (!plain() || event.defaultPrevented) return;
+    // Both keys keep focus in the field, so keyboard and screen reader users stay in place.
     if (event.key === "Enter") {
       event.preventDefault();
-      event.currentTarget.blur();
+      commit(parse(raw()), true);
+      committedOnEnter = true;
     } else if (event.key === "Escape" && parse(raw()) !== value()) {
       // Only an edit in progress swallows Escape; otherwise it reaches an enclosing panel.
       event.preventDefault();
       event.stopPropagation();
       setRaw(display(value()));
-      event.currentTarget.blur();
     }
+  };
+  const placeholderText = () => (typeof rest.placeholder === "string" ? rest.placeholder : "");
+  /** What a plain field shows: the formatted value at rest, the text being edited while focused. */
+  const shownText = () => {
+    const current = value();
+    if (!focused() && current != null && local.formatValue) return local.formatValue(current);
+    return raw() || placeholderText();
+  };
+  const valueText = () => {
+    if (rest["aria-valuetext"] !== undefined) return rest["aria-valuetext"];
+    const current = focused() ? parse(raw()) : value();
+    if (current == null) return undefined;
+    if (local.formatValue) return local.formatValue(current);
+    const unit = typeof local.suffix === "string" ? local.suffix : "";
+    return unit ? `${display(current)} ${unit}` : undefined;
   };
   const control = () => (
     <input
@@ -177,6 +205,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       aria-valuemin={Number.isFinite(min()) ? min() : undefined}
       aria-valuemax={Number.isFinite(max()) ? max() : undefined}
       aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
+      aria-valuetext={valueText()}
       // The plain sizer sets the width; the smallest intrinsic size keeps the input from widening it.
       size={plain() ? 1 : rest.size}
       onFocus={() => setFocused(true)}
@@ -196,10 +225,12 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           }
         }
         setRaw(next);
+        committedOnEnter = false;
         emit(parse(next));
       }}
       onBlur={() => {
-        commit(parse(raw()), true);
+        if (!committedOnEnter) commit(parse(raw()), true);
+        committedOnEnter = false;
         setFocused(false);
       }}
     />
@@ -247,12 +278,18 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
             <span class="k2b-input-shell__affix">{local.prefix}</span>
           </Show>
           <Show when={plain()} fallback={control()}>
-            {/* The sizer mirrors the text in a hidden grid cell, so the field is as wide as what it shows. */}
-            <span class="k2b-number-input__sizer" data-value={raw() || (typeof rest.placeholder === "string" ? rest.placeholder : "")}>
+            {/* The sizer shows the text in the input's grid cell, so the field is as wide as what it shows. At rest it is
+                the visible value; while editing the input takes over. */}
+            <span
+              class="k2b-number-input__sizer"
+              data-value={shownText()}
+              data-placeholder={raw() ? undefined : "true"}
+              data-editing={focused() ? "true" : undefined}
+            >
               {control()}
             </span>
           </Show>
-          <Show when={local.suffix && (!plain() || raw())}>
+          <Show when={local.suffix && (!plain() || (raw() && (focused() || !local.formatValue)))}>
             <span class="k2b-input-shell__affix">{local.suffix}</span>
           </Show>
           <Show when={local.clearable && raw() && !rest.disabled && !rest.readOnly && !plain()}>

@@ -63,9 +63,10 @@ its body to represent a compact, actionable empty group. Set `collapsible` for
 secondary content. Closed sections show a compact action row; open sections show
 a heading with a collapse button on the right. Both states share one geometry
 with the other section headings: the icon, title, meta, and chevron keep their
-columns and the row its height when the section opens or closes. Hover and
-focus only color the title and chevron; the row gets no fill and keeps its
-inset. Their content stays mounted when
+columns and the row its height when the section opens or closes. Hover only
+colors the title and chevron, and the row gets no fill. Keyboard focus adds the
+shared focus ring, drawn inside the row where the panel would clip it. Their
+content stays mounted when
 closed, preserving unsaved input and child state. Collapsible sections reserve
 the header action for collapsing.
 

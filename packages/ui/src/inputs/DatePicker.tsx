@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
@@ -195,6 +195,8 @@ function PickerShell<T>(props: {
           aria-expanded={open()}
           aria-controls={`${meta.controlId}-popover`}
           {...fieldControlAria(meta, props.owner)}
+          // A button's name replaces its content, so the shown date reaches assistive technology as the description.
+          aria-describedby={[fieldDescribedBy(meta, props.owner), `${meta.controlId}-value`].filter(Boolean).join(" ")}
           onClick={toggle}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
@@ -204,7 +206,7 @@ function PickerShell<T>(props: {
           }}
         >
           <i class={`${props.icon} k2b-date-trigger__icon`} aria-hidden="true" />
-          <span class="k2b-date-trigger__value">
+          <span id={`${meta.controlId}-value`} class="k2b-date-trigger__value">
             <Show when={props.valueLabel()} fallback={props.owner.placeholder ?? messages().pickDate}>
               {props.valueContent?.() ?? props.valueLabel()}
             </Show>

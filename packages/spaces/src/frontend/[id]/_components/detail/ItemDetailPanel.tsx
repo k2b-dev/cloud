@@ -22,7 +22,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type {
   SpaceColumn,
@@ -233,7 +233,9 @@ export default function ItemDetailPanel(props: Props) {
   };
 
   const isGeneratedOccurrence = () => Boolean(props.recurringContext && !props.recurringContext.isOverride);
-  const canEditItem = () => props.canWrite && !isGeneratedOccurrence();
+  // A memo, so a refreshed item snapshot that keeps the permission does not rebuild the property rows' controls and
+  // take focus from them.
+  const canEditItem = createMemo(() => props.canWrite && !isGeneratedOccurrence());
   const scheduleStart = () => props.recurringContext?.startsAt ?? props.item.startsAt;
   const scheduleEnd = () => props.recurringContext?.endsAt ?? props.item.endsAt;
   const seriesHref = () => {
@@ -332,7 +334,8 @@ export default function ItemDetailPanel(props: Props) {
 
   /**
    * One planning property edited in place. The row shows the new value at once and falls back to the previous
-   * one when the write fails; a second edit waits until the first is saved.
+   * one when the write fails. Edits made while a save runs are not lost: the last one is saved next, so ticking
+   * two tags in a row keeps both. A failed save drops the waiting edit with it.
    */
   const createPropertyEdit = <T,>(current: () => T, patch: (value: T) => Record<string, unknown>) => {
     const [value, setValue] = createSignal<T>(current());
@@ -340,10 +343,14 @@ export default function ItemDetailPanel(props: Props) {
       const next = current();
       setValue(() => next);
     });
+    let saved = false;
     const mutation = mutations.create<SpaceItem, { next: T; previous: T }, { previous: T }>({
       onBefore: (intent) => ({ previous: intent.previous }),
       mutation: (intent) => patchItem(patch(intent.next)),
-      onSuccess: handleItemUpdated,
+      onSuccess: (item) => {
+        saved = true;
+        handleItemUpdated(item);
+      },
       onError: (err, context) => {
         if (context) setValue(() => context.previous);
         prompts.error(err.message);
@@ -352,16 +359,30 @@ export default function ItemDetailPanel(props: Props) {
         if (context) setValue(() => context.previous);
       },
     });
-    let submitting = false;
+    const same = (left: T, right: T) => JSON.stringify(left) === JSON.stringify(right);
+    let saving = false;
+    let waiting: { next: T } | undefined;
     const update = async (next: T) => {
-      const previous = value();
-      if (submitting || mutation.loading() || JSON.stringify(next) === JSON.stringify(previous)) return;
-      submitting = true;
-      setValue(() => next);
+      if (saving) {
+        waiting = { next };
+        setValue(() => next);
+        return;
+      }
+      let intent = { next, previous: value() };
+      if (same(intent.next, intent.previous)) return;
+      saving = true;
       try {
-        await mutation.mutate({ next, previous });
+        for (;;) {
+          saved = false;
+          setValue(() => intent.next);
+          await mutation.mutate(intent);
+          const queued = waiting;
+          waiting = undefined;
+          if (!saved || !queued || same(queued.next, intent.next)) break;
+          intent = { next: queued.next, previous: intent.next };
+        }
       } finally {
-        submitting = false;
+        saving = false;
       }
     };
     return { value, update, loading: mutation.loading };
@@ -760,6 +781,7 @@ export default function ItemDetailPanel(props: Props) {
           min={1}
           max={2_147_483_647}
           allowNegative={false}
+          formatValue={formatEstimatedDuration}
           value={estimateEdit.value}
           onValueCommit={(minutes) => void estimateEdit.update(minutes)}
         />

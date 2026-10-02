@@ -69,6 +69,20 @@ render(
     }),
   document.getElementById("app"),
 );
+
+// Boxed fields in a narrow form: a long placeholder ends in an ellipsis.
+const narrow = document.createElement("div");
+narrow.id = "narrow";
+narrow.style.width = "150px";
+document.body.append(narrow);
+const long = "Select a very long placeholder";
+render(
+  () => [
+    createComponent(Select, { "aria-label": "Long select", placeholder: long, options: priorities, value: null }),
+    createComponent(MultiSelectInput, { "aria-label": "Long tags", placeholder: long, placeholderIcon: "ti ti-plus", options: tags, value: [] }),
+  ],
+  narrow,
+);
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the property row fixture for the browser.");
@@ -126,6 +140,24 @@ const transparent = "rgba(0, 0, 0, 0)";
 const editable = ["Due", "Estimate", "Priority", "Tags"] as const;
 
 describe("@k2b/ui property rows and DetailPanel sections", () => {
+  test("boxed Select and MultiSelectInput placeholders still end in an ellipsis", async () => {
+    const page = await load(390, "light");
+    try {
+      const placeholders = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>("#narrow .k2b-choice-trigger__value[data-placeholder='true']"), (value) => {
+          const style = getComputedStyle(value);
+          return { display: style.display, overflow: style.textOverflow, cut: value.scrollWidth > value.clientWidth };
+        }),
+      );
+      expect(placeholders).toEqual([
+        { display: "block", overflow: "ellipsis", cut: true },
+        { display: "block", overflow: "ellipsis", cut: true },
+      ]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   for (const width of [1440, 390]) {
     for (const theme of ["light", "dark"] as const) {
       test(`${width} px ${theme}: plain controls keep every box while hovered, focused, and open, and the whole row opens them`, async () => {
@@ -140,7 +172,7 @@ describe("@k2b/ui property rows and DetailPanel sections", () => {
               Array.from(list.querySelectorAll(":scope > .k2b-description-list__item > dd"), (dd) => {
                 const first =
                   dd.querySelector(
-                    ".k2b-choice-trigger > :not([hidden]), .k2b-choice-pill, .k2b-choice-trigger__value, .k2b-date-trigger__value, .k2b-number-input__sizer",
+                    ".k2b-choice-trigger > :not([hidden]), .k2b-choice-trigger__placeholder-icon, .k2b-choice-pill, .k2b-choice-trigger__value, .k2b-date-trigger__value, .k2b-number-input__sizer",
                   ) ?? dd;
                 return Math.round(first.getBoundingClientRect().left);
               }),
