@@ -139,6 +139,8 @@ Open **Mailbox tools > Mailbox health > Advanced diagnostics and repairs** and f
 - **Retry work** is shown only for failed provider-read maintenance where no provider effect started.
 - **Cancel work** is shown only while eligible maintenance is queued or has failed.
 
+A move, delete, flag change, or folder operation that could not reach the mail server before it started does not need attention: Mail tries it again several times over a few minutes. If the server stays unreachable, the action fails without changing anything on the server, and you can repeat it later.
+
 Do not repeat a move, delete, flag change, folder operation, or send when Mail reports an ambiguous outcome. If reconciliation cannot prove the remote result, the command remains **needs attention** for manual provider inspection.
 
 ## A provider folder action fails {icon="lifebuoy"}

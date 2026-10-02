@@ -3238,9 +3238,10 @@ suite("mail PostgreSQL foundation", () => {
       SET encrypted_secret = ${encryptedSecret}
       WHERE id = ${connection!.id}::uuid
     `;
+    // The last check: a connection failure during an earlier one would only schedule another check.
     await sql`
       UPDATE mail.outbox_submissions
-      SET state = 'unknown', last_error_code = NULL, last_error_message = NULL
+      SET state = 'unknown', attempt = 4, last_error_code = NULL, last_error_message = NULL
       WHERE id = ${retryOutbox!.id}::uuid
     `;
     await sql`
@@ -3271,7 +3272,7 @@ suite("mail PostgreSQL foundation", () => {
     expect(reconciledUnknown).toEqual({
       outbox_state: "needs_attention",
       command_state: "needs_attention",
-      outbox_attempt: 2,
+      outbox_attempt: 5,
       command_attempt: 1,
       worker_heartbeat_at: null,
     });

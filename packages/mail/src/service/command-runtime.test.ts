@@ -16,8 +16,6 @@ describe("mail mutation failure classification", () => {
 
   test("reconciles transport ambiguity and fails known precondition errors", () => {
     expect(mutationFailureState(Object.assign(new Error("reset"), { code: "ECONNRESET" }))).toBe("ambiguous");
-    expect(mutationFailureState(Object.assign(new Error("Socket timeout"), { code: "ETIMEOUT" }), false)).toBe("ambiguous");
-    expect(mutationFailureState(Object.assign(new Error("Connection not available"), { code: "NoConnection" }), false)).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("database"), { code: "AMBIGUOUS_LOCAL_PERSISTENCE" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("lease"), { code: "COMMAND_JOB_LEASE_LOST" }))).toBe("ambiguous");
     expect(mutationFailureState(Object.assign(new Error("partial state"), { code: "REMOTE_STATE_PARTIAL" }))).toBe("ambiguous");
@@ -42,7 +40,17 @@ describe("mail mutation failure classification", () => {
   });
 
   test("retries connection failures that happen before a provider mutation can start", () => {
-    for (const code of ["ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND"]) {
+    for (const code of [
+      "ECONNREFUSED",
+      "EAI_AGAIN",
+      "ENOTFOUND",
+      "CONNECT_TIMEOUT",
+      "GREETING_TIMEOUT",
+      "ENDPOINT_DNS_TIMEOUT",
+      "ETIMEOUT",
+      "NoConnection",
+      "ECONNRESET",
+    ]) {
       const error = Object.assign(new Error(code), { code });
       expect(mutationFailureState(error, false), code).toBe("queued");
       expect(mutationFailureState(error, true), code).toBe("ambiguous");

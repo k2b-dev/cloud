@@ -291,6 +291,123 @@ suite("mail command runtime provider safety", () => {
       providerState.mockRestore();
     }
   }, 15_000);
+  const inboxMessage = async (key: string, uid: number) => {
+    const rfcMessageId = `<${key}-${suffix}@example.com>`;
+    const [message] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id,
+        mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status
+      ) VALUES (${newShortId()},
+        ${mailboxId}::uuid, ${rfcMessageId}, 'Delete fixture', now(), 1, ${sha256Json({ fixture: key, suffix })}, 'complete'
+      ) RETURNING id
+    `;
+    const [remoteRef] = await sql<{ id: string }[]>`
+      INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+      VALUES (${inboxFolderId}::uuid, ${message!.id}::uuid, 10, ${uid})
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+      VALUES (${remoteRef!.id}::uuid, ${inboxFolderId}::uuid, ${message!.id}::uuid)
+    `;
+    return { id: message!.id, rfcMessageId };
+  };
+
+  /** A provider whose message exists until it is deleted; each queued failure rejects one state lookup first. */
+  const deletingProvider = (rfcMessageId: string, failures: Error[] = []) => {
+    let deleted = false;
+    const state = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => {
+      const failure = failures.shift();
+      if (failure) throw failure;
+      return { exists: !deleted, flags: [], keywords: [], messageId: rfcMessageId, modseq: "1" };
+    });
+    const remove = spyOn(imapSmtpConnector, "delete").mockImplementation(async () => {
+      deleted = true;
+    });
+    return {
+      remove,
+      restore: () => {
+        remove.mockRestore();
+        state.mockRestore();
+      },
+    };
+  };
+
+  const deleteCommand = async (messageId: string, key: string): Promise<string> => {
+    const command = await createActorCommand({
+      context: adminContext,
+      mailboxId,
+      enqueue: false,
+      input: { kind: "delete", messageId, folderId: inboxFolderId, idempotencyKey: `${key}-${suffix}` },
+    });
+    if (!command.ok) throw new Error(JSON.stringify(command.error));
+    return command.data.id;
+  };
+
+  const commandRow = async (commandId: string) => {
+    const [row] = await sql<{ state: string; provider_effect_started_at: Date | null }[]>`
+      SELECT state, provider_effect_started_at FROM mail.commands WHERE id = ${commandId}::uuid
+    `;
+    return row;
+  };
+
+  test("a delete that cannot reach the provider before its effect runs again once the provider is back", async () => {
+    const message = await inboxMessage("unreachable-delete", 424250);
+    const provider = deletingProvider(message.rfcMessageId, [
+      Object.assign(new Error("Connection timed out"), { code: "CONNECT_TIMEOUT" }),
+      Object.assign(new Error("Connection not available"), { code: "NoConnection" }),
+    ]);
+    try {
+      const commandId = await deleteCommand(message.id, "unreachable-delete");
+      // Neither failure reached the provider, so the delete waits for its next run instead of failing or needing attention.
+      for (let failure = 0; failure < 2; failure += 1) {
+        expect(await executeMutationCommand(commandId)).toBe("queued");
+        expect(await commandRow(commandId)).toEqual({ state: "queued", provider_effect_started_at: null });
+      }
+      expect(provider.remove).not.toHaveBeenCalled();
+      expect(await executeMutationCommand(commandId)).toBe("confirmed");
+      expect(provider.remove).toHaveBeenCalledTimes(1);
+    } finally {
+      provider.restore();
+    }
+  }, 15_000);
+
+  test("a delete whose provider stays unreachable fails after its last attempt instead of waiting forever", async () => {
+    const message = await inboxMessage("unreachable-delete-exhausted", 424252);
+    const timeout = () => Object.assign(new Error("Connection timed out"), { code: "CONNECT_TIMEOUT" });
+    const provider = deletingProvider(message.rfcMessageId, [timeout(), timeout(), timeout(), timeout(), timeout()]);
+    try {
+      const commandId = await deleteCommand(message.id, "unreachable-delete-exhausted");
+      const states: (string | null)[] = [];
+      for (let run = 0; run < 5; run += 1) states.push(await executeMutationCommand(commandId));
+      expect(states).toEqual(["queued", "queued", "queued", "queued", "failed"]);
+      const [row] = await sql<{ attempt: number; last_error_code: string | null; provider_effect_started_at: Date | null }[]>`
+        SELECT attempt, last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${commandId}::uuid
+      `;
+      expect(row).toEqual({ attempt: 5, last_error_code: "CONNECT_TIMEOUT", provider_effect_started_at: null });
+      expect(provider.remove).not.toHaveBeenCalled();
+    } finally {
+      provider.restore();
+    }
+  }, 15_000);
+
+  test("an ambiguous command whose provider effect never started runs fresh instead of needing attention", async () => {
+    const message = await inboxMessage("unstarted-ambiguous-delete", 424251);
+    const provider = deletingProvider(message.rfcMessageId);
+    try {
+      const commandId = await deleteCommand(message.id, "unstarted-ambiguous-delete");
+      // As a worker that stopped, or an earlier version, left it after a connection failure before the effect.
+      await sql`
+        UPDATE mail.commands
+        SET state = 'ambiguous', attempt = 1, last_error_code = 'NoConnection'
+        WHERE id = ${commandId}::uuid
+      `;
+      expect(await executeMutationCommand(commandId)).toBe("confirmed");
+      expect(provider.remove).toHaveBeenCalledTimes(1);
+    } finally {
+      provider.restore();
+    }
+  }, 15_000);
+
   test("keeps an ambiguous command ambiguous when the remote resource is busy", async () => {
     const [message] = await sql<{ id: string }[]>`
       INSERT INTO mail.message_contents (short_id,

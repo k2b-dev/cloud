@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import type { Socket } from "bun";
 import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
+import nodemailer from "nodemailer";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import {
   assertProviderKeywordsSupported,
@@ -221,6 +222,67 @@ describe("IMAP connection failures", () => {
 
     expect(tracked).toBeGreaterThan(0);
     expect(untracked).toEqual([]);
+  });
+});
+
+describe("SMTP message transfer", () => {
+  // Mail treats a send that failed with its message still unread as not transmitted at all.
+  const sendRaw = async (port: number) => {
+    const source = Readable.from([Buffer.from("Subject: Fixture\r\n\r\nBody\r\n")]);
+    const transport = nodemailer.createTransport({
+      host: "127.0.0.1",
+      port,
+      secure: false,
+      ignoreTLS: true,
+      connectionTimeout: 2_000,
+      greetingTimeout: 2_000,
+      socketTimeout: 2_000,
+    });
+    try {
+      const error = await transport.sendMail({ raw: source, envelope: { from: "owner@example.test", to: ["customer@example.test"] } }).then(
+        () => null,
+        (failure: unknown) => failure,
+      );
+      return { error, unread: source.readableFlowing === null && !source.readableDidRead };
+    } finally {
+      transport.close();
+    }
+  };
+
+  test("leaves the message unread when the server cannot be reached", async () => {
+    const closed = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data: () => undefined } });
+    const port = closed.port;
+    closed.stop(true);
+    const { error, unread } = await sendRaw(port);
+    expect(error).toMatchObject({ command: "CONN" });
+    expect(unread).toBe(true);
+  });
+
+  test("reads the message once the server takes it, even when the connection drops afterwards", async () => {
+    const server = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open: (socket) => {
+          socket.write("220 fixture ESMTP\r\n");
+        },
+        data: (socket, data) => {
+          const text = data.toString();
+          if (/^(EHLO|HELO)/iu.test(text)) socket.write("250 fixture\r\n");
+          else if (/^(MAIL|RCPT)/iu.test(text)) socket.write("250 OK\r\n");
+          else if (/^DATA/iu.test(text)) socket.write("354 Go ahead\r\n");
+          // The message arrived; the connection drops before the server confirms it.
+          else socket.end();
+        },
+      },
+    });
+    try {
+      const { error, unread } = await sendRaw(server.port);
+      expect(error).toMatchObject({ command: "CONN" });
+      expect(unread).toBe(false);
+    } finally {
+      server.stop(true);
+    }
   });
 });
 

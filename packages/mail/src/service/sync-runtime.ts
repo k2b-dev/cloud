@@ -37,6 +37,7 @@ import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs
 import { hydrateMessageFromSource, recordMissingMessageSources } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { normalizeMailSubject } from "./message-threading";
+import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
@@ -429,6 +430,11 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       remoteResourceId: params.remoteResourceId,
       message: params.message,
     }));
+  // A copy in the sender's Sent folder proves a send whose outcome Mail could not prove. This
+  // locks such a delivery before the message is written, in the order the send itself uses.
+  if (messageContentId) {
+    await reopenUnprovenSendWithSentCopy(params.db, { messageId: messageContentId, sentCopyFolderId: params.folderId });
+  }
   if (!messageContentId) {
     const messageRows = await withShortIdDb(
       params.db,

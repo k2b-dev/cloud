@@ -135,6 +135,8 @@ Zeigt **Status > Reparatur- und Projektionsabdeckung** eine Lücke, kann eine Pe
 - **Arbeit wiederholen** erscheint nur bei fehlgeschlagenen Wartungslesevorgängen beim Anbieter, wenn noch keine Anbieterwirkung begonnen hat.
 - **Arbeit abbrechen** erscheint nur, solange geeignete Wartungsarbeit vorgemerkt ist oder fehlgeschlagen ist.
 
+Ein Verschieben, Löschen, eine Markierungsänderung oder ein Ordnervorgang, der den Mailserver vor dem Start nicht erreichen konnte, benötigt keine Aufmerksamkeit: Mail versucht es über einige Minuten mehrmals erneut. Bleibt der Server unerreichbar, schlägt die Aktion fehl, ohne auf dem Server etwas zu ändern, und du kannst sie später wiederholen.
+
 Wiederhole weder Verschieben, Löschen, eine Markierungsänderung, einen Ordnervorgang noch den Versand, wenn Mail ein unklares Ergebnis meldet. Kann der Abgleich das entfernte Ergebnis nicht nachweisen, bleibt der Befehl im Zustand **Aufmerksamkeit erforderlich**, bis der Anbieter manuell geprüft wurde.
 
 ## Eine Ordneraktion beim Anbieter schlägt fehl {icon="lifebuoy"}

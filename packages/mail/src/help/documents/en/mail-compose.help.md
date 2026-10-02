@@ -124,9 +124,11 @@ After successful delivery, the message becomes normal sent mail. Scheduled deliv
 
 Select the delivery status below an outgoing message to see what happened and the safest available next step.
 
+If the mail server can't be reached before Mail hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes; the delivery status shows the next attempt. If the server stays unreachable, the message shows **Couldn’t send**.
+
 - **Couldn’t send** means Mail knows the message was not sent. Choose **Review and resend** to reopen the preserved draft before trying again. Recipient, size, or delivery-option errors use a more specific review label.
 - **Partially sent** means the receiving server accepted some recipients but not others. Choose **Review remaining recipients** to create an independent draft containing only the addresses that were not accepted. **Review everyone again…** includes the original recipients too and can therefore create duplicate messages.
-- **Delivery status unclear** means the connection ended before Mail could prove the outcome. Choose **Check again** first. Only create a resend draft when you have considered that the original message may already have arrived.
+- **Delivery status unclear** means the connection ended before Mail could prove the outcome. Mail looks for the provider's copy in the Sent folder a few more times and marks the message as sent when that copy shows up, even if it shows up later. Choose **Check again** first. Only create a resend draft when you have considered that the original message may already have arrived.
 - **Sent, but not saved** means delivery succeeded but Mail could not store its copy in the Sent folder. Do not resend the message.
 
 Creating a recovery draft never sends immediately. Review its sender, recipients, content, and attachments in the composer, then use the normal send action.

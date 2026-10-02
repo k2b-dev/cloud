@@ -11,9 +11,11 @@ export type ResolvedEndpoint = MailEndpoint & {
 };
 
 export class EndpointPolicyError extends Error {
-  readonly code = "ENDPOINT_BLOCKED";
-
-  constructor(message: string) {
+  constructor(
+    message: string,
+    // A lookup that timed out says nothing about the host, so it keeps its own code and can be retried.
+    readonly code: "ENDPOINT_BLOCKED" | "ENDPOINT_DNS_TIMEOUT" = "ENDPOINT_BLOCKED",
+  ) {
     super(message);
     this.name = "EndpointPolicyError";
   }
@@ -172,7 +174,7 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
     return await Promise.race([
       promise,
       new Promise<T>((_, reject) => {
-        timeout = setTimeout(() => reject(new EndpointPolicyError("Endpoint DNS lookup timed out")), timeoutMs);
+        timeout = setTimeout(() => reject(new EndpointPolicyError("Endpoint DNS lookup timed out", "ENDPOINT_DNS_TIMEOUT")), timeoutMs);
       }),
     ]);
   } finally {
