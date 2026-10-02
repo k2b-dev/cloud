@@ -248,5 +248,11 @@ export interface MailConnector {
   renameFolder(config: ProviderConnectionInput, path: string, newPath: string): Promise<void>;
   deleteFolder(config: ProviderConnectionInput, path: string): Promise<void>;
   setFolderSubscription(config: ProviderConnectionInput, path: string, subscribed: boolean): Promise<void>;
+  /**
+   * Runs `fn` with a copy of `config` whose IMAP operations share one connection: it opens on the first
+   * operation and closes when `fn` settles. An operation after the connection failed rejects instead of
+   * reconnecting, so a caller sees a broken session exactly where it broke.
+   */
+  withSession<C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T>;
   listenForChanges?(config: ProviderConnectionInput, request: ConnectorChangeListenerRequest): Promise<ConnectorChangeListener>;
 }

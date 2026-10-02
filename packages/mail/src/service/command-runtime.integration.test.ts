@@ -408,6 +408,135 @@ suite("mail command runtime provider safety", () => {
     }
   }, 15_000);
 
+  /**
+   * A provider that moves the message to Archive as UID 31; the fixture binding gains MOVE until `restore`.
+   * Every provider step records the configuration it ran with, so a test sees whether the steps shared the
+   * session `withSession` opened.
+   */
+  const movingProvider = async (rfcMessageId: string, options: { afterBaseline?: () => Promise<void>; afterMove?: Error } = {}) => {
+    await sql`
+      UPDATE mail.provider_bindings SET capabilities = capabilities || '{"move": true}'::jsonb WHERE id = ${bindingId}::uuid
+    `;
+    let moved = false;
+    const configs: unknown[] = [];
+    const session = spyOn(imapSmtpConnector, "withSession");
+    const state = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async (config) => {
+      configs.push(config);
+      if (moved && options.afterMove) throw options.afterMove;
+      return { exists: !moved, flags: [], keywords: [], messageId: rfcMessageId, modseq: "1" };
+    });
+    const find = spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (config) => {
+      configs.push(config);
+      if (!moved) await options.afterBaseline?.();
+      return moved ? [31] : [];
+    });
+    const move = spyOn(imapSmtpConnector, "move").mockImplementation(async (config) => {
+      configs.push(config);
+      moved = true;
+      return { destinationUidValidity: "20", destinationUid: 31 };
+    });
+    return {
+      move,
+      /** The configuration each command run passed to `withSession`. */
+      runs: () => session.mock.calls.map(([runtime]) => runtime),
+      /** The configuration of every provider step, in order. */
+      steps: () => configs,
+      recover: () => {
+        options.afterMove = undefined;
+      },
+      restore: async () => {
+        move.mockRestore();
+        find.mockRestore();
+        state.mockRestore();
+        session.mockRestore();
+        await sql`
+          UPDATE mail.provider_bindings SET capabilities = capabilities || '{"move": false}'::jsonb WHERE id = ${bindingId}::uuid
+        `;
+      },
+    };
+  };
+
+  const moveCommand = async (messageId: string, key: string): Promise<string> => {
+    const command = await createActorCommand({
+      context: adminContext,
+      mailboxId,
+      enqueue: false,
+      input: {
+        kind: "move",
+        messageId,
+        sourceFolderId: inboxFolderId,
+        destinationFolderId: archiveFolderId,
+        idempotencyKey: `${key}-${suffix}`,
+      },
+    });
+    if (!command.ok) throw new Error(JSON.stringify(command.error));
+    return command.data.id;
+  };
+
+  test("a move runs every provider step in one session", async () => {
+    const message = await inboxMessage("one-session-move", 424260);
+    const provider = await movingProvider(message.rfcMessageId);
+    try {
+      const commandId = await moveCommand(message.id, "one-session-move");
+      expect(await executeMutationCommand(commandId)).toBe("confirmed");
+      // Identity check, destination search, second identity check, MOVE, and the source check share the session.
+      expect(provider.steps()).toHaveLength(5);
+      expect(new Set(provider.steps()).size).toBe(1);
+      expect(provider.runs()).toHaveLength(1);
+      expect(provider.steps()[0]).not.toBe(provider.runs()[0]);
+      const [placement] = await sql<{ folder_id: string }[]>`
+        SELECT folder_id FROM mail.message_placements WHERE message_id = ${message.id}::uuid AND deleted_at IS NULL
+      `;
+      expect(placement?.folder_id).toBe(archiveFolderId);
+    } finally {
+      await provider.restore();
+    }
+  }, 15_000);
+
+  test("a move whose access is revoked between the steps of its session stops before the provider changes anything", async () => {
+    const message = await inboxMessage("revoked-mid-session-move", 424261);
+    const provider = await movingProvider(message.rfcMessageId, {
+      afterBaseline: async () => {
+        await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${userIds[0]!}::uuid`;
+      },
+    });
+    try {
+      const commandId = await moveCommand(message.id, "revoked-mid-session-move");
+      expect(await executeMutationCommand(commandId)).toBe("failed");
+      expect(provider.move).not.toHaveBeenCalled();
+      const [row] = await sql<{ last_error_code: string | null; provider_effect_started_at: Date | null }[]>`
+        SELECT last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${commandId}::uuid
+      `;
+      expect(row).toEqual({ last_error_code: "ACCESS_REVOKED", provider_effect_started_at: null });
+    } finally {
+      await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${userIds[0]!}::uuid`;
+      await provider.restore();
+    }
+  }, 15_000);
+
+  test("a move whose session drops after MOVE stays ambiguous until the next run proves it", async () => {
+    const message = await inboxMessage("dropped-session-move", 424262);
+    const provider = await movingProvider(message.rfcMessageId, {
+      afterMove: Object.assign(new Error("Connection not available"), { code: "NoConnection" }),
+    });
+    try {
+      const commandId = await moveCommand(message.id, "dropped-session-move");
+      // The source check after MOVE failed, so the outcome is unknown and the move must not run again.
+      expect(await executeMutationCommand(commandId)).toBe("ambiguous");
+      expect(provider.move).toHaveBeenCalledTimes(1);
+      expect((await commandRow(commandId))?.provider_effect_started_at).not.toBeNull();
+      provider.recover();
+      // Reconciliation checks the source and searches the destination over one new session.
+      expect(await executeMutationCommand(commandId)).toBe("reconciled");
+      expect(provider.move).toHaveBeenCalledTimes(1);
+      expect(provider.runs()).toHaveLength(2);
+      expect(new Set(provider.steps().slice(5)).size).toBe(1);
+      expect(provider.steps()[5]).not.toBe(provider.steps()[0]);
+    } finally {
+      await provider.restore();
+    }
+  }, 15_000);
+
   test("keeps an ambiguous command ambiguous when the remote resource is busy", async () => {
     const [message] = await sql<{ id: string }[]>`
       INSERT INTO mail.message_contents (short_id,

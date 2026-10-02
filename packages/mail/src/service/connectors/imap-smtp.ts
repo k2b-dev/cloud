@@ -178,15 +178,71 @@ export const runImapSession = async <T>(
   }
 };
 
+type SharedImapSession = <T>(fn: (client: ImapFlowWithNamespaces) => Promise<T>, signal?: AbortSignal) => Promise<T>;
+
+/** Configurations created by `withSharedImapSession`, and the connection their operations share. */
+const sharedImapSessions = new WeakMap<ProviderConnectionInput, SharedImapSession>();
+
+/**
+ * Runs `fn` with a copy of `config` whose operations share one connection, created by `createSession` on
+ * first use and disposed when `fn` settles. Each operation is checked like one in `runImapSession`; an
+ * operation after the connection failed rejects with that failure, or with ImapFlow's own rejection for a
+ * closed connection, and never reconnects.
+ */
+export const withSharedImapSession = async <C extends ProviderConnectionInput, T>(
+  config: C,
+  createSession: () => Promise<ImapSession>,
+  fn: (session: C) => Promise<T>,
+): Promise<T> => {
+  // Created and connected on the first operation, so a caller that never reaches the provider opens nothing.
+  const connection: { created?: Promise<ImapSession>; connected?: Promise<ImapSession> } = {};
+  const run: SharedImapSession = async (operation, signal) => {
+    throwIfAborted(signal);
+    connection.created ??= createSession();
+    connection.connected ??= connection.created.then(async (session) => {
+      await session.client.connect();
+      return session;
+    });
+    const { client, failure } = await connection.connected;
+    const earlier = failure();
+    if (earlier) throw earlier;
+    const abort = (): void => client.close();
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      const result = await operation(client as ImapFlowWithNamespaces);
+      throwIfAborted(signal);
+      const later = failure();
+      if (later) throw later;
+      return result;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
+  };
+  const scoped = { ...config };
+  sharedImapSessions.set(scoped, run);
+  try {
+    return await fn(scoped);
+  } finally {
+    sharedImapSessions.delete(scoped);
+    const session = await connection.created?.catch(() => null);
+    if (session) await disposeImapClient(session.client);
+  }
+};
+
 const withImapClient = async <T>(
   config: ProviderConnectionInput,
   fn: (client: ImapFlowWithNamespaces) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> => {
+  const shared = sharedImapSessions.get(config);
+  if (shared) return shared(fn, signal);
   throwIfAborted(signal);
   const endpoint = await resolvePublicEndpoint(config.imap);
   return runImapSession(createImapClient(config, endpoint), fn, signal);
 };
+
+const withSession = <C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T> =>
+  withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn);
 
 const capability = (client: ImapFlow, name: string): boolean => client.capabilities.has(name) || client.enabled.has(name);
 
@@ -1402,5 +1458,6 @@ export const imapSmtpConnector: MailConnector = {
   renameFolder,
   deleteFolder,
   setFolderSubscription,
+  withSession,
   listenForChanges,
 };
