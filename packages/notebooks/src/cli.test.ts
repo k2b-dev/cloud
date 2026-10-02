@@ -35,6 +35,7 @@ const notebookFixture = {
   homepageNoteId: null,
   defaultPresentationMode: "write",
   defaultNoteTitleTemplate: "New Document",
+  noteDeletePermission: "write",
   createdBy: null,
   createdAt: "2026-07-01T00:00:00.000Z",
   updatedAt: "2026-07-10T00:00:00.000Z",
@@ -89,6 +90,32 @@ test("updates only valid default presentation modes", async () => {
     { defaultPresentationMode: "write" },
     { defaultPresentationMode: "readonly" },
   ]);
+});
+
+test("updates only valid note delete permissions", async () => {
+  const { server, writes } = editingServer();
+  for (const permission of ["admin", "write"]) {
+    const result = await runCli(server, ["notebooks", "update", "wiki01", "--note-delete-permission", permission]);
+    expect(result.exitCode).toBe(0);
+  }
+  const invalid = await runCli(server, ["notebooks", "update", "wiki01", "--note-delete-permission", "read"]);
+  expect(invalid.exitCode).toBe(1);
+  expect(writes).toEqual([{ noteDeletePermission: "admin" }, { noteDeletePermission: "write" }]);
+});
+
+test("rm reports a notebook that reserves deleting notes for admins", async () => {
+  const message = "Deleting notes is reserved for admins in this notebook.";
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      if (request.method === "DELETE") return Response.json({ message, code: "NOTE_DELETE_ADMIN_ONLY" }, { status: 403 });
+      return Response.json(new URL(request.url).pathname === "/api/notebooks/wiki01" ? notebookFixture : noteFixture);
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["notebooks", "rm", "note01", "--yes"]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(message);
 });
 
 test("rejects ambiguous edit operations before a write", async () => {

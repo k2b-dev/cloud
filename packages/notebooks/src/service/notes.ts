@@ -1,9 +1,10 @@
-import type { MutationResult, PaginationParams } from "@k2b/cloud/contracts";
+import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/cloud/contracts";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
-import { type DateContext, dates, fromBase64Strict } from "@k2b/stdlib";
+import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
 import { RetentionGapError } from "@k2b/sync";
 import { sql } from "bun";
 import * as Y from "yjs";
+import { mayDeleteNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS } from "../lib/note-delete-permission";
 import {
   applyNoteEdits,
   NoteEditError,
@@ -935,23 +936,30 @@ const checkIsDescendant = async (ancestorId: string, descendantId: string): Prom
 };
 
 /**
- * Delete a note and all its children.
+ * Delete a note and all its children. `permission` is the caller's effective
+ * notebook permission; a notebook can reserve deleting notes for its admins.
  */
-export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
-  const existing = await get({ id: params.id });
-  const result = await sql`
-    DELETE FROM notebooks.notes
-    WHERE id = ${params.id}::uuid
+export const remove = async (params: { id: string; permission: PermissionLevel }): Promise<Result<void>> => {
+  const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteNotes(params.permission, rule));
+  // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
+  const [deleted] = await sql<{ id: string; notebook_id: string; short_id: string }[]>`
+    DELETE FROM notebooks.notes n
+    USING notebooks.notebooks nb
+    WHERE n.id = ${params.id}::uuid
+      AND nb.id = n.notebook_id
+      AND nb.note_delete_permission = ANY(${toPgTextArray(allowedRules)}::text[])
+    RETURNING n.id, n.notebook_id, n.short_id
   `;
 
-  if (result.count === 0) {
-    return { ok: false, error: "Note not found", status: 404 };
+  if (!deleted) {
+    const [exists] = await sql<{ id: string }[]>`SELECT id FROM notebooks.notes WHERE id = ${params.id}::uuid`;
+    return exists
+      ? fail({ code: NOTE_DELETE_ADMIN_ONLY, message: "Deleting notes is reserved for admins in this notebook.", status: 403 })
+      : fail(err.notFound("Note"));
   }
 
-  if (existing) {
-    await noteDeleted({ notebookId: existing.notebookId, noteId: existing.id, shortId: existing.shortId });
-  }
-  return { ok: true, data: undefined };
+  await noteDeleted({ notebookId: deleted.notebook_id, noteId: deleted.id, shortId: deleted.short_id });
+  return ok();
 };
 
 /**

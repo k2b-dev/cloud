@@ -21,6 +21,7 @@ const fakeNotebook: Notebook = {
   homepageNoteId: null,
   homepageNoteShortId: null,
   defaultPresentationMode: "write",
+  noteDeletePermission: "write",
   defaultNoteTitleTemplate: "New Document",
   createdBy: null,
   createdAt: new Date(0).toISOString(),

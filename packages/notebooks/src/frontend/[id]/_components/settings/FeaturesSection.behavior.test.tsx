@@ -11,6 +11,7 @@ const notebook: Notebook = {
   icon: "ti ti-flask",
   homepageNoteId: null,
   defaultPresentationMode: "write",
+  noteDeletePermission: "write",
   defaultNoteTitleTemplate: "{{ date }}",
   createdBy: "user-id",
   createdAt: "2026-08-10T10:00:00.000Z",

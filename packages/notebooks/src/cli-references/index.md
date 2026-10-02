@@ -322,7 +322,7 @@ cld notebooks lock <note> --yes                            # permanent lock
 cld notebooks favorites add <note>
 ```
 
-`mv` moves into the target when it names an existing note, like `mv file dir/`. Otherwise the last target segment becomes the new title below its parent path. Moving between notebooks is not supported; use `cp` and `rm`. `rm` and `lock` ask for confirmation in a terminal and require `--yes` otherwise. A lock is permanent.
+`mv` moves into the target when it names an existing note, like `mv file dir/`. Otherwise the last target segment becomes the new title below its parent path. Moving between notebooks is not supported; use `cp` and `rm`. `rm` and `lock` ask for confirmation in a terminal and require `--yes` otherwise. A lock is permanent. A notebook admin can reserve deleting notes for admins with `cld notebooks update <notebook> --note-delete-permission admin` (`write` restores the default). Then `rm` by anyone else fails with status 403 and the message that deleting is reserved for admins (API code `NOTE_DELETE_ADMIN_ONLY`); editing, including removing content, still works. Do not work around the rule by emptying the note; ask an admin instead.
 
 New notes without content get their H1 from the notebook's default note title template (default `New Document`). Change it with `cld notebooks update <notebook> --default-note-title-template '<liquid>'`. The template receives `notebook.id`, `notebook.name`, `note.id`, `note.depth`, `parent.exists`, `parent.id`, `parent.title`, `parent.path`, `date`, `time`, `datetime`, and `timezone`.
 

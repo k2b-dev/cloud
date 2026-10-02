@@ -26,6 +26,7 @@ describe("notebooks public resource projection", () => {
       homepageNoteId: "22222222-2222-4222-8222-222222222222",
       homepageNoteShortId: "def456",
       defaultPresentationMode: "book",
+      noteDeletePermission: "write",
       defaultNoteTitleTemplate: "Untitled",
       createdBy: null,
       createdAt,

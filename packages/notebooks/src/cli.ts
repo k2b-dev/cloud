@@ -39,6 +39,7 @@ import {
   writeManifest,
 } from "./cli-mirror";
 import { findNamedBlocks, type NamedBlockType, namedBlockBody } from "./lib/named-blocks";
+import { NOTE_DELETE_PERMISSIONS } from "./lib/note-delete-permission";
 import {
   applyNoteEdits,
   type NoteEditBlockSummary,
@@ -58,6 +59,7 @@ type Notebook = {
   homepageNoteId: string | null;
   defaultPresentationMode: string;
   defaultNoteTitleTemplate: string;
+  noteDeletePermission: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -1561,6 +1563,13 @@ function notebooksCommands(locale?: string) {
             name: "default-presentation-mode",
             description: t({ en: "Default view for editors and admins", de: "Standardansicht für Bearbeitende und Admins" }),
           }),
+          noteDeletePermission: flag.enum(NOTE_DELETE_PERMISSIONS, {
+            name: "note-delete-permission",
+            description: t({
+              en: "Who may delete notes: write (everyone who can write) or admin (admins only)",
+              de: "Wer Notizen löschen darf: write (alle mit Schreibrechten) oder admin (nur Admins)",
+            }),
+          }),
         },
         async run({ ctx, args, flags }) {
           const notebook = await resolveNotebookRef(ctx, args.notebook);
@@ -1578,6 +1587,7 @@ function notebooksCommands(locale?: string) {
           }
           if (flags.defaultNoteTitleTemplate !== undefined) body.defaultNoteTitleTemplate = flags.defaultNoteTitleTemplate;
           if (flags.defaultPresentationMode !== undefined) body.defaultPresentationMode = flags.defaultPresentationMode;
+          if (flags.noteDeletePermission !== undefined) body.noteDeletePermission = flags.noteDeletePermission;
           if (Object.keys(body).length === 0) throw new Error(t({ en: "No settings to change.", de: "Keine Einstellungen zu ändern." }));
           const updated = await ctx.readJson<Notebook>(
             await ctx.fetch(api(notebook.id), { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) }),

@@ -2,7 +2,7 @@
 id: notebooks-settings-access
 title: "Einstellungen und Zugriff"
 icon: "ti ti-settings"
-description: "Standardansicht, Details, Berechtigungen und Exporte eines Notizbuchs konfigurieren."
+description: "Standardansicht, Details, Berechtigungen, das Löschen von Notizen und Exporte eines Notizbuchs konfigurieren."
 order: 170
 ---
 
@@ -37,12 +37,18 @@ Unter **Notizbuch – Ansicht und Verhalten** legen Admins die **Standardansicht
 
 Gesperrte Notizen öffnen sich in der Ansicht **Schreibgeschützt** statt zum Bearbeiten. Die Seitendiskussion im Detailbereich bleibt trotz Sperre verfügbar.
 
+## Festlegen, wer Notizen löschen darf {icon="trash"}
+
+Anfangs dürfen alle mit Schreibrechten die Notizen eines Notizbuchs auch löschen. Damit Notizen nicht versehentlich verschwinden, öffnet ein Admin **Freigabe – Zugriff** und stellt **Wer darf Notizen löschen** auf **Nur Admins**. Die Änderung wird sofort gespeichert.
+
+Die Regel betrifft nur das Löschen ganzer Notizen. Personen und Agenten mit Schreibrechten bearbeiten Notizen weiterhin wie bisher und können auch Text entfernen; der Versionsverlauf bewahrt frühere Fassungen. Für sie bleibt **Löschen** im Notizmenü sichtbar, ist aber deaktiviert und nennt den Grund: Löschen ist in diesem Notizbuch Admins vorbehalten. Die API und `cld notebooks rm` lehnen das Löschen mit demselben Grund ab.
+
 ## Bereiche der Einstellungen {icon="settings"}
 
 :::reference
 - **Notizbuch – Allgemein:** Name, Symbol, Beschreibung, Startseite und Liquid-Vorlage für die erste Überschrift neuer leerer Notizen. Änderungen werden gemeinsam gespeichert oder verworfen.
 - **Notizbuch – Ansicht und Verhalten:** Admins wählen die gemeinsame Standardansicht. Das Seitenleistenlayout und deine Einstellung für die Tab-Taste werden in diesem Browser gespeichert und gelten sofort.
-- **Freigabe – Zugriff:** Admins verwalten Berechtigungen; Änderungen werden sofort gespeichert.
+- **Freigabe – Zugriff:** Admins verwalten Berechtigungen und legen fest, wer Notizen löschen darf; Änderungen werden sofort gespeichert.
 - **Freigabe – API-Schlüssel:** Admins verwalten an das Notizbuch gebundene Zugangsdaten. Neue Tokens werden nur einmal angezeigt.
 - **Daten – Export und Snapshots:** Admins erstellen portable ZIP-Exporte, konfigurieren S3-Snapshots und prüfen die letzten Läufe.
 - **Verwaltung – Endgültig löschen:** Dauerhafte Aktionen wie das Löschen des Notizbuchs und seiner Notizen.

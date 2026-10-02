@@ -39,6 +39,7 @@ const notebook = {
   homepageNoteId: null,
   homepageNoteShortId: null,
   defaultPresentationMode: "write" as PresentationMode,
+  noteDeletePermission: "write" as const,
   defaultNoteTitleTemplate: "Untitled",
   createdBy: user.id,
   createdAt: timestamp,

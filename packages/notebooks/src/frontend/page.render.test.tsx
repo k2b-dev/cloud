@@ -36,6 +36,7 @@ const notebook = (shortId: string, index: number) => ({
   homepageNoteId: null,
   homepageNoteShortId: null,
   defaultPresentationMode: "write" as const,
+  noteDeletePermission: "write" as const,
   defaultNoteTitleTemplate: "Untitled",
   createdBy: user.id,
   createdAt: timestamp,

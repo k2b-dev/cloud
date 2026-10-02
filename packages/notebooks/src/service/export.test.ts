@@ -13,6 +13,7 @@ const notebook: Notebook = {
   homepageNoteId: null,
   homepageNoteShortId: null,
   defaultPresentationMode: "book",
+  noteDeletePermission: "write",
   defaultNoteTitleTemplate: "New Document",
   createdBy: "22222222-2222-4222-8222-222222222222",
   createdAt: "2026-05-01T00:00:00.000Z",

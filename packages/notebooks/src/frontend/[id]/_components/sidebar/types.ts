@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { NavigatorQuery } from "../../../../lib/navigator-url";
+import type { NoteDeletePermission } from "../../../../lib/note-delete-permission";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NotebookSettings } from "../settings/NotebookSettingsStore";
 
@@ -12,6 +13,7 @@ export type Notebook = {
   homepageNoteId: string | null;
   defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
+  noteDeletePermission: NoteDeletePermission;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

@@ -14,6 +14,7 @@ export const toPublicNotebook = (notebook: Notebook) => ({
   homepageNoteId: notebook.homepageNoteShortId,
   defaultPresentationMode: notebook.defaultPresentationMode,
   defaultNoteTitleTemplate: notebook.defaultNoteTitleTemplate,
+  noteDeletePermission: notebook.noteDeletePermission,
   createdBy: notebook.createdBy,
   createdAt: notebook.createdAt,
   updatedAt: notebook.updatedAt,

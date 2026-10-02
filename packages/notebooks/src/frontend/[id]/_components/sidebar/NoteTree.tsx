@@ -24,6 +24,8 @@ type Props = {
   notebookName: string;
   selectedNoteId: string | null;
   canWrite?: boolean;
+  /** Whether this person may delete notes under the notebook's deletion rule. */
+  canDeleteNotes?: boolean;
   showSearch?: boolean;
   showHeaderActions?: boolean;
   favoriteNoteIds?: string[];
@@ -91,7 +93,10 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
       const res = await apiClient[":id"].notes[":noteId"].$delete({
         param: { id: notebookId, noteId },
       });
-      if (!res.ok) throw new Error(t().failedDeleteNote);
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message ?? t().failedDeleteNote);
+      }
     },
     onSuccess: () => {
       navigateTo(`/app/notebooks/${notebookId}`);
@@ -262,6 +267,7 @@ export const noteActionItems = (
   node: NoteTreeNode,
   actions: ReturnType<typeof useNoteActions>,
   t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
+  canDelete: boolean,
 ): DropdownItem[] => [
   {
     icon: "ti ti-file-plus",
@@ -305,12 +311,9 @@ export const noteActionItems = (
   {
     sectionLabel: "",
     items: [
-      {
-        icon: "ti ti-trash",
-        label: t.delete,
-        variant: "danger",
-        action: () => actions.handleDelete(node),
-      },
+      canDelete
+        ? { icon: "ti ti-trash", label: t.delete, variant: "danger", action: () => actions.handleDelete(node) }
+        : { icon: "ti ti-trash", label: t.delete, description: t.deleteAdminOnly, disabled: true },
     ],
   },
 ];
@@ -320,6 +323,7 @@ function NoteTreeItems(props: {
   notebookId: string;
   presentationMode?: PresentationMode;
   canWrite: boolean;
+  canDeleteNotes: boolean;
   actions: ReturnType<typeof useNoteActions>;
   favoriteNoteIds?: () => Set<string>;
   onToggleFavorite?: (node: NoteTreeNode, event: MouseEvent) => void;
@@ -365,7 +369,11 @@ function NoteTreeItems(props: {
                   </Show>
                   <Show when={props.canWrite}>
                     <AppWorkspace.SidebarItemActions visibility="hover">
-                      <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(node, props.actions, t())}>
+                      <Dropdown.Root
+                        position="bottom-right"
+                        width="12rem"
+                        items={noteActionItems(node, props.actions, t(), props.canDeleteNotes)}
+                      >
                         <Dropdown.Trigger
                           iconOnly
                           label={t().noteActions({ title: label() })}
@@ -386,6 +394,7 @@ function NoteTreeItems(props: {
               notebookId={props.notebookId}
               presentationMode={props.presentationMode}
               canWrite={props.canWrite}
+              canDeleteNotes={props.canDeleteNotes}
               actions={props.actions}
               favoriteNoteIds={props.favoriteNoteIds}
               onToggleFavorite={props.onToggleFavorite}
@@ -467,6 +476,7 @@ export default function NoteTree(props: Props) {
               notebookId={props.notebookId}
               presentationMode={props.presentationMode}
               canWrite={props.canWrite ?? false}
+              canDeleteNotes={props.canDeleteNotes ?? false}
               actions={actions}
               favoriteNoteIds={favoriteNoteIds}
               onToggleFavorite={toggleFavorite}
