@@ -35,11 +35,11 @@ afterAll(async () => {
 
 const text = (label: string) => createComponent(TextInput, { label, value: "Autumn market" });
 const locked = (label: string) => createComponent(NumberInput, { label, value: 3, disabled: true, onValueChange: () => {} });
-const section = (title: string, children: () => JSX.Element, hideable?: { defaultOpen: boolean }) =>
+const section = (title: string, children: () => JSX.Element, hideable?: { defaultOpen: boolean; subtitle?: false }) =>
   hideable
     ? createComponent(PanelDialog.Section, {
         title,
-        subtitle: "Shown to every member.",
+        subtitle: hideable.subtitle === false ? undefined : "Shown to every member.",
         icon: "ti ti-adjustments",
         hideable: true,
         defaultOpen: hideable.defaultOpen,
@@ -87,6 +87,21 @@ const markup = () =>
     dialog("lone-form", () => section("Name", () => text("Title"))),
     dialog("wrapped", () => [text("Search"), section("Message", () => text("Id")), section("Source", () => text("Size"))]),
     dialog("floating", () => [section("Trigger", () => text("Event")), section("Action", () => text("Target"))], "floating"),
+    // Titles without a subtitle are one line, shorter than the eye-off button.
+    dialog("bare", () => [
+      section("Closed", () => text("Hidden"), { defaultOpen: false, subtitle: false }),
+      section("Open", () => text("Shown"), { defaultOpen: true, subtitle: false }),
+    ]),
+    dialog(
+      "floating-toggle",
+      () => [
+        section("Closed", () => text("Hidden"), { defaultOpen: false }),
+        section("Open", () => text("Shown"), { defaultOpen: true }),
+        section("Closed bare", () => text("Hidden"), { defaultOpen: false, subtitle: false }),
+        section("Open bare", () => text("Shown"), { defaultOpen: true, subtitle: false }),
+      ],
+      "floating",
+    ),
     dialog("columns", () => [
       section("Client", () => text("Name")),
       section("Access", () => text("Who")),
@@ -204,6 +219,9 @@ const measure = () => {
     sectionGap: box(sections[1]!).top - box(sections[0]!).bottom,
     closed: sectionTitle(grouped.querySelector('.k2b-panel-dialog__section[data-open="false"]')!),
     opened: sectionTitle(grouped.querySelector('.k2b-panel-dialog__section[data-open="true"]')!),
+    toggles: ["bare", "floating-toggle"].map((id) =>
+      Array.from(scope(id).querySelectorAll(".k2b-panel-dialog__section")).map((element) => sectionTitle(element)),
+    ),
     lone: lone("lone"),
     loneForm: lone("lone-form"),
     wrapped: Array.from(scope("wrapped").querySelectorAll(".k2b-panel-dialog__section-body")).map(
@@ -238,6 +256,7 @@ const measure = () => {
 };
 
 const transparent = "rgba(0, 0, 0, 0)";
+type Toggle = { left: number; top: number; eyeCenter: number[] };
 
 describe("@k2b/ui PanelDialog sections are titled groups without frames", () => {
   for (const [name, viewport] of Object.entries(viewports)) {
@@ -266,8 +285,13 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
         expect(new Set(result.groupedWells)).toEqual(new Set([result.surface]));
         expect(result.looseWell).toBe(result.muted);
 
-        // Opening a hideable section keeps its title and eye button in place.
+        // Opening a hideable section keeps its title and eye button in place,
+        // with or without a subtitle and in floating cards too.
         expect(result.opened).toEqual(result.closed);
+        const [bare, floating] = result.toggles as [Toggle[], Toggle[]];
+        expect(bare[1]).toEqual(bare[0]!);
+        expect(floating[1]).toEqual(floating[0]!);
+        expect(floating[3]).toEqual(floating[2]!);
 
         // A lone section drops its group, also inside a form that fills the body.
         for (const lone of [result.lone, result.loneForm]) {
