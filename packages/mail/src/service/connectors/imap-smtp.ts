@@ -183,36 +183,57 @@ type SharedImapSession = <T>(fn: (client: ImapFlowWithNamespaces) => Promise<T>,
 /** Configurations created by `withSharedImapSession`, and the connection their operations share. */
 const sharedImapSessions = new WeakMap<ProviderConnectionInput, SharedImapSession>();
 
+/** A connection of a shared session; `connected` settles with the connect failure instead of rejecting. */
+type SharedImapConnection = { session: ImapSession; connected: Promise<Error | null> };
+
 /**
  * Runs `fn` with a copy of `config` whose operations share one connection, created by `createSession` on
- * first use and disposed when `fn` settles. Each operation is checked like one in `runImapSession`; an
- * operation after the connection failed rejects with that failure, or with ImapFlow's own rejection for a
- * closed connection, and never reconnects.
+ * first use and disposed when `fn` settles. Each operation is checked like one in `runImapSession`. An
+ * operation that finds the connection closed or failed, for example by the idle socket timeout while the
+ * caller worked between two operations, opens a new one, exactly as a step on its own connection would.
  */
 export const withSharedImapSession = async <C extends ProviderConnectionInput, T>(
   config: C,
   createSession: () => Promise<ImapSession>,
   fn: (session: C) => Promise<T>,
 ): Promise<T> => {
-  // Created and connected on the first operation, so a caller that never reaches the provider opens nothing.
-  const connection: { created?: Promise<ImapSession>; connected?: Promise<ImapSession> } = {};
+  const opened: Promise<SharedImapConnection>[] = [];
+  let current: Promise<SharedImapConnection> | undefined;
+  const open = async (): Promise<SharedImapConnection> => {
+    const session = await createSession();
+    return {
+      session,
+      connected: session.client.connect().then(
+        () => null,
+        (error: Error) => error,
+      ),
+    };
+  };
+  const usable = async (connection: Promise<SharedImapConnection>): Promise<boolean> => {
+    const settled = await connection.catch(() => null);
+    if (!settled || (await settled.connected)) return false;
+    return settled.session.client.usable && !settled.session.failure();
+  };
   const run: SharedImapSession = async (operation, signal) => {
     throwIfAborted(signal);
-    connection.created ??= createSession();
-    connection.connected ??= connection.created.then(async (session) => {
-      await session.client.connect();
-      return session;
-    });
-    const { client, failure } = await connection.connected;
-    const earlier = failure();
-    if (earlier) throw earlier;
+    // Opened on the first operation, so a caller that never reaches the provider opens nothing.
+    if (!current || !(await usable(current))) {
+      current = open();
+      opened.push(current);
+    }
+    const { session, connected } = await current;
+    const client = session.client as ImapFlowWithNamespaces;
     const abort = (): void => client.close();
     signal?.addEventListener("abort", abort, { once: true });
     try {
-      const result = await operation(client as ImapFlowWithNamespaces);
       throwIfAborted(signal);
-      const later = failure();
-      if (later) throw later;
+      const connectFailure = await connected;
+      if (connectFailure) throw connectFailure;
+      throwIfAborted(signal);
+      const result = await operation(client);
+      throwIfAborted(signal);
+      const failure = session.failure();
+      if (failure) throw failure;
       return result;
     } finally {
       signal?.removeEventListener("abort", abort);
@@ -224,8 +245,12 @@ export const withSharedImapSession = async <C extends ProviderConnectionInput, T
     return await fn(scoped);
   } finally {
     sharedImapSessions.delete(scoped);
-    const session = await connection.created?.catch(() => null);
-    if (session) await disposeImapClient(session.client);
+    for (const connection of opened) {
+      const settled = await connection.catch(() => null);
+      if (!settled) continue;
+      await settled.connected;
+      await disposeImapClient(settled.session.client);
+    }
   }
 };
 

@@ -250,8 +250,8 @@ export interface MailConnector {
   setFolderSubscription(config: ProviderConnectionInput, path: string, subscribed: boolean): Promise<void>;
   /**
    * Runs `fn` with a copy of `config` whose IMAP operations share one connection: it opens on the first
-   * operation and closes when `fn` settles. An operation after the connection failed rejects instead of
-   * reconnecting, so a caller sees a broken session exactly where it broke.
+   * operation and closes when `fn` settles. An operation that finds the connection closed or failed opens
+   * a new one, so each operation behaves as it would on its own connection, only without a login per step.
    */
   withSession<C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T>;
   listenForChanges?(config: ProviderConnectionInput, request: ConnectorChangeListenerRequest): Promise<ConnectorChangeListener>;

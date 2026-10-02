@@ -13,6 +13,7 @@ import {
   disposeImapClient,
   downloadSelectedSources,
   fetchRemoteMessageState,
+  type ImapSession,
   imapSmtpConnector,
   listenOnImapSession,
   mapFetchedEnvelope,
@@ -235,8 +236,8 @@ describe("Shared IMAP sessions", () => {
 
   // INBOX (UIDVALIDITY 10) holds UID 7, Archive (UIDVALIDITY 20) starts empty. Answers what a message
   // action sends: LIST, SELECT and EXAMINE, UID FETCH, UID SEARCH, and UID MOVE with COPYUID.
-  // `dropAfter` ends the connection right after that command was answered.
-  const mailServer = (options: { dropAfter?: string } = {}) => {
+  // `dropAfter` ends the connection right after that command was answered; `onLogin` runs before LOGIN is answered.
+  const mailServer = (options: { dropAfter?: string; onLogin?: () => void } = {}) => {
     const stats = { connections: 0, logins: 0, logouts: 0, commands: [] as string[] };
     const server = Bun.listen<{ selected: "INBOX" | "Archive" | null }>({
       hostname: "127.0.0.1",
@@ -257,6 +258,7 @@ describe("Shared IMAP sessions", () => {
             stats.commands.push(command);
             if (command === "LOGIN") {
               stats.logins += 1;
+              options.onLogin?.();
               socket.write(`${tag} OK [CAPABILITY ${CAPABILITIES}] logged in\r\n`);
             } else if (command === "LIST") {
               // An empty name asks for the hierarchy delimiter only.
@@ -308,19 +310,24 @@ describe("Shared IMAP sessions", () => {
     smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" },
     secret: { kind: "password", password: "fixture" },
   };
-  const sessionFor = (port: number) => async () =>
-    trackImapSession(
-      new ImapFlow({
-        host: "127.0.0.1",
-        port,
-        secure: false,
-        doSTARTTLS: false,
-        auth: { user: "fixture", pass: "fixture" },
-        logger: false,
-        disableAutoIdle: true,
-        socketTimeout: 1_000,
-      }),
-    );
+  const sessionFor =
+    (port: number, socketTimeout = 1_000, created: ImapSession[] = []) =>
+    async () => {
+      const session = trackImapSession(
+        new ImapFlow({
+          host: "127.0.0.1",
+          port,
+          secure: false,
+          doSTARTTLS: false,
+          auth: { user: "fixture", pass: "fixture" },
+          logger: false,
+          disableAutoIdle: true,
+          socketTimeout,
+        }),
+      );
+      created.push(session);
+      return session;
+    };
   const inboxMessage = { folderPath: "INBOX", uidValidity: "10", uid: 7 };
 
   test("run the steps of a move over one connection and close it afterwards", async () => {
@@ -350,21 +357,57 @@ describe("Shared IMAP sessions", () => {
     }
   });
 
-  test("reject the steps after the connection dropped instead of reconnecting", async () => {
+  test("open a new connection for a step after the provider closed the connection", async () => {
     const { server, stats } = mailServer({ dropAfter: "UID MOVE" });
+    const created: ImapSession[] = [];
     try {
-      let moved = false;
-      const run = withSharedImapSession(config, sessionFor(server.port), async (session) => {
+      const sourceExists = await withSharedImapSession(config, sessionFor(server.port, 1_000, created), async (session) => {
         await imapSmtpConnector.getMessageState(session, inboxMessage);
         await imapSmtpConnector.move(session, inboxMessage, "Archive");
-        moved = true;
-        // The source check after a MOVE whose connection ended cannot prove anything, so it fails as a transport error.
-        await imapSmtpConnector.getMessageState(session, inboxMessage);
+        // The runtime checks its lease between the steps; by then the close has arrived.
+        const client = created[0]!.client;
+        if (client.usable) await new Promise((resolve) => client.once("close", resolve));
+        // The source check runs as it would on its own connection and proves the move in the same run.
+        return (await imapSmtpConnector.getMessageState(session, inboxMessage)).exists;
       });
-      await expect(run).rejects.toMatchObject({ code: "NoConnection" });
-      expect(moved).toBe(true);
-      expect(stats.connections).toBe(1);
+      expect(sourceExists).toBe(false);
+      expect({ connections: stats.connections, logins: stats.logins }).toEqual({ connections: 2, logins: 2 });
       expect(stats.commands.filter((command) => command === "UID MOVE")).toHaveLength(1);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("open a new connection when the idle connection timed out between two steps", async () => {
+    const { server, stats } = mailServer();
+    const created: ImapSession[] = [];
+    try {
+      const sourceExists = await withSharedImapSession(config, sessionFor(server.port, 200, created), async (session) => {
+        await imapSmtpConnector.getMessageState(session, inboxMessage);
+        // The caller works elsewhere, such as on database row locks, until the socket timeout ends the connection.
+        const client = created[0]!.client;
+        await new Promise((resolve) => client.once("error", resolve));
+        return (await imapSmtpConnector.getMessageState(session, inboxMessage)).exists;
+      });
+      expect(sourceExists).toBe(true);
+      expect(created[0]!.failure()).toMatchObject({ code: "ETIMEOUT" });
+      expect(stats.connections).toBe(2);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("run no operation whose signal aborted while the shared connection was connecting", async () => {
+    const controller = new AbortController();
+    const { server, stats } = mailServer({ onLogin: () => controller.abort() });
+    try {
+      const run = withSharedImapSession(config, sessionFor(server.port), (session) =>
+        imapSmtpConnector.findMessageById(session, "Archive", MESSAGE_ID, controller.signal),
+      );
+      await expect(run).rejects.toMatchObject({ code: "ClosedAfterConnectText" });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stats.commands).not.toContain("EXAMINE");
+      expect(stats.commands).not.toContain("UID SEARCH");
     } finally {
       server.stop(true);
     }
@@ -386,11 +429,14 @@ describe("Shared IMAP sessions", () => {
 
   test("leave a caller's own configuration on separate connections", async () => {
     const { server, stats } = mailServer();
+    // A loopback provider address passes the shared fixture session but not the endpoint policy of a connection of its own.
+    const own: ProviderConnectionInput = { ...config, imap: { host: "127.0.0.1", port: server.port, tlsMode: "implicit" } };
     try {
-      await withSharedImapSession(config, sessionFor(server.port), async (session) => {
-        expect(session).not.toBe(config);
-        expect(session).toEqual(config);
+      await withSharedImapSession(own, sessionFor(server.port), async (session) => {
+        expect(session).not.toBe(own);
+        expect(session).toEqual(own);
         await imapSmtpConnector.getMessageState(session, inboxMessage);
+        await expect(imapSmtpConnector.getMessageState(own, inboxMessage)).rejects.toThrow("non-public address");
       });
       expect(stats.connections).toBe(1);
     } finally {
