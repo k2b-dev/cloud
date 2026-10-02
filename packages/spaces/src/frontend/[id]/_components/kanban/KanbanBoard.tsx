@@ -21,6 +21,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { descriptionPreview } from "@/presentation/description-preview";
 import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
@@ -1012,14 +1013,17 @@ export default function KanbanBoard(props: Props) {
                   meta: { bucketKey: bucket.key },
                 }));
               };
-              /** Accent line on the edge where a dragged column lands; outside the flow, so nothing moves, and never clipped by the board. */
+              /** Accent line where a dragged column lands: centred in the gap before this column, or on the outer edge of the
+               * first and last column, since the board clips anything beyond them. Outside the flow, so nothing moves. */
               const ColumnDropLine = () => (
                 <>
                   <Show when={columnIndicatorIndex() === bucketIndex()}>
                     <div
                       aria-hidden="true"
                       data-spaces-kanban-column-drop-indicator
-                      class="pointer-events-none absolute inset-y-1 left-0 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)]"
+                      class={`pointer-events-none absolute inset-y-1 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)] ${
+                        bucketIndex() === 0 ? "left-0" : "left-[calc(var(--ui-space-shell)/-2)] -translate-x-1/2"
+                      }`}
                     />
                   </Show>
                   <Show when={bucketIndex() === buckets().length - 1 && columnIndicatorIndex() === buckets().length}>
@@ -1312,8 +1316,8 @@ export default function KanbanBoard(props: Props) {
                                         </p>
                                       </div>
 
-                                      <Show when={item.description}>
-                                        <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{item.description}</p>
+                                      <Show when={descriptionPreview(item.description)}>
+                                        {(preview) => <p class="mt-1.5 line-clamp-3 break-words text-[11px] text-dimmed">{preview()}</p>}
                                       </Show>
 
                                       <div class={`mt-2 flex flex-wrap items-center gap-1.5 ${props.canWrite ? "min-h-6 pr-6" : ""}`}>

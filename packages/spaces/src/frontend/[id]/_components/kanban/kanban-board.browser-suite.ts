@@ -710,6 +710,100 @@ describe("Spaces Kanban board in Chromium", () => {
     }
   }, 30_000);
 
+  test("a dragged column's drop line sits centred in the gap, also next to folded and automatic columns, and moves nothing", async () => {
+    // Wide enough for the whole board: To do | Blocked (folded) | In progress (folded) | Review | Overdue | Done.
+    const page = await open(
+      { width: 1440, height: 900, touch: false },
+      { locale: "en", buckets: withAutomaticColumns(), folded: ["virtual:blocked", "column:Col002"] },
+    );
+    try {
+      const boxes = () =>
+        page.locator('[role="region"] section[data-spaces-kanban-column]').evaluateAll((sections) =>
+          sections.map((section) => {
+            const rect = section.getBoundingClientRect();
+            return { left: rect.left, right: rect.right, top: rect.top, height: rect.height };
+          }),
+        );
+      columnOrders.splice(0);
+      const before = await boxes();
+      expect(before.length).toBe(6);
+      // Between two columns the line's centre is the gap's midpoint; at the board's ends it lies on the outer column edge.
+      const expected = (index: number) =>
+        index === 0
+          ? before[0]!.left + 1
+          : index === before.length
+            ? before.at(-1)!.right - 1
+            : (before[index - 1]!.right + before[index]!.left) / 2;
+      const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      const misplaced: unknown[] = [];
+      const shifted: unknown[] = [];
+      // Each drag skips the two places beside the column itself, so two drags reach every place.
+      for (const [key, indices] of [
+        ["column:Col004", [0, 1, 2, 3, 4]],
+        ["column:Col001", [2, 3, 4, 5, 6]],
+      ] as const) {
+        const handle = (await page.locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-column-handle]`).boundingBox())!;
+        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+        await page.mouse.down();
+        for (const index of indices) {
+          const x = index < before.length ? before[index]!.left + 6 : before.at(-1)!.right - 6;
+          await page.mouse.move(x, before[0]!.top + 80, { steps: 10 });
+          await frames();
+          const lines = await page
+            .locator("[data-spaces-kanban-column-drop-indicator]")
+            .evaluateAll((elements) =>
+              elements.map((element) => element.getBoundingClientRect()).map((rect) => rect.left + rect.width / 2),
+            );
+          if (lines.length !== 1 || Math.abs(lines[0]! - expected(index)) > 1)
+            misplaced.push({ key, index, lines, expected: expected(index) });
+          if (JSON.stringify(await boxes()) !== JSON.stringify(before)) shifted.push({ key, index });
+        }
+        // Released over its own place, the column stays and the order is not saved.
+        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 10 });
+        await frames();
+        await page.mouse.up();
+        await frames();
+      }
+      expect({ misplaced, shifted }).toEqual({ misplaced: [], shifted: [] });
+      expect(columnOrders).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a card previews a Markdown description as plain text and still clamps it to three lines", async () => {
+    const raffle = item("Item11", "Col001", "Plan the raffle", {
+      description: `**Goal:** sell every ticket before noon
+
+## Prizes
+- [ ] Ask the \`bike shop\` for a voucher
+- See [the list](https://example.com/prizes) and _confirm_ the hamper
+
+${"Keep the stand calm and friendly. ".repeat(8)}`,
+    });
+    const buckets = unfiltered().map((entry) =>
+      entry.key === "column:Col001" ? { ...entry, items: [raffle, ...entry.items], total: entry.total + 1 } : entry,
+    );
+    const visible =
+      "Goal: sell every ticket before noon Prizes Ask the bike shop for a voucher See the list and confirm the hamper Keep the stand";
+    for (const javaScript of [false, true]) {
+      const page = await open(desktop, { locale: "en", buckets }, { javaScript });
+      try {
+        const preview = await page.locator('[data-spaces-kanban-card][data-item-id="Item11"] p.line-clamp-3').evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            text: element.textContent,
+            lines: Math.round(element.getBoundingClientRect().height / Number.parseFloat(style.lineHeight)),
+            clipped: element.scrollHeight > element.clientHeight,
+          };
+        });
+        expect({ ...preview, text: preview.text?.slice(0, visible.length) }).toEqual({ text: visible, lines: 3, clipped: true });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
   test("keyboard: a column header menu moves a column, announces it, and keeps focus", async () => {
     const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
     try {
