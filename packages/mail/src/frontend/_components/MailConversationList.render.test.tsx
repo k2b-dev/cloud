@@ -34,7 +34,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       dateConfig: { locale: "en", timeZone: "UTC" },
       canWrite: true,
       canAdmin: false,
-      junkFolderIds: [],
+      viewFolderId: null,
       folders: [],
       localTags: [],
       savedViews: [],

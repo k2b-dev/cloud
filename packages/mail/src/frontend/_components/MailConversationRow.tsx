@@ -1,7 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Dropdown, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
-import { getMailAction, type MailActionId, spamActionForFolder } from "./mail-actions";
+import { getMailAction, type MailActionId } from "./mail-actions";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
@@ -20,7 +20,7 @@ type MailConversationRowState = {
   selectedConversationIds: ReadonlySet<string>;
   selectionMode: boolean;
   canWrite: boolean;
-  junkFolderIds: string[];
+  spamAction: "junk" | "not_spam";
   dateConfig: DateContext;
 };
 
@@ -135,7 +135,7 @@ export default function MailConversationRow(props: {
         class="mail-list-row focus-ui"
         // The open card already names sender and subject; a native tooltip would cover the row.
         title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
-        draggable={props.state.canWrite && Boolean(props.item.conversationId && props.item.sourceFolderId)}
+        draggable={props.state.canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
         onClick={(event) => {
           activation = event.detail === 0 ? "keyboard" : "pointer";
           if (event.defaultPrevented || event.button !== 0 || event.altKey) return;
@@ -151,15 +151,10 @@ export default function MailConversationRow(props: {
         }}
         onDragStart={(event) => {
           const transfer = event.dataTransfer;
-          if (!props.item.conversationId || !props.item.sourceFolderId || !transfer) return event.preventDefault();
+          if (!props.item.conversationId || props.item.activeFolderIds.length === 0 || !transfer) return event.preventDefault();
           transfer.effectAllowed = "move";
-          transfer.setData(
-            "application/x-cloud-mail-conversation",
-            JSON.stringify({
-              conversationId: props.item.conversationId,
-              sourceFolderId: props.item.sourceFolderId,
-            }),
-          );
+          // The drop resolves this row's source folders the same way the Move action does.
+          transfer.setData("application/x-cloud-mail-conversation", JSON.stringify({ itemId: props.item.id }));
         }}
       >
         <span class="sr-only">
@@ -306,13 +301,11 @@ export default function MailConversationRow(props: {
                 icon: "ti ti-tags",
                 action: () => props.actions.manageTags(props.item),
               },
-              ...(["archive", "move", spamActionForFolder(props.item.sourceFolderId, props.state.junkFolderIds), "trash"] as const).map(
-                (actionId) => ({
-                  label: actionLabel(actionId),
-                  icon: getMailAction(actionId).icon,
-                  action: () => props.actions.itemAction(props.item, actionId),
-                }),
-              ),
+              ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => ({
+                label: actionLabel(actionId),
+                icon: getMailAction(actionId).icon,
+                action: () => props.actions.itemAction(props.item, actionId),
+              })),
               {
                 label: t().mergeWithConversation,
                 icon: "ti ti-git-merge",

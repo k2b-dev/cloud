@@ -10,6 +10,7 @@ import {
   draftEditableContentInputSchema,
   type MailCommand,
   type MailCommandInput,
+  type MailCommandOutcome,
   type MaintenanceCommandInput,
   smtpTransportCapabilitiesSchema,
 } from "../contracts";
@@ -1253,6 +1254,27 @@ export const getCommand = async (context: MailRequestContext, mailboxId: string,
     WHERE c.id = ${commandId}::uuid AND c.mailbox_id = ${mailboxId}::uuid
   `;
   return row ? ok(await normalizeCommand(mapCommand(row))) : fail(err.notFound("Mail command"));
+};
+
+/**
+ * The current state of commands a client queued, so it can tell its user when one fails later.
+ * Unknown IDs and other mailboxes' commands are left out.
+ */
+export const getCommandOutcomes = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  commandIds: readonly string[],
+): Promise<Result<MailCommandOutcome[]>> => {
+  const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
+  if (!access.ok) return access;
+  const rows = await sql<{ id: string; state: MailCommandOutcome["state"]; last_error_code: string | null }[]>`
+    SELECT id, state, last_error_code
+    FROM mail.commands
+    WHERE mailbox_id = ${mailboxId}::uuid
+      AND id = ANY(${toPgUuidArray([...new Set(commandIds)])}::uuid[])
+    ORDER BY id
+  `;
+  return ok(rows.map((row) => ({ id: row.id, state: row.state, code: row.last_error_code })));
 };
 
 export const listCommands = async (context: MailRequestContext, mailboxId: string, limit = 50): Promise<Result<MailCommand[]>> => {

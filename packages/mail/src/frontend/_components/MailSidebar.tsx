@@ -81,7 +81,8 @@ export default function MailSidebar(props: {
   onOpenRemoteContent: () => void;
   onOpenSubscriptions: () => void;
   onOpenSettings: () => void;
-  onMoveConversation: (input: { conversationId: string; sourceFolderId: string; destinationFolderId: string }) => void | Promise<void>;
+  /** Moves the conversation of the dragged list row, identified by the row's item ID. */
+  onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
 }) {
   const locale = useLocale();
@@ -186,15 +187,10 @@ export default function MailSidebar(props: {
     setDropFolderId(null);
     try {
       const value = JSON.parse(event.dataTransfer?.getData("application/x-cloud-mail-conversation") ?? "") as {
-        conversationId?: unknown;
-        sourceFolderId?: unknown;
+        itemId?: unknown;
       };
-      if (typeof value.conversationId !== "string" || typeof value.sourceFolderId !== "string") return;
-      void props.onMoveConversation({
-        conversationId: value.conversationId,
-        sourceFolderId: value.sourceFolderId,
-        destinationFolderId,
-      });
+      if (typeof value.itemId !== "string") return;
+      void props.onMoveConversation({ itemId: value.itemId, destinationFolderId });
     } catch {
       // Ignore unrelated drags; only Mail conversation payloads are accepted.
     }

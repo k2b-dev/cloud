@@ -182,6 +182,7 @@ export type ConversationSummary = {
   hasAttachments: boolean;
   messageCount: number;
   preview: string | null;
+  /** The folder in view, or the conversation's only folder in a folderless view; otherwise `null`. */
   folderId: string | null;
   unreadFolderIds: string[];
 };
@@ -283,7 +284,14 @@ export const listConversations = async (params: {
         SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id
       ) AS message_count,
       latest.preview,
-      latest.folder_id
+      -- The folder actions on this row start from: the folder in view, or the one folder a
+      -- folderless view finds the conversation in. Never the newest message's folder, which is
+      -- often Sent or Gmail's All Mail rather than the folder the user acts on.
+      CASE
+        WHEN ${folderId}::uuid IS NOT NULL THEN ${folderId}::uuid
+        WHEN cardinality(active_state.folder_ids) = 1 THEN active_state.folder_ids[1]::uuid
+        ELSE NULL
+      END AS folder_id
     FROM mail.conversations c
     LEFT JOIN LATERAL (
       SELECT reference.value
@@ -328,15 +336,7 @@ export const listConversations = async (params: {
             ON identity.mailbox_id = c.mailbox_id
            AND lower(identity.from_address) = sender.normalized_email
           WHERE sender.message_id = mc.id AND sender.role = 'from'
-        ) AS outbound,
-        (
-          SELECT placement.folder_id
-          FROM mail.message_placements placement
-          WHERE placement.message_id = mc.id AND placement.deleted_at IS NULL
-            AND ${includedPlacement(sql`placement.folder_id`)}
-          ORDER BY placement.updated_at DESC, placement.folder_id DESC
-          LIMIT 1
-        ) AS folder_id
+        ) AS outbound
       FROM mail.conversation_messages cm
       JOIN mail.message_contents mc ON mc.id = cm.message_id
       WHERE cm.conversation_id = c.id

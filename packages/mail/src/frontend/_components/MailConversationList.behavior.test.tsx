@@ -20,7 +20,7 @@ const listProps = (requestUrl: string) => ({
   dateConfig: { locale: "en", timeZone: "UTC" },
   canWrite: true,
   canAdmin: false,
-  junkFolderIds: [],
+  viewFolderId: null,
   folders: [],
   localTags: [],
   savedViews: [],

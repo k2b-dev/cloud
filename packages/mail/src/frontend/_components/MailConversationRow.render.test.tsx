@@ -56,7 +56,7 @@ const renderRow = (value: MailListItem) =>
         selectedConversationIds: new Set<string>(),
         selectionMode: false,
         canWrite: false,
-        junkFolderIds: [],
+        spamAction: "junk",
         dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
       },
       actions: {

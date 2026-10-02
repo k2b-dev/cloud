@@ -29,7 +29,15 @@ import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
 import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
-import { buildMailActionInput, MAIL_ACTION_MISSING_DESTINATION, type MailActionId } from "./_components/mail-actions";
+import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
+import {
+  buildMailActionInput,
+  MAIL_ACTION_MISSING_DESTINATION,
+  type MailActionId,
+  mailMoveSourceFolderIds,
+  mailRoleDestinationFolderId,
+  spamActionForConversation,
+} from "./_components/mail-actions";
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
@@ -684,10 +692,15 @@ function MailWorkspaceView(props: {
   const selectedFlagged = createMemo(
     () => selectedListItem()?.flagged ?? data.detailMessages.some((message) => message.flags.includes("\\Flagged")),
   );
-  const selectedInJunk = createMemo(() => {
-    const folderId = selectedListItem()?.sourceFolderId ?? data.folderId ?? data.detailMessages.at(-1)?.folderId;
-    return Boolean(folderId && data.folders.some((folder) => folder.id === folderId && folder.role === "junk"));
-  });
+  const selectedInJunk = createMemo(
+    () =>
+      spamActionForConversation({
+        viewFolderId: data.folderId,
+        activeFolderIds:
+          selectedListItem()?.activeFolderIds ?? data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
+        folders: data.folders,
+      }) === "not_spam",
+  );
   const selectedConversationRevision = createMemo(() => selectedListItem()?.revision ?? data.collaborationState?.revision ?? null);
   const canShowDetails = createMemo(() => Boolean(data.selectedConversationId));
 
@@ -840,7 +853,7 @@ function MailWorkspaceView(props: {
         ? item.unreadFolderIds
         : ["mark_unread", "flag", "unflag"].includes(actionId)
           ? item.activeFolderIds
-          : [item.sourceFolderId].filter((folderId): folderId is string => Boolean(folderId));
+          : mailMoveSourceFolderIds({ viewFolderId: data.folderId, activeFolderIds: item.activeFolderIds, folders: data.folders });
     return {
       conversationId: item.conversationId,
       label: item.subject || t().noSubject,
@@ -865,7 +878,11 @@ function MailWorkspaceView(props: {
               .map((message) => message.folderId),
           ),
         ]
-      : [data.folderId ?? data.detailMessages.at(-1)?.folderId ?? null];
+      : mailMoveSourceFolderIds({
+          viewFolderId: data.folderId,
+          activeFolderIds: data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
+          folders: data.folders,
+        });
     return [
       {
         conversationId: data.selectedConversationId!,
@@ -1126,9 +1143,95 @@ function MailWorkspaceView(props: {
     return splitMessageMutation.mutate({ messageId, conversationId, revision });
   };
 
+  // A queued action runs later. Follow its commands so a change the mail server did not make still
+  // reaches the user who was told it was queued.
+  const actionOutcomes = createMailActionOutcomes();
+  // The longest wait between two outcome requests, and the longest one request may take, so a stalled
+  // response cannot keep following past its lifetime.
+  const outcomePollMaxMs = 30_000;
+  let outcomePollTimer: ReturnType<typeof setTimeout> | null = null;
+  let outcomePollAttempt = 0;
+  const failureReason = (code: string): string => {
+    switch (code) {
+      case "REMOTE_MESSAGE_MISSING":
+      case "REMOTE_MESSAGE_STALE":
+      case "UIDVALIDITY_CHANGED":
+        return t().failureMessageGone;
+      case "REMOTE_STATE_CHANGED":
+        return t().failureMessageChanged;
+      case "PROVIDER_RIGHTS_CHANGED":
+      case "ACCESS_REVOKED":
+        return t().failureNotAllowed;
+      case "DESTINATION_UNAVAILABLE":
+      case "FOLDER_UNAVAILABLE":
+        return t().failureFolderUnavailable;
+      case "cancelled":
+        return t().failureCancelled;
+      case "needs_attention":
+        return t().failureUnclear;
+      default:
+        return t().failureNotApplied;
+    }
+  };
+  const showActionFailures = (report: MailActionFailureReport) => {
+    const [first] = report.failures;
+    if (!first || disposed) return;
+    // An unclear outcome must be checked, not repeated. The others repeat only in the folders where
+    // they failed, whatever view is open by now.
+    const retryTargets = report.failures.flatMap(({ code, ...target }) =>
+      code === "needs_attention" || target.sourceFolderIds.length === 0 ? [] : [target],
+    );
+    const more = report.failures.length - 1;
+    toast.error(`${first.label}: ${failureReason(first.code)}${more > 0 ? ` (${t().moreNotApplied({ count: more })})` : ""}`, {
+      title:
+        report.conversationCount === 1
+          ? t().changeNotApplied
+          : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount }),
+      action:
+        retryTargets.length > 0
+          ? {
+              label: t().tryAgain,
+              onClick: () =>
+                void runAction(report.actionId, { targets: retryTargets, destinationFolderId: report.destinationFolderId ?? undefined }),
+            }
+          : null,
+    });
+  };
+  const pollActionOutcomes = async () => {
+    outcomePollTimer = null;
+    const commandIds = actionOutcomes.pendingCommandIds();
+    let outcomes: MailActionCommand[] | null = null;
+    if (commandIds.length > 0) {
+      try {
+        const response = await apiClient.mailboxes[":mailboxId"].commands.outcomes.$post(
+          { param: { mailboxId }, json: { commandIds } },
+          { init: { signal: AbortSignal.timeout(outcomePollMaxMs) } },
+        );
+        if (response.ok) outcomes = await response.json();
+      } catch {
+        // The next poll asks again.
+      }
+    }
+    // Applied after a failed request too, so following still ends after its lifetime.
+    for (const report of actionOutcomes.apply(outcomes ? commandIds : [], outcomes ?? [])) showActionFailures(report);
+    if (!disposed && actionOutcomes.hasPending()) scheduleActionOutcomePoll();
+  };
+  // Commands usually finish within seconds; one that waits for the mailbox is asked about less often.
+  const scheduleActionOutcomePoll = (restart = false) => {
+    if (restart) outcomePollAttempt = 0;
+    if (outcomePollTimer && !restart) return;
+    if (outcomePollTimer) clearTimeout(outcomePollTimer);
+    outcomePollTimer = setTimeout(() => void pollActionOutcomes(), Math.min(1_000 * 2 ** outcomePollAttempt, outcomePollMaxMs));
+    outcomePollAttempt += 1;
+  };
+  onCleanup(() => {
+    if (outcomePollTimer) clearTimeout(outcomePollTimer);
+  });
+
   const actionHost = {
     resolveTargets: actionTargets,
     chooseDestinationFolder,
+    roleDestinationFolderId: (nextActionId) => mailRoleDestinationFolderId(nextActionId, data.folders),
     applyOptimistic: (nextActionId, targets) => {
       if (nextActionId === "mark_read" || nextActionId === "mark_unread") {
         const unread = nextActionId === "mark_unread";
@@ -1163,6 +1266,12 @@ function MailWorkspaceView(props: {
         { init: { signal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().actionFailed));
+      return (await response.json()).commands;
+    },
+    followOutcomes: (params) => {
+      const report = actionOutcomes.follow(params);
+      if (report) showActionFailures(report);
+      if (actionOutcomes.hasPending()) scheduleActionOutcomePoll(true);
     },
     pruneSelection: (succeeded) => {
       const current = conversationSelection();
@@ -1439,18 +1548,13 @@ function MailWorkspaceView(props: {
         onOpenRemoteContent={() => void openRemoteContent()}
         onOpenSubscriptions={() => void openSubscriptions()}
         onOpenSettings={() => void openSettings()}
-        onMoveConversation={(input) =>
-          runAction("move", {
-            targets: [
-              {
-                conversationId: input.conversationId,
-                label: t().conversation,
-                sourceFolderIds: [input.sourceFolderId],
-              },
-            ],
-            destinationFolderId: input.destinationFolderId,
-          })
-        }
+        onMoveConversation={(input) => {
+          // The dragged row, not the first row of its conversation: in a message list, rows of one
+          // conversation can sit in different folders.
+          const item = data.listItems.find((candidate) => candidate.id === input.itemId);
+          const target = item ? actionTargetForItem(item, "move") : null;
+          return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+        }}
         onNavigate={navigateWorkspace}
       />
       <AppWorkspace.Content>
@@ -1484,7 +1588,7 @@ function MailWorkspaceView(props: {
                     dateConfig={props.dateConfig}
                     canWrite={canWrite()}
                     canAdmin={canAdmin()}
-                    junkFolderIds={data.folders.filter((folder) => folder.role === "junk").map((folder) => folder.id)}
+                    viewFolderId={data.folderId}
                     folders={data.folders}
                     localTags={data.localTags}
                     savedViews={data.savedViews}

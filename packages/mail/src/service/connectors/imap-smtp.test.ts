@@ -11,6 +11,7 @@ import {
   connectSmtpConnection,
   disposeImapClient,
   downloadSelectedSources,
+  fetchRemoteMessageState,
   listenOnImapSession,
   mapFetchedEnvelope,
   normalizeImapQuotaEvidence,
@@ -400,6 +401,43 @@ describe("IMAP source downloads", () => {
       },
     );
     expect(sizes).toEqual([null]);
+  });
+});
+
+describe("IMAP message state", () => {
+  // Like imapflow against a server with X-GM-EXT-1: labels come back only when the query asks for them.
+  const gmailMessage = (query: { labels?: boolean }): FetchMessageObject => ({
+    seq: 1,
+    uid: 7,
+    flags: new Set(["\\Seen", "$Forwarded"]),
+    ...(query.labels ? { labels: new Set(["\\Important", "Projects"]) } : {}),
+    envelope: { date: new Date("2026-07-13T12:00:00.000Z"), messageId: "<state@example.test>" },
+  });
+
+  test("reports Gmail labels among the keywords exactly as sync stores them", async () => {
+    const state = await fetchRemoteMessageState({ fetchOne: async (_uid, query) => gmailMessage(query) }, 7);
+    const synced = await mapFetchedEnvelope(gmailMessage({ labels: true }), {
+      folderPath: "INBOX",
+      folderStableKey: "inbox",
+      uidValidity: "10",
+      highUid: 7,
+      limit: 1,
+    });
+    // An automation freezes the stored keywords as its precondition; a state read without the
+    // labels would make every action on a labeled Gmail message fail as changed.
+    expect(state).toMatchObject({ exists: true, flags: ["\\Seen"], messageId: "<state@example.test>" });
+    expect(state.keywords).toEqual(synced.labels);
+    expect(state.keywords).toEqual(["$Forwarded", "Projects", "\\Important"]);
+  });
+
+  test("reports a message the folder no longer has as missing", async () => {
+    expect(await fetchRemoteMessageState({ fetchOne: async () => false }, 7)).toEqual({
+      exists: false,
+      flags: [],
+      keywords: [],
+      messageId: null,
+      modseq: null,
+    });
   });
 });
 
