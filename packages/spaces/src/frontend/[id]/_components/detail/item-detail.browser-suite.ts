@@ -3,16 +3,15 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
-import { type Browser, chromium, type Page, webkit } from "playwright";
+import { type Browser, chromium, type Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
-// are layout questions, so the route renders on the server and then runs its real island bundle in a browser, as the
-// workspace page does. Chromium runs by default. SPACES_DETAIL_BROWSER=webkit with SPACES_DETAIL_BROWSER_WS pointing at
-// a Playwright run-server checks WebKit the same way; that server reaches this one through the host network.
+// are layout questions, so the route renders on the server and then runs its real island bundle in Chromium, as the
+// workspace page does.
 const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-detail-browser-"));
@@ -26,8 +25,6 @@ const styleEntries = [
   resolve(import.meta.dir, "../../../../styles/app.css"),
   resolve(import.meta.dir, "../../../../../../cloud/src/styles/global.css"),
 ];
-const engine = process.env.SPACES_DETAIL_BROWSER === "webkit" ? webkit : chromium;
-const remote = process.env.SPACES_DETAIL_BROWSER_WS;
 
 const spaceId = "Space1";
 const now = "2026-10-02T08:00:00.000Z";
@@ -128,7 +125,7 @@ beforeAll(async () => {
     ...(await Promise.all(built.map((build) => build.outputs[0]!.text()))),
   ].join("\n");
   server = Bun.serve({
-    hostname: remote ? "0.0.0.0" : "127.0.0.1",
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
@@ -160,7 +157,7 @@ beforeAll(async () => {
         : new Response("Not found", { status: 404 });
     },
   });
-  browser = remote ? await engine.connect(remote) : await engine.launch();
+  browser = await chromium.launch();
 }, 120_000);
 
 afterAll(async () => {
@@ -179,20 +176,18 @@ let caseCounter = 0;
 type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const desktop: View = { width: 1440, height: 900, touch: false };
-// A container reaches this server through the host network, not through the loopback name the server reports.
-const origin = () => (remote ? `http://127.0.0.1:${server.port}/` : String(server.url));
 
 const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "light") => {
   const id = `case${++caseCounter}`;
   pages.set(id, pageHtml(scenario, theme));
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
-    isMobile: view.touch && engine === chromium,
+    isMobile: view.touch,
     hasTouch: view.touch,
     reducedMotion: "reduce",
   });
   const page = await context.newPage();
-  await page.goto(`${origin()}app/spaces/${spaceId}?item=Item01&case=${id}`);
+  await page.goto(`${server.url}app/spaces/${spaceId}?item=Item01&case=${id}`);
   await page.evaluate(() => window.document.fonts.ready);
   // Hydrated icon buttons drop their server-only native title.
   await page.waitForSelector('[aria-label="Close item details"]:not([title]), [aria-label="Eintragsdetails schließen"]:not([title])', {
@@ -221,7 +216,9 @@ const clickLabel = async (page: Page, term: string) => {
 };
 const surface = (page: Page, term: string) =>
   planningRow(page, term).evaluate((row) => {
-    const control = row.querySelector(":scope > dd > .k2b-field > [data-appearance] > :first-child, :scope > dd > .k2b-field > .k2b-number-input");
+    const control = row.querySelector(
+      ":scope > dd > .k2b-field > [data-appearance] > :first-child, :scope > dd > .k2b-field > .k2b-number-input",
+    );
     return control ? getComputedStyle(control, "::before").backgroundColor : "none";
   });
 const transparent = "rgba(0, 0, 0, 0)";
@@ -230,9 +227,9 @@ const writesReach = async (count: number) => {
   expect(writes.length).toBe(count);
 };
 const shot = (page: Page, name: string) =>
-  page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-${engine.name()}-${name}.png`, animations: "disabled" });
+  page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-chromium-${name}.png`, animations: "disabled" });
 
-describe(`Spaces item detail in ${engine.name()}`, () => {
+describe("Spaces item detail in Chromium", () => {
   for (const [name, view] of [
     ["desktop", desktop],
     ["phone", phone],
@@ -354,12 +351,20 @@ describe(`Spaces item detail in ${engine.name()}`, () => {
       await page.getByRole("combobox", { name: "Add task blocker" }).click();
       await page.getByRole("option", { name: "Buy label tape" }).click();
       await writesReach(4);
-      expect(writes[3]).toEqual({ method: "POST", path: `/api/spaces/${spaceId}/items/Item01/blockers`, body: { blockerItemId: "Itm009" } });
+      expect(writes[3]).toEqual({
+        method: "POST",
+        path: `/api/spaces/${spaceId}/items/Item01/blockers`,
+        body: { blockerItemId: "Itm009" },
+      });
 
       await page.locator(".spaces-dependency", { hasText: "Rename the computers" }).hover();
       await page.getByRole("button", { name: "Remove blocker Rename the computers" }).click();
       await writesReach(5);
-      expect(writes[4]).toEqual({ method: "DELETE", path: `/api/spaces/${spaceId}/items/Item01/blockers`, body: { blockerItemId: "Itm002" } });
+      expect(writes[4]).toEqual({
+        method: "DELETE",
+        path: `/api/spaces/${spaceId}/items/Item01/blockers`,
+        body: { blockerItemId: "Itm002" },
+      });
       // Every save refreshed the panel without an error.
       expect(await page.locator("dialog[open]").count()).toBe(0);
     } finally {

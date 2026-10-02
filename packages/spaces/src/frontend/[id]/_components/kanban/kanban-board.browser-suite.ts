@@ -965,7 +965,12 @@ ${"Keep the stand calm and friendly. ".repeat(8)}`,
             const style = getComputedStyle(node);
             if (style.overflow === "visible") continue;
             const box = node.getBoundingClientRect();
-            if (holderBox.left - 4 < box.left || holderBox.right + 4 > box.right || holderBox.top - 4 < box.top || holderBox.bottom + 4 > box.bottom)
+            if (
+              holderBox.left - 4 < box.left ||
+              holderBox.right + 4 > box.right ||
+              holderBox.top - 4 < box.top ||
+              holderBox.bottom + 4 > box.bottom
+            )
               clipped.push(node.className);
           }
           return {
