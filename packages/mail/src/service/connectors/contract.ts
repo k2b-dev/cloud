@@ -215,8 +215,14 @@ export interface MailConnector {
     highUid: number,
     signal?: AbortSignal,
   ): Promise<FlagChange[]>;
-  /** Messages in the folder flagged `\Draft`. */
-  countDraftMessages(config: ProviderConnectionInput, folderPath: string, uidValidity: string, signal?: AbortSignal): Promise<number>;
+  /** Messages in the folder flagged `\Draft`, up to `maxUid`. */
+  countDraftMessages(
+    config: ProviderConnectionInput,
+    folderPath: string,
+    uidValidity: string,
+    maxUid: number,
+    signal?: AbortSignal,
+  ): Promise<number>;
   downloadSourceBatch(
     config: ProviderConnectionInput,
     folderPath: string,

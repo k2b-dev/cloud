@@ -113,10 +113,10 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused?: boole
       change?.();
       return listed;
     }),
-    spyOn(imapSmtpConnector, "countDraftMessages").mockImplementation(async (_config, path) => {
+    spyOn(imapSmtpConnector, "countDraftMessages").mockImplementation(async (_config, path, _uidValidity, maxUid) => {
       calls.draftCounts += 1;
       if (params.draftSearchRefused) throw Object.assign(new Error("SEARCH failed"), { code: "IMAP_SEARCH_FAILED" });
-      return [...folder(path).entries.values()].filter((message) => message.flags.has("\\Draft")).length;
+      return [...folder(path).entries.entries()].filter(([uid, message]) => uid <= maxUid && message.flags.has("\\Draft")).length;
     }),
   ];
   return {
@@ -320,18 +320,38 @@ suite("mail sync of changes made in other clients", () => {
     expect(mailbox.remote.calls).toEqual({ windows: [], envelopes: 0, draftCounts: 0 });
   });
 
-  test("a message removed while new mail arrives leaves its folder in the same sync", async () => {
+  test("a folder that receives new mail before every sync still notices a removed message", async () => {
     const mailbox = await connect("busy", true);
     mailbox.remote.put("archive", id("busy-kept"));
     const removed = mailbox.remote.put("archive", id("busy-removed"));
     await mailbox.sync("archive");
 
-    // A folder that receives mail before every sync still compares its counts once the mail is in.
     mailbox.remote.remove("archive", removed);
-    mailbox.remote.put("archive", id("busy-new"));
+    mailbox.remote.put("archive", id("busy-first"));
+    await mailbox.sync("archive");
+    mailbox.remote.put("archive", id("busy-second"));
+    mailbox.remote.resetCalls();
     await mailbox.sync("archive");
     expect(await mailbox.placements(id("busy-removed"))).toEqual([{ role: "archive", deleted: true, flags: [] }]);
-    expect(await mailbox.placements(id("busy-new"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+    expect(await mailbox.placements(id("busy-second"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+    expect(mailbox.remote.calls.windows).toHaveLength(1);
+
+    // A message Mail itself moves away is no removal to search for, even while mail keeps coming.
+    await sql`
+      UPDATE mail.remote_message_refs
+      SET stale_at = now()
+      WHERE folder_id = ${mailbox.folderId("archive")}::uuid AND uid = 3
+    `;
+    mailbox.remote.remove("archive", 3);
+    mailbox.remote.put("archive", id("busy-third"));
+    mailbox.remote.resetCalls();
+    await mailbox.sync("archive");
+    mailbox.remote.put("archive", id("busy-fourth"));
+    await mailbox.sync("archive");
+    mailbox.remote.put("archive", id("busy-fifth"));
+    await mailbox.sync("archive");
+    expect(mailbox.remote.calls.windows).toEqual([]);
+    expect(await mailbox.placements(id("busy-fifth"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
   test("a message removed while the search runs is found once the full reconciliation retired the one it missed", async () => {

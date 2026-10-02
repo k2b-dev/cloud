@@ -1370,13 +1370,15 @@ const appendSource = async (
 const normalizeMessageId = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
 
 /**
- * Counts the selected folder's drafts: messages flagged `\Draft`, on Gmail the ones with its Drafts
- * label. A server with ESEARCH answers with the count alone; any other lists the UIDs. A search
- * the server refused is an error, not zero drafts.
+ * Counts the selected folder's drafts up to `maxUid`: messages flagged `\Draft`, on Gmail the ones
+ * with its Drafts label. A server with ESEARCH answers with the count alone; any other lists the
+ * UIDs. A search the server refused is an error, not zero drafts.
  */
-export const countDraftUids = async (client: Pick<ImapFlow, "search" | "capabilities" | "enabled">): Promise<number> => {
+export const countDraftUids = async (client: Pick<ImapFlow, "search" | "capabilities" | "enabled">, maxUid: number): Promise<number> => {
+  if (maxUid < 1) return 0;
   const gmail = client.capabilities.has("X-GM-EXT-1") || client.enabled.has("X-GM-EXT-1");
-  const result = await client.search(gmail ? { gmraw: "in:drafts" } : { draft: true }, { uid: true, returnOptions: ["COUNT"] });
+  const uid = `1:${maxUid}`;
+  const result = await client.search(gmail ? { gmraw: "in:drafts", uid } : { draft: true, uid }, { uid: true, returnOptions: ["COUNT"] });
   if (Array.isArray(result)) return result.length;
   if (result && typeof result.count === "number") return result.count;
   throw Object.assign(new Error("Provider did not answer the draft search"), { code: "IMAP_SEARCH_FAILED" });
@@ -1386,6 +1388,7 @@ const countDraftMessages = async (
   config: ProviderConnectionInput,
   folderPath: string,
   uidValidity: string,
+  maxUid: number,
   signal?: AbortSignal,
 ): Promise<number> =>
   withImapClient(
@@ -1394,7 +1397,7 @@ const countDraftMessages = async (
       const lock = await client.getMailboxLock(folderPath, { readOnly: true });
       try {
         assertSelectedMailbox(client, uidValidity);
-        const count = await countDraftUids(client);
+        const count = await countDraftUids(client, maxUid);
         assertSelectedMailbox(client, uidValidity);
         return count;
       } finally {

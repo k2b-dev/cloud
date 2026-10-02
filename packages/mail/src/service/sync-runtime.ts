@@ -82,6 +82,8 @@ type EnvelopeCursor = {
   countOffset?: number;
   /** Remote messages the local count leaves out: outside Drafts, the drafts Mail never imports. */
   remoteUncounted?: number;
+  /** STATUS MESSAGES of the latest batch after which Mail held every UID it covers, up to highestSeenUid. */
+  countedMessages?: number | null;
 };
 
 type FolderSyncRow = {
@@ -162,6 +164,7 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
   vanishedSearch: false,
   countOffset: 0,
   remoteUncounted: 0,
+  countedMessages: null,
 });
 
 // `degraded` only records a failed sync whose binding and credentials stayed
@@ -1214,7 +1217,7 @@ const newestFirstWindowLow = async (params: {
   remoteMessages: number;
   skippedDrafts: number;
 }): Promise<number> => {
-  const local = await countLiveUids(params.folderId, params.uidValidity, params.draftsFolder);
+  const local = await countLiveUids(params.folderId, params.uidValidity, params.draftsFolder, Number.MAX_SAFE_INTEGER);
   if (Math.max(params.skippedDrafts, params.remoteMessages - local) >= RECONCILE_WINDOW_SIZE) {
     return Math.max(1, params.high - RECONCILE_WINDOW_SIZE + 1);
   }
@@ -1313,13 +1316,14 @@ const fetchReconcileImports = async (params: {
  * tracks there, in the states a reconcile window can retire. A retiring draft is still on the
  * server until Mail removes it.
  */
-const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder: boolean): Promise<number> => {
+const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder: boolean, maxUid: number): Promise<number> => {
   const [row] = draftsFolder
     ? await sql<{ count: number }[]>`
         SELECT count(DISTINCT uid)::int AS count
         FROM mail.draft_provider_snapshots
         WHERE folder_id = ${folderId}::uuid
           AND uid_validity = ${uidValidity}::numeric
+          AND uid <= ${maxUid}::numeric
           AND state IN ('active', 'appending', 'external', 'importing', 'retiring')
       `
     : await sql<{ count: number }[]>`
@@ -1327,6 +1331,7 @@ const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder
         FROM mail.remote_message_refs
         WHERE folder_id = ${folderId}::uuid
           AND uid_validity = ${uidValidity}::numeric
+          AND uid <= ${maxUid}::numeric
           AND stale_at IS NULL
       `;
   return row?.count ?? 0;
@@ -1343,52 +1348,57 @@ const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder
  * a higher remote count lowers it at once, a difference a complete search leaves raises it. So
  * an offset that absorbed a message removed during a search drops again once the full
  * reconciliation retires that message, and no later removal is hidden behind it.
+ *
+ * New mail Mail has not imported yet is in this batch's count but not in Mail's, so a folder that
+ * receives mail before every sync is compared with the count of the batch that imported the UIDs
+ * up to highestSeenUid. That count is at most one batch old and can only show fewer removals than
+ * happened; Mail's own changes since can make it look lower, so it never lowers the offset.
  */
 const checkVanishedMessages = async (params: {
   cursor: EnvelopeCursor;
   status: Pick<FolderStatus, "uidValidity" | "uidNext" | "messages">;
   folderId: string;
   draftsFolder: boolean;
-  countDrafts: () => Promise<number>;
-}): Promise<boolean> => {
+  countDrafts: (maxUid: number) => Promise<number>;
+}): Promise<void> => {
   const { cursor, status } = params;
-  if (!cursor.backfillComplete || cursor.incrementalNextHigh != null || cursor.reconcileNextLow != null) return false;
-  // Messages Mail has not imported yet would hide a removed one.
-  if (status.uidNext - 1 !== cursor.highestSeenUid) return false;
-  const local = await countLiveUids(params.folderId, status.uidValidity, params.draftsFolder);
+  if (!cursor.backfillComplete || cursor.incrementalNextHigh != null || cursor.reconcileNextLow != null) return;
+  const current = status.uidNext - 1 === cursor.highestSeenUid;
+  const messages = current ? status.messages : cursor.countedMessages;
+  if (messages == null) return;
+  const local = await countLiveUids(params.folderId, status.uidValidity, params.draftsFolder, cursor.highestSeenUid);
   const offset = cursor.countOffset ?? 0;
   let uncounted = params.draftsFolder ? 0 : (cursor.remoteUncounted ?? 0);
-  let gap = local + uncounted - status.messages;
+  let gap = local + uncounted - messages;
   if (gap !== offset && !cursor.vanishedSearch && !params.draftsFolder) {
     // A skipped draft may have left or lost its flag: count the drafts before the counts decide.
     // Without that count the search still runs; it only costs more windows.
-    uncounted = await params.countDrafts().catch((error: unknown) => {
+    uncounted = await params.countDrafts(cursor.highestSeenUid).catch((error: unknown) => {
       log.warn("Mail could not count a folder's drafts and searches it for removed messages", {
         folderId: params.folderId,
         code: providerErrorCode(error, "DRAFT_COUNT_FAILED"),
       });
       return uncounted;
     });
-    gap = local + uncounted - status.messages;
+    gap = local + uncounted - messages;
   }
   cursor.remoteUncounted = uncounted;
   // The provider lists more messages than Mail counts: the folder's count runs that much higher.
-  if (gap < offset) cursor.countOffset = gap;
+  if (gap < offset && current) cursor.countOffset = gap;
   if (gap <= offset) {
     cursor.vanishedSearch = false;
-    return true;
+    return;
   }
   if (!cursor.vanishedSearch) {
     cursor.vanishedSearch = true;
     cursor.sweepNextHigh = cursor.highestSeenUid;
-    return true;
+    return;
   }
   if (cursor.sweepNextHigh == null) {
     // Every window was searched and the counts still differ: this server counts differently.
     cursor.countOffset = gap;
     cursor.vanishedSearch = false;
   }
-  return true;
 };
 
 const reconcileWindowStart = (uid: number): number => {
@@ -1769,12 +1779,12 @@ export const syncFolderBatch = async (
             : structuredClone(beforeCursor);
         const draftsFolder = await isEffectiveDraftsFolder(sql, folder, folderId);
 
-        const countsCompared = await checkVanishedMessages({
+        await checkVanishedMessages({
           cursor,
           status,
           folderId,
           draftsFolder,
-          countDrafts: () => imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, status.uidValidity, signal),
+          countDrafts: (maxUid) => imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, status.uidValidity, maxUid, signal),
         });
 
         const envelope = await fetchEnvelopeStep({
@@ -1788,6 +1798,8 @@ export const syncFolderBatch = async (
         });
         const envelopeBatch = envelope.batch;
         if (envelopeBatch) await extendSyncLease(lock, "after envelope fetch");
+        // Once this batch commits, Mail holds every UID this count covers; see checkVanishedMessages.
+        cursor.countedMessages = cursor.backfillComplete && cursor.highestSeenUid === currentHighUid ? status.messages : null;
 
         const flagChanges = await fetchFlagStep({
           cursor,
@@ -1833,16 +1845,12 @@ export const syncFolderBatch = async (
 
         await enqueueDraftImports(result.draftImportSnapshotIds);
         await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
-        // New mail kept this batch from comparing the counts. Once it is imported, the next batch
-        // compares them, so a folder that receives mail before every sync still notices removals.
-        const compareCounts = !countsCompared && envelope.kind === "incremental" && cursor.incrementalNextHigh == null;
         const hasMore =
           cursor.incrementalNextHigh != null ||
           !cursor.backfillComplete ||
           cursor.flagNextLow != null ||
           cursor.reconcileNextLow != null ||
-          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null) ||
-          compareCounts;
+          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null);
         return {
           hasMore,
           syncPending: cursor.incrementalNextHigh != null || cursor.flagNextLow != null,

@@ -13,8 +13,8 @@ import {
   countDraftUids,
   disposeImapClient,
   downloadSelectedSources,
-  folderStatusSnapshot,
   fetchRemoteMessageState,
+  folderStatusSnapshot,
   type ImapSession,
   imapSmtpConnector,
   listenOnImapSession,
@@ -698,25 +698,31 @@ describe("IMAP draft count", () => {
 
   test("counts the UIDs the server reports as drafts", async () => {
     const imap = client(["IMAP4rev1"], [3, 9, 12]);
-    expect(await countDraftUids(imap.client)).toBe(3);
-    expect(imap.queries).toEqual([{ draft: true }]);
+    expect(await countDraftUids(imap.client, 20)).toBe(3);
+    expect(imap.queries).toEqual([{ draft: true, uid: "1:20" }]);
   });
 
   test("asks a server with ESEARCH for the count instead of every UID", async () => {
     const imap = client(["IMAP4rev1", "ESEARCH"], { count: 60_000 });
-    expect(await countDraftUids(imap.client)).toBe(60_000);
+    expect(await countDraftUids(imap.client, 90_000)).toBe(60_000);
     expect(imap.options).toEqual([{ uid: true, returnOptions: ["COUNT"] }]);
-    await expect(countDraftUids(client(["IMAP4rev1", "ESEARCH"], {}).client)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
+    await expect(countDraftUids(client(["IMAP4rev1", "ESEARCH"], {}).client, 90_000)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
   });
 
   test("counts Gmail's drafts by their Drafts label", async () => {
     const gmail = client(["IMAP4rev1", "X-GM-EXT-1"], [4]);
-    expect(await countDraftUids(gmail.client)).toBe(1);
-    expect(gmail.queries).toEqual([{ gmraw: "in:drafts" }]);
+    expect(await countDraftUids(gmail.client, 8)).toBe(1);
+    expect(gmail.queries).toEqual([{ gmraw: "in:drafts", uid: "1:8" }]);
+  });
+
+  test("counts no drafts in an empty folder without asking the server", async () => {
+    const empty = client(["IMAP4rev1"], false);
+    expect(await countDraftUids(empty.client, 0)).toBe(0);
+    expect(empty.queries).toEqual([]);
   });
 
   test("fails instead of counting zero drafts when the server refused the search", async () => {
-    await expect(countDraftUids(client([], false).client)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
+    await expect(countDraftUids(client([], false).client, 5)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
   });
 });
 
