@@ -55,6 +55,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     homepageNoteId: null,
     homepageNoteShortId: null,
     defaultPresentationMode: "write",
+    noteDeletePermission: "write",
     defaultNoteTitleTemplate: "Untitled",
     createdBy: user.id,
     createdAt: "2026-09-03T10:00:00Z",

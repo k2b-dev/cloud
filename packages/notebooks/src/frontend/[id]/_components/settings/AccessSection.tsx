@@ -1,11 +1,13 @@
 import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import { query } from "@k2b/stdlib/solid";
-import { Button, Placeholder, SettingsGroup, useLocale } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { mutation as mutations, query } from "@k2b/stdlib/solid";
+import { Button, Placeholder, Select, SettingsField, SettingsGroup, useLocale } from "@k2b/ui";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { isNoteDeletePermission, type NoteDeletePermission } from "@/lib/note-delete-permission";
 import type { Notebook } from "../sidebar/types";
 import { notebookSettingsMessages } from "./messages";
+import { SaveStatus } from "./shared";
 import { readErrorMessage } from "./utils";
 
 function RetryButton(props: { loading: boolean; onClick: () => void }) {
@@ -160,6 +162,48 @@ export function PermissionsSection(props: { notebook: Notebook }) {
           <RetryButton loading={accessEntries.refreshing()} onClick={() => reconcile()} />
         </div>
       </Show>
+    </SettingsGroup>
+  );
+}
+
+/** Admins choose whether everyone who can write, or only admins, may delete notes. Editing stays open to writers. */
+export function NoteDeletionSection(props: { notebook: Notebook; onNotebookChange: (notebook: Notebook) => void }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
+  const mutation = mutations.create<Notebook, NoteDeletePermission>({
+    mutation: async (next, { abortSignal }) => {
+      const res = await apiClient[":id"].$patch(
+        { param: { id: props.notebook.id }, json: { noteDeletePermission: next } },
+        { init: { signal: abortSignal } },
+      );
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().updateFailed));
+      return res.json();
+    },
+    onSuccess: (next) => props.onNotebookChange(next),
+  });
+  onCleanup(mutation.abort);
+
+  return (
+    <SettingsGroup title={t().deletingNotes} description={t().deletingNotesDescription}>
+      <SettingsField label={t().whoMayDeleteNotes} description={t().whoMayDeleteNotesHelp} error={() => undefined}>
+        <Select
+          aria-label={t().whoMayDeleteNotes}
+          value={() => props.notebook.noteDeletePermission}
+          onValueChange={(next) => {
+            if (!mutation.loading() && isNoteDeletePermission(next) && next !== props.notebook.noteDeletePermission) {
+              void mutation.mutate(next);
+            }
+          }}
+          options={[
+            { value: "write", label: t().deleteByWriters, icon: "ti ti-pencil" },
+            { value: "admin", label: t().deleteByAdmins, icon: "ti ti-shield" },
+          ]}
+          searchable={false}
+          clearable={false}
+          disabled={mutation.loading()}
+        />
+      </SettingsField>
+      <SaveStatus loading={mutation.loading()} saved={!mutation.error()} error={mutation.error()?.message ?? null} />
     </SettingsGroup>
   );
 }

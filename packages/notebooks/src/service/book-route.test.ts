@@ -25,6 +25,7 @@ const notebook: notebooks.Notebook = {
   homepageNoteId: null,
   homepageNoteShortId: null,
   defaultPresentationMode: "write",
+  noteDeletePermission: "write",
   defaultNoteTitleTemplate: "Untitled",
   createdBy: params.userId,
   createdAt: timestamp,

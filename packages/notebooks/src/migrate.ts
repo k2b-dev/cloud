@@ -36,6 +36,12 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE notebooks.notebooks
     ADD COLUMN IF NOT EXISTS default_note_title_template TEXT NOT NULL DEFAULT 'New Document'
   `.simple();
+  // The permission needed to delete notes; existing notebooks keep letting every writer delete.
+  await sql`
+    ALTER TABLE notebooks.notebooks
+    ADD COLUMN IF NOT EXISTS note_delete_permission TEXT NOT NULL DEFAULT 'write'
+      CHECK (note_delete_permission IN ('write', 'admin'))
+  `.simple();
   console.log("  ✓ notebooks.notebooks table");
 
   await sql`

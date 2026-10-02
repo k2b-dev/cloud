@@ -27,6 +27,9 @@ key, or `children`. Optional fields are `icon`, `badge` (string or number),
 `description`, `active`, `disabled`, `color`, and secondary `actions`. Everything
 in the item tree is serializable; functions remain in the controller.
 
+Secondary `actions` open from the row's menu button with their `label`, `icon`,
+`description`, and `disabled` state, so a disabled action can say why.
+
 A group without its own action toggles its children when selected and shows a
 chevron. Set `defaultExpanded: false` to start a group collapsed; omitted groups
 start expanded. Later toggles belong to the renderer and do not change the model.

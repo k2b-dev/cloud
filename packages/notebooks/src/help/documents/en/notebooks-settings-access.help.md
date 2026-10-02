@@ -2,7 +2,7 @@
 id: notebooks-settings-access
 title: "Settings & access"
 icon: "ti ti-settings"
-description: "Choose the default view and configure notebook details, permissions, and exports."
+description: "Choose the default view and configure notebook details, permissions, note deletion, and exports."
 order: 170
 ---
 
@@ -37,12 +37,18 @@ To choose the default for editors and admins, open **Notebook — View & behavio
 
 Locked notes open in **Read-only** instead of **Write**. Locking does not remove access to page discussions in the detail panel.
 
+## Decide who can delete notes {icon="trash"}
+
+By default, everyone who can write in a notebook can also delete its notes. To keep notes from disappearing by accident, an admin opens **Sharing — Access** and sets **Who can delete notes** to **Admins only**. The change saves immediately.
+
+The rule covers deleting whole notes, nothing else. People and agents with write permission still edit notes as before, including removing text; the version history keeps earlier versions. For them, **Delete** in the note menu stays visible but disabled and says that deleting is reserved for admins. The API and `cld notebooks rm` refuse the deletion with the same reason. Locking a note stays open to them: a locked note keeps its versions readable but can no longer be restored from them.
+
 ## Settings tabs {icon="settings"}
 
 :::reference
 - **Notebook — General:** Name, icon, description, default start page, and the Liquid template used to initialize the H1 of empty new notes. Review the footer, then save or discard your changes.
 - **Notebook — View & behavior:** Admins choose the shared default view. Your sidebar layout and Tab key preference are stored in this browser and apply immediately.
-- **Sharing — Access:** Admin-only permission editor. Permission changes save immediately.
+- **Sharing — Access:** Admin-only permission editor and the choice of who can delete notes. Changes save immediately.
 - **Sharing — API keys:** Admin-only resource credentials for integrations. Changes save immediately, and new tokens are shown once.
 - **Data — Export & snapshots:** Admin-only portable ZIP exports, S3 snapshot configuration, manual uploads, and recent snapshot runs. Snapshot configuration uses the persistent save footer.
 - **Lifecycle — Danger zone:** Admin-only destructive actions such as deleting the notebook and its notes.

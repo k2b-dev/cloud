@@ -3,6 +3,7 @@ import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@k2
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { NOTE_DELETE_PERMISSIONS } from "../lib/note-delete-permission";
 import { PRESENTATION_MODES } from "../lib/presentation-mode";
 import { notebooksService } from "../service";
 import { notebookApiMessages } from "./messages";
@@ -25,6 +26,7 @@ const CreatedNotebookSchema = z.object({
   homepageNoteId: ResourceShortIdSchema.nullable(),
   defaultPresentationMode: z.enum(PRESENTATION_MODES),
   defaultNoteTitleTemplate: z.string(),
+  noteDeletePermission: z.enum(NOTE_DELETE_PERMISSIONS),
   createdBy: z.uuid().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

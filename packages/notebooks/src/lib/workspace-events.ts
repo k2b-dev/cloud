@@ -1,3 +1,4 @@
+import type { NoteDeletePermission } from "./note-delete-permission";
 import type { PresentationMode } from "./presentation-mode";
 import { STREAM_CURSOR_PATTERN } from "./yjs";
 
@@ -19,6 +20,7 @@ export type NotebookWorkspaceNotebook = {
   homepageNoteShortId: string | null;
   defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
+  noteDeletePermission: NoteDeletePermission;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

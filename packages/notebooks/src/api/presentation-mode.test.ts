@@ -50,6 +50,7 @@ if (process.env.NOTEBOOKS_PRESENTATION_API_TEST !== "1") {
     homepageNoteId: null,
     homepageNoteShortId: null,
     defaultPresentationMode: "write",
+    noteDeletePermission: "write",
     defaultNoteTitleTemplate: "Untitled",
     createdBy: user.id,
     createdAt: "2026-09-03T10:00:00.000Z",
@@ -102,6 +103,21 @@ if (process.env.NOTEBOOKS_PRESENTATION_API_TEST !== "1") {
       const response = await patch({ name: "Renamed" });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ name: "Renamed", defaultPresentationMode: "write" });
+    });
+
+    test("reserves the note delete permission for notebook admins", async () => {
+      expect((await patch({ noteDeletePermission: "admin" })).status).toBe(403);
+      expect(update).not.toHaveBeenCalled();
+      permission.mockResolvedValue("admin");
+      for (const noteDeletePermission of ["admin", "write"]) {
+        const response = await patch({ noteDeletePermission });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ id: "book01", noteDeletePermission });
+      }
+      for (const value of ["read", "none", "", null]) {
+        expect((await patch({ noteDeletePermission: value })).status).toBe(400);
+      }
+      expect(update).toHaveBeenCalledTimes(2);
     });
 
     test("rejects malformed defaults before invoking the service", async () => {

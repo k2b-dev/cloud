@@ -3,6 +3,7 @@ import { deleteAccess, hasPermission, type PermissionLevel } from "@k2b/cloud/se
 import { logger, serviceAccounts, get as settingsGet, toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
 import { sql } from "bun";
+import { isNoteDeletePermission, type NoteDeletePermission } from "../lib/note-delete-permission";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
 import { isPresentationMode, type PresentationMode } from "../lib/presentation-mode";
 import { generateUniqueShortId } from "../lib/short-id";
@@ -34,6 +35,7 @@ export type Notebook = {
   homepageNoteShortId: string | null;
   defaultPresentationMode: PresentationMode;
   defaultNoteTitleTemplate: string;
+  noteDeletePermission: NoteDeletePermission;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +54,7 @@ export type UpdateNotebook = {
   homepageNoteId?: string | null;
   defaultPresentationMode?: PresentationMode;
   defaultNoteTitleTemplate?: string;
+  noteDeletePermission?: NoteDeletePermission;
 };
 
 type DbNotebook = {
@@ -64,6 +67,7 @@ type DbNotebook = {
   homepage_note_short_id: string | null;
   default_presentation_mode: PresentationMode;
   default_note_title_template: string;
+  note_delete_permission: NoteDeletePermission;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -104,6 +108,7 @@ const mapToNotebook = (row: DbNotebook): Notebook => ({
   homepageNoteShortId: row.homepage_note_short_id,
   defaultPresentationMode: row.default_presentation_mode,
   defaultNoteTitleTemplate: row.default_note_title_template,
+  noteDeletePermission: row.note_delete_permission,
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -212,6 +217,7 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
             h.short_id AS homepage_note_short_id,
             n.default_presentation_mode,
             n.default_note_title_template,
+            n.note_delete_permission,
             n.created_by,
             n.created_at,
             n.updated_at,
@@ -244,6 +250,7 @@ export const listWithPermission = async (params: ListNotebooksParams): Promise<{
             h.short_id AS homepage_note_short_id,
             n.default_presentation_mode,
             n.default_note_title_template,
+            n.note_delete_permission,
             n.created_by,
             n.created_at,
             n.updated_at,
@@ -346,6 +353,7 @@ export const listAdmin = async (params: {
       h.short_id AS homepage_note_short_id,
       n.default_presentation_mode,
       n.default_note_title_template,
+      n.note_delete_permission,
       n.created_by,
       n.created_at,
       n.updated_at,
@@ -358,7 +366,7 @@ export const listAdmin = async (params: {
       OR LOWER(n.name) LIKE ${pattern}
     )
     GROUP BY n.id, n.short_id, n.name, n.description, n.icon, n.homepage_note_id, h.short_id,
-             n.default_presentation_mode, n.default_note_title_template, n.created_by, n.created_at, n.updated_at
+             n.default_presentation_mode, n.default_note_title_template, n.note_delete_permission, n.created_by, n.created_at, n.updated_at
     ORDER BY LOWER(n.name) ASC, n.created_at ASC
     LIMIT ${params.pagination.limit}
     OFFSET ${params.pagination.offset}
@@ -430,6 +438,7 @@ export const get = async (params: { id: string }): Promise<Notebook | null> => {
       h.short_id AS homepage_note_short_id,
       n.default_presentation_mode,
       n.default_note_title_template,
+      n.note_delete_permission,
       n.created_by,
       n.created_at,
       n.updated_at
@@ -453,6 +462,7 @@ export const getByShortId = async (params: { shortId: string }): Promise<Noteboo
       h.short_id AS homepage_note_short_id,
       n.default_presentation_mode,
       n.default_note_title_template,
+      n.note_delete_permission,
       n.created_by,
       n.created_at,
       n.updated_at
@@ -489,6 +499,7 @@ export const create = async (params: {
       NULL::text AS homepage_note_short_id,
       default_presentation_mode,
       default_note_title_template,
+      note_delete_permission,
       created_by,
       created_at,
       updated_at
@@ -558,6 +569,9 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
     return { ok: false, error: "Invalid default presentation mode", status: 400 };
   }
   const defaultNoteTitleTemplate = data.defaultNoteTitleTemplate ?? existing.defaultNoteTitleTemplate;
+  if (data.noteDeletePermission !== undefined && !isNoteDeletePermission(data.noteDeletePermission)) {
+    return { ok: false, error: "Invalid note delete permission", status: 400 };
+  }
 
   const syntax = validateNoteTitleTemplate(defaultNoteTitleTemplate);
   if (!syntax.ok) return { ok: false, error: syntax.error, status: 400 };
@@ -585,6 +599,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
     return { ok: false, error: "Homepage note not found", status: 404 };
   }
 
+  // Only an explicit change writes the deletion rule, so an update from a stale snapshot cannot undo an admin's choice.
   const [row] = await sql<DbNotebook[]>`
     UPDATE notebooks.notebooks
     SET name = ${name},
@@ -593,6 +608,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
         homepage_note_id = ${homepageNoteId}::uuid,
         default_presentation_mode = ${defaultPresentationMode},
         default_note_title_template = ${defaultNoteTitleTemplate},
+        note_delete_permission = COALESCE(${data.noteDeletePermission ?? null}::text, note_delete_permission),
         updated_at = now()
     WHERE id = ${id}::uuid
     RETURNING
@@ -605,6 +621,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
       NULL::text AS homepage_note_short_id,
       default_presentation_mode,
       default_note_title_template,
+      note_delete_permission,
       created_by,
       created_at,
       updated_at

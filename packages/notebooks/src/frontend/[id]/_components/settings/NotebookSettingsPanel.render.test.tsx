@@ -6,6 +6,7 @@ import "../detail/ssr-test-plugin";
 
 const { NotebookSettingsBody } = await import("./NotebookSettingsPanel.tsx");
 const { DefaultPresentationSection, FeaturesSection } = await import("./FeaturesSection.tsx");
+const { NoteDeletionSection } = await import("./AccessSection.tsx");
 
 const notebook: Notebook = {
   id: "notes1",
@@ -14,6 +15,7 @@ const notebook: Notebook = {
   icon: "ti ti-flask",
   homepageNoteId: null,
   defaultPresentationMode: "write",
+  noteDeletePermission: "write",
   defaultNoteTitleTemplate: "{{ date }}",
   createdBy: "user-id",
   createdAt: "2026-08-10T10:00:00.000Z",
@@ -64,6 +66,25 @@ describe("Notebook settings", () => {
     expect(html).toContain('role="combobox"');
     expect(html).toContain("Write");
     expect(html).not.toContain("disabled");
+  });
+
+  test("lets admins choose who can delete notes with the shared selector, in English and German", () => {
+    const html = renderToString(() => (
+      <NoteDeletionSection notebook={{ ...notebook, noteDeletePermission: "admin" }} onNotebookChange={() => undefined} />
+    ));
+    expect(html).toContain("Deleting notes");
+    expect(html).toContain('aria-label="Who can delete notes"');
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain("Admins only");
+    expect(html).not.toContain("disabled");
+
+    const german = renderToString(() => (
+      <LocaleProvider locale="de">
+        <NoteDeletionSection notebook={notebook} onNotebookChange={() => undefined} />
+      </LocaleProvider>
+    ));
+    expect(german).toContain("Wer darf Notizen löschen");
+    expect(german).toContain("Alle mit Schreibrechten");
   });
 
   test("disables the shared default view setting for non-admins", () => {

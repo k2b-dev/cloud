@@ -2,6 +2,7 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, createNavigation, type NavigationItem, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
+import { mayDeleteNotes } from "../../../../lib/note-delete-permission";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -59,6 +60,7 @@ export default function NotebookSidebar(props: Props) {
     refreshWorkspace,
   } = useNotebookWorkspaceState(props.ctx);
   const canWrite = props.ctx.permission === "write" || props.ctx.permission === "admin";
+  const canDeleteNotes = () => mayDeleteNotes(props.ctx.permission, notebook().noteDeletePermission);
   const navigatorMode = () => props.ctx.settings.sidebarMode === "navigator";
   const [treeSort, setTreeSort] = createSignal<NoteTreeSort>(props.ctx.settings.treeSort);
   const sortedTree = createMemo(() => sortNoteTree(noteTree(), treeSort()));
@@ -114,6 +116,7 @@ export default function NotebookSidebar(props: Props) {
       notebookName={notebook().name}
       selectedNoteId={selectedNoteId()}
       canWrite={canWrite}
+      canDeleteNotes={canDeleteNotes()}
       showSearch={false}
       showHeaderActions={false}
       favoriteNoteIds={[...favoriteNoteIds()]}
@@ -124,7 +127,7 @@ export default function NotebookSidebar(props: Props) {
   const actions = useNoteActions(notebook().id, noteTree);
   const favorites = useFavoriteNotes({ notebookId: notebook().id, initialFavoriteNoteIds: () => [...favoriteNoteIds()] });
   const noteActions = (node: NoteTreeNode) =>
-    noteActionItems(node, actions, t()).flatMap((item) => ("items" in item ? item.items : [item]));
+    noteActionItems(node, actions, t(), canDeleteNotes()).flatMap((item) => ("items" in item ? item.items : [item]));
   const noteEntry = (node: NoteTreeNode): NavigationItem => ({
     id: `note:${node.id}`,
     label: node.title || t().untitled,
@@ -144,6 +147,7 @@ export default function NotebookSidebar(props: Props) {
             id: `note-action:${node.id}:${item.icon}`,
             action: `note-action:${node.id}:${item.icon}`,
             label: item.label,
+            description: item.description,
             icon: item.icon,
             disabled: item.disabled || actions.loading(),
           }))

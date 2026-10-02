@@ -228,3 +228,29 @@ test("an item's expanded state stays with its owner even without a handler", asy
     dom.cleanup();
   }
 });
+
+test("row actions keep their description, so a disabled action can say why", async () => {
+  const dom = createDomTestHarness();
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const navigation = createNavigation({
+    items: () => [
+      {
+        id: "plan",
+        label: "Plan",
+        href: "/plan",
+        actions: [{ id: "delete", label: "Delete", action: "delete", description: "Only admins delete here.", disabled: true }],
+      },
+    ],
+  });
+  const dispose = render(() => <Navigation navigation={navigation} label="Notes" />, dom.root);
+  try {
+    const trigger = dom.root.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+    const menu = dom.document.getElementById(trigger.getAttribute("aria-controls")!)!;
+    const item = menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+    expect(item.disabled).toBe(true);
+    expect(item.querySelector("small")?.textContent).toBe("Only admins delete here.");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

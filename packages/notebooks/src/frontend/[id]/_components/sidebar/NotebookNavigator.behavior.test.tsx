@@ -20,6 +20,7 @@ if (!isServer) {
     icon: null,
     homepageNoteId: "Home01",
     defaultPresentationMode: "write",
+    noteDeletePermission: "write",
     defaultNoteTitleTemplate: "",
     createdBy: null,
     createdAt: "2026-01-01T00:00:00.000Z",

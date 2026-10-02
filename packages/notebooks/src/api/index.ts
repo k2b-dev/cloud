@@ -37,6 +37,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS } from "@/lib/note-delete-permission";
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
@@ -71,6 +72,9 @@ const NotebookSchema = z.object({
   homepageNoteId: ResourceShortIdSchema.nullable(),
   defaultNoteTitleTemplate: z.string().describe("Liquid template used to initialize the H1 of new notes"),
   defaultPresentationMode: z.enum(PRESENTATION_MODES).describe("Default view for notebook editors and admins; readers always use Book"),
+  noteDeletePermission: z
+    .enum(NOTE_DELETE_PERMISSIONS)
+    .describe("Permission needed to delete notes: `write` (default) or `admin`. Editing note content stays open to writers."),
   createdBy: z.uuid().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -91,6 +95,7 @@ const UpdateNotebookSchema = z
     homepageNoteId: ResourceShortIdSchema.nullable().optional().describe("Homepage note ID"),
     defaultNoteTitleTemplate: z.string().min(1).max(2_000).optional(),
     defaultPresentationMode: z.enum(PRESENTATION_MODES).optional(),
+    noteDeletePermission: z.enum(NOTE_DELETE_PERMISSIONS).optional(),
   })
   .strict();
 
@@ -1229,7 +1234,7 @@ const app = new Hono<AuthContext>()
       tags: ["Notebooks"],
       summary: "Update notebook",
       description:
-        "Update notebook settings. Requires write permission; scripting and the default presentation mode require admin permission.",
+        "Update notebook settings. Requires write permission; the default presentation mode and `noteDeletePermission` require admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NotebookSchema, "Updated notebook"),
@@ -1241,7 +1246,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const data = c.req.valid("json");
 
-      const requiredLevel = data.defaultPresentationMode !== undefined ? "admin" : "write";
+      const requiredLevel = data.defaultPresentationMode !== undefined || data.noteDeletePermission !== undefined ? "admin" : "write";
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, requiredLevel);
       if (error) return error;
 
@@ -2162,11 +2167,11 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Delete note",
-      description: "Delete a note and all its children.",
+      description: `Delete a note and all its children. Requires write permission, or admin permission when the notebook's \`noteDeletePermission\` is \`admin\`; that case returns 403 with code \`${NOTE_DELETE_ADMIN_ONLY}\`.`,
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Note deleted"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        403: jsonResponse(ErrorResponseSchema, `Access denied, or code \`${NOTE_DELETE_ADMIN_ONLY}\` when only admins may delete notes`),
         404: jsonResponse(ErrorResponseSchema, "Note not found"),
       },
     }),
@@ -2174,13 +2179,17 @@ const app = new Hono<AuthContext>()
       let notebookId = c.req.param("id")!;
       let noteId = c.req.param("noteId")!;
 
-      const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
+      const { notebook, permission, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
       const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
-      return respondMessage(c, notebooksService.note.remove({ id: noteId }), messages(c).noteDeleted);
+      const removed = await notebooksService.note.remove({ id: noteId, permission });
+      if (!removed.ok && removed.error.code === NOTE_DELETE_ADMIN_ONLY) {
+        return respond(c, fail({ ...removed.error, message: messages(c).noteDeleteAdminOnly }));
+      }
+      return respondMessage(c, Promise.resolve(removed), messages(c).noteDeleted);
     },
   )
 
