@@ -1,3 +1,4 @@
+import type { MailActionCommand } from "./mail-action-outcomes";
 import type { MailActionId } from "./mail-actions";
 import { executeMailBulkAction, type MailBulkTarget } from "./mail-bulk-actions";
 import type { MailListOptimisticField } from "./mail-list-optimistic";
@@ -40,6 +41,8 @@ type ActionFailure = {
 export type MailWorkspaceActionRunnerHost = {
   resolveTargets: (actionId: MailActionId) => MailBulkTarget[];
   chooseDestinationFolder: () => Promise<string | null>;
+  /** The folder Archive, Spam, Not spam, or Delete moves to, when the workspace can tell. */
+  roleDestinationFolderId: (actionId: MailActionId) => string | null;
   applyOptimistic: (actionId: MailActionId, targets: readonly MailBulkTarget[]) => void;
   clearOptimistic: (conversationIds: readonly string[], fields: readonly MailListOptimisticField[]) => void;
   submit: (params: {
@@ -50,7 +53,13 @@ export type MailWorkspaceActionRunnerHost = {
     correlationId: string;
     idempotencyKey: string;
     signal: AbortSignal;
-  }) => Promise<void>;
+  }) => Promise<readonly MailActionCommand[]>;
+  /** Follows the queued commands until they finish, so a later failure still reaches the user. */
+  followOutcomes: (params: {
+    actionId: MailActionId;
+    destinationFolderId: string | null;
+    conversations: { conversationId: string; label: string; commands: MailActionCommand[] }[];
+  }) => void;
   pruneSelection: (succeededConversationIds: ReadonlySet<string>) => void;
   removesActiveConversation: (actionId: MailActionId, succeededConversationIds: ReadonlySet<string>) => boolean;
   refreshAfterSuccess: (params: { removesActiveConversation: boolean; succeededConversationIds: ReadonlySet<string> }) => Promise<void>;
@@ -100,8 +109,10 @@ export const runMailWorkspaceAction = async (
     }
     const destinationFolderId = actionId === "move" ? execution.destinationFolderId : undefined;
     if (signal.aborted || (actionId === "move" && !destinationFolderId)) return;
-    if (actionId === "move") {
-      targets = removeDestinationPlacements(targets, destinationFolderId!);
+    // A conversation already in the destination folder has nothing to move out of it.
+    const knownDestinationFolderId = destinationFolderId ?? host.roleDestinationFolderId(actionId);
+    if (knownDestinationFolderId) {
+      targets = removeDestinationPlacements(targets, knownDestinationFolderId);
       if (targets.length === 0) {
         if (!options.silent) host.showNothingToMove();
         return;
@@ -110,17 +121,18 @@ export const runMailWorkspaceAction = async (
 
     host.applyOptimistic(actionId, targets);
     optimisticApplied = true;
+    const queued = new Map<string, MailActionCommand[]>();
     const result = await executeMailBulkAction({
       actionId,
       targets,
-      submit: (target, sourceFolderId) => {
+      submit: async (target, sourceFolderId) => {
         const key = `${actionId}:${target.conversationId}:${sourceFolderId}:${destinationFolderId ?? ""}`;
         let idempotencyKey = execution.idempotencyKeys.get(key);
         if (!idempotencyKey) {
           idempotencyKey = crypto.randomUUID();
           execution.idempotencyKeys.set(key, idempotencyKey);
         }
-        return host.submit({
+        const commands = await host.submit({
           actionId,
           target,
           sourceFolderId,
@@ -129,6 +141,7 @@ export const runMailWorkspaceAction = async (
           idempotencyKey,
           signal,
         });
+        queued.set(target.conversationId, [...(queued.get(target.conversationId) ?? []), ...commands]);
       },
     });
     if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -139,6 +152,17 @@ export const runMailWorkspaceAction = async (
     );
     const succeeded = new Set(result.succeededConversationIds);
     host.pruneSelection(succeeded);
+    // A silent action was not the user's choice, so its later outcome is not announced either.
+    if (!options.silent)
+      host.followOutcomes({
+        actionId,
+        destinationFolderId: destinationFolderId ?? null,
+        conversations: targets.flatMap((target) =>
+          succeeded.has(target.conversationId)
+            ? [{ conversationId: target.conversationId, label: target.label, commands: queued.get(target.conversationId) ?? [] }]
+            : [],
+        ),
+      });
 
     if (succeeded.size > 0) {
       await host.refreshAfterSuccess({

@@ -29,7 +29,14 @@ import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
 import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
-import { buildMailActionInput, MAIL_ACTION_MISSING_DESTINATION, type MailActionId } from "./_components/mail-actions";
+import { createMailActionOutcomes, type MailActionFailureReport } from "./_components/mail-action-outcomes";
+import {
+  buildMailActionInput,
+  MAIL_ACTION_MISSING_DESTINATION,
+  type MailActionId,
+  mailMoveSourceFolderIds,
+  mailRoleDestinationFolderId,
+} from "./_components/mail-actions";
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
@@ -685,8 +692,15 @@ function MailWorkspaceView(props: {
     () => selectedListItem()?.flagged ?? data.detailMessages.some((message) => message.flags.includes("\\Flagged")),
   );
   const selectedInJunk = createMemo(() => {
-    const folderId = selectedListItem()?.sourceFolderId ?? data.folderId ?? data.detailMessages.at(-1)?.folderId;
-    return Boolean(folderId && data.folders.some((folder) => folder.id === folderId && folder.role === "junk"));
+    const folderIds = mailMoveSourceFolderIds({
+      viewFolderId: data.folderId,
+      activeFolderIds:
+        selectedListItem()?.activeFolderIds ?? data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
+      folders: data.folders,
+    });
+    return (
+      folderIds.length > 0 && folderIds.every((folderId) => data.folders.some((folder) => folder.id === folderId && folder.role === "junk"))
+    );
   });
   const selectedConversationRevision = createMemo(() => selectedListItem()?.revision ?? data.collaborationState?.revision ?? null);
   const canShowDetails = createMemo(() => Boolean(data.selectedConversationId));
@@ -840,7 +854,7 @@ function MailWorkspaceView(props: {
         ? item.unreadFolderIds
         : ["mark_unread", "flag", "unflag"].includes(actionId)
           ? item.activeFolderIds
-          : [item.sourceFolderId].filter((folderId): folderId is string => Boolean(folderId));
+          : mailMoveSourceFolderIds({ viewFolderId: data.folderId, activeFolderIds: item.activeFolderIds, folders: data.folders });
     return {
       conversationId: item.conversationId,
       label: item.subject || t().noSubject,
@@ -865,7 +879,11 @@ function MailWorkspaceView(props: {
               .map((message) => message.folderId),
           ),
         ]
-      : [data.folderId ?? data.detailMessages.at(-1)?.folderId ?? null];
+      : mailMoveSourceFolderIds({
+          viewFolderId: data.folderId,
+          activeFolderIds: data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
+          folders: data.folders,
+        });
     return [
       {
         conversationId: data.selectedConversationId!,
@@ -1126,9 +1144,91 @@ function MailWorkspaceView(props: {
     return splitMessageMutation.mutate({ messageId, conversationId, revision });
   };
 
+  // A queued action runs later. Follow its commands so a change the mail server did not make still
+  // reaches the user who was told it was queued.
+  const actionOutcomes = createMailActionOutcomes();
+  let outcomePollTimer: ReturnType<typeof setTimeout> | null = null;
+  let outcomePollAttempt = 0;
+  const failureReason = (code: string): string => {
+    switch (code) {
+      case "REMOTE_MESSAGE_MISSING":
+      case "REMOTE_MESSAGE_STALE":
+      case "UIDVALIDITY_CHANGED":
+        return t().failureMessageGone;
+      case "REMOTE_STATE_CHANGED":
+        return t().failureMessageChanged;
+      case "PROVIDER_RIGHTS_CHANGED":
+      case "ACCESS_REVOKED":
+        return t().failureNotAllowed;
+      case "DESTINATION_UNAVAILABLE":
+      case "FOLDER_UNAVAILABLE":
+        return t().failureFolderUnavailable;
+      case "cancelled":
+        return t().failureCancelled;
+      case "needs_attention":
+        return t().failureUnclear;
+      default:
+        return t().failureNotApplied;
+    }
+  };
+  const showActionFailures = (report: MailActionFailureReport) => {
+    const [first] = report.failures;
+    if (!first || disposed) return;
+    // An unclear outcome must be checked, not repeated; the others can be tried again from the list.
+    const retryable = new Set(report.failures.flatMap((failure) => (failure.code === "needs_attention" ? [] : [failure.conversationId])));
+    const retryTargets = () =>
+      data.listItems.flatMap((item) => {
+        const target = item.conversationId && retryable.has(item.conversationId) ? actionTargetForItem(item, report.actionId) : null;
+        return target ? [target] : [];
+      });
+    const more = report.failures.length - 1;
+    toast.error(`${first.label}: ${failureReason(first.code)}${more > 0 ? ` (${t().moreNotApplied({ count: more })})` : ""}`, {
+      title:
+        report.conversationCount === 1
+          ? t().changeNotApplied
+          : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount }),
+      action:
+        retryTargets().length > 0
+          ? {
+              label: t().tryAgain,
+              onClick: () => {
+                const targets = retryTargets();
+                if (targets.length > 0)
+                  void runAction(report.actionId, { targets, destinationFolderId: report.destinationFolderId ?? undefined });
+              },
+            }
+          : null,
+    });
+  };
+  const pollActionOutcomes = async () => {
+    outcomePollTimer = null;
+    const commandIds = actionOutcomes.pendingCommandIds();
+    if (commandIds.length > 0) {
+      try {
+        const response = await apiClient.mailboxes[":mailboxId"].commands.outcomes.$post({ param: { mailboxId }, json: { commandIds } });
+        if (response.ok) for (const report of actionOutcomes.apply(commandIds, await response.json())) showActionFailures(report);
+      } catch {
+        // The next poll asks again.
+      }
+    }
+    if (!disposed && actionOutcomes.hasPending()) scheduleActionOutcomePoll();
+  };
+  // Commands usually finish within seconds; one that waits for the mailbox is asked about less often.
+  const scheduleActionOutcomePoll = (restart = false) => {
+    if (restart) outcomePollAttempt = 0;
+    if (outcomePollTimer && !restart) return;
+    if (outcomePollTimer) clearTimeout(outcomePollTimer);
+    outcomePollTimer = setTimeout(() => void pollActionOutcomes(), Math.min(1_000 * 2 ** outcomePollAttempt, 30_000));
+    outcomePollAttempt += 1;
+  };
+  onCleanup(() => {
+    if (outcomePollTimer) clearTimeout(outcomePollTimer);
+  });
+
   const actionHost = {
     resolveTargets: actionTargets,
     chooseDestinationFolder,
+    roleDestinationFolderId: (nextActionId) => mailRoleDestinationFolderId(nextActionId, data.folders),
     applyOptimistic: (nextActionId, targets) => {
       if (nextActionId === "mark_read" || nextActionId === "mark_unread") {
         const unread = nextActionId === "mark_unread";
@@ -1163,6 +1263,12 @@ function MailWorkspaceView(props: {
         { init: { signal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().actionFailed));
+      return (await response.json()).commands;
+    },
+    followOutcomes: (params) => {
+      const report = actionOutcomes.follow(params);
+      if (report) showActionFailures(report);
+      if (actionOutcomes.hasPending()) scheduleActionOutcomePoll(true);
     },
     pruneSelection: (succeeded) => {
       const current = conversationSelection();
@@ -1439,18 +1545,11 @@ function MailWorkspaceView(props: {
         onOpenRemoteContent={() => void openRemoteContent()}
         onOpenSubscriptions={() => void openSubscriptions()}
         onOpenSettings={() => void openSettings()}
-        onMoveConversation={(input) =>
-          runAction("move", {
-            targets: [
-              {
-                conversationId: input.conversationId,
-                label: t().conversation,
-                sourceFolderIds: [input.sourceFolderId],
-              },
-            ],
-            destinationFolderId: input.destinationFolderId,
-          })
-        }
+        onMoveConversation={(input) => {
+          const item = data.listItems.find((candidate) => candidate.conversationId === input.conversationId);
+          const target = item ? actionTargetForItem(item, "move") : null;
+          return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
+        }}
         onNavigate={navigateWorkspace}
       />
       <AppWorkspace.Content>

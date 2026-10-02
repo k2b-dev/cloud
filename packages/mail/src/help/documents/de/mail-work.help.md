@@ -86,13 +86,15 @@ HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-,
 
 Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten Text anzeigen**, um ihn aufzuklappen, und **Zitierten Text ausblenden**, um ihn wieder einzuklappen. Ein aufgeklapptes Zitat bleibt offen, während neue Aktivität oder andere Live-Aktualisierungen in der Unterhaltung eintreffen.
 
-Die oberen Aktionen wirken auf die aktive Anbieterablage der Unterhaltung:
+Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansiehst, etwa dem Posteingang, auch wenn deine neueste Antwort in Gesendet liegt. In Ansichten über mehrere Ordner, etwa **Alle E-Mails** oder **Handlungsbedarf**, nehmen sie die Unterhaltung aus jedem Ordner, in dem sie abgelegt ist. Deine Kopien in Gesendet und Entwürfe sowie Nachrichten in Junk, Papierkorb oder **Alle Nachrichten** von Gmail bleiben, wo sie sind, außer die Unterhaltung liegt nur dort. **In Ordner verschieben** und das Ziehen einer Zeile folgen derselben Regel.
 
 - **Archivieren** verschiebt sie in den zugeordneten Archivordner. Gmail hat keinen Archivordner. Ohne Zuordnung entfernt Archivieren die Unterhaltung deshalb aus dem aktuellen Ordner, etwa dem Posteingang, und behält sie in **Alle Nachrichten**.
 - **In Junk verschieben** verschiebt sie in den zugeordneten Junk-Ordner. In Junk wird dieselbe Aktion zu **Kein Spam** und verschiebt die Unterhaltung zurück in den Posteingang.
 - **Löschen** verschiebt sie in den zugeordneten Papierkorb.
 
 Diese Aktionen erfordern Schreibzugriff und die entsprechende Ordnerzuordnung. Meldet Mail, dass die Unterhaltung keine aktive Anbieterablage besitzt, aktualisiere das Postfach oder bitte eine Person mit Adminrechten, Ordnererkennung und Zuordnungen zu prüfen.
+
+Mail reiht jede Aktion ein, und der Mailserver führt sie Augenblicke später aus. Nimmt der Server die Änderung nicht vor, etwa weil die Nachricht in einem anderen E-Mail-Programm verschoben wurde, nennt Mail die unveränderte Unterhaltung und bietet **Erneut versuchen** an.
 
 Wähle **Mail-Befehle** über der Unterhaltungsliste, um dieselben Aktionen zu durchsuchen, die in Schaltflächen und Menüs erscheinen. Häufige Befehle haben auch Tastaturkürzel. Unter **Tastaturkürzel konfigurieren** in den Mail-Befehlen kannst du sie auf diesem Gerät ändern oder deaktivieren. Kürzel werden nicht ausgeführt, während du in einem Eingabefeld oder Nachrichteneditor schreibst.
 

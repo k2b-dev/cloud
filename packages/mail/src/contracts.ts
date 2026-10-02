@@ -1322,6 +1322,17 @@ export const mailCommandSchema = z.object({
 });
 export type MailCommand = z.infer<typeof mailCommandSchema>;
 
+/** At most this many commands per outcome request, the same ceiling as one page of a Mail list. */
+export const MAX_COMMAND_OUTCOME_IDS = 100;
+export const mailCommandOutcomesInputSchema = z.object({ commandIds: z.array(z.uuid()).min(1).max(MAX_COMMAND_OUTCOME_IDS) }).strict();
+export const mailCommandOutcomeSchema = z.object({
+  id: z.uuid(),
+  state: commandStateSchema,
+  /** Stable error code of a failed or unclear command; the client words it. */
+  code: z.string().nullable(),
+});
+export type MailCommandOutcome = z.infer<typeof mailCommandOutcomeSchema>;
+
 export const operatorActionKindSchema = z.enum([
   "sync_mailbox",
   "sync_folder",

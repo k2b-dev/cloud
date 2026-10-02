@@ -20,11 +20,15 @@ const host = (overrides: Partial<MailWorkspaceActionRunnerHost> = {}) => {
   const value: MailWorkspaceActionRunnerHost = {
     resolveTargets: () => [target("one"), target("two")],
     chooseDestinationFolder: async () => "archive",
+    roleDestinationFolderId: () => null,
     applyOptimistic: () => events.push("optimistic"),
     clearOptimistic: (ids) => events.push(`clear:${ids.join(",")}`),
-    submit: async ({ target: item }) => {
+    submit: async ({ target: item, sourceFolderId }) => {
       events.push(`submit:${item.conversationId}`);
+      return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
     },
+    followOutcomes: ({ conversations }) =>
+      events.push(`follow:${conversations.map((conversation) => conversation.commands.map((command) => command.id).join("+")).join(",")}`),
     pruneSelection: (ids) => events.push(`prune:${[...ids].join(",")}`),
     removesActiveConversation: () => false,
     refreshAfterSuccess: async () => {
@@ -65,18 +69,30 @@ describe("Mail workspace action runner", () => {
   test("owns the successful optimistic action sequence", async () => {
     const fixture = host();
     await runMailWorkspaceAction("mark_read", {}, fixture.host, signal());
-    expect(fixture.events).toEqual(["optimistic", "submit:one", "submit:two", "clear:", "prune:one,two", "refresh", "success:2"]);
+    expect(fixture.events).toEqual([
+      "optimistic",
+      "submit:one",
+      "submit:two",
+      "clear:",
+      "prune:one,two",
+      "follow:one:inbox,two:inbox",
+      "refresh",
+      "success:2",
+    ]);
   });
 
   test("keeps partial failures explicit and reconciles successful targets", async () => {
     const fixture = host({
       submit: async ({ target: item }) => {
         if (item.conversationId === "two") throw new Error("provider rejected");
+        return [{ id: "archive-one", state: "queued" }];
       },
     });
     await runMailWorkspaceAction("archive", {}, fixture.host, signal());
     expect(fixture.events).toContain("clear:two");
     expect(fixture.events).toContain("prune:one");
+    // The rejected conversation was already reported; only the queued one is followed.
+    expect(fixture.events).toContain("follow:archive-one");
     expect(fixture.events).toContain("failures:1");
   });
 
@@ -84,7 +100,10 @@ describe("Mail workspace action runner", () => {
     const submissions: Array<{ correlationId: string; idempotencyKey: string }> = [];
     const fixture = host({
       resolveTargets: () => [target("one")],
-      submit: async ({ correlationId, idempotencyKey }) => void submissions.push({ correlationId, idempotencyKey }),
+      submit: async ({ correlationId, idempotencyKey }) => {
+        submissions.push({ correlationId, idempotencyKey });
+        return [];
+      },
     });
     const execution = { correlationId: "correlation-1", idempotencyKeys: new Map<string, string>() };
 
@@ -146,6 +165,7 @@ describe("Mail workspace action runner", () => {
       resolveTargets: () => [target("one", ["primary", "shared"])],
       submit: async ({ sourceFolderId }) => {
         if (sourceFolderId === "shared") throw new Error("provider rejected");
+        return [];
       },
       showFailures: async (failures) => {
         submittedPlacements = failures[0]?.submittedPlacements ?? 0;
@@ -158,5 +178,34 @@ describe("Mail workspace action runner", () => {
     expect(fixture.events).toContain("reconcile");
     expect(fixture.events).toContain("failures:1");
     expect(submittedPlacements).toBe(1);
+  });
+
+  test("leaves conversations alone that already sit in the folder Archive moves to", async () => {
+    const submitted: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [target("one", ["inbox", "archive"]), target("two", ["archive"])],
+      roleDestinationFolderId: (actionId) => (actionId === "archive" ? "archive" : null),
+      submit: async ({ target: item, sourceFolderId }) => {
+        submitted.push(`${item.conversationId}:${sourceFolderId}`);
+        return [];
+      },
+    });
+
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(submitted).toEqual(["one:inbox"]);
+
+    const nothing = host({ resolveTargets: () => [target("two", ["archive"])], roleDestinationFolderId: () => "archive" });
+    await runMailWorkspaceAction("archive", {}, nothing.host, signal());
+    expect(nothing.events).toEqual(["nothing"]);
+  });
+
+  test("follows the commands a user action queued, but not those of a silent read on open", async () => {
+    const chosen = host();
+    await runMailWorkspaceAction("archive", {}, chosen.host, signal());
+    expect(chosen.events).toContain("follow:one:inbox,two:inbox");
+
+    const silent = host();
+    await runMailWorkspaceAction("mark_read", { silent: true }, silent.host, signal());
+    expect(silent.events.some((event) => event.startsWith("follow:"))).toBe(false);
   });
 });

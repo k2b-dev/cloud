@@ -86,13 +86,15 @@ HTML messages keep a bounded set of layout, typography, color, spacing, and tabl
 
 Mail collapses the quoted history of earlier messages. Select **Show quoted text** to expand it and **Hide quoted text** to collapse it again. An expanded quote stays open while new activity or other live updates arrive in the conversation.
 
-The top actions operate on the conversation's active provider placement:
+The top actions take the conversation out of the folder you are viewing, such as Inbox, even when your newest reply is stored in Sent. In views that span folders, such as **All mail** or **Needs action**, they take it out of every folder it is filed in. Your copies in Sent and Drafts, and messages in Junk, Trash, or Gmail's **All Mail**, stay where they are unless the conversation is only there. **Move to folder** and dragging a row follow the same rule.
 
 - **Archive** moves it to the mapped archive folder. Gmail has no archive folder, so without a mapping Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.
 - **Move to junk** moves it to the mapped junk folder. In Junk, the same action becomes **Not spam** and moves the conversation back to Inbox.
 - **Delete** moves it to the mapped trash folder.
 
 These actions require write access and the corresponding folder mapping. If Mail reports that the conversation has no active provider placement, refresh the mailbox or ask an administrator to review folder discovery and mappings.
+
+Mail queues every action and the mail server applies it moments later. If the server does not make the change, for example because the message was moved in another email client, Mail names the conversation that stayed as it was and offers **Try again**.
 
 Select **Mail commands** above the conversation list to search the same actions that appear in buttons and menus. Common commands also have keyboard shortcuts. Open **Configure keyboard shortcuts** from Mail commands to change or disable them on this device. Shortcuts do not run while you are typing in an input or message editor.
 

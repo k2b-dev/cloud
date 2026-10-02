@@ -55,6 +55,8 @@ import {
   type MailCommand,
   type MailCommandInput,
   mailCommandInputSchema,
+  mailCommandOutcomeSchema,
+  mailCommandOutcomesInputSchema,
   mailConversationContextQuerySchema,
   mailConversationContextSchema,
   mailConversationPreviewSchema,
@@ -2761,6 +2763,22 @@ const mailOperationsApi = new Hono<MailApiContext>()
       c,
       commands.listCommands(requestContext(c), internalMailboxId(c), (await internalInput(c, c.req.valid("query"))).limit),
     ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/commands/outcomes",
+    describeRoute({
+      tags: ["Mail:Commands"],
+      summary: "Read the current state of queued commands",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(mailCommandOutcomeSchema), "Each known command's state and error code"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid command IDs"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("json", mailCommandOutcomesInputSchema),
+    async (c) => respondPublic(c, commands.getCommandOutcomes(requestContext(c), internalMailboxId(c), c.req.valid("json").commandIds)),
   )
   .get("/mailboxes/:mailboxId/commands/:commandId", v("param", mailboxAndIdParamSchema("commandId", z.uuid())), async (c) => {
     const params = internalParams(c, c.req.valid("param")) as {
