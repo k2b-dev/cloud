@@ -28,12 +28,12 @@ const solid: BunPlugin = {
   },
 };
 
-export async function build({ development = false } = {}) {
-  await rm(dist, { recursive: true, force: true });
-  await mkdir(dist, { recursive: true });
+export async function build({ development = false, outdir = dist } = {}) {
+  await rm(outdir, { recursive: true, force: true });
+  await mkdir(outdir, { recursive: true });
   const result = await Bun.build({
     entrypoints: [resolve(packageRoot, "src/main.tsx"), resolve(packageRoot, "src/styles.css")],
-    outdir: resolve(dist, "assets"),
+    outdir: resolve(outdir, "assets"),
     target: "browser",
     splitting: true,
     conditions: ["browser"],
@@ -58,18 +58,18 @@ export async function build({ development = false } = {}) {
   const cssText = (await css.text()) + "\n" + (await iconStyles(scripts.join("\n")));
   const cssName = `styles-${Bun.hash(cssText).toString(16)}.css`;
   await rm(css.path);
-  await Bun.write(resolve(dist, "assets", cssName), cssText);
-  await cp(resolve(packageRoot, "public"), dist, { recursive: true });
-  await mkdir(resolve(dist, "licenses"), { recursive: true });
-  await cp(resolve(dirname(Bun.resolveSync("qr-scanner", packageRoot)), "LICENSE"), resolve(dist, "licenses/qr-scanner.txt"));
+  await Bun.write(resolve(outdir, "assets", cssName), cssText);
+  await cp(resolve(packageRoot, "public"), outdir, { recursive: true });
+  await mkdir(resolve(outdir, "licenses"), { recursive: true });
+  await cp(resolve(dirname(Bun.resolveSync("qr-scanner", packageRoot)), "LICENSE"), resolve(outdir, "licenses/qr-scanner.txt"));
   await cp(
     resolve(dirname(Bun.resolveSync("hash-wasm/package.json", resolve(packageRoot, "../../packages/cloud"))), "LICENSE"),
-    resolve(dist, "licenses/hash-wasm.txt"),
+    resolve(outdir, "licenses/hash-wasm.txt"),
   );
   const en = authMessages.resolve(["en"]).t;
   const de = authMessages.resolve(["de"]).t;
   await Bun.write(
-    resolve(dist, "index.html"),
+    resolve(outdir, "index.html"),
     `<!doctype html>
 <html lang="en">
 <head>
@@ -104,8 +104,8 @@ export async function build({ development = false } = {}) {
 </html>
 `,
   );
-  if (!development) await writeServiceWorker(dist);
-  console.log(`Built pwa-auth → ${dist}`);
+  if (!development) await writeServiceWorker(outdir);
+  console.log(`Built pwa-auth → ${outdir}`);
 }
 
 if (import.meta.main) await build();
