@@ -716,6 +716,79 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("a removed focused control or an unmounted rail no longer holds every toast", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const open = () =>
+      Array.from(
+        dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast]:not([data-closing])"),
+        (card) => card.querySelector(".k2b-toast__description")?.textContent,
+      );
+    // Firefox and WebKit fire no focusout when a focused element is removed; neither does this harness.
+    const removeSilently = (element: Element) => {
+      const swallow = (event: Event) => event.stopImmediatePropagation();
+      dom.document.addEventListener("focusout", swallow, true);
+      element.remove();
+      dom.document.removeEventListener("focusout", swallow, true);
+    };
+
+    // Removing the focused action keeps the keyboard in the toast, on its close button.
+    const exporting = toast("Exporting", { progress: 0.2, action: { label: "Cancel", onClick: () => {} } });
+    dom.document.querySelector<HTMLButtonElement>(".k2b-toast__action")!.focus();
+    exporting.update("Export cancelled", { progress: null, action: null, duration: 100 });
+    expect(dom.document.activeElement?.className).toBe("k2b-toast__close");
+    // Replacing the action keeps the keyboard on the action.
+    exporting.update("Exporting again", { duration: 100, action: { label: "Cancel", onClick: () => {} } });
+    dom.document.querySelector<HTMLButtonElement>(".k2b-toast__action")!.focus();
+    exporting.update("Still exporting", { duration: 100, action: { label: "Cancel", onClick: () => {} } });
+    expect(dom.document.activeElement?.className).toBe("k2b-toast__action");
+    toast.dismissAll();
+    await Bun.sleep(220);
+
+    // A focused, hovered control that custom content removes without focusout or pointerleave releases the rail.
+    const retry = dom.document.createElement("button");
+    retry.textContent = "Retry";
+    const panel = dom.document.createElement("div");
+    panel.append(retry);
+    const slot = toast.custom(panel);
+    const panelCard = dom.document.querySelector<HTMLElement>("[data-custom]")!;
+    panelCard.dispatchEvent(new dom.window.PointerEvent("pointerenter") as unknown as Event);
+    retry.focus();
+    toast.success("Saved", { duration: 100 });
+    removeSilently(retry);
+    // WebKit fires no pointerleave once the hovered button is gone, only pointerover where the pointer goes next.
+    dom.document.body.dispatchEvent(new dom.window.PointerEvent("pointerover", { bubbles: true }) as unknown as Event);
+    await Bun.sleep(150);
+    expect(open()).toEqual([]);
+    slot.dismiss();
+    await Bun.sleep(220);
+
+    // The same when the rail goes away under the pointer and focus, as when the scope that hosts it unmounts.
+    const button = dom.document.createElement("button");
+    toast.custom(button);
+    const card = dom.document.querySelector<HTMLElement>("[data-custom]")!;
+    card.dispatchEvent(new dom.window.PointerEvent("pointerenter") as unknown as Event);
+    button.focus();
+    removeSilently(card.closest("[data-k2b-toast-container]")!);
+    toast.success("Saved again", { duration: 100 });
+    await Bun.sleep(150);
+    expect(open()).toEqual([]);
+    dom.cleanup();
+  });
+
+  test("a finished progress toast makes room when the rail is over its limit", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { toast } = await import("../src/feedback/toast");
+    const open = () => dom.document.querySelectorAll("[data-k2b-toast]:not([data-closing])").length;
+    const batches = [1, 2, 3, 4].map((n) => toast(`Batch ${n}`, { progress: 0.1, duration: 0 }));
+    expect(open()).toBe(4);
+    batches.forEach((batch, index) => batch.update(`Batch ${index + 1} uploaded`, { variant: "success", progress: null }));
+    expect(open()).toBe(3);
+    dom.cleanup();
+  });
+
   test("defaults the time on screen by variant, length and action", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
