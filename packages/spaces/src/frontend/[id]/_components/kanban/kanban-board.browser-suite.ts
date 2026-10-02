@@ -6,7 +6,7 @@ import tailwind from "bun-plugin-tailwind";
 import { type Browser, chromium, type Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { ItemFilterSchema, type SpaceColumn, type SpaceItem } from "@/contracts";
+import { ItemFilterSchema, type SpaceColumn, type SpaceItem, type SpaceWormhole } from "@/contracts";
 import type { KanbanBucketInitial } from "./types";
 
 // Where the board starts, whether the toolbar stays one row, and how a folded column takes a drop are
@@ -122,9 +122,33 @@ const withAutomaticColumns = (locale: "en" | "de" = "en") => [
   overdueBucket(locale === "de" ? "Überfällig" : "Overdue"),
   statusBucket(columns[3]!),
 ];
+// A Wormhole to another Space; the board shows the Wormholes section after the last column.
+const wormhole: SpaceWormhole = {
+  id: "Worm01",
+  sourceSpaceId: "Space1",
+  color: "#10b981",
+  rank: "1",
+  target: {
+    spaceId: "Space2",
+    spaceName: "Fair logistics",
+    spaceColor: "#10b981",
+    columnId: "Col101",
+    columnName: "Inbox",
+    columnIsDone: false,
+  },
+  createdAt: "2026-09-20T10:00:00.000Z",
+  updatedAt: "2026-09-20T10:00:00.000Z",
+};
 const assignedToMe = () => bucketsFor((entry) => entry.assignees?.some((assignee) => assignee.id === me.id) ?? false);
 
-type Scenario = { locale: "en" | "de"; query?: string; folded?: string[]; buckets?: KanbanBucketInitial[]; canWrite?: boolean };
+type Scenario = {
+  locale: "en" | "de";
+  query?: string;
+  folded?: string[];
+  buckets?: KanbanBucketInitial[];
+  canWrite?: boolean;
+  wormholes?: SpaceWormhole[];
+};
 const serverBody = (scenario: Scenario) =>
   renderToString(() =>
     createComponent(KanbanFixture, {
@@ -133,7 +157,7 @@ const serverBody = (scenario: Scenario) =>
       baseUrl: `/app/spaces/Space1${scenario.query ?? ""}`,
       columns,
       tags: [{ id: "Tag001", spaceId: "Space1", name: "Logistics", color: "#0ea5e9" }],
-      wormholes: [],
+      wormholes: scenario.wormholes ?? [],
       initialBuckets: scenario.buckets ?? unfiltered(),
       foldedColumns: scenario.folded ?? [],
       selectedItemId: "",
@@ -710,64 +734,80 @@ describe("Spaces Kanban board in Chromium", () => {
     }
   }, 30_000);
 
-  test("a dragged column's drop line sits centred in the gap, also next to folded and automatic columns, and moves nothing", async () => {
-    // Wide enough for the whole board: To do | Blocked (folded) | In progress (folded) | Review | Overdue | Done.
-    const page = await open(
-      { width: 1440, height: 900, touch: false },
-      { locale: "en", buckets: withAutomaticColumns(), folded: ["virtual:blocked", "column:Col002"] },
-    );
-    try {
-      const boxes = () =>
-        page.locator('[role="region"] section[data-spaces-kanban-column]').evaluateAll((sections) =>
-          sections.map((section) => {
-            const rect = section.getBoundingClientRect();
-            return { left: rect.left, right: rect.right, top: rect.top, height: rect.height };
-          }),
-        );
-      columnOrders.splice(0);
-      const before = await boxes();
-      expect(before.length).toBe(6);
-      // Between two columns the line's centre is the gap's midpoint; at the board's ends it lies on the outer column edge.
-      const expected = (index: number) =>
-        index === 0
-          ? before[0]!.left + 1
-          : index === before.length
-            ? before.at(-1)!.right - 1
-            : (before[index - 1]!.right + before[index]!.left) / 2;
-      const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-      const misplaced: unknown[] = [];
-      const shifted: unknown[] = [];
-      // Each drag skips the two places beside the column itself, so two drags reach every place.
-      for (const [key, indices] of [
-        ["column:Col004", [0, 1, 2, 3, 4]],
-        ["column:Col001", [2, 3, 4, 5, 6]],
-      ] as const) {
-        const handle = (await page.locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-column-handle]`).boundingBox())!;
-        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-        await page.mouse.down();
-        for (const index of indices) {
-          const x = index < before.length ? before[index]!.left + 6 : before.at(-1)!.right - 6;
-          await page.mouse.move(x, before[0]!.top + 80, { steps: 10 });
+  test("a dragged column's drop line sits centred in the gap, also next to folded and automatic columns and before the Wormholes, and moves nothing", async () => {
+    // Each drag skips the two places beside the column itself, so two drags reach every place. With Wormholes shown,
+    // only the end changes: a real gap then follows the last column.
+    const variants = [
+      {
+        wormholes: [],
+        drags: [
+          ["column:Col004", [0, 1, 2, 3, 4]],
+          ["column:Col001", [2, 3, 4, 5, 6]],
+        ],
+      },
+      { wormholes: [wormhole], drags: [["column:Col001", [5, 6]]] },
+    ] as const;
+    for (const { wormholes, drags } of variants) {
+      // Wide enough for the whole board: To do | Blocked (folded) | In progress (folded) | Review | Overdue | Done.
+      const page = await open(
+        { width: 1440, height: 900, touch: false },
+        { locale: "en", buckets: withAutomaticColumns(), folded: ["virtual:blocked", "column:Col002"], wormholes: [...wormholes] },
+      );
+      try {
+        const boxes = () =>
+          page.locator('[role="region"] section[data-spaces-kanban-column]').evaluateAll((sections) =>
+            sections.map((section) => {
+              const rect = section.getBoundingClientRect();
+              return { left: rect.left, right: rect.right, top: rect.top, height: rect.height };
+            }),
+          );
+        columnOrders.splice(0);
+        const before = await boxes();
+        expect(before.length).toBe(6);
+        const wormholesLeft = await page
+          .locator('[role="region"] section:not([data-spaces-kanban-column])')
+          .evaluateAll((sections) => sections.map((section) => section.getBoundingClientRect().left));
+        expect(wormholesLeft.length).toBe(wormholes.length);
+        // Between two neighbours the line's centre is the gap's midpoint; at the board's ends it lies on the outer column edge.
+        const expected = (index: number) =>
+          index === 0
+            ? before[0]!.left + 1
+            : index === before.length
+              ? wormholesLeft.length > 0
+                ? (before.at(-1)!.right + wormholesLeft[0]!) / 2
+                : before.at(-1)!.right - 1
+              : (before[index - 1]!.right + before[index]!.left) / 2;
+        const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+        const misplaced: unknown[] = [];
+        const shifted: unknown[] = [];
+        for (const [key, indices] of drags) {
+          const handle = (await page.locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-column-handle]`).boundingBox())!;
+          await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+          await page.mouse.down();
+          for (const index of indices) {
+            const x = index < before.length ? before[index]!.left + 6 : before.at(-1)!.right - 6;
+            await page.mouse.move(x, before[0]!.top + 80, { steps: 10 });
+            await frames();
+            const lines = await page
+              .locator("[data-spaces-kanban-column-drop-indicator]")
+              .evaluateAll((elements) =>
+                elements.map((element) => element.getBoundingClientRect()).map((rect) => rect.left + rect.width / 2),
+              );
+            if (lines.length !== 1 || Math.abs(lines[0]! - expected(index)) > 1)
+              misplaced.push({ key, index, lines, expected: expected(index) });
+            if (JSON.stringify(await boxes()) !== JSON.stringify(before)) shifted.push({ key, index });
+          }
+          // Released over its own place, the column stays and the order is not saved.
+          await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 10 });
           await frames();
-          const lines = await page
-            .locator("[data-spaces-kanban-column-drop-indicator]")
-            .evaluateAll((elements) =>
-              elements.map((element) => element.getBoundingClientRect()).map((rect) => rect.left + rect.width / 2),
-            );
-          if (lines.length !== 1 || Math.abs(lines[0]! - expected(index)) > 1)
-            misplaced.push({ key, index, lines, expected: expected(index) });
-          if (JSON.stringify(await boxes()) !== JSON.stringify(before)) shifted.push({ key, index });
+          await page.mouse.up();
+          await frames();
         }
-        // Released over its own place, the column stays and the order is not saved.
-        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2, { steps: 10 });
-        await frames();
-        await page.mouse.up();
-        await frames();
+        expect({ wormholes: wormholes.length, misplaced, shifted }).toEqual({ wormholes: wormholes.length, misplaced: [], shifted: [] });
+        expect(columnOrders).toEqual([]);
+      } finally {
+        await page.context().close();
       }
-      expect({ misplaced, shifted }).toEqual({ misplaced: [], shifted: [] });
-      expect(columnOrders).toEqual([]);
-    } finally {
-      await page.context().close();
     }
   }, 30_000);
 

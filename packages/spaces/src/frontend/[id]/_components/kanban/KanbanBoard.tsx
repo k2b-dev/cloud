@@ -227,6 +227,8 @@ export default function KanbanBoard(props: Props) {
   });
 
   const getBucketByKey = (bucketKey: string) => buckets().find((bucket) => bucket.key === bucketKey) ?? null;
+  /** Writers see the Wormholes section after the last column, one board gap further right. */
+  const showWormholes = () => props.canWrite && props.wormholes.length > 0;
   const getWormholeById = (wormholeId: string) => props.wormholes.find((wormhole) => wormhole.id === wormholeId) ?? null;
   const withViewTransition = (update: () => void) => {
     if (typeof document === "undefined") {
@@ -1013,8 +1015,9 @@ export default function KanbanBoard(props: Props) {
                   meta: { bucketKey: bucket.key },
                 }));
               };
-              /** Accent line where a dragged column lands: centred in the gap before this column, or on the outer edge of the
-               * first and last column, since the board clips anything beyond them. Outside the flow, so nothing moves. */
+              /** Accent line where a dragged column lands: centred in the gap beside this column, or on the outer edge of the
+               * first and last column where no gap follows, since the board clips anything beyond them. Outside the flow, so
+               * nothing moves. */
               const ColumnDropLine = () => (
                 <>
                   <Show when={columnIndicatorIndex() === bucketIndex()}>
@@ -1030,7 +1033,9 @@ export default function KanbanBoard(props: Props) {
                     <div
                       aria-hidden="true"
                       data-spaces-kanban-column-drop-indicator
-                      class="pointer-events-none absolute inset-y-1 right-0 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)]"
+                      class={`pointer-events-none absolute inset-y-1 z-20 w-0.5 rounded-full bg-[var(--ui-app-accent-border)] ${
+                        showWormholes() ? "right-[calc(var(--ui-space-shell)/-2)] translate-x-1/2" : "right-0"
+                      }`}
                     />
                   </Show>
                 </>
@@ -1427,7 +1432,7 @@ export default function KanbanBoard(props: Props) {
             }}
           </For>
 
-          <Show when={props.canWrite && props.wormholes.length > 0}>
+          <Show when={showWormholes()}>
             <section class="flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] border border-[var(--ui-border-strong)] bg-[var(--ui-surface-subtle)] p-1">
               <header class="flex items-center gap-2 px-1.5 py-1.5">
                 <i class="ti ti-arrow-bounce shrink-0 text-sm text-dimmed" />

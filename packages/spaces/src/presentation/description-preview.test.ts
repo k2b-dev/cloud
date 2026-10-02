@@ -33,6 +33,42 @@ describe("descriptionPreview", () => {
     );
   });
 
+  test("keeps comparisons, arrows, spaced asterisks, and email addresses as written", () => {
+    expect(descriptionPreview("Keep the talk < 30 minutes.\n\n## Agenda\n- Budget review -> Anna")).toBe(
+      "Keep the talk < 30 minutes. Agenda Budget review -> Anna",
+    );
+    expect(descriptionPreview("Seats for > 200 guests, 2<3")).toBe("Seats for > 200 guests, 2<3");
+    expect(descriptionPreview("Plan 3 * 4 tables and 5 ** 2 chairs")).toBe("Plan 3 * 4 tables and 5 ** 2 chairs");
+    expect(descriptionPreview("Ask <robin@example.com> for the keys <br/> then <!-- note --> go")).toBe(
+      "Ask robin@example.com for the keys then go",
+    );
+  });
+
+  test("keeps code as written, backslashes included, and a private-use character stays itself", () => {
+    expect(descriptionPreview("Match `\\.txt$` files and \\*not\\* here")).toBe("Match \\.txt$ files and *not* here");
+    expect(descriptionPreview("Clean up:\n\n```sh\nrm build\\*.tmp\n```\n~~~\nC:\\temp\\*\n~~~")).toBe(
+      "Clean up: rm build\\*.tmp C:\\temp\\*",
+    );
+    expect(descriptionPreview("Icon \ue02a stays")).toBe("Icon \ue02a stays");
+  });
+
+  test("drops table pipes, setext underlines, reference links, footnotes, and empty task boxes", () => {
+    expect(
+      descriptionPreview(`Seating
+=====
+| Item | Qty |
+|:-----|----:|
+| Chairs | 40 |
+
+See [the plan][plan] and [the map](https://example.com/Map_(fair))[^1]
+
+[plan]: https://example.com/plan
+[^1]: Printed copies at the stand
+- [ ]
+- [x] Done`),
+    ).toBe("Seating Item Qty Chairs 40 See the plan and the map Printed copies at the stand Done");
+  });
+
   test("returns a bounded preview and handles empty descriptions", () => {
     expect(descriptionPreview("   ")).toBeNull();
     expect(descriptionPreview("---\n\n# ")).toBeNull();
