@@ -259,6 +259,17 @@ describe("Mail workspace action runner", () => {
     expect(nothing.events).toEqual(["nothing"]);
   });
 
+  test("does nothing, without asking for a folder, when the rows it was given are gone", async () => {
+    // A dragged row that a live update removed before the drop resolves to no target.
+    const fixture = host();
+    await runMailWorkspaceAction("move", { targets: [], destinationFolderId: "projects" }, fixture.host, signal());
+    expect(fixture.events).toEqual([]);
+
+    const unresolved = host({ resolveTargets: () => [] });
+    await runMailWorkspaceAction("archive", {}, unresolved.host, signal());
+    expect(unresolved.events).toEqual(["missing"]);
+  });
+
   test("follows the commands a user action queued, but not those of a silent read on open", async () => {
     const chosen = host();
     await runMailWorkspaceAction("archive", {}, chosen.host, signal());
