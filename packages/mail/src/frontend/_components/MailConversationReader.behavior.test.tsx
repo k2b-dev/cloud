@@ -145,6 +145,100 @@ test.skipIf(isServer)(
   },
 );
 
+test.skipIf(isServer)("an opened quoted block stays open when a live update refreshes the conversation", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const hydrated: MessageDetail = {
+    ...envelopeOnly,
+    hydrationStatus: "complete",
+    plainText: "Sounds good.\n\nOn Monday Ada wrote:\n> Shall we meet on Friday?",
+    sourceAvailable: true,
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([hydrated]);
+  const [activity, setActivity] = createSignal<ComponentProps<typeof MailConversationReaderComponent>["activity"]>([]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+        get activity() {
+          return activity();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const quote = () => dom.root.querySelector<HTMLDetailsElement>('[data-mail-message-id="Msg001"] details');
+    await waitFor(() => quote() !== null);
+    const card = dom.root.querySelector('[data-mail-message-id="Msg001"]');
+    const opened = quote()!;
+    opened.open = true;
+
+    // Live invalidations reload activity and reconcile the detail snapshot.
+    setActivity([]);
+    setMessages([{ ...hydrated }]);
+    await Bun.sleep(5);
+
+    // The card stays mounted, so an HTML body keeps its frame document too.
+    expect(dom.root.querySelector('[data-mail-message-id="Msg001"]')).toBe(card);
+    expect(quote()).toBe(opened);
+    expect(quote()?.open).toBe(true);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a retained message card follows live delivery updates", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationReader } = await import("./MailConversationReader");
+  const delivery: NonNullable<MessageDetail["delivery"]> = {
+    submissionId: "Sub001",
+    draftId: "Dra001",
+    state: "undo_window",
+    attempt: 0,
+    maxAttempts: 3,
+    scheduledAt: now,
+    undoUntil: null,
+    acceptedAt: null,
+    lastErrorCode: null,
+    lastErrorMessage: null,
+    acceptedRecipients: [],
+    rejectedRecipients: [],
+  };
+  const outgoing: MessageDetail = { ...envelopeOnly, hydrationStatus: "complete", plainText: "See you Friday.", delivery };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([outgoing]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"]')!;
+    const header = () => card().querySelector("button[aria-expanded]")!.textContent ?? "";
+    await waitFor(() => card() !== null);
+    const mounted = card();
+    expect(header()).not.toContain("Sending");
+
+    setMessages([{ ...outgoing, delivery: { ...delivery, state: "sending", attempt: 1 } }]);
+    await waitFor(() => header().includes("Sending · 1/3"));
+
+    setMessages([{ ...outgoing, delivery: { ...delivery, state: "sent", attempt: 1 } }]);
+    await waitFor(() => !header().includes("Sending"));
+    expect(card()).toBe(mounted);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)("reply and forward Commands name an untitled conversation instead of quoting an empty subject", async () => {
   const dom = createDomTestHarness();
   const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");

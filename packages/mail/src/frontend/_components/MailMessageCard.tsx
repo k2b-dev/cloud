@@ -106,6 +106,12 @@ export default function MailMessageCard(props: {
     const delivery = props.message.delivery;
     return delivery && messageDeliveryControlLabel(delivery, props.context.canWrite, locale()) ? delivery : null;
   };
+  // Cards stay mounted across live updates, so the badge derives from the
+  // current delivery state rather than the state the card was mounted with.
+  const deliveryBadge = () => {
+    const delivery = props.message.delivery;
+    return delivery && !controllableDelivery() ? messageDeliveryPresentation(delivery, locale()) : null;
+  };
   const outgoing = () => isOutgoingMessage(props.message, props.context.identities);
   const senderLabel = () => {
     if (outgoing()) return messages().you;
@@ -245,20 +251,16 @@ export default function MailMessageCard(props: {
                 </span>
               )}
             </Show>
-            <Show when={props.message.delivery}>
-              {(delivery) => {
-                if (messageDeliveryControlLabel(delivery(), props.context.canWrite, locale())) return null;
-                const status = messageDeliveryPresentation(delivery(), locale());
-                return status ? (
-                  <StatusBadge
-                    tone={status.tone}
-                    label={status.label}
-                    icon={status.icon}
-                    title={delivery().lastErrorMessage ?? undefined}
-                    class="mt-1"
-                  />
-                ) : null;
-              }}
+            <Show when={deliveryBadge()}>
+              {(status) => (
+                <StatusBadge
+                  tone={status().tone}
+                  label={status().label}
+                  icon={status().icon}
+                  title={props.message.delivery?.lastErrorMessage ?? undefined}
+                  class="mt-1"
+                />
+              )}
             </Show>
           </span>
           <span class="flex h-6 shrink-0 items-center gap-2">

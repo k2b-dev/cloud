@@ -134,6 +134,11 @@ export default function MailConversationReader(props: {
   const initialMessageId = selectedHistoryMessageId();
   const orderedMessages = createMemo(() => newestFirstMessages(props.messages));
   const timeline = createMemo(() => buildMailConversationTimeline(props.messages, props.activity, locale()));
+  // Live updates rebuild every timeline item. Rows are keyed by their stable id
+  // so an update re-renders values in place instead of remounting each message
+  // body, which would reload its frame and close opened quoted text.
+  const timelineIds = createMemo(() => timeline().map((item) => item.id));
+  const timelineItems = createMemo(() => new Map(timeline().map((item) => [item.id, item])));
   const latestMessage = createMemo(() => orderedMessages()[0] ?? null);
   const [expandedMessages, setExpandedMessages] = createSignal(new Set(initialMessageId ? [initialMessageId] : []));
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
@@ -1135,71 +1140,94 @@ export default function MailConversationReader(props: {
               )}
             </Show>
             <div class="mx-auto flex w-full max-w-4xl flex-col gap-2" data-mail-conversation-messages>
-              <For each={timeline()}>
-                {(item) =>
-                  item.kind === "activity" ? (
-                    <div class="flex min-w-0 items-center gap-2 px-2 py-0.5 text-xs leading-5 text-dimmed" data-mail-conversation-activity>
-                      <i
-                        class={`ti ${item.activity.icon} w-4 shrink-0 text-center ${item.activity.outcome === "failed" ? "text-red-500" : "text-dimmed"}`}
-                        aria-hidden="true"
-                      />
-                      <span class="min-w-0 flex-1">
-                        <span class="font-medium text-secondary">{item.activity.actorLabel}</span> {item.activity.label}
-                        <Show when={item.activity.count > 1}> ({item.activity.count})</Show>
-                      </span>
-                      <time
-                        class="shrink-0 text-dimmed"
-                        dateTime={item.activity.createdAt}
-                        title={dates.formatDateTime(item.activity.createdAt, props.dateConfig)}
-                      >
-                        {dates.formatDateTimeRelative(item.activity.createdAt, props.dateConfig)}
-                      </time>
-                    </div>
-                  ) : (
-                    <MailMessageCard
-                      message={item.message}
-                      expanded={expandedMessages().has(item.message.id)}
-                      isLatest={props.messages.at(-1)?.id === item.message.id}
-                      selectionAvailable={Boolean(messageSelections()[item.message.id])}
-                      context={{
-                        mailboxId: props.mailboxId,
-                        requestUrl: props.requestUrl,
-                        canWrite: props.canWrite,
-                        canAdmin: props.canAdmin,
-                        selectionKey: props.selectionKey,
-                        selectedConversationId: props.selectedConversationId,
-                        totalMessageCount: props.totalMessageCount,
-                        identities: props.identities,
-                        dateConfig: props.dateConfig,
-                        readingFormat: props.readingFormat,
-                        theme: props.theme,
-                        calendarIntegrationAvailable: props.calendarIntegrationAvailable,
-                        composerBusy: composerBusy(),
-                      }}
-                      actions={{
-                        toggle: toggleMessage,
-                        selectionChange: (messageId, value) =>
-                          setMessageSelections((current) => {
-                            if (value)
-                              return current[messageId] === value && Object.keys(current).length === 1 ? current : { [messageId]: value };
-                            if (!(messageId in current)) return current;
-                            const next = { ...current };
-                            delete next[messageId];
-                            return next;
-                          }),
-                        compose: startComposer,
-                        quoteReply: startQuoteReply,
-                        derive: (kind, selectedMessage) => {
-                          void deriveMessage(kind, selectedMessage);
-                        },
-                        reconcile: props.onReconcileAfterWrite,
-                        refresh: props.onReconcile,
-                        reassign: props.onReassignMessage,
-                        split: props.onSplitMessage,
-                      }}
-                    />
-                  )
-                }
+              <For each={timelineIds()}>
+                {(id) => {
+                  const item = () => timelineItems().get(id);
+                  const activityItem = () => {
+                    const current = item();
+                    return current?.kind === "activity" ? current.activity : undefined;
+                  };
+                  const messageItem = () => {
+                    const current = item();
+                    return current?.kind === "message" ? current.message : undefined;
+                  };
+                  return (
+                    <>
+                      <Show when={activityItem()}>
+                        {(activity) => (
+                          <div
+                            class="flex min-w-0 items-center gap-2 px-2 py-0.5 text-xs leading-5 text-dimmed"
+                            data-mail-conversation-activity
+                          >
+                            <i
+                              class={`ti ${activity().icon} w-4 shrink-0 text-center ${activity().outcome === "failed" ? "text-red-500" : "text-dimmed"}`}
+                              aria-hidden="true"
+                            />
+                            <span class="min-w-0 flex-1">
+                              <span class="font-medium text-secondary">{activity().actorLabel}</span> {activity().label}
+                              <Show when={activity().count > 1}> ({activity().count})</Show>
+                            </span>
+                            <time
+                              class="shrink-0 text-dimmed"
+                              dateTime={activity().createdAt}
+                              title={dates.formatDateTime(activity().createdAt, props.dateConfig)}
+                            >
+                              {dates.formatDateTimeRelative(activity().createdAt, props.dateConfig)}
+                            </time>
+                          </div>
+                        )}
+                      </Show>
+                      <Show when={messageItem()}>
+                        {(message) => (
+                          <MailMessageCard
+                            message={message()}
+                            expanded={expandedMessages().has(message().id)}
+                            isLatest={props.messages.at(-1)?.id === message().id}
+                            selectionAvailable={Boolean(messageSelections()[message().id])}
+                            context={{
+                              mailboxId: props.mailboxId,
+                              requestUrl: props.requestUrl,
+                              canWrite: props.canWrite,
+                              canAdmin: props.canAdmin,
+                              selectionKey: props.selectionKey,
+                              selectedConversationId: props.selectedConversationId,
+                              totalMessageCount: props.totalMessageCount,
+                              identities: props.identities,
+                              dateConfig: props.dateConfig,
+                              readingFormat: props.readingFormat,
+                              theme: props.theme,
+                              calendarIntegrationAvailable: props.calendarIntegrationAvailable,
+                              composerBusy: composerBusy(),
+                            }}
+                            actions={{
+                              toggle: toggleMessage,
+                              selectionChange: (messageId, value) =>
+                                setMessageSelections((current) => {
+                                  if (value)
+                                    return current[messageId] === value && Object.keys(current).length === 1
+                                      ? current
+                                      : { [messageId]: value };
+                                  if (!(messageId in current)) return current;
+                                  const next = { ...current };
+                                  delete next[messageId];
+                                  return next;
+                                }),
+                              compose: startComposer,
+                              quoteReply: startQuoteReply,
+                              derive: (kind, selectedMessage) => {
+                                void deriveMessage(kind, selectedMessage);
+                              },
+                              reconcile: props.onReconcileAfterWrite,
+                              refresh: props.onReconcile,
+                              reassign: props.onReassignMessage,
+                              split: props.onSplitMessage,
+                            }}
+                          />
+                        )}
+                      </Show>
+                    </>
+                  );
+                }}
               </For>
             </div>
           </ScrollArea>
