@@ -12,7 +12,8 @@ type Props = {
 
 /**
  * Who is working on a task right now: the holder's avatar with a success ring, identical for people and service accounts.
- * The ring is a border inside the avatar's footprint, so the holder keeps the size of the assignee avatars.
+ * The ring sits outside the avatar behind a small gap and takes no layout space, so the holder keeps the size and place
+ * of the assignee avatars on cards and in the panel.
  */
 export default function ClaimAvatar(props: Props) {
   const t = useSpaceMessages();
@@ -37,7 +38,7 @@ export default function ClaimAvatar(props: Props) {
         }
         icon={user() ? undefined : "ti ti-api"}
         size={props.size ?? "xs"}
-        class="border-2 border-[var(--k2b-success-text)]"
+        class="spaces-claim-ring"
       />
     </span>
   );

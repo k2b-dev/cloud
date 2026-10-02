@@ -135,10 +135,10 @@ describe("Spaces claim controls", () => {
     expect(person).toContain("data-spaces-claim-badge");
     expect(person).toContain('title="Mira Beck is on it"');
     expect(person).toContain('aria-label="Mira Beck is on it"');
-    // The success ring is a border inside the avatar footprint, not a ring with an outside offset.
+    // The success ring lies outside the avatar behind a gap (a shadow, no layout space), so the size stays the assignees'.
     expect(person).toContain('data-size="xs"');
-    expect(person).toContain("border-2 border-[var(--k2b-success-text)]");
-    expect(person).not.toContain("ring-");
+    expect(person).toContain('class="k2b-avatar spaces-claim-ring"');
+    expect(person).not.toContain("border-2");
     expect(person).toContain("MB");
     expect(person).not.toContain("<img");
 
@@ -182,13 +182,13 @@ describe("Spaces claim controls", () => {
     expect(avatarNames(deduplicated)).toEqual(["Mira Beck is on it", "Person 1 avatar", "Person 2 avatar"]);
     expect(deduplicated).toContain(">+9</span>");
 
-    // Holder and assignees share one avatar size; the holder swaps the surface border for the success ring.
+    // Holder and assignees share one avatar size; the holder swaps the surface border for the outer success ring.
     expect(claimed.match(/data-size="xs"/g)).toHaveLength(3);
     expect(claimed.match(/border-2 border-\[var\(--ui-surface\)\]/g)).toHaveLength(3);
-    expect(claimed.match(/border-2 border-\[var\(--k2b-success-text\)\]/g)).toHaveLength(1);
-    // The holder paints above the overlapping next avatar so its ring stays whole, inside the stack's own layer.
+    expect(claimed.match(/spaces-claim-ring/g)).toHaveLength(1);
+    // The holder keeps its ring's width to the next avatar and paints above it, inside the stack's own layer.
     expect(claimed).toContain('class="isolate flex shrink-0 -space-x-1"');
-    expect(claimed).toMatch(/data-spaces-claim-badge class="[^"]* relative z-\[1\]"/);
+    expect(claimed).toMatch(/data-spaces-claim-badge class="[^"]* relative z-\[1\] me-1"/);
     expect(claimed.match(/z-\[1\]/g)).toHaveLength(1);
 
     // A service account or unassigned holder still shows on a card without assignees, and nothing hides at max 1.

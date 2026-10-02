@@ -19,7 +19,7 @@ When you create an item, Spaces initially selects a task or event based on the c
 - **Due date or event time:** Use a deadline for tasks and a schedule for events when timing changes what people should do next.
 - **Estimated duration:** Record a positive whole-minute estimate when it helps someone size or schedule a task. Events use their start and end time instead.
 - **Blocked by:** Add every unfinished task that must be completed first. A blocked task cannot be completed until all active blockers are complete. Dependencies must stay within one Space and cannot form a cycle.
-- **Blocks:** Open the task details to see the reverse direction: every task that currently depends on this task.
+- **Blocks:** The task details show the reverse direction: every task that currently depends on this task.
 - **Related tasks:** Link tasks that share context but do not depend on each other. A related-task link is not a blocker.
 - **Links & resources:** Attach Cloud resources and external pages such as the GitHub issue a task implements. GitHub issue and pull request links show their title and open, closed, or merged state.
 - **Checklist:** Break a task into small steps when a checkbox and label are enough. Checklist entries intentionally have no assignees, dates, or separate detail view.
@@ -27,6 +27,23 @@ When you create an item, Spaces initially selects a task or event based on the c
 - **Recurrence:** Use recurring events for repeated appointments or routines. Keep one-off tasks as normal tasks.
 - **Tags:** Use tags for themes that cut across assignees and status, such as frontend, legal, blocked, or meeting.
 :::
+
+## Plan in the task details {icon="list-details"}
+
+The **Planning** block at the top of the task details shows the due date,
+estimate, priority, tags, and dependencies. With write access you change each
+of them in place: select the row to pick a date, type the estimate in minutes
+and press Enter, choose a priority, or tick tags. **No priority** at the end of
+the list clears the priority; **Clear date** in the calendar removes the due
+date. The pencil opens the complete form.
+
+Under **Blocked by**, every blocking task shows its title and state: a lock for
+an open task, a check mark and **done** for a finished one. Select a task to
+open it. **+ Task** searches the Space for another blocker, and the × that
+appears beside a blocker removes it. **Blocks** lists the tasks that wait for
+this one. From five entries on, a list shows three, open tasks first, and
+folds the rest behind **N more**. Without write access you see the same values
+without the edit actions.
 
 ## Daily workflow {icon="route"}
 
@@ -55,8 +72,8 @@ second click releases it, and in the details you can leave a short handoff note
 on release. While a task is claimed, the card shows the holder's avatar with a
 green ring first among the assignees in any column, and the **In progress**
 filter lists claimed tasks. In the details, the holder leads the **Assigned**
-list with the same ring and the time they started; a holder who is not assigned
-is marked as such. A claim only marks who is working on it right now;
+list with the same ring, the label **working on it**, and the time they
+started; a holder who is not assigned is marked as such. A claim only marks who is working on it right now;
 assignment and the column do not change. CLI workers and service accounts claim
 the same way and appear the same way.
 
