@@ -10,9 +10,11 @@ import {
   assertSelectedMailbox,
   assertUidValidity,
   connectSmtpConnection,
+  countDraftUids,
   disposeImapClient,
   downloadSelectedSources,
   fetchRemoteMessageState,
+  folderStatusSnapshot,
   type ImapSession,
   imapSmtpConnector,
   listenOnImapSession,
@@ -657,6 +659,70 @@ describe("IMAP message state", () => {
       messageId: null,
       modseq: null,
     });
+  });
+});
+
+describe("IMAP folder status", () => {
+  test("reports a mailbox without persistent mod-sequences as one without CONDSTORE", () => {
+    const status = { uidValidity: 7n, uidNext: 42, messages: 3 };
+    expect(folderStatusSnapshot({ ...status, highestModseq: 0n }).highestModseq).toBeNull();
+    expect(folderStatusSnapshot({ ...status, highestModseq: 9n }).highestModseq).toBe("9");
+    expect(folderStatusSnapshot(status)).toEqual({ uidValidity: "7", uidNext: 42, highestModseq: null, messages: 3 });
+  });
+
+  test("rejects a status without UIDVALIDITY or UIDNEXT", () => {
+    expect(() => folderStatusSnapshot({ uidValidity: 7n, messages: 3 })).toThrow(
+      expect.objectContaining({ code: "INCOMPLETE_FOLDER_STATUS" }),
+    );
+  });
+});
+
+describe("IMAP draft count", () => {
+  const client = (capabilities: string[], result: number[] | { count?: number } | false) => {
+    const queries: unknown[] = [];
+    const options: unknown[] = [];
+    return {
+      queries,
+      options,
+      client: {
+        capabilities: new Map(capabilities.map((name) => [name, true])),
+        enabled: new Set<string>(),
+        search: async (query: unknown, searchOptions: unknown) => {
+          queries.push(query);
+          options.push(searchOptions);
+          return result;
+        },
+      } as never,
+    };
+  };
+
+  test("counts the UIDs the server reports as drafts", async () => {
+    const imap = client(["IMAP4rev1"], [3, 9, 12]);
+    expect(await countDraftUids(imap.client, 20)).toBe(3);
+    expect(imap.queries).toEqual([{ draft: true, uid: "1:20" }]);
+  });
+
+  test("asks a server with ESEARCH for the count instead of every UID", async () => {
+    const imap = client(["IMAP4rev1", "ESEARCH"], { count: 60_000 });
+    expect(await countDraftUids(imap.client, 90_000)).toBe(60_000);
+    expect(imap.options).toEqual([{ uid: true, returnOptions: ["COUNT"] }]);
+    await expect(countDraftUids(client(["IMAP4rev1", "ESEARCH"], {}).client, 90_000)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
+  });
+
+  test("counts Gmail's drafts by their Drafts label", async () => {
+    const gmail = client(["IMAP4rev1", "X-GM-EXT-1"], [4]);
+    expect(await countDraftUids(gmail.client, 8)).toBe(1);
+    expect(gmail.queries).toEqual([{ gmraw: "in:drafts", uid: "1:8" }]);
+  });
+
+  test("counts no drafts in an empty folder without asking the server", async () => {
+    const empty = client(["IMAP4rev1"], false);
+    expect(await countDraftUids(empty.client, 0)).toBe(0);
+    expect(empty.queries).toEqual([]);
+  });
+
+  test("fails instead of counting zero drafts when the server refused the search", async () => {
+    await expect(countDraftUids(client([], false).client, 5)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
   });
 });
 

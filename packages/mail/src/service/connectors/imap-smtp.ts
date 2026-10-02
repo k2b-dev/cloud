@@ -9,6 +9,7 @@ import {
   type ListResponse,
   type MessageAddressObject,
   type MessageStructureObject,
+  type StatusObject,
 } from "imapflow";
 import { simpleParser } from "mailparser";
 import nodemailer, { type Transporter } from "nodemailer";
@@ -981,26 +982,36 @@ const fetchEnvelopeBatch = async (
     signal,
   );
 
+/**
+ * A folder's STATUS as the sync reads it. A mailbox without persistent mod-sequences (NOMODSEQ)
+ * reports HIGHESTMODSEQ 0, which offers no flag change either: it counts as no mod-sequence.
+ */
+export const folderStatusSnapshot = (
+  status: Pick<StatusObject, "uidValidity" | "uidNext" | "highestModseq" | "messages">,
+): FolderStatusSnapshot => {
+  if (!status.uidValidity || !status.uidNext) {
+    throw Object.assign(new Error("Provider folder status is incomplete"), { code: "INCOMPLETE_FOLDER_STATUS" });
+  }
+  return {
+    uidValidity: status.uidValidity.toString(),
+    uidNext: status.uidNext,
+    highestModseq: status.highestModseq ? status.highestModseq.toString() : null,
+    messages: status.messages ?? 0,
+  };
+};
+
 const getFolderStatus = async (config: ProviderConnectionInput, folderPath: string, signal?: AbortSignal): Promise<FolderStatusSnapshot> =>
   withImapClient(
     config,
-    async (client) => {
-      const status = await client.status(folderPath, {
-        messages: true,
-        uidNext: true,
-        uidValidity: true,
-        highestModseq: true,
-      });
-      if (!status.uidValidity || !status.uidNext) {
-        throw Object.assign(new Error("Provider folder status is incomplete"), { code: "INCOMPLETE_FOLDER_STATUS" });
-      }
-      return {
-        uidValidity: status.uidValidity.toString(),
-        uidNext: status.uidNext,
-        highestModseq: status.highestModseq?.toString() ?? null,
-        messages: status.messages ?? 0,
-      };
-    },
+    async (client) =>
+      folderStatusSnapshot(
+        await client.status(folderPath, {
+          messages: true,
+          uidNext: true,
+          uidValidity: true,
+          highestModseq: true,
+        }),
+      ),
     signal,
   );
 
@@ -1358,6 +1369,44 @@ const appendSource = async (
 
 const normalizeMessageId = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
 
+/**
+ * Counts the selected folder's drafts up to `maxUid`: messages flagged `\Draft`, on Gmail the ones
+ * with its Drafts label. A server with ESEARCH answers with the count alone; any other lists the
+ * UIDs. A search the server refused is an error, not zero drafts.
+ */
+export const countDraftUids = async (client: Pick<ImapFlow, "search" | "capabilities" | "enabled">, maxUid: number): Promise<number> => {
+  if (maxUid < 1) return 0;
+  const gmail = client.capabilities.has("X-GM-EXT-1") || client.enabled.has("X-GM-EXT-1");
+  const uid = `1:${maxUid}`;
+  const result = await client.search(gmail ? { gmraw: "in:drafts", uid } : { draft: true, uid }, { uid: true, returnOptions: ["COUNT"] });
+  if (Array.isArray(result)) return result.length;
+  if (result && typeof result.count === "number") return result.count;
+  throw Object.assign(new Error("Provider did not answer the draft search"), { code: "IMAP_SEARCH_FAILED" });
+};
+
+const countDraftMessages = async (
+  config: ProviderConnectionInput,
+  folderPath: string,
+  uidValidity: string,
+  maxUid: number,
+  signal?: AbortSignal,
+): Promise<number> =>
+  withImapClient(
+    config,
+    async (client) => {
+      const lock = await client.getMailboxLock(folderPath, { readOnly: true });
+      try {
+        assertSelectedMailbox(client, uidValidity);
+        const count = await countDraftUids(client, maxUid);
+        assertSelectedMailbox(client, uidValidity);
+        return count;
+      } finally {
+        lock.release();
+      }
+    },
+    signal,
+  );
+
 const findMessageById = async (
   config: ProviderConnectionInput,
   folderPath: string,
@@ -1468,6 +1517,7 @@ export const imapSmtpConnector: MailConnector = {
   fetchEnvelopeBatch,
   fetchFlagChanges,
   fetchUidWindow,
+  countDraftMessages,
   downloadSourceBatch,
   send,
   sendSource,
