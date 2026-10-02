@@ -349,7 +349,7 @@ suite("mail body hydration scheduling", () => {
     } finally {
       acquisitions.mockRestore();
     }
-    // The folder sync, then one hydration batch; a hydration that found the sync still holding the lease would wait 5-30 s.
+    // The folder sync, then one hydration batch; a hydration that found the sync still holding the lease would have to wait and try again.
     expect(outcomes).toEqual(["acquired", "acquired"]);
   });
 
