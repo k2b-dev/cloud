@@ -427,3 +427,84 @@ export const removeUnsentOutboundMessage = async (db: SqlClient, outboxId: strin
     WHERE conversation.id = ${projection.conversation_id}::uuid
   `;
 };
+
+/**
+ * Whether the folder sync has placed a copy of the sent message in its sender's Sent folder.
+ * Only the provider stores a copy there before Mail knows that SMTP accepted the message, so
+ * such a copy proves the acceptance just like one the provider's search returns.
+ */
+export const hasSyncedSentCopy = async (db: SqlClient, outboxId: string): Promise<boolean> => {
+  const [found] = await db<{ exists: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM mail.outbox_submissions outbox
+      JOIN mail.sender_identities identity ON identity.id = outbox.sender_identity_id
+      JOIN mail.remote_message_refs remote_ref
+        ON remote_ref.message_id = outbox.message_id
+       AND remote_ref.folder_id = identity.sent_folder_id
+       AND remote_ref.stale_at IS NULL
+      WHERE outbox.id = ${outboxId}::uuid
+    ) AS exists
+  `;
+  return found?.exists === true;
+};
+
+/**
+ * Hands a send whose outcome Mail could not prove back to reconciliation once a copy shows up
+ * in the sender's Sent folder, for example after the provider's search lagged behind its own
+ * Sent folder. `sentCopyFolderId` is the folder a sync is placing the message in right now.
+ *
+ * The delivery is locked before the message is written, the order every send transition
+ * uses, so a sync that places the copy while the send is being given up on either waits for
+ * that decision and reopens it, or commits first and the decision sees the copy.
+ * Returns whether the send went back to reconciliation.
+ */
+export const reopenUnprovenSendWithSentCopy = async (
+  db: SqlClient,
+  params: { messageId: string; sentCopyFolderId?: string },
+): Promise<boolean> => {
+  const [outbox] = await db<{ id: string }[]>`
+    SELECT id
+    FROM mail.outbox_submissions
+    WHERE message_id = ${params.messageId}::uuid AND state IN ('unknown', 'needs_attention')
+    FOR UPDATE
+  `;
+  if (!outbox) return false;
+  const [reopened] = await db<{ id: string }[]>`
+    WITH unproven AS (
+      SELECT outbox.id, outbox.command_id
+      FROM mail.outbox_submissions outbox
+      JOIN mail.commands command ON command.id = outbox.command_id AND command.state = 'needs_attention'
+      JOIN mail.sender_identities identity ON identity.id = outbox.sender_identity_id
+      WHERE outbox.id = ${outbox.id}::uuid
+        -- Mail gave up proving the outcome; a partial acceptance is a known outcome.
+        AND outbox.state = 'needs_attention'
+        AND outbox.accepted_at IS NULL
+        AND outbox.last_error_code IS DISTINCT FROM 'SMTP_PARTIAL_ACCEPTANCE'
+        AND (
+          identity.sent_folder_id = ${params.sentCopyFolderId ?? null}::uuid
+          OR EXISTS (
+            SELECT 1
+            FROM mail.remote_message_refs remote_ref
+            WHERE remote_ref.message_id = outbox.message_id
+              AND remote_ref.folder_id = identity.sent_folder_id
+              AND remote_ref.stale_at IS NULL
+          )
+        )
+    ),
+    reopened_command AS (
+      UPDATE mail.commands command
+      SET state = 'ambiguous', finished_at = NULL, worker_heartbeat_at = NULL, updated_at = now()
+      FROM unproven
+      WHERE command.id = unproven.command_id
+      RETURNING command.id
+    )
+    UPDATE mail.outbox_submissions outbox
+    SET state = 'unknown', updated_at = now()
+    FROM unproven
+    JOIN reopened_command ON reopened_command.id = unproven.command_id
+    WHERE outbox.id = unproven.id
+    RETURNING outbox.id
+  `;
+  return Boolean(reopened);
+};

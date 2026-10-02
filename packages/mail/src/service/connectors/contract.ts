@@ -171,6 +171,10 @@ export type RemoteMessageStateChange = {
 };
 
 export type SendSourceRequest = {
+  /**
+   * The message. The connector starts reading it only after the SMTP session is connected and
+   * authenticated, so a rejected send that left it unread transmitted none of it.
+   */
   source: Readable;
   envelopeFrom: string | null;
   recipients: string[];

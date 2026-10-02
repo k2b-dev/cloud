@@ -28,7 +28,7 @@ Access is checked when the page loads and during live updates. If access was rev
 5. If folders are missing or changed, select **Rediscover** for the active binding.
 :::
 
-Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing. The reader then shows **Body is still synchronizing** and replaces it with the body as soon as synchronization completes, without a page reload. If the conversation list shows **Updates paused**, select **Refresh message** to load the current state.
+Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing. The reader then shows **Body is still synchronizing** and replaces it with the body as soon as synchronization completes, without a page reload. If the connection to the mail server keeps dropping, Mail keeps trying to load the body about once a minute until it succeeds. If the conversation list shows **Updates paused**, select **Refresh message** to load the current state.
 
 A sender or recipient entry shorter than 3 or longer than 320 characters, such as a text fragment in a malformed message, cannot be stored as an address. Mail still imports the message and leaves out only that entry; the original header remains under **Headers** in the conversation details.
 
@@ -138,6 +138,8 @@ Open **Mailbox tools > Mailbox health > Advanced diagnostics and repairs** and f
 - **Reconcile effect** is safe for an ambiguous provider outcome because it reads provider state before changing the command result.
 - **Retry work** is shown only for failed provider-read maintenance where no provider effect started.
 - **Cancel work** is shown only while eligible maintenance is queued or has failed.
+
+A move, delete, flag change, or folder operation that could not reach the mail server before it started does not need attention: it waits and runs as soon as the server is reachable again.
 
 Do not repeat a move, delete, flag change, folder operation, or send when Mail reports an ambiguous outcome. If reconciliation cannot prove the remote result, the command remains **needs attention** for manual provider inspection.
 

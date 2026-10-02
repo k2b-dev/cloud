@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { databaseErrorCode, isPermanentDataError } from "./database-errors";
+import { databaseErrorCode, isPermanentDataError, isTransientDatabaseError } from "./database-errors";
 
 const postgresError = (sqlState: string) =>
   Object.assign(new Error("Postgres rejected the statement"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: sqlState });
@@ -33,5 +33,22 @@ describe("isPermanentDataError", () => {
     expect(isPermanentDataError(postgresError("40P01"))).toBe(false);
     expect(isPermanentDataError(postgresError("57P01"))).toBe(false);
     expect(isPermanentDataError(Object.assign(new Error("timeout"), { code: "CONNECT_TIMEOUT" }))).toBe(false);
+  });
+});
+
+describe("isTransientDatabaseError", () => {
+  test("treats a lost connection, connection exceptions, conflicts, and a restarting server as transient", () => {
+    for (const code of ["ERR_POSTGRES_CONNECTION_CLOSED", "ERR_POSTGRES_CONNECTION_REFUSED", "ERR_POSTGRES_IDLE_TIMEOUT"]) {
+      expect(isTransientDatabaseError(Object.assign(new Error(code), { code })), code).toBe(true);
+    }
+    for (const sqlState of ["08006", "40001", "40P01", "53300", "57P01", "57P03"]) {
+      expect(isTransientDatabaseError(postgresError(sqlState)), sqlState).toBe(true);
+    }
+  });
+
+  test("leaves errors about the statement or its data alone", () => {
+    expect(isTransientDatabaseError(postgresError("23505"))).toBe(false);
+    expect(isTransientDatabaseError(postgresError("22P02"))).toBe(false);
+    expect(isTransientDatabaseError(Object.assign(new Error("reset"), { code: "ECONNRESET" }))).toBe(false);
   });
 });

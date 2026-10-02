@@ -12,6 +12,7 @@ import { commandStillAuthorized } from "./command-authorization";
 import { imapSmtpConnector, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
 import { deriveConversationWorkState } from "./conversation-work-state";
+import { isTransientDatabaseError } from "./database-errors";
 import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import {
@@ -23,9 +24,16 @@ import {
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { isOperatorMaintenanceKind } from "./operator-actions";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
-import { loadOutboundProjectionByOutbox, recordOutboundSentAt, recordSentCopyPlacement } from "./outbound-message-projection";
+import {
+  hasSyncedSentCopy,
+  loadOutboundProjectionByOutbox,
+  recordOutboundSentAt,
+  recordSentCopyPlacement,
+  reopenUnprovenSendWithSentCopy,
+} from "./outbound-message-projection";
 import { buildMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 import { type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
+import { isTransientProviderFailure } from "./provider-errors";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, providerBusyRetryDelayMs } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
@@ -321,18 +329,22 @@ const commandState = async (
   return true;
 };
 
-const claimCommand = async (
-  commandId: string,
-  allowedKinds: string[],
-): Promise<{ command: DbCommandExecution; previousState: string } | null> =>
+type ClaimedCommand = {
+  command: DbCommandExecution;
+  previousState: string;
+  /** An earlier attempt started the provider effect, so the command's outcome must be reconciled, never replayed blindly. */
+  earlierEffectStarted: boolean;
+};
+
+const claimCommand = async (commandId: string, allowedKinds: string[]): Promise<ClaimedCommand | null> =>
   sql.begin(async (tx) => {
-    const [current] = await tx<DbCommandExecution[]>`
+    const [current] = await tx<(DbCommandExecution & { provider_effect_started_at: Date | string | null })[]>`
       SELECT
         id, mailbox_id, kind, state, actor_kind, actor_id, correlation_id, workflow_execution_generation,
         initiator_actor_kind, initiator_actor_id,
         access_subject_kind, access_subject_id,
         credential_scopes, credential_id, credential_expires_at, target, payload, transport_metadata,
-        selected_binding_id, selected_secret_revision, attempt
+        selected_binding_id, selected_secret_revision, attempt, provider_effect_started_at
       FROM mail.commands
       WHERE id = ${commandId}::uuid
       FOR UPDATE
@@ -384,7 +396,7 @@ const claimCommand = async (
         credential_scopes, credential_id, credential_expires_at, target, payload, transport_metadata,
         selected_binding_id, selected_secret_revision, attempt
     `;
-    return claimed ? { command: claimed, previousState } : null;
+    return claimed ? { command: claimed, previousState, earlierEffectStarted: current.provider_effect_started_at !== null } : null;
   });
 
 const updateMutationProjection = async (params: {
@@ -493,32 +505,6 @@ const baselineUids = (command: DbCommandExecution): number[] => {
   return Array.isArray(values) ? values.filter((value): value is number => Number.isInteger(value) && value > 0) : [];
 };
 
-const isAmbiguousTransportError = (error: unknown): boolean => {
-  // The raw code, because normalizeCode drops ImapFlow's mixed-case NoConnection.
-  const code = (error as { code?: unknown } | null)?.code;
-  return (
-    typeof code === "string" &&
-    [
-      "ETIMEDOUT",
-      // ImapFlow's code for a socket timeout while a command waits for its reply.
-      "ETIMEOUT",
-      // ImapFlow fails every command of a connection that closed underneath it, such as after a
-      // socket timeout or a reset, with this code.
-      "NoConnection",
-      "ECONNRESET",
-      "ECONNABORTED",
-      "EPIPE",
-      "ESOCKET",
-      "ECONNECTION",
-      "EHOSTUNREACH",
-      "ENETUNREACH",
-      "IMAP_CONNECTION_CLOSED",
-    ].includes(code)
-  );
-};
-
-const RETRYABLE_CONNECTION_CODES = new Set(["ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND"]);
-
 const PARTIAL_MUTATION_CODES = new Set([
   "DELETE_RECONCILIATION_FAILED",
   "FLAG_RECONCILIATION_FAILED",
@@ -543,10 +529,10 @@ export const mutationFailureState = (error: unknown, providerEffectStarted = tru
   const code = normalizeCode(error, "");
   if (PARTIAL_MUTATION_CODES.has(code)) return "needs_attention";
   if (AMBIGUOUS_COMMAND_CODES.has(code)) return "ambiguous";
-  if (RETRYABLE_CONNECTION_CODES.has(code)) return providerEffectStarted ? "ambiguous" : "queued";
   // A started provider effect can never be replayed, so its outcome is reconciled instead of retried.
   if (providerEffectStarted) return "ambiguous";
-  return isAmbiguousTransportError(error) ? "ambiguous" : "failed";
+  // Before the effect the provider changed nothing, so a connection failure only delays the command.
+  return isTransientProviderFailure(error) ? "queued" : "failed";
 };
 
 const providerEffectStartedForAttempt = async (command: Pick<DbCommandExecution, "id" | "attempt">): Promise<boolean> => {
@@ -1232,6 +1218,13 @@ const claimedState = (claimed: { previousState: string }): "queued" | "ambiguous
   claimed.previousState === "ambiguous" ? "ambiguous" : "queued";
 
 /**
+ * An ambiguous command is reconciled only when an attempt started its provider effect. One that
+ * never got that far, such as after a connection failure or a stopped worker, left the provider
+ * unchanged and runs fresh.
+ */
+const reconcilesEarlierEffect = (claimed: ClaimedCommand): boolean => claimed.previousState === "ambiguous" && claimed.earlierEffectStarted;
+
+/**
  * Returns the command to the state it was claimed from, so a command that was
  * claimed for reconciliation is never re-executed fresh. The requeue itself
  * never reaches the provider and therefore never consumes an attempt.
@@ -1482,10 +1475,7 @@ const reconcileFolderOperation = async (
   );
 };
 
-const runFolderOperation = async (
-  claimed: { command: DbCommandExecution; previousState: string },
-  assertJobLeaseActive: LeaseAssertion,
-): Promise<void> => {
+const runFolderOperation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<void> => {
   const { command } = claimed;
   if (!(await commandStillAuthorized(command, "admin"))) {
     await commandState(
@@ -1536,7 +1526,7 @@ const runFolderOperation = async (
         };
         await waitForMailProviderSlot(operation.binding.remote_resource_id, signal);
         await assertLeaseActive();
-        if (claimed.previousState === "ambiguous") {
+        if (reconcilesEarlierEffect(claimed)) {
           await reconcileFolderOperation(command, operation, assertLeaseActive, assertAuthorized);
         } else {
           await executeFreshFolderOperation(command, operation, assertLeaseActive, assertAuthorized);
@@ -1550,10 +1540,7 @@ const runFolderOperation = async (
   }
 };
 
-const runMessageMutation = async (
-  claimed: { command: DbCommandExecution; previousState: string },
-  assertJobLeaseActive: LeaseAssertion,
-): Promise<void> => {
+const runMessageMutation = async (claimed: ClaimedCommand, assertJobLeaseActive: LeaseAssertion): Promise<void> => {
   if (await hasEarlierActiveMessageMutation(claimed.command.id)) {
     await requeueCommand(
       claimed.command,
@@ -1593,7 +1580,7 @@ const runMessageMutation = async (
         };
         await waitForMailProviderSlot(binding.remote_resource_id, signal);
         await assertLeaseActive();
-        if (claimed.previousState === "ambiguous") await reconcileMutation(claimed.command);
+        if (reconcilesEarlierEffect(claimed)) await reconcileMutation(claimed.command);
         else await executeFreshMutation(claimed.command, assertLeaseActive);
       },
     });
@@ -1604,10 +1591,7 @@ const runMessageMutation = async (
   }
 };
 
-const runClaimedMutation = async (
-  claimed: { command: DbCommandExecution; previousState: string },
-  assertLeaseActive: LeaseAssertion,
-): Promise<CommandState | null> => {
+const runClaimedMutation = async (claimed: ClaimedCommand, assertLeaseActive: LeaseAssertion): Promise<CommandState | null> => {
   try {
     if (claimed.previousState === "ambiguous" && claimed.command.attempt >= 5) {
       await commandState(
@@ -1623,7 +1607,9 @@ const runClaimedMutation = async (
       await runMessageMutation(claimed, assertLeaseActive);
     }
   } catch (error) {
-    const providerEffectStarted = await providerEffectStartedForAttempt(claimed.command).catch(() => true);
+    // An effect an earlier attempt started still needs reconciliation, even when this attempt failed before its own.
+    const providerEffectStarted =
+      claimed.earlierEffectStarted || (await providerEffectStartedForAttempt(claimed.command).catch(() => true));
     await commandState(claimed.command, mutationFailureState(error, providerEffectStarted), error);
   }
   const [state] = await sql<{ state: CommandState }[]>`
@@ -1659,6 +1645,7 @@ type DbOutboxExecution = {
   selected_binding_id: string;
   selected_identity_transport_revision: number | null;
   stable_message_id: string;
+  message_id: string | null;
   state: string;
   scheduled_at: Date | string;
   undo_until: Date | string | null;
@@ -1711,6 +1698,7 @@ const loadOutbox = async (outboxId: string): Promise<{ outbox: DbOutboxExecution
       o.selected_binding_id,
       o.selected_identity_transport_revision,
       o.stable_message_id,
+      o.message_id,
       o.state,
       o.scheduled_at,
       o.undo_until,
@@ -1757,6 +1745,7 @@ const loadOutbox = async (outboxId: string): Promise<{ outbox: DbOutboxExecution
       selected_binding_id: row.selected_binding_id,
       selected_identity_transport_revision: row.selected_identity_transport_revision,
       stable_message_id: row.stable_message_id,
+      message_id: row.message_id,
       state: row.state,
       scheduled_at: row.scheduled_at,
       undo_until: row.undo_until,
@@ -2321,11 +2310,8 @@ const finishOutbox = async (params: {
   return result.updated;
 };
 
-const isRetryablePreDispatchError = (error: unknown): boolean => {
-  if (isAmbiguousTransportError(error)) return true;
-  const code = normalizeCode(error, "");
-  return code.startsWith("08") || ["40001", "40P01", "53300", "57P01", "57P03", "COMMAND_JOB_LEASE_LOST"].includes(code);
-};
+const isRetryablePreDispatchError = (error: unknown): boolean =>
+  isTransientProviderFailure(error) || isTransientDatabaseError(error) || normalizeCode(error, "") === "COMMAND_JOB_LEASE_LOST";
 
 const scheduleOutboxRetry = async (params: {
   outbox: DbOutboxExecution;
@@ -2670,6 +2656,8 @@ const persistSmtpFailure = async (params: {
   command: DbCommandExecution;
   prepared: PreparedFreshOutbox;
   error: unknown;
+  /** The connector never read the message, so the SMTP server received none of it. */
+  messageUnread: boolean;
 }): Promise<void> => {
   const { outbox, command, prepared, error } = params;
   const responseCode = Number((error as { responseCode?: unknown } | null)?.responseCode);
@@ -2685,6 +2673,21 @@ const persistSmtpFailure = async (params: {
   }
   if (Number.isInteger(responseCode) && responseCode >= 400) {
     await finishOutbox({ outbox, command, outboxState: "failed", commandState: "failed", draftState: "draft", error });
+    return;
+  }
+  if (params.messageUnread) {
+    // Nothing was transmitted, so the outcome is known: retry a connection failure, fail anything else.
+    if (isTransientProviderFailure(error) && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
+      await scheduleOutboxRetry({
+        outbox,
+        command,
+        error,
+        code: "OUTBOX_PREDISPATCH_RETRY",
+        fallbackMessage: "Mail provider was temporarily unavailable before dispatch",
+      });
+    } else {
+      await finishOutbox({ outbox, command, outboxState: "failed", commandState: "failed", draftState: "draft", error });
+    }
     return;
   }
   const reconciled = await sentMatches({
@@ -2745,9 +2748,10 @@ const executeFreshOutbox = async (
     return;
   }
 
+  const source = createBlobReadable(prepared.mimeBlobId);
   try {
     const result = await imapSmtpConnector.sendSource(prepared.sendRuntime, {
-      source: createBlobReadable(prepared.mimeBlobId),
+      source,
       envelopeFrom: prepared.snapshot.useNullEnvelopeSender ? null : (prepared.snapshot.envelopeFrom ?? prepared.snapshot.from.address),
       recipients: outboundRecipients(prepared.snapshot),
       messageId: outbox.stable_message_id,
@@ -2758,7 +2762,31 @@ const executeFreshOutbox = async (
     await assertLeaseActive();
     await persistSmtpResult({ outbox, command, prepared, result, assertLeaseActive, signal });
   } catch (error) {
-    await persistSmtpFailure({ outbox, command, prepared, error });
+    const messageUnread = source.readableFlowing === null && !source.readableDidRead;
+    await persistSmtpFailure({ outbox, command, prepared, error, messageUnread });
+  }
+};
+
+/**
+ * Leaves an unproven send for a later check. The check still counts as an attempt, so the
+ * number of checks stays bounded.
+ */
+const recheckUnknownOutboxLater = async (outbox: DbOutboxExecution, command: DbCommandExecution): Promise<void> => {
+  await sql.begin(async (tx) => {
+    if (!(await lockOutboxFence(tx, outbox, command))) return;
+    await tx`
+      UPDATE mail.commands
+      SET state = 'ambiguous', worker_heartbeat_at = NULL, updated_at = now()
+      WHERE id = ${command.id}::uuid
+    `;
+  });
+};
+
+const giveUpUnknownOutbox = async (outbox: DbOutboxExecution, command: DbCommandExecution, error: unknown): Promise<void> => {
+  await finishOutbox({ outbox, command, outboxState: "needs_attention", commandState: "needs_attention", draftState: "sent", error });
+  // The folder sync may have placed the provider's copy while this check ran; then it proves the send after all.
+  if (outbox.message_id && (await reopenUnprovenSendWithSentCopy(sql, { messageId: outbox.message_id }))) {
+    await publishOutboundSubmissionChange({ outboxId: outbox.id, state: "unknown", attempt: outbox.attempt });
   }
 };
 
@@ -2766,20 +2794,23 @@ const reconcileUnknownOutbox = async (outbox: DbOutboxExecution, command: DbComm
   const binding = await loadPinnedBinding(command);
   const sender = await loadSenderBinding(command, outbox.sender_identity_id);
   const runtime = await loadPinnedRuntime(binding);
-  const matches = await sentMatches({ runtime, sentPath: sender.sent_path, messageId: outbox.stable_message_id, signal });
-  if (matches.length > 0) {
+  const synced = await hasSyncedSentCopy(sql, outbox.id);
+  const matches = synced ? [] : await sentMatches({ runtime, sentPath: sender.sent_path, messageId: outbox.stable_message_id, signal });
+  if (synced || matches.length > 0) {
     await recordSentCopy(outbox, sender, matches);
     await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent" });
-  } else {
-    await finishOutbox({
-      outbox,
-      command,
-      outboxState: "needs_attention",
-      commandState: "needs_attention",
-      draftState: "sent",
-      error: Object.assign(new Error("SMTP outcome could not be proven; the message was not resent"), { code: "AMBIGUOUS_SMTP_OUTCOME" }),
-    });
+    return;
   }
+  // A provider that stores the copy itself can list it only after a while, so it gets a few more checks.
+  if ((sender.saves_sent_automatically || providerStoresSubmission(binding, outbox)) && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
+    await recheckUnknownOutboxLater(outbox, command);
+    return;
+  }
+  await giveUpUnknownOutbox(
+    outbox,
+    command,
+    Object.assign(new Error("SMTP outcome could not be proven; the message was not resent"), { code: "AMBIGUOUS_SMTP_OUTCOME" }),
+  );
 };
 
 const reconcileSentCopy = async (
@@ -2848,12 +2879,19 @@ const runClaimedOutbox = async (
     if (claim.previousOutboxState === "sent_sync_pending") {
       log.warn("Sent copy reconciliation failed", { outboxId, code: normalizeCode(error, "SENT_RECONCILIATION_FAILED") });
       await deferSentCopy(loaded.outbox, error);
+    } else if (claim.previousOutboxState === "unknown") {
+      // A connection failure proves nothing either way, so the check is repeated while attempts remain.
+      if (isTransientProviderFailure(error) && loaded.outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
+        await recheckUnknownOutboxLater(loaded.outbox, loaded.command);
+      } else {
+        await giveUpUnknownOutbox(loaded.outbox, loaded.command, error);
+      }
     } else {
       await finishOutbox({
         outbox: loaded.outbox,
         command: loaded.command,
-        outboxState: claim.previousOutboxState === "unknown" ? "needs_attention" : "unknown",
-        commandState: claim.previousOutboxState === "unknown" ? "needs_attention" : "ambiguous",
+        outboxState: "unknown",
+        commandState: "ambiguous",
         draftState: "sent",
         error,
       });
@@ -3091,7 +3129,12 @@ const startOutboxJob = async (): Promise<void> => {
       return;
     }
     if (state === "unknown") {
-      ctx.resubmit({ delayMs: 2_000 });
+      // The first check follows right away; later ones give a provider's search time to list its copy.
+      const [unknown] = await sql<{ attempt: number }[]>`
+        SELECT attempt FROM mail.outbox_submissions WHERE id = ${ctx.input.outboxId}::uuid
+      `;
+      const checks = Math.max(0, (unknown?.attempt ?? 1) - 1);
+      ctx.resubmit({ delayMs: checks === 0 ? 2_000 : expBackoff(checks, { baseMs: 10_000, maxMs: 10 * 60_000 }) });
       return;
     }
     if (state === "sent_sync_pending") {

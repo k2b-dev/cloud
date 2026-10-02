@@ -77,6 +77,10 @@ const createProvider = (kind: ProviderKind) => {
   // Searches that fail once the next SMTP submission went through, like a dropped IMAP connection.
   let searchFailuresAfterSubmission = 0;
   let failingSearches = 0;
+  let searchFailureCode = "ECONNRESET";
+  // The next SMTP submission fails: before the server received the message, or after it stored it.
+  let submissionFailure: { error: Error; afterTransfer: boolean } | null = null;
+  let submissions = 0;
 
   const folder = (path: string): StoredFolder => {
     const found = folders.get(path);
@@ -187,8 +191,13 @@ const createProvider = (kind: ProviderKind) => {
       }
     }),
     spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (_config, request) => {
+      const failure = submissionFailure;
+      submissionFailure = null;
+      if (failure && !failure.afterTransfer) throw failure.error;
       const source = await readAll(request.source);
+      submissions += 1;
       if (storeSubmissions) await store(source, sentPath, ["\\Seen"]);
+      if (failure) throw failure.error;
       failingSearches = searchFailuresAfterSubmission;
       searchFailuresAfterSubmission = 0;
       return { accepted: request.recipients, rejected: [], response: "250 2.0.0 OK", messageId: request.messageId };
@@ -201,7 +210,7 @@ const createProvider = (kind: ProviderKind) => {
     spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (_config, path, messageId) => {
       if (failingSearches > 0) {
         failingSearches -= 1;
-        throw Object.assign(new Error("Connection closed"), { code: "ECONNRESET" });
+        throw Object.assign(new Error("Connection failed"), { code: searchFailureCode });
       }
       return [...folder(path).entries.entries()]
         .filter(([, message]) => !unindexed.has(message) && message.messageId?.toLowerCase() === messageId.trim().toLowerCase())
@@ -250,6 +259,14 @@ const createProvider = (kind: ProviderKind) => {
     failSearchesAfterSubmission: (count: number) => {
       searchFailuresAfterSubmission = count;
     },
+    failNextSearches: (count: number, code: string) => {
+      failingSearches = count;
+      searchFailureCode = code;
+    },
+    failNextSubmission: (code: string, afterTransfer: boolean) => {
+      submissionFailure = { error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN" }), afterTransfer };
+    },
+    submissions: () => submissions,
     messagesWithId: (path: string, messageId: string) =>
       [...folder(path).entries.values()].filter((message) => message.messageId?.toLowerCase() === messageId.toLowerCase()),
     restore: () => {
@@ -842,6 +859,107 @@ suite("mail sent message projection", () => {
       expect(await executeOutboxSubmission(outbox.id)).toBe("sent");
       expect(provider.appends).toEqual(["Drafts", "Sent"]);
       expect((await sentProjection(mailbox, outbox.stable_message_id)).placements).toEqual(["Sent"]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  const delivery = async (outboxId: string) => {
+    const [row] = await sql<{ state: string; last_error_code: string | null; command_state: string; draft_state: string }[]>`
+      SELECT outbox.state, outbox.last_error_code, command.state AS command_state, draft.state AS draft_state
+      FROM mail.outbox_submissions outbox
+      JOIN mail.commands command ON command.id = outbox.command_id
+      JOIN mail.drafts draft ON draft.id = outbox.draft_id
+      WHERE outbox.id = ${outboxId}::uuid
+    `;
+    return row;
+  };
+
+  const sendRetryNow = async (outboxId: string) => {
+    await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outboxId}::uuid`;
+    return executeOutboxSubmission(outboxId);
+  };
+
+  test("a send whose SMTP server cannot be reached is retried, and one that fails otherwise before transfer goes back to drafts", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "SMTP unreachable");
+      provider.failNextSubmission("ESOCKET", false);
+      const outbox = await send(mailbox, draft.id, draft.revision, "smtp-unreachable", "scheduled");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "OUTBOX_PREDISPATCH_RETRY",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      expect(provider.submissions()).toBe(1);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+
+      const rejected = await newDraft(mailbox, "SMTP certificate");
+      provider.failNextSubmission("ETLS", false);
+      const failed = await send(mailbox, rejected.id, rejected.revision, "smtp-certificate", "failed");
+      expect(await delivery(failed.id)).toEqual({
+        state: "failed",
+        last_error_code: "ETLS",
+        command_state: "failed",
+        draft_state: "draft",
+      });
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose IMAP server is unreachable before dispatch is retried instead of dropped", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "IMAP unreachable");
+      provider.failNextSearches(1, "CONNECT_TIMEOUT");
+      const outbox = await send(mailbox, draft.id, draft.revision, "imap-unreachable", "scheduled");
+      expect(provider.submissions()).toBe(0);
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "OUTBOX_PREDISPATCH_RETRY",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      expect(provider.submissions()).toBe(1);
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an unproven Gmail send is checked again and proven by the copy the Sent folder sync finds", async () => {
+    const provider = createProvider("gmail");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Lost confirmation");
+      provider.indexNewMessagesLate();
+      // Gmail stored the message, but the connection dropped before its confirmation arrived.
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "gmail-lost-confirmation", "unknown");
+      const checks: (string | null)[] = [];
+      while (checks.at(-1) !== "needs_attention" && checks.length < 5) checks.push(await executeOutboxSubmission(outbox.id));
+      // Gmail's search may list its copy only later, so Mail checks a few more times before it gives up.
+      expect(checks).toEqual(["unknown", "unknown", "unknown", "needs_attention"]);
+
+      await mailbox.syncAll();
+      expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "reconciled_accepted",
+        last_error_code: null,
+        command_state: "reconciled",
+        draft_state: "sent",
+      });
+      expect(provider.submissions()).toBe(1);
+      expect(provider.messagesWithId(SENT, outbox.stable_message_id)).toHaveLength(1);
+      expect(provider.appends.filter((path) => path === SENT)).toEqual([]);
     } finally {
       provider.restore();
     }
