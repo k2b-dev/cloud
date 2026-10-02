@@ -125,7 +125,7 @@ const surface = (page: Page, list: "filled" | "empty", term: string) =>
 const transparent = "rgba(0, 0, 0, 0)";
 const editable = ["Due", "Estimate", "Priority", "Tags"] as const;
 
-describe("@k2b/ui property rows", () => {
+describe("@k2b/ui property rows and DetailPanel sections", () => {
   for (const width of [1440, 390]) {
     for (const theme of ["light", "dark"] as const) {
       test(`${width} px ${theme}: plain controls keep every box while hovered, focused, and open, and the whole row opens them`, async () => {
@@ -190,6 +190,75 @@ describe("@k2b/ui property rows", () => {
           await page.close();
         }
       }, 60_000);
+
+      test(`${width} px ${theme}: a collapsible section lines up with the other section headings in both states`, async () => {
+        const page = await load(width, theme);
+        try {
+          const geometry = (title: string) =>
+            page.evaluate((title) => {
+              const section = Array.from(document.querySelectorAll(".k2b-detail-panel__section")).find((element) =>
+                Array.from(element.querySelectorAll("h3, .k2b-detail-panel__section-title")).some(
+                  (heading) => heading.textContent === title && !heading.closest("[hidden]"),
+                ),
+              )!;
+              const visible = (selector: string) =>
+                Array.from(section.querySelectorAll<HTMLElement>(selector)).find((element) => !element.closest("[hidden]"));
+              const box = (element: Element | undefined) => {
+                const rect = element!.getBoundingClientRect();
+                return {
+                  left: Math.round(rect.left),
+                  center: Math.round(rect.left + rect.width / 2),
+                  top: Math.round(rect.top),
+                  height: Math.round(rect.height),
+                };
+              };
+              const row = visible(".k2b-detail-panel__section-header, .k2b-detail-panel__section-summary");
+              const chevron = visible(".k2b-detail-panel__section-toggle i");
+              return {
+                row: box(row),
+                icon: box(visible(".k2b-detail-panel__section-icon")),
+                title: box(visible("h3, .k2b-detail-panel__section-title")),
+                meta: section.querySelector(".k2b-detail-panel__section-meta") ? box(visible(".k2b-detail-panel__section-meta")) : null,
+                chevron: chevron ? box(chevron) : null,
+                fill: getComputedStyle(row!).backgroundColor,
+              };
+            }, title);
+
+          const plain = await geometry("Online");
+          const closed = await geometry("Recent activity");
+          const open = await geometry("Information");
+          for (const state of [closed, open]) {
+            expect(state.icon.left).toBe(plain.icon.left);
+            expect(state.title.left).toBe(plain.title.left);
+            expect(state.row.height).toBe(plain.row.height);
+          }
+          // The closed chevron sits where the open header's collapse button has its chevron.
+          expect(closed.chevron?.center).toBe(open.chevron?.center);
+          // Meta sits next to the chevron column in both states.
+          expect(closed.meta!.left + 0).toBeLessThan(closed.chevron!.left);
+
+          // Hover and keyboard focus leave the row where it is and paint no pill.
+          const before = await boxes(page);
+          await page.getByRole("button", { name: /Recent activity/ }).hover();
+          const hovered = await geometry("Recent activity");
+          expect(hovered.fill).toBe(transparent);
+          expect(await boxes(page)).toEqual(before);
+          await page.getByRole("button", { name: /Recent activity/ }).focus();
+          expect(await boxes(page)).toEqual(before);
+
+          // Opening keeps the icon, title, and chevron columns.
+          await page.getByRole("button", { name: /Recent activity/ }).click();
+          const opened = await geometry("Recent activity");
+          expect(opened.icon).toEqual(closed.icon);
+          expect(opened.title.left).toBe(closed.title.left);
+          expect(opened.chevron?.center).toBe(closed.chevron?.center);
+          expect(opened.row.height).toBe(closed.row.height);
+          expect(await page.getByRole("button", { name: "Recent activity" }).getAttribute("aria-expanded")).toBe("true");
+          await page.screenshot({ path: `/tmp/k2b-ui-detail-sections-${width}-${theme}.png`, fullPage: true });
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
     }
   }
 });

@@ -61,7 +61,11 @@ count or state, and `actions` for a normal section. Only the description is
 muted: a field in `actions` keeps its own description and error styles. A normal section may omit
 its body to represent a compact, actionable empty group. Set `collapsible` for
 secondary content. Closed sections show a compact action row; open sections show
-a heading with a collapse button on the right. Their content stays mounted when
+a heading with a collapse button on the right. Both states share one geometry
+with the other section headings: the icon, title, meta, and chevron keep their
+columns and the row its height when the section opens or closes. Hover and
+focus only color the title and chevron; the row gets no fill and keeps its
+inset. Their content stays mounted when
 closed, preserving unsaved input and child state. Collapsible sections reserve
 the header action for collapsing.
 

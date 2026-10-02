@@ -2852,27 +2852,65 @@
   line-height: 1rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-summary {
+/* The closed row and the open header share one geometry: the icon, title,
+   meta, and chevron columns stay put when the section opens, and hover only
+   colours the text. The row keeps no padding or fill of its own, so it starts
+   where the other section headings start. */
+.k2b-ui .k2b-button.k2b-detail-panel__section-summary {
+  min-height: 1.75rem;
+  padding: 0;
+  border: 0;
   border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: transparent;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
 
-.k2b-ui .k2b-detail-panel__section-summary > i {
-  flex: 0 0 auto;
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
-  font-size: 0.75rem;
-  transition: transform 150ms ease;
+.k2b-ui .k2b-detail-panel__section-summary > .k2b-button__label {
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-start;
+  gap: 0.5rem;
 }
 
-.k2b-ui .k2b-detail-panel__section-summary:hover > i {
-  color: var(--k2b-text-secondary);
+.k2b-ui .k2b-button.k2b-detail-panel__section-summary:not(:disabled):hover {
+  background: transparent;
 }
 
+.k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-title,
+.k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-toggle,
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled):hover {
+  color: var(--k2b-text);
+}
+
+/* The row has no padding, so its ring sits just outside it, in the section's inset. */
 .k2b-ui .k2b-detail-panel__section-summary:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
+  outline-offset: var(--k2b-focus-width);
+}
+
+/* One trailing column for both chevrons: the closed row's icon and the open
+   header's collapse button. */
+.k2b-ui .k2b-detail-panel__section-toggle,
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle {
+  display: grid;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  flex: 0 0 1.75rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled):hover {
+  background: transparent;
 }
 
 .k2b-ui .k2b-detail-panel__section-body {
@@ -8422,7 +8460,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-detail-panel__section-summary > i,
   .k2b-ui .k2b-disclosure__chevron {
     transition: none;
   }
