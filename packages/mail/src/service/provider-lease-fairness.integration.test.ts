@@ -132,9 +132,12 @@ suite("mail provider lease fairness", () => {
   const flagWindows: string[] = [];
   // Every UID MOVE, by mailbox label, with the number of messages it carried.
   const moveSets: Array<{ label: string; uids: number }> = [];
-  // Messages the server refuses to move, and messages another client deletes while a move runs, by Message-ID.
+  // Messages the server refuses to move, by Message-ID, and messages another client deletes while a
+  // move runs, by Message-ID or, for one of two messages that share it, by subject.
   const refusedMoves = new Set<string>();
   const vanishingMoves = new Set<string>();
+  // Messages whose move the server carries out before the connection drops, by Message-ID.
+  const droppedMoves = new Set<string>();
   let hydrationStarted = false;
   const ensureHydrationRuntime = async (): Promise<void> => {
     if (hydrationStarted) return;
@@ -515,15 +518,19 @@ suite("mail provider lease fairness", () => {
         moveSets.push({ label: account.label, uids: messages.uids.length });
         const source = folderOf(config.username, messages.folderPath);
         const destinationUids = new Map<number, number>();
+        let connectionDrops = false;
         for (const uid of messages.uids) {
           const message = source.entries.get(uid);
+          if (message && droppedMoves.has(message.messageId)) connectionDrops = true;
           // Another client deletes this message just before the server takes the move.
-          if (message && vanishingMoves.has(message.messageId)) source.entries.delete(uid);
-          if (!message || refusedMoves.has(message.messageId) || vanishingMoves.has(message.messageId)) continue;
+          const vanishes = message && (vanishingMoves.has(message.messageId) || vanishingMoves.has(message.subject));
+          if (message && vanishes) source.entries.delete(uid);
+          if (!message || refusedMoves.has(message.messageId) || vanishes) continue;
           source.entries.delete(uid);
           source.modseq += 1;
           destinationUids.set(uid, store(config.username, destinationPath, message));
         }
+        if (connectionDrops) throw new Error("Connection closed");
         const completed = messages.uids.every((uid) => !source.entries.has(uid));
         // Without UIDPLUS the server reports no COPYUID, and imapflow drops it when the server refuses the move.
         if (!account.uidplus || !completed) return { completed, destinationUidValidity: null, destinationUids: new Map() };
@@ -720,6 +727,37 @@ suite("mail provider lease fairness", () => {
     } finally {
       refusedMoves.clear();
       vanishingMoves.clear();
+    }
+  }, 60_000);
+
+  test("two messages with the same Message-ID move in separate sets, so an unclear move proves each on its own", async () => {
+    const mailbox = await connect("same-id");
+    // A mailing list copy and a direct copy of one mail: two messages that share their Message-ID.
+    const messageId = `<same-id-${suffix}@example.test>`;
+    store(mailbox.account, INBOX, { messageId, subject: "direct copy", internalDate: new Date(Date.UTC(2026, 0, 2)) });
+    store(mailbox.account, INBOX, { messageId, subject: "list copy", internalDate: new Date(Date.UTC(2026, 0, 1)) });
+    await deliverAndSync(mailbox, 0, "same-id");
+    // The server moves the direct copy, another client deletes the list copy, and the connection
+    // drops before either move is confirmed.
+    vanishingMoves.add("list copy");
+    droppedMoves.add(messageId);
+    try {
+      // One move per message, newest first: the direct copy, then the list copy.
+      const [directMove, listMove] = await queueMoves(mailbox, [messageId, messageId], "same-id-move", { startTogether: true });
+      const moves = [directMove!, listMove!];
+      await waitFor(async () => (await pending(moves)) === 0, "the unclear moves");
+      expect(moveSets.filter((entry) => entry.label === "same-id").map((entry) => entry.uids)).toEqual([1, 1]);
+      const rows = await sql<{ id: string; state: string; code: string | null }[]>`
+        SELECT id, state, last_error_code AS code FROM mail.commands WHERE id IN ${sql(moves)}
+      `;
+      const outcome = new Map(rows.map((row) => [row.id, { state: row.state, code: row.code }]));
+      // The direct copy is found in Archive. The list copy is not, although Archive has a message with its Message-ID.
+      expect(outcome.get(directMove!)).toEqual({ state: "reconciled", code: null });
+      expect(outcome.get(listMove!)).toEqual({ state: "needs_attention", code: "AMBIGUOUS_MUTATION" });
+      expect(folderOf(mailbox.account, ARCHIVE).entries.size).toBe(1);
+    } finally {
+      vanishingMoves.clear();
+      droppedMoves.clear();
     }
   }, 60_000);
 

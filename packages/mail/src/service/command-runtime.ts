@@ -3382,6 +3382,11 @@ const MOVE_SET_LIMIT = 50;
  * The commands that move together with `headId`, the mailbox's next command, in creation order:
  * queued moves from the same source folder to the same destination over the same binding, whose
  * message has no earlier pending change. Empty when `headId` is not such a move.
+ *
+ * Of several messages that share a Message-ID, only the first goes into the set. When a move's
+ * outcome is unclear, reconciliation finds the message by its Message-ID above the destination's
+ * UIDNEXT before the set; within one set, one moved copy would prove a sibling that another client
+ * deleted meanwhile. The others go with a later set, whose baseline lies above the first copy.
  */
 const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string[]> => {
   const rows = await sql<{ id: string }[]>`
@@ -3395,25 +3400,42 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
       WHERE mailbox_id = ${mailboxId}::uuid
         AND state IN ('queued', 'executing', 'ambiguous')
         AND kind IN ('set_flags', 'change_message_state', 'move', 'copy', 'delete')
+    ),
+    candidates AS (
+      SELECT
+        candidate.id,
+        candidate.id = head.id AS is_head,
+        candidate.created_at,
+        nullif(lower(btrim(content.message_id)), '') AS rfc_message_id
+      FROM pending head
+      JOIN pending candidate
+        ON candidate.kind = 'move'
+       AND candidate.state = 'queued'
+       AND (candidate.last_error_code IS NULL OR candidate.last_error_code = 'REMOTE_RESOURCE_BUSY')
+       AND candidate.selected_binding_id = head.selected_binding_id
+       AND candidate.selected_secret_revision = head.selected_secret_revision
+       AND candidate.source_folder_id = head.source_folder_id
+       AND candidate.destination_folder_id = head.destination_folder_id
+      LEFT JOIN mail.remote_message_refs ref ON ref.id = candidate.message_ref::uuid
+      LEFT JOIN mail.message_contents content ON content.id = ref.message_id
+      WHERE head.id = ${headId}::uuid
+        AND NOT EXISTS (
+          SELECT 1
+          FROM pending earlier
+          WHERE earlier.message_ref = candidate.message_ref
+            AND (earlier.created_at, earlier.id) < (candidate.created_at, candidate.id)
+        )
+    ),
+    ranked AS (
+      SELECT
+        id, is_head, created_at, rfc_message_id,
+        row_number() OVER (PARTITION BY rfc_message_id ORDER BY is_head DESC, created_at, id) AS copy
+      FROM candidates
     )
-    SELECT candidate.id
-    FROM pending head
-    JOIN pending candidate
-      ON candidate.kind = 'move'
-     AND candidate.state = 'queued'
-     AND (candidate.last_error_code IS NULL OR candidate.last_error_code = 'REMOTE_RESOURCE_BUSY')
-     AND candidate.selected_binding_id = head.selected_binding_id
-     AND candidate.selected_secret_revision = head.selected_secret_revision
-     AND candidate.source_folder_id = head.source_folder_id
-     AND candidate.destination_folder_id = head.destination_folder_id
-    WHERE head.id = ${headId}::uuid
-      AND NOT EXISTS (
-        SELECT 1
-        FROM pending earlier
-        WHERE earlier.message_ref = candidate.message_ref
-          AND (earlier.created_at, earlier.id) < (candidate.created_at, candidate.id)
-      )
-    ORDER BY candidate.id = head.id DESC, candidate.created_at, candidate.id
+    SELECT id
+    FROM ranked
+    WHERE rfc_message_id IS NULL OR copy = 1
+    ORDER BY is_head DESC, created_at, id
     LIMIT ${MOVE_SET_LIMIT}
   `;
   return rows[0]?.id === headId ? rows.map((row) => row.id) : [];
