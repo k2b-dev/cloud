@@ -13,7 +13,7 @@ import {
 } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
-import type { SelectGroup } from "./Select";
+import type { ChoiceAppearance, SelectGroup } from "./Select";
 
 export type MultiSelectOption =
   | string
@@ -47,6 +47,10 @@ export type MultiSelectInputProps = ValueFieldProps<string[]> & {
   emptyLabel?: string;
   retryLabel?: string;
   clearLabel?: string;
+  /** `plain` shows the selection as wrapping pills without a box; options are removed in the list. */
+  appearance?: ChoiceAppearance;
+  /** Icon class shown before the placeholder while nothing is selected. */
+  placeholderIcon?: string;
 };
 
 /** Cloud tints the option icon with the option color instead of adding a dot. */
@@ -108,7 +112,8 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
     return options;
   });
   const selected = createMemo(() => values().map((value) => optionByValue().get(value) ?? ({ value, label: value } as NormalizedOption)));
-  const hasClearAction = () => Boolean(props.clearable && selected().length > 0 && !props.disabled);
+  const plain = () => props.appearance === "plain";
+  const hasClearAction = () => Boolean(props.clearable && selected().length > 0 && !props.disabled && !plain());
   const selectedValues = createMemo(() => new Set(values()));
   const popover = createChoicePopover(() => Boolean(props.disabled));
   const focusedOption = () => visibleOptions()[focusedIndex()];
@@ -125,6 +130,12 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
   const fitValues = () => {
     const values = valuesRef;
     if (!values?.isConnected) return;
+    // Plain pills wrap, so every one stays visible.
+    if (plain()) {
+      values.style.width = "";
+      setVisibleCount(Number.POSITIVE_INFINITY);
+      return;
+    }
     // Measuring releases a truncated first pill to its natural width; the
     // browser paints only the final state.
     values.dataset.measuring = "true";
@@ -238,7 +249,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
       required={props.required}
       disabled={props.disabled}
     >
-      <div class="k2b-choice-control" data-invalid={error() ? "true" : undefined}>
+      <div class="k2b-choice-control" data-appearance={props.appearance ?? "field"} data-invalid={error() ? "true" : undefined}>
         <div
           ref={(element) => {
             popover.setTrigger(element);
@@ -262,6 +273,9 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
             when={selected().length > 0}
             fallback={
               <span class="k2b-choice-trigger__value" data-placeholder="true">
+                <Show when={props.placeholderIcon}>
+                  {(icon) => <i class={`${icon()} k2b-choice-trigger__placeholder-icon`} aria-hidden="true" />}
+                </Show>
                 {props.placeholder ?? messages().select}
               </span>
             }
@@ -290,22 +304,24 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                     >
                       {(render) => <span class="k2b-choice-pill__content">{render()(option)}</span>}
                     </Show>
-                    <button
-                      type="button"
-                      aria-label={messages().removeNamed({ name: option.label })}
-                      disabled={props.disabled}
-                      tabIndex={-1}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        remove(option.value);
-                      }}
-                    >
-                      <i class="ti ti-x" aria-hidden="true" />
-                    </button>
+                    <Show when={!plain()}>
+                      <button
+                        type="button"
+                        aria-label={messages().removeNamed({ name: option.label })}
+                        disabled={props.disabled}
+                        tabIndex={-1}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          remove(option.value);
+                        }}
+                      >
+                        <i class="ti ti-x" aria-hidden="true" />
+                      </button>
+                    </Show>
                   </span>
                 )}
               </For>
-              <Show when={selected().length > 1}>
+              <Show when={selected().length > 1 && !plain()}>
                 <span
                   ref={(element) => {
                     moreRef = element;

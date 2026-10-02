@@ -42,6 +42,32 @@ The component keeps the raw text while focused, so intermediate input is not los
 
 `prefix` and `suffix` display short units inside the field. `clearable` adds an explicit empty-state action.
 
+## Edit a number in a property row
+
+Set `appearance="plain"` when the number is a property shown in a
+[`DescriptionList` row](/en/ui/surfaces/details), such as an estimate. The
+value reads as text in the row's type, followed by its `suffix`, and the field
+is exactly as wide as that text. There are no steppers or clear button: a click
+anywhere in the row edits the value, Enter or leaving the field commits, Escape
+restores the current value, and emptying the text clears it. The suffix hides
+while the field is empty, so the placeholder reads alone. Commit through
+`onValueCommit`; it also fires when the value did not change.
+
+On touch devices the field edits at 16 px like every other input, so iOS does
+not zoom.
+
+```tsx
+<NumberInput
+  aria-label="Estimate"
+  appearance="plain"
+  placeholder="No estimate"
+  suffix="min"
+  min={1}
+  value={estimate}
+  onValueCommit={saveEstimate}
+/>;
+```
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
@@ -69,10 +95,11 @@ type NumberInputProps = Omit<
     activeIcon?: string;
     prefix?: JSX.Element;
     suffix?: JSX.Element;
+    appearance?: ChoiceAppearance;
   };
 ```
 
-`onClear` overrides the built-in reset to `null`; the host must then report its own value/commit update. `icon` and `activeIcon` replace the idle and focused icons.
+`appearance` defaults to `"field"`; with `"plain"`, `showSteppers` defaults to `false`. `onClear` overrides the built-in reset to `null`; the host must then report its own value/commit update. `icon` and `activeIcon` replace the idle and focused icons.
 
 ## Accessibility
 

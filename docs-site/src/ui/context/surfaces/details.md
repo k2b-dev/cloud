@@ -9,6 +9,30 @@ value may contain one compact control such as a status or assignee picker when
 that control has its own accessible name. Use a normal form layout for broader
 editing, and do not use the component for arbitrary card layouts.
 
+## Property rows
+
+A property row shows a value that people edit in place: label left, value as
+plain text, and the whole row as the control. Put a control with
+`appearance="plain"` directly into a row's `description`:
+[`Select` and `MultiSelectInput`](/en/ui/input/select#show-a-value-in-a-property-row),
+[the date pickers](/en/ui/input/date-picker#show-a-date-in-a-property-row), or
+[`NumberInput`](/en/ui/input/number#edit-a-number-in-a-property-row). Give it an
+`"aria-label"` that repeats the term.
+
+The row keeps its height and columns. Hovering anywhere in the row, keyboard
+focus, or an open picker paints a quiet surface 0.5rem past the row on both
+sides, behind the label and value; focus adds the ring to that surface. A click
+on the label opens the picker or edits the number. Nothing in the list moves
+between these states, and an item `action` stays clickable above the row.
+
+Mix property rows with plain text rows freely. For people who cannot edit, render
+the same value as text, such as the dot and label of a priority or the
+[`Tag`](/en/ui/input/tag-editor) chips of labels, instead of a disabled control.
+The row then has no hover surface.
+
+A value that lists several entries, such as linked items, may be taller than
+one line. The term stays on the value's first line.
+
 ## Import
 
 ```tsx
@@ -43,11 +67,13 @@ type DescriptionListProps = {
 };
 ```
 
-`columns` defaults to `1`, `layout` to `"grid"`, and `actionVisibility` to `"always"`; `size` defaults to `"md"`. Item content accepts Solid JSX.
+`columns` defaults to `1`, `layout` to `"grid"`, and `actionVisibility` to `"always"`; `size` defaults to `"md"`. Item content accepts Solid JSX. Only a plain control that is the direct value of a `rows` item takes over the row; nested deeper, such as an add action below a list of entries, it covers only itself.
 
 ## Accessibility
 
-The component renders real `dl`, `dt`, and `dd` elements. Terms must be concise,
+The component renders real `dl`, `dt`, and `dd` elements. A property row's
+control keeps its own role and name; the row-wide hit area only extends where a
+pointer reaches it and adds no second tab stop. Terms must be concise,
 descriptions must remain meaningful without visual position, and icon-only
 actions need labels. Progressive actions remain keyboard-focusable and become
 visible through `focus-within`; visibility must never be the only indication

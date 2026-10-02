@@ -4,6 +4,7 @@ import { decimalSeparator, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
+import type { ChoiceAppearance } from "./Select";
 
 export type NumberInputProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
@@ -30,6 +31,12 @@ export type NumberInputProps = Omit<
     activeIcon?: string;
     prefix?: JSX.Element;
     suffix?: JSX.Element;
+    /**
+     * `plain` edits the value in place for property rows: no box and no steppers
+     * or clear button. The field sizes to its text, Enter commits, Escape
+     * restores the current value, and clearing the text clears the value.
+     */
+    appearance?: ChoiceAppearance;
   };
 
 function fractionDigits(value: number): number {
@@ -42,6 +49,7 @@ function fractionDigits(value: number): number {
 export function NumberInput(props: NumberInputProps): JSX.Element {
   const [local, rest] = splitProps(props, [
     "activeIcon",
+    "appearance",
     "allowNegative",
     "aria-describedby",
     "aria-label",
@@ -61,6 +69,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     "max",
     "min",
     "onClear",
+    "onKeyDown",
     "onValueCommit",
     "onValueChange",
     "prefix",
@@ -71,6 +80,8 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     "value",
   ]);
   const meta = createFieldMeta(local.id);
+  const plain = () => local.appearance === "plain";
+  let input: HTMLInputElement | undefined;
   const [focused, setFocused] = createSignal(false);
   const value = () => resolveMaybeAccessor(local.value);
   const error = () => resolveMaybeAccessor(local.error);
@@ -136,6 +147,63 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     if (focused()) return;
     if (parse(raw()) !== value()) setRaw(display(value()));
   });
+  const onKeyDown: JSX.EventHandler<HTMLInputElement, KeyboardEvent> = (event) => {
+    if (typeof local.onKeyDown === "function") local.onKeyDown(event);
+    if (!plain() || event.defaultPrevented) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.currentTarget.blur();
+    } else if (event.key === "Escape" && parse(raw()) !== value()) {
+      // Only an edit in progress swallows Escape; otherwise it reaches an enclosing panel.
+      event.preventDefault();
+      event.stopPropagation();
+      setRaw(display(value()));
+      event.currentTarget.blur();
+    }
+  };
+  const control = () => (
+    <input
+      {...rest}
+      ref={input}
+      id={meta.controlId}
+      class="k2b-input k2b-number-input__control"
+      data-filled={raw() ? "true" : undefined}
+      type="text"
+      role="spinbutton"
+      inputmode={places() === 0 ? "numeric" : "decimal"}
+      value={raw()}
+      required={local.required}
+      {...fieldControlAria(meta, local)}
+      aria-valuemin={Number.isFinite(min()) ? min() : undefined}
+      aria-valuemax={Number.isFinite(max()) ? max() : undefined}
+      aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
+      // The plain sizer sets the width; the smallest intrinsic size keeps the input from widening it.
+      size={plain() ? 1 : rest.size}
+      onFocus={() => setFocused(true)}
+      onKeyDown={onKeyDown}
+      onInput={(event) => {
+        const input = event.currentTarget;
+        const current = input.value;
+        const selectionStart = input.selectionStart;
+        const selectionEnd = input.selectionEnd;
+        const next = filter(current);
+        // Only write back when the filter actually dropped something —
+        // re-assigning an unchanged value moves the caret to the end.
+        if (current !== next) {
+          input.value = next;
+          if (selectionStart !== null && selectionEnd !== null) {
+            input.setSelectionRange(filter(current.slice(0, selectionStart)).length, filter(current.slice(0, selectionEnd)).length);
+          }
+        }
+        setRaw(next);
+        emit(parse(next));
+      }}
+      onBlur={() => {
+        commit(parse(raw()), true);
+        setFocused(false);
+      }}
+    />
+  );
 
   return (
     <Field
@@ -147,12 +215,17 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
       required={local.required}
       disabled={rest.disabled}
     >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the input inside is the keyboard target; a plain field's row only forwards a pointer click beside the text to it. */}
       <div
         class="k2b-input-shell k2b-number-input"
+        data-appearance={local.appearance ?? "field"}
         data-disabled={rest.disabled ? "true" : undefined}
         data-invalid={error() ? "true" : undefined}
+        onClick={(event) => {
+          if (plain() && event.target !== input && !rest.disabled) input?.focus();
+        }}
       >
-        <Show when={local.showSteppers ?? true}>
+        <Show when={local.showSteppers ?? !plain()}>
           <button
             type="button"
             class="k2b-number-input__step"
@@ -173,47 +246,16 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <Show when={local.prefix}>
             <span class="k2b-input-shell__affix">{local.prefix}</span>
           </Show>
-          <input
-            {...rest}
-            id={meta.controlId}
-            class="k2b-input k2b-number-input__control"
-            data-filled={raw() ? "true" : undefined}
-            type="text"
-            role="spinbutton"
-            inputmode={places() === 0 ? "numeric" : "decimal"}
-            value={raw()}
-            required={local.required}
-            {...fieldControlAria(meta, local)}
-            aria-valuemin={Number.isFinite(min()) ? min() : undefined}
-            aria-valuemax={Number.isFinite(max()) ? max() : undefined}
-            aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
-            onFocus={() => setFocused(true)}
-            onInput={(event) => {
-              const input = event.currentTarget;
-              const current = input.value;
-              const selectionStart = input.selectionStart;
-              const selectionEnd = input.selectionEnd;
-              const next = filter(current);
-              // Only write back when the filter actually dropped something —
-              // re-assigning an unchanged value moves the caret to the end.
-              if (current !== next) {
-                input.value = next;
-                if (selectionStart !== null && selectionEnd !== null) {
-                  input.setSelectionRange(filter(current.slice(0, selectionStart)).length, filter(current.slice(0, selectionEnd)).length);
-                }
-              }
-              setRaw(next);
-              emit(parse(next));
-            }}
-            onBlur={() => {
-              commit(parse(raw()), true);
-              setFocused(false);
-            }}
-          />
-          <Show when={local.suffix}>
+          <Show when={plain()} fallback={control()}>
+            {/* The sizer mirrors the text in a hidden grid cell, so the field is as wide as what it shows. */}
+            <span class="k2b-number-input__sizer" data-value={raw() || (typeof rest.placeholder === "string" ? rest.placeholder : "")}>
+              {control()}
+            </span>
+          </Show>
+          <Show when={local.suffix && (!plain() || raw())}>
             <span class="k2b-input-shell__affix">{local.suffix}</span>
           </Show>
-          <Show when={local.clearable && raw() && !rest.disabled && !rest.readOnly}>
+          <Show when={local.clearable && raw() && !rest.disabled && !rest.readOnly && !plain()}>
             <button
               type="button"
               class="k2b-input-shell__clear k2b-input-clear-action"
@@ -224,7 +266,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
             </button>
           </Show>
         </div>
-        <Show when={local.showSteppers ?? true}>
+        <Show when={local.showSteppers ?? !plain()}>
           <button
             type="button"
             class="k2b-number-input__step"

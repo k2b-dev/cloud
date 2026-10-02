@@ -11,7 +11,7 @@ changes, reserves no space, and is disabled in forced-color mode.
 ## Import
 
 ```tsx
-import { DescriptionList, DetailPanel } from "@k2b/ui";
+import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 ```
 
 ## Use DetailPanel
@@ -82,7 +82,11 @@ accessible group name. Do not wrap every standalone section or manufacture
 groups only for decoration.
 
 Sections accept arbitrary content. Use `DescriptionList layout="rows"` for
-compact properties, normal shared inputs for a full form inspector, and the
+compact properties. When people edit those properties in place, make them
+[property rows](/en/ui/surfaces/details#property-rows): a control with
+`appearance="plain"` as the row's value shows the value as text, and the whole
+row opens its picker. Keep the summary's pencil action for the full edit form.
+Use normal shared inputs for a full form inspector, and the
 appropriate shared list, table, notice, preview, or editor for specialized
 content. Use [`Discussion`](/en/ui/layout/discussion) directly in the body when
 notes or comments need their own labelled composer and author timeline. Do not
@@ -260,7 +264,12 @@ state and remain mounted when the section closes.
           actionVisibility="progressive"
           items={[
             { term: "Room", description: "Studio" },
-            { term: "Quantity", description: "18" },
+            {
+              term: "Quantity",
+              description: (
+                <NumberInput aria-label="Quantity" appearance="plain" min={0} value={quantity} onValueCommit={saveQuantity} />
+              ),
+            },
           ]}
         />
       </DetailPanel.Summary>

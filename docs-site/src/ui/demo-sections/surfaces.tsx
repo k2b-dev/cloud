@@ -4,17 +4,21 @@ import {
   Calendar,
   type CalendarEvent,
   DataPanel,
+  DateTimePicker,
   DescriptionList,
   IconButton,
   LinkCard,
+  MultiSelectInput,
   NotFoundState,
   NoticeCard,
+  NumberInput,
   PanelHeader,
   Paper,
   Placeholder,
   ProgressBar,
   ProgressRing,
   RangePicker,
+  Select,
   StatCell,
   StatGrid,
   StatusBadge,
@@ -205,12 +209,21 @@ const CardsDemo = () => (
   </DemoCard>
 );
 
-const DetailsDemo = () => (
-  <DemoCard
-    id="details"
-    chip={{ kind: "component", name: "DescriptionList", from: "@k2b/ui" }}
-    description="Semantic key-value content in a responsive grid or compact inspector rows. Both layouts retain real dl/dt/dd elements and support optional actions."
-    code={`{/* Scan-friendly facts */}
+const DetailsDemo = () => {
+  const [due, setDue] = createSignal<string | null>("2026-10-06T17:00");
+  const [estimate, setEstimate] = createSignal<number | null>(45);
+  const [priority, setPriority] = createSignal<string | null>("medium");
+  const [labels, setLabels] = createSignal<string[]>(["hardware"]);
+
+  return (
+    <DemoCard
+      id="details"
+      chip={[
+        { kind: "component", name: "DescriptionList", from: "@k2b/ui" },
+        { kind: "component", name: "Select", from: "@k2b/ui" },
+      ]}
+      description="Semantic key-value content in a responsive grid or compact inspector rows. Both layouts retain real dl/dt/dd elements and support optional actions. A plain control as a row's value turns the whole row into that control."
+      code={`{/* Scan-friendly facts */}
 <DescriptionList columns={2} items={facts} />
 
 {/* Compact metadata in a detail panel */}
@@ -219,59 +232,148 @@ const DetailsDemo = () => (
   size="sm"
   actionVisibility="progressive"
   items={metadata}
+/>
+
+{/* Property rows: the value is the control, the whole row opens it */}
+<DescriptionList
+  layout="rows"
+  size="sm"
+  items={[
+    { term: "Due", description: <DateTimePicker aria-label="Due" appearance="plain" placeholder="No due date" clearable value={due} onValueChange={setDue} /> },
+    { term: "Estimate", description: <NumberInput aria-label="Estimate" appearance="plain" placeholder="No estimate" suffix="min" min={1} value={estimate} onValueCommit={setEstimate} /> },
+    { term: "Priority", description: <Select aria-label="Priority" appearance="plain" placeholder="No priority" clearable options={priorities} value={priority} onValueChange={setPriority} /> },
+    { term: "Labels", description: <MultiSelectInput aria-label="Labels" appearance="plain" placeholder="Label" placeholderIcon="ti ti-plus" options={labelOptions} value={labels} onValueChange={setLabels} /> },
+  ]}
 />`}
-  >
-    <div class="ui-demo-form-grid">
-      <article class="ui-detail-panel-pattern">
-        <header>
-          <strong>Responsive grid</strong>
-          <span>Scan a small set of peer facts across one to three columns.</span>
-        </header>
-        <DescriptionList
-          columns={2}
-          items={[
-            { term: "Owner", description: "Platform team" },
-            { term: "Region", description: "Europe West" },
-            { term: "Created", description: "31 July 2026" },
-            {
-              term: "Repository",
-              description: "cloud",
-              action: (
-                <IconButton label="Open repository" size="xs" variant="ghost">
-                  <i class="ti ti-external-link" aria-hidden="true" />
-                </IconButton>
-              ),
-            },
-          ]}
-        />
-      </article>
-      <article class="ui-detail-panel-pattern">
-        <header>
-          <strong>Compact rows</strong>
-          <span>Align terms and values for inspector metadata and settings summaries.</span>
-        </header>
-        <DescriptionList
-          layout="rows"
-          size="sm"
-          actionVisibility="progressive"
-          items={[
-            { term: "Created", description: "31 July 2026, 14:32" },
-            { term: "Updated", description: "13 August 2026, 18:41" },
-            {
-              term: "ID",
-              description: "Res7K2",
-              action: (
-                <IconButton label="Copy resource ID" size="xs" variant="ghost">
-                  <i class="ti ti-copy" aria-hidden="true" />
-                </IconButton>
-              ),
-            },
-          ]}
-        />
-      </article>
-    </div>
-  </DemoCard>
-);
+    >
+      <div class="ui-demo-form-grid">
+        <article class="ui-detail-panel-pattern">
+          <header>
+            <strong>Responsive grid</strong>
+            <span>Scan a small set of peer facts across one to three columns.</span>
+          </header>
+          <DescriptionList
+            columns={2}
+            items={[
+              { term: "Owner", description: "Platform team" },
+              { term: "Region", description: "Europe West" },
+              { term: "Created", description: "31 July 2026" },
+              {
+                term: "Repository",
+                description: "cloud",
+                action: (
+                  <IconButton label="Open repository" size="xs" variant="ghost">
+                    <i class="ti ti-external-link" aria-hidden="true" />
+                  </IconButton>
+                ),
+              },
+            ]}
+          />
+        </article>
+        <article class="ui-detail-panel-pattern">
+          <header>
+            <strong>Compact rows</strong>
+            <span>Align terms and values for inspector metadata and settings summaries.</span>
+          </header>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            actionVisibility="progressive"
+            items={[
+              { term: "Created", description: "31 July 2026, 14:32" },
+              { term: "Updated", description: "13 August 2026, 18:41" },
+              {
+                term: "ID",
+                description: "Res7K2",
+                action: (
+                  <IconButton label="Copy resource ID" size="xs" variant="ghost">
+                    <i class="ti ti-copy" aria-hidden="true" />
+                  </IconButton>
+                ),
+              },
+            ]}
+          />
+        </article>
+        <article class="ui-detail-panel-pattern">
+          <header>
+            <strong>Property rows</strong>
+            <span>Values read as text; hover shows a quiet surface and a click anywhere in the row edits.</span>
+          </header>
+          <DescriptionList
+            layout="rows"
+            size="sm"
+            items={[
+              {
+                term: "Due",
+                description: (
+                  <DateTimePicker
+                    aria-label="Due"
+                    appearance="plain"
+                    placeholder="No due date"
+                    clearable
+                    value={due}
+                    onValueChange={setDue}
+                  />
+                ),
+              },
+              {
+                term: "Estimate",
+                description: (
+                  <NumberInput
+                    aria-label="Estimate"
+                    appearance="plain"
+                    placeholder="No estimate"
+                    suffix="min"
+                    min={1}
+                    value={estimate}
+                    onValueCommit={setEstimate}
+                  />
+                ),
+              },
+              {
+                term: "Priority",
+                description: (
+                  <Select
+                    aria-label="Priority"
+                    appearance="plain"
+                    placeholder="No priority"
+                    clearable
+                    options={[
+                      { id: "high", label: "High", color: "#f97316" },
+                      { id: "medium", label: "Medium", color: "#eab308" },
+                      { id: "low", label: "Low", color: "#3b82f6" },
+                    ]}
+                    value={priority}
+                    onValueChange={setPriority}
+                  />
+                ),
+              },
+              {
+                term: "Labels",
+                description: (
+                  <MultiSelectInput
+                    aria-label="Labels"
+                    appearance="plain"
+                    placeholder="Label"
+                    placeholderIcon="ti ti-plus"
+                    options={[
+                      { id: "hardware", label: "Hardware", color: "#2563eb" },
+                      { id: "office", label: "Office", color: "#16a34a" },
+                      { id: "network", label: "Network", color: "#9333ea" },
+                    ]}
+                    value={labels}
+                    onValueChange={setLabels}
+                  />
+                ),
+              },
+              { term: "Created", description: "31 July 2026, 14:32" },
+            ]}
+          />
+        </article>
+      </div>
+    </DemoCard>
+  );
+};
 
 const ProgressDemo = () => (
   <DemoCard

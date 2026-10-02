@@ -28,6 +28,7 @@ import {
 } from "./date-picker";
 import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import type { ChoiceAppearance } from "./Select";
 
 export type { DateRangeValue } from "./date-picker";
 
@@ -47,10 +48,18 @@ export type DatePickerBaseProps<T> = Omit<ValueFieldProps<T>, "value"> & {
   presets?: readonly DatePreset<T>[];
   dateConfig?: DateContext;
   clearable?: boolean;
+  /** `plain` shows the value as text for property rows; a clearable picker offers clearing in its panel. */
+  appearance?: ChoiceAppearance;
 };
 
-export type DatePickerProps = DatePickerBaseProps<string | null>;
-export type DateTimePickerProps = DatePickerBaseProps<string | null>;
+export type DatePickerProps = DatePickerBaseProps<string | null> & {
+  /** Trigger content for a set value, for example the date with a relative hint. */
+  renderValue?: (value: string) => JSX.Element;
+};
+export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
+  /** Trigger content for a set value, for example the date and time with a relative hint. */
+  renderValue?: (value: string) => JSX.Element;
+};
 export type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
   withTime?: boolean;
   datePresets?: readonly DatePreset<string | null>[];
@@ -138,6 +147,13 @@ function PickerShell<T>(props: {
   };
 
   const toggle = () => (open() ? close() : show());
+  const plain = () => props.owner.appearance === "plain";
+  const canClear = () => Boolean(props.owner.clearable && props.valueLabel() && !props.owner.disabled);
+  const clear = () => {
+    close();
+    commitFieldValue(props.owner, props.clearValue);
+    trigger?.focus();
+  };
 
   onMount(() => {
     const syncOpenState = () => setOpen(popoverIsOpen(popover));
@@ -166,7 +182,7 @@ function PickerShell<T>(props: {
       disabled={props.owner.disabled}
       meta={meta}
     >
-      <div class="k2b-date-picker" data-invalid={error() ? "true" : undefined}>
+      <div class="k2b-date-picker" data-appearance={props.owner.appearance ?? "field"} data-invalid={error() ? "true" : undefined}>
         <button
           ref={trigger}
           id={meta.controlId}
@@ -196,16 +212,14 @@ function PickerShell<T>(props: {
           <i class="ti ti-chevron-down k2b-date-trigger__chevron" aria-hidden="true" />
         </button>
 
-        <Show when={props.owner.clearable && props.valueLabel() && !props.owner.disabled}>
+        <Show when={canClear() && !plain()}>
           <button
             type="button"
             class="k2b-date-trigger__clear k2b-input-clear-action"
             aria-label={messages().clearDate}
             onClick={(event) => {
               event.stopPropagation();
-              close();
-              commitFieldValue(props.owner, props.clearValue);
-              trigger?.focus();
+              clear();
             }}
           >
             <i class="ti ti-x" aria-hidden="true" />
@@ -231,9 +245,16 @@ function PickerShell<T>(props: {
           }}
         >
           {props.children(close)}
-          <Show when={props.footerMeta || props.timezone}>
+          <Show when={props.footerMeta || props.timezone || (plain() && canClear())}>
             <footer class="k2b-date-popover__footer">
               <span>{props.footerMeta?.()}</span>
+              {/* A plain trigger has no room for a clear button beside its value. */}
+              <Show when={plain() && canClear()}>
+                <button type="button" class="k2b-date-popover__clear" onClick={clear}>
+                  <i class="ti ti-x" aria-hidden="true" />
+                  {messages().clearDate}
+                </button>
+              </Show>
               <Show when={props.timezone}>
                 <span class="k2b-date-popover__timezone">
                   <i class="ti ti-world" aria-hidden="true" />
@@ -489,6 +510,7 @@ export function DatePicker(props: DatePickerProps): JSX.Element {
       owner={props}
       icon="ti ti-calendar"
       valueLabel={valueLabel}
+      valueContent={props.renderValue ? () => props.renderValue!(value()!) : undefined}
       clearValue={null}
       onOpen={() => setVisibleMonth(parseDateValue(value(), dateConfig()))}
       wide={Boolean(props.presets?.length)}
@@ -520,6 +542,7 @@ export function DatePicker(props: DatePickerProps): JSX.Element {
 }
 
 export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
+  const messages = useUiMessages();
   const value = () => resolveMaybeAccessor(props.value);
   const dateConfig = useDateConfigLocale(() => props.dateConfig);
   const parts = () => splitDateTime(value(), dateConfig());
@@ -540,6 +563,7 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
       owner={props}
       icon="ti ti-calendar-time"
       valueLabel={valueLabel}
+      valueContent={props.renderValue ? () => props.renderValue!(value()!) : undefined}
       clearValue={null}
       timezone={dateConfig().timeZone}
       onOpen={syncDraft}
@@ -580,7 +604,7 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
                 commitFieldValue(props, value);
               }}
             >
-              Apply
+              {messages().apply}
             </button>
           </div>
         </>
@@ -778,7 +802,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
               }
               onClick={() => commit(close)}
             >
-              Apply
+              {messages().apply}
             </button>
           </div>
         </>
