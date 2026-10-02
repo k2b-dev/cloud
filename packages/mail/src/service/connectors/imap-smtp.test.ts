@@ -4,6 +4,7 @@ import type { Socket } from "bun";
 import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import nodemailer from "nodemailer";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
+import type { ProviderConnectionInput } from "../../contracts";
 import {
   assertProviderKeywordsSupported,
   assertSelectedMailbox,
@@ -12,6 +13,8 @@ import {
   disposeImapClient,
   downloadSelectedSources,
   fetchRemoteMessageState,
+  type ImapSession,
+  imapSmtpConnector,
   listenOnImapSession,
   mapFetchedEnvelope,
   normalizeImapQuotaEvidence,
@@ -22,6 +25,7 @@ import {
   selectUidBatch,
   trackImapSession,
   transportDiagnostic,
+  withSharedImapSession,
 } from "./imap-smtp";
 
 describe("Provider transport diagnostics", () => {
@@ -223,6 +227,221 @@ describe("IMAP connection failures", () => {
 
     expect(tracked).toBeGreaterThan(0);
     expect(untracked).toEqual([]);
+  });
+});
+
+describe("Shared IMAP sessions", () => {
+  const MESSAGE_ID = "<shared-session@example.test>";
+  const CAPABILITIES = "IMAP4rev1 MOVE UIDPLUS";
+
+  // INBOX (UIDVALIDITY 10) holds UID 7, Archive (UIDVALIDITY 20) starts empty. Answers what a message
+  // action sends: LIST, SELECT and EXAMINE, UID FETCH, UID SEARCH, and UID MOVE with COPYUID.
+  // `dropAfter` ends the connection right after that command was answered; `onLogin` runs before LOGIN is answered.
+  const mailServer = (options: { dropAfter?: string; onLogin?: () => void } = {}) => {
+    const stats = { connections: 0, logins: 0, logouts: 0, commands: [] as string[] };
+    const server = Bun.listen<{ selected: "INBOX" | "Archive" | null }>({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open: (socket) => {
+          stats.connections += 1;
+          socket.data = { selected: null };
+          socket.write(`* OK [CAPABILITY ${CAPABILITIES}] fixture ready\r\n`);
+        },
+        data: (socket, data) => {
+          for (const line of data.toString().split("\r\n").filter(Boolean)) {
+            const [tag, ...words] = line.split(" ");
+            const command = (words[0] === "UID" ? `UID ${words[1]}` : (words[0] ?? "")).toUpperCase();
+            const name = (words.at(-1) ?? "").replaceAll('"', "");
+            const folder = name === "Archive" ? "Archive" : "INBOX";
+            const uids = folders[socket.data.selected ?? "INBOX"];
+            stats.commands.push(command);
+            if (command === "LOGIN") {
+              stats.logins += 1;
+              options.onLogin?.();
+              socket.write(`${tag} OK [CAPABILITY ${CAPABILITIES}] logged in\r\n`);
+            } else if (command === "LIST") {
+              // An empty name asks for the hierarchy delimiter only.
+              socket.write(`* LIST (${name ? "" : "\\Noselect"}) "/" ${name ? folder : '""'}\r\n${tag} OK done\r\n`);
+            } else if (command === "SELECT" || command === "EXAMINE") {
+              socket.data.selected = folder;
+              const access = command === "SELECT" ? "READ-WRITE" : "READ-ONLY";
+              socket.write(
+                `* FLAGS (\\Seen)\r\n* ${folders[folder].length} EXISTS\r\n* OK [UIDVALIDITY ${folder === "INBOX" ? 10 : 20}] ok\r\n` +
+                  `* OK [UIDNEXT 100] ok\r\n${tag} OK [${access}] done\r\n`,
+              );
+            } else if (command === "UID FETCH") {
+              const uid = Number(words[2]);
+              const seq = uids.indexOf(uid) + 1;
+              const found =
+                seq > 0
+                  ? `* ${seq} FETCH (UID ${uid} FLAGS () ENVELOPE (NIL "Shared" NIL NIL NIL NIL NIL NIL NIL "${MESSAGE_ID}"))\r\n`
+                  : "";
+              socket.write(`${found}${tag} OK done\r\n`);
+            } else if (command === "UID SEARCH") {
+              socket.write(`* SEARCH ${uids.join(" ")}\r\n${tag} OK done\r\n`);
+            } else if (command === "UID MOVE") {
+              const uid = Number(words[2]);
+              const seq = uids.indexOf(uid) + 1;
+              uids.splice(seq - 1, 1);
+              folders.Archive.push(3);
+              socket.write(`* OK [COPYUID 20 ${uid} 3] moved\r\n* ${seq} EXPUNGE\r\n${tag} OK done\r\n`);
+            } else if (command === "LOGOUT") {
+              stats.logouts += 1;
+              socket.write(`* BYE\r\n${tag} OK done\r\n`);
+              socket.end();
+            } else {
+              socket.write(`${tag} OK done\r\n`);
+            }
+            if (command === options.dropAfter) socket.end();
+          }
+        },
+      },
+    });
+    const folders = { INBOX: [7], Archive: [] as number[] };
+    return { server, stats };
+  };
+
+  const config: ProviderConnectionInput = {
+    name: "Shared session fixture",
+    email: "shared@example.test",
+    username: "shared@example.test",
+    imap: { host: "imap.example.test", port: 993, tlsMode: "implicit" },
+    smtp: { host: "smtp.example.test", port: 587, tlsMode: "starttls" },
+    secret: { kind: "password", password: "fixture" },
+  };
+  const sessionFor =
+    (port: number, socketTimeout = 1_000, created: ImapSession[] = []) =>
+    async () => {
+      const session = trackImapSession(
+        new ImapFlow({
+          host: "127.0.0.1",
+          port,
+          secure: false,
+          doSTARTTLS: false,
+          auth: { user: "fixture", pass: "fixture" },
+          logger: false,
+          disableAutoIdle: true,
+          socketTimeout,
+        }),
+      );
+      created.push(session);
+      return session;
+    };
+  const inboxMessage = { folderPath: "INBOX", uidValidity: "10", uid: 7 };
+
+  test("run the steps of a move over one connection and close it afterwards", async () => {
+    const { server, stats } = mailServer();
+    try {
+      const steps = await withSharedImapSession(config, sessionFor(server.port), async (session) => {
+        const identity = await imapSmtpConnector.getMessageState(session, inboxMessage);
+        const baseline = await imapSmtpConnector.findMessageById(session, "Archive", MESSAGE_ID);
+        await imapSmtpConnector.getMessageState(session, inboxMessage);
+        const moved = await imapSmtpConnector.move(session, inboxMessage, "Archive");
+        const source = await imapSmtpConnector.getMessageState(session, inboxMessage);
+        return { identity: identity.messageId, baseline, moved, sourceExists: source.exists };
+      });
+      expect(steps).toEqual({
+        identity: MESSAGE_ID,
+        baseline: [],
+        moved: { destinationUidValidity: "20", destinationUid: 3 },
+        sourceExists: false,
+      });
+      expect({ connections: stats.connections, logins: stats.logins, logouts: stats.logouts }).toEqual({
+        connections: 1,
+        logins: 1,
+        logouts: 1,
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("open a new connection for a step after the provider closed the connection", async () => {
+    const { server, stats } = mailServer({ dropAfter: "UID MOVE" });
+    const created: ImapSession[] = [];
+    try {
+      const sourceExists = await withSharedImapSession(config, sessionFor(server.port, 1_000, created), async (session) => {
+        await imapSmtpConnector.getMessageState(session, inboxMessage);
+        await imapSmtpConnector.move(session, inboxMessage, "Archive");
+        // The runtime checks its lease between the steps; by then the close has arrived.
+        const client = created[0]!.client;
+        if (client.usable) await new Promise((resolve) => client.once("close", resolve));
+        // The source check runs as it would on its own connection and proves the move in the same run.
+        return (await imapSmtpConnector.getMessageState(session, inboxMessage)).exists;
+      });
+      expect(sourceExists).toBe(false);
+      expect({ connections: stats.connections, logins: stats.logins }).toEqual({ connections: 2, logins: 2 });
+      expect(stats.commands.filter((command) => command === "UID MOVE")).toHaveLength(1);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("open a new connection when the idle connection timed out between two steps", async () => {
+    const { server, stats } = mailServer();
+    const created: ImapSession[] = [];
+    try {
+      const sourceExists = await withSharedImapSession(config, sessionFor(server.port, 200, created), async (session) => {
+        await imapSmtpConnector.getMessageState(session, inboxMessage);
+        // The caller works elsewhere, such as on database row locks, until the socket timeout ends the connection.
+        const client = created[0]!.client;
+        await new Promise((resolve) => client.once("error", resolve));
+        return (await imapSmtpConnector.getMessageState(session, inboxMessage)).exists;
+      });
+      expect(sourceExists).toBe(true);
+      expect(created[0]!.failure()).toMatchObject({ code: "ETIMEOUT" });
+      expect(stats.connections).toBe(2);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("run no operation whose signal aborted while the shared connection was connecting", async () => {
+    const controller = new AbortController();
+    const { server, stats } = mailServer({ onLogin: () => controller.abort() });
+    try {
+      const run = withSharedImapSession(config, sessionFor(server.port), (session) =>
+        imapSmtpConnector.findMessageById(session, "Archive", MESSAGE_ID, controller.signal),
+      );
+      await expect(run).rejects.toMatchObject({ code: "ClosedAfterConnectText" });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stats.commands).not.toContain("EXAMINE");
+      expect(stats.commands).not.toContain("UID SEARCH");
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("open no connection when no step reaches the provider", async () => {
+    let created = 0;
+    const result = await withSharedImapSession(
+      config,
+      async () => {
+        created += 1;
+        throw new Error("no connection may open");
+      },
+      async () => "decided without the provider",
+    );
+    expect(result).toBe("decided without the provider");
+    expect(created).toBe(0);
+  });
+
+  test("leave a caller's own configuration on separate connections", async () => {
+    const { server, stats } = mailServer();
+    // A loopback provider address passes the shared fixture session but not the endpoint policy of a connection of its own.
+    const own: ProviderConnectionInput = { ...config, imap: { host: "127.0.0.1", port: server.port, tlsMode: "implicit" } };
+    try {
+      await withSharedImapSession(own, sessionFor(server.port), async (session) => {
+        expect(session).not.toBe(own);
+        expect(session).toEqual(own);
+        await imapSmtpConnector.getMessageState(session, inboxMessage);
+        await expect(imapSmtpConnector.getMessageState(own, inboxMessage)).rejects.toThrow("non-public address");
+      });
+      expect(stats.connections).toBe(1);
+    } finally {
+      server.stop(true);
+    }
   });
 });
 

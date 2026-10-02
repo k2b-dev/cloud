@@ -178,15 +178,96 @@ export const runImapSession = async <T>(
   }
 };
 
+type SharedImapSession = <T>(fn: (client: ImapFlowWithNamespaces) => Promise<T>, signal?: AbortSignal) => Promise<T>;
+
+/** Configurations created by `withSharedImapSession`, and the connection their operations share. */
+const sharedImapSessions = new WeakMap<ProviderConnectionInput, SharedImapSession>();
+
+/** A connection of a shared session; `connected` settles with the connect failure instead of rejecting. */
+type SharedImapConnection = { session: ImapSession; connected: Promise<Error | null> };
+
+/**
+ * Runs `fn` with a copy of `config` whose operations share one connection, created by `createSession` on
+ * first use and disposed when `fn` settles. Each operation is checked like one in `runImapSession`. An
+ * operation that finds the connection closed or failed, for example by the idle socket timeout while the
+ * caller worked between two operations, opens a new one, exactly as a step on its own connection would.
+ */
+export const withSharedImapSession = async <C extends ProviderConnectionInput, T>(
+  config: C,
+  createSession: () => Promise<ImapSession>,
+  fn: (session: C) => Promise<T>,
+): Promise<T> => {
+  const opened: Promise<SharedImapConnection>[] = [];
+  let current: Promise<SharedImapConnection> | undefined;
+  const open = async (): Promise<SharedImapConnection> => {
+    const session = await createSession();
+    return {
+      session,
+      connected: session.client.connect().then(
+        () => null,
+        (error: Error) => error,
+      ),
+    };
+  };
+  const usable = async (connection: Promise<SharedImapConnection>): Promise<boolean> => {
+    const settled = await connection.catch(() => null);
+    if (!settled || (await settled.connected)) return false;
+    return settled.session.client.usable && !settled.session.failure();
+  };
+  const run: SharedImapSession = async (operation, signal) => {
+    throwIfAborted(signal);
+    // Opened on the first operation, so a caller that never reaches the provider opens nothing.
+    if (!current || !(await usable(current))) {
+      current = open();
+      opened.push(current);
+    }
+    const { session, connected } = await current;
+    const client = session.client as ImapFlowWithNamespaces;
+    const abort = (): void => client.close();
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      throwIfAborted(signal);
+      const connectFailure = await connected;
+      if (connectFailure) throw connectFailure;
+      throwIfAborted(signal);
+      const result = await operation(client);
+      throwIfAborted(signal);
+      const failure = session.failure();
+      if (failure) throw failure;
+      return result;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+    }
+  };
+  const scoped = { ...config };
+  sharedImapSessions.set(scoped, run);
+  try {
+    return await fn(scoped);
+  } finally {
+    sharedImapSessions.delete(scoped);
+    for (const connection of opened) {
+      const settled = await connection.catch(() => null);
+      if (!settled) continue;
+      await settled.connected;
+      await disposeImapClient(settled.session.client);
+    }
+  }
+};
+
 const withImapClient = async <T>(
   config: ProviderConnectionInput,
   fn: (client: ImapFlowWithNamespaces) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> => {
+  const shared = sharedImapSessions.get(config);
+  if (shared) return shared(fn, signal);
   throwIfAborted(signal);
   const endpoint = await resolvePublicEndpoint(config.imap);
   return runImapSession(createImapClient(config, endpoint), fn, signal);
 };
+
+const withSession = <C extends ProviderConnectionInput, T>(config: C, fn: (session: C) => Promise<T>): Promise<T> =>
+  withSharedImapSession(config, async () => createImapClient(config, await resolvePublicEndpoint(config.imap)), fn);
 
 const capability = (client: ImapFlow, name: string): boolean => client.capabilities.has(name) || client.enabled.has(name);
 
@@ -1402,5 +1483,6 @@ export const imapSmtpConnector: MailConnector = {
   renameFolder,
   deleteFolder,
   setFolderSubscription,
+  withSession,
   listenForChanges,
 };

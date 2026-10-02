@@ -945,6 +945,22 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const source = await loadRemoteMessage(command, target);
   const remote = remoteTarget(source);
+  // One connection carries every provider step of the command, from the identity checks to the verification.
+  await imapSmtpConnector.withSession(runtime, (session) =>
+    executeMutationSteps({ command, binding, runtime: session, target, source, remote, assertLeaseActive }),
+  );
+};
+
+const executeMutationSteps = async (params: {
+  command: DbCommandExecution;
+  binding: DbPinnedBinding;
+  runtime: MutationRuntime;
+  target: MutationTarget;
+  source: DbRemoteMessage;
+  remote: RemoteMutationTarget;
+  assertLeaseActive: LeaseAssertion;
+}): Promise<void> => {
+  const { command, binding, runtime, target, source, remote, assertLeaseActive } = params;
   const assertAuthorized = async (): Promise<void> => {
     await assertLeaseActive();
     if (!(await commandStillAuthorized(command, "write"))) {
@@ -957,7 +973,7 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
       throw Object.assign(new Error("Mailbox write access was revoked before provider execution"), { code: "ACCESS_REVOKED" });
     }
   };
-  const params = {
+  const steps = {
     command,
     runtime,
     source,
@@ -966,10 +982,10 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
     assertAuthorized,
     beginEffect: () => beginProviderEffect(command),
   };
-  if (command.kind === "set_flags") return executeSetFlagsMutation(params);
-  if (command.kind === "change_message_state") return executeMessageStateMutation(params);
-  if (command.kind === "delete") return executeDeleteMutation(params);
-  return executeTransferMutation({ ...params, target, remoteTarget: remote, capabilities: parseJsonRecord(binding.capabilities) });
+  if (command.kind === "set_flags") return executeSetFlagsMutation(steps);
+  if (command.kind === "change_message_state") return executeMessageStateMutation(steps);
+  if (command.kind === "delete") return executeDeleteMutation(steps);
+  return executeTransferMutation({ ...steps, target, remoteTarget: remote, capabilities: parseJsonRecord(binding.capabilities) });
 };
 
 const loadReconciliationSource = async (command: DbCommandExecution, target: MutationTarget): Promise<DbRemoteMessage> => {
@@ -1091,6 +1107,16 @@ const reconcileMutation = async (command: DbCommandExecution): Promise<void> => 
   const runtime = await loadPinnedRuntime(await loadPinnedBinding(command));
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
   const source = await loadReconciliationSource(command, target);
+  await imapSmtpConnector.withSession(runtime, (session) => reconcileMutationSteps({ command, runtime: session, target, source }));
+};
+
+const reconcileMutationSteps = async (params: {
+  command: DbCommandExecution;
+  runtime: MutationRuntime;
+  target: MutationTarget;
+  source: DbRemoteMessage;
+}): Promise<void> => {
+  const { command, runtime, target, source } = params;
   const remote = remoteTarget(source);
   if (command.kind === "set_flags") {
     await reconcileSetFlagsMutation({ command, runtime, source, target: remote });
