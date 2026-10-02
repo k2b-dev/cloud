@@ -148,8 +148,9 @@ test("the document itself can never scroll or rubber-band", async () => {
     expect(computed(root).overflow).toBe("hidden");
     expect(computed(root).overscrollBehavior).toBe("none");
   }
-  // Pinned to the viewport, so the shell adds no document height whatever the dynamic toolbars do.
-  expect(computed(".auth-app").position).toBe("fixed");
+  // Sized to the initial containing block, so the shell adds no document height whatever the dynamic toolbars do.
+  // Not fixed: Safari would keep a dialog backdrop's dim in the status bar (status-bar.behavior.test.ts).
+  expect(computed(".auth-app").position).toBe("absolute");
   expect(computed(".auth-app").getPropertyValue("inset")).toBe("0");
   dispose();
 });

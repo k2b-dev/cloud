@@ -24,9 +24,11 @@ body {
   margin: 0;
 }
 
-/* Pinned to the viewport rather than sized in vh units, so the shell adds no document height. */
+/* Sized to the initial containing block rather than in vh units, so the shell adds no document height.
+ * Not a fixed layer: Safari colors the status bar from a fixed layer at the top edge, and keeps the
+ * color it had for one that covers the whole viewport, which after a dialog is the backdrop's dim. */
 .auth-app {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
