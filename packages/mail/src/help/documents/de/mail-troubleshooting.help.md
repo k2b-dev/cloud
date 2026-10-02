@@ -34,6 +34,12 @@ Ein Absender- oder Empfängereintrag mit weniger als 3 oder mehr als 320 Zeichen
 
 Prüfe bei geteilten Anbieterordnern zuerst, ob das verbundene IMAP-Konto weiterhin das erforderliche Abonnement und die nötigen Berechtigungen besitzt. Mail kann nur Ordner neu erkennen, die der Anbieter für dieses Konto bereitstellt.
 
+## Eine Änderung aus einem anderen E-Mail-Programm erscheint noch nicht {icon="lifebuoy"}
+
+Mail prüft jeden synchronisierten Ordner etwa einmal pro Minute; der Posteingang aktualisiert sich meist sofort. Eine Nachricht, die du in einem anderen E-Mail-Programm oder auf dem Smartphone löschst oder verschiebst, verschwindet bei der nächsten Prüfung aus ihrem bisherigen Ordner, in jedem Ordner. Änderungen am Lesestatus und an Markierungen aus anderen Programmen kommen ebenso an, auch bei Anbietern ohne Änderungsverfolgung wie Microsoft 365. Synchronisiert eine Installation mehr als 500 Ordner, prüft Mail sie abwechselnd; ein Ordner kann dann einige Minuten brauchen.
+
+Um ein Postfach sofort zu prüfen, öffne **Postfachwerkzeuge > Postfachstatus** und wähle **Jetzt synchronisieren**.
+
 ## Ein Ordner fehlt in der Seitenleiste {icon="folder"}
 
 Personen mit Postfach-Adminrechten sollten **Einstellungen > Ordner** öffnen und zwischen folgenden Fällen unterscheiden:

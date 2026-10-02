@@ -34,6 +34,12 @@ A sender or recipient entry shorter than 3 or longer than 320 characters, such a
 
 For provider-shared folders, first confirm that the connected IMAP account still has the required subscription and rights. Mail can rediscover only folders the provider exposes to that account.
 
+## A change from another mail app does not show yet {icon="lifebuoy"}
+
+Mail checks every synchronized folder about once a minute; Inbox usually updates right away. A message you delete or move in another mail app or on your phone leaves its old folder at the next check, in every folder. Read and flag changes from other apps arrive the same way, also from providers without change tracking, such as Microsoft 365. When an installation synchronizes more than 500 folders, Mail checks them in turns, so a folder can take a few minutes.
+
+To check a mailbox right away, open **Mailbox tools > Mailbox health** and select **Sync now**.
+
 ## A folder is missing from the sidebar {icon="folder"}
 
 Mailbox administrators should open **Settings > Folders** and distinguish these cases:

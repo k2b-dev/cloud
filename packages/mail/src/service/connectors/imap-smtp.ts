@@ -1358,6 +1358,39 @@ const appendSource = async (
 
 const normalizeMessageId = (value: string | null | undefined): string => value?.trim().toLowerCase() ?? "";
 
+/**
+ * Counts the selected folder's drafts: messages flagged `\Draft`, on Gmail the ones with its Drafts
+ * label. A search the server refused is an error, not zero drafts.
+ */
+export const countDraftUids = async (client: Pick<ImapFlow, "search" | "capabilities" | "enabled">): Promise<number> => {
+  const gmail = client.capabilities.has("X-GM-EXT-1") || client.enabled.has("X-GM-EXT-1");
+  const uids = await client.search(gmail ? { gmraw: "in:drafts" } : { draft: true }, { uid: true });
+  if (!Array.isArray(uids)) throw Object.assign(new Error("Provider did not answer the draft search"), { code: "IMAP_SEARCH_FAILED" });
+  return uids.length;
+};
+
+const countDraftMessages = async (
+  config: ProviderConnectionInput,
+  folderPath: string,
+  uidValidity: string,
+  signal?: AbortSignal,
+): Promise<number> =>
+  withImapClient(
+    config,
+    async (client) => {
+      const lock = await client.getMailboxLock(folderPath, { readOnly: true });
+      try {
+        assertSelectedMailbox(client, uidValidity);
+        const count = await countDraftUids(client);
+        assertSelectedMailbox(client, uidValidity);
+        return count;
+      } finally {
+        lock.release();
+      }
+    },
+    signal,
+  );
+
 const findMessageById = async (
   config: ProviderConnectionInput,
   folderPath: string,
@@ -1468,6 +1501,7 @@ export const imapSmtpConnector: MailConnector = {
   fetchEnvelopeBatch,
   fetchFlagChanges,
   fetchUidWindow,
+  countDraftMessages,
   downloadSourceBatch,
   send,
   sendSource,

@@ -73,6 +73,15 @@ type EnvelopeCursor = {
   flagMaxUid: number | null;
   reconcileNextLow: number | null;
   lastFullReconcileAt: string | null;
+  // The fields below arrived after the first cursors were stored, so a stored cursor can lack them.
+  /** High UID of the next newest-first reconcile window; null starts again at the newest message. */
+  sweepNextHigh?: number | null;
+  /** The folder's message count shows that messages left it; the newest-first windows look for them. */
+  vanishedSearch?: boolean;
+  /** Live local UIDs plus uncounted remote messages minus STATUS MESSAGES while nothing is missing; 0 on a consistent server. */
+  countOffset?: number;
+  /** Remote messages the local count leaves out: outside Drafts, the drafts Mail never imports. */
+  remoteUncounted?: number;
 };
 
 type FolderSyncRow = {
@@ -149,6 +158,10 @@ const initialCursor = (uidValidity: string, currentHighUid: number, highestModse
   flagMaxUid: null,
   reconcileNextLow: null,
   lastFullReconcileAt: null,
+  sweepNextHigh: null,
+  vanishedSearch: false,
+  countOffset: 0,
+  remoteUncounted: 0,
 });
 
 // `degraded` only records a failed sync whose binding and credentials stayed
@@ -1062,10 +1075,63 @@ const fetchFlagStep = async (params: {
   return changes;
 };
 
+/**
+ * One UID window of the folder: the remote flags, the UIDs the provider still lists, and the
+ * envelopes of listed UIDs Mail has no live local record for. A window with more of those gaps
+ * than one envelope batch carries ends at the last gap it imports, so the next window continues
+ * behind it instead of repeating it.
+ */
+const fetchReconcileWindow = async (params: {
+  low: number;
+  high: number;
+  newestFirst: boolean;
+  currentHighUid: number;
+  remoteMessages: number;
+  runtime: SyncRuntime;
+  folderPath: string;
+  folderId: string;
+  uidValidity: string;
+  draftsFolder: boolean;
+  signal: AbortSignal;
+}): Promise<ReconcileWindow> => {
+  const flags = await imapSmtpConnector.fetchUidWindow(
+    params.runtime,
+    params.folderPath,
+    params.uidValidity,
+    params.low,
+    params.high,
+    params.signal,
+  );
+  // A window that spans the whole folder and still reports nothing contradicts
+  // the folder status: never let that silence retire local messages.
+  if (flags.length === 0 && params.remoteMessages > 0 && params.low === 1 && params.high >= params.currentHighUid) {
+    throw Object.assign(new Error("Reconciliation window reported no remote messages while the folder is not empty"), {
+      code: "RECONCILE_WINDOW_UNTRUSTED",
+    });
+  }
+  const imports = await fetchReconcileImports({
+    // The Drafts folder imports its drafts; every other folder never fetches them.
+    uids: (params.draftsFolder ? flags : flags.filter((entry) => !isProviderDraft(entry))).map((entry) => entry.uid),
+    newestFirst: params.newestFirst,
+    runtime: params.runtime,
+    folderPath: params.folderPath,
+    folderId: params.folderId,
+    uidValidity: params.uidValidity,
+    draftsFolder: params.draftsFolder,
+    signal: params.signal,
+  });
+  const low = imports.truncated && params.newestFirst ? imports.uids[0]! : params.low;
+  const high = imports.truncated && !params.newestFirst ? imports.uids.at(-1)! : params.high;
+  const covered = flags.filter((entry) => entry.uid >= low && entry.uid <= high);
+  return { low, high, uids: covered.map((entry) => entry.uid), flags: covered, imports: imports.messages };
+};
+
 export const fetchReconcileStep = async (params: {
   cursor: EnvelopeCursor;
   currentHighUid: number;
   remoteMessages: number;
+  /** STATUS HIGHESTMODSEQ; without it, no flag change reaches Mail between reconcile windows. */
+  highestModseq: string | null;
   runtime: SyncRuntime;
   folderPath: string;
   folderId: string;
@@ -1074,89 +1140,178 @@ export const fetchReconcileStep = async (params: {
   draftsFolder: boolean;
   signal: AbortSignal;
 }): Promise<ReconcileWindow | null> => {
+  const { cursor } = params;
   const due =
-    params.cursor.backfillComplete &&
-    (!params.cursor.lastFullReconcileAt || Date.now() - new Date(params.cursor.lastFullReconcileAt).getTime() >= 6 * 60 * 60_000);
-  if (!due && params.cursor.reconcileNextLow == null) return null;
-
-  const low = params.cursor.reconcileNextLow ?? 1;
-  if (low > params.currentHighUid) {
-    params.cursor.reconcileNextLow = null;
-    params.cursor.lastFullReconcileAt = new Date().toISOString();
+    cursor.backfillComplete &&
+    (!cursor.lastFullReconcileAt || Date.now() - new Date(cursor.lastFullReconcileAt).getTime() >= 6 * 60 * 60_000);
+  if (due || cursor.reconcileNextLow != null) {
+    const low = cursor.reconcileNextLow ?? 1;
+    if (low > params.currentHighUid) {
+      cursor.reconcileNextLow = null;
+      cursor.lastFullReconcileAt = new Date().toISOString();
+      return null;
+    }
+    const window = await fetchReconcileWindow({
+      ...params,
+      low,
+      high: Math.min(params.currentHighUid, low + RECONCILE_WINDOW_SIZE - 1),
+      newestFirst: false,
+    });
+    cursor.reconcileNextLow = window.high < params.currentHighUid ? window.high + 1 : null;
+    if (cursor.reconcileNextLow == null) cursor.lastFullReconcileAt = new Date().toISOString();
+    return window;
+  }
+  // Newest first, one window per batch: while messages are known to have left the folder until
+  // the search finds them, and on every batch of a server without CONDSTORE, which reports flag
+  // changes no other way. Mail keeps no flags of drafts, so the Drafts folder needs no such window.
+  if (cursor.vanishedSearch ? cursor.sweepNextHigh == null : params.highestModseq != null || params.draftsFolder) return null;
+  const high = Math.min(cursor.sweepNextHigh ?? cursor.highestSeenUid, cursor.highestSeenUid);
+  if (high < 1) {
+    cursor.sweepNextHigh = null;
     return null;
   }
-  const high = Math.min(params.currentHighUid, low + RECONCILE_WINDOW_SIZE - 1);
-  const flags = await imapSmtpConnector.fetchUidWindow(params.runtime, params.folderPath, params.uidValidity, low, high, params.signal);
-  // A window that spans the whole folder and still reports nothing contradicts
-  // the folder status: never let that silence retire local messages.
-  if (flags.length === 0 && params.remoteMessages > 0 && low === 1 && high >= params.currentHighUid) {
-    throw Object.assign(new Error("Reconciliation window reported no remote messages while the folder is not empty"), {
-      code: "RECONCILE_WINDOW_UNTRUSTED",
-    });
-  }
-  const uids = flags.map((entry) => entry.uid);
-  const imports = await fetchReconcileImports({
-    window: {
-      low,
-      high,
-      uids: params.draftsFolder ? uids : flags.filter((entry) => !isProviderDraft(entry)).map((entry) => entry.uid),
-    },
-    runtime: params.runtime,
-    folderPath: params.folderPath,
-    folderId: params.folderId,
-    uidValidity: params.uidValidity,
-    signal: params.signal,
-  });
-  params.cursor.reconcileNextLow = high < params.currentHighUid ? high + 1 : null;
-  if (params.cursor.reconcileNextLow == null) params.cursor.lastFullReconcileAt = new Date().toISOString();
-  // More gaps than one envelope batch can carry: repeat this window next time.
-  if (imports.truncated) params.cursor.reconcileNextLow = low;
-  return { low, high, uids, flags, imports: imports.messages };
+  const window = await fetchReconcileWindow({ ...params, low: Math.max(1, high - RECONCILE_WINDOW_SIZE + 1), high, newestFirst: true });
+  cursor.sweepNextHigh = window.low > 1 ? window.low - 1 : null;
+  return window;
 };
 
-// UIDs the provider still lists but that have no live local reference: a gap
-// left by a lost batch or a wrongly retired message. Re-import them through the
-// same envelope path backfill uses.
+// UIDs the provider still lists but that have no live local record: a gap left
+// by a lost batch or a wrongly retired message. Re-import them through the same
+// envelope path backfill uses, at most one envelope batch at a time, starting at
+// the side the window walks from.
 const fetchReconcileImports = async (params: {
-  window: { low: number; high: number; uids: number[] };
+  uids: number[];
+  newestFirst: boolean;
   runtime: SyncRuntime;
   folderPath: string;
   folderId: string;
   uidValidity: string;
+  draftsFolder: boolean;
   signal: AbortSignal;
-}): Promise<{ messages: ConnectorEnvelope[]; truncated: boolean }> => {
-  if (params.window.uids.length === 0) return { messages: [], truncated: false };
+}): Promise<{ messages: ConnectorEnvelope[]; uids: number[]; truncated: boolean }> => {
+  if (params.uids.length === 0) return { messages: [], uids: [], truncated: false };
+  // A draft never gets a message reference: the Drafts folder knows a UID by its draft snapshot.
   const missing = await sql<{ uid: string }[]>`
     SELECT remote.uid
-    FROM jsonb_array_elements_text(${params.window.uids}::jsonb) AS remote(uid)
+    FROM jsonb_array_elements_text(${params.uids}::jsonb) AS remote(uid)
     WHERE NOT EXISTS (
       SELECT 1
       FROM mail.remote_message_refs rmr
-      WHERE rmr.folder_id = ${params.folderId}::uuid
+      WHERE NOT ${params.draftsFolder}::boolean
+        AND rmr.folder_id = ${params.folderId}::uuid
         AND rmr.uid_validity = ${params.uidValidity}::numeric
         AND rmr.uid = remote.uid::numeric
         AND rmr.stale_at IS NULL
     )
-    ORDER BY remote.uid::numeric
+    AND NOT EXISTS (
+      SELECT 1
+      FROM mail.draft_provider_snapshots snapshot
+      WHERE ${params.draftsFolder}::boolean
+        AND snapshot.folder_id = ${params.folderId}::uuid
+        AND snapshot.uid_validity = ${params.uidValidity}::numeric
+        AND snapshot.uid = remote.uid::numeric
+    )
+    ORDER BY CASE WHEN ${params.newestFirst}::boolean THEN -remote.uid::numeric ELSE remote.uid::numeric END
     LIMIT ${ENVELOPE_BATCH_SIZE + 1}
   `;
-  if (missing.length === 0) return { messages: [], truncated: false };
+  if (missing.length === 0) return { messages: [], uids: [], truncated: false };
   const truncated = missing.length > ENVELOPE_BATCH_SIZE;
-  const uids = missing.slice(0, ENVELOPE_BATCH_SIZE).map((row) => Number(row.uid));
+  const uids = missing
+    .slice(0, ENVELOPE_BATCH_SIZE)
+    .map((row) => Number(row.uid))
+    .sort((left, right) => left - right);
   const batch = await imapSmtpConnector.fetchEnvelopeBatch(
     params.runtime,
     {
       folderPath: params.folderPath,
       folderStableKey: params.folderId,
       uidValidity: params.uidValidity,
-      highUid: uids[uids.length - 1]!,
+      highUid: uids.at(-1)!,
       lowUid: uids[0]!,
       limit: ENVELOPE_BATCH_SIZE,
       uids,
     },
     params.signal,
   );
-  return { messages: batch.messages, truncated };
+  return { messages: batch.messages, uids, truncated };
+};
+
+/** Live local UIDs of the folder: message references, or in the Drafts folder the drafts Mail tracks there. */
+const countLiveUids = async (folderId: string, uidValidity: string, draftsFolder: boolean): Promise<number> => {
+  const [row] = draftsFolder
+    ? await sql<{ count: number }[]>`
+        SELECT count(DISTINCT uid)::int AS count
+        FROM mail.draft_provider_snapshots
+        WHERE folder_id = ${folderId}::uuid
+          AND uid_validity = ${uidValidity}::numeric
+          AND state IN ('active', 'appending', 'external', 'importing')
+      `
+    : await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count
+        FROM mail.remote_message_refs
+        WHERE folder_id = ${folderId}::uuid
+          AND uid_validity = ${uidValidity}::numeric
+          AND stale_at IS NULL
+      `;
+  return row?.count ?? 0;
+};
+
+/**
+ * An IMAP server reports a removed message only to a client that has the folder open, so the
+ * folder's message count shows that messages left it: a delete or a move in another client.
+ * Once every UID is imported, the live local UIDs plus the remote messages Mail does not count
+ * match STATUS MESSAGES up to the folder's offset. More local UIDs start a newest-first search
+ * through the reconcile windows, which ends as soon as the counts match again.
+ */
+const checkVanishedMessages = async (params: {
+  cursor: EnvelopeCursor;
+  status: Pick<FolderStatus, "uidValidity" | "uidNext" | "messages">;
+  folderId: string;
+  draftsFolder: boolean;
+  countDrafts: () => Promise<number>;
+}): Promise<void> => {
+  const { cursor, status } = params;
+  if (!cursor.backfillComplete || cursor.incrementalNextHigh != null || cursor.reconcileNextLow != null) return;
+  // Messages Mail has not imported yet would hide a removed one.
+  if (status.uidNext - 1 !== cursor.highestSeenUid) return;
+  const local = await countLiveUids(params.folderId, status.uidValidity, params.draftsFolder);
+  const offset = cursor.countOffset ?? 0;
+  let uncounted = cursor.remoteUncounted ?? 0;
+  let gap = local + uncounted - status.messages;
+  if (gap > offset && !cursor.vanishedSearch) {
+    // A draft Mail never imported may be what left: count the drafts before searching. Without
+    // that count the search still runs; it only costs more windows.
+    uncounted = params.draftsFolder
+      ? 0
+      : await params.countDrafts().catch((error: unknown) => {
+          log.warn("Mail could not count a folder's drafts and searches it for removed messages", {
+            folderId: params.folderId,
+            code: providerErrorCode(error, "DRAFT_COUNT_FAILED"),
+          });
+          return uncounted;
+        });
+    gap = local + uncounted - status.messages;
+  }
+  // More remote messages than Mail counts, such as a new draft it skips.
+  if (gap < offset) {
+    uncounted += offset - gap;
+    gap = offset;
+  }
+  cursor.remoteUncounted = uncounted;
+  if (gap === offset) {
+    cursor.vanishedSearch = false;
+    return;
+  }
+  if (!cursor.vanishedSearch) {
+    cursor.vanishedSearch = true;
+    cursor.sweepNextHigh = cursor.highestSeenUid;
+    return;
+  }
+  if (cursor.sweepNextHigh == null) {
+    // Every window was searched and the counts still differ: this server counts differently.
+    cursor.countOffset = gap;
+    cursor.vanishedSearch = false;
+  }
 };
 
 const reconcileWindowStart = (uid: number): number => {
@@ -1308,7 +1463,11 @@ export const commitSyncBatch = async (params: {
       draftRemoved = projection.removed;
     } else {
       for (const message of params.envelopeBatch?.messages ?? []) {
-        if (isProviderDraft(message)) continue;
+        if (isProviderDraft(message)) {
+          // The folder's message count includes it; see checkVanishedMessages.
+          params.cursor.remoteUncounted = (params.cursor.remoteUncounted ?? 0) + 1;
+          continue;
+        }
         hydratedIds.push(
           await ingestEnvelope({
             db: tx,
@@ -1531,6 +1690,15 @@ export const syncFolderBatch = async (
           !beforeCursor || uidValidityChanged
             ? initialCursor(status.uidValidity, currentHighUid, status.highestModseq)
             : structuredClone(beforeCursor);
+        const draftsFolder = await isEffectiveDraftsFolder(sql, folder, folderId);
+
+        await checkVanishedMessages({
+          cursor,
+          status,
+          folderId,
+          draftsFolder,
+          countDrafts: () => imapSmtpConnector.countDraftMessages(runtime, folderExecution.path, status.uidValidity, signal),
+        });
 
         const envelope = await fetchEnvelopeStep({
           cursor,
@@ -1559,11 +1727,12 @@ export const syncFolderBatch = async (
           cursor,
           currentHighUid,
           remoteMessages: status.messages,
+          highestModseq: status.highestModseq,
           runtime,
           folderPath: folderExecution.path,
           folderId,
           uidValidity: status.uidValidity,
-          draftsFolder: await isEffectiveDraftsFolder(sql, folder, folderId),
+          draftsFolder,
           signal,
         });
         if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");
@@ -1588,7 +1757,11 @@ export const syncFolderBatch = async (
         await enqueueDraftImports(result.draftImportSnapshotIds);
         await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
         const hasMore =
-          cursor.incrementalNextHigh != null || !cursor.backfillComplete || cursor.flagNextLow != null || cursor.reconcileNextLow != null;
+          cursor.incrementalNextHigh != null ||
+          !cursor.backfillComplete ||
+          cursor.flagNextLow != null ||
+          cursor.reconcileNextLow != null ||
+          (cursor.vanishedSearch === true && cursor.sweepNextHigh != null);
         return {
           hasMore,
           syncPending: cursor.incrementalNextHigh != null || cursor.flagNextLow != null,
@@ -2219,6 +2392,50 @@ export const submitDueHydrationWork = async (): Promise<number> => {
   return mailboxes.length;
 };
 
+// Each minute queues at most this many folder syncs. The scheduler takes them in turn by folder
+// id, so with more eligible folders every folder still gets a sync every few minutes.
+const DUE_FOLDER_SYNCS_PER_RUN = 500;
+const DUE_FOLDER_CURSOR_KEY = "mail:sync-due:folder-cursor";
+
+/**
+ * Queues the next page of eligible folder syncs after the folder the previous run stopped at,
+ * wrapping around to the first folder. Returns the queued folder ids, Inboxes first.
+ */
+export const submitDueFolderSyncs = async (limit = DUE_FOLDER_SYNCS_PER_RUN): Promise<string[]> => {
+  const after = (await redis.get(DUE_FOLDER_CURSOR_KEY)) ?? "00000000-0000-0000-0000-000000000000";
+  const folders = await sql<{ id: string; role: string }[]>`
+    SELECT f.id, f.role
+    FROM mail.folders f
+    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+    JOIN mail.mailboxes m ON m.id = rr.mailbox_id
+    WHERE f.selected_for_sync = true
+      AND f.discovery_state = 'active'
+      AND f.sync_status <> 'excluded'
+      AND m.sync_enabled = true
+      AND m.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM mail.provider_bindings pb
+        JOIN mail.provider_connections pc ON pc.id = pb.connection_id
+        WHERE pb.remote_resource_id = rr.id
+          AND pb.state = 'active'
+          AND pb.verified_scope_fingerprint = rr.scope_fingerprint
+          AND pb.verified_secret_revision = pc.secret_revision
+          AND pc.status = 'active'
+          AND pc.encrypted_secret IS NOT NULL
+      )
+    ORDER BY f.id <= ${after}::uuid, f.id
+    LIMIT ${limit}
+  `;
+  const last = folders.at(-1);
+  if (last) await redis.set(DUE_FOLDER_CURSOR_KEY, last.id);
+  const ids = [...folders.filter((folder) => folder.role === "inbox"), ...folders.filter((folder) => folder.role !== "inbox")].map(
+    (folder) => folder.id,
+  );
+  for (const id of ids) await submitSyncFolderJob(id);
+  return ids;
+};
+
 const submitDueWork = async (): Promise<{
   bindings: number;
   folders: number;
@@ -2252,37 +2469,7 @@ const submitDueWork = async (): Promise<{
     await submitRediscoveryJob(binding.id, false);
   }
 
-  const folders = await sql<{ id: string }[]>`
-    SELECT f.id
-    FROM mail.folders f
-    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
-    JOIN mail.mailboxes m ON m.id = rr.mailbox_id
-    WHERE f.selected_for_sync = true
-      AND f.discovery_state = 'active'
-      AND f.sync_status <> 'excluded'
-      AND m.sync_enabled = true
-      AND m.deleted_at IS NULL
-      AND EXISTS (
-        SELECT 1
-        FROM mail.provider_bindings pb
-        JOIN mail.provider_connections pc ON pc.id = pb.connection_id
-        WHERE pb.remote_resource_id = rr.id
-          AND pb.state = 'active'
-          AND pb.verified_scope_fingerprint = rr.scope_fingerprint
-          AND pb.verified_secret_revision = pc.secret_revision
-          AND pc.status = 'active'
-          AND pc.encrypted_secret IS NOT NULL
-      )
-    ORDER BY
-      CASE f.role WHEN 'inbox' THEN 0 ELSE 1 END,
-      COALESCE(f.last_reconciled_at, '-infinity'::timestamptz),
-      f.id
-    LIMIT 500
-  `;
-  for (const folder of folders) {
-    await submitSyncFolderJob(folder.id);
-  }
-
+  const folders = await submitDueFolderSyncs();
   const hydrationMailboxes = await submitDueHydrationWork();
   const draftProjection = await submitDueDraftProjectionWork();
   return {
@@ -2335,8 +2522,7 @@ export const enqueueFolderReconciliation = async (folderId: string, fromUid: num
           )
         ),
         true
-      ),
-      last_reconciled_at = NULL
+      )
     WHERE id = ${folderId}::uuid
       AND selected_for_sync = true
       AND discovery_state = 'active'

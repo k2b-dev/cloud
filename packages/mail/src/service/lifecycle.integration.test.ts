@@ -1676,6 +1676,7 @@ suite("mail lifecycle control plane", () => {
           cursor,
           currentHighUid: 10,
           remoteMessages: 2,
+          highestModseq: "1",
           runtime: {} as never,
           folderPath: "Reconcile",
           folderId: fixture.folderId,
@@ -1707,6 +1708,7 @@ suite("mail lifecycle control plane", () => {
         cursor,
         currentHighUid: 10,
         remoteMessages: 2,
+        highestModseq: "1",
         runtime: {} as never,
         folderPath: "Reconcile",
         folderId: fixture.folderId,
@@ -1726,8 +1728,67 @@ suite("mail lifecycle control plane", () => {
     }
   });
 
-  test("a reconcile window fetches drafts only in the Drafts folder", async () => {
+  test("a reconcile window with more gaps than one envelope batch ends at its last import and the next window continues", async () => {
+    const fixture = await reconcileFixture({ key: "reconcile-truncated", uidValidity: "66", localUids: [] });
+    const remote = Array.from({ length: 250 }, (_, index) => ({ uid: index + 1, modseq: null, flags: [], labels: [] }));
+    const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockImplementation(async (_config, _path, _uidValidity, low, high) =>
+      remote.filter((entry) => entry.uid >= low && entry.uid <= high),
+    );
+    // The envelopes never arrive, like messages removed right after the window listed them.
+    const envelopes = spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockResolvedValue({ messages: [], nextHighUid: null });
+    const step = (cursor: Parameters<typeof fetchReconcileStep>[0]["cursor"]) =>
+      fetchReconcileStep({
+        cursor,
+        currentHighUid: 250,
+        remoteMessages: 250,
+        highestModseq: "1",
+        runtime: {} as never,
+        folderPath: "Reconcile",
+        folderId: fixture.folderId,
+        uidValidity: "66",
+        draftsFolder: false,
+        signal: AbortSignal.timeout(10_000),
+      });
+    try {
+      const walk = reconcileCursor("66", 1);
+      const first = await step(walk);
+      expect([first?.low, first?.high, first?.uids.length]).toEqual([1, 200, 200]);
+      expect(walk.reconcileNextLow).toBe(201);
+      const second = await step(walk);
+      expect([second?.low, second?.high]).toEqual([201, 250]);
+      expect(walk.reconcileNextLow).toBeNull();
+
+      const search = {
+        ...reconcileCursor("66"),
+        highestSeenUid: 250,
+        lastFullReconcileAt: new Date().toISOString(),
+        vanishedSearch: true,
+        sweepNextHigh: 250,
+      };
+      const newest = await step(search);
+      expect([newest?.low, newest?.high, newest?.uids.length]).toEqual([51, 250, 200]);
+      expect(search.sweepNextHigh).toBe(50);
+      const oldest = await step(search);
+      expect([oldest?.low, oldest?.high]).toEqual([1, 50]);
+      expect(search.sweepNextHigh).toBeNull();
+    } finally {
+      envelopes.mockRestore();
+      window.mockRestore();
+      await dropReconcileFolders();
+    }
+  });
+
+  test("a reconcile window fetches drafts only in the Drafts folder, and there only the ones it does not track", async () => {
     const fixture = await reconcileFixture({ key: "reconcile-drafts", uidValidity: "64", localUids: [1] });
+    // Drafts get no message reference: the Drafts folder knows a UID by its draft snapshot.
+    await sql`
+      INSERT INTO mail.draft_provider_snapshots (
+        mailbox_id, direction, state, stable_message_id, remote_resource_id, binding_id, folder_id, uid_validity, uid
+      ) VALUES (
+        ${mailboxId}::uuid, 'import', 'external', ${`<tracked-draft-${suffix}@example.com>`},
+        ${fixture.resourceId}::uuid, ${bindingId}::uuid, ${fixture.folderId}::uuid, 64, 3
+      )
+    `;
     const window = spyOn(imapSmtpConnector, "fetchUidWindow").mockResolvedValue([
       { uid: 1, modseq: null, flags: [], labels: [] },
       { uid: 2, modseq: null, flags: ["\\Draft"], labels: [] },
@@ -1742,6 +1803,7 @@ suite("mail lifecycle control plane", () => {
           cursor: reconcileCursor("64", 1),
           currentHighUid: 10,
           remoteMessages: 5,
+          highestModseq: "1",
           runtime: {} as never,
           folderPath: "Reconcile",
           folderId: fixture.folderId,
@@ -1750,10 +1812,11 @@ suite("mail lifecycle control plane", () => {
           signal: AbortSignal.timeout(10_000),
         });
       }
-      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [2, 3, 4, 5]]);
+      expect(envelopes.mock.calls.map((call) => call[1].uids)).toEqual([[4], [1, 2, 4, 5]]);
     } finally {
       envelopes.mockRestore();
       window.mockRestore();
+      await sql`DELETE FROM mail.draft_provider_snapshots WHERE folder_id = ${fixture.folderId}::uuid`;
       await dropReconcileFolders();
     }
   });

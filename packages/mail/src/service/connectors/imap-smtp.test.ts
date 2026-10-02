@@ -10,6 +10,7 @@ import {
   assertSelectedMailbox,
   assertUidValidity,
   connectSmtpConnection,
+  countDraftUids,
   disposeImapClient,
   downloadSelectedSources,
   fetchRemoteMessageState,
@@ -657,6 +658,39 @@ describe("IMAP message state", () => {
       messageId: null,
       modseq: null,
     });
+  });
+});
+
+describe("IMAP draft count", () => {
+  const client = (capabilities: string[], result: number[] | false) => {
+    const queries: unknown[] = [];
+    return {
+      queries,
+      client: {
+        capabilities: new Map(capabilities.map((name) => [name, true])),
+        enabled: new Set<string>(),
+        search: async (query: unknown) => {
+          queries.push(query);
+          return result;
+        },
+      } as never,
+    };
+  };
+
+  test("counts the UIDs the server reports as drafts", async () => {
+    const imap = client(["IMAP4rev1"], [3, 9, 12]);
+    expect(await countDraftUids(imap.client)).toBe(3);
+    expect(imap.queries).toEqual([{ draft: true }]);
+  });
+
+  test("counts Gmail's drafts by their Drafts label", async () => {
+    const gmail = client(["IMAP4rev1", "X-GM-EXT-1"], [4]);
+    expect(await countDraftUids(gmail.client)).toBe(1);
+    expect(gmail.queries).toEqual([{ gmraw: "in:drafts" }]);
+  });
+
+  test("fails instead of counting zero drafts when the server refused the search", async () => {
+    await expect(countDraftUids(client([], false).client)).rejects.toMatchObject({ code: "IMAP_SEARCH_FAILED" });
   });
 });
 
