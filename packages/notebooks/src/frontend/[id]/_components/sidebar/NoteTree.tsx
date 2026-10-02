@@ -9,6 +9,7 @@ import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
 import SearchButton from "../search/SearchButton";
+import { readErrorMessage } from "../settings/utils";
 import { listAccessibleNotebooks } from "./notebooks";
 import { flattenTree, getNodeDepthLabel } from "./tree-utils";
 import type { Notebook, NoteTreeNode } from "./types";
@@ -93,10 +94,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
       const res = await apiClient[":id"].notes[":noteId"].$delete({
         param: { id: notebookId, noteId },
       });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message ?? t().failedDeleteNote);
-      }
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().failedDeleteNote));
     },
     onSuccess: () => {
       navigateTo(`/app/notebooks/${notebookId}`);

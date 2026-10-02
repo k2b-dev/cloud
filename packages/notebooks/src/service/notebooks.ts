@@ -569,8 +569,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
     return { ok: false, error: "Invalid default presentation mode", status: 400 };
   }
   const defaultNoteTitleTemplate = data.defaultNoteTitleTemplate ?? existing.defaultNoteTitleTemplate;
-  const noteDeletePermission = data.noteDeletePermission ?? existing.noteDeletePermission;
-  if (!isNoteDeletePermission(noteDeletePermission)) {
+  if (data.noteDeletePermission !== undefined && !isNoteDeletePermission(data.noteDeletePermission)) {
     return { ok: false, error: "Invalid note delete permission", status: 400 };
   }
 
@@ -600,6 +599,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
     return { ok: false, error: "Homepage note not found", status: 404 };
   }
 
+  // Only an explicit change writes the deletion rule, so an update from a stale snapshot cannot undo an admin's choice.
   const [row] = await sql<DbNotebook[]>`
     UPDATE notebooks.notebooks
     SET name = ${name},
@@ -608,7 +608,7 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
         homepage_note_id = ${homepageNoteId}::uuid,
         default_presentation_mode = ${defaultPresentationMode},
         default_note_title_template = ${defaultNoteTitleTemplate},
-        note_delete_permission = ${noteDeletePermission},
+        note_delete_permission = COALESCE(${data.noteDeletePermission ?? null}::text, note_delete_permission),
         updated_at = now()
     WHERE id = ${id}::uuid
     RETURNING

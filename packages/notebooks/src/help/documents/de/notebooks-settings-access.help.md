@@ -41,7 +41,7 @@ Gesperrte Notizen öffnen sich in der Ansicht **Schreibgeschützt** statt zum Be
 
 Anfangs dürfen alle mit Schreibrechten die Notizen eines Notizbuchs auch löschen. Damit Notizen nicht versehentlich verschwinden, öffnet ein Admin **Freigabe – Zugriff** und stellt **Wer darf Notizen löschen** auf **Nur Admins**. Die Änderung wird sofort gespeichert.
 
-Die Regel betrifft nur das Löschen ganzer Notizen. Personen und Agenten mit Schreibrechten bearbeiten Notizen weiterhin wie bisher und können auch Text entfernen; der Versionsverlauf bewahrt frühere Fassungen. Für sie bleibt **Löschen** im Notizmenü sichtbar, ist aber deaktiviert und nennt den Grund: Löschen ist in diesem Notizbuch Admins vorbehalten. Die API und `cld notebooks rm` lehnen das Löschen mit demselben Grund ab.
+Die Regel betrifft nur das Löschen ganzer Notizen. Personen und Agenten mit Schreibrechten bearbeiten Notizen weiterhin wie bisher und können auch Text entfernen; der Versionsverlauf bewahrt frühere Fassungen. Für sie bleibt **Löschen** im Notizmenü sichtbar, ist aber deaktiviert und nennt den Grund: Löschen ist in diesem Notizbuch Admins vorbehalten. Die API und `cld notebooks rm` lehnen das Löschen mit demselben Grund ab. Sperren dürfen sie eine Notiz weiterhin: Eine gesperrte Notiz behält ihre Versionen lesbar, lässt sich daraus aber nicht mehr wiederherstellen.
 
 ## Bereiche der Einstellungen {icon="settings"}
 

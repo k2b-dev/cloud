@@ -3,12 +3,14 @@ import { generateSpecs } from "hono-openapi";
 import app from "./index";
 
 type Schema = { $ref?: string; items?: Schema; properties?: Record<string, Schema> };
+type Operation = { responses?: Record<string, { content?: Record<string, { schema?: Schema }> }> };
 type Spec = {
-  paths: Record<string, { get?: { responses?: Record<string, { content?: Record<string, { schema?: Schema }> }> } }>;
+  paths: Record<string, { get?: Operation; post?: Operation }>;
   components?: { schemas?: Record<string, Schema> };
 };
 
-const responseSchema = (spec: Spec, path: string) => spec.paths[path]?.get?.responses?.["200"]?.content?.["application/json"]?.schema;
+const responseSchema = (spec: Spec, path: string, method: "get" | "post" = "get", status = "200") =>
+  spec.paths[path]?.[method]?.responses?.[status]?.content?.["application/json"]?.schema;
 
 test("the note tree and the book tree are separate OpenAPI components", async () => {
   const spec = (await generateSpecs(app)) as Spec;
@@ -24,4 +26,13 @@ test("the note tree and the book tree are separate OpenAPI components", async ()
   expect(bookTree).toBe("#/components/schemas/BookTreeNode");
   expect(Object.keys(schemas.BookTreeNode?.properties ?? {})).toEqual(["id", "title", "children"]);
   expect(schemas.BookTreeNode?.properties?.children?.items?.$ref).toBe(bookTree);
+});
+
+test("a notebook created from a template documents the same fields as every other notebook", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const fields = (schema?: Schema) => Object.keys(schema?.properties ?? {}).sort();
+
+  const notebook = fields(responseSchema(spec, "/{id}"));
+  expect(notebook).toContain("noteDeletePermission");
+  expect(fields(responseSchema(spec, "/templates/{templateId}", "post", "201"))).toEqual(notebook);
 });

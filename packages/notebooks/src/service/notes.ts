@@ -940,6 +940,8 @@ const checkIsDescendant = async (ancestorId: string, descendantId: string): Prom
  * notebook permission; a notebook can reserve deleting notes for its admins.
  */
 export const remove = async (params: { id: string; permission: PermissionLevel }): Promise<Result<void>> => {
+  // Below write permission no rule allows deleting; the admin-only reason would mislead.
+  if (!mayDeleteNotes(params.permission, "write")) return fail(err.forbidden());
   const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteNotes(params.permission, rule));
   // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
   const [deleted] = await sql<{ id: string; notebook_id: string; short_id: string }[]>`

@@ -99,7 +99,9 @@ set **Who can delete notes** to **Admins only** under **Settings → Sharing →
 Access**; the change saves immediately. People and agents with write access
 keep editing, including removing content, and saved versions keep earlier
 content recoverable. Their **Delete** action stays visible but disabled with
-the reason. The rule covers only deleting whole notes.
+the reason. The rule covers only deleting whole notes. Locking a note stays
+open to writers; a locked note keeps its saved versions readable but can no
+longer be restored from them.
 
 The API carries the rule as the notebook's `noteDeletePermission` (`write` or
 `admin`). Only notebook admins change it with `PATCH /api/notebooks/:id` or

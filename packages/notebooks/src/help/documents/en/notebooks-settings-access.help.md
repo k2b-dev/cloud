@@ -41,7 +41,7 @@ Locked notes open in **Read-only** instead of **Write**. Locking does not remove
 
 By default, everyone who can write in a notebook can also delete its notes. To keep notes from disappearing by accident, an admin opens **Sharing — Access** and sets **Who can delete notes** to **Admins only**. The change saves immediately.
 
-The rule covers deleting whole notes, nothing else. People and agents with write permission still edit notes as before, including removing text; the version history keeps earlier versions. For them, **Delete** in the note menu stays visible but disabled and says that deleting is reserved for admins. The API and `cld notebooks rm` refuse the deletion with the same reason.
+The rule covers deleting whole notes, nothing else. People and agents with write permission still edit notes as before, including removing text; the version history keeps earlier versions. For them, **Delete** in the note menu stays visible but disabled and says that deleting is reserved for admins. The API and `cld notebooks rm` refuse the deletion with the same reason. Locking a note stays open to them: a locked note keeps its versions readable but can no longer be restored from them.
 
 ## Settings tabs {icon="settings"}
 

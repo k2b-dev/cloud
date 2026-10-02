@@ -115,6 +115,7 @@ export default function Navigation(props: NavigationProps) {
                     items={(item().actions ?? []).map((action) => ({
                       label: action.label,
                       icon: action.icon,
+                      description: action.description,
                       disabled: disabled() || action.disabled,
                       action: () => {
                         if (action.href)

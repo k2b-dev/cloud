@@ -123,6 +123,9 @@ suite("Notebooks note deletion rule", () => {
       const direct = await notebooksService.note.getByShortId({ shortId: (await createNote("Direct")).split("/").at(-1)! });
       const denied = await notebooksService.note.remove({ id: direct!.id, permission: "write" });
       expect(denied.ok ? null : denied.error.code).toBe(NOTE_DELETE_ADMIN_ONLY);
+      // Below write permission the answer is plain access denied, not the admin-only rule.
+      const readOnly = await notebooksService.note.remove({ id: direct!.id, permission: "read" });
+      expect(readOnly.ok ? null : readOnly.error.code).toBe("FORBIDDEN");
       expect(await notebooksService.note.get({ id: direct!.id })).not.toBeNull();
       expect((await notebooksService.note.remove({ id: direct!.id, permission: "admin" })).ok).toBe(true);
 
@@ -140,6 +143,50 @@ suite("Notebooks note deletion rule", () => {
         await sql`DELETE FROM auth.access WHERE user_id = ${id}::uuid`;
         await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
       }
+    }
+  });
+
+  test("a writer's update that read the notebook before an admin reserved deleting keeps the admin's rule", async () => {
+    const notebook = { id: crypto.randomUUID(), shortId: shortId() };
+    await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebook.id}::uuid, ${notebook.shortId}, 'Before')`;
+    // The admin's change holds the row lock, so the writer's rename reads the old rule and waits to write.
+    const admin = await sql.reserve();
+    let open = true;
+    const finish = async (statement: "COMMIT" | "ROLLBACK") => {
+      if (!open) return;
+      open = false;
+      try {
+        await (statement === "COMMIT" ? admin`COMMIT` : admin`ROLLBACK`);
+      } finally {
+        admin.release();
+      }
+    };
+    try {
+      await admin`BEGIN`;
+      const [backend] = await admin<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+      await admin`UPDATE notebooks.notebooks SET note_delete_permission = 'admin' WHERE id = ${notebook.id}::uuid`;
+      const renamed = notebooksService.notebook.update({
+        id: notebook.id,
+        data: { name: "Renamed" },
+        dateConfig: { timeZone: "UTC", locale: "en", firstDayOfWeek: 1 },
+      });
+      const deadline = Date.now() + 2_000;
+      let waiting = false;
+      while (!waiting && Date.now() < deadline) {
+        const [row] = await sql<{ waiting: boolean }[]>`
+          SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ${backend!.pid}::int = ANY(pg_blocking_pids(pid))) AS waiting`;
+        waiting = row?.waiting ?? false;
+        if (!waiting) await Bun.sleep(10);
+      }
+      expect(waiting).toBe(true);
+      await finish("COMMIT");
+      expect(await renamed).toMatchObject({ ok: true, data: { name: "Renamed", noteDeletePermission: "admin" } });
+      const [stored] = await sql<{ name: string; note_delete_permission: string }[]>`
+        SELECT name, note_delete_permission FROM notebooks.notebooks WHERE id = ${notebook.id}::uuid`;
+      expect(stored).toEqual({ name: "Renamed", note_delete_permission: "admin" });
+    } finally {
+      await finish("ROLLBACK");
+      await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebook.id}::uuid`;
     }
   });
 });
