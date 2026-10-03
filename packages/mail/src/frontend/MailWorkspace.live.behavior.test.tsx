@@ -193,7 +193,7 @@ describe("Mail workspace live updates when a tab returns", () => {
 
   const updatesPaused = () => dom.root.textContent?.includes("Updates paused") ?? false;
 
-  test("a returning tab whose cursor did not move refreshes nothing", async () => {
+  test("a returning tab refreshes only when the server's head skipped replay", async () => {
     await mount();
     latestSocket().open();
     latestSocket().message("mail.live.ready", { cursor: "s6t.mail.4" });
@@ -204,6 +204,11 @@ describe("Mail workspace live updates when a tab returns", () => {
     latestSocket().message("mail.live.ready", { cursor: "s6t.mail.4" });
     await settle();
     expect(workspaceRequests).toBe(0);
+
+    // Replay was too long, so the server follows with its head: events were skipped.
+    latestSocket().message("mail.live.ready", { cursor: "s6t.mail.9" });
+    await settle();
+    expect(workspaceRequests).toBe(1);
   });
 
   test("a stream error pauses updates until the reconnected stream confirms the page is current", async () => {
