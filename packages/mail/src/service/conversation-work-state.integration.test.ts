@@ -359,12 +359,22 @@ suite("mail conversation work-state projection", () => {
       await refreshConversationTimeline(tx, conversationId);
     });
     await holding;
-    const refresh = sql.begin((tx) => refreshConversationTimeline(tx, conversationId));
+    let started!: (pid: number) => void;
+    const refreshPid = new Promise<number>((resolve) => {
+      started = resolve;
+    });
+    const refresh = sql.begin(async (tx) => {
+      const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      started(backend!.pid);
+      await refreshConversationTimeline(tx, conversationId);
+    });
+    // Release the hydration only once the refresh waits for the conversation.
+    const pid = await refreshPid;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      const [waiting] = await sql<{ count: number }[]>`
-        SELECT COUNT(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
+      const [backend] = await sql<{ wait_event_type: string | null }[]>`
+        SELECT wait_event_type FROM pg_stat_activity WHERE pid = ${pid}
       `;
-      if ((waiting?.count ?? 0) > 0) break;
+      if (backend?.wait_event_type === "Lock") break;
       await Bun.sleep(20);
     }
     release();
