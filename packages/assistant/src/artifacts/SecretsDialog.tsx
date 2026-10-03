@@ -70,10 +70,10 @@ function SecretsDialog(props: { scope: HttpScope; signal?: AbortSignal; saved: (
           when={entries()?.length}
           fallback={<Placeholder title={t().noSecrets} icon="ti ti-key" action={<Button onClick={() => edit()}>{copy().add}</Button>} />}
         >
-          <div class="max-h-80 overflow-auto">
+          <div class="flex max-h-80 flex-col gap-1 overflow-auto">
             <For each={entries()}>
               {(entry) => (
-                <div class="flex items-center gap-3 border-b border-[var(--ui-border)] py-3">
+                <div class="flex items-center gap-3 py-2">
                   <i class="ti ti-key text-secondary" aria-hidden="true" />
                   <div class="min-w-0 flex-1">
                     <strong class="block truncate">{entry.name}</strong>

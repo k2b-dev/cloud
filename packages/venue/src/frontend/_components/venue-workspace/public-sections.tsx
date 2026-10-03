@@ -292,7 +292,7 @@ export function PublicSectionDialog(
                   {(link, index) => (
                     <div class="paper p-3">
                       <div class="mb-3 flex items-center justify-between gap-2">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().linkNumber({ count: index() + 1 })}</p>
+                        <p class="text-xs font-semibold text-secondary">{t().linkNumber({ count: index() + 1 })}</p>
                         <Button type="button" variant="secondary" size="sm" onClick={() => removeLink(link.id)}>
                           <i class="ti ti-trash" /> {t().remove}
                         </Button>
@@ -331,7 +331,7 @@ export function PublicSectionDialog(
               {(item, index) => (
                 <div class="paper p-3">
                   <div class="mb-3 flex items-center justify-between gap-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().itemNumber({ count: index() + 1 })}</p>
+                    <p class="text-xs font-semibold text-secondary">{t().itemNumber({ count: index() + 1 })}</p>
                     <Button type="button" variant="secondary" size="sm" onClick={() => removeItem(item.id)}>
                       <i class="ti ti-trash" /> {t().remove}
                     </Button>

@@ -79,7 +79,7 @@ function GeneratedPasswordDialog(props: { password: string; close: () => void; l
   return (
     <div class="flex flex-col gap-4">
       <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-dimmed">{t().generatedPassword}</p>
+        <p class="text-xs font-semibold text-secondary">{t().generatedPassword}</p>
         <p class="mt-2 break-all font-mono text-sm text-primary">{props.password}</p>
       </div>
 

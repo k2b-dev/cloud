@@ -121,7 +121,7 @@ const openPermissionDialog = async (props: AdminGridsActionsProps, entries: Scop
         <Show when={customAppEntries().length > 0}>
           <div class="flex flex-col gap-2 pt-1">
             <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().appAccess}</h3>
+              <h3 class="text-xs font-semibold text-secondary">{t().appAccess}</h3>
               <p class="text-xs text-dimmed">{t().appAccessDescription}</p>
             </div>
             <div class="flex flex-col">

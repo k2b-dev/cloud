@@ -373,7 +373,7 @@ export default function VersionHistory(props: Props) {
           {/* Left: version list */}
           <ScrollArea class="notebooks-version-history-list scrollbar">
             <div class="flex flex-col gap-0.5 p-2">
-              <p class="px-2.5 pb-1 text-[10px] font-semibold uppercase text-dimmed">{t().savedVersions}</p>
+              <p class="px-2.5 pb-1 text-xs font-semibold text-secondary">{t().savedVersions}</p>
               <For each={versions()}>
                 {(version) => (
                   <Button
@@ -440,7 +440,7 @@ export default function VersionHistory(props: Props) {
             <Show when={selectedVersionId() && previewMode() === "changes" && comparisonLabel()}>
               <div class="flex shrink-0 flex-wrap items-center gap-3 px-3 pb-2">
                 <div class="min-w-0 flex-1">
-                  <p class="text-[10px] font-semibold uppercase text-dimmed">{t().comparing}</p>
+                  <p class="text-xs font-semibold text-secondary">{t().comparing}</p>
                   <p class="mt-1 flex min-w-0 items-center gap-1.5 text-xs">
                     <span class="flex min-w-0 items-center gap-1">
                       <span class="truncate font-medium text-primary">{comparisonLabel()!.from}</span>

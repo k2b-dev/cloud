@@ -74,6 +74,33 @@ describe("query workspace UI contracts", () => {
     expect(formatIdentifierRef(quotedField.name)).toBe('"Asset ID"');
   });
 
+  test("shows query diagnostics as danger notices, not hand-coloured boxes", () => {
+    const html = renderToString(() =>
+      createComponent(QueryWorkspace, {
+        baseId: table.baseId,
+        initialQuery: "from Items select Price",
+        initialPreview: {
+          ok: false,
+          diagnostics: [
+            { code: "gql.resolution", line: 1, column: 19, message: "Unknown field Price" },
+            { code: "gql.access", message: "You cannot read this table" },
+          ],
+        },
+        queryPath: "/app/grids/inventory/query",
+        tables: [table],
+        fieldsByTable: { [table.id]: [field] },
+        viewsByTable: {},
+      }),
+    );
+
+    expect(html.match(/class="k2b-notice-card\s*" data-tone="danger"/g)).toHaveLength(2);
+    expect(html).toContain('<p class="k2b-notice-card__title">Line 1 · Col 19</p>');
+    expect(html).toContain('<p class="k2b-notice-card__description">Unknown field Price</p>');
+    expect(html).toContain('<p class="k2b-notice-card__title">Query</p>');
+    expect(html).not.toContain("bg-red-50");
+    expect(html).not.toContain("uppercase");
+  });
+
   test("uses the semantic wide panel dialog contract", () => {
     expect(QUERY_PANEL_DIALOG_OPTIONS.panelClassName).toContain("is-wide");
     expect(QUERY_PANEL_DIALOG_OPTIONS.panelClassName).not.toContain("w-[");
