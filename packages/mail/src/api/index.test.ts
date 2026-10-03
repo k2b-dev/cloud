@@ -19,6 +19,41 @@ describe("Mail API composition", () => {
     expect(conversationResolver).toBeGreaterThan(assign);
   });
 
+  test("reaches every static path segment before an ID resolver can claim it as an ID", () => {
+    // A resolver middleware runs for every later route its pattern matches; a static segment in its ID
+    // position (`/mailboxes/deleted`) would be looked up as an ID and answered with 404.
+    // The sender identity resolver passes `default` through to `default/setup` on its own.
+    const passedThrough = new Set(["/mailboxes/:mailboxId/sender-identities/:senderIdentityId/* default"]);
+    const segments = (path: string) => path.split("/").filter(Boolean);
+    const claimedSegment = (resolverPath: string, routePath: string): string | null => {
+      const pattern = segments(resolverPath);
+      const route = segments(routePath);
+      const open = pattern.at(-1) === "*";
+      const fixed = open ? pattern.slice(0, -1) : pattern;
+      if (open ? route.length < fixed.length : route.length !== fixed.length) return null;
+      let claimed: string | null = null;
+      for (const [index, part] of fixed.entries()) {
+        const segment = route[index] ?? "";
+        if (!part.startsWith(":")) {
+          if (part !== segment) return null;
+        } else if (!segment.startsWith(":")) claimed ??= segment;
+      }
+      return claimed;
+    };
+    const shadowed = api.routes.flatMap((route, index) =>
+      route.method === "ALL"
+        ? []
+        : api.routes.slice(0, index).flatMap((resolver) => {
+            if (resolver.method !== "ALL" || !resolver.path.includes("/:")) return [];
+            const segment = claimedSegment(resolver.path, route.path);
+            return segment === null || passedThrough.has(`${resolver.path} ${segment}`)
+              ? []
+              : [`${route.method} ${route.path} <- ${resolver.path}`];
+          }),
+    );
+    expect([...new Set(shadowed)]).toEqual([]);
+  });
+
   test("exposes explicit platform-admin mailbox recovery routes", () => {
     expect(api.routes.some((route) => route.method === "GET" && route.path === "/admin/mailboxes/:mailboxId/operations")).toBe(true);
     expect(api.routes.some((route) => route.method === "GET" && route.path === "/admin/mailboxes/:mailboxId/access")).toBe(true);

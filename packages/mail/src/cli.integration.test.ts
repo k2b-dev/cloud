@@ -351,5 +351,17 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
         [`${ids.inbox} -> ${ids.archive}`, `${ids.inbox} -> ${ids.year}`, `${ids.inbox} -> ${ids.year}`].sort(),
       );
     });
+
+    test("mailbox deleted list, deleted get, and restore reach a deleted mailbox", async () => {
+      // Deleting through the API needs the provider barrier on the process Sync, which this child process does not start.
+      const [twin] = await sql<{ short_id: string }[]>`
+        UPDATE mail.mailboxes SET deleted_at = now(), sync_enabled = false WHERE id = ${internal.twin}::uuid RETURNING short_id
+      `;
+
+      const listed = await cldJson<{ items: Array<{ id: string }> }>(["mail", "mailbox", "deleted", "list"]);
+      expect(listed.items.map((mailbox) => mailbox.id)).toContain(twin!.short_id);
+      expect((await cldJson<{ id: string }>(["mail", "mailbox", "deleted", "get", twin!.short_id])).id).toBe(twin!.short_id);
+      expect((await cldJson<{ id: string }>(["mail", "mailbox", "restore", twin!.short_id, "--yes"])).id).toBe(twin!.short_id);
+    });
   });
 }

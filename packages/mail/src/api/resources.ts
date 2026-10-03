@@ -11,8 +11,10 @@ import { type MailApiContext, resolveMailboxParam } from "./public-resource-boun
 import remoteContentRoutes from "./remote-content";
 
 export default new Hono<MailApiContext>()
-  // The resolver below also matches `/mailboxes/preferences` and would answer 404 for it.
+  // Routers with a collection path directly below /mailboxes come first: the resolver below would read
+  // `preferences` or `deleted` as a mailbox ID and answer 404. Their mailbox routes resolve the ID inline.
   .route("/", mailboxPreferenceRoutes)
+  .route("/", mailboxLifecycleRoutes)
   .use("/mailboxes/:mailboxId/*", resolveMailboxParam)
   .route("/", addressRoutes)
   .route("/", incomingAutomationRoutes)
@@ -20,5 +22,4 @@ export default new Hono<MailApiContext>()
   .route("/", conversationAssignmentRoutes)
   .route("/", conversationReferenceRoutes)
   .route("/", automaticReplyRoutes)
-  .route("/", remoteContentRoutes)
-  .route("/", mailboxLifecycleRoutes);
+  .route("/", remoteContentRoutes);
