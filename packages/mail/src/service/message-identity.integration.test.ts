@@ -9,6 +9,7 @@ import type { MailRequestContext } from "./auth";
 import type { ConnectorEnvelope } from "./connectors";
 import { createMailbox } from "./mailboxes";
 import { hydrateMessageFromSource } from "./message-hydration";
+import { extractMessageProtocolFacts } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
 import { activateWorkflow, createWorkflow } from "./workflow-definition-service";
 
@@ -374,13 +375,23 @@ steps:
     const date = new Date("2026-08-03T09:00:00.000Z");
     const team: Address = { name: "Team", address: "team@example.test" };
     const fields = { messageId, subject: "Team update", from: supportAddress, to: [team], date };
-    // The delivered copy carries extra Received headers and arrives a little later; only the copy
-    // in Sent keeps the Bcc recipient.
+    // The delivered copy carries extra Received and list headers, a list footer, and arrives a
+    // little later; only the copy in Sent keeps the Bcc recipient.
     const sentId = await ingest(
       "sent",
       envelope({ folder: "sent", ...fields, bcc: [{ name: "Manager", address: "manager@example.test" }], sizeBytes: 900 }),
     );
-    const delivered = envelope({ folder: "inbox", ...fields, sizeBytes: 1_400, internalDate: new Date("2026-08-03T09:00:04.000Z") });
+    const delivered: ConnectorEnvelope = {
+      ...envelope({ folder: "inbox", ...fields, sizeBytes: 1_400, internalDate: new Date("2026-08-03T09:00:04.000Z") }),
+      mimeStructure: {
+        type: "multipart/mixed",
+        childNodes: [
+          { part: "1", type: "text/plain" },
+          { part: "2", type: "text/plain" },
+        ],
+      },
+      protocolFacts: extractMessageProtocolFacts((name) => (name === "list-id" ? "<team.example.test>" : null)),
+    };
     const deliveredId = await ingest("inbox", delivered, true);
     expect(deliveredId).toBe(sentId);
     expect(await projection(messageId)).toEqual({ contents: 1, links: 1, live_placements: 2 });
@@ -393,6 +404,24 @@ steps:
       { role: "to", normalized_email: "team@example.test" },
     ];
     expect(addresses).toEqual(expectedAddresses);
+    // The message keeps the date and size of the copy that stored it, so it does not move in time.
+    // Its MIME structure, which hydration uses for the source it loads, and its list headers follow
+    // the delivered copy.
+    const storedEnvelope = async () => {
+      const [row] = await sql<{ internal_date: Date; size_bytes: number; mime_structure: unknown; list_id: string | null }[]>`
+        SELECT internal_date, size_bytes::int, mime_structure, protocol_facts #>> '{list,id}' AS list_id
+        FROM mail.message_contents
+        WHERE id = ${sentId}::uuid
+      `;
+      return row;
+    };
+    const expectedEnvelope = {
+      internal_date: date,
+      size_bytes: 900,
+      mime_structure: delivered.mimeStructure,
+      list_id: "<team.example.test>",
+    };
+    expect(await storedEnvelope()).toEqual(expectedEnvelope);
     // A folder rebuild imports the delivered copy again under its known reference.
     expect(await ingest("inbox", delivered)).toBe(sentId);
     expect(
@@ -400,6 +429,27 @@ steps:
         SELECT role, normalized_email FROM mail.message_addresses WHERE message_id = ${sentId}::uuid ORDER BY role, position
       `,
     ).toEqual(expectedAddresses);
+    expect(await storedEnvelope()).toEqual(expectedEnvelope);
+  });
+
+  test("a message moved out and back before the folder sync noticed stays one message", async () => {
+    // Archive and undo in another client: the message returns to the Inbox under a new UID while
+    // Mail still holds its old UID there, which a later sync retires.
+    const messageId = `<moved-back-${suffix}@example.test>`;
+    const fields = {
+      messageId,
+      subject: "Moved back",
+      from: customer,
+      to: [supportAddress],
+      date: new Date("2026-08-05T09:00:00.000Z"),
+    };
+    const eventsBefore = await receivedEvents();
+    const before = envelope({ folder: "inbox", ...fields });
+    const originalId = await ingest("inbox", before, true);
+    expect(await ingest("inbox", envelope({ folder: "inbox", ...fields }), true)).toBe(originalId);
+    expect(await receivedEvents()).toBe(eventsBefore + 1);
+    await leaveFolder("inbox", before);
+    expect(await projection(messageId)).toEqual({ contents: 1, links: 1, live_placements: 1 });
   });
 
   test("unrelated mail with the same subject from different senders stays apart", async () => {

@@ -588,8 +588,10 @@ const findCanonicalMessageContent = async (params: {
   // bytes. Only one's own mail may differ in size: the copy in Sent and the one delivered back
   // through a Bcc, a list, or a team address carry different transport headers. Without a Date
   // header, the copy also keeps the INTERNALDATE, which a move or copy preserves; that also finds
-  // the copy of a message without a Message-ID, through the subject index. Like the twin lookup
-  // in findConversation, it reads at most one envelope batch of candidates.
+  // the copy of a message without a Message-ID, through the subject index. The copy may also be
+  // in the same folder: a message moved out and back before the folder sync noticed it gets a new
+  // UID while its old one still looks live. Like the twin lookup in findConversation, it reads at
+  // most one envelope batch of candidates.
   const senders = senderSet(params.message);
   const [sameMessage] = await params.db<{ id: string }[]>`
     SELECT candidate.id
@@ -839,8 +841,14 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       WHERE id = ${messageContentId}::uuid AND hydration_error_code = 'MESSAGE_SOURCE_MISSING'
     `;
   }
+  // Copies of one message can differ in their INTERNALDATE and size, such as the copy in Sent and
+  // the delivered copy, or a copy another client appended later. The message keeps the date and
+  // size of the copy that stored it while another copy is still on the server, so it does not move
+  // in time. The MIME structure and protocol facts still follow the latest copy, as hydration
+  // labels the parts of the source it loads with that structure, and only a delivered copy carries
+  // list headers.
   await params.db`
-    UPDATE mail.message_contents
+    UPDATE mail.message_contents mc
     SET
       message_id = ${params.message.messageId},
       in_reply_to = ${params.message.inReplyTo},
@@ -848,12 +856,19 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       provider_thread_id = ${params.message.providerThreadId},
       subject = ${params.message.subject},
       normalized_subject = ${normalizedSubject},
-      internal_date = ${params.message.internalDate},
+      internal_date = CASE WHEN other_copy.present THEN mc.internal_date ELSE ${params.message.internalDate}::timestamptz END,
       sent_at = ${params.message.sentAt},
-      size_bytes = ${params.message.sizeBytes},
+      size_bytes = CASE WHEN other_copy.present THEN mc.size_bytes ELSE ${params.message.sizeBytes}::bigint END,
       mime_structure = ${params.message.mimeStructure}::jsonb,
       protocol_facts = ${protocolFacts}::jsonb
-    WHERE id = ${messageContentId}::uuid
+    FROM (
+      SELECT EXISTS (
+        SELECT 1
+        FROM mail.remote_message_refs other
+        WHERE other.message_id = ${messageContentId}::uuid AND other.id <> ${remoteRef.id}::uuid AND other.stale_at IS NULL
+      ) AS present
+    ) other_copy
+    WHERE mc.id = ${messageContentId}::uuid
   `;
   await upsertAddresses(params.db, messageContentId, params.message);
   await params.db`
