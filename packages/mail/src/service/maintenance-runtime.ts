@@ -11,10 +11,21 @@ import { resolveMailExecution } from "./execution";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { executeOperatorAction, OPERATOR_MAINTENANCE_KINDS } from "./operator-actions";
 import { providerBusyRetryAfterMs } from "./provider-operation-lock";
-import { enqueueFolderSync, enqueueMailboxHydration, enqueueMailboxSync, executeBindingRediscovery } from "./sync-runtime";
+import {
+  enqueueFolderSync,
+  enqueueMailboxHydration,
+  enqueueMailboxSync,
+  executeBindingRediscovery,
+  FOLDER_SYNC_REQUEST_MS,
+  requestedSyncProgress,
+} from "./sync-runtime";
 
 const MAINTENANCE_JOB_LEASE_MS = 6 * 60_000;
 const STALE_EXECUTION_MINUTES = 10;
+// A sync command that queued folder syncs stays `executing` and checks this often whether they
+// ran, as often as a waiting `cld mail sync --wait` polls it. It waits as long as the sync runtime
+// keeps a request (`FOLDER_SYNC_REQUEST_MS`).
+const SYNC_CHECK_INTERVAL_MS = 1_000;
 const maintenanceTasks = createRuntimeTaskTracker();
 
 type JsonRecord = Record<string, unknown>;
@@ -81,7 +92,7 @@ const heartbeatCommand = async (command: Pick<DbMaintenanceCommand, "id" | "atte
 };
 
 const finishMaintenanceCommand = async (params: {
-  command: DbMaintenanceCommand;
+  command: Pick<DbMaintenanceCommand, "id" | "attempt">;
   state: "confirmed" | "failed";
   result?: JsonRecord;
   error?: unknown;
@@ -126,6 +137,20 @@ const finishMaintenanceCommand = async (params: {
 
 const folderTargetSchema = z.object({ folderId: z.string().uuid() });
 const bindingTargetSchema = z.object({ bindingId: z.string().uuid().nullable() });
+
+const syncTargetFolderId = (command: Pick<DbMaintenanceCommand, "kind" | "target">): string | null =>
+  command.kind === "sync_folder" ? folderTargetSchema.parse(parseRecord(command.target)).folderId : null;
+
+/** Why the mailbox, or the one folder, cannot synchronize now; null when it can. */
+const syncUnavailable = async (mailboxId: string, folderId: string | null): Promise<{ code: string; message: string } | null> => {
+  // The sync job resolves the same execution first.
+  const execution = await resolveMailExecution({
+    mailboxId,
+    operation: "backgroundSync",
+    folderRequirements: folderId ? [{ folderId, rights: ["read"] }] : [],
+  });
+  return execution.ok ? null : execution.error;
+};
 
 const executeFolderRebuild = async (command: DbMaintenanceCommand, folderId: string, enqueueWork: boolean): Promise<JsonRecord> => {
   const result = await sql.begin(async (tx) => {
@@ -208,17 +233,12 @@ const executeMaintenanceWork = async (
   }
   const target = parseRecord(command.target);
   if (command.kind === "sync_mailbox" || command.kind === "sync_folder") {
-    const folderId = command.kind === "sync_folder" ? folderTargetSchema.parse(target).folderId : null;
-    // The sync job resolves the same execution first. When that fails, report the
-    // prerequisite instead of queueing work that cannot run and would overwrite
-    // the mailbox's recorded reason with a generic failure.
-    const execution = await resolveMailExecution({
-      mailboxId: command.mailbox_id,
-      operation: "backgroundSync",
-      folderRequirements: folderId ? [{ folderId, rights: ["read"] }] : [],
-    });
-    if (!execution.ok) {
-      const reason = execution.error.message;
+    const folderId = syncTargetFolderId(command);
+    // Report the prerequisite instead of queueing work that cannot run and would overwrite the
+    // mailbox's recorded reason with a generic failure.
+    const unavailable = await syncUnavailable(command.mailbox_id, folderId);
+    if (unavailable) {
+      const reason = unavailable.message;
       return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
     }
   }
@@ -278,8 +298,66 @@ const executeMaintenanceWork = async (
   return { bindings: discoveries };
 };
 
-/** A run's state, and how soon a run that found the provider lease busy should try again. */
+/**
+ * A run's state, and how soon a run that found the provider lease busy should try again. A sync
+ * command that queued folder syncs stays `executing` until they ran.
+ */
 type MaintenanceRun = { state: CommandState; busyRetryAfterMs: number | null };
+
+const queuedFolderSyncs = (command: DbMaintenanceCommand, result: JsonRecord): boolean =>
+  (command.kind === "sync_mailbox" && Number(result.queuedFolders) > 0) || (command.kind === "sync_folder" && result.queued === true);
+
+const syncCommandFailure = (code: string, message: string): Error => Object.assign(new Error(message), { code });
+
+/**
+ * Ends a sync command whose folder syncs were queued once each folder synced or failed after the
+ * request, or once the request ran out. Returns null when the command is no longer waiting.
+ */
+const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | null> => {
+  const [command] = await sql<
+    (Pick<DbMaintenanceCommand, "id" | "mailbox_id" | "kind" | "target" | "attempt"> & {
+      result: JsonRecord | string;
+      started_at: Date;
+      expired: boolean;
+    })[]
+  >`
+    UPDATE mail.commands
+    SET worker_heartbeat_at = now(), updated_at = now()
+    WHERE id = ${commandId}::uuid AND state = 'executing' AND kind IN ('sync_mailbox', 'sync_folder')
+    RETURNING
+      id, mailbox_id, kind, target, attempt, result, started_at,
+      started_at < now() - (${FOLDER_SYNC_REQUEST_MS}::int * interval '1 millisecond') AS expired
+  `;
+  if (!command) return null;
+  const result = parseRecord(command.result);
+  const folderId = syncTargetFolderId(command);
+  const unavailable = await syncUnavailable(command.mailbox_id, folderId);
+  if (unavailable) {
+    await finishMaintenanceCommand({ command, state: "failed", result, error: syncCommandFailure(unavailable.code, unavailable.message) });
+    return { state: "failed", busyRetryAfterMs: null };
+  }
+  // Mail delivered before the request is in once each folder synced after it. The request counts
+  // from this attempt, which queued the folder syncs: a retried command does not settle on runs
+  // of its earlier attempt.
+  const progress = await requestedSyncProgress({ mailboxId: command.mailbox_id, folderId, since: command.started_at });
+  if (progress.synced === progress.folders) {
+    await finishMaintenanceCommand({ command, state: "confirmed", result });
+    return { state: "confirmed", busyRetryAfterMs: null };
+  }
+  // A folder whose sync gave up ends the wait at once; the other folders go on syncing.
+  const error =
+    progress.failed > 0
+      ? syncCommandFailure("SYNC_FAILED", `Synchronization failed in ${progress.failed} of ${progress.folders} requested folders`)
+      : command.expired
+        ? syncCommandFailure(
+            "SYNC_TIMEOUT",
+            `Synchronization did not finish within ${FOLDER_SYNC_REQUEST_MS / 60_000} minutes in ${progress.folders - progress.synced} of ${progress.folders} requested folders; it continues in the background`,
+          )
+        : null;
+  if (!error) return { state: "executing", busyRetryAfterMs: null };
+  await finishMaintenanceCommand({ command, state: "failed", result, error });
+  return { state: "failed", busyRetryAfterMs: null };
+};
 
 const runMaintenanceCommand = async (
   commandId: string,
@@ -305,6 +383,14 @@ const runMaintenanceCommand = async (
           options.enqueueWork !== false,
         ),
     });
+    if (options.enqueueWork !== false && queuedFolderSyncs(command, result)) {
+      await sql`
+        UPDATE mail.commands
+        SET result = ${result}::jsonb, worker_heartbeat_at = now(), updated_at = now()
+        WHERE id = ${command.id}::uuid AND attempt = ${command.attempt} AND state = 'executing'
+      `;
+      return { state: "executing", busyRetryAfterMs: null };
+    }
     await finishMaintenanceCommand({ command, state: "confirmed", result });
     return { state: "confirmed", busyRetryAfterMs: null };
   } catch (error) {
@@ -337,7 +423,8 @@ export const executeMaintenanceCommand = async (
   options: { enqueueWork?: boolean } = {},
 ): Promise<CommandState | null> => (await runMaintenanceCommand(commandId, jobHeartbeat, options))?.state ?? null;
 
-type MaintenanceJobInput = { commandId: string; continuationAttempt?: number };
+/** `awaitingSync` marks a sync command that queued its folder syncs and waits for them. */
+type MaintenanceJobInput = { commandId: string; continuationAttempt?: number; awaitingSync?: boolean };
 
 const maintenanceJob = lazySync((sync) =>
   sync.job<MaintenanceJobInput>({
@@ -351,7 +438,14 @@ let maintenanceJobWorker: Worker | undefined;
 export const runMaintenanceJob = async (
   ctx: Pick<JobContext<MaintenanceJobInput>, "input" | "attempt" | "heartbeat" | "resubmit">,
 ): Promise<void> => {
-  const run = await runMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat(), {});
+  // A sync command that was queued again, for example after its worker stopped, runs anew.
+  const run =
+    (ctx.input.awaitingSync ? await checkRequestedSync(ctx.input.commandId) : null) ??
+    (await runMaintenanceCommand(ctx.input.commandId, () => ctx.heartbeat(), {}));
+  if (run?.state === "executing") {
+    ctx.resubmit({ delayMs: SYNC_CHECK_INTERVAL_MS, input: { commandId: ctx.input.commandId, awaitingSync: true } });
+    return;
+  }
   if (run?.state !== "queued") return;
   // A busy provider lease is routine: the lease line says when to try again, and waiting does
   // not count as a failed attempt. A rate limit backs off.

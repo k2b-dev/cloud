@@ -936,12 +936,12 @@ const waitForCommand = async (
   return result;
 };
 
-// A confirmed sync request only queues work; `mail status` shows when a sync last completed.
+// A sync request is confirmed once each folder it queued holds the mail delivered before it.
 const printSyncRequest = (ctx: CloudCliContext, label: string, command: MailCommand): void => {
   const reason = typeof command.result.reason === "string" ? command.result.reason : null;
   if (command.state !== "confirmed") ctx.print(`${label} request ${command.state} (${command.id}).`);
   else if (reason) ctx.print(`${label} not queued: ${reason} (${command.id}).`);
-  else ctx.print(`${label} queued (${command.id}); \`cld mail status\` shows the last completed sync.`);
+  else ctx.print(`${label} finished (${command.id}).`);
 };
 
 const waitForCommands = async (
@@ -3841,7 +3841,7 @@ const specialistCommands = {
       flags: {
         ...mutationFlags,
         wait: flag.boolean({
-          description: "Wait for the queueing command to finish",
+          description: "Wait until every folder holds the mail delivered before the request",
         }),
         ...waitFlags,
       },
