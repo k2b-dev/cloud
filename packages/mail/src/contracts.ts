@@ -12,6 +12,11 @@ import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-i
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 /** Upper bound for one multi-conversation request; the list selection shares it. */
 export const MAIL_CONVERSATION_BATCH_LIMIT = 50;
+/**
+ * Pinned and, separately, hidden mailboxes one principal keeps. The overview lists at most 200
+ * mailboxes, and Focus leaves out at most as many as the browser sends in one request.
+ */
+export const MAX_MAILBOX_PREFERENCES = 200;
 
 export const ResourceShortIdSchema = z
   .string()

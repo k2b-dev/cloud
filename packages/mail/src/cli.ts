@@ -383,6 +383,28 @@ const mailboxFlag = {
   }),
 };
 
+/** Pins, unpins, hides, or shows one mailbox in the caller's own overview. */
+const mailboxPreferenceCommand = (
+  name: "pin" | "unpin" | "hide" | "unhide",
+  summary: string,
+  change: { pinned: boolean } | { hidden: boolean },
+  done: (mailbox: string) => string,
+) =>
+  command(`mailbox ${name}`, {
+    summary,
+    args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+    run: async ({ ctx, args }) => {
+      const mailbox = await resolveMailbox(ctx, args.mailbox);
+      const result = await readApi<{ pinned: boolean; hidden: boolean }>(
+        ctx,
+        `/mailboxes/${mailbox.id}/preference`,
+        jsonRequest("PATCH", change),
+      );
+      if (printStructured(ctx, result)) return;
+      ctx.print(done(`${mailbox.name} (${mailbox.id})`));
+    },
+  });
+
 const workflowSourceInput = flag.input({
   required: true,
   fileName: "source-file",
@@ -2373,7 +2395,7 @@ const specialistCommands = {
     draft: "Create, edit, and recover shared drafts",
     folder: "Create, map, and manage provider folders",
     identity: "Create, configure, and verify sender identities",
-    mailbox: "Inspect and restore individual mailboxes",
+    mailbox: "Inspect, restore, pin, and hide individual mailboxes",
     message: "Inspect and manage individual messages",
     operator: "Inspect and run bounded mailbox operator actions",
     provider: "Discover and manage mail provider connections",
@@ -2530,6 +2552,47 @@ const specialistCommands = {
         ctx.print(`Restored ${restored.name} in paused state. Verify the provider, then explicitly resume synchronization.`);
       },
     }),
+    command("mailbox preferences", {
+      summary: "List the mailboxes you pinned or hid in your overview",
+      run: async ({ ctx }) => {
+        const [preferences, mailboxes] = await Promise.all([
+          readApi<{ pinnedMailboxIds: string[]; hiddenMailboxIds: string[] }>(ctx, "/mailboxes/preferences"),
+          listMailboxes(ctx),
+        ]);
+        const names = new Map(mailboxes.map((mailbox) => [mailbox.id, mailbox.name]));
+        const ids = [...new Set([...preferences.pinnedMailboxIds, ...preferences.hiddenMailboxIds])];
+        printTable(
+          ctx,
+          preferences,
+          ids.map((id) => ({
+            name: names.get(id) ?? "",
+            pinned: preferences.pinnedMailboxIds.includes(id) ? "yes" : "",
+            hidden: preferences.hiddenMailboxIds.includes(id) ? "yes" : "",
+            id,
+          })),
+          [
+            { key: "name", label: "NAME" },
+            { key: "pinned", label: "PINNED" },
+            { key: "hidden", label: "HIDDEN" },
+            { key: "id", label: "ID" },
+          ],
+        );
+      },
+    }),
+    mailboxPreferenceCommand("pin", "Pin a mailbox to the top of your overview", { pinned: true }, (mailbox) => `Pinned ${mailbox}.`),
+    mailboxPreferenceCommand("unpin", "Unpin a mailbox in your overview", { pinned: false }, (mailbox) => `Unpinned ${mailbox}.`),
+    mailboxPreferenceCommand(
+      "hide",
+      "Hide a mailbox from your overview and its Focus",
+      { hidden: true },
+      (mailbox) => `${mailbox} is hidden from your overview and its Focus.`,
+    ),
+    mailboxPreferenceCommand(
+      "unhide",
+      "Show a hidden mailbox in your overview again",
+      { hidden: false },
+      (mailbox) => `${mailbox} is shown in your overview again.`,
+    ),
     command("mailbox wait", {
       summary: "Wait for a mailbox health state",
       args: {

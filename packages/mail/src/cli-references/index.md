@@ -160,6 +160,18 @@ cld mail use <mailbox-id>
 cld --json mail current
 ```
 
+Pin or hide mailboxes in your own overview. The lists belong to the signed-in person or service account, apply on every device, and hold up to 200 mailboxes each; a hidden mailbox leaves the web overview and its Focus but stays connected:
+
+```bash
+cld --json mail mailbox preferences
+cld mail mailbox pin Support
+cld mail mailbox hide <mailbox-id>
+cld mail mailbox unpin <mailbox-id>
+cld mail mailbox unhide <mailbox-id>
+```
+
+`focus` still lists every readable mailbox, including hidden ones.
+
 Update user-visible settings and the search backend:
 
 ```bash
@@ -613,7 +625,7 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 | Area | Commands |
 | --- | --- |
 | Everyday | `ls`, `show`, `cat`, `assign`, `archive`, `mv`, `read`, `unread`, `flag`, `unflag`, `rm`, `tag add|rm`, `reply`, `forward`, `send`, `comments list|add|update|delete` |
-| Mailboxes | `ls`, `create`, `use`, `current`, `mailbox get`, `mailbox deleted list|get`, `mailbox restore`, `mailbox wait`, `configure`, `delete` |
+| Mailboxes | `ls`, `create`, `use`, `current`, `mailbox get`, `mailbox deleted list|get`, `mailbox restore`, `mailbox wait`, `mailbox preferences|pin|unpin|hide|unhide`, `configure`, `delete` |
 | Access | `access list|search-principals|grant|set|revoke` |
 | Discovery | `provider discover|list`, `binding list|attach`, `identity list|add|setup-default|configure|verify|disable`, `folders`, `status` |
 | Read and search | `focus`, `search`, `message wait|inspect|source|edit-as-new|resend`, `conversation messages|counts`, `remote-content list|allow-sender|allow-domain|remove` |

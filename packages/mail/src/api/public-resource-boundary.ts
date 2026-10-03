@@ -39,6 +39,8 @@ type RelationTable = publicResources.MailPublicResourceTable;
 const INTERNAL_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const relationTables: Record<string, RelationTable> = {
   mailboxId: "mailboxes",
+  pinnedMailboxIds: "mailboxes",
+  hiddenMailboxIds: "mailboxes",
   folderId: "folders",
   sourceFolderId: "folders",
   destinationFolderId: "folders",

@@ -1311,6 +1311,42 @@ test("reference list and ensure expose the permanent value without a row id", as
   expect(ensured.stdout).toContain("Found SUP-2026-42 (primary).");
 });
 
+test("mailbox preference commands pin, hide, and list the caller's own overview", async () => {
+  const changes: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/api/mail/mailboxes/preferences") {
+      return api({ pinnedMailboxIds: [MAILBOX_ID], hiddenMailboxIds: [MAILBOX_ID, "Gone01"] });
+    }
+    if (request.method === "PATCH" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/preference`) {
+      const body = (await request.json()) as { pinned?: boolean; hidden?: boolean };
+      changes.push(body);
+      return api({ pinned: body.pinned ?? true, hidden: body.hidden ?? false });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+
+  const listed = await runCli(origin, ["--json", "mail", "mailbox", "preferences"]);
+  const table = await runCli(origin, ["mail", "mailbox", "preferences"]);
+  const pinned = await runCli(origin, ["--json", "mail", "mailbox", "pin", "Support"]);
+  const hidden = await runCli(origin, ["mail", "mailbox", "hide", MAILBOX_ID]);
+  const unpinned = await runCli(origin, ["mail", "mailbox", "unpin", MAILBOX_ID]);
+  const shown = await runCli(origin, ["mail", "mailbox", "unhide", "Support"]);
+
+  for (const result of [listed, table, pinned, hidden, unpinned, shown]) expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(listed.stdout)).toEqual({ pinnedMailboxIds: [MAILBOX_ID], hiddenMailboxIds: [MAILBOX_ID, "Gone01"] });
+  // A mailbox the caller no longer lists keeps its ID without a name.
+  expect(table.stdout).toMatch(new RegExp(`Support\\s+yes\\s+yes\\s+${MAILBOX_ID}`));
+  expect(table.stdout).toMatch(/\s+yes\s+Gone01/);
+  expect(JSON.parse(pinned.stdout)).toEqual({ pinned: true, hidden: false });
+  expect(hidden.stdout).toContain(`Support (${MAILBOX_ID}) is hidden from your overview and its Focus.`);
+  expect(unpinned.stdout).toContain(`Unpinned Support (${MAILBOX_ID}).`);
+  expect(shown.stdout).toContain(`Support (${MAILBOX_ID}) is shown in your overview again.`);
+  expect(changes).toEqual([{ pinned: true }, { hidden: true }, { pinned: false }, { hidden: false }]);
+});
+
 test("deleted mailbox CLI lists, reads, and restores retained mailboxes", async () => {
   const requests: Array<{ method: string; path: string }> = [];
   const deleted = { ...mailbox, deletedAt: "2026-07-16T12:00:00.000Z", permission: "admin" };
