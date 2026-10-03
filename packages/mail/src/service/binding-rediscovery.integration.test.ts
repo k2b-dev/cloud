@@ -4,12 +4,13 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
+import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
 import { imapSmtpConnector } from "./connectors";
 import { createMailbox } from "./mailboxes";
 import { createProviderConnection } from "./provider-connections";
 import { providerErrorCode } from "./provider-errors";
-import { executeBindingRediscovery } from "./sync-runtime";
+import { executeBindingRediscovery, submitDueFolderSyncs } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -30,6 +31,17 @@ const inbox = () => ({
   highestModseq: "1",
   rights: ["read", "write_flags", "insert", "move", "delete_messages"],
   rightsSource: "acl" as const,
+});
+
+const folder = (path: string, uidValidity: string, uidNext: string, highestModseq = "1") => ({
+  ...inbox(),
+  stableKey: `${path}:${uidValidity}`,
+  path,
+  name: path,
+  role: "other" as const,
+  uidValidity,
+  uidNext,
+  highestModseq,
 });
 
 const fixtureVerification = (account: string): ConnectorVerification => ({
@@ -59,7 +71,7 @@ suite("mail binding rediscovery", () => {
   let userId = "";
   let ownerContext: MailRequestContext;
 
-  const createBoundMailbox = async (label: string): Promise<{ bindingId: string; account: string }> => {
+  const createBoundMailbox = async (label: string): Promise<{ bindingId: string; account: string; mailboxId: string }> => {
     const account = `${label}-${suffix}@example.test`;
     const mailbox = await createMailbox(ownerContext, { name: `Rediscovery ${label} ${suffix}` });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
@@ -124,7 +136,18 @@ suite("mail binding rediscovery", () => {
         ${evidence}::jsonb, ${scope}, 1, now()
       ) RETURNING id
     `;
-    return { bindingId: binding!.id, account };
+    return { bindingId: binding!.id, account, mailboxId: mailbox.data.id };
+  };
+
+  /** The binding's folders by provider path, with their discovery state. */
+  const projectedFolders = async (bindingId: string): Promise<Record<string, { id: string; state: string }>> => {
+    const rows = await sql<{ id: string; remote_path: string; discovery_state: string }[]>`
+      SELECT folder.id, ref.remote_path, folder.discovery_state
+      FROM mail.binding_folder_refs ref
+      JOIN mail.folders folder ON folder.id = ref.folder_id
+      WHERE ref.binding_id = ${bindingId}::uuid
+    `;
+    return Object.fromEntries(rows.map((row) => [row.remote_path, { id: row.id, state: row.discovery_state }]));
   };
 
   beforeAll(async () => {
@@ -210,4 +233,119 @@ suite("mail binding rediscovery", () => {
       verify.mockRestore();
     }
   }, 15_000);
+
+  test("a new folder that shares another folder's UIDVALIDITY is projected as a folder of its own", async () => {
+    const bound = await createBoundMailbox("collision");
+    let folders = [inbox(), folder("Zeta", "7", "40")];
+    const verify = spyOn(imapSmtpConnector, "verify").mockImplementation(async (config) => fixtureVerification(config.username));
+    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => folders);
+    try {
+      await rediscoverProviderBinding({ bindingId: bound.bindingId });
+      const before = await projectedFolders(bound.bindingId);
+      // Another client creates a folder whose UIDVALIDITY collides, as on a server that derives it from the creation second.
+      folders = [inbox(), folder("Alpha", "7", "1"), folder("Zeta", "7", "40")];
+      for (let run = 0; run < 2; run += 1) {
+        await expect(rediscoverProviderBinding({ bindingId: bound.bindingId })).resolves.toMatchObject({ ambiguous: 0, renamed: 0 });
+      }
+      const after = await projectedFolders(bound.bindingId);
+      expect(after.Zeta).toEqual(before.Zeta!);
+      expect(after.Alpha).toMatchObject({ state: "active" });
+      expect(after.Alpha?.id).not.toBe(before.Zeta!.id);
+    } finally {
+      discover.mockRestore();
+      verify.mockRestore();
+    }
+  });
+
+  test("a folder that replaces a deleted one with the same UIDVALIDITY starts fresh, while a rename keeps its folder", async () => {
+    const bound = await createBoundMailbox("replaced");
+    let folders = [inbox(), folder("Projects", "7", "50", "90")];
+    const verify = spyOn(imapSmtpConnector, "verify").mockImplementation(async (config) => fixtureVerification(config.username));
+    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => folders);
+    try {
+      await rediscoverProviderBinding({ bindingId: bound.bindingId });
+      const projects = (await projectedFolders(bound.bindingId)).Projects!;
+
+      // Renamed by another client: the provider keeps UIDVALIDITY and never lowers UIDNEXT or HIGHESTMODSEQ.
+      folders = [inbox(), folder("Clients", "7", "52", "95")];
+      await expect(rediscoverProviderBinding({ bindingId: bound.bindingId })).resolves.toMatchObject({ renamed: 1 });
+      expect((await projectedFolders(bound.bindingId)).Clients).toEqual(projects);
+
+      // Deleted, and an unrelated folder created with the same UIDVALIDITY: its counters start below the old ones.
+      folders = [inbox(), folder("Receipts", "7", "3", "4")];
+      await expect(rediscoverProviderBinding({ bindingId: bound.bindingId })).resolves.toMatchObject({ renamed: 0, ambiguous: 0 });
+      const after = await projectedFolders(bound.bindingId);
+      expect(after.Clients).toEqual({ id: projects.id, state: "missing" });
+      expect(after.Receipts?.state).toBe("active");
+      expect(after.Receipts?.id).not.toBe(projects.id);
+    } finally {
+      discover.mockRestore();
+      verify.mockRestore();
+    }
+  });
+
+  test("a provider outage during rediscovery keeps folders syncing, and only rejected credentials degrade the binding", async () => {
+    const bound = await createBoundMailbox("outage");
+    const verify = spyOn(imapSmtpConnector, "verify").mockImplementation(async (config) => fixtureVerification(config.username));
+    const discover = spyOn(imapSmtpConnector, "discoverFolders").mockImplementation(async () => [inbox()]);
+    const bindingState = async () => {
+      const [row] = await sql<{ binding: string; code: string | null; connection: string }[]>`
+        SELECT binding.state AS binding, binding.last_error_code AS code, connection.status AS connection
+        FROM mail.provider_bindings binding
+        JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+        WHERE binding.id = ${bound.bindingId}::uuid
+      `;
+      return row;
+    };
+    try {
+      await rediscoverProviderBinding({ bindingId: bound.bindingId });
+      const inboxId = (await projectedFolders(bound.bindingId)).INBOX!.id;
+      const unreachable = Object.assign(new Error("connect ECONNREFUSED 192.0.2.1:993"), { code: "ECONNREFUSED" });
+      const outages: Array<[string, Error]> = [
+        ["unreachable", unreachable],
+        // The connector's verification wraps the IMAP and SMTP failures.
+        [
+          "verification",
+          Object.assign(new Error("IMAP: Server could not be reached; SMTP: Server could not be reached"), {
+            code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED",
+            failures: [unreachable, unreachable],
+          }),
+        ],
+        // RFC 5530: the server refuses the login for now, not the password.
+        [
+          "temporary login refusal",
+          Object.assign(new Error("Command failed"), {
+            authenticationFailed: true,
+            serverResponseCode: "UNAVAILABLE",
+            responseText: "Temporary authentication failure",
+          }),
+        ],
+      ];
+      for (const [label, error] of outages) {
+        // Every attempt of the job, as during an outage longer than its retry budget.
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          verify.mockRejectedValueOnce(error);
+          await expect(rediscoverProviderBinding({ bindingId: bound.bindingId }), label).rejects.toThrow();
+        }
+        verify.mockReset();
+        verify.mockImplementation(async (config) => fixtureVerification(config.username));
+        expect(await bindingState(), label).toMatchObject({ binding: "active", connection: "active" });
+        expect(await submitDueFolderSyncs(100_000), label).toContain(inboxId);
+      }
+
+      const rejected = Object.assign(new Error("Command failed"), {
+        authenticationFailed: true,
+        serverResponseCode: "AUTHENTICATIONFAILED",
+        responseText: "Invalid credentials",
+      });
+      verify.mockRejectedValueOnce(rejected);
+      await expect(rediscoverProviderBinding({ bindingId: bound.bindingId })).rejects.toThrow();
+      expect(await bindingState()).toMatchObject({ binding: "degraded", connection: "degraded" });
+      const [mailbox] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${bound.mailboxId}::uuid`;
+      expect(mailbox?.health).toBe("auth_required");
+    } finally {
+      discover.mockRestore();
+      verify.mockRestore();
+    }
+  });
 });

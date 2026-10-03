@@ -29,7 +29,7 @@ import type {
   SmtpTransportCapabilities,
 } from "../../contracts";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS, extractMessageProtocolFacts } from "../message-protocol";
-import { providerErrorDetail } from "../provider-errors";
+import { isTemporaryLoginRefusal, providerErrorDetail } from "../provider-errors";
 import type {
   ConnectorAddress,
   ConnectorChangeListener,
@@ -599,8 +599,9 @@ export const transportDiagnostic = (
   const error = result.reason as { code?: unknown; message?: unknown; authenticationFailed?: unknown } | null;
   const code = typeof error?.code === "string" ? error.code.toUpperCase() : "";
   const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
-  const category =
-    error?.authenticationFailed === true || code.includes("AUTH") || message.includes("auth") || message.includes("credential")
+  const category = isTemporaryLoginRefusal(result.reason)
+    ? "unavailable"
+    : error?.authenticationFailed === true || code.includes("AUTH") || message.includes("auth") || message.includes("credential")
       ? "authentication"
       : code.includes("CERT") || code.includes("TLS") || message.includes("certificate") || message.includes("tls")
         ? "tls"
@@ -626,7 +627,7 @@ export const transportDiagnostic = (
 export const verifyImapSmtpTransports = async (
   config: ProviderConnectionInput,
   signal?: AbortSignal,
-): Promise<{ verification: ConnectorVerification | null; diagnostics: ProviderTransportDiagnostics }> => {
+): Promise<{ verification: ConnectorVerification | null; diagnostics: ProviderTransportDiagnostics; failures: unknown[] }> => {
   const checkedAt = new Date().toISOString();
   const [imap, smtp] = await Promise.allSettled([
     verifyImap(config, signal),
@@ -637,10 +638,12 @@ export const verifyImapSmtpTransports = async (
     imap: transportDiagnostic(imap, secrets),
     smtp: transportDiagnostic(smtp, secrets),
   } satisfies ProviderTransportDiagnostics;
-  if (imap.status === "rejected" || smtp.status === "rejected") return { verification: null, diagnostics };
+  const failures = [imap, smtp].flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (imap.status === "rejected" || smtp.status === "rejected") return { verification: null, diagnostics, failures };
   const accountId = sha256(`${config.imap.host.toLowerCase()}\n${imap.value.authenticatedPrincipal.toLowerCase()}`);
   return {
     diagnostics,
+    failures,
     verification: {
       authenticatedPrincipal: imap.value.authenticatedPrincipal,
       serverIdentity: imap.value.serverIdentity,
@@ -873,7 +876,12 @@ const verify = async (config: ProviderConnectionInput, signal?: AbortSignal): Pr
   const result = await verifyImapSmtpTransports(config, signal);
   if (result.verification) return result.verification;
   const summary = `IMAP: ${result.diagnostics.imap.message}; SMTP: ${result.diagnostics.smtp.message}`;
-  throw Object.assign(new Error(summary), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", diagnostics: result.diagnostics });
+  // The original failures let callers tell a provider that is down from one that rejects the account.
+  throw Object.assign(new Error(summary), {
+    code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED",
+    diagnostics: result.diagnostics,
+    failures: result.failures,
+  });
 };
 
 const isServerRefusal = (error: unknown): boolean => {

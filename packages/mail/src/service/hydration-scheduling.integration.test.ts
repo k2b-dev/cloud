@@ -14,6 +14,7 @@ import { createProviderConnection } from "./provider-connections";
 import { mailProviderOperationMutex } from "./provider-operation-lock";
 import {
   enqueueMessageHydration,
+  recoverInterruptedHydrations,
   startHydrationRuntime,
   stopHydrationRuntime,
   submitDueHydrationWork,
@@ -86,6 +87,8 @@ suite("mail body hydration scheduling", () => {
   const broken = new Set<string>();
   // Accounts whose next source download fails before the first message.
   const unreachable = new Set<string>();
+  // Accounts whose source downloads do not answer until the test releases them.
+  const hanging = new Map<string, Promise<void>>();
   const downloads: string[] = [];
   // Every message requested from the provider, in request order.
   const fetched: string[] = [];
@@ -268,6 +271,7 @@ suite("mail body hydration scheduling", () => {
       spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, _folderPath, requests, consume) => {
         downloads.push(labels.get(config.username) ?? config.username);
         await downloadGate;
+        await hanging.get(config.username);
         if (unreachable.delete(config.username)) {
           throw Object.assign(new Error("Connection not available"), { code: "NoConnection" });
         }
@@ -320,7 +324,7 @@ suite("mail body hydration scheduling", () => {
       VALUES (${blocker.folderId}::uuid, ${blockerMessage!.id}::uuid, 10, 1)
     `;
     downloads.length = 0;
-    // The single hydration worker slot stays busy with the blocker until every mailbox has queued its work.
+    // Every download waits until each mailbox has queued its work.
     await withDownloadsHeld(async () => {
       await enqueueMessageHydration(blockerMessage!.id);
       // 60 bodies are three source batches of 20.
@@ -328,8 +332,9 @@ suite("mail body hydration scheduling", () => {
       await deliver(small, 1);
     });
     await waitFor(async () => (await unhydrated([blocker, big, small])) === 0);
-    // Mailboxes take turns one batch at a time: the small mailbox's new message follows the big mailbox's first batch.
-    expect(downloads).toEqual(["blocker", "big", "small", "big", "big"]);
+    // Mailboxes take turns one batch at a time: the small mailbox's new message does not wait for the big mailbox's backlog.
+    expect(downloads.filter((label) => label === "big")).toHaveLength(3);
+    expect(downloads.indexOf("small")).toBeLessThan(downloads.lastIndexOf("big"));
   });
 
   test("hydration of new mail starts after the folder sync that imported it released the provider lease", async () => {
@@ -391,13 +396,15 @@ suite("mail body hydration scheduling", () => {
       failing = await newestMessageId(fixture);
       broken.add(failing);
     });
-    // The single worker takes jobs in order: once the sentinel's body is in, the failing batch has finished.
+    await waitFor(async () => (await hydrationState(failing))?.hydration_status === "failed");
+    // A whole sentinel round gives the failing batch time to end, so the next sync queues a job of its own.
     await deliver(sentinel, 1);
     await waitFor(async () => (await unhydrated([sentinel])) === 0);
     await deliver(fixture, 1);
     const fresh = await newestMessageId(fixture);
     await waitFor(async () => (await hydrationState(fresh))?.hydration_status === "complete", BEFORE_FIRST_RETRY_MS);
-    // Another sentinel round: a job that queued itself again for the failed body would have run first.
+    // Another sentinel round: jobs start in the order they were queued, so a job that queued itself
+    // again for the failed body would have fetched it by now.
     await deliver(sentinel, 1);
     await waitFor(async () => (await unhydrated([sentinel])) === 0);
     expect(await hydrationState(failing)).toEqual({ hydration_status: "failed", hydration_attempt: 1, hydration_error_code: "ECONNRESET" });
@@ -409,11 +416,75 @@ suite("mail body hydration scheduling", () => {
     const sentinel = await createSyncedMailbox("sentinel-provider");
     unreachable.add(fixture.account);
     await deliver(fixture, 1);
-    // The single worker takes jobs in order: once the sentinel's body is in, the failed batch has finished.
+    await waitFor(async () => !unreachable.has(fixture.account));
+    // A whole sentinel round gives the failed batch time to end, so the next sync queues a job of its own.
     await deliver(sentinel, 1);
     await waitFor(async () => (await unhydrated([sentinel])) === 0);
     await deliver(fixture, 1);
     await waitFor(async () => (await unhydrated([fixture])) === 0, BEFORE_FIRST_RETRY_MS);
+  });
+
+  test("a provider that does not answer holds back only its own mailbox's bodies", async () => {
+    const stalled = await createSyncedMailbox("stalled");
+    const other = await createSyncedMailbox("other");
+    let answer = (): void => undefined;
+    hanging.set(
+      stalled.account,
+      new Promise<void>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    try {
+      await deliver(stalled, 1);
+      await waitFor(async () => downloads.includes("stalled"));
+      await deliver(other, 1);
+      await waitFor(async () => (await unhydrated([other])) === 0, BEFORE_FIRST_RETRY_MS);
+      expect(await unhydrated([stalled])).toBe(1);
+    } finally {
+      answer();
+      hanging.delete(stalled.account);
+    }
+    await waitFor(async () => (await unhydrated([stalled])) === 0);
+  });
+
+  test("a body download a stopped worker left claimed is fetched again, and one on its last attempt fails", async () => {
+    const fixture = await createSyncedMailbox("interrupted");
+    // A worker claimed these bodies and stopped before it saved, for example killed by a restart.
+    // It last renewed the claims an hour ago; the third claim belongs to a download still running.
+    const insertClaimed = async (uid: number, attempt: number, claimedAgo: string): Promise<string> => {
+      const [message] = await sql<{ id: string }[]>`
+        INSERT INTO mail.message_contents (
+          short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash,
+          hydration_status, hydration_attempt, hydration_claim_id, hydration_claimed_at
+        )
+        VALUES (
+          ${newShortId()}, ${fixture.mailboxId}::uuid, ${`<interrupted-${uid}-${suffix}@example.test>`}, 'Interrupted', now(), 256,
+          ${sha256Json({ fixture: "hydration-interrupted", uid, suffix })}, 'hydrating', ${attempt}, gen_random_uuid(),
+          now() - ${claimedAgo}::interval
+        )
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+        VALUES (${fixture.folderId}::uuid, ${message!.id}::uuid, 10, ${uid})
+      `;
+      return message!.id;
+    };
+    const retried = await insertClaimed(1, 1, "1 hour");
+    const exhausted = await insertClaimed(2, 5, "1 hour");
+    const running = await insertClaimed(3, 1, "0 seconds");
+    // Nothing else in the mailbox is pending, so no batch would come across these claims.
+    expect(await recoverInterruptedHydrations()).toBeGreaterThanOrEqual(2);
+    await waitFor(async () => (await hydrationState(retried))?.hydration_status === "complete");
+    expect(await hydrationState(retried)).toEqual({ hydration_status: "complete", hydration_attempt: 2, hydration_error_code: null });
+    expect(await hydrationState(exhausted)).toEqual({
+      hydration_status: "failed",
+      hydration_attempt: 5,
+      hydration_error_code: "HYDRATION_INTERRUPTED",
+    });
+    expect(await hydrationState(running)).toEqual({ hydration_status: "hydrating", hydration_attempt: 1, hydration_error_code: null });
+    expect(fetched).not.toContain(exhausted);
+    expect(fetched).not.toContain(running);
   });
 
   test("a message the provider lists but never delivers does not hold back the mailbox's other folders", async () => {

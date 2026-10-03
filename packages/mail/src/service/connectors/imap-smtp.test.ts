@@ -42,6 +42,19 @@ describe("Provider transport diagnostics", () => {
     });
   });
 
+  test("report a login the server refuses for now as unavailable, not as rejected credentials", () => {
+    const reason = Object.assign(new Error("Command failed"), {
+      authenticationFailed: true,
+      serverResponseCode: "UNAVAILABLE",
+      responseText: "Temporary authentication failure",
+    });
+    expect(transportDiagnostic({ status: "rejected", reason })).toEqual({
+      status: "failed",
+      category: "unavailable",
+      message: "Server could not be reached: UNAVAILABLE Temporary authentication failure",
+    });
+  });
+
   test("redact the submitted password from an SMTP login failure", () => {
     const reason = Object.assign(new Error("Invalid login: 535 5.7.8 rejected s3cret-value"), { code: "EAUTH" });
     expect(transportDiagnostic({ status: "rejected", reason }, ["s3cret-value"]).message).toBe(

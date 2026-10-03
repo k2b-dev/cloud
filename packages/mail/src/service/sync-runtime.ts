@@ -35,7 +35,7 @@ import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
-import { hydrateMessageFromSource, recordMissingMessageSources } from "./message-hydration";
+import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { hasReplySubjectPrefix, normalizeMailSubject, REPLY_SUBJECT_PREFIX_PATTERN } from "./message-threading";
 import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
@@ -43,6 +43,7 @@ import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import {
   acquireProviderLease,
+  MAIL_PROVIDER_JOB_CONCURRENCY,
   mailProviderOperationMutex,
   type ProviderLeasePriority,
   providerBusyRetryAfterMs,
@@ -2405,7 +2406,10 @@ export const onSyncFolderJobError = async ({
 
 let syncFolderJobWorker: Worker | undefined;
 const startSyncFolderJob = async (): Promise<void> => {
-  syncFolderJobWorker = await syncFolderJob().process({ onError: onSyncFolderJobError }, runSyncFolderJob);
+  syncFolderJobWorker = await syncFolderJob().process(
+    { concurrency: MAIL_PROVIDER_JOB_CONCURRENCY, onError: onSyncFolderJobError },
+    runSyncFolderJob,
+  );
 };
 
 // An open reader may hold an envelope-only snapshot of a message in this batch.
@@ -2437,7 +2441,7 @@ const invalidateSettledConversations = async (mailboxId: string, messageIds: Rea
 /**
  * A hydration job either works through one mailbox (`mailboxId`) or fetches one requested
  * message (`messageId`). A mailbox job hydrates one source batch per run and then queues again
- * behind every other mailbox's job, so the single worker slot takes turns between mailboxes
+ * behind every other mailbox's job, so the worker's places take turns between mailboxes
  * instead of draining one mailbox's backlog first.
  */
 type HydrationInput = { mailboxId: string } | { messageId: string };
@@ -2715,7 +2719,7 @@ const hydrationJob = lazySync((sync) =>
 );
 let hydrationJobWorker: Worker | undefined;
 const startHydrationJob = async (): Promise<void> => {
-  hydrationJobWorker = await hydrationJob().process({}, async (ctx) => {
+  hydrationJobWorker = await hydrationJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, async (ctx) => {
     try {
       await hydrateMessageBatch(ctx);
     } catch (error) {
@@ -2826,7 +2830,7 @@ const rediscoveryJob = lazySync((sync) =>
 );
 let rediscoveryJobWorker: Worker | undefined;
 const startRediscoveryJob = async (): Promise<void> => {
-  rediscoveryJobWorker = await rediscoveryJob().process({}, async (ctx) => {
+  rediscoveryJobWorker = await rediscoveryJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, async (ctx) => {
     try {
       await executeBindingRediscovery(ctx.input.bindingId, ctx.input.allowCredentialRevision, () => ctx.heartbeat());
     } catch (error) {
@@ -2905,6 +2909,23 @@ export const submitDueHydrationWork = async (): Promise<number> => {
     await submitHydrationJob({ mailboxId: mailbox.id });
   }
   return mailboxes.length;
+};
+
+/**
+ * Releases the body downloads a stopped worker left claimed, such as one killed by a restart, so
+ * their bodies are fetched again; one on its last attempt shows as failed. Queues the affected
+ * mailboxes and returns how many downloads it released.
+ */
+export const recoverInterruptedHydrations = async (): Promise<number> => {
+  const released = await releaseExpiredHydrationClaims();
+  const byMailbox = Map.groupBy(released, (message) => message.mailbox_id);
+  for (const [mailboxId, messages] of byMailbox) {
+    // A reader open on a message that has no attempt left shows the failure instead of loading.
+    await invalidateSettledConversations(mailboxId, new Set(messages.map((message) => message.id)));
+    await submitHydrationJob({ mailboxId });
+  }
+  if (released.length > 0) log.warn("Mail released interrupted body downloads", { released: released.length, mailboxes: byMailbox.size });
+  return released.length;
 };
 
 // Each minute queues at most this many folder syncs. Every Inbox goes first; the other folders
@@ -3145,6 +3166,16 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
       meta: { appId: "mail", family: "mail:sync", label: "Mail synchronization" },
       process: async () => {
         await submitDueWork();
+      },
+    });
+    // Once per hydration claim lifetime: a claim expires 15 minutes after its last renewal.
+    await mailScheduler().create({
+      id: "mail:hydration-recovery",
+      cron: "*/15 * * * *",
+      misfire: "latest",
+      meta: { appId: "mail", family: "mail:sync", label: "Mail interrupted body download recovery" },
+      process: async () => {
+        await recoverInterruptedHydrations();
       },
     });
     await mailScheduler().create({
