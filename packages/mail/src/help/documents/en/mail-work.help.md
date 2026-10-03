@@ -38,7 +38,7 @@ When extracted attachment text matches, the result names the attachment, shows a
 
 ## Use follow-up, assignment, and folders for different purposes {icon="layout-list"}
 
-The built-in **Follow-up** views show what should happen next. **Assignment** shows who owns it. Both leave out conversations that are only in Trash or Junk, such as spam your provider filed there or mail someone deleted; moving a conversation back shows it again with its next step:
+The built-in **Follow-up** views show what should happen next. **Assignment** shows who owns it. Except for **Done**, these views leave out conversations that are only in Trash or Junk, such as spam your provider filed there or mail someone deleted; moving a conversation back shows it again with its next step:
 
 | Section | View | What it shows |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ For composing, drafts, attachments, signatures, and delivery options, see [Write
 
 ## Create reusable views and local tags {icon="layout-list"}
 
-Open **Settings > Organization** to create a saved view from folder and collaboration filters. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**.
+Open **Settings > Organization** to create a saved view from folder and collaboration filters. A view can filter by folder, assignee, next step, local tag, and whether the conversation is in **Later**. Like **Unassigned**, a filter for conversations without an assignee also finds those whose assignee can no longer write in this mailbox.
 
 - **Only me** creates a private view.
 - **Everyone with mailbox access** creates a mailbox view and requires write access.

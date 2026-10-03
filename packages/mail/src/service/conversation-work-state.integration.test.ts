@@ -7,6 +7,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, ConnectorProtocolFacts } from "./connectors";
+import { refreshConversationTimeline } from "./conversation-timeline";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
@@ -302,6 +303,77 @@ suite("mail conversation work-state projection", () => {
       WHERE link.message_id = ${messageId}::uuid
     `;
     expect(conversation?.work_status).toBe("waiting");
+  }, 30_000);
+
+  test("a timeline refresh waits for a hydration of the same conversation instead of overwriting it", async () => {
+    const olderMessageId = `<work-state-timeline-older-${suffix}@example.test>`;
+    const older = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId,
+      message: envelope({
+        uid: 7,
+        messageId: olderMessageId,
+        inReplyTo: null,
+        from: "customer@example.test",
+        to: "support@example.test",
+        date: new Date("2026-07-23T09:00:00.000Z"),
+      }),
+    });
+    const newerDate = new Date("2026-07-23T10:00:00.000Z");
+    const newer = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId,
+      message: envelope({
+        uid: 8,
+        messageId: `<work-state-timeline-newer-${suffix}@example.test>`,
+        inReplyTo: olderMessageId,
+        from: "customer@example.test",
+        to: "support@example.test",
+        date: newerDate,
+      }),
+    });
+    const [link] = await sql<{ conversation_id: string }[]>`
+      SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ${newer}::uuid
+    `;
+    const conversationId = link!.conversation_id;
+    await sql`UPDATE mail.message_contents SET hydration_status = 'complete' WHERE id = ${older}::uuid`;
+
+    // A hydration holds the conversation while it completes the newer message.
+    let completed!: () => void;
+    const holding = new Promise<void>((resolve) => {
+      completed = resolve;
+    });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const hydration = sql.begin(async (tx) => {
+      await tx`SELECT id FROM mail.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
+      await tx`UPDATE mail.message_contents SET hydration_status = 'complete' WHERE id = ${newer}::uuid`;
+      completed();
+      await released;
+      await refreshConversationTimeline(tx, conversationId);
+    });
+    await holding;
+    const refresh = sql.begin((tx) => refreshConversationTimeline(tx, conversationId));
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [waiting] = await sql<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
+      `;
+      if ((waiting?.count ?? 0) > 0) break;
+      await Bun.sleep(20);
+    }
+    release();
+    await Promise.all([hydration, refresh]);
+
+    const [conversation] = await sql<{ latest_message_at: Date }[]>`
+      SELECT latest_message_at FROM mail.conversations WHERE id = ${conversationId}::uuid
+    `;
+    expect(conversation?.latest_message_at.getTime()).toBe(newerDate.getTime());
   }, 30_000);
 
   test("releases due snoozes once without changing their work state", async () => {

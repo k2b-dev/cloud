@@ -2455,6 +2455,20 @@ const applyConfirmedSendWorkState = async (params: {
   return { conversationId: draft.conversation_id, activityId: String(activity.id) };
 };
 
+/**
+ * A send joins its conversation's timeline once it is sent, and leaves it while it waits for
+ * another attempt or after it failed.
+ */
+const refreshOutboxConversationTimeline = async (db: SqlClient, outboxId: string): Promise<void> => {
+  const [link] = await db<{ conversation_id: string }[]>`
+    SELECT link.conversation_id
+    FROM mail.outbox_submissions outbox
+    JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
+    WHERE outbox.id = ${outboxId}::uuid
+  `;
+  if (link) await refreshConversationTimeline(db, link.conversation_id);
+};
+
 const finishOutbox = async (params: {
   outbox: DbOutboxExecution;
   command: DbCommandExecution;
@@ -2482,15 +2496,6 @@ const finishOutbox = async (params: {
     if (["accepted", "sent_sync_pending", "sent", "reconciled_accepted"].includes(params.outboxState)) {
       await recordOutboundSentAt(tx, params.outbox.id);
     }
-    // A reply that waited for its send time joins its conversation's timeline once it is sent; a
-    // failed one leaves it.
-    const [link] = await tx<{ conversation_id: string }[]>`
-      SELECT link.conversation_id
-      FROM mail.outbox_submissions outbox
-      JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
-      WHERE outbox.id = ${params.outbox.id}::uuid
-    `;
-    if (link) await refreshConversationTimeline(tx, link.conversation_id);
     await tx`
       UPDATE mail.commands
       SET
@@ -2539,6 +2544,7 @@ const finishOutbox = async (params: {
       FROM mail.commands c
       WHERE c.id = ${params.outbox.command_id}::uuid
     `;
+    await refreshOutboxConversationTimeline(tx, params.outbox.id);
     if (params.commandState !== "confirmed" && params.commandState !== "reconciled") {
       return { updated: true, transition: null };
     }
@@ -2609,6 +2615,7 @@ const scheduleOutboxRetry = async (params: {
       WHERE id = ${params.command.id}::uuid
     `;
     await tx`UPDATE mail.drafts SET state = 'scheduled' WHERE id = ${params.outbox.draft_id}::uuid`;
+    await refreshOutboxConversationTimeline(tx, params.outbox.id);
     return true;
   });
   if (updated) {

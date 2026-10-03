@@ -35,10 +35,24 @@ export const isTimelineMessage = (message: { id: SqlFragment; hydrationStatus: S
 )`;
 
 /**
+ * Whether a message is an outgoing one that has not reached anyone, such as a reply scheduled for
+ * later. A conversation row previews its newest message without it, as the timeline dates it.
+ */
+export const isUnsentOutboundMessage = (messageId: SqlFragment): SqlFragment => sql`EXISTS (
+  SELECT 1
+  FROM mail.outbox_submissions unsent_outbox
+  WHERE unsent_outbox.message_id = ${messageId}
+    AND unsent_outbox.state NOT IN (SELECT value FROM jsonb_array_elements_text(${TIMELINE_OUTBOX_STATES}::jsonb))
+)`;
+
+/**
  * Recomputes a conversation's date, subject, and participant summary from its timeline messages.
  * A conversation without any, such as one that holds only a scheduled reply, keeps its values.
+ * It locks the conversation first, so the recomputation reads messages that a concurrent
+ * hydration of the same conversation committed, instead of overwriting them with older values.
  */
 export const refreshConversationTimeline = async (db: SqlClient, conversationId: string): Promise<void> => {
+  await db`SELECT id FROM mail.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
   await db`
     WITH classified AS (
       SELECT

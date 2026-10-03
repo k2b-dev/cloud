@@ -18,6 +18,7 @@ import { startDraftProjectionRuntime, stopDraftProjectionRuntime, submitDueDraft
 import { createDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { listConversations } from "./messages";
 import { createProviderConnection } from "./provider-connections";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 
@@ -1139,6 +1140,11 @@ suite("mail sent message projection", () => {
       expect(reopened.snoozed_until).toBeNull();
       expect(reopened.latest_message_at.getTime()).toBe(answer!.internal_date.getTime());
       expect(reopened.participant_summary).toBe("Customer");
+      // The list previews the answer, not the reply that has not been sent yet.
+      const needsAction = await listConversations({ context, mailboxId: mailbox.mailboxId, view: "needs_action" });
+      if (!needsAction.ok) throw new Error(JSON.stringify(needsAction.error));
+      const row = needsAction.data.items.find((item) => item.id === inbound.conversation_id);
+      expect(row?.preview).toStartWith("Never mind, I found it.");
 
       // Once sent, the reply is the newest message and the conversation waits for an answer again.
       const [outbox] = await sql<{ id: string; message_id: string }[]>`
@@ -1154,6 +1160,62 @@ suite("mail sent message projection", () => {
       const sent = await conversationState();
       expect(sent.work_status).toBe("waiting");
       expect(sent.latest_message_at.getTime()).toBe(reply!.internal_date.getTime());
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a reply waiting for another send attempt leaves the conversation's date until it is sent", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "retried");
+      const draft = await replyDraft(mailbox, inbound);
+      await waitForDraftExport(draft.id, ["active"]);
+      const command = await createActorCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "send",
+          draftId: draft.id,
+          expectedDraftRevision: draft.revision,
+          senderIdentityId: mailbox.identityId,
+          undoSeconds: 10,
+          idempotencyKey: `retried-reply-${suffix}`,
+        },
+        enqueue: false,
+      });
+      if (!command.ok) throw new Error(JSON.stringify(command.error));
+      const dates = async () => {
+        const [row] = await sql<{ latest_message_at: Date; inbound_at: Date; reply_at: Date }[]>`
+          SELECT conversation.latest_message_at, inbound.internal_date AS inbound_at, reply.internal_date AS reply_at
+          FROM mail.conversations conversation
+          JOIN mail.message_contents inbound ON inbound.id = ${inbound.id}::uuid
+          JOIN mail.outbox_submissions outbox ON outbox.command_id = ${command.data.id}::uuid
+          JOIN mail.message_contents reply ON reply.id = outbox.message_id
+          WHERE conversation.id = ${inbound.conversation_id}::uuid
+        `;
+        if (!row) throw new Error("The conversation disappeared");
+        return { latest: row.latest_message_at.getTime(), inbound: row.inbound_at.getTime(), reply: row.reply_at.getTime() };
+      };
+      // Right after Send, the reply dates the conversation.
+      const sending = await dates();
+      expect(sending.latest).toBe(sending.reply);
+
+      const [outbox] = await sql<{ id: string }[]>`
+        UPDATE mail.outbox_submissions
+        SET scheduled_at = now() - interval '1 second', undo_until = now() - interval '1 second'
+        WHERE command_id = ${command.data.id}::uuid
+        RETURNING id
+      `;
+      provider.failNextSubmission("ESOCKET", false);
+      expect(await executeOutboxSubmission(outbox!.id)).toBe("scheduled");
+      const retrying = await dates();
+      expect(retrying.latest).toBe(retrying.inbound);
+
+      expect(await sendRetryNow(outbox!.id)).toBe("sent");
+      const sent = await dates();
+      expect(sent.latest).toBe(sent.reply);
     } finally {
       provider.restore();
     }

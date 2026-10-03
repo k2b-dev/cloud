@@ -4,6 +4,7 @@ import type { MailFocusView } from "../contracts";
 import { isCurrentActorActive, mailboxAccessPrincipalCondition } from "./access";
 import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { isFollowUpConversation, isTrashOrJunkFolder } from "./follow-up-scope";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -214,6 +215,7 @@ export const listFocusConversations = async (params: {
         FROM mail.conversation_messages cm
         JOIN mail.message_contents content ON content.id = cm.message_id
         WHERE cm.conversation_id = c.id
+          AND NOT ${isUnsentOutboundMessage(sql`content.id`)}
         ORDER BY content.internal_date DESC, content.id DESC
         LIMIT 1
       ) latest ON true

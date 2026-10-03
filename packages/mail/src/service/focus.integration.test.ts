@@ -8,6 +8,7 @@ import type { MailRequestContext } from "./auth";
 import { listFocusConversations, listMailboxCounts } from "./focus";
 import { createMailbox } from "./mailboxes";
 import { getConversationViewCounts, listConversations } from "./messages";
+import { searchMessages } from "./search";
 
 const suite = suiteFor("database", "nats");
 
@@ -280,6 +281,15 @@ suite("cross-mailbox focus", () => {
     }
     const counts = await getConversationViewCounts({ context: leadContext, mailboxId: team.id });
     expect(counts.ok && counts.data).toMatchObject({ needs_action: 3, unassigned: 3, recently_active: 5 });
+    // The message list and search find the same unassigned conversations.
+    const unassignedMessages = await searchMessages({
+      context: leadContext,
+      mailboxId: team.id,
+      groupByConversation: false,
+      excludedFolderIds: [junkFolderId, trashFolderId],
+      request: { expression: { type: "assignee", userId: null }, sort: "newest", limit: 10 },
+    });
+    expect(unassignedMessages.ok && unassignedMessages.data.items.map((item) => item.subject)).toEqual(openSubjects);
 
     // Moving the spam back out of Junk shows it again with its work state.
     await sql`

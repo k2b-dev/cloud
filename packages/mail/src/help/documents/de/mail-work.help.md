@@ -38,7 +38,7 @@ Wenn erkannter Anhangstext übereinstimmt, nennt das Ergebnis den Anhang, zeigt 
 
 ## Nachverfolgung, Zuordnung und Ordner gezielt verwenden {icon="layout-list"}
 
-Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschehen soll. **Zuordnung** zeigt, wer zuständig ist. Beide lassen Unterhaltungen aus, die nur im Papierkorb oder in Junk liegen, etwa Spam, den dein Anbieter dort abgelegt hat, oder gelöschte E-Mails. Verschiebst du eine Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt:
+Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschehen soll. **Zuordnung** zeigt, wer zuständig ist. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Junk liegen, etwa Spam, den dein Anbieter dort abgelegt hat, oder gelöschte E-Mails. Verschiebst du eine Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt:
 
 | Abschnitt | Ansicht | Inhalt |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ Informationen zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustellungsopt
 
 ## Wiederverwendbare Ansichten und lokale Tags erstellen {icon="layout-list"}
 
-Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt.
+Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Wie **Nicht zugewiesen** findet ein Filter für Unterhaltungen ohne zuständige Person auch solche, deren zuständige Person in diesem Postfach nicht mehr schreiben darf.
 
 - **Nur für mich** erstellt eine private Ansicht.
 - **Alle mit Postfachzugriff** erstellt eine Postfachansicht und erfordert Schreibzugriff.

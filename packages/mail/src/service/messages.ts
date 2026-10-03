@@ -8,6 +8,7 @@ import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
 import { FOLLOW_UP_VIEWS, isFollowUpConversation } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
@@ -343,6 +344,7 @@ export const listConversations = async (params: {
       FROM mail.conversation_messages cm
       JOIN mail.message_contents mc ON mc.id = cm.message_id
       WHERE cm.conversation_id = c.id
+        AND NOT ${isUnsentOutboundMessage(sql`mc.id`)}
       ORDER BY mc.internal_date DESC, mc.id DESC
       LIMIT 1
     ) latest ON true
@@ -401,10 +403,7 @@ export const listConversations = async (params: {
         )
         OR ${view} = 'recently_active'
       )
-      AND CASE
-        WHEN ${view}::text IN (SELECT value FROM jsonb_array_elements_text(${FOLLOW_UP_VIEWS}::jsonb)) THEN ${isFollowUpConversation(sql`c.id`)}
-        ELSE true
-      END
+      AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
       AND (
         ${folderId}::uuid IS NULL
         OR EXISTS (
