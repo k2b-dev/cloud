@@ -315,6 +315,43 @@ steps:
     expect(message).toEqual({ hydration_status: "complete", links: 1, live_refs: 1 });
   });
 
+  test("a message whose body went missing before a move loads it from its new folder", async () => {
+    const messageId = `<moved-missing-${suffix}@example.test>`;
+    const source = Buffer.from(
+      [
+        `Message-ID: ${messageId}`,
+        "Date: Tue, 04 Aug 2026 09:00:00 +0000",
+        `From: Customer <${customer.address}>`,
+        `To: Support <${support}>`,
+        "Subject: Moved after failed loads",
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        "Body that only the archived copy can provide",
+      ].join("\r\n"),
+    );
+    const fields = {
+      messageId,
+      subject: "Moved after failed loads",
+      from: customer,
+      to: [supportAddress],
+      date: new Date("2026-08-04T09:00:00.000Z"),
+      sizeBytes: source.byteLength,
+    };
+    const inInbox = envelope({ folder: "inbox", ...fields });
+    const originalId = await ingest("inbox", inInbox);
+    // Every attempt found the Inbox copy gone, as recordMissingMessageSources records it.
+    await sql`
+      UPDATE mail.message_contents
+      SET hydration_status = 'failed', hydration_attempt = 5, hydration_error_code = 'MESSAGE_SOURCE_MISSING'
+      WHERE id = ${originalId}::uuid
+    `;
+    await leaveFolder("inbox", inInbox);
+    expect(await ingest("archive", envelope({ folder: "archive", ...fields }))).toBe(originalId);
+    expect(await hydrateMessageFromSource({ messageId: originalId, source: Readable.from([source]) })).toMatchObject({
+      status: "hydrated",
+    });
+  });
+
   test("the copy in Sent and the delivered copy of one's own mail are one message", async () => {
     const messageId = `<own-copy-${suffix}@example.test>`;
     const date = new Date("2026-08-03T09:00:00.000Z");

@@ -299,24 +299,28 @@ const findConversation = async (params: {
   // A copy that its envelope could not prove to be the same message (see
   // findCanonicalMessageContent), such as a second delivery with other transport headers, joins
   // the conversation of its twin from the same sender; hydration merges the two once their
-  // sources match. A Message-ID alone proves nothing: another sender can reuse it.
+  // sources match. A Message-ID alone proves nothing: another sender can reuse it, even for all
+  // of its mail, so the lookup reads at most one envelope batch of messages with the Message-ID.
   if (params.message.messageId) {
     const senders = senderSet(params.message);
     const [twin] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
-      FROM mail.message_contents mc
-      JOIN mail.conversation_messages cm ON cm.message_id = mc.id
-      WHERE mc.mailbox_id = ${params.mailboxId}::uuid
-        AND mc.id <> ${params.messageId}::uuid
-        AND mc.message_id IS NOT NULL
-        AND lower(mc.message_id) = lower(${params.message.messageId})
-        AND ARRAY(
-          SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = mc.id AND sender.role = 'from'
+      FROM (
+        SELECT mc.id
+        FROM mail.message_contents mc
+        WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+          AND mc.id <> ${params.messageId}::uuid
+          AND mc.message_id IS NOT NULL
+          AND lower(mc.message_id) = lower(${params.message.messageId})
+        LIMIT ${ENVELOPE_BATCH_SIZE}
+      ) candidate
+      JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
+      WHERE ARRAY(
+          SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = candidate.id AND sender.role = 'from'
         ) <@ ${toPgTextArray(senders)}::text[]
         AND ${toPgTextArray(senders)}::text[] <@ ARRAY(
-          SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = mc.id AND sender.role = 'from'
+          SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = candidate.id AND sender.role = 'from'
         )
-      ORDER BY mc.created_at, mc.id
       LIMIT 1
     `;
     if (twin) return twin.conversation_id;
@@ -481,20 +485,25 @@ const findCanonicalMessageContent = async (params: {
   // mail, so the copy must also have the same size, as a move or copy keeps the bytes. Only one's
   // own mail may differ in size: the copy in Sent and the one delivered back through a Bcc, a
   // list, or a team address carry different transport headers. Without a Date header, only a
-  // copy with the same size and INTERNALDATE matches.
+  // copy with the same size and INTERNALDATE matches. Like the twin lookup in findConversation,
+  // it reads at most one envelope batch of messages with the Message-ID.
   const senders = senderSet(params.message);
   const [sameMessage] = await params.db<{ id: string }[]>`
-    SELECT mc.id
-    FROM mail.message_contents mc
-    WHERE mc.mailbox_id = ${params.mailboxId}::uuid
-      AND mc.message_id IS NOT NULL
-      AND lower(mc.message_id) = lower(${params.message.messageId})
-      AND mc.subject = ${params.message.subject}
-      AND mc.sent_at IS NOT DISTINCT FROM ${params.message.sentAt}::timestamptz
+    SELECT candidate.id
+    FROM (
+      SELECT mc.id, mc.subject, mc.sent_at, mc.size_bytes, mc.internal_date
+      FROM mail.message_contents mc
+      WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+        AND mc.message_id IS NOT NULL
+        AND lower(mc.message_id) = lower(${params.message.messageId})
+      LIMIT ${ENVELOPE_BATCH_SIZE}
+    ) candidate
+    WHERE candidate.subject = ${params.message.subject}
+      AND candidate.sent_at IS NOT DISTINCT FROM ${params.message.sentAt}::timestamptz
       AND (
         (
-          mc.size_bytes = ${params.message.sizeBytes}
-          AND (${params.message.sentAt}::timestamptz IS NOT NULL OR mc.internal_date = ${params.message.internalDate}::timestamptz)
+          candidate.size_bytes = ${params.message.sizeBytes}
+          AND (${params.message.sentAt}::timestamptz IS NOT NULL OR candidate.internal_date = ${params.message.internalDate}::timestamptz)
         )
         OR (
           ${params.message.sentAt}::timestamptz IS NOT NULL
@@ -509,14 +518,13 @@ const findCanonicalMessageContent = async (params: {
       AND ARRAY(
         SELECT sender.normalized_email
         FROM mail.message_addresses sender
-        WHERE sender.message_id = mc.id AND sender.role = 'from'
+        WHERE sender.message_id = candidate.id AND sender.role = 'from'
       ) <@ ${toPgTextArray(senders)}::text[]
       AND ${toPgTextArray(senders)}::text[] <@ ARRAY(
         SELECT sender.normalized_email
         FROM mail.message_addresses sender
-        WHERE sender.message_id = mc.id AND sender.role = 'from'
+        WHERE sender.message_id = candidate.id AND sender.role = 'from'
       )
-    ORDER BY mc.created_at, mc.id
     LIMIT 1
   `;
   return sameMessage?.id ?? null;
@@ -603,6 +611,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       remoteResourceId: params.remoteResourceId,
       message: params.message,
     }));
+  const copyOfKnownMessage = !knownRemoteRef && messageContentId !== null;
   // A copy in the sender's Sent folder proves a send whose outcome Mail could not prove. This
   // locks such a delivery before the message is written, in the order the send itself uses.
   if (messageContentId) {
@@ -697,6 +706,18 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         AND NOT EXISTS (SELECT 1 FROM mail.conversation_messages link WHERE link.message_id = candidate.id)
     `;
     messageContentId = remoteRef.message_id;
+  }
+  // The body of a message whose source went missing, for example because another client moved
+  // it before Mail loaded it, loads again from this new copy.
+  if (copyOfKnownMessage) {
+    await params.db`
+      UPDATE mail.message_contents
+      SET
+        hydration_status = CASE WHEN hydration_status = 'failed' THEN 'envelope' ELSE hydration_status END,
+        hydration_attempt = 0,
+        hydration_error_code = NULL
+      WHERE id = ${messageContentId}::uuid AND hydration_error_code = 'MESSAGE_SOURCE_MISSING'
+    `;
   }
   await params.db`
     UPDATE mail.message_contents
