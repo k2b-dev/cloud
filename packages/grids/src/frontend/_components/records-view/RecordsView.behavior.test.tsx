@@ -332,6 +332,79 @@ domTest("a failed server read shows its error without repeating the read, and th
   }
 });
 
+domTest("an empty table keeps its empty state while a search loads, and only a finished read with records brings the grid", async () => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click", "input"], dom.document);
+  const previousObserver = globalThis.IntersectionObserver;
+  Object.assign(globalThis, {
+    IntersectionObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+  });
+  let resolveRead!: (page: PublicTableQueryResult) => void;
+  let reads = 0;
+  fetchRecords = () => {
+    reads++;
+    return new Promise((resolve) => {
+      resolveRead = resolve;
+    });
+  };
+  // Counts every grid the records area mounts, including one that a later change replaces before the test looks.
+  let gridsMounted = 0;
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations)
+      for (const node of Array.from(mutation.addedNodes))
+        if (node instanceof Element && (node.matches("table") || node.querySelector("table"))) gridsMounted++;
+  });
+  const { default: RecordsView } = await import("./RecordsView");
+  const dispose = render(
+    () => createComponent(RecordsView, recordsViewProps({ initialData: { items: [], nextCursor: null }, relationLabels: {} })),
+    dom.root,
+  );
+  const searchInput = () => dom.root.querySelector<HTMLInputElement>('input[name="grids-record-search"]')!;
+  const text = () => dom.root.textContent ?? "";
+  try {
+    await Bun.sleep(0);
+    expect(text()).toContain("No records yet");
+    expect(dom.root.querySelector("table")).toBeNull();
+    observer.observe(dom.root, { childList: true, subtree: true });
+
+    searchInput().value = "venue";
+    searchInput().dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => reads > 0);
+    expect(text()).toContain("No records yet");
+    expect(dom.root.querySelector("table")).toBeNull();
+
+    resolveRead({ items: [], nextCursor: null });
+    await waitFor(() => text().includes("No matching records"));
+    expect(dom.root.querySelector("table")).toBeNull();
+    await Bun.sleep(0);
+    expect(gridsMounted).toBe(0);
+
+    const readsBeforeClear = reads;
+    Array.from(dom.root.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("Clear search and filters"))!
+      .click();
+    await waitFor(() => reads > readsBeforeClear);
+    expect(text()).toContain("No matching records");
+    expect(dom.root.querySelector("table")).toBeNull();
+
+    resolveRead(memberPage);
+    await waitFor(() => text().includes("Draft the brochure"));
+    expect(text()).not.toContain("No records yet");
+    expect(text()).not.toContain("No matching records");
+    await Bun.sleep(0);
+    expect(gridsMounted).toBe(1);
+  } finally {
+    observer.disconnect();
+    dispose();
+    dom.cleanup();
+    Object.assign(globalThis, { IntersectionObserver: previousObserver });
+    fetchRecords = async () => memberPage;
+  }
+});
+
 const notesField = field("FIELD4", "Notes", 1);
 
 /**

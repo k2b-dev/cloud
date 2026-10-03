@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Button } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { PublicFieldSchema, PublicGridRecordSchema } from "../../../api/public-dto";
@@ -48,7 +49,7 @@ const record = PublicGridRecordSchema.parse({
   updatedAt: timestamp,
 });
 
-const renderSurface = (mode: SurfaceProps["mode"]): string =>
+const renderSurface = (mode: SurfaceProps["mode"], overrides: Partial<SurfaceProps> = {}): string =>
   renderToString(() =>
     createComponent(RecordsResultSurface, {
       grouped: false,
@@ -86,6 +87,7 @@ const renderSurface = (mode: SurfaceProps["mode"]): string =>
       canEditView: false,
       resultNarrowed: false,
       onClearResultNarrowing: () => {},
+      readFailed: false,
       bulkSelection: undefined,
       onRecordClick: () => {},
       onCalendarChange: () => {},
@@ -96,6 +98,7 @@ const renderSurface = (mode: SurfaceProps["mode"]): string =>
       onViewColumnMove: () => {},
       onGroupedColumnSettings: () => {},
       onGroupedColumnMove: () => {},
+      ...overrides,
     }),
   );
 
@@ -114,5 +117,53 @@ describe("RecordsResultSurface relation labels", () => {
 
     expect(html).toContain("Acme, Globex");
     expect(html).not.toContain("Unavailable record");
+  });
+});
+
+describe("RecordsResultSurface empty table", () => {
+  const addRecord = () => createComponent(Button, { type: "button", children: "Add record" });
+
+  test("a table without records shows one empty state with the creation action instead of an empty grid", () => {
+    const html = renderSurface("table", { items: [], emptyAction: addRecord() });
+
+    expect(html).toContain("No records yet");
+    expect(html).toContain("Records added to this table appear here.");
+    expect(html).toContain("Add record");
+    expect(html).toContain('data-variant="panel"');
+    expect(html).not.toContain("<table");
+  });
+
+  test("readers see the empty state without an action", () => {
+    const html = renderSurface("table", { items: [] });
+
+    expect(html).toContain("No records yet");
+    expect(html).not.toContain("k2b-placeholder__action");
+  });
+
+  test("edit mode, saved views, the trash and narrowed results keep their own empty presentation", () => {
+    for (const overrides of [{ adminMode: true }, { savedView: true }, { trashMode: true }] satisfies Partial<SurfaceProps>[]) {
+      const html = renderSurface("table", { items: [], emptyAction: addRecord(), ...overrides });
+      expect(html).toContain("<table");
+      expect(html).not.toContain("No records yet");
+    }
+
+    const narrowed = renderSurface("table", { items: [], resultNarrowed: true });
+    expect(narrowed).toContain("No matching records");
+    expect(narrowed).not.toContain("No records yet");
+  });
+
+  test("a failed read says nothing about the table, so it keeps the grid instead of claiming there are no records", () => {
+    const html = renderSurface("table", { items: [], readFailed: true, emptyAction: addRecord() });
+
+    expect(html).toContain("<table");
+    expect(html).not.toContain("No records yet");
+    expect(html).not.toContain("Add record");
+  });
+
+  test("before its first read has finished, a table keeps the grid", () => {
+    const html = renderSurface("table", { items: [], loading: true });
+
+    expect(html).toContain("<table");
+    expect(html).not.toContain("No records yet");
   });
 });

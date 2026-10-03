@@ -74,9 +74,16 @@ ownership of landmarks.
 
 ## Accessibility
 
-Write titles that distinguish an empty result from a failed request. Loading
-text should name what is loading. Recovery actions should name the action
-rather than say only “Retry”.
+Write titles that distinguish an empty result from a failed request. Show an
+empty state only after a read that succeeded: a failed read shows its error,
+not a claim that nothing is there. While the same region reloads, keep the
+empty state in place instead of swapping in an empty frame. Loading text should
+name what is loading. Recovery actions should name the action rather than say
+only “Retry”.
+
+When an action fills the region, such as adding the first record, the
+placeholder and its focused button leave. Move focus to the new content, such
+as the created row, so it does not fall back to the page.
 
 `NotFoundState` renders its title as an `h1`. Do not place another page-level
 heading around it.
