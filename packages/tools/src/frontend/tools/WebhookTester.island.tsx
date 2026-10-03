@@ -853,20 +853,20 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
         </DetailPanel.Summary>
 
         <DetailPanel.Group label={t().requestData}>
-          <LogBlock title={t().requestHeaders} value={props.log.requestHeaders} />
-          <LogBlock title={t().requestBody} value={props.log.requestBody ?? "-"} />
+          <LogBlock title={t().requestHeaders} icon="ti ti-list-details" value={props.log.requestHeaders} />
+          <LogBlock title={t().requestBody} icon="ti ti-braces" value={props.log.requestBody ?? "-"} />
         </DetailPanel.Group>
 
         <DetailPanel.Group label={t().responseData}>
-          <LogBlock title={t().responseHeaders} value={props.log.responseHeaders ?? "-"} />
-          <LogBlock title={t().responseBody} value={props.log.responseBody ?? props.log.error ?? "-"} />
+          <LogBlock title={t().responseHeaders} icon="ti ti-list-details" value={props.log.responseHeaders ?? "-"} />
+          <LogBlock title={t().responseBody} icon="ti ti-braces" value={props.log.responseBody ?? props.log.error ?? "-"} />
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>
   );
 }
 
-const LogBlock = (props: { title: string; value: unknown }) => {
+const LogBlock = (props: { title: string; icon: string; value: unknown }) => {
   const locale = useLocale();
   const t = () => webhookMessages.resolve([locale()]).t;
   const [raw, setRaw] = createSignal(false);
@@ -883,6 +883,8 @@ const LogBlock = (props: { title: string; value: unknown }) => {
   return (
     <DetailPanel.Section
       title={props.title}
+      icon={props.icon}
+      tone="neutral"
       actions={
         <>
           <Button variant="secondary" size="xs" class="text-[11px]" onClick={() => setRaw(!raw())}>

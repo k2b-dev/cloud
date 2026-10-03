@@ -123,21 +123,6 @@ export default function CommentsSection(props: Props) {
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m`;
-    if (diffHours < 24) return `${diffHours}h`;
-    if (diffDays < 7) return `${diffDays}d`;
-    return dates.formatDate(date, props.dateConfig);
-  };
-
   const sortedComments = () => [...props.comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   return (
@@ -187,7 +172,7 @@ export default function CommentsSection(props: Props) {
               author={comment.userName ?? t.unknownUser}
               timestamp={
                 <time dateTime={comment.createdAt} title={dates.formatDateTime(comment.createdAt, props.dateConfig)}>
-                  {formatDate(comment.createdAt)}
+                  {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
                 </time>
               }
               actions={

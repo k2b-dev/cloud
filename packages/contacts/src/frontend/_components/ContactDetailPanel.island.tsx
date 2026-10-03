@@ -531,7 +531,7 @@ export default function ContactDetailPanel(props: Props) {
                                 <Show
                                   when={safeWebsiteHref(website.url)}
                                   fallback={
-                                    <div class="flex min-w-0 items-start gap-3 px-2 py-2 text-sm">
+                                    <div class="flex min-w-0 items-start gap-3 py-2 text-sm">
                                       <i class="ti ti-world mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
                                       <span class="min-w-0">
                                         <span class="block break-all text-secondary">{website.url}</span>
@@ -563,7 +563,7 @@ export default function ContactDetailPanel(props: Props) {
                           <div class="flex flex-col gap-3">
                             <For each={c().addresses}>
                               {(address) => (
-                                <div class="flex items-start gap-3 px-2 py-1 text-sm text-primary">
+                                <div class="flex items-start gap-3 py-1 text-sm text-primary">
                                   <i class="ti ti-map-pin mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
                                   <div class="min-w-0 flex-1">
                                     <Show when={address.label}>
@@ -587,7 +587,7 @@ export default function ContactDetailPanel(props: Props) {
                           <div class="flex flex-col gap-3">
                             <For each={c().bankAccounts}>
                               {(account) => (
-                                <div class="flex items-start gap-3 px-2 py-1 text-sm text-primary">
+                                <div class="flex items-start gap-3 py-1 text-sm text-primary">
                                   <i class="ti ti-building-bank mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
                                   <div class="min-w-0 flex-1">
                                     <Show when={account.label}>
@@ -742,7 +742,7 @@ export default function ContactDetailPanel(props: Props) {
                             </ul>
                           </Show>
                           <Show when={!c().parent && c().members.length === 0}>
-                            <p class="px-2 py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
+                            <p class="py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
                           </Show>
                         </div>
                       </DetailPanel.Section>

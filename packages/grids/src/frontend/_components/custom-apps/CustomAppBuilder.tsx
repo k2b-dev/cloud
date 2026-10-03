@@ -1210,10 +1210,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
               <For each={addBlockSections()}>
                 {(section) => (
                   <section aria-labelledby={`custom-app-block-section-${section.id}`}>
-                    <h3
-                      id={`custom-app-block-section-${section.id}`}
-                      class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed"
-                    >
+                    <h3 id={`custom-app-block-section-${section.id}`} class="mb-2 text-xs font-semibold text-secondary">
                       {section.label}
                     </h3>
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">

@@ -281,10 +281,10 @@ function MutationPolicyDialog(props: {
                                 : t().reviewEntryPoints
                           }
                         />
-                        <ul class="paper divide-y divide-[var(--ui-border)]" aria-label={t().affectedEntryPoints}>
+                        <ul class="flex flex-col gap-1" aria-label={t().affectedEntryPoints}>
                           <For each={impact().items}>
                             {(item) => (
-                              <li class="flex items-center gap-3 px-3 py-2">
+                              <li class="flex items-center gap-3 py-1.5">
                                 <i class={`${impactKind(item.kind).icon} text-base text-dimmed`} aria-hidden="true" />
                                 <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">{item.name}</span>
                                 <span class="text-xs text-dimmed">{impactKind(item.kind).label}</span>

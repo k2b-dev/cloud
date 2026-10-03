@@ -195,6 +195,8 @@ function ResponsePanel(props: {
   return (
     <DetailPanel.Section
       title={t().response}
+      icon="ti ti-arrow-back-up"
+      tone="neutral"
       description={t().responseDescription}
       meta={
         <Show when={outcome()}>
@@ -449,6 +451,8 @@ function CapabilityRunner(props: Props) {
         <DetailPanel.Group label={t().runGroup}>
           <DetailPanel.Section
             title={t().request}
+            icon="ti ti-send"
+            tone="neutral"
             description={t().requestDescription}
             actions={
               <Button
@@ -469,10 +473,10 @@ function CapabilityRunner(props: Props) {
               )}
             </Show>
             <div class="mt-4 flex flex-col gap-3">
-              <Disclosure summary={t().requestCurl} icon="ti ti-terminal-2" disabled={!curl()}>
+              <Disclosure summary={t().requestCurl} icon="ti ti-terminal-2" surface="plain" disabled={!curl()}>
                 <Show when={curl()}>{(value) => <CodeDisplay code={value()} language="script" lineNumbers={false} />}</Show>
               </Disclosure>
-              <Disclosure summary={t().schemas} icon="ti ti-braces">
+              <Disclosure summary={t().schemas} icon="ti ti-braces" surface="plain">
                 <div class="grid gap-3">
                   <StructuredDataPreview
                     title={t().inputSchema}

@@ -157,9 +157,11 @@ describe("DetailPanel", () => {
     );
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const groupRule = css.match(/\.k2b-ui \.k2b-detail-panel__group \{([^}]*)\}/)?.[1];
+    // A group, a section placed directly in the body and a discussion share one frame rule.
+    const frame = css.match(/\.k2b-ui\s*:is\(\s*(\.k2b-detail-panel__group,[^)]*)\)\s*\{([^}]*)\}/);
     const groupedSectionRule = css.match(/\.k2b-ui \.k2b-detail-panel__group > \.k2b-detail-panel__section \{([^}]*)\}/)?.[1];
     const summaryRule = css.match(/\.k2b-ui \.k2b-detail-panel__summary \{([^}]*)\}/)?.[1];
-    const sectionIconRule = css.match(/\.k2b-ui \.k2b-detail-panel__section-icon \{([^}]*)\}/)?.[1];
+    const sectionIconRule = css.match(/\.k2b-ui \.k2b-detail-panel__section-icon,\s*\.k2b-ui \.k2b-discussion__icon \{([^}]*)\}/)?.[1];
 
     expect(html).toContain('class="k2b-detail-panel__header-icon"');
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Document context"');
@@ -168,7 +170,10 @@ describe("DetailPanel", () => {
     // One quiet surface like the summary: no border, no 1px rules between sections.
     expect(groupRule).not.toContain("gap: 1px");
     expect(groupRule).not.toContain("border:");
-    expect(groupRule?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
+    expect(frame?.[1]).toContain(".k2b-detail-panel__body > .k2b-detail-panel__section");
+    expect(frame?.[1]).toContain('.k2b-detail-panel .k2b-discussion[data-surface="default"]');
+    expect(frame?.[2]).toContain("border: 0;");
+    expect(frame?.[2]?.match(/background: ([^;]+);/)?.[1]).toBe(summaryRule?.match(/background: ([^;]+);/)?.[1]);
     expect(groupedSectionRule).not.toContain("background");
     expect(sectionIconRule).not.toContain("background");
   });

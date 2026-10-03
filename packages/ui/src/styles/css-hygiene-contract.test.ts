@@ -30,6 +30,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
       ".k2b-ui .k2b-detail-panel__summary-header h3",
       ".k2b-ui .k2b-detail-panel__section-header h3",
       ".k2b-ui .k2b-detail-panel__section-title",
+      ".k2b-ui .k2b-discussion__header :is(h2, h3)",
     ]) {
       const label = declarations(selector);
       expect(label.get("text-transform")).toEqual(["none"]);

@@ -255,6 +255,8 @@ export default function FileInspector(props: {
                     <DetailPanel.Group label={t().preview}>
                       <DetailPanel.Section
                         title={t().preview}
+                        icon="ti ti-eye"
+                        tone="neutral"
                         actions={
                           <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
                             <i class="ti ti-arrows-maximize" aria-hidden="true" />
@@ -313,7 +315,7 @@ export default function FileInspector(props: {
                     />
                   </DetailPanel.Summary>
                   <DetailPanel.Group label={t().actions}>
-                    <DetailPanel.Section title={t().actions}>
+                    <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="neutral">
                       <div class="flex flex-col gap-1">
                         <Show when={!item().directory && notPdf() !== revision(item())}>
                           {actionRow(t().openInTab, "ti ti-external-link", () => void openInTab(item()))}
@@ -367,7 +369,7 @@ export default function FileInspector(props: {
               <p class="text-sm text-dimmed">{t().unknownFolders}</p>
             </Show>
           </DetailPanel.Summary>
-          <DetailPanel.Section title={t().actions}>
+          <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="neutral">
             <div class="flex flex-col gap-1">{actionRow(t().downloadZip, "ti ti-download", () => props.onDownload(props.selected))}</div>
           </DetailPanel.Section>
         </DetailPanel.Body>

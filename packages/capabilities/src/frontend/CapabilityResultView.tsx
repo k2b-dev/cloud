@@ -114,7 +114,7 @@ function UniversalSearchResults(props: { items: UniversalSearchData }) {
   return (
     <div class="flex flex-col gap-3">
       <div class="flex items-baseline justify-between gap-3">
-        <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().results}</h3>
+        <h3 class="text-xs font-semibold text-secondary">{t().results}</h3>
         <span class="text-xs tabular-nums text-dimmed">{t().resourceCount({ count: props.items.length })}</span>
       </div>
 
@@ -127,7 +127,7 @@ function UniversalSearchResults(props: { items: UniversalSearchData }) {
         </ul>
       </Show>
 
-      <Disclosure summary={t().rawResult} icon="ti ti-braces">
+      <Disclosure summary={t().rawResult} icon="ti ti-braces" surface="plain">
         <StructuredDataPreview data={props.items} defaultMode="raw" />
       </Disclosure>
     </div>
@@ -139,7 +139,7 @@ function ResourceReferences(props: { refs: CloudResourceRef[] }) {
   const t = () => capabilityUiMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-2">
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().refs}</h3>
+      <h3 class="text-xs font-semibold text-secondary">{t().refs}</h3>
       <DescriptionList
         layout="rows"
         size="sm"
@@ -186,7 +186,7 @@ function SemanticLinks(props: { links: CapabilitySemanticLink[] }) {
   const t = () => capabilityUiMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-2">
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t().links}</h3>
+      <h3 class="text-xs font-semibold text-secondary">{t().links}</h3>
       <div class="flex flex-col gap-1">
         <For each={props.links}>
           {(link) => (

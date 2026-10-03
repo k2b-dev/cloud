@@ -251,25 +251,26 @@ describe("Mail conversation detail panel", () => {
     expect(header).toContain('aria-label="Close conversation details"');
     expect(header).toContain("lg:hidden");
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Workflow"');
-    expect(html).not.toContain(">Active collaborators<");
     expect(html).not.toContain("Here now");
     expect(html).toContain(">Tags<");
     expect(html).not.toContain("Next step");
     expect(html).toContain("Mark as done");
     expect(html).toContain('class="k2b-checkbox-card-field');
-    expect(html.indexOf("Mark as done")).toBeLessThan(html.indexOf(">Workflow<"));
+    // Marking the conversation done is part of its workflow, a field in that section, not a card of its own.
+    expect(html.indexOf("Mark as done")).toBeGreaterThan(html.indexOf(">Workflow<"));
+    expect(html.indexOf("Mark as done")).toBeLessThan(html.indexOf(">Tags<"));
+    expect(html).toContain('data-variant="input"');
     expect(html).toContain('data-scroll-preserve="mail-conversation-detail"');
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Conversation context"');
     expect(html).toContain('aria-label="Conversation history"');
-    expect(html).toContain('aria-label="Active collaborators" class="bg-[var(--ui-surface)] p-3"');
-    expect(html).toContain('aria-label="Contacts" class="bg-[var(--ui-surface)] p-3"');
-    expect(html).toContain('aria-label="Spaces" class="space-y-1 bg-[var(--ui-surface)] p-3"');
+    // Presence, contacts and Spaces are regular sections of the context group, each with its own heading.
+    for (const title of ["Active collaborators", "Contacts", "Spaces"]) expect(html).toMatch(new RegExp(`<h3 id="[^"]+">${title}</h3>`));
+    expect(html).not.toContain("bg-[var(--ui-surface)] p-3");
     expect(html).toContain("Related mail");
     expect(html).toContain("No related mail");
-    expect(html.indexOf('aria-label="Active collaborators"')).toBeGreaterThan(html.indexOf('aria-label="Conversation context"'));
-    expect(html.indexOf('aria-label="Active collaborators"')).toBeLessThan(html.indexOf('aria-label="Contacts"'));
-    expect(html).not.toContain(">Contacts<");
+    expect(html.indexOf(">Active collaborators<")).toBeGreaterThan(html.indexOf('aria-label="Conversation context"'));
+    expect(html.indexOf(">Active collaborators<")).toBeLessThan(html.indexOf(">Contacts<"));
     expect(html).not.toContain("border-t");
     expect(html).toContain('class="k2b-discussion');
     expect(html).toContain('class="k2b-discussion__item');

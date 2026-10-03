@@ -1019,7 +1019,7 @@ const DetailPanelDemo = () => {
         { kind: "component", name: "DescriptionList", from: "@k2b/ui" },
         { kind: "component", name: "Discussion", from: "@k2b/ui" },
       ]}
-      description="Two production-shaped inspectors demonstrate the final contract: padded identity headers, one stable scroll gutter absorbed by the trailing host inset, related surfaces, compact data, and a panel-native comment thread."
+      description="Two production-shaped inspectors demonstrate the final contract: padded identity headers, one stable scroll gutter absorbed by the trailing host inset, one flat frame for every summary, group, lone section and comment thread, and the same heading, icon and count columns in all of them."
       code={`<DetailPanel.Group label="Customer context">
   <DetailPanel.Section title="Company" icon="ti ti-building" tone="accent">
     <DescriptionList layout="rows" size="sm" items={companyItems} />
@@ -1036,6 +1036,8 @@ const DetailPanelDemo = () => {
   </DetailPanel.Section>
   <DetailPanel.Section title="Recent threads" icon="ti ti-history" tone="success">…</DetailPanel.Section>
 </DetailPanel.Group>
+
+<DetailPanel.Section title="Subscription plan details" icon="ti ti-alert-triangle" tone="danger" actions={retry} />
 
 <Discussion label="Comments" icon="ti ti-messages" count={1}>
   <Discussion.List>…</Discussion.List>
@@ -1221,18 +1223,16 @@ const DetailPanelDemo = () => {
                   </DetailPanel.Section>
                 </DetailPanel.Group>
 
-                <DetailPanel.Group label="Subscription context">
-                  <DetailPanel.Section
-                    title="Subscription plan details"
-                    icon="ti ti-alert-triangle"
-                    tone="danger"
-                    actions={
-                      <IconButton variant="ghost" size="xs" label="Retry subscription sync">
-                        <i class="ti ti-refresh" aria-hidden="true" />
-                      </IconButton>
-                    }
-                  />
-                </DetailPanel.Group>
+                <DetailPanel.Section
+                  title="Subscription plan details"
+                  icon="ti ti-alert-triangle"
+                  tone="danger"
+                  actions={
+                    <IconButton variant="ghost" size="xs" label="Retry subscription sync">
+                      <i class="ti ti-refresh" aria-hidden="true" />
+                    </IconButton>
+                  }
+                />
               </DetailPanel.Body>
             </DetailPanel>
           </div>
@@ -1315,7 +1315,7 @@ const DetailPanelDemo = () => {
                 </Discussion>
 
                 <DetailPanel.Group label="Collaboration context">
-                  <DetailPanel.Section title="Online · 1" icon="ti ti-users" tone="success">
+                  <DetailPanel.Section title="Online" icon="ti ti-users" tone="success" meta="1">
                     <div class="ui-detail-panel-grouped__person">
                       <Avatar name="Valentin Kolb" size="xs" />
                       <span>Valentin Kolb</span>

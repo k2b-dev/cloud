@@ -990,7 +990,7 @@ export default function ItemDetailPanel(props: Props) {
               </span>
               <Show when={!props.canWrite}>
                 <span class="inline-flex items-center gap-1 text-dimmed">
-                  <i class="ti ti-lock" aria-hidden="true" /> Read only
+                  <i class="ti ti-lock" aria-hidden="true" /> {t.readOnly}
                 </span>
               </Show>
               <Show when={props.recurringContext}>

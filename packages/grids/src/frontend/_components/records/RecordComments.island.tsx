@@ -183,7 +183,7 @@ export default function RecordComments(props: Props) {
         meta={comments().length}
         actions={
           permissions().canWrite && !composerOpen() ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setComposerOpen(true)}>
+            <Button type="button" variant="ghost" size="xs" onClick={() => setComposerOpen(true)}>
               <i class="ti ti-plus" aria-hidden="true" /> {t().addComment}
             </Button>
           ) : undefined

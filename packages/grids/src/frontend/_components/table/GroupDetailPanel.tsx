@@ -206,7 +206,7 @@ export default function GroupDetailPanel(props: Props) {
             <For each={aggSpecsWithCount()}>
               {(agg) => (
                 <div class="min-w-0">
-                  <div class="flex min-w-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-dimmed">
+                  <div class="flex min-w-0 items-center gap-1.5 text-xs font-medium text-dimmed">
                     <i class="ti ti-math-function shrink-0" />
                     <span class="truncate">{aggLabel(agg)}</span>
                   </div>

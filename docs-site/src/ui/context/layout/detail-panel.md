@@ -29,7 +29,9 @@ set of prominent commands below the identity row. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above. Optional
-metadata sits beside the subtitle instead of competing with the title.
+metadata sits beside the subtitle instead of competing with the title; plain
+text in `meta` uses the subtitle's size and color, while badges and buttons keep
+their own.
 `DetailPanel.Body` is the single scrolling element and accepts a
 `scrollPreserveKey`. Its stable scrollbar gutter prevents content from shifting
 when expanding content first makes the panel overflow. Inside
@@ -52,9 +54,9 @@ The panel uses `--k2b-detail-panel-accent` for restrained identity and action
 accents, with the portable UI accent as its fallback. A host may map that hook
 to its own theme token; `DetailPanel` does not know how the host derives it.
 
-`DetailPanel.Section` is deliberately flat by default. It groups content
-through spacing and a sentence-case title, not a card, divider, or decorative
-background. Pass `icon` for a fixed section icon slot and `tone` to distinguish
+`DetailPanel.Section` draws no frame of its own. It groups content through
+spacing and a sentence-case title, not a card, divider, or decorative
+background; the group or the body frames it. Pass `icon` for a fixed section icon slot and `tone` to distinguish
 portable `accent`, `neutral`, `success`, `warning`, or `danger` roles through
 text color only. Pass `description` for short supporting context, `meta` for a
 count or state, and `actions` for a normal section. Only the description is
@@ -81,10 +83,16 @@ Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. The group owns the
 same quiet surface as the summary, without a border or lines between its
-sections: spacing and the section headings separate them. Sections outside a
-group stay flat. Pass `label` when the shared context benefits from an
-accessible group name. Do not wrap every standalone section or manufacture
-groups only for decoration.
+sections: spacing and the section headings separate them. Pass `label` when the
+shared context benefits from an accessible group name.
+
+Every block in the body has one flat frame. A section placed directly in
+`DetailPanel.Body` is a group of one: it gets the group surface and inset, so
+its icon, title, count, and content start in the same columns as every grouped
+section. A [`Discussion`](/en/ui/layout/discussion) inside the panel does the
+same. Do not wrap a standalone section in a group only to frame it, and do not
+add an application frame, border, or padding around a section. Give every
+section of a panel an `icon` so the titles share one column.
 
 Sections accept arbitrary content. Use `DescriptionList layout="rows"` for
 compact properties. When people edit those properties in place, make them
@@ -94,7 +102,11 @@ row opens its picker. Keep the summary's pencil action for the full edit form.
 Use normal shared inputs for a full form inspector, and the
 appropriate shared list, table, notice, preview, or editor for specialized
 content. Use [`Discussion`](/en/ui/layout/discussion) directly in the body when
-notes or comments need their own labelled composer and author timeline. Do not
+notes or comments need their own labelled composer and author timeline. It
+takes the frame and heading of a section, so it needs no group or wrapper. Rows
+that are not `DetailPanel.Action`, such as a static address or an empty
+message, start at the content edge without their own horizontal padding. A
+left-aligned `Placeholder` in a section does the same on its own. Do not
 add domain variants such as `record`, `mail`, or `workflow` to `DetailPanel`.
 
 Use `DetailPanel.Action` for a full-width destination or command such as a
@@ -280,6 +292,7 @@ state and remain mounted when the section closes.
       </DetailPanel.Summary>
       <DetailPanel.Section
         title="Notes"
+        icon="ti ti-notes"
         meta="0"
         description="Keep decisions with this location"
         actions={<Button variant="ghost" size="xs">Add note</Button>}
@@ -296,7 +309,7 @@ state and remain mounted when the section closes.
         </DetailPanel.Section>
         <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" meta="2" />
       </DetailPanel.Group>
-      <DetailPanel.Section title="History" collapsible>
+      <DetailPanel.Section title="History" icon="ti ti-history" collapsible>
         …
       </DetailPanel.Section>
     </DetailPanel.Body>

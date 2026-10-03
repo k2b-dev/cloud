@@ -1267,16 +1267,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
           <DetailPanel.Body>
             <Show when={error()}>
-              <div
-                class="flex items-start gap-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
-                role="alert"
-              >
-                <i class="ti ti-alert-circle shrink-0" />
+              <NoticeCard tone="danger" role="alert" bodyClass="flex items-start gap-2">
                 <span class="min-w-0 flex-1">{error()}</span>
                 <IconButton label={t().dismissError} size="xs" class="h-6 w-6 shrink-0 text-current" onClick={() => setError("")}>
-                  <i class="ti ti-x" />
+                  <i class="ti ti-x" aria-hidden="true" />
                 </IconButton>
-              </div>
+              </NoticeCard>
             </Show>
 
             <Show when={hasImages()}>
