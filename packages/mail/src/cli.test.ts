@@ -2047,7 +2047,7 @@ test("status reads the aggregate operational health endpoint", async () => {
   expect(text.stdout).toContain("Sync: never completed, 0 running, 0 failed");
 });
 
-test("sync folder separates a finished sync from a missing prerequisite", async () => {
+test("sync folder separates a finished sync from a missing prerequisite before or during the wait", async () => {
   let result: Record<string, unknown> = { folderId: FOLDER_ID, queued: true };
   const server = withMailbox((request) => {
     const path = new URL(request.url).pathname;
@@ -2067,6 +2067,12 @@ test("sync folder separates a finished sync from a missing prerequisite", async 
   const blocked = await runCli(`http://127.0.0.1:${server.port}`, args);
   expect(blocked.exitCode, blocked.stderr).toBe(0);
   expect(blocked.stdout.trim()).toBe(`Folder sync not queued: Mailbox transport is paused (${COMMAND_ID}).`);
+
+  // The mailbox was paused while the request waited for its folder.
+  result = { folderId: FOLDER_ID, queued: true, reason: "Mailbox transport is paused" };
+  const stopped = await runCli(`http://127.0.0.1:${server.port}`, args);
+  expect(stopped.exitCode, stopped.stderr).toBe(0);
+  expect(stopped.stdout.trim()).toBe(`Folder sync stopped: Mailbox transport is paused (${COMMAND_ID}).`);
 });
 
 test("operator run submits a durable typed action with the caller idempotency key", async () => {

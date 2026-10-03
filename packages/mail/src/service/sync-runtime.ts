@@ -5,7 +5,7 @@ import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
-import type { JobContext, Worker } from "@k2b/sync";
+import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
 import { redis, sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { truncateUtf8 } from "../lib/utf8";
@@ -2311,35 +2311,31 @@ const SYNC_FOLDER_MAX_ATTEMPTS = 5;
 // errored binding waits for its next verification instead of repeating the failure every minute.
 const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 
-/** The folder's job gave up. Its last run says so, for a sync request that waits for the folder. */
-const markFolderDegraded = async (folderId: string): Promise<void> => {
-  await sql
-    .begin(async (tx) => {
-      await tx`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid`;
-      await tx`
-        UPDATE mail.sync_runs
-        SET stats = stats || '{"gaveUp": true}'::jsonb
-        WHERE state = 'failed' AND id = (
-          SELECT run.id
-          FROM mail.sync_runs run
-          JOIN mail.folders folder ON folder.remote_resource_id = run.remote_resource_id
-          WHERE folder.id = ${folderId}::uuid AND run.stats ->> 'folderId' = ${folderId}
-          ORDER BY run.started_at DESC
-          LIMIT 1
-        )
-      `;
-    })
-    .catch((cause: Error) => log.error("Failed to mark a Mail folder as degraded", { folderId, error: cause.message }));
-};
-
-/** `backfill` marks a continuation that only imports older mail or reconciliation windows. */
-type SyncFolderJobInput = { folderId: string; backfill?: boolean };
-
 // A sync requested while the folder's job runs joins that job and keeps its input. This marker
 // lets the job's next batch rank as a folder sync again, or gives the request a batch of its own
 // when the job would end. A request counts this long: it outlasts a long batch and a few retries.
 export const FOLDER_SYNC_REQUEST_MS = 10 * 60_000;
 const syncRequestKey = (folderId: string): string => `mail:sync-requested:${folderId}`;
+// When the folder's job last gave up, as long as a request counts. A job can give up before it
+// records a run, for example when no binding may read the folder, so its runs cannot say so.
+const syncGaveUpKey = (folderId: string): string => `mail:sync-gave-up:${folderId}`;
+
+/** The folder's job gave up; a sync request that waits for the folder learns when. */
+const markFolderDegraded = async (folderId: string): Promise<void> => {
+  try {
+    // Database time, like the request time it is compared with.
+    const [folder] = await sql<{ gave_up_at: Date }[]>`
+      UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid RETURNING now() AS gave_up_at
+    `;
+    if (!folder) return;
+    await redis.send("SET", [syncGaveUpKey(folderId), String(folder.gave_up_at.getTime()), "PX", String(FOLDER_SYNC_REQUEST_MS)]);
+  } catch (cause) {
+    log.error("Failed to mark a Mail folder as degraded", { folderId, error: cause instanceof Error ? cause.message : String(cause) });
+  }
+};
+
+/** `backfill` marks a continuation that only imports older mail or reconciliation windows. */
+type SyncFolderJobInput = { folderId: string; backfill?: boolean };
 
 const syncFolderJob = lazySync((sync) =>
   sync.job<SyncFolderJobInput>({
@@ -2389,25 +2385,27 @@ export const runSyncFolderJob = async (ctx: Pick<JobContext<SyncFolderJobInput>,
   }
 };
 
+/** Retries a failed `mail:sync-folder` attempt or gives up after the last one; exported for tests. */
+export const onSyncFolderJobError = async ({
+  context,
+  error,
+}: {
+  context: Pick<JobContext<SyncFolderJobInput>, "input" | "attempt">;
+  error: Error;
+}): Promise<JobFailureDecision> => {
+  if (context.attempt < SYNC_FOLDER_MAX_ATTEMPTS) return { action: "retry" };
+  await markFolderDegraded(context.input.folderId);
+  log.error("Mail folder sync exhausted retries", {
+    folderId: context.input.folderId,
+    attempt: context.attempt,
+    code: normalizeSyncErrorCode(error),
+  });
+  return { action: "dead_letter", reason: error.message };
+};
+
 let syncFolderJobWorker: Worker | undefined;
 const startSyncFolderJob = async (): Promise<void> => {
-  syncFolderJobWorker = await syncFolderJob().process(
-    {
-      onError: async ({ context, error }) => {
-        if (context.attempt >= SYNC_FOLDER_MAX_ATTEMPTS) {
-          await markFolderDegraded(context.input.folderId);
-          log.error("Mail folder sync exhausted retries", {
-            folderId: context.input.folderId,
-            attempt: context.attempt,
-            code: normalizeSyncErrorCode(error),
-          });
-          return { action: "dead_letter", reason: error.message };
-        }
-        return { action: "retry" };
-      },
-    },
-    runSyncFolderJob,
-  );
+  syncFolderJobWorker = await syncFolderJob().process({ onError: onSyncFolderJobError }, runSyncFolderJob);
 };
 
 // An open reader may hold an envelope-only snapshot of a message in this batch.
@@ -3025,53 +3023,50 @@ export const enqueueFolderSync = async (folderId: string): Promise<void> => {
  * one of them. A batch that started after the request saw every message delivered before it, and,
  * with CONDSTORE, every flag change made before it. A folder has synced once Mail holds that
  * state: its cursor reached the batch's highest UID and modification sequence. Older mail may
- * still be importing. It has failed once its job gave up after a failed batch since the request.
+ * still be importing. A folder that has not synced has failed once its job gave up after the
+ * request.
  */
 export const requestedSyncProgress = async (params: {
   mailboxId: string;
   folderId: string | null;
   since: Date;
 }): Promise<{ folders: number; synced: number; failed: number }> => {
-  const [progress] = await sql<{ folders: number; synced: number; failed: number }[]>`
-    SELECT
-      count(*)::int AS folders,
-      count(*) FILTER (WHERE folder.synced)::int AS synced,
-      count(*) FILTER (WHERE NOT folder.synced AND folder.failed)::int AS failed
-    FROM (
+  // One pass over the mailbox's runs since the request, not one per folder.
+  const folders = await sql<{ id: string; synced: boolean }[]>`
+    WITH runs AS MATERIALIZED (
       SELECT
-        EXISTS (
-          SELECT 1
-          FROM mail.sync_runs run
-          WHERE run.remote_resource_id = f.remote_resource_id
-            AND run.started_at >= ${params.since}::timestamptz
-            AND run.stats ->> 'folderId' = f.id::text
-            AND run.state = 'completed'
-            AND run.cursor_after ->> 'uidValidity' = f.envelope_cursor ->> 'uidValidity'
-            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= (run.stats ->> 'statusHighUid')::bigint
-            AND (
-              run.stats ->> 'statusModseq' IS NULL
-              OR (f.envelope_cursor ->> 'highestModseq')::numeric >= (run.stats ->> 'statusModseq')::numeric
-            )
-        ) AS synced,
-        EXISTS (
-          SELECT 1
-          FROM mail.sync_runs run
-          WHERE run.remote_resource_id = f.remote_resource_id
-            AND run.started_at >= ${params.since}::timestamptz
-            AND run.stats ->> 'folderId' = f.id::text
-            AND run.state = 'failed'
-            AND run.stats ->> 'gaveUp' = 'true'
-        ) AS failed
-      FROM mail.folders f
-      JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+        run.stats ->> 'folderId' AS folder_id,
+        run.cursor_after ->> 'uidValidity' AS uid_validity,
+        (run.stats ->> 'statusHighUid')::bigint AS high_uid,
+        (run.stats ->> 'statusModseq')::numeric AS modseq
+      FROM mail.remote_resources rr
+      JOIN mail.sync_runs run ON run.remote_resource_id = rr.id
       WHERE rr.mailbox_id = ${params.mailboxId}::uuid
-        AND (${params.folderId}::uuid IS NULL OR f.id = ${params.folderId}::uuid)
-        AND f.selected_for_sync = true
-        AND f.discovery_state = 'active'
-        AND f.sync_status <> 'excluded'
-    ) folder
+        AND run.started_at >= ${params.since}::timestamptz
+        AND run.state = 'completed'
+        AND run.stats ? 'statusHighUid'
+    )
+    SELECT
+      f.id::text AS id,
+      COALESCE(bool_or(
+        run.uid_validity = f.envelope_cursor ->> 'uidValidity'
+        AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= run.high_uid
+        AND (run.modseq IS NULL OR (f.envelope_cursor ->> 'highestModseq')::numeric >= run.modseq)
+      ), false) AS synced
+    FROM mail.folders f
+    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+    LEFT JOIN runs run ON run.folder_id = f.id::text
+    WHERE rr.mailbox_id = ${params.mailboxId}::uuid
+      AND (${params.folderId}::uuid IS NULL OR f.id = ${params.folderId}::uuid)
+      AND f.selected_for_sync = true
+      AND f.discovery_state = 'active'
+      AND f.sync_status <> 'excluded'
+    GROUP BY f.id
   `;
-  return progress ?? { folders: 0, synced: 0, failed: 0 };
+  const pending = folders.filter((folder) => !folder.synced).map((folder) => folder.id);
+  const gaveUpAt = pending.length > 0 ? await redis.mget(...pending.map(syncGaveUpKey)) : [];
+  const failed = gaveUpAt.filter((at) => at != null && Number(at) >= params.since.getTime()).length;
+  return { folders: folders.length, synced: folders.length - pending.length, failed };
 };
 
 export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {

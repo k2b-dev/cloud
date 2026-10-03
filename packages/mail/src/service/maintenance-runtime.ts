@@ -142,14 +142,14 @@ const syncTargetFolderId = (command: Pick<DbMaintenanceCommand, "kind" | "target
   command.kind === "sync_folder" ? folderTargetSchema.parse(parseRecord(command.target)).folderId : null;
 
 /** Why the mailbox, or the one folder, cannot synchronize now; null when it can. */
-const syncUnavailable = async (mailboxId: string, folderId: string | null): Promise<{ code: string; message: string } | null> => {
+const syncUnavailable = async (mailboxId: string, folderId: string | null): Promise<string | null> => {
   // The sync job resolves the same execution first.
   const execution = await resolveMailExecution({
     mailboxId,
     operation: "backgroundSync",
     folderRequirements: folderId ? [{ folderId, rights: ["read"] }] : [],
   });
-  return execution.ok ? null : execution.error;
+  return execution.ok ? null : execution.error.message;
 };
 
 const executeFolderRebuild = async (command: DbMaintenanceCommand, folderId: string, enqueueWork: boolean): Promise<JsonRecord> => {
@@ -236,11 +236,8 @@ const executeMaintenanceWork = async (
     const folderId = syncTargetFolderId(command);
     // Report the prerequisite instead of queueing work that cannot run and would overwrite the
     // mailbox's recorded reason with a generic failure.
-    const unavailable = await syncUnavailable(command.mailbox_id, folderId);
-    if (unavailable) {
-      const reason = unavailable.message;
-      return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
-    }
+    const reason = await syncUnavailable(command.mailbox_id, folderId);
+    if (reason) return folderId ? { folderId, queued: false, reason } : { queuedFolders: 0, reason };
   }
   if (command.kind === "sync_mailbox") {
     if (enqueueWork) return { queuedFolders: await enqueueMailboxSync(command.mailbox_id) };
@@ -310,8 +307,9 @@ const queuedFolderSyncs = (command: DbMaintenanceCommand, result: JsonRecord): b
 const syncCommandFailure = (code: string, message: string): Error => Object.assign(new Error(message), { code });
 
 /**
- * Ends a sync command whose folder syncs were queued once each folder synced or failed after the
- * request, or once the request ran out. Returns null when the command is no longer waiting.
+ * Ends a sync command whose folder syncs were queued once each folder synced after the request, a
+ * folder's sync gave up, the mailbox stopped synchronizing, or the request ran out. Returns null
+ * when the command is no longer waiting.
  */
 const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | null> => {
   const [command] = await sql<
@@ -331,10 +329,12 @@ const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | n
   if (!command) return null;
   const result = parseRecord(command.result);
   const folderId = syncTargetFolderId(command);
-  const unavailable = await syncUnavailable(command.mailbox_id, folderId);
-  if (unavailable) {
-    await finishMaintenanceCommand({ command, state: "failed", result, error: syncCommandFailure(unavailable.code, unavailable.message) });
-    return { state: "failed", busyRetryAfterMs: null };
+  // The mailbox stopped synchronizing, for example because it was paused. The request ends with
+  // the reason, as one that finds the mailbox so before it queues anything.
+  const reason = await syncUnavailable(command.mailbox_id, folderId);
+  if (reason) {
+    await finishMaintenanceCommand({ command, state: "confirmed", result: { ...result, reason } });
+    return { state: "confirmed", busyRetryAfterMs: null };
   }
   // Mail delivered before the request is in once each folder synced after it. The request counts
   // from this attempt, which queued the folder syncs: a retried command does not settle on runs

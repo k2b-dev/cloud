@@ -13,7 +13,7 @@ import { enqueueMailCommand, runMailboxCommandsJob, startCommandWorkers, stopCom
 import { createActorCommand, createMailCommand } from "./commands";
 import { type ConnectorEnvelope, imapSmtpConnector, type RemoteMessageState } from "./connectors";
 import { createDraft } from "./drafts";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, updateMailbox } from "./mailboxes";
 import { runMaintenanceJob } from "./maintenance-runtime";
 import { createProviderConnection } from "./provider-connections";
 import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
@@ -21,6 +21,7 @@ import {
   enqueueFolderSync,
   enqueueMailboxHydration,
   FOLDER_SYNC_REQUEST_MS,
+  onSyncFolderJobError,
   runSyncFolderJob,
   startHydrationRuntime,
   stopHydrationRuntime,
@@ -1151,6 +1152,76 @@ suite("mail provider lease fairness", () => {
     await Promise.all([runFolderSyncJob(inbox), runFolderSyncJob(mailbox.folderId(ARCHIVE)), runFolderSyncJob(mailbox.folderId(SENT))]);
     expect(await maintenanceTurn(retried!.input)).toBeNull();
     expect(await commandOutcome(failing)).toEqual({ state: "confirmed", code: null, result: { queuedFolders: 3 } });
+  }, 60_000);
+
+  test("a waited sync fails once a folder's job gives up after the request, also on a batch that started before it or never reached the provider", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("gave-up");
+    const inbox = mailbox.folderId(INBOX);
+    const archive = mailbox.folderId(ARCHIVE);
+
+    // The request comes while a batch runs that then stops on mail Postgres cannot store.
+    store(mailbox.account, INBOX, {
+      messageId: `<gave-up-unstorable-${suffix}@example.test>`,
+      subject: "Re\u0000port",
+      internalDate: new Date(),
+    });
+    const late: { commandId?: string; waiting?: { delayMs: number; input: MaintenanceJobInput } | null } = {};
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== INBOX) return;
+      afterStatus = null;
+      late.commandId = await requestSync(mailbox, "gave-up-late", INBOX);
+      late.waiting = await maintenanceTurn({ commandId: late.commandId });
+    };
+    try {
+      expect(await syncFolderTurn(inbox)).toEqual({ delayMs: 15 * 60_000, input: { folderId: inbox } });
+    } finally {
+      afterStatus = null;
+    }
+    expect(late.waiting?.input).toEqual({ commandId: late.commandId!, awaitingSync: true });
+    expect(await maintenanceTurn(late.waiting!.input)).toBeNull();
+    expect(await commandOutcome(late.commandId!)).toMatchObject({ state: "failed", code: "SYNC_FAILED" });
+
+    // No binding may read Archive any more, so its job fails before it records a run and gives up
+    // after its last attempt. That ends a waited mailbox sync while INBOX and Sent have not synced.
+    await sql`UPDATE mail.binding_folder_refs SET effective_rights = '{}' WHERE folder_id = ${archive}::uuid`;
+    const commandId = await requestSync(mailbox, "gave-up-unreadable");
+    const waiting = await maintenanceTurn({ commandId });
+    expect(waiting?.input).toEqual({ commandId, awaitingSync: true });
+    const failure = await runSyncFolderJob({
+      input: { folderId: archive },
+      heartbeat: async () => undefined,
+      resubmit: () => undefined,
+    }).then(
+      () => null,
+      (error: Error) => error,
+    );
+    expect(failure).toMatchObject({ code: "NO_SYNC_BINDING" });
+    expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 4 }, error: failure! })).toEqual({
+      action: "retry",
+    });
+    expect(await maintenanceTurn(waiting!.input)).toEqual(waiting);
+    expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure! })).toMatchObject({
+      action: "dead_letter",
+    });
+    expect(await maintenanceTurn(waiting!.input)).toBeNull();
+    expect(await commandOutcome(commandId)).toMatchObject({ state: "failed", code: "SYNC_FAILED", result: { queuedFolders: 3 } });
+  }, 60_000);
+
+  test("a waited sync whose mailbox is paused meanwhile ends with the reason, like a request that finds it paused", async () => {
+    const mailbox = await connect("paused");
+    const commandId = await requestSync(mailbox, "paused-sync");
+    const waiting = await maintenanceTurn({ commandId });
+    expect(waiting?.input).toEqual({ commandId, awaitingSync: true });
+
+    const paused = await updateMailbox({ context, mailboxId: mailbox.mailboxId, syncEnabled: false });
+    if (!paused.ok) throw new Error(JSON.stringify(paused.error));
+    expect(await maintenanceTurn(waiting!.input)).toBeNull();
+    expect(await commandOutcome(commandId)).toEqual({
+      state: "confirmed",
+      code: null,
+      result: { queuedFolders: 3, reason: "Mailbox transport is paused" },
+    });
   }, 60_000);
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {
