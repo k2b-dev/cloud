@@ -79,6 +79,12 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`
     CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_mailbox_idx ON mail.personal_mailbox_preferences USING btree (mailbox_id)
   `.simple();
+  // Body downloads in progress, so the recovery of claims a stopped worker left behind reads only
+  // them instead of every message. Building it reads the table once, on the first start after the update.
+  await tx`
+    CREATE INDEX IF NOT EXISTS message_contents_hydration_claim_idx ON mail.message_contents USING btree (hydration_claimed_at)
+    WHERE hydration_status = 'hydrating'
+  `.simple();
 };
 
 const migrationErrorCode = (error: unknown): string | null => {

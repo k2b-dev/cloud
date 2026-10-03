@@ -201,7 +201,11 @@ export const getOperatorActionEligibility = async (params: {
       SELECT COUNT(*)::int AS count
       FROM mail.message_contents
       WHERE mailbox_id = ${params.mailboxId}::uuid
-        AND hydration_status IN ('envelope', 'headers', 'body', 'failed')
+        AND (
+          hydration_status IN ('envelope', 'headers', 'body', 'failed')
+          -- A download whose worker stopped before it saved, as the repair retries it.
+          OR (hydration_status = 'hydrating' AND hydration_claimed_at < now() - interval '15 minutes')
+        )
     `;
     return Number(messages?.count ?? 0) > 0
       ? eligibility(params.input, true)

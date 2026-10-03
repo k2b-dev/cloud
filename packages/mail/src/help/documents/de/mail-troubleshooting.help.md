@@ -28,7 +28,9 @@ Mail prüft den Zugriff beim Laden der Seite und bei Live-Aktualisierungen. Wurd
 5. Fehlen Ordner oder haben sie sich geändert, wähle für die aktive Verbindung **Neu erkennen**.
 :::
 
-Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert** und ersetzt den Hinweis durch den Inhalt, sobald die Synchronisierung abgeschlossen ist, ohne dass du die Seite neu laden musst. Zeigt die Konversationsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
+Die erste Synchronisierung lädt ältere Nachrichten nach und nach. Eine Nachricht kann erscheinen, bevor ihr vollständiger Inhalt oder die Daten ihrer Anhänge synchronisiert sind. Der Lesebereich zeigt dann **Der Nachrichteninhalt wird noch synchronisiert** und ersetzt den Hinweis durch den Inhalt, sobald die Synchronisierung abgeschlossen ist, ohne dass du die Seite neu laden musst. Startet Mail neu, während es einen Nachrichteninhalt herunterlädt, lädt es diesen Inhalt innerhalb von etwa einer halben Stunde erneut. Zeigt die Konversationsliste **Live-Aktualisierung pausiert**, wähle **Nachricht aktualisieren**, um den aktuellen Stand zu laden.
+
+Solange der E-Mail-Anbieter nicht erreichbar ist oder Anmeldungen nur vorübergehend ablehnt, etwa während einer Wartung oder weil zu viele Verbindungen offen sind, versucht Mail es weiter und macht von selbst weiter, sobald der Anbieter wieder antwortet. Nur ein Passwort oder Zugangsdaten, die der Anbieter ablehnt, müssen ersetzt werden.
 
 Ein Absender- oder Empfängereintrag mit weniger als 3 oder mehr als 320 Zeichen, etwa ein Textfragment aus einer fehlerhaften Nachricht, lässt sich nicht als Adresse speichern. Mail übernimmt die Nachricht trotzdem und lässt nur diesen Eintrag weg; der ursprüngliche Header bleibt in den Details der Unterhaltung unter **Header** sichtbar.
 

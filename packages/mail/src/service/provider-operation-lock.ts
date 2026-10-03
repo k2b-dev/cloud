@@ -6,6 +6,13 @@ import { withLeaseHeartbeat } from "./lease-heartbeat";
 
 export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
 
+/**
+ * Jobs of one kind, such as folder syncs or sends, that one Mail process runs at once. Only the
+ * job holding a remote mailbox's provider lease works on it, and the others resubmit, so each
+ * place serves another mailbox: a slow or unreachable provider holds one place, not the queue.
+ */
+export const MAIL_PROVIDER_JOB_CONCURRENCY = 4;
+
 export const mailProviderOperationMutex = lazySync((sync) =>
   sync.mutex({
     id: "mail:remote-resource-sync",

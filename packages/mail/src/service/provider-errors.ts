@@ -8,9 +8,46 @@ export const providerErrorCode = (error: unknown, fallback: string): string => {
 export const providerErrorMessage = (error: unknown, fallback: string): string =>
   (error instanceof Error ? error.message : fallback).slice(0, 1_000);
 
+// RFC 5530 codes with which an IMAP server refuses a login for now, not the credentials: the
+// service is temporarily unavailable, the account is in use elsewhere, or a connection limit is
+// reached.
+const TEMPORARY_LOGIN_REFUSAL_CODES = new Set(["UNAVAILABLE", "INUSE", "LIMIT"]);
+
+/**
+ * A login that failed for now, not because of the credentials. ImapFlow marks every failed LOGIN
+ * or AUTHENTICATE as an authentication failure, also one whose connection broke before the reply
+ * and one the server refused with a temporary RFC 5530 code. An SMTP server answers a login it
+ * cannot check for now with a 4xx reply, such as 454 (RFC 4954).
+ */
+export const isTemporaryLoginFailure = (error: unknown): boolean => {
+  const value = error as { code?: unknown; authenticationFailed?: unknown; serverResponseCode?: unknown; responseCode?: unknown } | null;
+  if (value?.authenticationFailed === true) {
+    return (
+      (typeof value.serverResponseCode === "string" && TEMPORARY_LOGIN_REFUSAL_CODES.has(value.serverResponseCode.toUpperCase())) ||
+      (typeof value.code === "string" && TRANSIENT_PROVIDER_CODES.has(value.code))
+    );
+  }
+  const responseCode = Number(value?.responseCode);
+  return value?.code === "EAUTH" && responseCode >= 400 && responseCode < 500;
+};
+
+/** The provider's original failures behind a failed IMAP and SMTP verification, see imapSmtpConnector.verify. */
+const verificationFailures = (error: unknown): unknown[] => {
+  const value = error as { code?: unknown; failures?: unknown } | null;
+  return value?.code === "PROVIDER_TRANSPORT_VERIFICATION_FAILED" && Array.isArray(value.failures) ? value.failures : [];
+};
+
+/** The provider rejected the credentials, so the account must be reconnected. A login that failed only for now is not. */
 export const isProviderAuthenticationFailure = (error: unknown, code = providerErrorCode(error, "")): boolean => {
-  const value = error as { authenticationFailed?: unknown; responseCode?: unknown } | null;
-  return value?.authenticationFailed === true || code === "EAUTH" || code.includes("AUTHENTICATION") || code.includes("AUTH_FAILED");
+  if (isTemporaryLoginFailure(error)) return false;
+  const value = error as { authenticationFailed?: unknown } | null;
+  return (
+    value?.authenticationFailed === true ||
+    code === "EAUTH" ||
+    code.includes("AUTHENTICATION") ||
+    code.includes("AUTH_FAILED") ||
+    verificationFailures(error).some((failure) => isProviderAuthenticationFailure(failure))
+  );
 };
 
 /**
@@ -62,11 +99,15 @@ const TRANSIENT_PROVIDER_CODES = new Set([
 ]);
 
 /**
- * The provider could not be reached or the connection broke. Nothing about the request itself
- * failed, so the same work can succeed once the connection recovers.
+ * The provider could not be reached, the connection broke, or the login failed for now. Nothing
+ * about the request or the credentials failed, so the same work can succeed once the provider
+ * recovers.
  */
 export const isTransientProviderFailure = (error: unknown): boolean => {
   // The raw code, because providerErrorCode drops ImapFlow's mixed-case codes such as NoConnection.
   const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" && TRANSIENT_PROVIDER_CODES.has(code);
+  if (typeof code === "string" && TRANSIENT_PROVIDER_CODES.has(code)) return true;
+  // A failed verification counts when IMAP, SMTP, or both failed only transiently.
+  const failures = verificationFailures(error);
+  return isTemporaryLoginFailure(error) || (failures.length > 0 && failures.every(isTransientProviderFailure));
 };

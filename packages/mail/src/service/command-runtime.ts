@@ -38,6 +38,7 @@ import { isTransientProviderFailure } from "./provider-errors";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
 import {
   acquireProviderLease,
+  MAIL_PROVIDER_JOB_CONCURRENCY,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
   providerBusyRetryAfterMs,
@@ -3616,9 +3617,6 @@ const REQUEUED_COMMAND_RETRY_SECONDS = 30;
 // the mailbox's job looks for new commands this often: a command created meanwhile joins that
 // job instead of starting its own.
 const MAILBOX_COMMAND_POLL_MS = 2_000;
-// Mailboxes whose commands one Mail process runs at once. Each holds at most one provider lease
-// and one provider connection, and commands of one mailbox still run one after another.
-const MAILBOX_COMMAND_CONCURRENCY = 4;
 
 /** The mailbox's next mutation command in creation order, and how long until it may run. */
 const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wait_ms: number } | null> => {
@@ -3829,7 +3827,8 @@ export const runMailboxCommandsJob = async (
 
 let mutationJobWorker: Worker | undefined;
 const startMutationJob = async (): Promise<void> => {
-  mutationJobWorker = await mutationJob().process({ concurrency: MAILBOX_COMMAND_CONCURRENCY }, runMailboxCommandsJob);
+  // Commands of one mailbox still run one after another: each mailbox has one coalesced job.
+  mutationJobWorker = await mutationJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, runMailboxCommandsJob);
 };
 
 const outboxJob = lazySync((sync) =>
@@ -3840,7 +3839,7 @@ const outboxJob = lazySync((sync) =>
 );
 let outboxJobWorker: Worker | undefined;
 const startOutboxJob = async (): Promise<void> => {
-  outboxJobWorker = await outboxJob().process({}, async (ctx) => {
+  outboxJobWorker = await outboxJob().process({ concurrency: MAIL_PROVIDER_JOB_CONCURRENCY }, async (ctx) => {
     let state: string | null;
     try {
       state = await executeOutboxSubmissionWithHeartbeat(ctx.input.outboxId, async (loaded) => {
