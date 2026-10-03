@@ -19,6 +19,42 @@ describe("Mail API composition", () => {
     expect(conversationResolver).toBeGreaterThan(assign);
   });
 
+  test("reaches every static path segment before an earlier route can claim it as an ID", () => {
+    // Hono runs matching routes in registration order. A resolver middleware runs for every later route
+    // its pattern matches, and an earlier handler of the same method answers first; either would read a
+    // static segment in its ID position (`/mailboxes/deleted`) as an ID and answer 404.
+    // The sender identity resolver passes `default` through to `default/setup` on its own.
+    const passedThrough = new Set(["/mailboxes/:mailboxId/sender-identities/:senderIdentityId/* default"]);
+    const segments = (path: string) => path.split("/").filter(Boolean);
+    const claimedSegment = (earlierPath: string, routePath: string): string | null => {
+      const pattern = segments(earlierPath);
+      const route = segments(routePath);
+      const open = pattern.at(-1) === "*";
+      const fixed = open ? pattern.slice(0, -1) : pattern;
+      if (open ? route.length < fixed.length : route.length !== fixed.length) return null;
+      let claimed: string | null = null;
+      for (const [index, part] of fixed.entries()) {
+        const segment = route[index] ?? "";
+        if (!part.startsWith(":")) {
+          if (part !== segment) return null;
+        } else if (!segment.startsWith(":")) claimed ??= segment;
+      }
+      return claimed;
+    };
+    const shadowed = api.routes.flatMap((route, index) =>
+      route.method === "ALL"
+        ? []
+        : api.routes.slice(0, index).flatMap((earlier) => {
+            if ((earlier.method !== "ALL" && earlier.method !== route.method) || !earlier.path.includes("/:")) return [];
+            const segment = claimedSegment(earlier.path, route.path);
+            return segment === null || passedThrough.has(`${earlier.path} ${segment}`)
+              ? []
+              : [`${route.method} ${route.path} <- ${earlier.method} ${earlier.path}`];
+          }),
+    );
+    expect([...new Set(shadowed)]).toEqual([]);
+  });
+
   test("exposes explicit platform-admin mailbox recovery routes", () => {
     expect(api.routes.some((route) => route.method === "GET" && route.path === "/admin/mailboxes/:mailboxId/operations")).toBe(true);
     expect(api.routes.some((route) => route.method === "GET" && route.path === "/admin/mailboxes/:mailboxId/access")).toBe(true);

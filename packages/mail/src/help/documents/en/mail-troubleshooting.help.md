@@ -28,7 +28,9 @@ Access is checked when the page loads and during live updates. If access was rev
 5. If folders are missing or changed, select **Rediscover** for the active binding.
 :::
 
-Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing. The reader then shows **Body is still synchronizing** and replaces it with the body as soon as synchronization completes, without a page reload. If the conversation list shows **Updates paused**, select **Refresh message** to load the current state.
+Initial synchronization loads history progressively. A message can appear before its complete body or attachment bytes finish synchronizing. The reader then shows **Body is still synchronizing** and replaces it with the body as soon as synchronization completes, without a page reload. If Mail restarts while it downloads a body, it downloads that body again within about half an hour. If the conversation list shows **Updates paused**, select **Refresh message** to load the current state.
+
+While the mail provider cannot be reached, or refuses logins only for a while, for example during maintenance or because too many connections are open, Mail keeps trying and continues on its own once the provider answers again. Only a password or credential the provider rejects needs a new one.
 
 A sender or recipient entry shorter than 3 or longer than 320 characters, such as a text fragment in a malformed message, cannot be stored as an address. Mail still imports the message and leaves out only that entry; the original header remains under **Headers** in the conversation details.
 

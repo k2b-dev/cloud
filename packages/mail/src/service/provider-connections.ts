@@ -8,7 +8,7 @@ import { auditActorFromRequest, type MailRequestContext, permissionFromScopes } 
 import { imapSmtpConnector } from "./connectors";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
-import { providerErrorDetail } from "./provider-errors";
+import { isTemporaryLoginFailure, providerErrorDetail } from "./provider-errors";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
@@ -107,6 +107,7 @@ const normalizeProviderError = (error: unknown, secrets: readonly string[] = [])
   const detail = providerErrorDetail(error, secrets);
   const withDetail = (message: string): ServiceError => err.badInput(detail ? `${message}: ${detail}` : message);
   const code = typeof value?.code === "string" ? value.code.toUpperCase() : "";
+  if (isTemporaryLoginFailure(error)) return withDetail("The provider could not complete the login for now");
   if (value?.authenticationFailed === true || code === "EAUTH" || code.includes("AUTH")) {
     return withDetail("Provider authentication failed");
   }

@@ -2542,6 +2542,19 @@ suite("mail lifecycle control plane", () => {
       VALUES (${newShortId()}, ${mailboxId}::uuid, '<hydrate@example.com>', 'Hydrate', now(), 1, ${"b".repeat(64)}, 'failed', 5)
       RETURNING id
     `;
+    // Two downloads on their last attempt: one whose worker stopped an hour ago, one still running.
+    const [interrupted, running] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id,
+        mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, hydration_attempt,
+        hydration_claim_id, hydration_claimed_at
+      )
+      VALUES
+        (${newShortId()}, ${mailboxId}::uuid, '<interrupted@example.com>', 'Interrupted', now(), 1, ${"1".repeat(64)},
+          'hydrating', 5, gen_random_uuid(), now() - interval '1 hour'),
+        (${newShortId()}, ${mailboxId}::uuid, '<running@example.com>', 'Running', now(), 1, ${"2".repeat(64)},
+          'hydrating', 5, gen_random_uuid(), now())
+      RETURNING id
+    `;
     const hydrate = await createMailCommand({
       context: adminContext,
       mailboxId,
@@ -2555,12 +2568,15 @@ suite("mail lifecycle control plane", () => {
         enqueueWork: false,
       }),
     ).toBe("confirmed");
-    const [hydrated] = await sql<{ hydration_status: string; hydration_attempt: number }[]>`
-      SELECT hydration_status, hydration_attempt FROM mail.message_contents WHERE id = ${failed!.id}::uuid
+    const hydrationStates = await sql<{ id: string; hydration_status: string; hydration_attempt: number }[]>`
+      SELECT id, hydration_status, hydration_attempt
+      FROM mail.message_contents
+      WHERE id IN (${failed!.id}::uuid, ${interrupted!.id}::uuid, ${running!.id}::uuid)
     `;
-    expect(hydrated).toEqual({
-      hydration_status: "envelope",
-      hydration_attempt: 0,
+    expect(Object.fromEntries(hydrationStates.map(({ id, ...state }) => [id, state]))).toEqual({
+      [failed!.id]: { hydration_status: "envelope", hydration_attempt: 0 },
+      [interrupted!.id]: { hydration_status: "envelope", hydration_attempt: 0 },
+      [running!.id]: { hydration_status: "hydrating", hydration_attempt: 5 },
     });
   });
 

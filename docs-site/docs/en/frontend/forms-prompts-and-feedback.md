@@ -70,12 +70,15 @@ progress is measurable.
 
 Choose one channel per outcome:
 
-- no success message when the result shows where the user acted;
-- `toast.success()` when the effect is not on screen, with Undo where it
-  exists;
+- no visible success message when the result shows where the user acted;
+  announce it politely for screen readers when the focused control does not
+  say it, for example after a shortcut or when the control was replaced;
+- `toast.success()` when the effect is not on screen, including an item the
+  active filter now hides, with Undo where it exists;
 - `toast.error()` with a Retry action when a single action failed and
   repeating it is safe;
-- inline field errors for input that blocks a form;
+- inline errors for input that blocks a form, and for a failed save from a
+  dialog that can stay open until the server answers;
 - `prompts.confirm()` before a destructive action, and `prompts.error()`
   only for a failure the user must read and decide on;
 - a visible error state for failed content loading.

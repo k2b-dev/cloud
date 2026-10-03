@@ -100,8 +100,9 @@ export default function ItemLinksSection(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.linkResourceFailed));
     },
     onSuccess: () => props.onChanged(),
-    // The picker has closed, so Retry links the captured choice to the same item.
-    onError: (error, context) => retryToast(error.message, t.retry, () => context && linkReference.mutate(context.intent)),
+    // The picker has closed, so Retry links the captured choice to the same item, and stays until closed.
+    onError: (error, context) =>
+      retryToast(error.message, t.retry, () => context && linkReference.mutate(context.intent), { untilClosed: true }),
   });
 
   type AddLinkIntent = { itemId: string; link: { url: string; label: string | null } };
@@ -118,8 +119,8 @@ export default function ItemLinksSection(props: Props) {
       setFilled(null);
       props.onChanged();
     },
-    // The form has closed, so Retry adds the captured link to the same item.
-    onError: (error, context) => retryToast(error.message, t.retry, () => context && addLink.mutate(context.intent)),
+    // The form has closed, so Retry adds the captured link to the same item, and stays until closed.
+    onError: (error, context) => retryToast(error.message, t.retry, () => context && addLink.mutate(context.intent), { untilClosed: true }),
   });
 
   const removeLink = mutations.create<void, string>({

@@ -53,17 +53,19 @@ suite("mail baseline schema", () => {
     await migrate();
   });
 
-  test("adds tables created after the baseline to a database installed before them", async () => {
+  test("adds tables and indexes created after the baseline to a database installed before them", async () => {
     await migrate();
     await sql`DROP TABLE mail.personal_mailbox_preferences`;
+    await sql`DROP INDEX mail.message_contents_hydration_claim_idx`;
     await migrate();
-    const [shape] = await sql<{ table_exists: boolean; versions: number }[]>`
+    const [shape] = await sql<{ table_exists: boolean; claim_index_exists: boolean; versions: number }[]>`
       SELECT
         to_regclass('mail.personal_mailbox_preferences') IS NOT NULL AS table_exists,
+        to_regclass('mail.message_contents_hydration_claim_idx') IS NOT NULL AS claim_index_exists,
         (SELECT count(*)::int FROM mail.schema_migrations) AS versions
     `;
     // No version is recorded, so an older Mail image still starts on the upgraded database.
-    expect(shape).toEqual({ table_exists: true, versions: 1 });
+    expect(shape).toEqual({ table_exists: true, claim_index_exists: true, versions: 1 });
   });
 
   test("seeds the singleton rows a fresh installation needs", async () => {

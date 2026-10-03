@@ -2,7 +2,7 @@ import { v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { type MailRequestContext, mailboxes } from "../service";
-import { internalMailboxId, type MailApiContext, mailboxParamSchema, respondPublic } from "./public-resource-boundary";
+import { internalMailboxId, type MailApiContext, mailboxParamSchema, resolveMailboxParam, respondPublic } from "./public-resource-boundary";
 
 const deletedMailboxQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
@@ -20,9 +20,9 @@ export default new Hono<MailApiContext>()
     const query = c.req.valid("query");
     return respondPublic(c, mailboxes.listDeletedMailboxes(requestContext(c), query), "mailboxes");
   })
-  .get("/mailboxes/:mailboxId/deleted", v("param", mailboxParamSchema), async (c) =>
+  .get("/mailboxes/:mailboxId/deleted", resolveMailboxParam, v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxes.getDeletedMailbox(requestContext(c), internalMailboxId(c)), "mailboxes"),
   )
-  .post("/mailboxes/:mailboxId/restore", v("param", mailboxParamSchema), async (c) =>
+  .post("/mailboxes/:mailboxId/restore", resolveMailboxParam, v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxes.restoreMailbox(requestContext(c), internalMailboxId(c)), "mailboxes"),
   );

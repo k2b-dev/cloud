@@ -9,7 +9,7 @@ import { sha256Json } from "./canonical";
 import { imapSmtpConnector } from "./connectors";
 import { logDatabaseFailure } from "./database-errors";
 import { getProviderConnection, type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
-import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
+import { isProviderAuthenticationFailure, isTransientProviderFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
 import { compareProviderEvidence, type EvidenceComparison, providerServerKey } from "./provider-identity";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
@@ -162,6 +162,8 @@ type ExistingFolderProjection = {
   role: RemoteFolder["role"];
   remote_path: string | null;
   uid_validity: string | number | null;
+  uid_next: string | number | null;
+  highest_modseq: string | number | null;
 };
 
 type FolderProjectionMatch = {
@@ -171,17 +173,50 @@ type FolderProjectionMatch = {
   skip: boolean;
 };
 
-const matchFolderProjection = (params: {
-  folder: FolderEvidence;
-  stableKey: string;
+type FolderProjectionIndexes = {
   byStableKey: Map<string, ExistingFolderProjection>;
   byRemotePath: Map<string, ExistingFolderProjection>;
   byUidValidity: Map<string, ExistingFolderProjection[]>;
   discoveredUidCounts: Map<string, number>;
+};
+
+// A provider never lowers a mailbox's UIDNEXT or HIGHESTMODSEQ. A folder that reports less than
+// Mail last saw for a candidate is another mailbox, whatever UIDVALIDITY it shares with it.
+const continuesFolder = (candidate: ExistingFolderProjection, folder: FolderEvidence): boolean => {
+  if (candidate.uid_next == null || folder.uidNext == null) return false;
+  if (BigInt(folder.uidNext) < BigInt(candidate.uid_next)) return false;
+  return (
+    candidate.highest_modseq == null || folder.highestModseq == null || BigInt(folder.highestModseq) >= BigInt(candidate.highest_modseq)
+  );
+};
+
+/**
+ * The known folder that a discovered folder without a path match was renamed from, or null.
+ * UIDVALIDITY is unique only per mailbox name, so another folder may share it: it counts only
+ * when exactly one discovered and one known folder of the same role have it and the counters
+ * show the same mailbox. Anything else is a new folder with its own cursor.
+ */
+const renameSource = (
+  folder: FolderEvidence,
+  indexes: FolderProjectionIndexes,
+  usedFolderIds: ReadonlySet<string>,
+): ExistingFolderProjection | null => {
+  if (!folder.uidValidity || indexes.discoveredUidCounts.get(folder.uidValidity) !== 1) return null;
+  const candidates = (indexes.byUidValidity.get(folder.uidValidity) ?? []).filter(
+    (candidate) => candidate.role === folder.role && !usedFolderIds.has(candidate.folder_id),
+  );
+  const [candidate] = candidates;
+  return candidates.length === 1 && candidate && continuesFolder(candidate, folder) ? candidate : null;
+};
+
+const matchFolderProjection = (params: {
+  folder: FolderEvidence;
+  stableKey: string;
+  indexes: FolderProjectionIndexes;
   usedFolderIds: Set<string>;
 }): FolderProjectionMatch => {
-  const pathCandidate = params.byRemotePath.get(params.folder.remotePath) ?? null;
-  const stableCandidate = params.byStableKey.get(params.stableKey) ?? null;
+  const pathCandidate = params.indexes.byRemotePath.get(params.folder.remotePath) ?? null;
+  const stableCandidate = params.indexes.byStableKey.get(params.stableKey) ?? null;
   const pathMatch = pathCandidate && !params.usedFolderIds.has(pathCandidate.folder_id) ? pathCandidate : null;
   const stableMatch = stableCandidate && !params.usedFolderIds.has(stableCandidate.folder_id) ? stableCandidate : null;
   if (pathMatch && stableMatch && pathMatch.folder_id !== stableMatch.folder_id) {
@@ -193,41 +228,22 @@ const matchFolderProjection = (params: {
     };
   }
   const exactMatch = pathMatch ?? stableMatch;
-  if (!params.folder.uidValidity) {
-    return { folder: exactMatch, ambiguousFolderIds: [], renamed: false, skip: false };
-  }
-  const identityMatches = (params.byUidValidity.get(params.folder.uidValidity) ?? []).filter(
-    (candidate) => candidate.role === params.folder.role && !params.usedFolderIds.has(candidate.folder_id),
-  );
-  const uniqueIdentity = identityMatches.length === 1 && params.discoveredUidCounts.get(params.folder.uidValidity) === 1;
-  if (!uniqueIdentity) {
-    if (exactMatch) return { folder: exactMatch, ambiguousFolderIds: [], renamed: false, skip: false };
-    return identityMatches.length === 0
-      ? { folder: null, ambiguousFolderIds: [], renamed: false, skip: false }
-      : { folder: null, ambiguousFolderIds: identityMatches.map((candidate) => candidate.folder_id), renamed: false, skip: true };
-  }
-  const identityMatch = identityMatches[0]!;
-  if (exactMatch && exactMatch.folder_id !== identityMatch.folder_id) {
+  const source = renameSource(params.folder, params.indexes, params.usedFolderIds);
+  if (!source) return { folder: exactMatch, ambiguousFolderIds: [], renamed: false, skip: false };
+  if (exactMatch && exactMatch.folder_id !== source.folder_id) {
     return {
       folder: null,
-      ambiguousFolderIds: [exactMatch.folder_id, identityMatch.folder_id],
+      ambiguousFolderIds: [exactMatch.folder_id, source.folder_id],
       renamed: false,
       skip: true,
     };
   }
   return {
-    folder: identityMatch,
+    folder: source,
     ambiguousFolderIds: [],
-    renamed: Boolean(identityMatch.remote_path && identityMatch.remote_path !== params.folder.remotePath),
+    renamed: Boolean(source.remote_path && source.remote_path !== params.folder.remotePath),
     skip: false,
   };
-};
-
-type FolderProjectionIndexes = {
-  byStableKey: Map<string, ExistingFolderProjection>;
-  byRemotePath: Map<string, ExistingFolderProjection>;
-  byUidValidity: Map<string, ExistingFolderProjection[]>;
-  discoveredUidCounts: Map<string, number>;
 };
 
 const buildFolderProjectionIndexes = (existing: ExistingFolderProjection[], evidence: ScopeEvidence): FolderProjectionIndexes => {
@@ -247,10 +263,10 @@ const buildFolderProjectionIndexes = (existing: ExistingFolderProjection[], evid
   return { byStableKey, byRemotePath, byUidValidity, discoveredUidCounts };
 };
 
+// Renamed folders go first, so the folder that took over an old name cannot claim its projection.
 const folderProjectionPriority = (folder: FolderEvidence, indexes: FolderProjectionIndexes): number => {
-  if (!folder.uidValidity || indexes.discoveredUidCounts.get(folder.uidValidity) !== 1) return 1;
-  const matches = (indexes.byUidValidity.get(folder.uidValidity) ?? []).filter((candidate) => candidate.role === folder.role);
-  return matches.length === 1 && matches[0]?.remote_path && matches[0].remote_path !== folder.remotePath ? 0 : 1;
+  const source = renameSource(folder, indexes, new Set());
+  return source?.remote_path && source.remote_path !== folder.remotePath ? 0 : 1;
 };
 
 const rememberProjectedFolder = (params: {
@@ -283,6 +299,8 @@ const rememberProjectedFolder = (params: {
     role: params.folder.role,
     remote_path: params.folder.remotePath,
     uid_validity: params.folder.uidValidity,
+    uid_next: params.folder.uidNext,
+    highest_modseq: params.folder.highestModseq,
   };
   params.indexes.byStableKey.set(params.stableKey, projected);
   params.indexes.byRemotePath.set(params.folder.remotePath, projected);
@@ -488,7 +506,9 @@ const projectFolders = async (params: {
       folder.stable_key,
       folder.role,
       ref.remote_path,
-      ref.uid_validity
+      ref.uid_validity,
+      ref.uid_next,
+      ref.highest_modseq
     FROM mail.folders folder
     LEFT JOIN mail.binding_folder_refs ref
       ON ref.folder_id = folder.id
@@ -510,12 +530,7 @@ const projectFolders = async (params: {
     .map((item) => item.folder);
   for (const folder of projectionOrder) {
     const stableKey = canonicalFolderKey(folder.relativePath);
-    const match = matchFolderProjection({
-      folder,
-      stableKey,
-      ...indexes,
-      usedFolderIds,
-    });
+    const match = matchFolderProjection({ folder, stableKey, indexes, usedFolderIds });
     for (const folderId of match.ambiguousFolderIds) ambiguousFolderIds.add(folderId);
     if (match.skip) continue;
     if (match.renamed) renamed += 1;
@@ -555,7 +570,10 @@ const projectFolders = async (params: {
   };
 };
 
-const updateMailboxBindingHealth = async (mailboxId: string, failure?: { code: string; message: string }): Promise<void> => {
+const updateMailboxBindingHealth = async (
+  mailboxId: string,
+  failure?: { code: string; message: string; authenticationFailed?: boolean },
+): Promise<void> => {
   const [state] = await sql<{ active: number; degraded: number; ambiguous: number }[]>`
     SELECT
       COUNT(*) FILTER (
@@ -589,18 +607,21 @@ const updateMailboxBindingHealth = async (mailboxId: string, failure?: { code: s
     WHERE resource.mailbox_id = ${mailboxId}::uuid
   `;
   if ((state?.active ?? 0) > 0) {
+    // A binding that stays active through a failure, such as a provider that cannot be reached,
+    // shows the failure as a failed folder sync does, not restored access.
     await sql`
       UPDATE mail.mailboxes
       SET
         health = CASE
           WHEN sync_enabled = false THEN 'paused'
-          WHEN ${state?.degraded ?? 0} > 0 OR ${state?.ambiguous ?? 0} > 0 THEN 'degraded'
+          WHEN ${state?.degraded ?? 0} > 0 OR ${state?.ambiguous ?? 0} > 0 OR ${failure !== undefined} THEN 'degraded'
           WHEN health IN ('auth_required', 'connection_required', 'degraded', 'reconnecting') THEN 'bootstrapping'
           ELSE health
         END,
         health_reason = CASE
           WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
           WHEN ${state?.degraded ?? 0} > 0 THEN 'One or more provider bindings require attention'
+          WHEN ${failure !== undefined} THEN ${failure?.message ?? null}
           WHEN ${state?.ambiguous ?? 0} > 0 THEN 'One or more remote folders require identity review'
           WHEN health IN ('auth_required', 'connection_required', 'degraded', 'reconnecting') THEN 'Provider access restored; synchronization pending'
           ELSE health_reason
@@ -631,6 +652,7 @@ const markRediscoveryFailure = async (
   const code = providerErrorCode(error, "PROVIDER_REDISCOVERY_FAILED");
   const message = providerErrorMessage(error, "Provider rediscovery failed");
   const authFailure = isProviderAuthenticationFailure(error, code);
+  const transient = !authFailure && isTransientProviderFailure(error);
   const affected = authFailure
     ? await sql.begin(async (tx) => {
         const [connection] = await tx<{ id: string }[]>`
@@ -653,9 +675,15 @@ const markRediscoveryFailure = async (
           RETURNING resource.mailbox_id
         `;
       })
-    : await sql<{ mailbox_id: string }[]>`
+    : // A provider that is down keeps the binding as it is, as a failed folder sync does: folder
+      // syncs and push need an active binding, and the first one that reaches the provider again
+      // resumes synchronization without waiting for the next rediscovery.
+      await sql<{ mailbox_id: string }[]>`
         UPDATE mail.provider_bindings binding
-        SET state = 'degraded', last_error_code = ${code}, last_error_message = ${message}
+        SET
+          state = CASE WHEN ${transient} THEN binding.state ELSE 'degraded' END,
+          last_error_code = ${code},
+          last_error_message = ${message}
         FROM mail.remote_resources resource, mail.provider_connections connection
         WHERE binding.id = ${bindingId}::uuid
           AND binding.state IN ('active', 'degraded')
@@ -666,7 +694,8 @@ const markRediscoveryFailure = async (
         RETURNING resource.mailbox_id
       `;
   for (const mailboxId of new Set(affected.map((row) => row.mailbox_id))) {
-    await updateMailboxBindingHealth(mailboxId, { code, message });
+    // The code alone does not show a login the provider rejected, so the classification travels along.
+    await updateMailboxBindingHealth(mailboxId, { code, message, authenticationFailed: authFailure });
   }
 };
 

@@ -623,6 +623,34 @@ export const recordMissingMessageSources = async (messageIds: string[], transpor
   return recorded.map((message) => message.id);
 };
 
+/**
+ * Ends the hydration claims whose worker stopped before it saved, such as a process that was
+ * killed mid-download: a running hydration renews its claim every minute, so one that nobody
+ * renewed for 15 minutes is no longer worked on. The interrupted try counts as one failed
+ * attempt, so the body is retried like any other failure and a claim on its last attempt ends
+ * as failed. Returns the released messages.
+ */
+export const releaseExpiredHydrationClaims = async (): Promise<{ id: string; mailbox_id: string }[]> => {
+  // `message_contents_hydration_claim_idx` covers the claims. Each running job holds at most one,
+  // so a stopped process leaves at most as many as it ran jobs.
+  const released = await sql<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
+    UPDATE mail.message_contents
+    SET
+      hydration_status = 'failed',
+      hydration_error_code = 'HYDRATION_INTERRUPTED',
+      hydration_claim_id = NULL,
+      hydration_claimed_at = NULL
+    WHERE hydration_status = 'hydrating'
+      AND hydration_claimed_at < now() - interval '15 minutes'
+    RETURNING id, mailbox_id, hydration_attempt
+  `;
+  for (const message of released) {
+    if (message.hydration_attempt < MAX_HYDRATION_ATTEMPTS) continue;
+    await publishMailWorkflowDependency({ mailboxId: message.mailbox_id, dependency: { kind: "mail.hydration", key: message.id } });
+  }
+  return released.map((message) => ({ id: message.id, mailbox_id: message.mailbox_id }));
+};
+
 export const hydrateMessageFromSource = async (params: {
   messageId: string;
   source: Readable;

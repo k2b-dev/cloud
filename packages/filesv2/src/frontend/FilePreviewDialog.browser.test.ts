@@ -117,6 +117,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
+// A hold keeps back the Markdown file and the icon font, as a slow connection would: the dialog must not move when
+// either arrives. Without a hold, a test measures the dialog with the icon font in place.
 const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", hold?: Promise<void>) => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
@@ -136,11 +138,16 @@ const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "l
       if (hold && path.endsWith(".md")) await hold;
       return route.fulfill({ contentType: file[0], body: file[1], headers: { "access-control-allow-origin": "*" } });
     }
+    if (hold && path.endsWith(".woff2")) await hold;
     const asset = assets[path] ?? (path.endsWith(".woff2") ? ["font/woff2", readFileSync(`${ui}dist${path}`)] : null);
     return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
   });
   await tab.goto("http://preview.test/");
   await tab.waitForFunction(() => !!window.preview);
+  if (!hold)
+    await tab.evaluate(async () => {
+      await document.fonts.load("1em tabler-icons");
+    });
   return tab;
 };
 const settle = (tab: Page) => tab.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 60))));
@@ -149,10 +156,16 @@ const show = async (tab: Page, name: string, options: { editable?: boolean; read
   await tab.evaluate(([name, size, options]) => window.preview.open(name, size, options), [name, size, options] as const);
   await tab.waitForSelector(".filesv2-preview-dialog[open]");
   await settle(tab);
-  // These tests are about the dialog's own layout, so they measure it with the icon font in place, however slowly
-  // the runner serves it. Whether a font may move anything is the font tests' question.
-  await tab.evaluate(() => document.fonts.ready);
 };
+/** Whether the icon font is still on its way: a held test measures once before it arrives and once after. */
+const iconFont = (tab: Page) =>
+  tab.evaluate(() => {
+    let status: string | undefined;
+    document.fonts.forEach((face) => {
+      if (face.family === "tabler-icons") status = face.status;
+    });
+    return status;
+  });
 type Box = { left: number; top: number; width: number; height: number };
 const box = (tab: Page, selector: string): Promise<Box> =>
   tab.$eval(selector, (element) => {
@@ -176,7 +189,8 @@ describe("file preview dialog in a browser", () => {
     );
     try {
       await show(tab, "README.md", { editable: true });
-      // While the file loads, the title line is held and the facts wait invisibly for it.
+      // While the file and the icon font load, the title line is held and the facts wait invisibly for it.
+      expect(await iconFont(tab)).toBe("loading");
       const pendingHeader = await box(tab, ".k2b-panel-dialog__header");
       const pendingTitle = await box(tab, ".k2b-panel-dialog__heading h2");
       expect(await tab.getAttribute(".filesv2-preview-dialog", "aria-labelledby")).toBeTruthy();
@@ -184,8 +198,10 @@ describe("file preview dialog in a browser", () => {
       expect(await tab.$eval(".filesv2-preview-facts", (facts) => getComputedStyle(facts).visibility)).toBe("hidden");
       release();
       await tab.waitForSelector(".k2b-content-markdown");
+      await tab.evaluate(() => document.fonts.ready);
       await settle(tab);
 
+      expect(await iconFont(tab)).toBe("loaded");
       expect(await tab.$eval(".k2b-panel-dialog__heading h2", (title) => title.textContent)).toBe("Summer party 2026");
       expect(await tab.$eval(".filesv2-preview-facts", (facts) => getComputedStyle(facts).visibility)).toBe("visible");
       expect(await box(tab, ".k2b-panel-dialog__header")).toEqual(pendingHeader);
@@ -258,8 +274,9 @@ describe("file preview dialog in a browser", () => {
         expect(pending.some(([name]) => String(name).includes("filesv2-preview-facts"))).toBe(false);
         release();
         await tab.waitForSelector(".k2b-content-markdown");
+        await tab.evaluate(() => document.fonts.ready);
         await settle(tab);
-        // Everything that was visible before the title arrived stays where it was.
+        // Everything that was visible before the title and the icon font arrived stays where it was.
         const loaded = await visible();
         for (const element of pending) expect(loaded).toContainEqual(element);
         const title = await tab.$eval(".k2b-panel-dialog__heading h2", (heading) => ({

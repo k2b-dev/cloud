@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem } from "@/contracts";
@@ -89,6 +89,8 @@ describe("Spaces keyboard shortcuts", () => {
     const { attachCommandShortcuts } = await import("../../cloud/src/browser/command-shortcuts");
     const { runContextAwareCommand } = await import("@k2b/cloud/browser/commands");
     const stopKeyboard = attachCommandShortcuts((command) => void runContextAwareCommand(command));
+    const { toast } = await import("@k2b/ui");
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const dispose = render(
       () =>
         createComponent(KanbanBoard, {
@@ -148,9 +150,16 @@ describe("Spaces keyboard shortcuts", () => {
 
     key(dom.document.activeElement!, "m");
     await flush();
+    // The card shows the new avatar; a screen reader hears it through the polite Spaces status region.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect([...dom.document.querySelectorAll("[data-spaces-status] > div")].map((line) => line.textContent)).toEqual(["Assigned to you"]);
     key(dom.document.activeElement!, "d");
     await flush();
     expect(calls).toEqual(["assign:Item03", "complete:Item03"]);
+    // Completing moves the card away from where the user acted, so it is confirmed with Undo.
+    expect(successes).toHaveBeenCalledTimes(1);
+    expect(successes.mock.calls[0]?.[0]).toBe("Item completed");
+    expect(successes.mock.calls[0]?.[1]?.action?.label).toBe("Undo");
 
     const input = dom.document.createElement("input");
     board.append(input);
@@ -169,6 +178,7 @@ describe("Spaces keyboard shortcuts", () => {
     await flush();
     expect(calls).toEqual(["assign:Item03", "complete:Item03"]);
 
+    successes.mockRestore();
     stopKeyboard();
     dispose();
     dom.cleanup();

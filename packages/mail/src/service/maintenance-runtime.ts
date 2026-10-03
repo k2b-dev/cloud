@@ -211,7 +211,11 @@ const executeHydrationRetry = async (mailboxId: string, enqueueWork: boolean): P
       hydration_claim_id = NULL,
       hydration_claimed_at = NULL
     WHERE mailbox_id = ${mailboxId}::uuid
-      AND hydration_status = 'failed'
+      AND (
+        hydration_status = 'failed'
+        -- A download whose worker stopped before it saved; a running one renews its claim every minute.
+        OR (hydration_status = 'hydrating' AND hydration_claimed_at < now() - interval '15 minutes')
+      )
     RETURNING id
   `;
   const queued = await sql<{ id: string }[]>`

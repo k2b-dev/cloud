@@ -38,12 +38,13 @@ import type {
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
-import { createRetryToasts } from "../../../lib/feedback";
+import { announceStatus, createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
 import { claimTask, ownClaimId, promptReleaseNote, releaseTask, takeOverTask } from "../shared/claim/claim";
-import { openEditItemDialog, saveItemFormData } from "../shared/editItem";
+import { setItemCompleted } from "../shared/completion";
+import { openEditItemDialog } from "../shared/editItem";
 import { deadlinePresets } from "../shared/item-form/date";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import {
@@ -417,18 +418,16 @@ export default function ItemDetailPanel(props: Props) {
   });
   const completeMutation = mutations.create<boolean, CompleteIntent, { intent: CompleteIntent }>({
     onBefore: (intent) => ({ intent }),
-    mutation: async ({ itemId, completed, claimId }) => {
-      const res = await apiClient[":id"].items[":itemId"].completed.$post({
-        param: { id: props.spaceId, itemId },
-        json: { completed, claimId },
-      });
-      if (!res.ok) {
-        throw new Error(await readResponseError(res, t.updateItemFailed));
-      }
-      await res.json();
-      return completed;
+    mutation: async (intent) => {
+      await setItemCompleted({ spaceId: props.spaceId, ...intent }, t.updateItemFailed);
+      return intent.completed;
     },
-    onSuccess: () => reconcileAfterWrite(),
+    // The button shows the new state, but it was busy while saving and a shortcut never focused it, so a screen
+    // reader is told.
+    onSuccess: (completed) => {
+      announceStatus(completed ? t.itemCompleted : t.itemReopened);
+      reconcileAfterWrite();
+    },
     onError: (err, context) => retryToast(err.message, t.retry, () => context && completeMutation.mutate(context.intent)),
   });
 
@@ -562,28 +561,20 @@ export default function ItemDetailPanel(props: Props) {
     }
   };
 
-  type EditIntent = Parameters<typeof saveItemFormData>[0];
-  // The dialog has closed when the save fails, so Retry sends the captured changes again instead of losing them.
-  const editItemMutation = mutations.create<void, EditIntent, { intent: EditIntent }>({
-    onBefore: (intent) => ({ intent }),
-    mutation: saveItemFormData,
-    onSuccess: () => reconcileAfterWrite(),
-    onError: (err, context) => retryToast(err.message, t.retry, () => context && editItemMutation.mutate(context.intent)),
-  });
+  // The dialog stays open until the save answers, so a failure shows in it with the input still there.
   let editPromptPending = false;
   const handleEdit = async () => {
-    if (editPromptPending || editItemMutation.loading()) return;
+    if (editPromptPending) return;
     editPromptPending = true;
-    const target = { spaceId: props.spaceId, itemId: props.item.id };
     try {
-      const data = await openEditItemDialog({
+      const saved = await openEditItemDialog({
         spaceId: props.spaceId,
         item: props.item,
         columns: props.columns,
         tags: props.tags,
         dateConfig: props.dateConfig,
       });
-      if (data) void editItemMutation.mutate({ ...target, data, locale: props.dateConfig?.locale });
+      if (saved) reconcileAfterWrite();
     } finally {
       editPromptPending = false;
     }
@@ -599,7 +590,6 @@ export default function ItemDetailPanel(props: Props) {
     duplicateMutation.loading() ||
     deleteMutation.loading() ||
     transferMutation.loading() ||
-    editItemMutation.loading() ||
     addBlocker.loading() ||
     removeBlocker.loading();
 

@@ -28,6 +28,7 @@ import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { providerErrorCode, providerErrorMessage } from "./provider-errors";
 import {
   acquireProviderLease,
+  MAIL_PROVIDER_JOB_CONCURRENCY,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
   providerBusyRetryAfterMs,
@@ -1441,6 +1442,7 @@ let exportJobWorker: Worker | undefined;
 const startExportJob = async (): Promise<void> => {
   exportJobWorker = await exportJob().process(
     {
+      concurrency: MAIL_PROVIDER_JOB_CONCURRENCY,
       onError: async ({ context, error }) => {
         if (context.attempt >= PROJECTION_MAX_ATTEMPTS) {
           await markProjectionFailure(context.input.snapshotId, "needs_attention", error);
@@ -1478,6 +1480,7 @@ let importJobWorker: Worker | undefined;
 const startImportJob = async (): Promise<void> => {
   importJobWorker = await importJob().process(
     {
+      concurrency: MAIL_PROVIDER_JOB_CONCURRENCY,
       onError: async ({ context, error }) => {
         if (context.attempt >= PROJECTION_MAX_ATTEMPTS) {
           await markProjectionFailure(context.input.snapshotId, "needs_attention", error);

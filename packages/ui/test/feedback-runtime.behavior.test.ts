@@ -544,6 +544,44 @@ describe("@k2b/ui feedback runtime", () => {
     dom.cleanup();
   });
 
+  test("form errors wait for the first submit and then follow every change", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+
+    const formResult = prompts.form({
+      fields: {
+        url: { type: "text", label: "URL", validate: (value) => (value && !value.startsWith("https://") ? "Enter a full URL" : null) },
+      },
+    });
+    await settle();
+    const input = dom.document.querySelector<HTMLInputElement>(".k2b-dialog__body input")!;
+    const errors = () => Array.from(dom.document.querySelectorAll(".k2b-dialog__body .k2b-field__error"), (error) => error.textContent);
+    const type = async (value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await settle();
+    };
+
+    // A URL still being typed does not interrupt the user.
+    await type("h");
+    expect(errors()).toEqual([]);
+
+    dom.document.querySelector(".k2b-dialog__panel")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await settle();
+    expect(errors()).toEqual(["Enter a full URL"]);
+
+    await type("https://example.com");
+    expect(errors()).toEqual([]);
+    await type("example.com");
+    expect(errors()).toEqual(["Enter a full URL"]);
+
+    dialogCore.close();
+    expect(await formResult).toBeNull();
+    dom.cleanup();
+  });
+
   test("a toast shows a title only when the caller passes one", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
