@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { IconButton, prompts, useLocale } from "@k2b/ui";
+import { IconButton, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import {
   contactFavoriteKey,
@@ -41,7 +41,7 @@ export default function ContactFavoriteButton(props: Props) {
     onError: (error, context) => {
       if (!context || lifecycle.owns(context.sourceKey)) {
         if (context && favorite() === context.optimisticFavorite) setFavorite(context.previous);
-        void prompts.error(error.message);
+        toast.error(error.message);
       }
     },
     onAbort: (context) => {

@@ -16,7 +16,7 @@ import {
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySchema, type Recurrence, type SpaceItem } from "@/contracts";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -178,11 +178,12 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
   const reconcileAfterWrite = (): void =>
-    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
+    void invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
   const seriesItemQuery = query.create<string | null, { source: string; item: SpaceItem }, { cursor: string | null }>({
     source: seriesItemSource,
     enabled: () => seriesItemSource() !== null,
@@ -441,8 +442,7 @@ export default function Calendar(props: CalendarProps) {
     onError: (error, context) => {
       if (context) clearOptimisticTime(context.eventId);
       toast.error(error.message);
-      const confirmState = (): void =>
-        void invalidateSpacesData().catch(() => toastErrorWithRetry(t.eventStateUnconfirmed, t.retry, confirmState));
+      const confirmState = (): void => void invalidateSpacesData().catch(() => retryToast(t.eventStateUnconfirmed, t.retry, confirmState));
       confirmState();
     },
   });
@@ -484,7 +484,7 @@ export default function Calendar(props: CalendarProps) {
       reconcileAfterWrite();
     },
     // The form has closed, so Retry sends the captured entry again instead of losing it.
-    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && createEvent.mutate(context.intent)),
+    onError: (error, context) => retryToast(error.message, t.retry, () => context && createEvent.mutate(context.intent)),
   });
   const createEventFromSlot = async (slot: CalendarEventTimeChange) => {
     if (createDialogPending() || createEvent.loading()) return;

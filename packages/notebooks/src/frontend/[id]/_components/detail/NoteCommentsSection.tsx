@@ -105,12 +105,11 @@ export default function NoteCommentsSection(props: Props) {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().addCommentFailed));
       return { target, comment: await response.json() };
     },
+    // The new comment appears in the list; a failure stays under the composer, which keeps the draft.
     onSuccess: ({ target }) => {
       if (source() === sourceFor(target.notebookId, target.noteId)) setComposerOpen(false);
-      toast.success(t().commentAdded);
       reconcile(target);
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const updateMutation = mutations.create<
@@ -128,12 +127,11 @@ export default function NoteCommentsSection(props: Props) {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().updateCommentFailed));
       return { target, comment: await response.json() };
     },
+    // The comment shows its new text; a failure stays under the edit composer, which keeps the text.
     onSuccess: ({ target }) => {
       if (source() === sourceFor(target.notebookId, target.noteId)) setEditingId(null);
-      toast.success(t().commentUpdated);
       reconcile(target);
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const deleteMutation = mutations.create<CommentTarget, CommentTarget & { commentId: string }>({
@@ -145,11 +143,8 @@ export default function NoteCommentsSection(props: Props) {
       if (!response.ok) throw new Error(await readErrorMessage(response, t().deleteCommentFailed));
       return target;
     },
-    onSuccess: (target) => {
-      toast.success(t().commentDeleted);
-      reconcile(target);
-    },
-    onError: (error) => prompts.error(error.message),
+    onSuccess: (target) => reconcile(target),
+    onError: (error) => toast.error(error.message),
   });
 
   onCleanup(() => {
@@ -200,7 +195,8 @@ export default function NoteCommentsSection(props: Props) {
             lines={5}
             onSubmit={async (content) => {
               await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
-              return createMutation.error() === null;
+              const error = createMutation.error();
+              if (error) throw error;
             }}
           />
         </Show>
@@ -289,7 +285,8 @@ export default function NoteCommentsSection(props: Props) {
                           commentId: comment.id,
                           content,
                         });
-                        return updateMutation.error() === null;
+                        const error = updateMutation.error();
+                        if (error) throw error;
                       }}
                     />
                   </Show>

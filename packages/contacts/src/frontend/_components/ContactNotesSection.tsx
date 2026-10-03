@@ -111,14 +111,13 @@ export default function ContactNotesSection(props: Props) {
       if (!res.ok) throw new Error(await readErrorMessage(res, t().addNoteFailed));
       return { target, note: await res.json() };
     },
+    // The new note appears in the list; a failure stays under the composer, which keeps the draft.
     onSuccess: ({ target }) => {
       if (source() === createContactQuerySource(target)) {
         setComposerOpen(false);
       }
-      toast.success(t().commentAdded);
       reconcile(target);
     },
-    onError: (err) => prompts.error(err.message),
   });
 
   const updateMutation = mutations.create<{ target: WriteTarget; note: ContactNote }, WriteTarget & { noteId: string; content: string }>({
@@ -137,14 +136,13 @@ export default function ContactNotesSection(props: Props) {
       if (!res.ok) throw new Error(await readErrorMessage(res, t().updateNoteFailed));
       return { target, note: await res.json() };
     },
+    // The note shows its new text; a failure stays under the edit composer, which keeps the text.
     onSuccess: ({ target }) => {
       if (source() === createContactQuerySource(target)) {
         setEditingId(null);
       }
-      toast.success(t().commentUpdated);
       reconcile(target);
     },
-    onError: (err) => prompts.error(err.message),
   });
 
   const deleteMutation = mutations.create<WriteTarget, WriteTarget & { noteId: string }>({
@@ -162,11 +160,8 @@ export default function ContactNotesSection(props: Props) {
       if (!res.ok) throw new Error(await readErrorMessage(res, t().deleteNoteFailed));
       return target;
     },
-    onSuccess: (target) => {
-      toast.success(t().commentDeleted);
-      reconcile(target);
-    },
-    onError: (err) => prompts.error(err.message),
+    onSuccess: (target) => reconcile(target),
+    onError: (err) => toast.error(err.message),
   });
 
   const deleteNote = async (note: ContactNote) => {
@@ -228,7 +223,8 @@ export default function ContactNotesSection(props: Props) {
           lines={5}
           onSubmit={async (content) => {
             await createMutation.mutate({ bookId: props.bookId, contactId: props.contactId, content });
-            return createMutation.error() === null;
+            const error = createMutation.error();
+            if (error) throw error;
           }}
         />
       </Show>
@@ -307,7 +303,8 @@ export default function ContactNotesSection(props: Props) {
                     lines={3}
                     onSubmit={async (content) => {
                       await updateMutation.mutate({ bookId: props.bookId, contactId: props.contactId, noteId: note.id, content });
-                      return updateMutation.error() === null;
+                      const error = updateMutation.error();
+                      if (error) throw error;
                     }}
                   />
                 </Show>

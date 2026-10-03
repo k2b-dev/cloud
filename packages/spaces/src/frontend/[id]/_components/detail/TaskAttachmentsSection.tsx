@@ -2,7 +2,7 @@ import { DetailPanel, IconButton, Lightbox, type LightboxImage, prompts, Tooltip
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { MAX_TASK_ATTACHMENTS, type SpaceItemAttachment } from "@/contracts";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
@@ -16,6 +16,7 @@ export default function TaskAttachmentsSection(props: {
   onChanged: () => void;
 }) {
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const [attachments, setAttachments] = createSignal([...props.attachments]);
   const [uploading, setUploading] = createSignal(false);
   const [deletingId, setDeletingId] = createSignal<string | null>(null);
@@ -109,9 +110,7 @@ export default function TaskAttachmentsSection(props: {
       setAttachments((current) => current.filter((entry) => entry.id !== attachment.id));
       props.onChanged();
     } catch (error) {
-      toastErrorWithRetry(error instanceof Error ? error.message : t.deleteAttachmentFailed, t.retry, () =>
-        deleteAttachment(itemId, attachment),
-      );
+      retryToast(error instanceof Error ? error.message : t.deleteAttachmentFailed, t.retry, () => deleteAttachment(itemId, attachment));
     } finally {
       setDeletingId(null);
     }

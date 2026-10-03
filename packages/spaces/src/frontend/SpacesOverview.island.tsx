@@ -28,7 +28,7 @@ import { apiClient } from "@/api/client";
 import type { Space } from "@/contracts";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { setLastSpaceId, setPinnedSpaceIds, type ViewType, writeSpaceSettings } from "./[id]/_components/settings/SpaceSettingsStore";
-import { toastErrorWithRetry } from "./lib/feedback";
+import { createRetryToasts } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
 import { createSpaceCommands } from "./space-commands";
 
@@ -346,6 +346,7 @@ export default function SpacesOverview(props: Props) {
   createSpaceCommands({ dateConfig: props.dateConfig });
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
+  const retryToast = createRetryToasts();
   const localizeStarter = (starter: SpaceStarter): SpaceStarter => ({
     ...starter,
     name:
@@ -469,7 +470,7 @@ export default function SpacesOverview(props: Props) {
       navigateTo(`/app/spaces/${space.id}`);
     },
     // The form has closed, so Retry sends the captured draft again instead of losing it.
-    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && createSpaceMutation.mutate(context.intent)),
+    onError: (error, context) => retryToast(error.message, t.retry, () => context && createSpaceMutation.mutate(context.intent)),
   });
   const createSpace = async (starter: SpaceStarter) => {
     if (dialogPending() || createSpaceMutation.loading()) return;
