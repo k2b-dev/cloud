@@ -49,7 +49,8 @@ const toTopic = (row: { id: string; ordering_key: string; payload: unknown }) =>
 
 suiteFor("database", "nats")("live outbox", () => {
   test("an application does not start before Core created the outbox", async () => {
-    await expect(startLiveOutbox()).rejects.toThrow(/Update Cloud Core first/);
+    await expect(startLiveOutbox("inventory")).rejects.toThrow(/names "eventstest", but this process starts "inventory"/);
+    await expect(startLiveOutbox(APP)).rejects.toThrow(/Update Cloud Core first/);
     const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
     await runCoreSetup();
   });
@@ -65,7 +66,7 @@ suiteFor("database", "nats")("live outbox", () => {
     expect(await pending()).toEqual([]);
 
     await sql.begin((tx) => live.publish(tx, { key: "a", data: { n: 2 } }));
-    const stop = await startLiveOutbox();
+    const stop = await startLiveOutbox(APP);
     try {
       live.wake();
       for (let attempt = 0; attempt < 50 && (await pending()).length > 0; attempt++) await Bun.sleep(100);
@@ -79,6 +80,22 @@ suiteFor("database", "nats")("live outbox", () => {
     const first = await updates.next();
     await updates.return(undefined);
     expect(first.value).toMatchObject({ key: "a", data: { n: 2 } });
+  });
+
+  test("a subscriber receives the schema output once, and data that does not survive JSON fails the write", async () => {
+    const transformed = defineLive({ appId: APP, event: z.object({ n: z.string().transform(Number) }) });
+    const after = await transformed.cursor();
+    await sql.begin((tx) => transformed.publish(tx, { key: "transform", data: { n: "42" } }));
+    expect((await pending()).map((row) => row.payload)).toEqual([{ v: 1, k: "transform", d: { n: "42" } }]);
+    await liveOutbox(APP, toTopic).reconcile();
+    const updates = transformed.subscribe({ after })[Symbol.asyncIterator]();
+    const first = await updates.next();
+    await updates.return(undefined);
+    expect(first.value).toMatchObject({ key: "transform", data: { n: 42 } });
+
+    const dated = defineLive({ appId: APP, event: z.object({ at: z.date() }) });
+    await expect(sql.begin((tx) => dated.publish(tx, { key: "date", data: { at: new Date() } }))).rejects.toThrow();
+    expect(await pending()).toEqual([]);
   });
 
   test("rows of one key keep their order and a failing row blocks no other key", async () => {

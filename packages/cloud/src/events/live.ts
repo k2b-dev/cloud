@@ -75,13 +75,20 @@ const logStaleRows = async (appId: string): Promise<void> => {
 };
 
 /**
- * Publishes the rows of every live definition in this process. `app.start()`
- * calls it; it does nothing without a definition, and fails when Core has not
- * created the outbox yet.
+ * Publishes the rows of the live definitions in this process. `app.start()`
+ * calls it with the started application's ID; it does nothing without a
+ * definition, and fails when a definition names another application or Core
+ * has not created the outbox yet.
  */
-export const startLiveOutbox = async (): Promise<(() => Promise<void>) | null> => {
+export const startLiveOutbox = async (startedAppId: string): Promise<(() => Promise<void>) | null> => {
   const appIds = [...dispatchers.keys()];
   if (appIds.length === 0) return null;
+  const foreign = appIds.filter((appId) => appId !== startedAppId);
+  if (foreign.length > 0) {
+    throw new Error(
+      `defineLive() names "${foreign.join('", "')}", but this process starts "${startedAppId}". Use the ID from the application's declaration.`,
+    );
+  }
   const [installed] = await sql<{ ready: boolean }[]>`
     SELECT to_regprocedure('events.enqueue(uuid,text,text,text,jsonb,text)') IS NOT NULL AS ready
   `;
@@ -128,7 +135,12 @@ export const defineLive = <const Event extends z.ZodType>(definition: { appId: s
      * reader of `key` may not see.
      */
     publish: async (tx: SQL, input: { key: string; data: z.input<Event> }): Promise<void> => {
-      const envelope = JSON.stringify({ v: 1, k: input.key, d: event.parse(input.data) });
+      // Store the JSON form of the input, and validate exactly that form here:
+      // subscribe() parses it once, so transforms run for the subscriber and data
+      // that does not survive JSON fails this write instead of every read.
+      const data: unknown = JSON.parse(JSON.stringify(input.data));
+      event.parse(data);
+      const envelope = JSON.stringify({ v: 1, k: input.key, d: data });
       await tx`SELECT events.enqueue(${crypto.randomUUID()}::uuid, ${appId}, 'live', ${input.key}, ${envelope}::text::jsonb)`;
     },
     /** Publishes committed updates now instead of within the next second. Call it after the commit. */

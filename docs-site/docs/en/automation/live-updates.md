@@ -35,7 +35,8 @@ export const inventoryLive = defineLive({
 });
 ```
 
-`appId` is the ID from the application's declaration. Define the updates once,
+`appId` is the ID from the application's declaration; `app.start()` refuses
+to start when a definition names another application. Define the updates once,
 at module scope, in a module that the application imports before
 `app.start()`. `app.start()` then publishes the pending updates from every
 replica. Writing an update needs no started application, so tests can call the
@@ -59,8 +60,12 @@ inventoryLive.wake();
 - One update has one key. A change that concerns two containers publishes
   twice. Publish a move as a removal keyed by the source and an addition keyed
   by the target, so a reader of one container does not learn the other.
-- `data` is validated against `event`. A violation throws and rolls back the
-  transaction, like any other failed statement.
+- `data` travels as JSON. `publish()` validates its JSON form against `event`,
+  and subscribers receive the schema's output, so transforms and defaults run
+  once, for the subscriber. A violation throws and rolls back the transaction,
+  like any other failed statement. A value that JSON cannot carry, such as a
+  `Date` for `z.date()`, is a violation: send an ISO string, or use
+  `z.coerce.date()`.
 - `data` must not contain anything that a reader of `key` may not see. There
   is no per-reader projection.
 - Data larger than 32 KiB never fails the write. The update becomes a reload
@@ -72,6 +77,11 @@ Publish only when the transaction changed something. A write that is refused
 or finds no row should return before `publish()`.
 
 ## Read the updates for a socket
+
+`subscribe()` is interim: it reads the updates for the application's own
+socket until Cloud provides shared live routes for sockets. A later release
+can replace it; [Deprecations](/en/docs/reference/deprecations-and-migrations)
+then names the migration.
 
 ```ts
 // SSR: capture the cursor before the snapshot it belongs to.

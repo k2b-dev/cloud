@@ -218,13 +218,14 @@ inside it.
 
 ## Run side effects after commit
 
-Publish live events and send notifications after the domain transaction
-commits.
+Send notifications, publish to topics, and run other external effects after
+the domain transaction commits.
 
 If the side effect must be recovered after a crash, store an outbox or durable
-job request in the same transaction. A worker can deliver it later. For updates
-to the application's open tabs, [Live updates](/en/docs/automation/live-updates)
-provide that outbox.
+job request in the same transaction. A worker can deliver it later. Updates to
+the application's open tabs work this way: write them in the transaction with
+[Live updates](/en/docs/automation/live-updates), and the platform publishes
+them after the commit.
 
 Continue with [Jobs and queues](/en/docs/automation/jobs-and-queues) and
 [Notifications](/en/docs/platform/notifications).

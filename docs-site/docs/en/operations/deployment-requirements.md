@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Deployment requirements
@@ -91,6 +91,9 @@ stream. Their byte limits come from the declaration:
   events, and the Notebooks snapshot job limit their dead letters to 256 at the
   payload limit, as Sync does by default; for example, 17.6 MiB for
   `grids:records` and 3 MiB for `mail:invalidations`.
+- The [live updates](/en/docs/automation/live-updates) of an application use
+  the topic `cloud:live:<application ID>`, which reserves 64 MiB plus 1 MiB of
+  dead letters. Its `sync.owner` is `cloud`, not the application.
 - A pump reserves 64 MiB.
 
 Per replica, the built-in applications reserve:
@@ -102,7 +105,7 @@ Per replica, the built-in applications reserve:
 | Gateway Ops | 2 | none | 132 MiB |
 | Grids | 2 | `grids:records` 1 GiB, `grids:workflow-record-events` 1 GiB, workflow run events 512 MiB, metadata events 128 MiB | 2.8 GiB |
 | Mail | 10 | `mail:invalidations` 1 GiB, automation backfill pump 64 MiB | 1.7 GiB |
-| Contacts | 0 | contact events 1 GiB | 1 GiB |
+| Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
 | Spaces | 0 | item events 1 GiB | 1 GiB |
 | Pulse | 5 | none | 330 MiB |

@@ -814,7 +814,7 @@ export const defineApp = <
       if (stopLifecycle) cleanup.push(() => stopLifecycle(cloudCtx));
 
       // Fails before any setup when Core has not created the platform outbox yet.
-      const stopLiveOutbox = await startLiveOutbox();
+      const stopLiveOutbox = await startLiveOutbox(meta.id);
       if (stopLiveOutbox) cleanup.push(stopLiveOutbox);
 
       if (!startOpts.skipSetup && startOpts.lifecycle?.setup) {

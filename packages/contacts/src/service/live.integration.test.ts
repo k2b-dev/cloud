@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { create, move } from "./contacts";
+import { commit } from "./imports";
 
 type Book = { id: string; shortId: string };
 type Pending = { payload: { d: { type: string; bookId: string; contactId?: string } } };
@@ -13,7 +15,7 @@ const books: Book[] = [];
 
 beforeAll(async () => {
   if (!testInfra.database) return;
-  for (const name of ["Live source", "Live target"]) {
+  for (const name of ["Live source", "Live target", "Live import"]) {
     const [book] = await sql<{ id: string; short_id: string }[]>`
       INSERT INTO contacts.books (short_id, name) VALUES (${newShortId()}, ${name}) RETURNING id, short_id
     `;
@@ -61,5 +63,19 @@ suite("Contacts live updates", () => {
     expect(await pendingFor(target)).toEqual([
       expect.objectContaining({ type: "contact.created", bookId: target.shortId, contactId: contact!.short_id }),
     ]);
+  });
+
+  test("an import announces the contacts it committed, even when it stops early", async () => {
+    const [, , imported] = books as [Book, Book, Book];
+    const stopped = commit({
+      bookId: imported.id,
+      candidates: ["Grace", "stop"],
+      validateCandidate: (candidate) => {
+        if (candidate === "stop") throw new Error("validation crashed");
+        return ok({ firstName: String(candidate) });
+      },
+    });
+    await expect(stopped).rejects.toThrow("validation crashed");
+    expect(await pendingFor(imported)).toEqual([expect.objectContaining({ type: "contacts.imported", bookId: imported.shortId })]);
   });
 });

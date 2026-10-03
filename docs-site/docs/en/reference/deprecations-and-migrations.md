@@ -17,11 +17,16 @@ through the platform outbox that Core's migration creates. Update Core before
 Contacts: Contacts does not start until `events.outbox` exists. See
 [Live updates](/en/docs/automation/live-updates).
 
-The Contacts socket reads the topic `cloud:live:contacts`. Tabs that are open
-during the upgrade reload once. While replicas of both versions run, a change
-handled by an older replica reaches a new tab only after its next reload.
-Nothing writes the previous topic, `cloud:contacts:events:changes`, anymore;
-its events expire after 24 hours.
+The Contacts socket reads the topic `cloud:live:contacts`. With one Contacts
+replica, tabs that are open during the upgrade reload once. While replicas of
+both versions run, a change handled by an older replica reaches a new tab only
+after its next reload, and a tab whose page and socket come from replicas of
+different versions can reload and then show "Live updates stopped" until the
+rollout finishes; reloading the page after the rollout restores live updates.
+Nothing writes the previous topic, `cloud:contacts:events:changes`, anymore.
+Its events expire after 24 hours, but its stream keeps its 1 GiB reservation
+until a later release removes it; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
 
 A moved contact now arrives as a deletion in its source book and a creation in
 its target book, so a reader of one book does not learn the other. Another tab
