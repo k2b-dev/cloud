@@ -48,11 +48,11 @@ export const isUnsentOutboundMessage = (messageId: SqlFragment): SqlFragment => 
 /**
  * Recomputes a conversation's date, subject, and participant summary from its timeline messages.
  * A conversation without any, such as one that holds only a scheduled reply, keeps its values.
- * It locks the conversation first, so the recomputation reads messages that a concurrent
- * hydration of the same conversation committed, instead of overwriting them with older values.
+ * It first takes the row lock its UPDATE needs anyway, so the recomputation reads what a concurrent
+ * hydration of the conversation committed instead of overwriting it with older values.
  */
 export const refreshConversationTimeline = async (db: SqlClient, conversationId: string): Promise<void> => {
-  await db`SELECT id FROM mail.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
+  await db`SELECT id FROM mail.conversations WHERE id = ${conversationId}::uuid FOR NO KEY UPDATE`;
   await db`
     WITH classified AS (
       SELECT
