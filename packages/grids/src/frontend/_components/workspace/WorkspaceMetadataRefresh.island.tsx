@@ -1,4 +1,5 @@
-import { Button, dialogCore, NoticeCard, prompts, useLocale } from "@k2b/ui";
+import { retry } from "@k2b/sync/retry";
+import { Button, dialogCore, NoticeCard, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
@@ -18,7 +19,6 @@ export default function WorkspaceMetadataRefresh(props: {
   const locale = useLocale();
   const t = () => workspaceMessages.resolve([locale()]).t;
   const [changed, setChanged] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
   const reload = async () => {
     // Explicitly warn about both modal and full-page drafts. Existing native
     // beforeunload guards remain active; no synthetic unload event is needed.
@@ -28,9 +28,24 @@ export default function WorkspaceMetadataRefresh(props: {
   onMount(() => {
     let disposed = false;
     let revoked = false;
+    // Live failures inform in a toast, so the workspace never moves; a later successful check dismisses it.
+    let failure: ToastHandle | null = null;
+    const showFailure = () => {
+      if (disposed || revoked || failure) return;
+      failure = toast(t().liveUpdatesStoppedDetail, {
+        title: t().liveUpdatesStopped,
+        duration: 0,
+        action: { label: t().reload, onClick: () => void reload() },
+      });
+    };
+    const clearFailure = () => {
+      failure?.dismiss();
+      failure = null;
+    };
     const revoke = () => {
       if (disposed || revoked) return;
       revoked = true;
+      clearFailure();
       controller.dispose();
       setWorkspaceLiveStatus({ revoked: true, message: t().accessRevoked });
       dialogCore.close();
@@ -41,23 +56,31 @@ export default function WorkspaceMetadataRefresh(props: {
     const controller = createWorkspaceRevisionController({
       initial: { ...(props.revision ?? { revision: "", resources: {} }), canWrite: props.canWrite, canAdmin: props.canAdmin },
       activeKeys: props.activeKeys,
-      load: async (signal) => {
-        const response = await apiClient.workspace.revision.$get({ query: { baseId: props.baseId } }, { init: { signal } });
-        if ([401, 403, 404].includes(response.status)) {
-          revoke();
-          throw new Error(t().accessRevoked);
-        }
-        if (!response.ok) throw new Error(t().liveMetadataFailed);
-        return response.json();
-      },
+      // A check that fails briefly (for example while the network returns with the tab) is retried before it counts as a failure.
+      load: (signal) =>
+        retry({
+          signal,
+          run: async () => {
+            const response = await apiClient.workspace.revision.$get({ query: { baseId: props.baseId } }, { init: { signal } });
+            if ([401, 403, 404].includes(response.status)) {
+              revoke();
+              throw new Error(t().accessRevoked);
+            }
+            if (!response.ok) throw new Error(t().liveMetadataFailed);
+            return response.json();
+          },
+          after: ({ ctx }) => {
+            if (ctx.error && !revoked && ctx.attempt < 3) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 150, maxMs: 1_000 }) });
+          },
+        }),
       apply: (state) => {
         if (revoked) return;
-        setFailed(false);
+        clearFailure();
         if (state.revoked) return revoke();
         setChanged(state.changed);
       },
       markApplied: (cursor) => provider.markApplied(cursor),
-      onError: () => setFailed(true),
+      onError: showFailure,
     });
     const provider = createGridsMetadataEventsProvider({
       baseId: props.baseId,
@@ -68,7 +91,7 @@ export default function WorkspaceMetadataRefresh(props: {
       onError: (error) => controller.check(error.code === "resync_required" ? null : undefined),
       onRevoked: revoke,
       onFatal: () => {
-        setFailed(true);
+        showFailure();
         controller.check();
       },
     });
@@ -93,18 +116,16 @@ export default function WorkspaceMetadataRefresh(props: {
       document.removeEventListener(workspaceResourceAppliedEvent, applied);
       controller.dispose();
       provider.dispose();
+      clearFailure();
       setWorkspaceLiveStatus({ revoked: false, message: "" });
     });
   });
 
   return (
-    <Show when={changed() || failed() || workspaceLiveStatus().revoked}>
+    <Show when={changed() || workspaceLiveStatus().revoked}>
       <div class="mb-[var(--ui-space-shell)] shrink-0" role="status">
-        <NoticeCard
-          icon="ti ti-refresh"
-          title={workspaceLiveStatus().revoked ? t().accessDenied : failed() && !changed() ? t().liveMetadataFailed : t().workspaceChanged}
-        >
-          <p>{workspaceLiveStatus().revoked ? t().accessRevoked : failed() ? t().liveUpdatesStoppedDetail : t().structureChanged}</p>
+        <NoticeCard icon="ti ti-refresh" title={workspaceLiveStatus().revoked ? t().accessDenied : t().workspaceChanged}>
+          <p>{workspaceLiveStatus().revoked ? t().accessRevoked : t().structureChanged}</p>
           <Button variant="secondary" class="mt-3" onClick={() => void reload()}>
             {t().reload}
           </Button>

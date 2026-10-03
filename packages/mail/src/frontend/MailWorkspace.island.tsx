@@ -577,7 +577,6 @@ function MailWorkspaceView(props: {
 
   onMount(() => {
     setRequestPath(`${window.location.pathname}${window.location.search}`);
-    let readyReceived = false;
     const live = createLiveWebSocket<MailLiveServerMessage>({
       url: "/api/mail/ws",
       initialCursor: props.data.initialLiveCursor,
@@ -616,10 +615,11 @@ function MailWorkspaceView(props: {
           return;
         }
         if (message.type === MAIL_LIVE_WS_TYPE.ready) {
-          if (props.data.initialLiveCursor === null || readyReceived) {
+          // The server confirms the subscribed cursor when it can replay from it, as when a tab returns.
+          // Any other cursor (a first subscription or a head after skipped replay) needs a snapshot refresh.
+          if (message.payload.cursor !== controls.subscribedCursor()) {
             liveHub.schedule({ cursor: message.payload.cursor, conversationId: null });
-          } else controls.markApplied(message.payload.cursor);
-          readyReceived = true;
+          }
           return;
         }
         if (message.type === MAIL_LIVE_WS_TYPE.event) {

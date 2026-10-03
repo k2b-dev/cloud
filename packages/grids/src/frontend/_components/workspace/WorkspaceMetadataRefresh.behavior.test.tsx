@@ -174,3 +174,62 @@ domTest("revocation hides SSR content and closes resource dialogs immediately", 
     dom.cleanup();
   }
 });
+
+domTest("a failed check is retried, and a lasting failure informs in a toast without moving the workspace", async () => {
+  const dom = createDomTestHarness();
+  const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
+  const initial = { revision: "one", resources: { "table:TABLE1": "one" } };
+  let failuresLeft = 2;
+  let requests = 0;
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () => {
+        requests++;
+        if (failuresLeft > 0) {
+          failuresLeft--;
+          return new Response("Bad gateway", { status: 502 });
+        }
+        return Response.json({ ...initial, canWrite: true, canAdmin: true });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const reloadAction = () =>
+    Array.from(dom.document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Reload" && !dom.root.contains(button),
+    );
+  const dispose = render(
+    () =>
+      createComponent(WorkspaceMetadataRefresh, {
+        baseId: "BASE01",
+        initialCursor: null,
+        revision: initial,
+        activeKeys: ["table:TABLE1"],
+        canWrite: true,
+        canAdmin: true,
+      }),
+    dom.root,
+  );
+  try {
+    // The tab returns while the network is still coming back.
+    callbacks.onReady?.(null);
+    await Bun.sleep(1_200);
+    expect(requests).toBe(3);
+    expect(reloadAction()).toBeUndefined();
+
+    failuresLeft = Number.POSITIVE_INFINITY;
+    callbacks.onEvent?.("s6t.test.1");
+    await Bun.sleep(1_200);
+    expect(reloadAction()).toBeDefined();
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+
+    failuresLeft = 0;
+    callbacks.onEvent?.("s6t.test.2");
+    await Bun.sleep(600);
+    expect(reloadAction()).toBeUndefined();
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});

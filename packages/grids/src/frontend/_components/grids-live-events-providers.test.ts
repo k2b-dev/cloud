@@ -307,7 +307,7 @@ if (process.env.GRIDS_LIVE_EVENTS_CHILD !== "1") {
       expect(call.markedCursors).toEqual(["s6t.test.8"]);
     });
 
-    test("routes transient errors and terminates terminal metadata errors", () => {
+    test("routes server failures as recoverable metadata errors", () => {
       const callbacks: string[] = [];
       createGridsMetadataEventsProvider({
         baseId: BASE_ID,
@@ -318,10 +318,11 @@ if (process.env.GRIDS_LIVE_EVENTS_CHILD !== "1") {
 
       deliver(call, { type: "grids.metadata.error", payload: { code: "stream_failed", message: "Retry" } });
       deliver(call, { type: "grids.metadata.error", payload: { code: "backpressure", message: "Retry later" } });
-      deliver(call, { type: "grids.metadata.error", payload: { code: "internal_error", message: "Stop" } });
+      // A failed access lookup is infrastructure, not an access decision; the socket reconnects and checks again.
+      deliver(call, { type: "grids.metadata.error", payload: { code: "internal_error", message: "Retry" } });
 
-      expect(callbacks).toEqual(["error:stream_failed", "error:backpressure", "fatal:internal_error"]);
-      expect(call.terminations).toEqual([{ code: "internal_error", message: "Stop" }]);
+      expect(callbacks).toEqual(["error:stream_failed", "error:backpressure", "error:internal_error"]);
+      expect(call.terminations).toEqual([]);
     });
   });
 
