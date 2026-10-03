@@ -217,7 +217,7 @@ export default function RecordDetails(props: {
       <Show when={headingField || props.block.title || editableFields.length > 0}>
         <div class="flex min-w-0 flex-col gap-1">
           <Show when={headingField && props.block.title}>
-            <p class="text-xs font-medium uppercase tracking-wide text-secondary">{props.block.title}</p>
+            <p class="text-xs font-medium text-secondary">{props.block.title}</p>
           </Show>
           <PanelHeader
             title={documentHeading() ?? draftHeading() ?? headingValue() ?? props.block.title ?? props.tableName}

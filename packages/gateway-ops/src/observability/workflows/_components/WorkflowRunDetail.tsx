@@ -71,7 +71,7 @@ const RunSteps = (props: { steps: WorkflowStepSummary[] }) => {
 
 const RunFact = (props: { label: string; children: JSX.Element }) => (
   <div class="min-w-0">
-    <dt class="text-[10px] uppercase tracking-wider text-dimmed">{props.label}</dt>
+    <dt class="text-xs text-dimmed">{props.label}</dt>
     <dd class="mt-0.5 truncate text-xs text-primary">{props.children}</dd>
   </div>
 );

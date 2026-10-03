@@ -2208,7 +2208,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
               {(sidebarAction) => {
                 const selectedForm = () => formsById().get(sidebarAction().formId);
                 return (
-                  <DetailPanel.Group label={text("Action settings")}>
+                  <DetailPanel.Summary title={text("Action settings")}>
                     <div class="flex flex-col gap-3">
                       <div class="flex items-center gap-2">
                         <strong class="min-w-0 flex-1 truncate text-sm">{sidebarAction().label}</strong>
@@ -2370,7 +2370,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         error={() => diagnosticFor(sidebarAction().id, "availableWhen")}
                       />
                     </div>
-                  </DetailPanel.Group>
+                  </DetailPanel.Summary>
                 );
               }}
             </Show>
@@ -3516,6 +3516,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         <Show when={selectedFormBlock()?.actionsBlockId}>
                           <DetailPanel.Section
                             title={text("Workspace context")}
+                            icon="ti ti-layout-sidebar-right"
                             collapsible
                             defaultOpen={Boolean(selectedFormBlock()?.workspace)}
                           >

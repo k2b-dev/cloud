@@ -186,24 +186,21 @@ export default function SourceDetailView(props: Props) {
         </Show>
 
         <Show when={props.source.kind === "http_ingest"}>
-          <div class="flex flex-col gap-2">
-            <ResourceApiKeys
-              title={t().apiKeys}
-              description={t().apiKeysDescription}
-              initialKeys={props.apiKeys}
-              permissionOptions={[
-                {
-                  value: "write",
-                  label: t().ingest,
-                  description: t().ingestDescription,
-                  icon: "ti ti-database-import",
-                },
-              ]}
-              createKey={props.createApiKey}
-              revokeKey={props.revokeApiKey}
-            />
-            <p class="text-xs text-dimmed">{t().bearerTokenHint}</p>
-          </div>
+          <ResourceApiKeys
+            title={t().apiKeys}
+            description={`${t().apiKeysDescription} ${t().bearerTokenHint}`}
+            initialKeys={props.apiKeys}
+            permissionOptions={[
+              {
+                value: "write",
+                label: t().ingest,
+                description: t().ingestDescription,
+                icon: "ti ti-database-import",
+              },
+            ]}
+            createKey={props.createApiKey}
+            revokeKey={props.revokeApiKey}
+          />
         </Show>
 
         <Show when={httpExample()}>{(command) => renderCodeSection({ title: t().httpIngestExample, code: command() })}</Show>

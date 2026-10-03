@@ -2011,13 +2011,14 @@
   background: var(--k2b-hover);
 }
 
+/* A sentence-case label like the section heading above it, not an uppercase eyebrow. */
 .k2b-ui .k2b-content-structured-data__title {
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .k2b-ui .k2b-content-structured-data__surface {

@@ -86,13 +86,17 @@ same quiet surface as the summary, without a border or lines between its
 sections: spacing and the section headings separate them. Pass `label` when the
 shared context benefits from an accessible group name.
 
-Every block in the body has one flat frame. A section placed directly in
+Every section in the body has one flat frame. A section placed directly in
 `DetailPanel.Body` is a group of one: it gets the group surface and inset, so
 its icon, title, count, and content start in the same columns as every grouped
 section. A [`Discussion`](/en/ui/layout/discussion) inside the panel does the
 same. Do not wrap a standalone section in a group only to frame it, and do not
-add an application frame, border, or padding around a section. Give every
-section of a panel an `icon` so the titles share one column.
+add an application frame, border, or padding around a section. Only a notice,
+a progress bar, or a short row of commands stands in the body without a frame;
+loose text belongs in the header subtitle or a section, and a block with its
+own heading becomes a section. Give every section of a panel an `icon` so the
+titles share one column, and use `size="xs"` for text buttons in its
+`actions`, so their labels end at the same edge as a count.
 
 Sections accept arbitrary content. Use `DescriptionList layout="rows"` for
 compact properties. When people edit those properties in place, make them

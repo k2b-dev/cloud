@@ -475,7 +475,7 @@ export default function ContactDetailPanel(props: Props) {
                     title={t().overview}
                     actions={
                       actions.canEdit() && !quickEditing() ? (
-                        <Button variant="ghost" size="sm" onClick={() => setQuickEditing(true)}>
+                        <Button variant="ghost" size="xs" onClick={() => setQuickEditing(true)}>
                           <i class="ti ti-pencil" aria-hidden="true" /> {t().quickEdit}
                         </Button>
                       ) : undefined
@@ -663,12 +663,12 @@ export default function ContactDetailPanel(props: Props) {
                         actions={
                           <>
                             <Show when={hasOrgTree()}>
-                              <Button variant="ghost" size="sm" loading={actions.orgTreeLoading()} onClick={() => actions.openOrgTree(c())}>
+                              <Button variant="ghost" size="xs" loading={actions.orgTreeLoading()} onClick={() => actions.openOrgTree(c())}>
                                 <i class="ti ti-hierarchy" aria-hidden="true" /> {t().tree}
                               </Button>
                             </Show>
                             <Show when={actions.canEdit()}>
-                              <Button variant="ghost" size="sm" onClick={() => actions.openAddMemberDialog(c())}>
+                              <Button variant="ghost" size="xs" onClick={() => actions.openAddMemberDialog(c())}>
                                 <i class="ti ti-plus" aria-hidden="true" /> {t().addMember}
                               </Button>
                             </Show>

@@ -47,6 +47,7 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
       <DetailPanel>
         <DetailPanel.Header
           title={t.detailTitle}
+          subtitle={t.detailHint}
           actions={
             <IconButtonLink href={props.closeHref} label={t.close}>
               <i class="ti ti-x" />
@@ -54,7 +55,6 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
           }
         />
         <DetailPanel.Body>
-          <p class="text-xs text-dimmed">{t.detailHint}</p>
           {props.executions.map((execution) => (
             <DetailPanel.Section
               title={`${execution.appId} · ${execution.capability}`}

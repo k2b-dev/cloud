@@ -210,7 +210,7 @@ export function WorkflowRunDocumentsSection(props: {
       actions={
         <Show when={props.documents.total > 0}>
           <Tooltip.Anchor content={downloadAll().hint}>
-            <Button variant="ghost" size="sm" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
+            <Button variant="ghost" size="xs" type="button" onClick={props.onDownloadAll} disabled={props.downloadingAll}>
               <i class={props.downloadingAll ? "ti ti-loader-2 animate-spin" : "ti ti-download"} /> {downloadAll().label}
             </Button>
           </Tooltip.Anchor>

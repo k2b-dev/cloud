@@ -1,6 +1,6 @@
 import type { AiConversation, AiConversationPage, AiConversationStatusFilter, AiProject } from "@k2b/cloud/ai";
 import { query as solidQuery } from "@k2b/stdlib/solid";
-import { Button, dialogCore, PanelDialog, Placeholder, panelDialogFixedOptions, SegmentedControl, TextInput } from "@k2b/ui";
+import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions, SegmentedControl, TextInput } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAllChatsList from "./AssistantAllChatsList";
@@ -142,13 +142,7 @@ function AssistantAllChatsDialog(props: {
           />
         </div>
 
-        <Show when={result.data() ? result.error() : null}>
-          {(error) => (
-            <div class="rounded-[var(--ui-radius-surface)] bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
-              {error().message}
-            </div>
-          )}
-        </Show>
+        <Show when={result.data() ? result.error() : null}>{(error) => <NoticeCard tone="danger" title={error().message} />}</Show>
 
         <div aria-busy={result.loading() || result.refreshing()}>
           <Show
