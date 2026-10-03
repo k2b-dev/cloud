@@ -10,7 +10,7 @@ import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
-import { isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
+import { isMailReceivedSinceSend, isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
 import { type MailCollaborationEvent, publishMailCollaborationEvent } from "./events";
@@ -65,6 +65,7 @@ type VerifiedConversationProjection = {
   protocol_facts: Record<string, unknown> | string;
   outbound: boolean;
   is_latest_verified: boolean;
+  received_since_send: boolean;
   message_count: number;
 };
 
@@ -507,7 +508,15 @@ const applyVerifiedConversationTransition = async (params: {
         WHERE newer_link.conversation_id = conversation.id
           AND ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
           AND (newer_message.internal_date, newer_message.id) > (message.internal_date, message.id)
+          -- A reply someone chose to send before Mail stored this message was written without it.
+          AND NOT EXISTS (
+            SELECT 1
+            FROM mail.outbox_submissions newer_send
+            WHERE newer_send.message_id = newer_message.id
+              AND newer_send.created_at < message.created_at
+          )
       ) AS is_latest_verified,
+      ${isMailReceivedSinceSend(sql`message.id`)} AS received_since_send,
       (
         SELECT COUNT(*)::int
         FROM mail.conversation_messages conversation_link
@@ -523,14 +532,17 @@ const applyVerifiedConversationTransition = async (params: {
   const protocolFacts = parseMessageProtocolFacts(
     typeof projection.protocol_facts === "string" ? JSON.parse(projection.protocol_facts) : projection.protocol_facts,
   );
-  const transition = projection.is_latest_verified
-    ? deriveConversationWorkState(projection.work_status, {
-        direction: projection.outbound ? "outbound" : "inbound",
-        intent:
-          projection.outbound && (projection.in_reply_to || projection.reference_ids.length > 0) ? "observed_reply" : "observed_message",
-        automatic: isAutomaticSubmission(protocolFacts.autoSubmitted),
-      })
-    : { workStatus: projection.work_status, clearSnooze: false };
+  // The provider's copy of a reply Mail sent does not answer mail that arrived after someone chose
+  // Send, so it leaves that mail needing action, as the confirmed send did.
+  const transition =
+    projection.is_latest_verified && !(projection.outbound && projection.received_since_send)
+      ? deriveConversationWorkState(projection.work_status, {
+          direction: projection.outbound ? "outbound" : "inbound",
+          intent:
+            projection.outbound && (projection.in_reply_to || projection.reference_ids.length > 0) ? "observed_reply" : "observed_message",
+          automatic: isAutomaticSubmission(protocolFacts.autoSubmitted),
+        })
+      : { workStatus: projection.work_status, clearSnooze: false };
   const nextWorkStatus = transition.workStatus;
   const nextSnoozedUntil = transition.clearSnooze ? null : projection.snoozed_until;
   const changed =

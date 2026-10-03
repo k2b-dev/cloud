@@ -11,7 +11,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
-import { refreshConversationTimeline } from "./conversation-timeline";
+import { isMailReceivedSinceSend, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
 import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
@@ -2420,6 +2420,16 @@ const applyConfirmedSendWorkState = async (params: {
     automatic: draft.delivery_class === "automatic_reply" || params.command.actor_kind === "workflow",
   });
   if (transition.workStatus === draft.work_status) return null;
+  // A reply does not answer mail that arrived after someone chose Send, such as an answer to a
+  // reply scheduled for later: that mail still needs action.
+  if (transition.workStatus === "waiting") {
+    const [received] = await params.db<{ since_send: boolean }[]>`
+      SELECT ${isMailReceivedSinceSend(sql`outbox.message_id`)} AS since_send
+      FROM mail.outbox_submissions outbox
+      WHERE outbox.id = ${params.outbox.id}::uuid
+    `;
+    if (received?.since_send) return null;
+  }
 
   const [conversation] = await params.db<{ revision: string | number }[]>`
     UPDATE mail.conversations
@@ -2457,7 +2467,7 @@ const applyConfirmedSendWorkState = async (params: {
 
 /**
  * A send joins its conversation's timeline once it is sent, and leaves it while it waits for
- * another attempt or after it failed.
+ * another attempt or after it failed. A changed date or summary is a new conversation revision.
  */
 const refreshOutboxConversationTimeline = async (db: SqlClient, outboxId: string): Promise<void> => {
   const [link] = await db<{ conversation_id: string }[]>`
@@ -2466,7 +2476,8 @@ const refreshOutboxConversationTimeline = async (db: SqlClient, outboxId: string
     JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
     WHERE outbox.id = ${outboxId}::uuid
   `;
-  if (link) await refreshConversationTimeline(db, link.conversation_id);
+  if (!link || !(await refreshConversationTimeline(db, link.conversation_id))) return;
+  await db`UPDATE mail.conversations SET revision = revision + 1, updated_at = now() WHERE id = ${link.conversation_id}::uuid`;
 };
 
 const finishOutbox = async (params: {

@@ -6,6 +6,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { mergeConversationReferencesInTransaction } from "./conversation-reference";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { type MailConversationChangedEvent, publishMailCollaborationEvent } from "./events";
 import { parseMessageProtocolFacts } from "./message-protocol";
@@ -83,6 +84,7 @@ const recomputeConversation = async (params: {
       latest_subject: string;
       participant_summary: string;
       latest_outbound: boolean;
+      latest_unsent: boolean;
       latest_in_reply_to: string | null;
       latest_reference_ids: string[];
       latest_protocol_facts: Record<string, unknown> | string;
@@ -103,23 +105,31 @@ const recomputeConversation = async (params: {
             ON identity.mailbox_id = conversation.mailbox_id
            AND lower(identity.from_address) = sender.normalized_email
           WHERE sender.message_id = message.id AND sender.role = 'from'
-        ) AS outbound
+        ) AS outbound,
+        ${isUnsentOutboundMessage(sql`message.id`)} AS unsent
       FROM mail.conversations conversation
       JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
       JOIN mail.message_contents message ON message.id = link.message_id
       WHERE conversation.id = ${params.conversationId}::uuid
     ),
+    -- A reply scheduled for later does not date its conversation until it is sent. A conversation
+    -- that holds only unsent messages takes its subject and date from them.
+    considered AS (
+      SELECT *
+      FROM classified
+      WHERE NOT unsent OR NOT EXISTS (SELECT 1 FROM classified sent_message WHERE NOT sent_message.unsent)
+    ),
     timeline AS (
       SELECT
-        COUNT(*)::int AS message_count,
+        (SELECT COUNT(*)::int FROM classified) AS message_count,
         MAX(internal_date) AS latest_message_at,
         MAX(internal_date) FILTER (WHERE NOT outbound) AS latest_inbound_at,
         MAX(internal_date) FILTER (WHERE outbound) AS latest_outbound_at
-      FROM classified
+      FROM considered
     ),
     latest AS (
-      SELECT message_id, subject, outbound, in_reply_to, reference_ids, protocol_facts
-      FROM classified
+      SELECT message_id, subject, outbound, unsent, in_reply_to, reference_ids, protocol_facts
+      FROM considered
       ORDER BY internal_date DESC, message_id DESC
       LIMIT 1
     ),
@@ -149,6 +159,7 @@ const recomputeConversation = async (params: {
       latest.subject AS latest_subject,
       participants.summary AS participant_summary,
       latest.outbound AS latest_outbound,
+      latest.unsent AS latest_unsent,
       latest.in_reply_to AS latest_in_reply_to,
       latest.reference_ids AS latest_reference_ids,
       latest.protocol_facts AS latest_protocol_facts
@@ -162,16 +173,18 @@ const recomputeConversation = async (params: {
   const protocolFacts = parseMessageProtocolFacts(
     typeof projection.latest_protocol_facts === "string" ? JSON.parse(projection.latest_protocol_facts) : projection.latest_protocol_facts,
   );
-  const transition = params.deriveCollaboration
-    ? deriveConversationWorkState(projection.work_status, {
-        direction: projection.latest_outbound ? "outbound" : "inbound",
-        intent:
-          projection.latest_outbound && (projection.latest_in_reply_to || projection.latest_reference_ids.length > 0)
-            ? "observed_reply"
-            : "observed_message",
-        automatic: isAutomaticSubmission(protocolFacts.autoSubmitted),
-      })
-    : { workStatus: projection.work_status, clearSnooze: false };
+  // A reply that has not been sent does not decide the next step.
+  const transition =
+    params.deriveCollaboration && !projection.latest_unsent
+      ? deriveConversationWorkState(projection.work_status, {
+          direction: projection.latest_outbound ? "outbound" : "inbound",
+          intent:
+            projection.latest_outbound && (projection.latest_in_reply_to || projection.latest_reference_ids.length > 0)
+              ? "observed_reply"
+              : "observed_message",
+          automatic: isAutomaticSubmission(protocolFacts.autoSubmitted),
+        })
+      : { workStatus: projection.work_status, clearSnooze: false };
   const [state] = await params.db<{ id: string; revision: string | number }[]>`
     UPDATE mail.conversations
     SET

@@ -7,6 +7,8 @@ import type {
   OperatorActionSafety,
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
+import { isInboxFolder, isSentFolder } from "./follow-up-scope";
 import { SEARCH_CHUNK_CHARACTERS, SEARCH_CHUNK_OVERLAP_CHARACTERS } from "./search-chunks";
 
 type SqlClient = typeof sql;
@@ -279,7 +281,7 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       subject: string;
       internal_date: Date | string;
       outbound: boolean;
-      human_message: boolean;
+      starts_waiting: boolean;
       participants: string;
     }[]
   >`
@@ -294,7 +296,35 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
          AND lower(identity.from_address) = sender.normalized_email
         WHERE sender.message_id = message.id AND sender.role = 'from'
       ) AS outbound,
-      COALESCE(NULLIF(lower(btrim(message.protocol_facts->>'autoSubmitted')), ''), 'no') = 'no' AS human_message,
+      -- Like a newly received message: a human reply, or a new message found in Sent and not in the
+      -- Inbox, by folder or Gmail label, waits for an answer.
+      (
+        COALESCE(NULLIF(lower(btrim(message.protocol_facts->>'autoSubmitted')), ''), 'no') = 'no'
+        AND (
+          message.in_reply_to IS NOT NULL
+          OR cardinality(message.reference_ids) > 0
+          OR (
+            EXISTS (
+              SELECT 1 FROM mail.message_placements placement
+              WHERE placement.message_id = message.id
+                AND placement.deleted_at IS NULL
+                AND (
+                  ${isSentFolder(sql`placement.folder_id`)}
+                  OR EXISTS (SELECT 1 FROM unnest(placement.keywords) keyword WHERE lower(keyword) = '\\sent')
+                )
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM mail.message_placements placement
+              WHERE placement.message_id = message.id
+                AND placement.deleted_at IS NULL
+                AND (
+                  ${isInboxFolder(sql`placement.folder_id`)}
+                  OR EXISTS (SELECT 1 FROM unnest(placement.keywords) keyword WHERE lower(keyword) = '\\inbox')
+                )
+            )
+          )
+        )
+      ) AS starts_waiting,
       COALESCE((
         SELECT string_agg(COALESCE(NULLIF(address.display_name, ''), address.email), ', ' ORDER BY address.position)
         FROM mail.message_addresses address WHERE address.message_id = message.id
@@ -315,7 +345,7 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       ) VALUES (
         ${shortId}, ${mailboxId}::uuid, ${orphan.subject}, ${orphan.participants},
         ${orphan.outbound ? null : orphan.internal_date}, ${orphan.outbound ? orphan.internal_date : null},
-        ${orphan.internal_date}, ${orphan.outbound && orphan.human_message ? "waiting" : "needs_action"}
+        ${orphan.internal_date}, ${orphan.outbound && orphan.starts_waiting ? "waiting" : "needs_action"}
       )
       RETURNING id
     `,
@@ -348,6 +378,8 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
       JOIN mail.message_contents message ON message.id = link.message_id
       WHERE conversation.mailbox_id = ${mailboxId}::uuid
+        -- A reply scheduled for later does not date its conversation until it is sent.
+        AND NOT ${isUnsentOutboundMessage(sql`message.id`)}
     ), latest AS (
       SELECT DISTINCT ON (conversation_id) conversation_id, message_id, subject, outbound
       FROM classified ORDER BY conversation_id, internal_date DESC, message_id DESC
