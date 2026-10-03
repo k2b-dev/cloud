@@ -6,7 +6,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { RemoteContentRuleInput, RemoteContentRuleScope } from "../contracts";
 import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normalization";
-import { auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
+import { auditActorFromRequest, type MailRequestContext, type PersonalPrincipal, personalPrincipal } from "./auth";
 import { createPinnedLookup, resolvePublicEndpoint } from "./connectors/endpoint-policy";
 import { resolveMailExecution } from "./execution";
 import { assessMessage } from "./security";
@@ -16,11 +16,6 @@ const REMOTE_IMAGE_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 3;
 const MAX_REMOTE_CONTENT_RULES = 500;
 const ALLOWED_IMAGE_TYPES = new Set(["image/avif", "image/gif", "image/jpeg", "image/png", "image/webp"]);
-
-type PersonalPrincipal = {
-  kind: "user" | "service_account";
-  id: string;
-};
 
 type RemoteImageRow = {
   id: string;
@@ -67,15 +62,6 @@ const mapRule = (row: RemoteContentRuleRow): RemoteContentRule => ({
   value: row.value,
   createdAt: toIso(row.created_at),
 });
-
-const personalPrincipal = (context: MailRequestContext): PersonalPrincipal => {
-  const user = userBackedActor(context);
-  if (user) return { kind: "user", id: user.id };
-  if (context.actor.kind === "service_account") {
-    return { kind: "service_account", id: context.actor.serviceAccount.id };
-  }
-  throw new Error("Mail request actor has no personal principal");
-};
 
 export const normalizeRemoteContentRule = (input: RemoteContentRuleInput): Result<{ scope: RemoteContentRuleScope; value: string }> => {
   const value = input.scope === "sender" ? normalizeEmailAddress(input.value) : normalizeEmailDomain(input.value);

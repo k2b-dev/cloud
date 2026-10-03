@@ -58,18 +58,26 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
-  // Pinned and hidden mailboxes in the overview, kept per person so they apply on every device.
+  // Pinned and hidden mailboxes in the overview, kept per principal so they apply on every device.
+  // A person's rows go with the person, a service account's with the account.
   await tx`
-    CREATE TABLE IF NOT EXISTS mail.user_mailbox_preferences (
-      user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    CREATE TABLE IF NOT EXISTS mail.personal_mailbox_preferences (
       mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+      service_account_id uuid REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
       pinned_at timestamp with time zone,
       hidden_at timestamp with time zone,
-      PRIMARY KEY (user_id, mailbox_id)
+      CONSTRAINT personal_mailbox_preferences_principal_check CHECK (num_nonnulls(user_id, service_account_id) = 1),
+      CONSTRAINT personal_mailbox_preferences_key UNIQUE NULLS NOT DISTINCT (user_id, service_account_id, mailbox_id)
     )
   `.simple();
   await tx`
-    CREATE INDEX IF NOT EXISTS user_mailbox_preferences_mailbox_idx ON mail.user_mailbox_preferences USING btree (mailbox_id)
+    CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_service_account_idx
+    ON mail.personal_mailbox_preferences USING btree (service_account_id, mailbox_id)
+    WHERE service_account_id IS NOT NULL
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_mailbox_idx ON mail.personal_mailbox_preferences USING btree (mailbox_id)
   `.simple();
 };
 

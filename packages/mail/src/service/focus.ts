@@ -92,7 +92,8 @@ const boundMailboxId = (context: MailRequestContext): string | null => {
   return context.actor.serviceAccount.resourceId;
 };
 
-const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string }[]>`
+/** Mailboxes the request may read, as a subquery of `mailbox_id` rows. */
+export const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string }[]>`
   SELECT ma.mailbox_id
   FROM mail.mailbox_access ma
   JOIN auth.access a ON a.id = ma.access_id

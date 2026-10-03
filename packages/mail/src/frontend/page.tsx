@@ -57,16 +57,13 @@ export default ssr<AuthContext>(async (c) => {
     // Pins and hidden mailboxes used to live in this cookie. Move this browser's lists to the
     // person once, for mailboxes they can still read, and drop them from the cookie.
     if (workspacePreferences.pinnedMailboxIds.length > 0 || workspacePreferences.hiddenMailboxIds.length > 0) {
-      const readable = new Set((await publicMailboxesPromise).map((mailbox) => mailbox.id));
-      await mailboxPreferences.importBrowserMailboxPreferences(user.id, {
-        pinnedMailboxIds: workspacePreferences.pinnedMailboxIds.filter((id) => readable.has(id)),
-        hiddenMailboxIds: workspacePreferences.hiddenMailboxIds.filter((id) => readable.has(id)),
-      });
+      await mailboxPreferences.importBrowserMailboxPreferences(context, workspacePreferences);
       c.header("Set-Cookie", mailWorkspaceCookie({ ...workspacePreferences, pinnedMailboxIds: [], hiddenMailboxIds: [] }), {
         append: true,
       });
     }
-    const stored = await mailboxPreferences.listMailboxPreferences(user.id);
+    // Only readable mailboxes, at most as many as Focus excludes in one request.
+    const stored = await mailboxPreferences.listMailboxPreferences(context);
     const shortIds = await publicResources.publicIds("mailboxes", [...stored.pinnedMailboxIds, ...stored.hiddenMailboxIds]);
     const toPublic = (ids: string[]) => ids.flatMap((id) => shortIds.get(id) ?? []);
     return {

@@ -60,8 +60,18 @@ cross-mailbox focus queue (for me, unassigned, waiting, all active) with
 People can pin a mailbox to the top of that sidebar or hide one they rarely
 need. A hidden mailbox moves to a collapsed **Hidden** section, and its
 conversations leave the focus queue and its view counts; it stays connected and
-opens directly. Pins and hidden mailboxes are stored per person in Mail's
-database, so they apply on every device and never change what others see.
+opens directly. Mail stores pins and hidden mailboxes per principal, so they
+apply on every device and never change what others see. A service account or
+agent keeps its own lists, like a person, and a personal API key uses its
+person's lists. Each list holds up to 200 mailboxes the principal can still
+read; a mailbox whose access ends drops out of the lists and returns with the
+access.
+
+`GET /api/mail/mailboxes/preferences` reads the lists, and
+`PATCH /api/mail/mailboxes/{mailboxId}/preference` pins or hides one mailbox;
+`cld mail mailbox preferences|pin|unpin|hide|unhide` wraps both. The focus API
+and `cld mail focus` cover every readable mailbox; pass the hidden ones as
+`excludeMailboxIds` to get the overview's queue.
 
 Open **Recently deleted mailboxes** at the bottom of that sidebar to load
 mailboxes you can restore. The list loads on demand and supports retry and

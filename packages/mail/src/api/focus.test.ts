@@ -139,6 +139,7 @@ suite("Mail focus API", () => {
 
     const spec = await generateSpecs(app);
     expect(spec.paths?.["/mailboxes/{mailboxId}/preference"]?.patch?.tags).toContain("Mail:Mailboxes");
+    expect(spec.paths?.["/mailboxes/preferences"]?.get?.tags).toContain("Mail:Mailboxes");
   });
 
   test("resolves public mailbox and conversation IDs for overview details", async () => {

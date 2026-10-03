@@ -147,6 +147,13 @@ test.skipIf(isServer)("pinning saves for the person and puts the row back when t
     expect(order()).toEqual(["Mail01", "Mail02", "Mail03"]);
     button("Unpin Sales");
     expect(document.body.textContent).toContain("Mail is restarting");
+
+    // Two quick changes that both fail end where the server is, not at the first change.
+    button("Unpin Sales").click();
+    button("Pin Sales").click();
+    await settle();
+    expect(saves.slice(-2).map((save) => save.body)).toEqual([{ pinned: false }, { pinned: true }]);
+    expect(order()).toEqual(["Mail01", "Mail02", "Mail03"]);
     // The browser keeps no copy of its own.
     expect(document.cookie).not.toContain("pinnedMailboxIds");
   } finally {
@@ -312,6 +319,69 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     await settle();
     expect(document.activeElement).toBe(sectionToggle());
     expect(scope()).toBe("All mailboxes except 2 hidden");
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a full hidden list keeps the mailbox in place and says why", async () => {
+  const dom = createDomTestHarness();
+  dom.window.happyDOM.setURL("http://localhost/app/mail");
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return Response.json({ message: "Unexpected request" }, { status: 500 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: MailOverview } = await import("./MailOverview.island");
+  delegateEvents(["click"], dom.document);
+  const dispose = render(
+    () =>
+      createComponent(MailOverview, {
+        mailboxes: [
+          {
+            id: "Mail01",
+            name: "Support",
+            description: null,
+            health: "active" as const,
+            healthReason: null,
+            syncEnabled: true,
+            searchBackend: "auto" as const,
+            automaticReplyManagementPermission: "admin" as const,
+            composeSafety: { internalDomains: ["example.test"], largeRecipientThreshold: 20 },
+            createdAt: "2026-08-19T10:00:00.000Z",
+            updatedAt: "2026-08-19T10:00:00.000Z",
+            permission: "admin" as const,
+            receivingAddress: "support@example.test",
+          },
+        ],
+        initialView: "mine",
+        initialSelection: null,
+        initialDetail: null,
+        initialPinnedMailboxIds: [],
+        // Hidden mailboxes beyond the ones the overview lists still count.
+        initialHiddenMailboxIds: Array.from({ length: 200 }, (_, index) => `Hid${String(index).padStart(3, "0")}`),
+        currentUserEmail: null,
+        contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+        dateConfig: { locale: "en", timeZone: "UTC" },
+        initialFocusError: null,
+        initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+      }),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(30);
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Hide Support"]')!.click();
+    await Bun.sleep(30);
+    expect(document.body.textContent).toContain("You can hide at most 200 mailboxes. Show another one again first.");
+    expect(dom.root.querySelector('.mail-overview-mailbox[data-mailbox="Mail01"]')?.getAttribute("data-hidden")).toBeNull();
+    // Neither a save nor a Focus refresh past the 200 IDs Focus accepts.
+    expect(requests).toEqual([]);
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
