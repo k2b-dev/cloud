@@ -114,7 +114,11 @@ test("server HTML shows a failed server read as its error with a retry, not as a
   const html = renderToString(() =>
     createComponent(
       RecordsView,
-      recordsViewProps({ initialData: { items: [], nextCursor: null }, initialError: "The filter is invalid: unknown field." }),
+      recordsViewProps({
+        canWrite: true,
+        initialData: { items: [], nextCursor: null },
+        initialError: "The filter is invalid: unknown field.",
+      }),
     ),
   );
 
@@ -122,7 +126,23 @@ test("server HTML shows a failed server read as its error with a retry, not as a
   expect(html).toContain("Could not refresh records");
   expect(html).toContain("The filter is invalid: unknown field.");
   expect(html).toContain("Retry");
+  expect(html).not.toContain("No records yet");
+  expect(html.match(/Add record/g)).toHaveLength(1);
   expect(searchInput).not.toContain("aria-busy");
   expect(searchIcon).not.toContain("k2b-spin");
   expect(recordsArea).not.toContain("opacity-60");
+});
+
+test("server HTML shows an empty table as one empty state whose action is the toolbar's create control", () => {
+  const empty = { initialData: { items: [], nextCursor: null } };
+  const writer = renderToString(() => createComponent(RecordsView, recordsViewProps({ ...empty, canWrite: true })));
+  expect(writer).toContain("No records yet");
+  expect(writer.match(/Add record/g)).toHaveLength(2);
+
+  // Only forms may add records here, and none is active: the toolbar shows nothing, so the empty state has no action slot.
+  const noControl = renderToString(() =>
+    createComponent(RecordsView, recordsViewProps({ ...empty, canWrite: true, disableDirectInsert: true })),
+  );
+  expect(noControl).toContain("No records yet");
+  expect(noControl).not.toContain("k2b-placeholder__action");
 });

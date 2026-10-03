@@ -87,6 +87,7 @@ const renderSurface = (mode: SurfaceProps["mode"], overrides: Partial<SurfacePro
       canEditView: false,
       resultNarrowed: false,
       onClearResultNarrowing: () => {},
+      readFailed: false,
       bulkSelection: undefined,
       onRecordClick: () => {},
       onCalendarChange: () => {},
@@ -151,7 +152,15 @@ describe("RecordsResultSurface empty table", () => {
     expect(narrowed).not.toContain("No records yet");
   });
 
-  test("a table that is still loading keeps the grid until the result arrives", () => {
+  test("a failed read says nothing about the table, so it keeps the grid instead of claiming there are no records", () => {
+    const html = renderSurface("table", { items: [], readFailed: true, emptyAction: addRecord() });
+
+    expect(html).toContain("<table");
+    expect(html).not.toContain("No records yet");
+    expect(html).not.toContain("Add record");
+  });
+
+  test("before its first read has finished, a table keeps the grid", () => {
     const html = renderSurface("table", { items: [], loading: true });
 
     expect(html).toContain("<table");

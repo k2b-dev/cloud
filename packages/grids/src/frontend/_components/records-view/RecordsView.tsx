@@ -38,7 +38,7 @@ import type { QueryWorkspaceCurrentSource } from "../query/query-workspace-model
 import { openCombinedAuditDialog } from "../records/CombinedAuditDialog";
 import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
 import type { GroupBucket } from "../table/GroupedTable";
-import { GridCreateActions } from "../toolbar/GridCreateActions";
+import { GridCreateActions, offersGridCreateActions } from "../toolbar/GridCreateActions";
 import GridToolbar from "../toolbar/GridToolbar";
 // Plain children share RecordsView's hydrated state; nested islands cannot
 // serialize the callback props used by these controls.
@@ -893,8 +893,15 @@ export default function RecordsView(props: Props) {
               canEditView={!!props.canEditActiveView}
               resultNarrowed={resultNarrowed()}
               onClearResultNarrowing={clearResultNarrowing}
+              readFailed={Boolean(queryFailure())}
               emptyAction={
-                props.canWrite ? (
+                offersGridCreateActions({
+                  canWrite: props.canWrite,
+                  canDirectWrite: canDirectWrite(),
+                  canSubmitForms: props.canWrite && mutationSourceAllowed("form"),
+                  disableDirectInsert: disableDirectInsert(),
+                  forms: forms(),
+                }) ? (
                   <div class="flex flex-wrap items-center justify-center gap-2">
                     <GridCreateActions
                       baseId={props.baseId}

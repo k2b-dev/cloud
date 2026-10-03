@@ -25,10 +25,19 @@ type Props = {
   dateConfig?: DateContext;
 };
 
+type CreateAccess = Pick<Props, "canWrite" | "canDirectWrite" | "canSubmitForms" | "disableDirectInsert" | "forms">;
+
+const activeFormsOf = (props: Pick<Props, "canSubmitForms" | "forms">): Form[] =>
+  props.canSubmitForms ? (props.forms ?? []).filter((form) => form.isActive) : [];
+
+/** Whether GridCreateActions shows a control: an active form, direct insert, or the locked button that says why adding is unavailable. */
+export const offersGridCreateActions = (props: CreateAccess): boolean =>
+  props.canWrite && (activeFormsOf(props).length > 0 || !props.canDirectWrite || !props.disableDirectInsert);
+
 export function GridCreateActions(props: Props) {
   const locale = useLocale();
   const t = () => toolbarMessages.resolve([locale()]).t;
-  const activeForms = createMemo(() => (props.canSubmitForms ? (props.forms ?? []).filter((form) => form.isActive) : []));
+  const activeForms = createMemo(() => activeFormsOf(props));
   const blockedReason = () => (props.canSubmitForms ? t().activeFormRequired : t().changesUnavailable);
   const [creating, setCreating] = createSignal(false);
   const saveRecord = async (payload: Record<string, unknown>) => {
