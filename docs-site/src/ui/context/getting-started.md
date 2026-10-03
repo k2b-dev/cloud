@@ -62,9 +62,10 @@ Omit either preset when your application already provides that asset.
 The icon preset gives every Tabler icon a fixed width of one em. An icon keeps
 that width while the icon font loads, so buttons and text next to it do not
 grow or move sideways when the font arrives. Because each icon is its own box,
-running text can wrap between an icon and the word next to it, and link
-underlines and letter spacing skip the icon. To keep an icon with its label,
-put both in a flex row with a gap, as buttons do.
+running text can wrap between an icon and the word next to it, even across a
+no-break space, and link underlines and letter spacing skip the icon. To keep an
+icon with its label, put both in a flex row with a gap, as buttons do, or inside
+running text in an element with `white-space: nowrap`.
 
 The Plex preset references separate WOFF2 files in its adjacent `fonts/`
 directory. Keep these assets with the stylesheet when copying it for direct
