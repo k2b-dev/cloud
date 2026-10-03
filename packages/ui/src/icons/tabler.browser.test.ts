@@ -9,8 +9,9 @@ const dist = resolve(import.meta.dir, "../../dist");
 const preset = readFileSync(resolve(dist, "tabler.css"), "utf8");
 const fontFile = /\.\/(tabler-icons-[\w-]+\.woff2)/.exec(preset)![1]!;
 
-// An icon in running text, an icon with a label, an icon-only control at another size, and text after each.
-const page = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/tabler.css"></head>
+// An icon in running text, an icon with a label, an icon-only control at another size, and text after each. The
+// preset is inline: a linked stylesheet could still be on its way when the first measurement runs.
+const page = `<!doctype html><html><head><meta charset="utf-8"><style>${preset}</style></head>
 <body style="margin:0;font:14px/1.5 sans-serif">
 <p>Sign in <i class="ti ti-login"></i> to continue</p>
 <div style="display:flex;align-items:center;gap:8px">
@@ -36,7 +37,6 @@ describe("Tabler icon preset", () => {
       await tab.route("http://icons.test/**", async (route) => {
         const { pathname } = new URL(route.request().url());
         if (pathname === "/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page });
-        if (pathname === "/tabler.css") return route.fulfill({ contentType: "text/css; charset=utf-8", body: preset });
         if (pathname === `/${fontFile}`) {
           await firstFrame.promise;
           return route.fulfill({ contentType: "font/woff2", path: resolve(dist, fontFile) });

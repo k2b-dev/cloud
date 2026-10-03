@@ -149,6 +149,9 @@ const show = async (tab: Page, name: string, options: { editable?: boolean; read
   await tab.evaluate(([name, size, options]) => window.preview.open(name, size, options), [name, size, options] as const);
   await tab.waitForSelector(".filesv2-preview-dialog[open]");
   await settle(tab);
+  // These tests are about the dialog's own layout, so they measure it with the icon font in place, however slowly
+  // the runner serves it. Whether a font may move anything is the font tests' question.
+  await tab.evaluate(() => document.fonts.ready);
 };
 type Box = { left: number; top: number; width: number; height: number };
 const box = (tab: Page, selector: string): Promise<Box> =>
