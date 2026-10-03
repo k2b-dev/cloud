@@ -9,9 +9,9 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
-import { runMailboxCommandsJob, startCommandWorkers, stopCommandWorkers } from "./command-runtime";
+import { enqueueMailCommand, runMailboxCommandsJob, startCommandWorkers, stopCommandWorkers } from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
-import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
+import { type ConnectorEnvelope, imapSmtpConnector, type RemoteMessageState } from "./connectors";
 import { createDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { runMaintenanceJob } from "./maintenance-runtime";
@@ -35,11 +35,13 @@ const FOLDER_RIGHTS = ["read", "write_flags", "insert", "move", "delete_messages
 
 // Every provider round trip of this fixture takes this long, like a remote IMAP server.
 const ROUND_TRIP_MS = 15;
+// A move takes this much longer per message it carries.
+const MOVE_MS_PER_MESSAGE = 5;
 
 type StoredMessage = { messageId: string; subject: string; internalDate: Date };
 // `modseq` grows with every change, like HIGHESTMODSEQ on a server with CONDSTORE.
 type StoredFolder = { uidValidity: string; nextUid: number; modseq: number; entries: Map<number, StoredMessage> };
-type Account = { label: string; condstore: boolean; folders: Map<string, StoredFolder> };
+type Account = { label: string; condstore: boolean; uidplus: boolean; folders: Map<string, StoredFolder> };
 
 type Mailbox = {
   account: string;
@@ -128,6 +130,14 @@ suite("mail provider lease fairness", () => {
   const sends: string[] = [];
   // Every CHANGEDSINCE flag window, by mailbox label.
   const flagWindows: string[] = [];
+  // Every UID MOVE, by mailbox label, with the number of messages it carried.
+  const moveSets: Array<{ label: string; uids: number }> = [];
+  // Messages the server refuses to move, by Message-ID, and messages another client deletes while a
+  // move runs, by Message-ID or, for one of two messages that share it, by subject.
+  const refusedMoves = new Set<string>();
+  const vanishingMoves = new Set<string>();
+  // Messages whose move the server carries out before the connection drops, by Message-ID.
+  const droppedMoves = new Set<string>();
   let hydrationStarted = false;
   const ensureHydrationRuntime = async (): Promise<void> => {
     if (hydrationStarted) return;
@@ -219,12 +229,16 @@ suite("mail provider lease fairness", () => {
    * A mailbox on its own in-memory IMAP account, with INBOX, Archive, and Sent discovered and INBOX
    * synced. `firstInboxUid` gives INBOX the UID history of an older account.
    */
-  const connect = async (label: string, options: { condstore?: boolean; firstInboxUid?: number } = {}): Promise<Mailbox> => {
+  const connect = async (
+    label: string,
+    options: { condstore?: boolean; firstInboxUid?: number; uidplus?: boolean } = {},
+  ): Promise<Mailbox> => {
     const account = `${label}-${suffix}@example.test`;
     const condstore = options.condstore ?? false;
     accounts.set(account, {
       label,
       condstore,
+      uidplus: options.uidplus ?? true,
       folders: new Map(
         [INBOX, ARCHIVE, SENT].map((path, index) => [
           path,
@@ -356,8 +370,16 @@ suite("mail provider lease fairness", () => {
     return Boolean(message);
   };
 
-  /** Queues one move to Archive per message, as a bulk move in the web UI does. */
-  const queueMoves = async (mailbox: Mailbox, messageIds: string[], label: string): Promise<string[]> => {
+  /**
+   * Queues one move per message, by default from INBOX to Archive, as a bulk move in the web UI
+   * does. With `startTogether` the mailbox's job starts once every move is queued.
+   */
+  const queueMoves = async (
+    mailbox: Mailbox,
+    messageIds: string[],
+    label: string,
+    options: { from?: string; to?: string; startTogether?: boolean } = {},
+  ): Promise<string[]> => {
     const messages = await sql<{ id: string }[]>`
       SELECT id FROM mail.message_contents
       WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id IN ${sql(messageIds)}
@@ -369,17 +391,19 @@ suite("mail provider lease fairness", () => {
       const command = await createActorCommand({
         context,
         mailboxId: mailbox.mailboxId,
+        enqueue: !options.startTogether,
         input: {
           kind: "move",
           messageId: message.id,
-          sourceFolderId: mailbox.folderId(INBOX),
-          destinationFolderId: mailbox.folderId(ARCHIVE),
+          sourceFolderId: mailbox.folderId(options.from ?? INBOX),
+          destinationFolderId: mailbox.folderId(options.to ?? ARCHIVE),
           idempotencyKey: `${label}-${index}-${suffix}`,
         },
       });
       if (!command.ok) throw new Error(JSON.stringify(command.error));
       commandIds.push(command.data.id);
     }
+    if (options.startTogether && commandIds[0]) await enqueueMailCommand(commandIds[0], "move");
     return commandIds;
   };
 
@@ -477,15 +501,40 @@ suite("mail provider lease fairness", () => {
           .filter(([, message]) => message.messageId.toLowerCase() === messageId.trim().toLowerCase())
           .map(([uid]) => uid);
       }),
-      spyOn(imapSmtpConnector, "move").mockImplementation(async (config, target, destinationPath) => {
+      spyOn(imapSmtpConnector, "getMessageStates").mockImplementation(async (config, messages) => {
         await Bun.sleep(ROUND_TRIP_MS);
-        const source = folderOf(config.username, target.folderPath);
-        const message = source.entries.get(target.uid);
-        if (!message) throw Object.assign(new Error("No such message"), { responseStatus: "NO" });
-        source.entries.delete(target.uid);
-        source.modseq += 1;
-        const uid = store(config.username, destinationPath, message);
-        return { destinationUidValidity: folderOf(config.username, destinationPath).uidValidity, destinationUid: uid };
+        const folder = folderOf(config.username, messages.folderPath);
+        const states = new Map<number, RemoteMessageState>();
+        for (const uid of messages.uids) {
+          const message = folder.entries.get(uid);
+          if (message) states.set(uid, { exists: true, flags: [], keywords: [], messageId: message.messageId, modseq: null });
+        }
+        return states;
+      }),
+      spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (config, messages, destinationPath) => {
+        const account = accounts.get(config.username)!;
+        // Like a server that moves message after message.
+        await Bun.sleep(ROUND_TRIP_MS + messages.uids.length * MOVE_MS_PER_MESSAGE);
+        moveSets.push({ label: account.label, uids: messages.uids.length });
+        const source = folderOf(config.username, messages.folderPath);
+        const destinationUids = new Map<number, number>();
+        let connectionDrops = false;
+        for (const uid of messages.uids) {
+          const message = source.entries.get(uid);
+          if (message && droppedMoves.has(message.messageId)) connectionDrops = true;
+          // Another client deletes this message just before the server takes the move.
+          const vanishes = message && (vanishingMoves.has(message.messageId) || vanishingMoves.has(message.subject));
+          if (message && vanishes) source.entries.delete(uid);
+          if (!message || refusedMoves.has(message.messageId) || vanishes) continue;
+          source.entries.delete(uid);
+          source.modseq += 1;
+          destinationUids.set(uid, store(config.username, destinationPath, message));
+        }
+        if (connectionDrops) throw new Error("Connection closed");
+        const completed = messages.uids.every((uid) => !source.entries.has(uid));
+        // Without UIDPLUS the server reports no COPYUID, and imapflow drops it when the server refuses the move.
+        if (!account.uidplus || !completed) return { completed, destinationUidValidity: null, destinationUids: new Map() };
+        return { completed, destinationUidValidity: folderOf(config.username, destinationPath).uidValidity, destinationUids };
       }),
       spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, path, requests, consume) => {
         downloads.push(accounts.get(config.username)?.label ?? config.username);
@@ -550,19 +599,8 @@ suite("mail provider lease fairness", () => {
     });
     if (!draft.ok) throw new Error(JSON.stringify(draft.error));
 
-    const moves = await queueMoves(busy, backlog, "bulk-move");
+    const moves = await queueMoves(busy, backlog, "bulk-move", { startTogether: true });
     await waitFor(async () => (await confirmed(moves)) >= 3, "the bulk move to start");
-
-    // New mail for the busy mailbox comes in with each folder sync, not after the backlog. Several
-    // rounds, because a sync that only gets in when it happens to try between two moves can be lucky once.
-    for (let round = 0; round < 3; round += 1) {
-      const [newMail] = deliver(busy, 1, `new-mail-${round}`);
-      const windowsBefore = flagWindows.filter((label) => label === "busy").length;
-      const syncMs = await runFolderSyncJob(busy.folderId(INBOX));
-      expect(await imported(busy, newMail!)).toBe(true);
-      expect(flagWindows.filter((label) => label === "busy").length - windowsBefore).toBeGreaterThanOrEqual(5);
-      expect(syncMs).toBeLessThan(5_000);
-    }
 
     // Another mailbox's move and send run while the backlog drains.
     const startedAt = performance.now();
@@ -588,11 +626,174 @@ suite("mail provider lease fairness", () => {
     );
     expect(performance.now() - startedAt).toBeLessThan(5_000);
 
-    // The backlog was still draining all along, and keeps draining after the sync took its turn.
-    const remaining = await pending(moves);
-    expect(remaining).toBeGreaterThan(200);
-    await waitFor(async () => (await pending(moves)) < remaining, "the bulk move to continue");
+    // New mail for the busy mailbox comes in with each folder sync, not after the backlog. Several
+    // rounds, because a sync that only gets in when it happens to try between two turns can be lucky once.
+    for (let round = 0; round < 3; round += 1) {
+      const [newMail] = deliver(busy, 1, `new-mail-${round}`);
+      const windowsBefore = flagWindows.filter((label) => label === "busy").length;
+      const syncMs = await runFolderSyncJob(busy.folderId(INBOX));
+      expect(await imported(busy, newMail!)).toBe(true);
+      expect(flagWindows.filter((label) => label === "busy").length - windowsBefore).toBeGreaterThanOrEqual(5);
+      expect(syncMs).toBeLessThan(5_000);
+      // The first sync waited for at most the set of moves in progress, not for the backlog.
+      if (round === 0) expect(await pending(moves)).toBeGreaterThan(0);
+    }
+
+    // The backlog keeps draining after the syncs took their turns.
+    await waitFor(async () => (await pending(moves)) === 0, "the bulk move to finish");
+    expect(await confirmed(moves)).toBe(300);
   }, 120_000);
+
+  /** The message's commands by Message-ID, with their outcome. */
+  const outcomes = async (commandIds: string[]): Promise<Map<string, { state: string; code: string | null }>> => {
+    const rows = await sql<{ message_id: string; state: string; code: string | null }[]>`
+      SELECT content.message_id, command.state, command.last_error_code AS code
+      FROM mail.commands command
+      JOIN mail.remote_message_refs ref ON ref.id = (command.target->>'remoteMessageRefId')::uuid
+      JOIN mail.message_contents content ON content.id = ref.message_id
+      WHERE command.id IN ${sql(commandIds)}
+    `;
+    return new Map(rows.map((row) => [row.message_id, { state: row.state, code: row.code }]));
+  };
+
+  /** How many of the messages have a current placement in the folder. */
+  const placedIn = async (mailbox: Mailbox, path: string, messageIds: string[]): Promise<number> => {
+    const [row] = await sql<{ count: number }[]>`
+      SELECT count(*)::int AS count
+      FROM mail.message_placements placement
+      JOIN mail.message_contents content ON content.id = placement.message_id
+      WHERE placement.folder_id = ${mailbox.folderId(path)}::uuid
+        AND placement.deleted_at IS NULL
+        AND content.message_id IN ${sql(messageIds)}
+    `;
+    return row?.count ?? 0;
+  };
+
+  test("300 moves drain in a handful of set moves with one command each, and moving them back works", async () => {
+    const mailbox = await connect("sets");
+    const messageIds = await deliverAndSync(mailbox, 300, "set");
+    const sets = () => moveSets.filter((entry) => entry.label === "sets").map((entry) => entry.uids);
+
+    const moves = await queueMoves(mailbox, messageIds, "set-move", { startTogether: true });
+    await waitFor(async () => (await confirmed(moves)) === 300, "the moves to Archive");
+    expect(sets()).toEqual([50, 50, 50, 50, 50, 50]);
+    // Every message keeps its own command and its own execution activity.
+    const [activity] = await sql<{ commands: number; events: number }[]>`
+      SELECT count(DISTINCT command_id)::int AS commands, count(*)::int AS events
+      FROM mail.activity_events
+      WHERE command_id IN ${sql(moves)} AND action = 'command.execute'
+    `;
+    expect(activity).toEqual({ commands: 300, events: 300 });
+    // COPYUID tells each message's new UID, so Archive shows them without waiting for its folder sync.
+    expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(300);
+    expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
+
+    // Moving messages back, as an undo does, finds each one at its new place.
+    const undone = messageIds.slice(0, 100);
+    const back = await queueMoves(mailbox, undone, "set-back", { from: ARCHIVE, to: INBOX, startTogether: true });
+    await waitFor(async () => (await confirmed(back)) === 100, "the moves back to INBOX");
+    expect(await placedIn(mailbox, INBOX, undone)).toBe(100);
+    expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(200);
+    expect(folderOf(mailbox.account, INBOX).entries.size).toBe(100);
+  }, 120_000);
+
+  test("a set move that partly fails proves each moved message and leaves the others where they are", async () => {
+    const mailbox = await connect("partial");
+    const messageIds = await deliverAndSync(mailbox, 7, "partial");
+    const [gone, refusedFirst, refusedSecond, vanished, ...movable] = messageIds;
+    // One message disappeared from the server before its turn, the server refuses to move two
+    // others, and another client deletes one while the move runs.
+    const inbox = folderOf(mailbox.account, INBOX);
+    for (const [uid, message] of inbox.entries) if (message.messageId === gone) inbox.entries.delete(uid);
+    refusedMoves.add(refusedFirst!);
+    refusedMoves.add(refusedSecond!);
+    vanishingMoves.add(vanished!);
+    try {
+      const moves = await queueMoves(mailbox, messageIds, "partial-move", { startTogether: true });
+      await waitFor(async () => (await pending(moves)) === 0, "the partly failing moves");
+      const results = await outcomes(moves);
+      expect(results.get(gone!)).toEqual({ state: "failed", code: "REMOTE_MESSAGE_MISSING" });
+      expect(results.get(refusedFirst!)).toEqual({ state: "needs_attention", code: "REMOTE_MOVE_FAILED" });
+      expect(results.get(refusedSecond!)).toEqual({ state: "needs_attention", code: "REMOTE_MOVE_FAILED" });
+      // The refused MOVE reported no new UIDs, so each message gone from the source is looked up in
+      // the destination: the moved ones are found, the deleted one is not.
+      for (const messageId of movable) expect(results.get(messageId)).toEqual({ state: "reconciled", code: null });
+      expect(results.get(vanished!)).toEqual({ state: "needs_attention", code: "AMBIGUOUS_MUTATION" });
+      // One UID MOVE carried the six messages the server still had.
+      expect(moveSets.filter((entry) => entry.label === "partial").map((entry) => entry.uids)).toEqual([6]);
+      expect(await placedIn(mailbox, INBOX, [refusedFirst!, refusedSecond!])).toBe(2);
+      await runFolderSyncJob(mailbox.folderId(ARCHIVE));
+      expect(await placedIn(mailbox, ARCHIVE, movable)).toBe(3);
+    } finally {
+      refusedMoves.clear();
+      vanishingMoves.clear();
+    }
+  }, 60_000);
+
+  test("two messages with the same Message-ID move in separate sets, so an unclear move proves each on its own", async () => {
+    const mailbox = await connect("same-id");
+    // A mailing list copy and a direct copy of one mail: two messages that share their Message-ID.
+    const messageId = `<same-id-${suffix}@example.test>`;
+    store(mailbox.account, INBOX, { messageId, subject: "direct copy", internalDate: new Date(Date.UTC(2026, 0, 2)) });
+    store(mailbox.account, INBOX, { messageId, subject: "list copy", internalDate: new Date(Date.UTC(2026, 0, 1)) });
+    await deliverAndSync(mailbox, 0, "same-id");
+    // The server moves the direct copy, another client deletes the list copy, and the connection
+    // drops before either move is confirmed.
+    vanishingMoves.add("list copy");
+    droppedMoves.add(messageId);
+    try {
+      // One move per message, newest first: the direct copy, then the list copy.
+      const [directMove, listMove] = await queueMoves(mailbox, [messageId, messageId], "same-id-move", { startTogether: true });
+      const moves = [directMove!, listMove!];
+      await waitFor(async () => (await pending(moves)) === 0, "the unclear moves");
+      expect(moveSets.filter((entry) => entry.label === "same-id").map((entry) => entry.uids)).toEqual([1, 1]);
+      const rows = await sql<{ id: string; state: string; code: string | null }[]>`
+        SELECT id, state, last_error_code AS code FROM mail.commands WHERE id IN ${sql(moves)}
+      `;
+      const outcome = new Map(rows.map((row) => [row.id, { state: row.state, code: row.code }]));
+      // The direct copy is found in Archive. The list copy is not, although Archive has a message with its Message-ID.
+      expect(outcome.get(directMove!)).toEqual({ state: "reconciled", code: null });
+      expect(outcome.get(listMove!)).toEqual({ state: "needs_attention", code: "AMBIGUOUS_MUTATION" });
+      expect(folderOf(mailbox.account, ARCHIVE).entries.size).toBe(1);
+    } finally {
+      vanishingMoves.clear();
+      droppedMoves.clear();
+    }
+  }, 60_000);
+
+  test("without UIDPLUS, moved messages appear in the destination with its next folder sync", async () => {
+    const mailbox = await connect("no-uidplus", { uidplus: false });
+    await sql`
+      UPDATE mail.provider_bindings SET capabilities = capabilities || '{"uidplus": false}'::jsonb WHERE id = ${mailbox.bindingId}::uuid
+    `;
+    const messageIds = await deliverAndSync(mailbox, 3, "no-uidplus");
+    const moves = await queueMoves(mailbox, messageIds, "no-uidplus-move", { startTogether: true });
+    await waitFor(async () => (await confirmed(moves)) === 3, "the moves without UIDPLUS");
+    expect(moveSets.filter((entry) => entry.label === "no-uidplus").map((entry) => entry.uids)).toEqual([3]);
+    // Without COPYUID the new UIDs are unknown, so the destination's folder sync places the messages.
+    expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
+    expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(0);
+    await runFolderSyncJob(mailbox.folderId(ARCHIVE));
+    expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(3);
+  }, 60_000);
+
+  test("without MOVE and UIDPLUS, every move of a set fails before the provider changes anything", async () => {
+    const mailbox = await connect("unsafe");
+    await sql`
+      UPDATE mail.provider_bindings
+      SET capabilities = capabilities || '{"move": false, "uidplus": false}'::jsonb
+      WHERE id = ${mailbox.bindingId}::uuid
+    `;
+    const messageIds = await deliverAndSync(mailbox, 3, "unsafe");
+    const moves = await queueMoves(mailbox, messageIds, "unsafe-move", { startTogether: true });
+    await waitFor(async () => (await pending(moves)) === 0, "the refused moves");
+    const rows = await sql<{ state: string; code: string | null; effect: Date | null }[]>`
+      SELECT state, last_error_code AS code, provider_effect_started_at AS effect FROM mail.commands WHERE id IN ${sql(moves)}
+    `;
+    expect(rows).toEqual(Array.from({ length: 3 }, () => ({ state: "failed", code: "SAFE_MOVE_UNSUPPORTED", effect: null })));
+    expect(moveSets.filter((entry) => entry.label === "unsafe")).toEqual([]);
+    expect(await placedIn(mailbox, INBOX, messageIds)).toBe(3);
+  }, 60_000);
 
   test("a folder that backfills old mail holds back neither new mail in another folder nor the mailbox's commands", async () => {
     const mailbox = await connect("backfilling");
@@ -656,7 +857,8 @@ suite("mail provider lease fairness", () => {
   test("a sync requested for a folder that backfills old mail goes before the mailbox's commands", async () => {
     await ensureHydrationRuntime();
     const mailbox = await connect("requested");
-    const backlog = await deliverAndSync(mailbox, 100, "requested-backlog");
+    // Four sets of moves, so the sync can only go before the last ones by going first.
+    const backlog = await deliverAndSync(mailbox, 200, "requested-backlog");
     for (let index = 0; index < 2_000; index += 1) {
       store(mailbox.account, ARCHIVE, {
         messageId: `<requested-archived-${index}-${suffix}@example.test>`,
@@ -666,7 +868,7 @@ suite("mail provider lease fairness", () => {
     }
     // Archive's job has started importing old mail; its next batch would be background work.
     expect((await syncFolderBatch(mailbox.folderId(ARCHIVE), async () => undefined)).hasMore).toBe(true);
-    const moves = await queueMoves(mailbox, backlog, "requested-move");
+    const moves = await queueMoves(mailbox, backlog, "requested-move", { startTogether: true });
     await waitFor(async () => (await confirmed(moves)) >= 3, "the moves to start");
 
     // A requested sync joins that job; its next batch ranks as a folder sync and goes first.
