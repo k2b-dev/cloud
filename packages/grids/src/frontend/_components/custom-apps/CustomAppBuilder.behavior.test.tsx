@@ -7,6 +7,19 @@ import type { CustomAppCatalog } from "./custom-app-catalog";
 
 const domTest = isServer ? test.skip : test;
 
+// The first import runs the Solid DOM transform over the builder's whole source graph, which can take longer than the
+// 5 s test timeout on a busy machine. Load it once, outside any test, so the timeout measures behavior.
+// The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return { CustomAppBuilder: (await import("./CustomAppBuilder")).default, prompts: (await import("@k2b/ui")).prompts };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 type Definition = NonNullable<PublicCustomApp["draftDefinition"]>;
 
 const definition = (markdown: string): Definition => ({
@@ -86,8 +99,7 @@ const brokenByResource = "The Form is missing, inactive, or belongs to another B
 
 domTest("restoring a live version that no longer compiles keeps Publish disabled and names the cause", async () => {
   const dom = createDomTestHarness();
-  const { default: CustomAppBuilder } = await import("./CustomAppBuilder");
-  const { prompts } = await import("@k2b/ui");
+  const { CustomAppBuilder, prompts } = modules!;
   // A used resource changed incompatibly after publication: the restored draft equals the live version but is invalid.
   const restored: PublicCustomApp = {
     ...app,
