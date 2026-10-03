@@ -354,6 +354,8 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
 
     test("mailbox deleted list, deleted get, and restore reach a deleted mailbox", async () => {
       // Deleting through the API needs the provider barrier on the process Sync, which this child process does not start.
+      // The update mirrors the paused transport of a real delete; deleted list, get, and restore select on `deleted_at`
+      // alone, and api/mailbox-lifecycle.integration.test.ts covers the real delete before them.
       const [twin] = await sql<{ short_id: string }[]>`
         UPDATE mail.mailboxes SET deleted_at = now(), sync_enabled = false WHERE id = ${internal.twin}::uuid RETURNING short_id
       `;
