@@ -73,7 +73,7 @@ function MailAttachmentPreviewDialog(props: {
   const filename = () => props.attachment.filename ?? messages().attachment;
   // Undefined until a Markdown attachment shows whether it starts with a heading; every other file is titled by its name.
   const [documentTitle, setDocumentTitle] = createSignal<string | null | undefined>(props.kind === "markdown" ? undefined : null);
-  // Plain text shows no code box, so copying moves into the header, as in the Files preview.
+  // Plain text, and a table's raw view, show no code box, so copying moves into the header.
   const [text, setText] = createSignal<string | null>(null);
   const load = async (): Promise<FileViewContent> => {
     const response = await fetch(props.previewHref, { credentials: "same-origin" });
@@ -119,7 +119,7 @@ function MailAttachmentPreviewDialog(props: {
         }
         actions={
           <>
-            <Show when={props.kind === "text"}>
+            <Show when={props.kind === "text" || props.kind === "delimited-text"}>
               <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
             </Show>
             <Tooltip.Anchor content={messages().downloadAttachment}>

@@ -7,10 +7,12 @@ import { createDomTestHarness } from "../../../../ui/test/dom";
 const files: Record<string, [string, string]> = {
   Att001: ["text/plain", "# Summer party 2026\n\nEverything the organising team needs.\n"],
   Att002: ["text/plain", "Packing list\n- Pavilion\n"],
+  Att003: ["text/csv", "Stand,Team\nGrill,Team A\n"],
 };
 const attachments = [
   { id: "Att001", filename: "Summer_party.md", contentType: "text/plain", sizeBytes: 519 },
   { id: "Att002", filename: "Packing_list.txt", contentType: "text/plain", sizeBytes: 24 },
+  { id: "Att003", filename: "Stands.csv", contentType: "text/csv", sizeBytes: 26 },
 ];
 
 const settle = async () => {
@@ -78,6 +80,14 @@ describe("Mail attachment preview", () => {
       const copy = dialog().querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button");
       expect(copy?.getAttribute("aria-label")).toBe("Copy");
       expect(copy?.disabled).toBeFalse();
+      dialogCore.close();
+      await settle();
+
+      // A table fills the wide frame; its raw view has no code box either, so Copy stays in the header.
+      preview(2).click();
+      await settle();
+      expect(dialog().className).toContain("mail-attachment-dialog--stretch");
+      expect(dialog().querySelector(".k2b-panel-dialog__actions .k2b-copy-button")).not.toBeNull();
     } finally {
       dialogCore.close();
       dispose();
