@@ -594,6 +594,15 @@
 .k2b-ui .mail-attachment-dialog--stretch .k2b-content-file-view__media {
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
+/* A document title wraps so it reads in full; four lines bound a runaway heading, so the content always stays in view,
+   like in the Files preview. */
+.k2b-ui .mail-attachment-dialog .k2b-panel-dialog__heading h2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
 /* Holds the title line while a Markdown attachment loads; the facts appear together with the title. */
 .mail-attachment-dialog__title-pending {
   display: inline-block;
