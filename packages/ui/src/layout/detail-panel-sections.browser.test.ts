@@ -107,6 +107,27 @@ const panel = (id: string, comments: Comments, composer = false) =>
     }),
   )}</div>`;
 
+// A discussion placed in a group is one of its sections; inside a section the section frames it.
+const nested = () =>
+  `<div id="nested" class="k2b-app-workspace__detail" style="height:40rem">${renderToString(() =>
+    createComponent(DetailPanel, {
+      get children() {
+        return createComponent(DetailPanel.Body, {
+          get children() {
+            return [
+              createComponent(DetailPanel.Group, {
+                get children() {
+                  return [section("Contents", "ti ti-list"), discussion("one", false), section("Info", "ti ti-info-circle")];
+                },
+              }),
+              section("Notes", "ti ti-notes", undefined, () => discussion("one", false)),
+            ];
+          },
+        });
+      },
+    }),
+  )}</div>`;
+
 // Outside a detail panel the discussion keeps its own card, and `bare` stays bare.
 const standalone = () =>
   `<div id="standalone" style="padding:1rem">${renderToString(() => discussion("one", false))}</div>` +
@@ -131,6 +152,7 @@ const open = async (viewport: { width: number; height: number }, theme: "light" 
       panel("one", "one") +
       panel("two", "two") +
       panel("composer", "one", true) +
+      nested() +
       standalone() +
       `</body></html>`,
   );
@@ -173,7 +195,33 @@ const measure = () => {
     const element = document.querySelector(`#${id} .k2b-discussion`)!;
     return { border: style(element).borderTopWidth, background: style(element).backgroundColor, padding: style(element).paddingTop };
   };
+  const grouped = Array.from(document.querySelectorAll("#nested .k2b-detail-panel__group > *")).map((element) => {
+    const icon = element.querySelector(":is(.k2b-detail-panel__section-icon, .k2b-discussion__icon)")!;
+    const header = element.querySelector(":is(.k2b-detail-panel__section-header, .k2b-discussion__header)")!;
+    return { iconLeft: box(icon).left, headerOffset: box(header).top - box(element).top, background: style(element).backgroundColor };
+  });
+  const inSection = document.querySelector("#nested .k2b-detail-panel__section-body > .k2b-discussion")!;
+  const sectionBody = inSection.parentElement!;
+  // WCAG relative luminance contrast of the comment action against the frame it sits on.
+  const luminance = (color: string) => {
+    const [r, g, b] = color.match(/[\d.]+/g)!.slice(0, 3).map((value) => {
+      const channel = Number(value) / 255;
+      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const action = document.querySelector("#one .k2b-discussion__actions .k2b-button")!;
+  const frame = document.querySelector("#one .k2b-discussion")!;
+  const [light, dark] = [luminance(style(action).color), luminance(style(frame).backgroundColor)].sort((a, b) => b - a);
   return {
+    actionContrast: (light! + 0.05) / (dark! + 0.05),
+    grouped,
+    inSection: {
+      left: box(inSection).left - box(sectionBody).left,
+      padding: style(inSection).paddingTop + " " + style(inSection).paddingLeft,
+      background: style(inSection).backgroundColor,
+      border: style(inSection).borderTopWidth,
+    },
     overflow: document.documentElement.scrollWidth - window.innerWidth,
     blocks: { loading: blocks("loading"), one: blocks("one"), two: blocks("two"), composer: blocks("composer") },
     headings: headings("one"),
@@ -247,6 +295,16 @@ describe("DetailPanel sections and Discussion share one frame", () => {
 
           // Plain header meta reads like the subtitle beside it.
           expect(result.headerMeta[0]).toBe(result.headerMeta[1]);
+
+          // The comment action is text, so it keeps 4.5:1 on its frame in both themes.
+          expect(result.actionContrast).toBeGreaterThanOrEqual(4.5);
+
+          // In a group, the discussion's icon sits in the sections' column and the spacing between
+          // neighbours matches; inside a section it adds no frame or inset of its own.
+          expect(new Set(result.grouped.map((entry) => entry.iconLeft)).size).toBe(1);
+          expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([8, 12, 12]);
+          expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
+          expect(result.inSection).toEqual({ left: 0, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
 
           // Outside a detail panel the default discussion is its own card; bare draws nothing.
           expect(result.standalone.border).toBe("1px");

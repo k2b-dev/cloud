@@ -2502,11 +2502,30 @@
   gap: 0.375rem;
 }
 
+/* Placed in a group, a discussion is one of its sections; deeper in a
+   section or summary, that host already frames it. */
+.k2b-ui .k2b-detail-panel__group > .k2b-discussion[data-surface="default"] {
+  padding: 0.5rem 0.875rem 0.75rem;
+  border-radius: 0;
+  background: transparent;
+}
+
+.k2b-ui
+  :is(.k2b-detail-panel__section, .k2b-detail-panel__summary)
+  .k2b-discussion[data-surface="default"] {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section {
   padding: 0.5rem 0.875rem 0.75rem;
 }
 
-.k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section + .k2b-detail-panel__section {
+.k2b-ui
+  .k2b-detail-panel__group
+  > :is(.k2b-detail-panel__section, .k2b-discussion)
+  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
   padding-top: 0.75rem;
 }
 
@@ -2872,14 +2891,15 @@
 .k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="text"],
 .k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"],
 .k2b-ui .k2b-discussion__actions .k2b-button[data-variant="text"] {
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
+  /* Text, so the fallback is the theme-aware action colour, not the fixed accent the icons use. */
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover,
 .k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover,
 .k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"]:not(:disabled):hover {
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
-  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 9%, transparent);
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
 }
 
 .k2b-ui .k2b-detail-panel__section-description {

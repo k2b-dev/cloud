@@ -51,8 +51,10 @@ primary overview from related context. Do not repeat the summary for every
 group.
 
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
-accents, with the portable UI accent as its fallback. A host may map that hook
-to its own theme token; `DetailPanel` does not know how the host derives it.
+accents, with the portable UI accent as its fallback. Text actions in section
+and summary headings fall back to the theme's action color instead, so they
+keep their contrast in dark mode. A host may map that hook to its own theme
+token; `DetailPanel` does not know how the host derives it.
 
 `DetailPanel.Section` draws no frame of its own. It groups content through
 spacing and a sentence-case title, not a card, divider, or decorative
@@ -92,9 +94,10 @@ its icon, title, count, and content start in the same columns as every grouped
 section. A [`Discussion`](/en/ui/layout/discussion) inside the panel does the
 same. Do not wrap a standalone section in a group only to frame it, and do not
 add an application frame, border, or padding around a section. Only a notice,
-a progress bar, or a short row of commands stands in the body without a frame;
-loose text belongs in the header subtitle or a section, and a block with its
-own heading becomes a section. Give every section of a panel an `icon` so the
+a progress bar, a short row of commands, or a feed whose items are each one
+frame stands in the body without a section frame. Loose text belongs in the
+header subtitle or a section, and a block with its own heading becomes a
+section. Give every section of a panel an `icon` so the
 titles share one column, and use `size="xs"` for text buttons in its
 `actions`, so their labels end at the same edge as a count.
 
