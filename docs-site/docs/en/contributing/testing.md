@@ -70,9 +70,10 @@ Guard browser-only tests with `isServer` from `solid-js/web`, so a plain
 that branches on `isServer` is not named `*.behavior.test.*`, or when the
 runner would not pick up a behavior test.
 
-Import heavy components once at module scope, not inside the first test: the
-first import runs the Solid transform over the component's source graph, and
-that time otherwise counts against the 5 s test timeout.
+Import heavy components once at module scope, after any top-level
+`mock.module` calls, not inside the first test: the first import runs the Solid
+transform over the component's source graph, and that time otherwise counts
+against the 5 s test timeout.
 
 ## Replace modules in tests
 
