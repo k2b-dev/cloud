@@ -22,24 +22,20 @@ const fileFor = (artifact: Artifact) => ({ path: artifact.filename, mediaType: a
 export const canPreviewDocumentArtifact = (artifact: Artifact) =>
   ["text/csv", "application/json", "application/xml"].includes(artifact.mimeType) && canPreviewFile(fileFor(artifact));
 
-export const openDocumentArtifactPreview = (document: Pick<PublicDocument, "id" | "createdAt">, artifact: Artifact) => {
+export const openDocumentArtifactPreview = (documentId: string, artifact: Artifact) => {
   if (!canPreviewDocumentArtifact(artifact)) return;
   return dialogCore.open<void>(
-    (close) => <DocumentArtifactPreviewDialog document={document} artifact={artifact} close={close} />,
+    (close) => <DocumentArtifactPreviewDialog documentId={documentId} artifact={artifact} close={close} />,
     panelDialogWorkspaceOptions,
   );
 };
 
 /**
- * Follows the Files preview: the file name as the title, a quiet line with the file facts, copying in the header, and
- * the stored data on the dialog surface without a second frame. The workspace frame keeps long export lines wide and
- * takes the whole phone screen.
+ * Follows the Files preview: the file name as the title, its type and size in a quiet line, copying in the header, and
+ * the stored data on the dialog surface without a second frame. The details dialog behind it already dates the
+ * Document. The workspace frame keeps long export lines wide and takes the whole phone screen.
  */
-function DocumentArtifactPreviewDialog(props: {
-  document: Pick<PublicDocument, "id" | "createdAt">;
-  artifact: Artifact;
-  close: () => void;
-}) {
+function DocumentArtifactPreviewDialog(props: { documentId: string; artifact: Artifact; close: () => void }) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
   const abort = new AbortController();
@@ -58,8 +54,6 @@ function DocumentArtifactPreviewDialog(props: {
               aria-hidden="true"
             />{" "}
             <Format.Bytes value={props.artifact.sizeBytes} />
-            <span aria-hidden="true"> · </span>
-            <Format.DateTime value={props.document.createdAt} />
           </>
         }
         actions={
@@ -75,7 +69,7 @@ function DocumentArtifactPreviewDialog(props: {
           file={fileFor(props.artifact)}
           load={async () => {
             const response = await apiClient.documents[":documentId"].artifacts[":artifactKey"].$get(
-              { param: { documentId: props.document.id, artifactKey: props.artifact.key } },
+              { param: { documentId: props.documentId, artifactKey: props.artifact.key } },
               { init: { signal: abort.signal } },
             );
             if (!response.ok) throw new Error(await errorMessage(response, t().couldNotLoadPreviewData));

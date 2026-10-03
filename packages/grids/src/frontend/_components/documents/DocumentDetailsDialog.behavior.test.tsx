@@ -22,17 +22,14 @@ domTest("stored CSV and XML previews load authorized bytes and never activate ma
       ["csv", "text/csv"],
       ["xml", "application/xml"],
     ]) {
-      void openDocumentArtifactPreview(
-        { id: "DOC001", createdAt: "2026-09-28T10:15:00.000Z" },
-        {
-          key: key!,
-          filename: `export.${key}`,
-          mimeType: mimeType!,
-          sizeBytes: source.length,
-          sha256: "a".repeat(64),
-          downloadUrl: `/api/grids/documents/DOC001/artifacts/${key}`,
-        },
-      );
+      void openDocumentArtifactPreview("DOC001", {
+        key: key!,
+        filename: `export.${key}`,
+        mimeType: mimeType!,
+        sizeBytes: source.length,
+        sha256: "a".repeat(64),
+        downloadUrl: `/api/grids/documents/DOC001/artifacts/${key}`,
+      });
       await Bun.sleep(50);
       expect(paths.at(-1)).toContain(`/documents/DOC001/artifacts/${key}`);
       expect(dom.document.body.textContent).toContain(source);

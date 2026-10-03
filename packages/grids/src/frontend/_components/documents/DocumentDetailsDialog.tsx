@@ -291,7 +291,7 @@ export function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; 
                   <Button
                     variant="ghost"
                     class="grids-document-detail-row"
-                    onClick={() => openDocumentArtifactPreview(document(), artifact())}
+                    onClick={() => openDocumentArtifactPreview(document().id, artifact())}
                   >
                     <span class="min-w-0">{t().preview}</span>
                     <i class="ti ti-chevron-right ml-auto shrink-0 text-dimmed" aria-hidden="true" />
