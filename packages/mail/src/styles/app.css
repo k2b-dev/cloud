@@ -586,19 +586,28 @@
     max-height: var(--mail-attachment-dialog-height);
   }
 }
+/* The content takes focus on open, so arrow keys scroll it; it is not a control, so it draws no ring. */
+.mail-attachment-dialog__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  outline: none;
+}
 /* Media and tables take the body's height, so an image fits the frame and a table scrolls in itself. */
-.k2b-ui .mail-attachment-dialog--stretch .k2b-panel-dialog__body > .k2b-content-file-view {
+.k2b-ui .mail-attachment-dialog--stretch .k2b-panel-dialog__body > .mail-attachment-dialog__content,
+.k2b-ui .mail-attachment-dialog--stretch .mail-attachment-dialog__content > .k2b-content-file-view {
   flex: 1 1 auto;
   min-height: 0;
 }
 .k2b-ui .mail-attachment-dialog--stretch .k2b-content-file-view__media {
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
-/* A document title wraps so it reads in full; four lines bound a runaway heading, so the content always stays in view,
-   like in the Files preview. */
+/* As in the Files preview, the document title keeps the size it had as the document's heading, so it stands above the
+   section headings below it, and wraps to read in full; four lines bound a runaway heading. */
 .k2b-ui .mail-attachment-dialog .k2b-panel-dialog__heading h2 {
   display: -webkit-box;
   overflow: hidden;
+  font-size: 1.5rem;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
   line-clamp: 4;
@@ -613,11 +622,36 @@
   border-radius: 0.375rem;
   background: var(--k2b-surface-muted);
 }
+/* One quiet line, like in the Files preview: the file name gives way, so the size stays. */
+.mail-attachment-dialog__facts {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
 .mail-attachment-dialog__facts[data-pending] {
   visibility: hidden;
 }
+.mail-attachment-dialog__facts > * {
+  flex: none;
+}
 .mail-attachment-dialog__facts > i {
-  margin-inline-end: 0.375rem;
+  font-size: 0.875rem;
+}
+.mail-attachment-dialog__facts > .mail-attachment-dialog__facts-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  text-overflow: ellipsis;
+}
+/* Phones keep the facts on one line: without a date there is nothing a second line would make room for. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .mail-attachment-dialog .k2b-panel-dialog__heading h2 {
+    font-size: 1.25rem;
+  }
 }
 
 /* Match the unlayered shared button styles so mailbox content stays left-aligned. */

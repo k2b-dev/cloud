@@ -73,7 +73,7 @@ function MailAttachmentPreviewDialog(props: {
   const filename = () => props.attachment.filename ?? messages().attachment;
   // Undefined until a Markdown attachment shows whether it starts with a heading; every other file is titled by its name.
   const [documentTitle, setDocumentTitle] = createSignal<string | null | undefined>(props.kind === "markdown" ? undefined : null);
-  // Plain text, and a table's raw view, show no code box, so copying moves into the header.
+  // Plain text, a table's raw view and JSON that does not parse show no code box, so copying moves into the header.
   const [text, setText] = createSignal<string | null>(null);
   const load = async (): Promise<FileViewContent> => {
     const response = await fetch(props.previewHref, { credentials: "same-origin" });
@@ -111,15 +111,19 @@ function MailAttachmentPreviewDialog(props: {
               aria-hidden="true"
             />
             <Show when={documentTitle()}>
-              {filename()}
-              <span aria-hidden="true"> · </span>
+              <span class="mail-attachment-dialog__facts-name" title={filename()}>
+                {filename()}
+              </span>
+              <span class="mail-attachment-dialog__facts-separator" aria-hidden="true">
+                ·
+              </span>
             </Show>
             <Format.Bytes value={props.attachment.sizeBytes} />
           </span>
         }
         actions={
           <>
-            <Show when={props.kind === "text" || props.kind === "delimited-text"}>
+            <Show when={props.kind === "text" || props.kind === "delimited-text" || props.kind === "json"}>
               <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
             </Show>
             <Tooltip.Anchor content={messages().downloadAttachment}>
@@ -133,14 +137,16 @@ function MailAttachmentPreviewDialog(props: {
         close={props.close}
       />
       <PanelDialog.Body>
-        <FileView
-          variant="plain"
-          headingScale="normal"
-          file={attachmentFile(props.attachment)}
-          load={load}
-          previewHref={props.previewHref}
-          onDocumentTitle={setDocumentTitle}
-        />
+        <div class="mail-attachment-dialog__content" tabindex="-1">
+          <FileView
+            variant="plain"
+            headingScale="normal"
+            file={attachmentFile(props.attachment)}
+            load={load}
+            previewHref={props.previewHref}
+            onDocumentTitle={setDocumentTitle}
+          />
+        </div>
       </PanelDialog.Body>
     </PanelDialog>
   );
@@ -161,7 +167,12 @@ const openAttachmentPreview = (attachment: Attachment, downloadHref: string, pre
         close={() => close()}
       />
     ),
-    { ...panelDialogWorkspaceOptions, panelClassName: classes.join(" ") },
+    {
+      ...panelDialogWorkspaceOptions,
+      panelClassName: classes.join(" "),
+      // Reading comes first: focus starts on the content, so arrow keys and Page Down scroll it at once.
+      initialFocus: (dialog) => dialog.querySelector<HTMLElement>(".mail-attachment-dialog__content"),
+    },
   );
 };
 

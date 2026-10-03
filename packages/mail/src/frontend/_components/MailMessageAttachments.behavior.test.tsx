@@ -8,11 +8,13 @@ const files: Record<string, [string, string]> = {
   Att001: ["text/plain", "# Summer party 2026\n\nEverything the organising team needs.\n"],
   Att002: ["text/plain", "Packing list\n- Pavilion\n"],
   Att003: ["text/csv", "Stand,Team\nGrill,Team A\n"],
+  Att004: ["application/json", '{ "incomplete":'],
 };
 const attachments = [
   { id: "Att001", filename: "Summer_party.md", contentType: "text/plain", sizeBytes: 519 },
   { id: "Att002", filename: "Packing_list.txt", contentType: "text/plain", sizeBytes: 24 },
   { id: "Att003", filename: "Stands.csv", contentType: "text/csv", sizeBytes: 26 },
+  { id: "Att004", filename: "Stands.json", contentType: "application/json", sizeBytes: 15 },
 ];
 
 const settle = async () => {
@@ -59,7 +61,7 @@ describe("Mail attachment preview", () => {
       // The leading heading becomes the title and leaves the document; the file name moves into the facts line.
       expect(dialog().querySelector("h2")?.textContent).toBe("Summer party 2026");
       const facts = dialog().querySelector(".mail-attachment-dialog__facts");
-      expect(facts?.textContent).toContain("Summer_party.md");
+      expect(facts?.querySelector(".mail-attachment-dialog__facts-name")?.getAttribute("title")).toBe("Summer_party.md");
       expect(facts?.textContent).toContain("519 B");
       expect(facts?.textContent).not.toContain("text/plain");
       expect(facts?.hasAttribute("data-pending")).toBeFalse();
@@ -88,6 +90,14 @@ describe("Mail attachment preview", () => {
       await settle();
       expect(dialog().className).toContain("mail-attachment-dialog--stretch");
       expect(dialog().querySelector(".k2b-panel-dialog__actions .k2b-copy-button")).not.toBeNull();
+      dialogCore.close();
+      await settle();
+
+      // JSON that does not parse falls back to text without a code box; the header still copies it.
+      preview(3).click();
+      await settle();
+      expect(dialog().querySelector(".k2b-content-code-display__header")).toBeNull();
+      expect(dialog().querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button")?.disabled).toBeFalse();
     } finally {
       dialogCore.close();
       dispose();
