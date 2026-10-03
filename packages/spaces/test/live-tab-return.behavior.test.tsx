@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { query } from "@k2b/stdlib/solid";
 import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
@@ -75,6 +75,7 @@ describe("Spaces live updates when a tab returns", () => {
   });
 
   afterEach(() => {
+    setSystemTime();
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
     reload.mockRestore();
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
@@ -90,7 +91,8 @@ describe("Spaces live updates when a tab returns", () => {
     const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
     const host = dom.document.createElement("div");
     dom.root.append(host);
-    cleanups.push(render(() => createComponent(SpaceLiveEvents, { spaceId: SPACE_ID, initialCursor }), host));
+    const dateConfig = { timeZone: "Europe/Berlin" };
+    cleanups.push(render(() => createComponent(SpaceLiveEvents, { spaceId: SPACE_ID, initialCursor, dateConfig }), host));
     return host;
   };
 
@@ -126,6 +128,30 @@ describe("Spaces live updates when a tab returns", () => {
     await settle();
 
     expect(refetched).toEqual([]);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("a tab that returns on a later day refreshes its deadline views even when the cursor did not move", async () => {
+    const refetched: string[] = [];
+    cleanups.push(subscribeToSpacesDataInvalidation(["view"], async () => void refetched.push("view")));
+    setSystemTime(new Date("2026-10-03T21:30:00Z"));
+    await mount("s6t.spaces.4");
+    latestSocket().open();
+    latestSocket().ready("s6t.spaces.4");
+    await settle();
+    expect(refetched).toEqual([]);
+
+    // 00:30 in Berlin: yesterday's "today" deadlines are overdue now.
+    setSystemTime(new Date("2026-10-03T22:30:00Z"));
+    returnToTab();
+    latestSocket().ready("s6t.spaces.4");
+    await settle();
+    expect(refetched).toEqual(["view"]);
+
+    returnToTab();
+    latestSocket().ready("s6t.spaces.4");
+    await settle();
+    expect(refetched).toEqual(["view"]);
     expect(reload).not.toHaveBeenCalled();
   });
 
@@ -173,7 +199,7 @@ describe("Spaces live updates when a tab returns", () => {
     await mount(null);
     latestSocket().open();
     latestSocket().ready("s6t.spaces.9");
-    for (let wait = 0; wait < 50 && attempts < 3; wait += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+    for (let wait = 0; wait < 250 && attempts < 3; wait += 1) await new Promise((resolve) => setTimeout(resolve, 20));
     await settle();
 
     expect(attempts).toBe(3);

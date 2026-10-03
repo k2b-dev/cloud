@@ -1,5 +1,6 @@
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { type DateContext, dates } from "@k2b/stdlib";
 import { type ToastHandle, toast } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import {
@@ -14,6 +15,7 @@ import { createSpacesLiveCursorQueue, invalidateSpacesData } from "./workspace-e
 type Props = {
   spaceId: string;
   initialCursor: string | null;
+  dateConfig?: DateContext;
 };
 
 export default function SpaceLiveEvents(props: Props) {
@@ -21,6 +23,9 @@ export default function SpaceLiveEvents(props: Props) {
   onMount(() => {
     const lifecycle = new AbortController();
     let unavailable: ToastHandle | null = null;
+    // Deadline views (overdue, today, this week) depend on the current day, and no event announces a new day.
+    const today = () => dates.formatDateKey(new Date(), props.dateConfig);
+    let snapshotDay = today();
     // A condition that persists across loads must not reload the page forever.
     const reload = () => {
       if (lifecycle.signal.aborted || unavailable || reloadOnce(`spaces:live:${props.spaceId}`)) return;
@@ -44,9 +49,11 @@ export default function SpaceLiveEvents(props: Props) {
           return;
         }
         if (message.type === SPACE_LIVE_WS_TYPE.ready) {
-          // A ready that confirms the subscribed cursor resumes the stream after it, as when a tab returns.
-          // Any other cursor skipped events, so the page refreshes its snapshot first.
-          if (message.payload.cursor !== controls.subscribedCursor()) {
+          // A ready that confirms the subscribed cursor resumes the stream after it, as when a tab returns on the
+          // same day. Any other cursor skipped events, and a new day moves deadline views, so the snapshot refreshes.
+          const day = today();
+          if (message.payload.cursor !== controls.subscribedCursor() || day !== snapshotDay) {
+            snapshotDay = day;
             void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
           }
           return;

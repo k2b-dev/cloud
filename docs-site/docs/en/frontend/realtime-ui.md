@@ -93,8 +93,10 @@ if (message.type === "ready") {
 }
 ```
 
-Refresh on every ready only when replay cannot cover the page, for example
-when it shows values derived from other resources or from the current time.
+Replay covers only the stream's own events. When the page shows values derived
+from other resources, refresh on every ready. When it shows values relative to
+the current day, such as overdue or due-today lists, also refresh when the day
+changed since the snapshot, because no event announces a new day.
 
 ## Advance only after coverage
 
