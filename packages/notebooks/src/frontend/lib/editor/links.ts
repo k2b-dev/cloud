@@ -3,9 +3,10 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { fileIcons } from "@k2b/stdlib";
+import { openAttachmentById } from "../attachment-preview";
 import { navigateToNotebookNote } from "../soft-navigation";
 import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
-import { buildAttachmentContentUrl, confirmAndDownload, extractAttachmentId, isSafeMarkdownUrl } from "./attachment-url";
+import { buildAttachmentContentUrl, extractAttachmentId, isSafeMarkdownUrl } from "./attachment-url";
 
 /** Internal `note://<shortId>` markdown scheme — distinct from
  *  user-typed external URLs so we can render note links as pills. */
@@ -19,6 +20,7 @@ type LinkData = {
   isNoteLink: boolean;
   /** Set if the link is an `attach://<shortId>` reference to a non-image blob. */
   attachmentId: string | null;
+  notebookId: string;
 };
 
 class LinkWidget extends WidgetType {
@@ -27,9 +29,10 @@ class LinkWidget extends WidgetType {
   }
 
   override toDOM() {
-    if (this.linkData.attachmentId) {
-      // File-attachment pill: file icon + filename. Click opens download URL
-      // in a new tab — keeping the editor untouched.
+    const { attachmentId } = this.linkData;
+    if (attachmentId) {
+      // File-attachment pill: file icon + filename. Click opens the preview,
+      // or asks to download a file without one — keeping the editor untouched.
       const el = document.createElement("span");
       el.className =
         "cm-attachment-pill inline-flex cursor-pointer items-center gap-1 rounded-md bg-zinc-100/80 px-1.5 py-0.5 text-zinc-700 shadow-[var(--ui-shadow-surface)] hover:bg-zinc-200/80 dark:bg-zinc-800/80 dark:text-zinc-300 dark:hover:bg-zinc-700/80";
@@ -51,7 +54,7 @@ class LinkWidget extends WidgetType {
       el.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        void confirmAndDownload(this.linkData.label, this.linkData.resolvedUrl);
+        void openAttachmentById(this.linkData.notebookId, attachmentId, this.linkData.label);
       };
 
       return el;
@@ -167,6 +170,7 @@ const parseLinkSyntax = (text: string, notebookId: string): LinkData | null => {
     resolvedUrl,
     isNoteLink: NOTE_LINK_URL_REGEX.test(url),
     attachmentId,
+    notebookId,
   };
 };
 
@@ -228,8 +232,8 @@ export const linksExtension = (notebookId: string): Extension => {
     mousedown(event, view) {
       const target = event.target as HTMLElement;
       // Note-link & attachment-pill clicks are handled by the widget's own
-      // onclick (note-link navigates same-window, attachment opens in new
-      // tab). Bail out so CM doesn't reposition the cursor.
+      // onclick (note-link navigates same-window, attachment opens its
+      // preview). Bail out so CM doesn't reposition the cursor.
       if (target.closest(".cm-note-link") || target.closest(".cm-attachment-pill")) {
         return true;
       }

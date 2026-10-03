@@ -882,3 +882,116 @@
     max-height: none;
   }
 }
+
+/* The attachment preview follows the Files preview in the workspace frame, which takes the whole screen without a
+   border on phones. On wider screens, documents and text read in a 40rem column that is anchored where the workspace
+   frame starts and grows only downward with its content, so loading never moves the header. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-dialog.k2b-panel-dialog-frame.notebooks-attachment-dialog--reading {
+    --notebooks-attachment-dialog-height: min(80dvh, var(--k2b-dialog-available-height));
+    top: calc((100dvh - var(--notebooks-attachment-dialog-height)) / 2);
+    width: min(var(--k2b-dialog-available-width), 40rem);
+    /* The dialog's own sizing; `auto` would stretch a fixed frame down to the viewport's edge. */
+    height: fit-content;
+    max-height: var(--notebooks-attachment-dialog-height);
+    transform: translateX(-50%);
+  }
+  /* A column, so the panel shrinks to the capped height and only its body scrolls. */
+  .k2b-ui .notebooks-attachment-dialog--reading .k2b-panel-dialog-viewport.is-workspace {
+    flex-direction: column;
+    height: auto;
+    max-height: var(--notebooks-attachment-dialog-height);
+  }
+}
+/* The content takes focus on open, so arrow keys scroll it; it is not a control, so it draws no ring. */
+.notebooks-attachment-dialog__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  outline: none;
+}
+/* A PDF fills the frame, and a table scrolls inside it with its header row and settings in view. */
+.k2b-ui .notebooks-attachment-dialog--stretch .k2b-panel-dialog__body > .notebooks-attachment-dialog__content,
+.k2b-ui .notebooks-attachment-dialog--stretch .notebooks-attachment-dialog__content > .k2b-content-file-view {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.notebooks-attachment-dialog__pdf {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+/* The document title keeps the size it had as the document's heading, so it stands above the section headings below
+   it, and wraps to read in full; four lines bound a runaway heading. */
+.k2b-ui .notebooks-attachment-dialog .k2b-panel-dialog__heading h2 {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 1.5rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+}
+/* Holds the title line while a Markdown file loads; the facts appear together with the title. */
+.notebooks-attachment-dialog__title-pending {
+  display: inline-block;
+  width: 14rem;
+  max-width: 70%;
+  height: 1.25rem;
+  vertical-align: middle;
+  border-radius: 0.375rem;
+  background: var(--k2b-surface-muted);
+}
+/* One quiet line: the file name gives way, so the size stays. */
+.notebooks-attachment-dialog__facts {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.notebooks-attachment-dialog__facts[data-pending] {
+  visibility: hidden;
+}
+.notebooks-attachment-dialog__facts > * {
+  flex: none;
+}
+.notebooks-attachment-dialog__facts > i {
+  font-size: 0.875rem;
+}
+.notebooks-attachment-dialog__facts > .notebooks-attachment-dialog__facts-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text-secondary);
+  text-overflow: ellipsis;
+}
+@media (max-width: 47.999rem) {
+  .k2b-ui .notebooks-attachment-dialog .k2b-panel-dialog__heading h2 {
+    font-size: 1.25rem;
+  }
+}
+
+/* An attachment tile opens its preview; the focus ring sits inside the tile, which clips its content. */
+.notebooks-attachment-tile__open {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  outline: none;
+}
+.notebooks-attachment-tile__open:focus-visible {
+  box-shadow: var(--k2b-focus-inset);
+}
+/* An attachment image in Book opens the lightbox. The inline link around it draws no visible ring of its own, so the
+   image carries the focus ring of Book links. */
+.notebook-book-content a.notebook-book-image-link {
+  cursor: zoom-in;
+}
+.notebook-book-content a.notebook-book-image-link:focus-visible {
+  outline: none;
+}
+.notebook-book-content a.notebook-book-image-link:focus-visible img {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

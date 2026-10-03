@@ -2,13 +2,20 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { openAttachmentImage } from "../attachment-preview";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
-import { buildAttachmentContentUrl, confirmAndDownload, extractAttachmentId, isSafeMarkdownUrl } from "./attachment-url";
+import {
+  attachmentFromContentUrl,
+  buildAttachmentContentUrl,
+  confirmAndDownload,
+  extractAttachmentId,
+  isSafeMarkdownUrl,
+} from "./attachment-url";
 
 /** Match the optional `=WxH` size suffix Pandoc-style image syntax allows. */
 const SIZE_SUFFIX_REGEX = /\s+=(\d+)?x(\d+)?$/;
@@ -83,8 +90,13 @@ class ImageWidget extends WidgetType {
 
     container.appendChild(figure);
 
-    // Click → download confirm. Stop propagation so CM doesn't reposition
-    // the cursor (consistent with the file-pill widget).
+    // Click → an attachment opens in the lightbox, any other image keeps the
+    // download confirm. Stop propagation so CM doesn't reposition the cursor
+    // (consistent with the file-pill widget).
+    const open = () => {
+      if (attachmentFromContentUrl(this.url, window.location.href)) openAttachmentImage(this.url, this.alt);
+      else void confirmAndDownload(this.alt || "image", this.url);
+    };
     container.onmousedown = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -92,13 +104,13 @@ class ImageWidget extends WidgetType {
     container.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      void confirmAndDownload(this.alt || "image", this.url);
+      open();
     };
     container.onkeydown = (e) => {
       if (e.key !== "Enter" && e.key !== " ") return;
       e.preventDefault();
       e.stopPropagation();
-      void confirmAndDownload(this.alt || "image", this.url);
+      open();
     };
 
     return container;

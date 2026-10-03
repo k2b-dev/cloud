@@ -1,6 +1,8 @@
 /**
  * Attachments overview — notebook-wide tile grid with per-tile actions
  * (download / copy markdown / delete). Lives at /app/notebooks/<id>/attachments.
+ * Selecting a tile opens the attachment's preview, or asks to download a file
+ * without one.
  *
  * Images render as actual thumbnails (lazy-loaded), non-image attachments
  * as file-icon tiles in the same grid. KISS: no thumbnail generation
@@ -17,6 +19,7 @@ import { clipboard } from "@k2b/stdlib/browser";
 import { IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { attachmentPreviewKind, openAttachment } from "../../../lib/attachment-preview";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
   type Attachment,
@@ -108,24 +111,36 @@ const AttachmentsOverview = (props: Props) => {
                     taller than wide). Action buttons overlay on hover —
                     at this tile width the meta row has no room for them. */}
               <div class="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                {att.kind === "image" ? (
-                  <img
-                    src={buildAttachmentContentUrl(props.notebookId, att.id)}
-                    alt={att.filename}
-                    loading="lazy"
-                    class="absolute inset-0 w-full h-full object-contain"
-                  />
-                ) : (
-                  <div class="absolute inset-0 flex items-center justify-center">
-                    <i
-                      class={`ti ${fileIcons.getFileIcon({
-                        name: att.filename,
-                        type: "file",
-                        mimeType: att.mimeType,
-                      })} text-2xl`}
+                <button
+                  type="button"
+                  class="notebooks-attachment-tile__open"
+                  aria-label={
+                    attachmentPreviewKind(att)
+                      ? t().previewNamedAttachment({ filename: att.filename })
+                      : t().downloadNamedAttachment({ filename: att.filename })
+                  }
+                  onClick={() => openAttachment(props.notebookId, att)}
+                >
+                  {att.kind === "image" ? (
+                    <img
+                      src={buildAttachmentContentUrl(props.notebookId, att.id)}
+                      alt=""
+                      loading="lazy"
+                      class="absolute inset-0 w-full h-full object-contain"
                     />
-                  </div>
-                )}
+                  ) : (
+                    <span class="absolute inset-0 flex items-center justify-center">
+                      <i
+                        class={`ti ${fileIcons.getFileIcon({
+                          name: att.filename,
+                          type: "file",
+                          mimeType: att.mimeType,
+                        })} text-2xl`}
+                        aria-hidden="true"
+                      />
+                    </span>
+                  )}
+                </button>
 
                 {/* Hover overlay: download / copy / delete. Sits on the
                       preview so meta row stays clean (filename + size). */}

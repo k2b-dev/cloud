@@ -52,12 +52,14 @@ describe("Book controller", () => {
       <a id="notebook-root" href="/app/notebooks/book01?mode=book">Notebook home</a>
       <div id="notebook-book-history-warning" hidden>Incomplete history</div>
       <article id="notebook-book-content" tabindex="-1"><h1 id="heading">First</h1></article><div id="controller"></div></div></div>`;
-    const requests: Array<{ href: string; signal: AbortSignal | null | undefined; resolve: (value: Response) => void }> = [];
+    const requests: Array<{ href: string; path: string; signal: AbortSignal | null | undefined; resolve: (value: Response) => void }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       (input: string | URL | Request, init?: RequestInit) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
-        return new Promise<Response>((resolve) => requests.push({ href: url.searchParams.get("href")!, signal: init?.signal, resolve }));
+        return new Promise<Response>((resolve) =>
+          requests.push({ href: url.searchParams.get("href")!, path: url.pathname, signal: init?.signal, resolve }),
+        );
       },
       { preconnect: originalFetch.preconnect },
     );
@@ -159,6 +161,40 @@ describe("Book controller", () => {
       await flush();
       expect(app.requests).toHaveLength(0);
     } finally {
+      app.cleanup();
+    }
+  });
+
+  test("opens attachments in place: a file in its preview, an image in the lightbox", async () => {
+    const app = await mount();
+    const { dialogCore } = await import("@k2b/ui");
+    const content = "/api/notebooks/book01/attachments";
+    app.article.innerHTML = `<p><a id="file" href="${content}/Att001/content?v=1">Floor plan</a></p>
+      <p><a id="image" class="notebook-book-image-link" href="${content}/Att002/content?v=1"><img alt="Stage" src="${content}/Att002/content?v=1"></a></p>`;
+    try {
+      expect(app.click("file").defaultPrevented).toBe(true);
+      await flush();
+      // The stored type decides the preview, so the click reads it instead of loading another Book page.
+      expect(app.requests.map((request) => request.path)).toEqual([`${content}/Att001`]);
+      app.requests[0]!.resolve(
+        Response.json({ id: "Att001", filename: "Floor_plan.pdf", mimeType: "application/pdf", sizeBytes: 2048, kind: "file" }),
+      );
+      await flush();
+      expect(document.querySelector(".k2b-dialog[open].notebooks-attachment-dialog h2")?.textContent).toBe("Floor_plan.pdf");
+      dialogCore.close();
+      await flush();
+
+      expect(app.click("image").defaultPrevented).toBe(true);
+      await flush();
+      const lightbox = document.querySelector("dialog.k2b-content-lightbox");
+      expect(lightbox?.querySelector("img")?.getAttribute("src")).toBe(`${content}/Att002/content?v=1`);
+      expect(lightbox?.textContent).toContain("Stage");
+      expect(app.requests).toHaveLength(2);
+      lightbox?.querySelector<HTMLButtonElement>("button[aria-label='Close lightbox']")?.click();
+      await flush();
+      expect(location.pathname).toEndWith("/note01");
+    } finally {
+      while (dialogCore.isOpen()) dialogCore.close();
       app.cleanup();
     }
   });
