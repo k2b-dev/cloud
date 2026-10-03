@@ -1,10 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { prompts, Tag, toast } from "@k2b/ui";
+import { Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
@@ -69,12 +70,11 @@ export default function ItemRow(props: ItemRowProps) {
       await res.json();
       return completed;
     },
-    onSuccess: (completed) => {
-      toast.success(completed ? t.itemCompleted : t.itemReopened);
-      void invalidateSpacesData().catch(() => prompts.error(t.listRefreshFailed));
-    },
-    onError: (err) => prompts.error(err.message),
+    // The row shows the new state itself; only a failure needs a message.
+    onSuccess: () => refreshList(),
+    onError: (err) => toastErrorWithRetry(err.message, t.retry, () => completeMutation.retry()),
   });
+  const refreshList = (): void => void invalidateSpacesData().catch(() => toastErrorWithRetry(t.listRefreshFailed, t.retry, refreshList));
   const isCompleted = () => !!props.item.completedAt;
   const completionBlocked = () => !isCompleted() && props.item.activeBlockerCount > 0;
   const isEvent = () => !!(props.item.startsAt && props.item.endsAt);

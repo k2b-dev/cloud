@@ -6,9 +6,33 @@ A toast is one calm line: a tone glyph, the message, an optional text action, an
 
 ## Use toast
 
-Use a toast after a non-blocking action when the user can continue without responding.
+Use a toast after a non-blocking action when the user can continue without responding. Choose the feedback for an outcome by what the user needs next:
 
-Use `prompts` when work must pause for acknowledgement or a decision. Keep failures visible in the page when they prevent the user from completing the current task.
+| Outcome | Feedback |
+| --- | --- |
+| Success that shows where the user acted: a ticked item, a new comment, a moved card, a saved field | None. The changed screen is the confirmation. |
+| Success whose effect is not on screen: sent, moved elsewhere, created outside the current view, finished in the background | `toast.success`, with an Undo action when the operation can be undone. |
+| A single action failed and the user can try again: a toggle, a move, a save, a refresh after a saved change | `toast.error` that names what failed, with a Retry action when repeating the same request is safe. |
+| Input that blocks a form or composer | An inline error next to the field, such as the field's `error` state or `InlineGuidance`. The input stays. |
+| A destructive action, or a failure that cannot be recovered and needs a decision | A dialog: `prompts.confirm` before the action, `prompts.error` when the user must read the failure before continuing. |
+
+Toasts confirm only what the user cannot see. A toast for every visible change teaches people to ignore the rail, including its errors. An error dialog for a one-click action interrupts more than the failure deserves: the toast names it and offers the retry.
+
+Retry repeats the failed request with the intent captured when it started, such as the item ID and the values, so it still applies to the same object after the user has moved on. Offer it when repeating cannot do harm, such as setting a value, deleting, or refreshing, and when the input would otherwise be lost because its form or picker has already closed. When a change was saved but the view could not refresh, say that the change was saved and let Retry refresh the view, not repeat the change. Dismiss the error toast when its Retry starts, so a second failure shows a fresh one:
+
+```ts
+const notice = toast.error("Could not complete the task", {
+  action: {
+    label: "Retry",
+    onClick: () => {
+      notice.dismiss();
+      void completeTask({ taskId, completed: true });
+    },
+  },
+});
+```
+
+A toast over a modal dialog is not announced and cannot be reached until the dialog closes. Show feedback for work inside a dialog in the dialog itself, and keep a failure that prevents the current task visible in the page.
 
 ## Import
 

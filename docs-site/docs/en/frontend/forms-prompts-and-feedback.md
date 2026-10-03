@@ -5,7 +5,7 @@ section: Frontend
 order: 880
 description: Collect input and show mutation progress, cancellation, success, and errors.
 tags: [forms, prompts, feedback]
-updated: 2026-08-28
+updated: 2026-10-03
 ---
 
 # Forms, prompts, and feedback
@@ -68,13 +68,20 @@ cancel and navigation available when safe.
 Show progress next to the action that started it. Use `ProgressBar` only when
 progress is measurable.
 
-Use:
+Choose one channel per outcome:
 
-- inline field errors for invalid input;
-- a visible error state for failed content loading;
-- `toast.success()` for a completed background action;
-- `toast.error()` or `prompts.error()` when a failure needs attention;
-- `prompts.confirm()` before a destructive action.
+- no success message when the result shows where the user acted;
+- `toast.success()` when the effect is not on screen, with Undo where it
+  exists;
+- `toast.error()` with a Retry action when a single action failed and
+  repeating it is safe;
+- inline field errors for input that blocks a form;
+- `prompts.confirm()` before a destructive action, and `prompts.error()`
+  only for a failure the user must read and decide on;
+- a visible error state for failed content loading.
+
+The [Toast](/en/ui/feedback/toast#use-toast) context explains the rule and
+the Retry pattern.
 
 Do not show success before the server confirms the change.
 

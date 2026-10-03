@@ -1,9 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
+import { AppWorkspace, Button, dialogCore, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceTag } from "@/contracts";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -26,7 +27,8 @@ export function createItemController(props: Props) {
   const defaultType = () => props.defaultType ?? "task";
   const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
   const [dialogPending, setDialogPending] = createSignal(false);
-  const mutation = mutations.create<SpaceItem, ItemFormData>({
+  const mutation = mutations.create<SpaceItem, ItemFormData, { intent: ItemFormData }>({
+    onBefore: (intent) => ({ intent }),
     mutation: async (intent) => {
       const res = await apiClient[":id"].items.$post({
         param: { id: props.spaceId },
@@ -43,11 +45,15 @@ export function createItemController(props: Props) {
       return res.json();
     },
     onSuccess: (item) => {
+      // The new entry can land outside the current view or filter, so it is confirmed.
       toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
-      void invalidateSpacesData().catch(() => prompts.error(t.workspaceRefreshAfterCreateFailed));
+      refreshWorkspace();
     },
-    onError: (err) => prompts.error(err.message),
+    // The form has closed, so Retry sends the captured entry again instead of losing it.
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && mutation.mutate(context.intent)),
   });
+  const refreshWorkspace = (): void =>
+    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.workspaceRefreshAfterCreateFailed, t.retry, refreshWorkspace));
   const createItem = async (options: { type?: ItemType; references?: SpaceItemResourceReferenceInput[]; returnTo?: string } = {}) => {
     if (dialogPending() || mutation.loading()) return;
     setDialogPending(true);

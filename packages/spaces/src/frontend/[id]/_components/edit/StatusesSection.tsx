@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, Switch, toast } from "@k2b/ui";
+import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, Switch } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BoardColumn, boardColumnOrderId, orderBoardColumns } from "@/board-columns";
@@ -57,7 +57,6 @@ export function StatusesSection(props: {
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success(m.statusCreated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -77,7 +76,6 @@ export function StatusesSection(props: {
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success(m.statusUpdated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -95,7 +93,6 @@ export function StatusesSection(props: {
       return column;
     },
     onSuccess: () => {
-      toast.success(m.statusDeleted);
       props.onWorkspaceChange?.();
       reconcile();
     },

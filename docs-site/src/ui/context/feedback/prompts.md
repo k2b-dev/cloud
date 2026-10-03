@@ -10,6 +10,8 @@ Use a prompt when the user must acknowledge information, choose a result, or pro
 
 Use a toast for non-blocking feedback. Use `PanelDialog` for a persistent editor with tabs, sections, or a larger application workflow.
 
+Use `prompts.error` only when the user must read a failure and decide how to continue. A failed one-click action gets an error toast with Retry, and invalid input stays inline next to its field; [Toast](/en/ui/feedback/toast#use-toast) lists the whole rule. Validate a `prompts.form` field with `validate`, so the form stays open with the message under the field instead of closing and opening an error dialog.
+
 ## Import
 
 ```tsx

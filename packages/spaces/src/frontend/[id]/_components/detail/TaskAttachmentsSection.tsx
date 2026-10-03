@@ -2,6 +2,7 @@ import { DetailPanel, IconButton, Lightbox, type LightboxImage, prompts, Tooltip
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { MAX_TASK_ATTACHMENTS, type SpaceItemAttachment } from "@/contracts";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
@@ -96,17 +97,21 @@ export default function TaskAttachmentsSection(props: {
       title: t.deleteAttachment,
       variant: "danger",
     });
-    if (!confirmed) return;
+    if (confirmed) await deleteAttachment(props.itemId, attachment);
+  };
+  const deleteAttachment = async (itemId: string, attachment: SpaceItemAttachment) => {
     setDeletingId(attachment.id);
     try {
       const response = await apiClient[":id"].items[":itemId"].attachments[":attachmentId"].$delete({
-        param: { id: props.spaceId, itemId: props.itemId, attachmentId: attachment.id },
+        param: { id: props.spaceId, itemId, attachmentId: attachment.id },
       });
       if (!response.ok) throw new Error(await readResponseError(response, t.deleteAttachmentFailed));
       setAttachments((current) => current.filter((entry) => entry.id !== attachment.id));
       props.onChanged();
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : t.deleteAttachmentFailed);
+      toastErrorWithRetry(error instanceof Error ? error.message : t.deleteAttachmentFailed, t.retry, () =>
+        deleteAttachment(itemId, attachment),
+      );
     } finally {
       setDeletingId(null);
     }

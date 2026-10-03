@@ -8,7 +8,7 @@ import {
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
-import { Dropdown, IconButton, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import { Dropdown, IconButton, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
@@ -24,6 +24,7 @@ import {
 import { descriptionPreview } from "@/presentation/description-preview";
 import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
@@ -463,6 +464,12 @@ export default function KanbanBoard(props: Props) {
     });
   });
 
+  /** Reconciles after a confirmed write; a failed refresh says the change was saved and retries the refresh. */
+  const refreshBoard = (failure: string): void =>
+    void invalidateSpacesData(["view"]).catch(() => toastErrorWithRetry(failure, t.retry, () => refreshBoard(failure)));
+  const refreshWorkspace = (failure: string): void =>
+    void invalidateSpacesData().catch(() => toastErrorWithRetry(failure, t.retry, () => refreshWorkspace(failure)));
+
   // ---- Column order: people who may change the statuses reorder the board for everyone. ----
   const [columnAnnouncement, setColumnAnnouncement] = createSignal("");
   type ColumnMove = { keys: string[]; movedKey: string };
@@ -489,7 +496,7 @@ export default function KanbanBoard(props: Props) {
     },
     onError: (error, context) => {
       setColumnOrder(context?.previous ?? null);
-      prompts.error(error.message);
+      toast.error(error.message);
     },
   });
   /** Moves a column so it sits before the column now at `insertIndex`, or last. */
@@ -678,7 +685,7 @@ export default function KanbanBoard(props: Props) {
             : t.movedStaysOverdue({ status: ctx.targetLabel }),
         );
       }
-      void invalidateSpacesData(["view"]).catch(() => prompts.error(t.moveRefreshFailed));
+      refreshBoard(t.moveRefreshFailed);
     },
     onError: (error, ctx) => {
       if (ctx) {
@@ -692,7 +699,7 @@ export default function KanbanBoard(props: Props) {
         });
         void invalidateSpacesData(["view"]).catch(() => undefined);
       }
-      prompts.error(error.message);
+      toast.error(error.message);
     },
     onAbort: (ctx) => {
       if (ctx?.previousBuckets) setBuckets(ctx.previousBuckets);
@@ -730,7 +737,7 @@ export default function KanbanBoard(props: Props) {
       }),
     onSuccess: (result) => {
       showWormholeTransferToast(result, locale());
-      void invalidateSpacesData(["view"]).catch(() => prompts.error(t.transferRefreshFailed));
+      refreshBoard(t.transferRefreshFailed);
       if (selectedItemId() === result.item.id) {
         requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
       }
@@ -741,7 +748,7 @@ export default function KanbanBoard(props: Props) {
           withViewTransition(() => setBuckets(context.previousBuckets));
         });
       }
-      if (error.name !== "AbortError") prompts.error(error.message);
+      if (error.name !== "AbortError") toast.error(error.message);
     },
     onAbort: (context) => {
       if (context?.previousBuckets) setBuckets(context.previousBuckets);
@@ -749,7 +756,8 @@ export default function KanbanBoard(props: Props) {
     onFinally: () => setMovingItemId(null),
   });
 
-  const assignCardMutation = mutations.create<SpaceItem, SpaceItem>({
+  const assignCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
+    onBefore: (item) => ({ item }),
     mutation: async (item) => {
       if (item.assignees?.some((assignee) => assignee.id === props.currentUserId)) return item;
       const response = await apiClient[":id"].items[":itemId"].$patch({
@@ -766,17 +774,22 @@ export default function KanbanBoard(props: Props) {
       );
       const refocus = () => focusCard(kanbanCards().find((card) => card.dataset.itemId === item.id));
       queueMicrotask(refocus);
-      toast.success(alreadyAssigned ? t.alreadyAssignedToYou : t.assignedToYou);
-      if (!alreadyAssigned) {
+      // The card shows the new avatar; only an assignment that changed nothing needs saying.
+      if (alreadyAssigned) {
+        toast(t.alreadyAssignedToYou);
+        return;
+      }
+      const refresh = (): void =>
         void invalidateSpacesData()
           .then(refocus)
-          .catch(() => prompts.error(t.itemRefreshFailed));
-      }
+          .catch(() => toastErrorWithRetry(t.itemRefreshFailed, t.retry, refresh));
+      refresh();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && assignCardMutation.mutate(context.item)),
   });
 
-  const completeCardMutation = mutations.create<SpaceItem, SpaceItem>({
+  const completeCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
+    onBefore: (item) => ({ item }),
     mutation: async (item) => {
       const response = await apiClient[":id"].items[":itemId"].completed.$post({
         param: { id: props.spaceId, itemId: item.id },
@@ -787,10 +800,9 @@ export default function KanbanBoard(props: Props) {
     },
     onSuccess: () => {
       setOptimisticBuckets(null);
-      toast.success(t.itemCompleted);
-      void invalidateSpacesData().catch(() => prompts.error(t.listRefreshFailed));
+      refreshWorkspace(t.listRefreshFailed);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && completeCardMutation.mutate(context.item)),
   });
 
   const [claimingItemId, setClaimingItemId] = createSignal<string | null>(null);
@@ -807,9 +819,9 @@ export default function KanbanBoard(props: Props) {
     },
     onSuccess: (message) => {
       toast.success(message);
-      void invalidateSpacesData().catch(() => prompts.error(t.itemRefreshFailed));
+      refreshWorkspace(t.itemRefreshFailed);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
     onFinally: () => setClaimingItemId(null),
   });
 
