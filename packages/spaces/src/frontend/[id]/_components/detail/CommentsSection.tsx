@@ -4,6 +4,7 @@ import { Avatar, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast }
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
@@ -39,11 +40,8 @@ export default function CommentsSection(props: Props) {
       }
       return res.json();
     },
-    onSuccess: () => {
-      toast.success(t.commentAdded);
-      props.onUpdate();
-    },
-    onError: (err) => prompts.error(err.message),
+    // The new comment appears in the list; a failure stays under the composer, which keeps the draft.
+    onSuccess: () => props.onUpdate(),
   });
 
   const deleteCommentMutation = mutations.create<void, string>({
@@ -56,26 +54,23 @@ export default function CommentsSection(props: Props) {
       }
       await res.json();
     },
-    onSuccess: () => {
-      toast.success(t.commentDeleted);
-      props.onUpdate();
-    },
-    onError: (err) => prompts.error(err.message),
+    onSuccess: () => props.onUpdate(),
+    onError: (err) => toast.error(err.message),
   });
-  const updateCommentMutation = mutations.create<void, { id: string; content: string }>({
-    mutation: async ({ id, content }) => {
+  type CommentEdit = { itemId: string; id: string; content: string };
+  const updateCommentMutation = mutations.create<void, CommentEdit, { edit: CommentEdit }>({
+    onBefore: (edit) => ({ edit }),
+    mutation: async ({ itemId, id, content }) => {
       const res = await apiClient[":id"].items[":itemId"].comments[":commentId"].$patch({
-        param: { id: props.spaceId, itemId: props.itemId, commentId: id },
+        param: { id: props.spaceId, itemId, commentId: id },
         json: { content },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.updateCommentFailed));
       await res.json();
     },
-    onSuccess: () => {
-      toast.success(t.commentUpdated);
-      props.onUpdate();
-    },
-    onError: (err) => prompts.error(err.message),
+    onSuccess: () => props.onUpdate(),
+    // The edit dialog has closed, so Retry saves the captured text again instead of losing it.
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && updateCommentMutation.mutate(context.edit)),
   });
   const editComment = async (comment: SpaceComment) => {
     const values = await prompts.form({
@@ -96,7 +91,7 @@ export default function CommentsSection(props: Props) {
     if (!values) return;
     const content = String(values.content ?? "").trim();
     if (!content) return;
-    await updateCommentMutation.mutate({ id: comment.id, content });
+    await updateCommentMutation.mutate({ itemId: props.itemId, id: comment.id, content });
   };
   let deletePromptPending = false;
   const deleteComment = async (id: string) => {
@@ -146,7 +141,8 @@ export default function CommentsSection(props: Props) {
           submitLabel={t.postComment}
           onSubmit={async (content) => {
             await createCommentMutation.mutate(content);
-            return createCommentMutation.error() === null;
+            const error = createCommentMutation.error();
+            if (error) throw error;
           }}
         />
       </Show>

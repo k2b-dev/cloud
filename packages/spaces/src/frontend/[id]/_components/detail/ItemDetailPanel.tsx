@@ -38,6 +38,7 @@ import type {
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
@@ -165,7 +166,8 @@ export default function ItemDetailPanel(props: Props) {
     { value: "medium", label: t.medium, icon: "ti ti-minus", color: "#eab308" },
     { value: "low", label: t.low, icon: "ti ti-arrow-down", color: "#3b82f6" },
   ] as const;
-  const reconcileAfterWrite = () => void invalidateSpacesData().catch(() => prompts.error(t.itemRefreshFailed));
+  const reconcileAfterWrite = (): void =>
+    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.itemRefreshFailed, t.retry, reconcileAfterWrite));
 
   const unlinkReference = mutations.create<void, { type: string; id: string }>({
     mutation: async (ref, { abortSignal }) => {
@@ -176,7 +178,7 @@ export default function ItemDetailPanel(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.unlinkResourceFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const addBlocker = mutations.create<void, string>({
@@ -188,7 +190,7 @@ export default function ItemDetailPanel(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.addBlockerFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const removeBlocker = mutations.create<void, string>({
@@ -200,7 +202,7 @@ export default function ItemDetailPanel(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.removeBlockerFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const blockerOptions = async (search: string, signal: AbortSignal) => {
@@ -257,10 +259,9 @@ export default function ItemDetailPanel(props: Props) {
     return (await res.json()) as SpaceItem;
   };
 
+  // Every edit shows its new value in the panel, so a save needs no confirmation.
   const handleItemUpdated = (item: SpaceItem | null) => {
-    if (!item) return;
-    toast.success(t.itemUpdated);
-    reconcileAfterWrite();
+    if (item) reconcileAfterWrite();
   };
 
   const loadCommentsPage = async (page: number, signal: AbortSignal) => {
@@ -311,6 +312,8 @@ export default function ItemDetailPanel(props: Props) {
         }
       }),
   });
+  const refreshComments = (): void =>
+    void commentsQuery.invalidate().catch(() => toastErrorWithRetry(t.commentRefreshAfterSaveFailed, t.retry, refreshComments));
   const commentsPage = () => {
     const pages = commentsQuery.pages();
     const first = pages[0] ?? props.initialCommentsPage;
@@ -329,7 +332,7 @@ export default function ItemDetailPanel(props: Props) {
   const updateMutation = mutations.create<SpaceItem, Record<string, unknown>>({
     mutation: patchItem,
     onSuccess: handleItemUpdated,
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
   /**
@@ -353,7 +356,7 @@ export default function ItemDetailPanel(props: Props) {
       },
       onError: (err, context) => {
         if (context) setValue(() => context.previous);
-        prompts.error(err.message);
+        toast.error(err.message);
       },
       onAbort: (context) => {
         if (context) setValue(() => context.previous);
@@ -405,11 +408,18 @@ export default function ItemDetailPanel(props: Props) {
     (tagIds) => ({ tagIds }),
   );
 
-  const completeMutation = mutations.create<boolean, boolean>({
-    mutation: async (completed: boolean) => {
+  type CompleteIntent = { itemId: string; completed: boolean; claimId: string | undefined };
+  const completeIntent = (completed: boolean): CompleteIntent => ({
+    itemId: props.item.id,
+    completed,
+    claimId: ownClaimId(props.item.claim, props.currentUserId),
+  });
+  const completeMutation = mutations.create<boolean, CompleteIntent, { intent: CompleteIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ itemId, completed, claimId }) => {
       const res = await apiClient[":id"].items[":itemId"].completed.$post({
-        param: { id: props.spaceId, itemId: props.item.id },
-        json: { completed, claimId: ownClaimId(props.item.claim, props.currentUserId) },
+        param: { id: props.spaceId, itemId },
+        json: { completed, claimId },
       });
       if (!res.ok) {
         throw new Error(await readResponseError(res, t.updateItemFailed));
@@ -417,11 +427,8 @@ export default function ItemDetailPanel(props: Props) {
       await res.json();
       return completed;
     },
-    onSuccess: (completed) => {
-      toast.success(completed ? t.itemCompleted : t.itemReopened);
-      reconcileAfterWrite();
-    },
-    onError: (err) => prompts.error(err.message),
+    onSuccess: () => reconcileAfterWrite(),
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && completeMutation.mutate(context.intent)),
   });
 
   const claimMutation = mutations.create<string | null, "claim" | "release" | "take-over">({
@@ -454,7 +461,7 @@ export default function ItemDetailPanel(props: Props) {
       toast.success(message);
       reconcileAfterWrite();
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
   /** Header: claim or release your own claim. Work section: admin take-over of somebody else's claim. */
   const claimButton = (options: { takeOver?: boolean } = {}) => (
@@ -495,21 +502,25 @@ export default function ItemDetailPanel(props: Props) {
       toast.success(t.itemDuplicated);
       reconcileAfterWrite();
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
-  const deleteMutation = mutations.create<void, { itemId: string }>({
-    mutation: async ({ itemId }) => {
+  type DeleteIntent = { spaceId: string; itemId: string };
+  const deleteMutation = mutations.create<void, DeleteIntent, { intent: DeleteIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ spaceId, itemId }) => {
       const res = await apiClient[":id"].items[":itemId"].$delete({
-        param: { id: props.spaceId, itemId },
+        param: { id: spaceId, itemId },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.deleteItemFailed));
     },
-    onSuccess: () => {
+    onSuccess: (_, context) => {
       toast.success(t.itemDeleted);
-      requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
+      // A retry can succeed after the user opened another item; only the deleted item's panel closes.
+      if (context?.intent.itemId === props.item.id) requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
+      else reconcileAfterWrite();
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && deleteMutation.mutate(context.intent)),
   });
 
   const transferMutation = mutations.create<WormholeTransferResult, string>({
@@ -526,7 +537,7 @@ export default function ItemDetailPanel(props: Props) {
       requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
     },
     onError: (error) => {
-      if (error.name !== "AbortError") prompts.error(error.message);
+      if (error.name !== "AbortError") toast.error(error.message);
     },
   });
 
@@ -544,20 +555,19 @@ export default function ItemDetailPanel(props: Props) {
         variant: "danger",
         confirmText: t.delete,
       });
-      if (confirmed) void deleteMutation.mutate({ itemId: props.item.id });
+      if (confirmed) void deleteMutation.mutate({ spaceId: props.spaceId, itemId: props.item.id });
     } finally {
       deletePromptPending = false;
     }
   };
 
   type EditIntent = Parameters<typeof saveItemFormData>[0];
-  const editItemMutation = mutations.create<void, EditIntent>({
+  // The dialog has closed when the save fails, so Retry sends the captured changes again instead of losing them.
+  const editItemMutation = mutations.create<void, EditIntent, { intent: EditIntent }>({
+    onBefore: (intent) => ({ intent }),
     mutation: saveItemFormData,
-    onSuccess: () => {
-      toast.success(t.itemUpdated);
-      reconcileAfterWrite();
-    },
-    onError: (err) => prompts.error(err.message),
+    onSuccess: () => reconcileAfterWrite(),
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && editItemMutation.mutate(context.intent)),
   });
   let editPromptPending = false;
   const handleEdit = async () => {
@@ -611,7 +621,7 @@ export default function ItemDetailPanel(props: Props) {
           shortcut: "d",
           action: () => {
             if (props.item.id === itemId && canEditItem() && !isLoading() && !completionBlocked())
-              return completeMutation.mutate(!isCompleted());
+              return completeMutation.mutate(completeIntent(!isCompleted()));
           },
         }),
       );
@@ -1032,7 +1042,7 @@ export default function ItemDetailPanel(props: Props) {
                 <Show when={canEditItem()}>
                   <Button
                     type="button"
-                    onClick={() => completeMutation.mutate(!isCompleted())}
+                    onClick={() => completeMutation.mutate(completeIntent(!isCompleted()))}
                     disabled={isLoading() || completionBlocked()}
                     title={completionBlocked() ? t.completeBlockersFirst : undefined}
                     variant="secondary"
@@ -1272,7 +1282,7 @@ export default function ItemDetailPanel(props: Props) {
               onLoadMore={() => commentsQuery.loadMore()}
               onRetry={() => commentsQuery.refresh()}
               currentUserId={props.currentUserId}
-              onUpdate={() => void commentsQuery.invalidate().catch(() => prompts.error(t.commentRefreshAfterSaveFailed))}
+              onUpdate={refreshComments}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
             />

@@ -292,8 +292,8 @@ describe("Spaces Kanban drop indicator", () => {
       bucket("Col003", "Later", []),
     ]);
     // Unmounting aborts the pending canonical refreshes, which the board reports after the DOM is gone.
-    const { prompts } = await import("@k2b/ui");
-    const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const { toast } = await import("@k2b/ui");
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
 
     await drop("X", 0, cardCenter(0) - 10);
     expect(slots()).toEqual(["Open: X A B C D", "Review: Y Z", "Later: empty"]);
@@ -346,8 +346,8 @@ describe("Spaces Kanban drop indicator", () => {
       bucket("Col002", "Review", [item("X", "Col002", "1024"), item("Y", "Col002", "2048")]),
       bucket("Col003", "Later", []),
     ]);
-    const { prompts } = await import("@k2b/ui");
-    const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const { toast } = await import("@k2b/ui");
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const settle = async (expected: string[]) => {
       for (let attempt = 0; attempt < 20 && JSON.stringify(slots()) !== JSON.stringify(expected); attempt++) await flush();
       expect(slots()).toEqual(expected);

@@ -1,9 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, dialogCore, prompts, toast } from "@k2b/ui";
+import { AppWorkspace, Button, dialogCore, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceTag } from "@/contracts";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -26,36 +27,45 @@ export function createItemController(props: Props) {
   const defaultType = () => props.defaultType ?? "task";
   const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
   const [dialogPending, setDialogPending] = createSignal(false);
-  const mutation = mutations.create<SpaceItem, ItemFormData>({
-    mutation: async (intent) => {
+  // The Space and the return address belong to the intent: a compose command can select another Space before Retry.
+  type CreateIntent = { spaceId: string; data: ItemFormData; returnTo?: string };
+  const mutation = mutations.create<SpaceItem, CreateIntent, { intent: CreateIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ spaceId, data }) => {
       const res = await apiClient[":id"].items.$post({
-        param: { id: props.spaceId },
+        param: { id: spaceId },
         json: {
-          ...intent,
-          location: intent.location ?? undefined,
-          url: intent.url ?? undefined,
-          priority: intent.priority ?? undefined,
-          recurrence: intent.recurrence ?? undefined,
-          estimatedDurationMinutes: intent.estimatedDurationMinutes ?? undefined,
+          ...data,
+          location: data.location ?? undefined,
+          url: data.url ?? undefined,
+          priority: data.priority ?? undefined,
+          recurrence: data.recurrence ?? undefined,
+          estimatedDurationMinutes: data.estimatedDurationMinutes ?? undefined,
         },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
       return res.json();
     },
-    onSuccess: (item) => {
+    onSuccess: (item, context) => {
+      // The new entry can land outside the current view or filter, so it is confirmed.
       toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
-      void invalidateSpacesData().catch(() => prompts.error(t.workspaceRefreshAfterCreateFailed));
+      refreshWorkspace();
+      if (context?.intent.returnTo) window.location.assign(context.intent.returnTo);
     },
-    onError: (err) => prompts.error(err.message),
+    // The form has closed, so Retry sends the captured entry again instead of losing it.
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && mutation.mutate(context.intent)),
   });
+  const refreshWorkspace = (): void =>
+    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.workspaceRefreshAfterCreateFailed, t.retry, refreshWorkspace));
   const createItem = async (options: { type?: ItemType; references?: SpaceItemResourceReferenceInput[]; returnTo?: string } = {}) => {
     if (dialogPending() || mutation.loading()) return;
     setDialogPending(true);
+    const spaceId = props.spaceId;
     try {
-      const intent = await dialogCore.open<ItemFormData | null>(
+      const data = await dialogCore.open<ItemFormData | null>(
         (close) => (
           <ItemForm
-            spaceId={props.spaceId}
+            spaceId={spaceId}
             columns={props.columns}
             tags={props.tags}
             quickCreate
@@ -67,10 +77,8 @@ export function createItemController(props: Props) {
         ),
         itemCreateDialogOptions,
       );
-      if (intent) {
-        await mutation.mutate(intent);
-        if (!mutation.error() && options.returnTo) window.location.assign(options.returnTo);
-      } else if (options.returnTo) window.location.assign(options.returnTo);
+      if (data) await mutation.mutate({ spaceId, data, returnTo: options.returnTo });
+      else if (options.returnTo) window.location.assign(options.returnTo);
     } finally {
       setDialogPending(false);
     }
