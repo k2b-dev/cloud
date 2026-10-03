@@ -440,7 +440,8 @@ const findConversation = async (params: {
   // A subject alone links a message to mail with the same counterparty only when one of the two
   // presents itself as a reply or forward (a prefix such as Re: or reply headers whose message is
   // unknown): this reply joins the closest earlier message, and when the initial sync imports a
-  // reply first, the earlier message joins that reply as long as nothing earlier has claimed it.
+  // reply without reply headers first, the earlier message joins that reply as long as nothing
+  // earlier has claimed it. A later reply with reply headers names its own message instead.
   // Every inbound message carries the mailbox's own address, so that address proves no relation:
   // two unrelated senders that both write "Invoice" stay two conversations. Like the lookup above,
   // it reads at most one envelope batch of the closest mail with the subject on each side.
@@ -487,11 +488,9 @@ const findConversation = async (params: {
       AND (
         NOT candidate.later
         OR (
-          (
-            candidate.in_reply_to IS NOT NULL
-            OR cardinality(candidate.reference_ids) > 0
-            OR btrim(candidate.subject) ~* ${REPLY_SUBJECT_PREFIX_PATTERN}
-          )
+          candidate.in_reply_to IS NULL
+          AND cardinality(candidate.reference_ids) = 0
+          AND btrim(candidate.subject) ~* ${REPLY_SUBJECT_PREFIX_PATTERN}
           AND NOT EXISTS (
             SELECT 1 FROM mail.conversation_messages earlier WHERE earlier.conversation_id = cm.conversation_id AND earlier.position < cm.position
           )
@@ -863,10 +862,12 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
   const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
   const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
+  // The account address counts as the mailbox's side too, even before sending is set up.
+  const fromMailbox = isOutbound || params.message.addresses.from.some((address) => mailboxAddresses.has(storedAddress(address.address)));
   const { addresses } = params.message;
   const counterparties = [
     ...new Set(
-      (isOutbound ? [...addresses.to, ...addresses.cc, ...addresses.bcc] : [...addresses.from, ...addresses.replyTo]).map((address) =>
+      (fromMailbox ? [...addresses.to, ...addresses.cc, ...addresses.bcc] : [...addresses.from, ...addresses.replyTo]).map((address) =>
         storedAddress(address.address),
       ),
     ),

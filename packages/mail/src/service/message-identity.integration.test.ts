@@ -502,6 +502,84 @@ steps:
     );
     expect(await conversationOf(secondOrder)).toBe(await conversationOf(answer));
     expect(await conversationOf(firstOrder)).not.toBe(await conversationOf(answer));
+
+    // A later reply that names its message in its reply headers claims no other message with the subject.
+    const answeredInvoiceId = `<monthly-invoice-1-${suffix}@shop.example.test>`;
+    const namedReply = await ingest(
+      "sent",
+      envelope({
+        folder: "sent",
+        messageId: `<monthly-invoice-reply-${suffix}@example.test>`,
+        subject: "Re: Monthly invoice",
+        from: supportAddress,
+        to: [shop],
+        date: new Date("2026-09-20T09:00:00.000Z"),
+        inReplyTo: answeredInvoiceId,
+        references: [answeredInvoiceId],
+      }),
+    );
+    const otherInvoice = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: `<monthly-invoice-2-${suffix}@shop.example.test>`,
+        subject: "Monthly invoice",
+        from: shop,
+        to: [supportAddress],
+        date: new Date("2026-09-10T09:00:00.000Z"),
+      }),
+    );
+    const answeredInvoice = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: answeredInvoiceId,
+        subject: "Monthly invoice",
+        from: shop,
+        to: [supportAddress],
+        date: new Date("2026-09-01T09:00:00.000Z"),
+      }),
+    );
+    expect(await conversationOf(answeredInvoice)).toBe(await conversationOf(namedReply));
+    expect(await conversationOf(otherInvoice)).not.toBe(await conversationOf(namedReply));
+  });
+
+  test("a reply from the account address threads by subject before sending is set up", async () => {
+    const [identity] = await sql<{ short_id: string; label: string; display_name: string; from_address: string }[]>`
+      DELETE FROM mail.sender_identities WHERE mailbox_id = ${mailboxId}::uuid RETURNING short_id, label, display_name, from_address
+    `;
+    if (!identity) throw new Error("The fixture sender identity is missing");
+    try {
+      const request = await ingest(
+        "inbox",
+        envelope({
+          folder: "inbox",
+          messageId: `<quote-request-${suffix}@example.test>`,
+          subject: "Quote request",
+          from: customer,
+          to: [supportAddress],
+          date: new Date("2026-08-26T09:00:00.000Z"),
+        }),
+      );
+      // Another client sent the answer without reply headers.
+      const answer = await ingest(
+        "sent",
+        envelope({
+          folder: "sent",
+          messageId: `<quote-answer-${suffix}@example.test>`,
+          subject: "Re: Quote request",
+          from: supportAddress,
+          to: [customer],
+          date: new Date("2026-08-26T11:00:00.000Z"),
+        }),
+      );
+      expect(await conversationOf(answer)).toBe(await conversationOf(request));
+    } finally {
+      await sql`
+        INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
+        VALUES (${identity.short_id}, ${mailboxId}::uuid, ${identity.label}, ${identity.display_name}, ${identity.from_address}, true, 'verified')
+      `;
+    }
   });
 
   test("a sender that reuses its Message-ID does not continue an old conversation", async () => {
