@@ -19,16 +19,16 @@ describe("Table administration overview", () => {
     const groupName = `Final reviewers ${groupId}`;
     try {
       await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`overview-${groupId}`}, 'local', ${groupName})`;
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Overview')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Overview')`;
       await sql`
       INSERT INTO grids.tables (id, short_id, base_id, kind, name, position, disable_direct_insert, mutation_policy) VALUES
-        (${storedId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'stored', 'Cases', 0, FALSE, '{"mode":"selected","sources":["direct"]}'::jsonb),
-        (${combinedId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'federated', 'Combined cases', 1, TRUE, '{"mode":"all"}'::jsonb)
+        (${storedId}::uuid, ${testShortId()}, ${baseId}::uuid, 'stored', 'Cases', 0, FALSE, '{"mode":"selected","sources":["direct"]}'::jsonb),
+        (${combinedId}::uuid, ${testShortId()}, ${baseId}::uuid, 'federated', 'Combined cases', 1, TRUE, '{"mode":"all"}'::jsonb)
     `;
       await sql`
       INSERT INTO grids.fields (id, short_id, table_id, name, type, indexed, unique_constraint, position) VALUES
-        (${testUuid()}::uuid, ${testShortId("F")}, ${storedId}::uuid, 'Name', 'text', TRUE, FALSE, 0),
-        (${testUuid()}::uuid, ${testShortId("F")}, ${storedId}::uuid, 'Case ID', 'text', FALSE, TRUE, 1)
+        (${testUuid()}::uuid, ${testShortId()}, ${storedId}::uuid, 'Name', 'text', TRUE, FALSE, 0),
+        (${testUuid()}::uuid, ${testShortId()}, ${storedId}::uuid, 'Case ID', 'text', FALSE, TRUE, 1)
     `;
       const history = await enableDurableHistory(storedId, null);
       if (!history.ok) throw history.error;

@@ -2,12 +2,12 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { adminList, listVisible, overviewActivity } from "./bases";
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -29,8 +29,8 @@ describe("base visibility integration", () => {
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
         VALUES
-          (${baseAId}::uuid, ${shortId("A")}, 'Bound base'),
-          (${baseBId}::uuid, ${shortId("B")}, 'Other base')
+          (${baseAId}::uuid, ${testShortId()}, 'Bound base'),
+          (${baseBId}::uuid, ${testShortId()}, 'Other base')
       `;
       for (const baseId of [baseAId, baseBId]) {
         const [access] = await sql<{ id: string }[]>`
@@ -84,17 +84,17 @@ describe("base overview activity integration", () => {
       await sql`
         INSERT INTO grids.bases (id, short_id, name, updated_at)
         VALUES
-          (${baseAId}::uuid, ${shortId("A")}, 'Sales', '2026-01-01T00:00:00Z'),
-          (${baseBId}::uuid, ${shortId("B")}, 'Empty', '2026-01-03T00:00:00Z'),
-          (${otherBaseId}::uuid, ${shortId("C")}, 'Not requested', '2026-01-01T00:00:00Z')
+          (${baseAId}::uuid, ${testShortId()}, 'Sales', '2026-01-01T00:00:00Z'),
+          (${baseBId}::uuid, ${testShortId()}, 'Empty', '2026-01-03T00:00:00Z'),
+          (${otherBaseId}::uuid, ${testShortId()}, 'Not requested', '2026-01-01T00:00:00Z')
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, updated_at, deleted_at)
         VALUES
-          (${oldTableId}::uuid, ${shortId("T")}, ${baseAId}::uuid, 'Contacts', '2026-01-02T00:00:00Z', NULL),
-          (${activeTableId}::uuid, ${shortId("U")}, ${baseAId}::uuid, 'Deals', '2026-01-01T00:00:00Z', NULL),
-          (${deletedTableId}::uuid, ${shortId("V")}, ${baseAId}::uuid, 'Archive', '2026-01-09T00:00:00Z', now()),
-          (${otherTableId}::uuid, ${shortId("W")}, ${otherBaseId}::uuid, 'Hidden', '2026-01-09T00:00:00Z', NULL)
+          (${oldTableId}::uuid, ${testShortId()}, ${baseAId}::uuid, 'Contacts', '2026-01-02T00:00:00Z', NULL),
+          (${activeTableId}::uuid, ${testShortId()}, ${baseAId}::uuid, 'Deals', '2026-01-01T00:00:00Z', NULL),
+          (${deletedTableId}::uuid, ${testShortId()}, ${baseAId}::uuid, 'Archive', '2026-01-09T00:00:00Z', now()),
+          (${otherTableId}::uuid, ${testShortId()}, ${otherBaseId}::uuid, 'Hidden', '2026-01-09T00:00:00Z', NULL)
       `;
       // A record write is newer than any schema change and moves its table to the top.
       await sql`

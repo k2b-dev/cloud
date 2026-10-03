@@ -17,11 +17,11 @@ beforeAll(async () => {
 describe("custom app numeric snapshot Metrics", () => {
   postgresTest("publishes only explicit bounded numeric projections while preserving aggregates", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const tableId = testUuid();
-    const tableShortId = testShortId("T");
-    const numberShortId = testShortId("N");
-    const textShortId = testShortId("X");
+    const tableShortId = testShortId();
+    const numberShortId = testShortId();
+    const textShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Metrics')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
@@ -32,7 +32,7 @@ describe("custom app numeric snapshot Metrics", () => {
       const definition = (query: string): CustomAppDefinition => ({
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Metrics",
         startPageId: "home",

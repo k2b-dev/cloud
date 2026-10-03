@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
 import * as fields from "./fields";
@@ -10,13 +11,12 @@ import * as views from "./views";
 const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createBase = async (): Promise<string> => {
   const baseId = uuid();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'Named refs integration')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Named refs integration')
   `;
   return baseId;
 };

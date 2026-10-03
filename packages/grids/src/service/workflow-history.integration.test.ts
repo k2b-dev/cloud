@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createWorkflow, listWorkflows } from "./workflow-definitions";
 import { listWorkflowEmailDeliveriesPage } from "./workflow-email-deliveries";
@@ -9,7 +10,6 @@ import { deleteTestWorkflow, deleteTestWorkflowScope, insertTestWorkflowRun } fr
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -23,7 +23,7 @@ describe("workflow history integration", () => {
     try {
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
-        VALUES (${baseId}::uuid, ${shortId("B")}, 'Workflow history integration')
+        VALUES (${baseId}::uuid, ${testShortId()}, 'Workflow history integration')
       `;
       const created = await createWorkflow(
         baseId,

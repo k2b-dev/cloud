@@ -1,24 +1,24 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createInTransaction, restore } from "./record-write";
 
 const postgresTest = testFor("database");
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createFixture = async () => {
   const baseId = Bun.randomUUIDv7();
   const tableId = Bun.randomUUIDv7();
   const fieldId = Bun.randomUUIDv7();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Parent invariant')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Parent invariant')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
-    VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Records', 0)
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Records', 0)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-    VALUES (${fieldId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+    VALUES (${fieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
   `;
   return { baseId, tableId, fieldId };
 };
@@ -53,7 +53,7 @@ describe("record parent invariants", () => {
     try {
       await sql`
         INSERT INTO grids.records (short_id, id, table_id, data, deleted_at)
-        VALUES (${shortId("R")}, ${recordId}::uuid, ${fixture.tableId}::uuid, '{}'::jsonb, now())
+        VALUES (${testShortId()}, ${recordId}::uuid, ${fixture.tableId}::uuid, '{}'::jsonb, now())
       `;
       await sql`UPDATE grids.tables SET deleted_at = now() WHERE id = ${fixture.tableId}::uuid`;
 

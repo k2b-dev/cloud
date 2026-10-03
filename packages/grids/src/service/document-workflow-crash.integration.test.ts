@@ -50,9 +50,9 @@ const fixture = async (name: string) => {
     actorId = testUuid();
   await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
     VALUES (${actorId}::uuid, ${actorId}, 'local', 'user', 'Crash test', 'Crash', 'Test')`;
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, ${name})`;
-  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
-  const recordShortId = testShortId("R");
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, ${name})`;
+  await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices')`;
+  const recordShortId = testShortId();
   await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, '{}'::jsonb)`;
   const [access] = await sql`INSERT INTO auth.access (user_id, permission) VALUES (${actorId}::uuid, 'write') RETURNING id`;
   await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${access.id}::uuid)`;
@@ -93,7 +93,7 @@ steps:
     plan: compiled.plan,
     enabled: true,
     ownerUserId: actorId,
-    shortId: testShortId("W"),
+    shortId: testShortId(),
   });
   const invoke = (key: string) =>
     invokeGridsWorkflow({

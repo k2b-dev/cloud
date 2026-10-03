@@ -41,7 +41,7 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
       expect((await preview(fixture, source.replace("oneof", "noneof"))).rows.map((row) => row.recordId)).toEqual([fixture.orderBId]);
       expect((await preview(fixture, "where Receipts != null")).rows).toHaveLength(0);
       await sql`INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-        VALUES (${fileId}::uuid, ${testShortId("F")}, 'demo.txt', 'text/plain', 4, 'fixture', ${new TextEncoder().encode("demo")})`;
+        VALUES (${fileId}::uuid, ${testShortId()}, 'demo.txt', 'text/plain', 4, 'fixture', ${new TextEncoder().encode("demo")})`;
       await sql`INSERT INTO grids.file_attachments (file_id, record_id, field_id, position)
         VALUES (${fileId}::uuid, ${fixture.orderAId}::uuid, ${receipt.id}::uuid, 0)`;
       expect((await preview(fixture, "where Receipts != null")).rows.map((row) => row.recordId)).toEqual([fixture.orderAId]);
@@ -62,7 +62,7 @@ describe("Query DSL Postgres smoke — joins and grouped joins", () => {
       await sql.begin(async (tx) => {
         for (const [index, id] of ids.entries()) {
           await tx`INSERT INTO grids.records (id, short_id, table_id, data)
-            VALUES (${id}::uuid, ${testShortId("R")}, ${fixture.customers.id}::uuid,
+            VALUES (${id}::uuid, ${testShortId()}, ${fixture.customers.id}::uuid,
               ${{ [fixture.customerNameId]: index === 50 ? "Needle" : "Other", [fixture.customerScoreId]: index }}::jsonb)`;
           await tx`INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
             VALUES (${fixture.orderCId}::uuid, ${fixture.customerLinkId}::uuid, ${id}::uuid, ${index})`;

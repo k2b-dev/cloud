@@ -1,20 +1,19 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
-import { postgresTest } from "../integration-test-utils";
+import { postgresTest, testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { create, get, listDependenciesForBase, remove, update } from "./email-templates";
 import { createWorkflow, removeWorkflow } from "./workflow-definitions";
 import { deleteTestWorkflowScope } from "./workflow-test-fixture";
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = () => `B${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 postgresTest("email templates persist and update nested preview sample data", async () => {
   await migrate();
   const baseId = uuid();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId()}, 'Email template sample data')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Email template sample data')
   `;
 
   try {
@@ -53,7 +52,7 @@ postgresTest("email templates report workflow dependencies and reject deletion w
   const baseId = uuid();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId()}, 'Email template dependency test')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Email template dependency test')
   `;
 
   try {

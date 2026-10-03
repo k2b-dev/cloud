@@ -16,8 +16,8 @@ beforeAll(async () => {
 
 const insertFixture = async () => {
   const baseId = testUuid();
-  const table = { kind: "table" as const, id: testUuid(), shortId: testShortId("T"), name: "Items" };
-  const target = { kind: "table" as const, id: testUuid(), shortId: testShortId("T"), name: "Customers" };
+  const table = { kind: "table" as const, id: testUuid(), shortId: testShortId(), name: "Items" };
+  const target = { kind: "table" as const, id: testUuid(), shortId: testShortId(), name: "Customers" };
   const amountId = testUuid();
   const titleId = testUuid();
   const relationId = testUuid();
@@ -28,20 +28,20 @@ const insertFixture = async () => {
     { id: testUuid(), amount: "9007199254740993.000001", title: "keep a", version: 2 },
     { id: testUuid(), amount: "9007199254740993.000002", title: "keep b", version: 3 },
     { id: testUuid(), amount: "0.10", title: "other", version: 4 },
-  ].map((row) => ({ ...row, shortId: testShortId("R") }));
+  ].map((row) => ({ ...row, shortId: testShortId() }));
   await sql.begin(async (tx) => {
-    await tx`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Record query parity')`;
+    await tx`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Record query parity')`;
     for (const [position, item] of [table, target].entries()) {
       await tx`INSERT INTO grids.tables (id, short_id, base_id, name, position)
         VALUES (${item.id}::uuid, ${item.shortId}, ${baseId}::uuid, ${item.name}, ${position})`;
     }
     await tx`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable) VALUES
-      (${amountId}::uuid, ${testShortId("F")}, ${table.id}::uuid, 'Amount', 'number', '{}'::jsonb, 0, FALSE),
-      (${titleId}::uuid, ${testShortId("F")}, ${table.id}::uuid, 'Title', 'text', '{}'::jsonb, 1, TRUE),
-      (${relationId}::uuid, ${testShortId("F")}, ${table.id}::uuid, 'Customer', 'relation', ${{ targetTableId: target.id }}::jsonb, 2, FALSE),
-      (${targetNameId}::uuid, ${testShortId("F")}, ${target.id}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE)`;
+      (${amountId}::uuid, ${testShortId()}, ${table.id}::uuid, 'Amount', 'number', '{}'::jsonb, 0, FALSE),
+      (${titleId}::uuid, ${testShortId()}, ${table.id}::uuid, 'Title', 'text', '{}'::jsonb, 1, TRUE),
+      (${relationId}::uuid, ${testShortId()}, ${table.id}::uuid, 'Customer', 'relation', ${{ targetTableId: target.id }}::jsonb, 2, FALSE),
+      (${targetNameId}::uuid, ${testShortId()}, ${target.id}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE)`;
     await tx`INSERT INTO grids.records (id, short_id, table_id, data)
-      VALUES (${targetRecordId}::uuid, ${testShortId("R")}, ${target.id}::uuid, ${{ [targetNameId]: "Private customer" }}::jsonb)`;
+      VALUES (${targetRecordId}::uuid, ${testShortId()}, ${target.id}::uuid, ${{ [targetNameId]: "Private customer" }}::jsonb)`;
     for (const row of rows) {
       await tx`INSERT INTO grids.records (id, short_id, table_id, data, version)
         VALUES (${row.id}::uuid, ${row.shortId}, ${table.id}::uuid,
@@ -84,7 +84,7 @@ describe("stored record list and textual GQL parity", () => {
     try {
       const dayId = testUuid();
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${dayId}::uuid, ${testShortId("F")}, ${f.table.id}::uuid, 'Day', 'date', '{}'::jsonb, 3)`;
+        VALUES (${dayId}::uuid, ${testShortId()}, ${f.table.id}::uuid, 'Day', 'date', '{}'::jsonb, 3)`;
       for (const [index, row] of f.rows.entries()) {
         await sql`UPDATE grids.records SET data = data || jsonb_build_object(${dayId}::text, ${"2026-09-08"}::text),
           created_at = ${`2026-09-08T00:00:00.00000${index + 1}Z`}::timestamptz WHERE id = ${row.id}::uuid`;

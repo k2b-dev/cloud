@@ -43,7 +43,7 @@ beforeAll(async () => {
 describe("Grids App lifecycle", () => {
   postgresTest("publishes scalar prompts and rejects private bindings, unsupported inputs, and extra confirmations", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const workflowId = testUuid();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Workflow prompt')`;
@@ -80,7 +80,7 @@ describe("Grids App lifecycle", () => {
       const definition = CustomAppDefinitionSchema.parse({
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Prompt",
         startPageId: "home",
@@ -144,17 +144,17 @@ describe("Grids App lifecycle", () => {
 
   postgresTest("compiles referenced records through the pinned record query capability", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const customerTableId = testUuid();
-    const customerTableShortId = testShortId("C");
+    const customerTableShortId = testShortId();
     const customerNameId = testUuid();
-    const customerNameShortId = testShortId("N");
+    const customerNameShortId = testShortId();
     const orderTableId = testUuid();
-    const orderTableShortId = testShortId("O");
+    const orderTableShortId = testShortId();
     const orderNumberId = testUuid();
-    const orderNumberShortId = testShortId("F");
+    const orderNumberShortId = testShortId();
     const customerRelationId = testUuid();
-    const customerRelationShortId = testShortId("R");
+    const customerRelationShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Referenced records App')`;
       await sql`
@@ -173,7 +173,7 @@ describe("Grids App lifecycle", () => {
       const definition: CustomAppDefinition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Customers",
         startPageId: "home",
@@ -234,9 +234,9 @@ describe("Grids App lifecycle", () => {
       ]);
 
       const customerRecordId = testUuid();
-      const customerRecordShortId = testShortId("R");
+      const customerRecordShortId = testShortId();
       const orderRecordId = testUuid();
-      const orderRecordShortId = testShortId("R");
+      const orderRecordShortId = testShortId();
       await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES
         (${customerRecordId}::uuid, ${customerRecordShortId}, ${customerTableId}::uuid, ${{ [customerNameId]: "Customer" }}::jsonb),
         (${orderRecordId}::uuid, ${orderRecordShortId}, ${orderTableId}::uuid, ${{ [orderNumberId]: "Needle" }}::jsonb)`;
@@ -312,7 +312,7 @@ describe("Grids App lifecycle", () => {
 
       const privateFieldId = testUuid();
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable)
-        VALUES (${privateFieldId}::uuid, ${testShortId("F")}, ${customerTableId}::uuid, 'Private label', 'text', '{}'::jsonb, 1, TRUE)`;
+        VALUES (${privateFieldId}::uuid, ${testShortId()}, ${customerTableId}::uuid, 'Private label', 'text', '{}'::jsonb, 1, TRUE)`;
       const changedLabels = await executePublishedCustomAppRecords({
         ...runtime,
         page: navigationPage,
@@ -330,12 +330,12 @@ describe("Grids App lifecycle", () => {
       // to a UUID query or accepted merely because the ShortID exists globally.
       const foreignBaseId = testUuid();
       const foreignTableId = testUuid();
-      const foreignTableShortId = testShortId("T");
+      const foreignTableShortId = testShortId();
       try {
-        await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${foreignBaseId}::uuid, ${testShortId("B")}, 'Foreign App base')`;
+        await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${foreignBaseId}::uuid, ${testShortId()}, 'Foreign App base')`;
         await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
           VALUES (${foreignTableId}::uuid, ${foreignTableShortId}, ${foreignBaseId}::uuid, 'Foreign customers')`;
-        for (const tableShortId of [testShortId("Z"), foreignTableShortId]) {
+        for (const tableShortId of [testShortId(), foreignTableShortId]) {
           const invalid = structuredClone(definition);
           invalid.pages[1]!.parameters.customer_id!.tableId = tableShortId;
           const before = structuredClone(invalid);
@@ -360,7 +360,7 @@ describe("Grids App lifecycle", () => {
         SET config = ${{ targetTableId: orderTableId, cardinality: "single" }}::jsonb
         WHERE id = ${customerRelationId}::uuid
       `;
-      const rejected = await compile({ ...definition, id: testShortId("X") });
+      const rejected = await compile({ ...definition, id: testShortId() });
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) expect(rejected.diagnostics.some((item) => item.path.includes("relationFieldId"))).toBe(true);
     } finally {
@@ -370,13 +370,13 @@ describe("Grids App lifecycle", () => {
 
   postgresTest("pins one HTML template field for a record-page Rendered HTML block", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const tableId = testUuid();
-    const tableShortId = testShortId("T");
+    const tableShortId = testShortId();
     const htmlFieldId = testUuid();
-    const htmlFieldShortId = testShortId("H");
+    const htmlFieldShortId = testShortId();
     const textFieldId = testUuid();
-    const textFieldShortId = testShortId("F");
+    const textFieldShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Rendered HTML App')`;
       await sql`
@@ -392,7 +392,7 @@ describe("Grids App lifecycle", () => {
       const definition: CustomAppDefinition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Equipment cards",
         startPageId: "home",
@@ -454,7 +454,7 @@ describe("Grids App lifecycle", () => {
   postgresTest("keeps legacy definitions stored without rewriting and fails published lookup closed", async () => {
     const baseId = testUuid();
     const appId = testUuid();
-    const shortId = testShortId("A");
+    const shortId = testShortId();
     const legacyDefinition = {
       schemaVersion: 1,
       kind: "grids.custom-app",
@@ -465,7 +465,7 @@ describe("Grids App lifecycle", () => {
       pages: [{ id: "home", title: "Home", rows: [] }],
     };
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Legacy app base')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Legacy app base')`;
       await sql`
         INSERT INTO grids.custom_apps (
           id, short_id, base_id, name, draft_definition, draft_capabilities, published_definition, published_capabilities, published_at
@@ -503,15 +503,15 @@ describe("Grids App lifecycle", () => {
 
   postgresTest("publishes table presentation only for available date columns and unique result labels", async () => {
     const baseId = testUuid();
-    const baseShortId = testShortId("B");
+    const baseShortId = testShortId();
     const tableId = testUuid();
-    const tableShortId = testShortId("T");
+    const tableShortId = testShortId();
     const dueId = testUuid();
-    const dueShortId = testShortId("F");
+    const dueShortId = testShortId();
     const changedId = testUuid();
-    const changedShortId = testShortId("F");
+    const changedShortId = testShortId();
     const viewId = testUuid();
-    const viewShortId = testShortId("V");
+    const viewShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Presentation validation')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
@@ -524,7 +524,7 @@ describe("Grids App lifecycle", () => {
       const definition: CustomAppDefinition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Tasks",
         startPageId: "home",
@@ -704,7 +704,7 @@ describe("Grids App lifecycle", () => {
   postgresTest("autosaves invalid referenced drafts and restores the live snapshot", async () => {
     const baseId = testUuid();
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Draft lifecycle')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Draft lifecycle')`;
       const created = await createBlank(baseId, "Draft app");
       expect(created.ok).toBe(true);
       if (!created.ok) return;
@@ -726,8 +726,8 @@ describe("Grids App lifecycle", () => {
                   type: "records",
                   searchable: true,
                   pageSize: 25,
-                  source: { kind: "view", viewId: testShortId("V") },
-                  display: { kind: "table", columnIds: [testShortId("F")] },
+                  source: { kind: "view", viewId: testShortId() },
+                  display: { kind: "table", columnIds: [testShortId()] },
                 },
               ],
             })),
@@ -771,7 +771,7 @@ describe("Grids App lifecycle", () => {
     const otherFieldId = testUuid();
     let appId = testUuid();
     const requestRecordId = testUuid();
-    const requestRecordShortId = testShortId("R");
+    const requestRecordShortId = testShortId();
     const workflowId = testUuid();
     const bulkWorkflowId = testUuid();
     const accessIds: string[] = [];
@@ -784,24 +784,24 @@ describe("Grids App lifecycle", () => {
       ],
     };
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Grids Apps')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Grids Apps')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Requests')
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Requests')
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, default_value, position)
-        VALUES (${fieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, ${JSON.stringify(textDefault)}::text::jsonb, 0)
+        VALUES (${fieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, ${JSON.stringify(textDefault)}::text::jsonb, 0)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${computedFieldId}::uuid, ${testShortId("F")}, ${tableId}::uuid, 'Summary', 'formula', ${{ expression: "LEN(Title)" }}::jsonb, 1)
+        VALUES (${computedFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Summary', 'formula', ${{ expression: "LEN(Title)" }}::jsonb, 1)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES (
           ${htmlFieldId}::uuid,
-          ${testShortId("F")},
+          ${testShortId()},
           ${tableId}::uuid,
           'Request card',
           'html_template',
@@ -813,7 +813,7 @@ describe("Grids App lifecycle", () => {
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES (
           ${relationFieldId}::uuid,
-          ${testShortId("F")},
+          ${testShortId()},
           ${tableId}::uuid,
           'Parent request',
           'relation',
@@ -825,7 +825,7 @@ describe("Grids App lifecycle", () => {
         INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position)
         VALUES (
           ${formId}::uuid,
-          ${testShortId("M")},
+          ${testShortId()},
           ${tableId}::uuid,
           'Request form',
           ${JSON.stringify(formConfig)}::text::jsonb,
@@ -835,23 +835,23 @@ describe("Grids App lifecycle", () => {
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${otherTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Other records')
+        VALUES (${otherTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Other records')
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${otherFieldId}::uuid, ${testShortId("F")}, ${otherTableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
+        VALUES (${otherFieldId}::uuid, ${testShortId()}, ${otherTableId}::uuid, 'Title', 'text', '{}'::jsonb, 0)
       `;
       await sql`
         INSERT INTO grids.document_templates (id, short_id, table_id, name, renderer_kind, source, html, number_template, filename_template)
         VALUES
-          (${documentTemplateId}::uuid, ${testShortId("D")}, ${tableId}::uuid, 'Certificate', 'html', 'from table Requests', '<p>Certificate</p>', 'CERT-{{ document.id }}', '{{ document.number }}.pdf'),
-          (${otherDocumentTemplateId}::uuid, ${testShortId("D")}, ${otherTableId}::uuid, 'Other document', 'html', 'from table Other', '<p>Other</p>', 'OTHER-{{ document.id }}', '{{ document.number }}.pdf')
+          (${documentTemplateId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Certificate', 'html', 'from table Requests', '<p>Certificate</p>', 'CERT-{{ document.id }}', '{{ document.number }}.pdf'),
+          (${otherDocumentTemplateId}::uuid, ${testShortId()}, ${otherTableId}::uuid, 'Other document', 'html', 'from table Other', '<p>Other</p>', 'OTHER-{{ document.id }}', '{{ document.number }}.pdf')
       `;
       await sql`
         INSERT INTO grids.views (id, short_id, table_id, name, source)
         VALUES
-          (${viewId}::uuid, ${testShortId("V")}, ${tableId}::uuid, 'My requests', ${`from table {${tableId}}`}),
-          (${metricViewId}::uuid, ${testShortId("V")}, ${tableId}::uuid, 'Request count', ${`from table {${tableId}}\naggregate count(*) as requests`})
+          (${viewId}::uuid, ${testShortId()}, ${tableId}::uuid, 'My requests', ${`from table {${tableId}}`}),
+          (${metricViewId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Request count', ${`from table {${tableId}}\naggregate count(*) as requests`})
       `;
       await insertTestWorkflow({
         baseId,
@@ -949,7 +949,7 @@ describe("Grids App lifecycle", () => {
       const definition: CustomAppDefinition = {
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: publicId(baseId),
         name: "Request portal",
         startPageId: "home",
@@ -1332,7 +1332,7 @@ describe("Grids App lifecycle", () => {
       const htmlBlock = wrongHtmlField.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "html")!;
       if (htmlBlock.type !== "html") throw new Error("Expected Rendered HTML block");
       htmlBlock.fieldId = publicId(fieldId);
-      const wrongHtmlResult = await compile({ ...wrongHtmlField, id: testShortId("A") });
+      const wrongHtmlResult = await compile({ ...wrongHtmlField, id: testShortId() });
       expect(wrongHtmlResult.ok).toBe(false);
       if (!wrongHtmlResult.ok) {
         expect(wrongHtmlResult.diagnostics.some((diagnostic) => diagnostic.message.includes("not an HTML template field"))).toBe(true);
@@ -1474,7 +1474,7 @@ describe("Grids App lifecycle", () => {
 
       const invalid = await compile({
         ...definition,
-        id: testShortId("A"),
+        id: testShortId(),
         pages: [
           {
             ...definition.pages[0],
@@ -1491,7 +1491,7 @@ describe("Grids App lifecycle", () => {
                         searchable: true,
                         pageSize: 25,
                         source: { kind: "view", viewId: publicId(viewId) },
-                        display: { kind: "table", columnIds: [testShortId("F")] },
+                        display: { kind: "table", columnIds: [testShortId()] },
                       },
                     ],
                   },
@@ -1507,7 +1507,7 @@ describe("Grids App lifecycle", () => {
       invalidGlobalContext.sidebar!.actions[0]!.availableWhen = {
         query: `from table {${publicId(tableId)}}\nwhere {${publicId(fieldId)}} = @page.id\nlimit 1`,
       };
-      const invalidGlobalContextResult = await compile({ ...invalidGlobalContext, id: testShortId("A") });
+      const invalidGlobalContextResult = await compile({ ...invalidGlobalContext, id: testShortId() });
       expect(invalidGlobalContextResult.ok).toBe(false);
       if (!invalidGlobalContextResult.ok) {
         expect(invalidGlobalContextResult.diagnostics.some((diagnostic) => diagnostic.message.includes("@page.id"))).toBe(true);
@@ -1518,7 +1518,7 @@ describe("Grids App lifecycle", () => {
       if (computedRecord.type !== "record") throw new Error("Expected Record block");
       computedRecord.fieldIds.push(publicId(computedFieldId));
       computedRecord.editableFieldIds = [publicId(computedFieldId)];
-      const computedEditResult = await compile({ ...computedEdit, id: testShortId("A") });
+      const computedEditResult = await compile({ ...computedEdit, id: testShortId() });
       expect(computedEditResult.ok).toBe(false);
       if (!computedEditResult.ok) {
         expect(computedEditResult.diagnostics.some((diagnostic) => diagnostic.message.includes("not a writable record field"))).toBe(true);
@@ -1528,7 +1528,7 @@ describe("Grids App lifecycle", () => {
       const metricBlock = rawMetric.pages[0]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "metrics")!;
       if (metricBlock.type !== "metrics") throw new Error("Expected Metrics block");
       metricBlock.source = { kind: "gql", query: `from table {${publicId(tableId)}}` };
-      const rawMetricResult = await compile({ ...rawMetric, id: testShortId("A") });
+      const rawMetricResult = await compile({ ...rawMetric, id: testShortId() });
       expect(rawMetricResult.ok).toBe(false);
       if (!rawMetricResult.ok) {
         expect(rawMetricResult.diagnostics.some((diagnostic) => diagnostic.message.includes("ungrouped scalar aggregations"))).toBe(true);
@@ -1541,7 +1541,7 @@ describe("Grids App lifecycle", () => {
         kind: "gql",
         query: `from table {${publicId(tableId)}}\naggregate count(*) as requests`,
       };
-      const ungroupedChartResult = await compile({ ...ungroupedChart, id: testShortId("A") });
+      const ungroupedChartResult = await compile({ ...ungroupedChart, id: testShortId() });
       expect(ungroupedChartResult.ok).toBe(false);
       if (!ungroupedChartResult.ok) {
         expect(ungroupedChartResult.diagnostics.some((diagnostic) => diagnostic.message.includes("must group rows"))).toBe(true);
@@ -1551,7 +1551,7 @@ describe("Grids App lifecycle", () => {
       const documentRecord = wrongDocumentTemplate.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.type === "record")!;
       if (documentRecord.type !== "record") throw new Error("Expected Record block");
       documentRecord.documents = { templateIds: [publicId(otherDocumentTemplateId)] };
-      const wrongDocumentResult = await compile({ ...wrongDocumentTemplate, id: testShortId("A") });
+      const wrongDocumentResult = await compile({ ...wrongDocumentTemplate, id: testShortId() });
       expect(wrongDocumentResult.ok).toBe(false);
       if (!wrongDocumentResult.ok) {
         expect(wrongDocumentResult.diagnostics.some((diagnostic) => diagnostic.message.includes("another table"))).toBe(true);
@@ -1565,10 +1565,10 @@ describe("Grids App lifecycle", () => {
         throw new Error("Expected navigable Records block");
       }
       relationRecords.rowNavigate.params.request_id = { source: "ROW", path: "relation", fieldId: publicId(relationFieldId) };
-      expect((await compile({ ...relationRowTarget, id: testShortId("A") })).ok).toBe(true);
+      expect((await compile({ ...relationRowTarget, id: testShortId() })).ok).toBe(true);
 
       relationRecords.source = { kind: "gql", query: `from table {${publicId(tableId)}}\nselect {${publicId(fieldId)}}` };
-      const unselectedRelationTarget = await compile({ ...relationRowTarget, id: testShortId("A") });
+      const unselectedRelationTarget = await compile({ ...relationRowTarget, id: testShortId() });
       expect(unselectedRelationTarget.ok).toBe(false);
       if (!unselectedRelationTarget.ok) {
         expect(unselectedRelationTarget.diagnostics.some((diagnostic) => diagnostic.message.includes("selected single relation"))).toBe(
@@ -1578,7 +1578,7 @@ describe("Grids App lifecycle", () => {
 
       const wrongRowTarget = await compile({
         ...definition,
-        id: testShortId("A"),
+        id: testShortId(),
         pages: [
           definition.pages[0],
           {
@@ -1607,7 +1607,7 @@ describe("Grids App lifecycle", () => {
 
       const wrongFixedTarget = await compile({
         ...definition,
-        id: testShortId("A"),
+        id: testShortId(),
         pages: [
           {
             ...definition.pages[0],

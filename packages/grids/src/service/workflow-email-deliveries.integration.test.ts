@@ -29,11 +29,11 @@ const insertFixture = async (): Promise<Fixture> => {
   const stepKey = "steps.0";
   const templateId = testUuid();
 
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Email delivery')`;
-  await insertTestWorkflow({ id: workflowId, shortId: testShortId("W"), baseId: baseId, name: "Notify", source: "steps: []" });
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Email delivery')`;
+  await insertTestWorkflow({ id: workflowId, shortId: testShortId(), baseId: baseId, name: "Notify", source: "steps: []" });
   await sql`
     INSERT INTO grids.email_templates (id, short_id, base_id, name, subject, html)
-    VALUES (${templateId}::uuid, ${testShortId("E")}, ${baseId}::uuid, 'Notice', 'Subject', '<p>Private</p>')
+    VALUES (${templateId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Notice', 'Subject', '<p>Private</p>')
   `;
   return { baseId, workflowId, runId, stepKey, templateId };
 };

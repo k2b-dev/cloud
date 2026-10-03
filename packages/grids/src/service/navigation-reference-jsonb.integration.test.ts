@@ -1,10 +1,10 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { updateBaseNavigation } from "./base-navigation";
 import { rewriteFieldNameReferences } from "./reference-renames";
-import { newShortId } from "./short-id";
 
 const postgresTest = testFor("database");
 
@@ -15,9 +15,9 @@ beforeAll(async () => {
 const fixture = async () => {
   const baseId = Bun.randomUUIDv7();
   const tableId = Bun.randomUUIDv7();
-  const tableShortId = newShortId();
+  const tableShortId = testShortId();
   await sql`INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${newShortId()}, 'JSONB writer regression')`;
+    VALUES (${baseId}::uuid, ${testShortId()}, 'JSONB writer regression')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
     VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Entries')`;
   return { baseId, tableId, tableShortId };
@@ -26,7 +26,7 @@ const fixture = async () => {
 postgresTest("navigation updates store a queryable JSON array, including empty groups", async () => {
   const { baseId, tableShortId } = await fixture();
   try {
-    const groupId = newShortId();
+    const groupId = testShortId();
     const updated = await updateBaseNavigation(
       baseId,
       {
@@ -57,7 +57,7 @@ postgresTest("formula reference rewriting stores a queryable config object and r
   try {
     const config = { expression: '"Old amount" * 2', outputType: "number", decimalPlaces: 2 };
     await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config)
-      VALUES (${formulaId}::uuid, ${newShortId()}, ${tableId}::uuid, 'Total', 'formula', ${config}::jsonb)`;
+      VALUES (${formulaId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Total', 'formula', ${config}::jsonb)`;
     await sql.begin((tx) => rewriteFieldNameReferences({ tableId, oldName: "Old amount", newName: "New amount" }, tx));
     const [stored] = await sql`SELECT jsonb_typeof(config) AS kind,
       config ->> 'expression' AS expression, config ->> 'outputType' AS output,

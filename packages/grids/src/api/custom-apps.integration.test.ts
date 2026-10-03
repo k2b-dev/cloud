@@ -129,12 +129,12 @@ describe("Grids App Form runtime", () => {
     const recordId = testUuid();
     const relationFieldId = testUuid();
     const formId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const fieldShortId = testShortId("F");
-    const recordShortId = testShortId("R");
-    const relationFieldShortId = testShortId("F");
-    const formShortId = testShortId("M");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const fieldShortId = testShortId();
+    const recordShortId = testShortId();
+    const relationFieldShortId = testShortId();
+    const formShortId = testShortId();
     let accessId: string | undefined;
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Repeated page parameters')`;
@@ -158,7 +158,7 @@ describe("Grids App Form runtime", () => {
       const applied = await apply({
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Repeated parameters",
         startPageId: "home",
@@ -268,7 +268,7 @@ describe("Grids App Form runtime", () => {
       const sameRecord = await api.request(`${route}?cursor=${recordShortId}&limit=${recordShortId}`);
       expect(sameRecord.status).toBe(200);
       expect((await api.request(`${route}?cursor=${recordShortId}&limit=${recordShortId}&_cursor=invalid`)).status).toBe(400);
-      const missingRecord = await api.request(`${route}?cursor=${recordShortId}&limit=${testShortId("Z")}`);
+      const missingRecord = await api.request(`${route}?cursor=${recordShortId}&limit=${testShortId()}`);
       expect(missingRecord.status).toBe(404);
       for (const [pageId, query] of [
         ["detail", `cursor=${recordShortId}&limit=${recordShortId}`],
@@ -361,9 +361,9 @@ describe("Grids App Form runtime", () => {
 
       const newTargetTableId = testUuid();
       const newTargetRecordId = testUuid();
-      const newTargetRecordShortId = testShortId("R");
+      const newTargetRecordShortId = testShortId();
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-        VALUES (${newTargetTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Unpublished target')`;
+        VALUES (${newTargetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Unpublished target')`;
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES (${newTargetRecordId}::uuid, ${newTargetRecordShortId}, ${newTargetTableId}::uuid, '{}'::jsonb)`;
       await sql`UPDATE grids.fields SET config = ${{ targetTableId: newTargetTableId, cardinality: "single" }}::jsonb
@@ -406,19 +406,19 @@ describe("Grids App Form runtime", () => {
       const otherDocumentTemplateId = testUuid();
       const launcherId = testUuid();
       const workflowId = testUuid();
-      const basePublicId = testShortId("B");
-      const tablePublicId = testShortId("T");
-      const fieldPublicId = testShortId("F");
-      const hiddenFieldPublicId = testShortId("H");
-      const suppliedFieldPublicId = testShortId("S");
-      const imageFieldPublicId = testShortId("I");
-      const formPublicId = testShortId("M");
-      const viewPublicId = testShortId("V");
-      const documentTemplatePublicId = testShortId("D");
-      const otherDocumentTemplatePublicId = testShortId("E");
-      const appPublicId = testShortId("A");
-      const launcherPublicId = testShortId("L");
-      const workflowPublicId = testShortId("W");
+      const basePublicId = testShortId();
+      const tablePublicId = testShortId();
+      const fieldPublicId = testShortId();
+      const hiddenFieldPublicId = testShortId();
+      const suppliedFieldPublicId = testShortId();
+      const imageFieldPublicId = testShortId();
+      const formPublicId = testShortId();
+      const viewPublicId = testShortId();
+      const documentTemplatePublicId = testShortId();
+      const otherDocumentTemplatePublicId = testShortId();
+      const appPublicId = testShortId();
+      const launcherPublicId = testShortId();
+      const workflowPublicId = testShortId();
       const authUser = userFor(testUuid());
       await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
         VALUES (${authUser.id}::uuid, ${authUser.uid}, 'local', 'user', ${authUser.displayName}, ${authUser.givenname}, ${authUser.sn})`;
@@ -660,7 +660,7 @@ describe("Grids App Form runtime", () => {
               run_id, short_id, base_id, workflow_id, launcher_id, launcher_kind, channel, actor_user_id, request_fingerprint
             ) VALUES (
               ${runId}::uuid,
-              ${testShortId(channel === "scanner" ? "C" : "U")},
+              ${testShortId()},
               ${baseId}::uuid,
               ${workflowId}::uuid,
               ${launcherId}::uuid,
@@ -828,7 +828,7 @@ describe("Grids App Form runtime", () => {
           expect(JSON.stringify(chartBlock)).not.toContain(unselectedId);
         }
         const fileId = testUuid();
-        const filePublicId = testShortId("P");
+        const filePublicId = testShortId();
         const imageBytes = new Uint8Array([137, 80, 78, 71]);
         await sql`
           INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
@@ -935,13 +935,13 @@ describe("Grids App Form runtime", () => {
         }
 
         const snapshotId = testUuid();
-        const snapshotPublicId = testShortId("N");
+        const snapshotPublicId = testShortId();
         const documentId = testUuid();
-        const documentPublicId = testShortId("R");
+        const documentPublicId = testShortId();
         const otherDocumentId = testUuid();
-        const otherDocumentPublicId = testShortId("Q");
+        const otherDocumentPublicId = testShortId();
         const otherRecordId = testUuid();
-        const otherRecordPublicId = testShortId("O");
+        const otherRecordPublicId = testShortId();
         await sql`
         INSERT INTO grids.records (id, short_id, table_id, data, created_by, updated_by)
         VALUES (
@@ -1125,7 +1125,7 @@ describe("Grids App Form runtime", () => {
         const rejectedField = await api.request(recordUrl, {
           method: "PATCH",
           headers: { "content-type": "application/json", "If-Match": "2" },
-          body: JSON.stringify({ values: { [testShortId("Z")]: "not published" } }),
+          body: JSON.stringify({ values: { [testShortId()]: "not published" } }),
         });
         expect(rejectedField.status).toBe(400);
 
@@ -1246,7 +1246,7 @@ describe("Grids App Form runtime", () => {
         });
         const authenticatedUser = userFor(authUser.id);
         const referenceFieldId = testUuid();
-        const referenceFieldPublicId = testShortId("F");
+        const referenceFieldPublicId = testShortId();
         await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
           VALUES (${referenceFieldId}::uuid, ${referenceFieldPublicId}, ${tableId}::uuid, 'Related request', 'relation',
             ${{ targetTableId: tableId, cardinality: "multiple" }}::jsonb, 10)`;
@@ -1364,7 +1364,7 @@ describe("Grids App Form runtime", () => {
           ),
           ${authUser.id}::uuid,
           ${authUser.id}::uuid
-        FROM jsonb_array_elements_text((${{ ids: Array.from({ length: 130 }, () => testShortId("X")) }}::jsonb)->'ids')
+        FROM jsonb_array_elements_text((${{ ids: Array.from({ length: 130 }, () => testShortId()) }}::jsonb)->'ids')
           WITH ORDINALITY AS generated(short_id, index)
         RETURNING id::text, short_id AS public_id, data->>${fieldId}::text AS subject
       `;
@@ -1469,7 +1469,7 @@ describe("Grids App Form runtime", () => {
           body: JSON.stringify({ operationId: testUuid() }),
         });
         expect(unpinnedPrompt.status).toBe(409);
-        for (const inputs of [{ request: testShortId("X") }, { unknown: "50" }]) {
+        for (const inputs of [{ request: testShortId() }, { unknown: "50" }]) {
           const invalidPrompt = await api.request(
             `/apps/runtime/${applied.data.shortId}/request/actions/actions/approve?request_id=${body.recordId}`,
             {
@@ -1601,7 +1601,7 @@ describe("Grids App Form runtime", () => {
                   ? {
                       runId,
                       baseId,
-                      workflow: { id: workflowId, shortId: testShortId("W"), name: "Approve request" },
+                      workflow: { id: workflowId, shortId: testShortId(), name: "Approve request" },
                       principal: accepted.principal,
                       authorization: accepted.authorization,
                       launcherId: accepted.launcherId,
@@ -1690,7 +1690,7 @@ describe("Grids App Form runtime", () => {
         expect(await recovered.json()).toMatchObject({ statusUrl: delegatedAction.statusUrl });
         expect((await firstServiceAccountApi.request(statusPath)).status).toBe(200);
         expect((await retry(firstServiceAccountApi, { amount: "999" })).status).toBe(409);
-        expect((await retry(firstServiceAccountApi, {}, testShortId("X"))).status).toBe(404);
+        expect((await retry(firstServiceAccountApi, {}, testShortId())).status).toBe(404);
         expect((await retry(secondServiceAccountApi)).status).toBe(404);
         const fresh = await firstServiceAccountApi.request(promptUrl, {
           method: "POST",
@@ -1705,7 +1705,7 @@ describe("Grids App Form runtime", () => {
         const [beforeRebind] =
           await sql`SELECT published_definition, published_capabilities FROM grids.custom_apps WHERE id = ${appId}::uuid`;
         const replacementLauncherId = testUuid();
-        const replacementLauncherPublicId = testShortId("L");
+        const replacementLauncherPublicId = testShortId();
         await sql`INSERT INTO grids.workflow_launchers (id, short_id, base_id, workflow_id, name, kind, config, enabled, validated_revision)
           SELECT ${replacementLauncherId}::uuid, ${replacementLauncherPublicId}, base_id, workflow_id, 'Replacement', kind, config, enabled, validated_revision
           FROM grids.workflow_launchers WHERE id = ${launcherId}::uuid`;
@@ -1878,7 +1878,7 @@ describe("Grids App Form runtime", () => {
         const forgedRowResponse = await api.request(rowActionUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ operationId: testUuid(), rowId: testShortId("Z") }),
+          body: JSON.stringify({ operationId: testUuid(), rowId: testShortId() }),
         });
         expect(forgedRowResponse.status).toBe(404);
         expect(actionInvocation).toBeNull();
@@ -2058,11 +2058,11 @@ describe("Grids App record block", () => {
     const titleFieldId = testUuid();
     const ownersFieldId = testUuid();
     const recordId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const titleFieldShortId = testShortId("F");
-    const ownersFieldShortId = testShortId("O");
-    const recordShortId = testShortId("R");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const titleFieldShortId = testShortId();
+    const ownersFieldShortId = testShortId();
+    const recordShortId = testShortId();
     const viewer = userFor(testUuid());
     const owners = [{ type: "user", id: viewer.id }];
     let accessId: string | undefined;
@@ -2080,7 +2080,7 @@ describe("Grids App record block", () => {
       const applied = await apply({
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Device owners",
         startPageId: "home",
@@ -2184,12 +2184,12 @@ describe("Grids App dependency changes", () => {
     const notesFieldId = testUuid();
     const formId = testUuid();
     const viewId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const titleFieldShortId = testShortId("F");
-    const notesFieldShortId = testShortId("N");
-    const formShortId = testShortId("M");
-    const viewShortId = testShortId("V");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const titleFieldShortId = testShortId();
+    const notesFieldShortId = testShortId();
+    const formShortId = testShortId();
+    const viewShortId = testShortId();
     const author = userFor(testUuid());
     const accessIds: string[] = [];
     try {
@@ -2218,7 +2218,7 @@ describe("Grids App dependency changes", () => {
       const applied = await apply({
         schemaVersion: 5,
         kind: "grids.custom-app",
-        id: testShortId("A"),
+        id: testShortId(),
         baseId: baseShortId,
         name: "Requests",
         startPageId: "home",

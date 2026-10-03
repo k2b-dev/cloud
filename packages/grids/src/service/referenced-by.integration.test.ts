@@ -29,22 +29,22 @@ const createFixture = async (sourceCount = 550): Promise<Fixture> => {
   const otherSourceTableId = testUuid();
   const labelFieldId = testUuid();
   const relationFieldId = testUuid();
-  const relationFieldShortId = testShortId("F");
+  const relationFieldShortId = testShortId();
   const otherRelationFieldId = testUuid();
-  const otherRelationFieldShortId = testShortId("G");
+  const otherRelationFieldShortId = testShortId();
   const sourceRecordIds = Array.from({ length: sourceCount }, () => testUuid());
   const otherSourceRecordId = testUuid();
 
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Referenced by')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Referenced by')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, kind, position) VALUES
-      (${targetTableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Targets', 'stored', 0),
-      (${sourceTableId}::uuid, ${testShortId("S")}, ${baseId}::uuid, 'Sources', 'stored', 1),
-      (${otherSourceTableId}::uuid, ${testShortId("O")}, ${baseId}::uuid, 'Other sources', 'stored', 2)
+      (${targetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Targets', 'stored', 0),
+      (${sourceTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Sources', 'stored', 1),
+      (${otherSourceTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Other sources', 'stored', 2)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable) VALUES
-      (${labelFieldId}::uuid, ${testShortId("L")}, ${sourceTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE),
+      (${labelFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE),
       (
         ${relationFieldId}::uuid,
         ${relationFieldShortId},
@@ -68,7 +68,7 @@ const createFixture = async (sourceCount = 550): Promise<Fixture> => {
   `;
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data)
-    VALUES (${targetRecordId}::uuid, ${testShortId("R")}, ${targetTableId}::uuid, '{}'::jsonb)
+    VALUES (${targetRecordId}::uuid, ${testShortId()}, ${targetTableId}::uuid, '{}'::jsonb)
   `;
 
   for (let offset = 0; offset < sourceRecordIds.length; offset += 50) {
@@ -76,7 +76,7 @@ const createFixture = async (sourceCount = 550): Promise<Fixture> => {
     const values = chunk
       .map(
         (id, index) =>
-          sql`(${id}::uuid, ${testShortId("R")}, ${sourceTableId}::uuid, ${{ [labelFieldId]: `Source ${offset + index}` }}::jsonb)`,
+          sql`(${id}::uuid, ${testShortId()}, ${sourceTableId}::uuid, ${{ [labelFieldId]: `Source ${offset + index}` }}::jsonb)`,
       )
       .reduce((left, right) => sql`${left}, ${right}`);
     await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES ${values}`;
@@ -87,7 +87,7 @@ const createFixture = async (sourceCount = 550): Promise<Fixture> => {
   }
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data)
-    VALUES (${otherSourceRecordId}::uuid, ${testShortId("R")}, ${otherSourceTableId}::uuid, '{}'::jsonb)
+    VALUES (${otherSourceRecordId}::uuid, ${testShortId()}, ${otherSourceTableId}::uuid, '{}'::jsonb)
   `;
   await sql`
     INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
@@ -239,7 +239,7 @@ describe("referenced-by integration", () => {
       if (!deleted) throw new Error("Expected an existing record after the page boundary");
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${inserted.id}::uuid, ${testShortId("R")}, ${fixture.sourceTableId}::uuid, '{}'::jsonb)
+        VALUES (${inserted.id}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, '{}'::jsonb)
       `;
       await sql`
         INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
@@ -276,7 +276,7 @@ describe("referenced-by integration", () => {
     try {
       const unrelatedTargets = Array.from({ length: 24 }, () => testUuid());
       const targetValues = unrelatedTargets
-        .map((id) => sql`(${id}::uuid, ${testShortId("R")}, ${fixture.targetTableId}::uuid, '{}'::jsonb)`)
+        .map((id) => sql`(${id}::uuid, ${testShortId()}, ${fixture.targetTableId}::uuid, '{}'::jsonb)`)
         .reduce((left, right) => sql`${left}, ${right}`);
       await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES ${targetValues}`;
       for (const targetId of unrelatedTargets) {

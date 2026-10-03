@@ -1,6 +1,7 @@
 import { beforeAll, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { cleanupFixture, ctx, insertDslDbFixture, postgresTest } from "../query-dsl/sql-compiler.integration-fixtures";
 import { workflowQueryParameterSamples } from "../workflows/query-parameters";
@@ -12,7 +13,7 @@ postgresTest("summary workflow bindings capture real rows and reject a changed u
   const fixture = await insertDslDbFixture();
   try {
     const viewId = Bun.randomUUIDv7();
-    const shortId = Math.random().toString(36).slice(2, 8);
+    const shortId = testShortId();
     const source = `from table {${fixture.orders.shortId}}\ngroup by {${fixture.fieldsByTableId[fixture.orders.id]!.find((field) => field.id === fixture.customerLinkId)!.shortId}}\naggregate sum(Amount) as summed_amount`;
     await sql`INSERT INTO grids.views (id, short_id, base_id, table_id, name, source)
       VALUES (${viewId}::uuid, ${shortId}, ${fixture.baseId}::uuid, ${fixture.orders.id}::uuid, 'Order totals', ${source})`;

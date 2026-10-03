@@ -7,6 +7,7 @@ import { createAuthenticatedFormRoutes } from "../api/form-authenticated-routes"
 import { createPublicFormRoutes } from "../api/form-public-routes";
 import { toPublicFields } from "../api/public-dto";
 import { planFormComputedFields, previewFormComputedFields } from "../form-computed-fields";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { customAppFormRelationScope } from "./custom-app-form-relations";
 import { listByTable } from "./fields";
@@ -14,7 +15,6 @@ import { validateFormConfig } from "./form-config-validation";
 import * as forms from "./forms";
 
 const postgresTest = testFor("database");
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 const createFixture = async () => {
   const baseId = Bun.randomUUIDv7();
@@ -25,29 +25,29 @@ const createFixture = async () => {
   const targetNameFieldId = Bun.randomUUIDv7();
   const startFieldId = Bun.randomUUIDv7();
   const dueFieldId = Bun.randomUUIDv7();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Form validation')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Form validation')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
     VALUES
-      (${sourceTableId}::uuid, ${shortId("S")}, ${baseId}::uuid, 'Requests', 0),
-      (${targetTableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Contacts', 1)
+      (${sourceTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Requests', 0),
+      (${targetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Contacts', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${nameFieldId}::uuid, ${shortId("N")}, ${sourceTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
+      (${nameFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0),
       (
         ${relationFieldId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${sourceTableId}::uuid,
         'Contact',
         'relation',
         ${{ targetTableId, cardinality: "multiple" }}::jsonb,
         1
       ),
-      (${targetNameFieldId}::uuid, ${shortId("C")}, ${targetTableId}::uuid, 'Contact name', 'text', '{}'::jsonb, 0),
-      (${startFieldId}::uuid, ${shortId("A")}, ${sourceTableId}::uuid, 'Start', 'date', '{}'::jsonb, 2),
-      (${dueFieldId}::uuid, ${shortId("D")}, ${sourceTableId}::uuid, 'Due', 'date', '{}'::jsonb, 3)
+      (${targetNameFieldId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'Contact name', 'text', '{}'::jsonb, 0),
+      (${startFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Start', 'date', '{}'::jsonb, 2),
+      (${dueFieldId}::uuid, ${testShortId()}, ${sourceTableId}::uuid, 'Due', 'date', '{}'::jsonb, 3)
   `;
   return { baseId, sourceTableId, targetTableId, nameFieldId, relationFieldId, targetNameFieldId, startFieldId, dueFieldId };
 };
@@ -62,7 +62,7 @@ describe("form config validation", () => {
     try {
       const computedId = Bun.randomUUIDv7();
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-        VALUES (${computedId}::uuid, ${shortId("F")}, ${fixture.sourceTableId}::uuid, 'Summary', 'formula',
+        VALUES (${computedId}::uuid, ${testShortId()}, ${fixture.sourceTableId}::uuid, 'Summary', 'formula',
           ${{ expression: "CONCAT(Name, '!')" }}::jsonb, 4)`;
       const config = { fields: [{ kind: "user_input", fieldId: fixture.nameFieldId }], computedFields: [{ fieldId: computedId }] };
       const accepted = await validateFormConfig(fixture.sourceTableId, config);
@@ -252,8 +252,8 @@ postgresTest("standalone filtered pickers require active tokens or Base Write an
       null,
     );
     if (!saved.ok) throw saved.error;
-    const publicId = shortId("P"),
-      privateId = shortId("I");
+    const publicId = testShortId(),
+      privateId = testShortId();
     await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES
       (${Bun.randomUUIDv7()}::uuid, ${publicId}, ${fixture.targetTableId}::uuid, ${{ [fixture.targetNameFieldId]: "Public camera" }}::jsonb),
       (${Bun.randomUUIDv7()}::uuid, ${privateId}, ${fixture.targetTableId}::uuid, ${{ [fixture.targetNameFieldId]: "Internal camera" }}::jsonb)`;

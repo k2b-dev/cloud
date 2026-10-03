@@ -20,10 +20,10 @@ const fixture = async (): Promise<IssueDocumentInput> => {
   const baseId = testUuid();
   const tableId = testUuid();
   const recordId = testUuid();
-  const recordShortId = testShortId("R");
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'Reservation locks')`;
+  const recordShortId = testShortId();
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Reservation locks')`;
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices')`;
   await sql`INSERT INTO grids.records (id, short_id, table_id, data)
     VALUES (${recordId}::uuid, ${recordShortId}, ${tableId}::uuid, '{}'::jsonb)`;
   for (const enabled of [await enableHistory(tableId, null), await enableFinalization(tableId, { mode: "direct" }, null)]) {

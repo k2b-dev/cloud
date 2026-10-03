@@ -3,10 +3,10 @@ import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { toPublicWorkflowPayloads } from "../api/workflow-api-shared";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { cleanupFixture, ctx, insertDslDbFixture, postgresTest } from "../query-dsl/sql-compiler.integration-fixtures";
 import { canonicalDocumentJson } from "./document-json";
-import { newShortId } from "./short-id";
 import { bindWorkflowQueryData, captureWorkflowQueryData } from "./workflow-query-data";
 import { findWorkflowDocumentDataForStep, loadWorkflowQueryData, persistWorkflowQueryDataInTransaction } from "./workflow-query-store";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
@@ -20,8 +20,8 @@ beforeAll(async () => {
 postgresTest("query payload is immutable, scoped, deduplicated and rolls back with its step transaction", async () => {
   const fixture = await insertDslDbFixture();
   try {
-    const workflowId = await insertTestWorkflow({ baseId: fixture.baseId, shortId: newShortId() });
-    const runId = await insertTestWorkflowRun({ baseId: fixture.baseId, workflowId, state: "succeeded", shortId: newShortId() });
+    const workflowId = await insertTestWorkflow({ baseId: fixture.baseId, shortId: testShortId() });
+    const runId = await insertTestWorkflowRun({ baseId: fixture.baseId, workflowId, state: "succeeded", shortId: testShortId() });
     const bound = bindWorkflowQueryData("from table Orders\nselect Amount as exported_amount", ctx(fixture), {});
     if (!bound.ok) throw new Error(bound.error.message);
     const captured = await captureWorkflowQueryData({

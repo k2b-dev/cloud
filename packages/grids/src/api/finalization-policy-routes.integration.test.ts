@@ -45,10 +45,10 @@ describe("Four-eyes Finalization routes", () => {
     const tableId = testUuid();
     const fieldId = testUuid();
     const recordId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const fieldShortId = testShortId("F");
-    const recordShortId = testShortId("R");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const fieldShortId = testShortId();
+    const recordShortId = testShortId();
     const accessIds = [testUuid(), testUuid(), testUuid()];
     const auth: MiddlewareHandler<AuthContext> = async (c, next) => {
       const selected = users.get(c.req.header("x-test-user") ?? "") ?? requester;

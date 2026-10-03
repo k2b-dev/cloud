@@ -2,6 +2,7 @@ import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { toPublicRecord } from "../api/public-dto";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createRecordSnapshot, filterSnapshotRelatedRecords } from "./document-snapshots";
 import { lockFinalizedSchema } from "./finalized-schema";
@@ -10,7 +11,6 @@ import { createReader } from "./record-read";
 
 const postgresTest = testFor("database");
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 // Raw SQL fixtures must materialize the same stored calculations as normal writes.
 const materialize = (tableId: string) =>
@@ -29,14 +29,14 @@ describe("record snapshot relation access", () => {
     const tableId = uuid();
     const recordId = uuid();
     const fieldId = uuid();
-    const fieldShortId = shortId("F");
+    const fieldShortId = testShortId();
     const totalId = uuid();
     const fallbackId = uuid();
     const branchId = uuid();
     const config = { fields: [{ id: "Amount", name: "Amount", type: "number", required: true, config: {} }] };
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Invalid list')`;
-      await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Root', 0)`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Invalid list')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Root', 0)`;
       await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES (${fieldId}::uuid, ${fieldShortId}, ${tableId}::uuid, 'Items', 'object_list', ${config}::jsonb, 0)`;
       for (const [id, name, expression] of [
         [totalId, "Total", "LIST_SUM(Items, 'Amount')"],
@@ -44,11 +44,11 @@ describe("record snapshot relation access", () => {
         [branchId, "Branch", "IF(false, LIST_SUM(Items, 'Amount'), 7)"],
       ]) {
         await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
-          VALUES (${id!}::uuid, ${shortId("F")}, ${tableId}::uuid, ${name!}, 'formula', ${{ expression }}::jsonb, 1)`;
+          VALUES (${id!}::uuid, ${testShortId()}, ${tableId}::uuid, ${name!}, 'formula', ${{ expression }}::jsonb, 1)`;
       }
       // Represents a retained row after its column constraints became stricter.
       const value = [{ Amount: null }];
-      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, ${{ [fieldId]: value }}::jsonb)`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, ${{ [fieldId]: value }}::jsonb)`;
       await materialize(tableId);
       const reader = await createReader(tableId);
       const record = await reader.get(recordId);
@@ -85,16 +85,16 @@ describe("record snapshot relation access", () => {
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
         VALUES
-          (${baseId}::uuid, ${shortId("B")}, 'Snapshot owner'),
-          (${wrongBaseId}::uuid, ${shortId("B")}, 'Wrong snapshot owner')
+          (${baseId}::uuid, ${testShortId()}, 'Snapshot owner'),
+          (${wrongBaseId}::uuid, ${testShortId()}, 'Wrong snapshot owner')
       `;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position)
-        VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Root', 0)
+        VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Root', 0)
       `;
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, '{}'::jsonb)
+        VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)
       `;
 
       const snapshot = await createRecordSnapshot({
@@ -132,28 +132,28 @@ describe("record snapshot relation access", () => {
     const checkedTargets: string[] = [];
 
     try {
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Snapshot ACL integration')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Snapshot ACL integration')`;
       await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name, position)
         VALUES
-          (${rootTableId}::uuid, ${shortId("R")}, ${baseId}::uuid, 'Root', 0),
-          (${readableTableId}::uuid, ${shortId("A")}, ${baseId}::uuid, 'Readable', 1),
-          (${deniedTableId}::uuid, ${shortId("D")}, ${baseId}::uuid, 'Denied', 2)
+          (${rootTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Root', 0),
+          (${readableTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Readable', 1),
+          (${deniedTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Denied', 2)
       `;
       await sql`
         INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
         VALUES
-          (${readableRelationFieldId}::uuid, ${shortId("L")}, ${rootTableId}::uuid, 'Readable link', 'relation', ${{ targetTableId: readableTableId }}::jsonb, 0),
-          (${deniedRelationFieldId}::uuid, ${shortId("L")}, ${rootTableId}::uuid, 'Denied link', 'relation', ${{ targetTableId: deniedTableId }}::jsonb, 1),
-          (${uuid()}::uuid, ${shortId("F")}, ${readableTableId}::uuid, 'Readable value', 'text', '{}'::jsonb, 0),
-          (${uuid()}::uuid, ${shortId("F")}, ${deniedTableId}::uuid, 'Secret value', 'text', '{}'::jsonb, 0)
+          (${readableRelationFieldId}::uuid, ${testShortId()}, ${rootTableId}::uuid, 'Readable link', 'relation', ${{ targetTableId: readableTableId }}::jsonb, 0),
+          (${deniedRelationFieldId}::uuid, ${testShortId()}, ${rootTableId}::uuid, 'Denied link', 'relation', ${{ targetTableId: deniedTableId }}::jsonb, 1),
+          (${uuid()}::uuid, ${testShortId()}, ${readableTableId}::uuid, 'Readable value', 'text', '{}'::jsonb, 0),
+          (${uuid()}::uuid, ${testShortId()}, ${deniedTableId}::uuid, 'Secret value', 'text', '{}'::jsonb, 0)
       `;
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
         VALUES
-          (${rootRecordId}::uuid, ${shortId("R")}, ${rootTableId}::uuid, '{}'::jsonb),
-          (${readableRecordId}::uuid, ${shortId("R")}, ${readableTableId}::uuid, '{}'::jsonb),
-          (${deniedRecordId}::uuid, ${shortId("R")}, ${deniedTableId}::uuid, '{}'::jsonb)
+          (${rootRecordId}::uuid, ${testShortId()}, ${rootTableId}::uuid, '{}'::jsonb),
+          (${readableRecordId}::uuid, ${testShortId()}, ${readableTableId}::uuid, '{}'::jsonb),
+          (${deniedRecordId}::uuid, ${testShortId()}, ${deniedTableId}::uuid, '{}'::jsonb)
       `;
       await sql`
         INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id)
@@ -220,25 +220,24 @@ describe("record snapshot relation access", () => {
       const formulaFieldId = uuid();
       const lookupFieldId = uuid();
       const recordIds = Array.from({ length: 500 }, uuid);
-      const recordShortIdPrefix = Math.random().toString(36).slice(2, 5).padEnd(3, "0");
-      const recordShortIds = recordIds.map((_, index) => `R${recordShortIdPrefix}${index.toString(36).padStart(2, "0")}`);
+      const recordShortIds = recordIds.map(() => testShortId());
       const relatedIds = recordIds.slice(1);
       const fromIds = [...relatedIds.map(() => recordIds[0]!), ...relatedIds];
       const targetIds = [...relatedIds, ...relatedIds.map(() => recordIds[0]!)];
       let permissionChecks = 0;
       try {
-        await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Snapshot cycle')`;
+        await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'Snapshot cycle')`;
         await sql`
           INSERT INTO grids.tables (id, short_id, base_id, name, position)
-          VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Cycle', 0)
+          VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Cycle', 0)
         `;
         await sql`
           INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
           VALUES
-            (${relationFieldId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Next', 'relation', ${{ targetTableId: tableId }}::jsonb, 0),
-            (${nameFieldId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
-            (${formulaFieldId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Name length', 'formula', ${{ expression: "LEN(Name)" }}::jsonb, 2),
-            (${lookupFieldId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Next name length', 'lookup', ${{ relationFieldId, targetFieldId: formulaFieldId }}::jsonb, 3)
+            (${relationFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Next', 'relation', ${{ targetTableId: tableId }}::jsonb, 0),
+            (${nameFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
+            (${formulaFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Name length', 'formula', ${{ expression: "LEN(Name)" }}::jsonb, 2),
+            (${lookupFieldId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Next name length', 'lookup', ${{ relationFieldId, targetFieldId: formulaFieldId }}::jsonb, 3)
         `;
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data)

@@ -18,13 +18,13 @@ describe("Record retention policy integration", () => {
     const oldRecordId = testUuid();
     const recentRecordId = testUuid();
     const finalRecordId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const oldShortId = testShortId("O");
-    const recentShortId = testShortId("R");
-    const finalShortId = testShortId("F");
-    const boundedPrefix = testShortId("X").slice(0, 2);
-    const boundedFilePrefix = testShortId("L").slice(0, 2);
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const oldShortId = testShortId();
+    const recentShortId = testShortId();
+    const finalShortId = testShortId();
+    const boundedShortIds = Array.from({ length: 101 }, () => testShortId());
+    const boundedFileShortIds = Array.from({ length: 101 }, () => testShortId());
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Retention fixture')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Cases')`;
@@ -37,7 +37,7 @@ describe("Record retention policy integration", () => {
       await sql`INSERT INTO grids.table_schema_revisions (id, table_id, schema_hash, fields) VALUES (${schemaRevisionId}::uuid, ${tableId}::uuid, ${"a".repeat(64)}, '{}'::jsonb)`;
       await sql`
         INSERT INTO grids.record_revisions (id, short_id, table_id, record_id, schema_revision_id, revision_no, action, record_version, data)
-        VALUES (${finalRevisionId}::uuid, ${testShortId("V")}, ${tableId}::uuid, ${finalRecordId}::uuid, ${schemaRevisionId}::uuid, 1, 'finalized', 1, '{}'::jsonb)
+        VALUES (${finalRevisionId}::uuid, ${testShortId()}, ${tableId}::uuid, ${finalRecordId}::uuid, ${schemaRevisionId}::uuid, 1, 'finalized', 1, '{}'::jsonb)
       `;
       await sql`UPDATE grids.records SET finalized_at = now() - interval '200 days', final_revision_id = ${finalRevisionId}::uuid WHERE id = ${finalRecordId}::uuid`;
 
@@ -85,8 +85,8 @@ describe("Record retention policy integration", () => {
       ]);
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data, deleted_at)
-        SELECT gen_random_uuid(), ${boundedPrefix} || lpad(value::text, 4, '0'), ${tableId}::uuid, '{}'::jsonb, now() - interval '100 days'
-        FROM generate_series(1, 101) value
+        SELECT gen_random_uuid(), short_id, ${tableId}::uuid, '{}'::jsonb, now() - interval '100 days'
+        FROM unnest(${sql.array(boundedShortIds, "TEXT")}::text[]) short_id
       `;
       const bounded = await preview(baseId, { minimumDays: 30 });
       expect(bounded.examples).toHaveLength(100);
@@ -94,9 +94,9 @@ describe("Record retention policy integration", () => {
       await sql`
         WITH inserted AS (
           INSERT INTO grids.files (short_id, filename, mime_type, size_bytes, sha256, bytes)
-          SELECT ${boundedFilePrefix} || lpad(value::text, 4, '0'), 'retention-candidate-' || value || '.txt',
+          SELECT short_id, 'retention-candidate-' || value || '.txt',
             'text/plain', 1, repeat('a', 64), decode('78', 'hex')
-          FROM generate_series(1, 101) value
+          FROM unnest(${sql.array(boundedFileShortIds, "TEXT")}::text[]) WITH ORDINALITY AS bounded(short_id, value)
           RETURNING id
         )
         INSERT INTO grids.file_retention_candidates (file_id, base_id, unreferenced_at)
@@ -105,7 +105,7 @@ describe("Record retention policy integration", () => {
       const fileImpact = await preview(baseId, { minimumDays: 30 });
       expect(fileImpact.files.counts).toEqual({ unreferenced: 101, floorReached: 0, retainedUntilLater: 101, sizeBytes: 101 });
       expect(fileImpact.files.examples).toHaveLength(100);
-      expect(fileImpact.files.examples.every((item) => item.fileId.startsWith(boundedFilePrefix))).toBe(true);
+      expect(fileImpact.files.examples.every((item) => boundedFileShortIds.includes(item.fileId))).toBe(true);
       expect(fileImpact.files.truncated).toBe(true);
       await sql`
         UPDATE grids.file_retention_candidates candidate

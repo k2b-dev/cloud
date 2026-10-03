@@ -36,9 +36,9 @@ describe("HTML template field integration", () => {
     const thirdHtmlFieldId = testUuid();
     const fourthHtmlFieldId = testUuid();
     const recordId = testUuid();
-    const baseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const recordShortId = testShortId("R");
+    const baseShortId = testShortId();
+    const tableShortId = testShortId();
+    const recordShortId = testShortId();
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'HTML templates')`;
       await sql`
@@ -97,7 +97,7 @@ describe("HTML template field integration", () => {
         }
 
         const latestRecordId = testUuid();
-        const latestRecordShortId = testShortId("L");
+        const latestRecordShortId = testShortId();
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data, created_at, updated_at)
           VALUES (${latestRecordId}::uuid, ${latestRecordShortId}, ${tableId}::uuid, ${{ [nameFieldId]: "Tripod" }}::jsonb, '2030-01-01', '2030-01-01')
@@ -141,7 +141,7 @@ describe("HTML template field integration", () => {
     const fieldId = testUuid();
     const record = {
       id: testUuid(),
-      shortId: testShortId("R"),
+      shortId: testShortId(),
       tableId,
       data: {} as Record<string, unknown>,
       version: 1,
@@ -153,7 +153,7 @@ describe("HTML template field integration", () => {
     };
     const field = {
       id: fieldId,
-      shortId: testShortId("H"),
+      shortId: testShortId(),
       tableId,
       name: "HTML",
       description: null,

@@ -4,7 +4,7 @@ import { err, fail, ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId as shortId, testUuid as uuid } from "../integration-test-utils";
+import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { createAccessEntryRoutes } from "./access-entry-routes";
 import { createAccessResourceRoutes } from "./access-resource-routes";
@@ -66,10 +66,10 @@ const insertFixture = async (): Promise<Fixture> => {
   const customAppId = uuid();
   const foreignBaseId = uuid();
   const foreignCustomAppId = uuid();
-  const baseShortId = shortId("B");
-  const customAppShortId = shortId("A");
-  const foreignBaseShortId = shortId("F");
-  const foreignCustomAppShortId = shortId("X");
+  const baseShortId = testShortId();
+  const customAppShortId = testShortId();
+  const foreignBaseShortId = testShortId();
+  const foreignCustomAppShortId = testShortId();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
     VALUES

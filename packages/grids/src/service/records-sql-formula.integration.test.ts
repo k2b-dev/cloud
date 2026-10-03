@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { parseFormula } from "../formula/parser";
+import { testShortId } from "../integration-test-utils";
 import { lockFinalizedSchema } from "./finalized-schema";
 import { refreshLocalCalculations } from "./local-calculation-storage";
 import { aggregate, get, group, list } from "./records";
@@ -16,7 +17,6 @@ const materialize = (tableId: string) =>
 const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 type TestShape = {
   baseId: string;
@@ -50,20 +50,20 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
   const statusId = uuid();
   const relationId = uuid();
   const targetNameId = uuid();
-  const priceRef = shortId("P");
-  const quantityRef = shortId("Q");
-  const subtotalRef = shortId("S");
+  const priceRef = testShortId();
+  const quantityRef = testShortId();
+  const subtotalRef = testShortId();
 
   await sql.begin(async (sql) => {
     await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'SQL formula integration')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'SQL formula integration')
   `;
     await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
     VALUES
-      (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Line items', 0),
-      (${targetTableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Products', 1)
+      (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Line items', 0),
+      (${targetTableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Products', 1)
   `;
     await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
@@ -71,10 +71,10 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
       (${priceId}::uuid, ${priceRef}, ${tableId}::uuid, 'Price', 'number', '{}'::jsonb, 0),
       (${quantityId}::uuid, ${quantityRef}, ${tableId}::uuid, 'Quantity', 'number', '{}'::jsonb, 1),
       (${subtotalId}::uuid, ${subtotalRef}, ${tableId}::uuid, 'Subtotal', 'formula', ${{ expression: `{${priceRef}} + {${quantityRef}} * 0.20` }}::jsonb, 2),
-      (${grossId}::uuid, ${shortId("G")}, ${tableId}::uuid, 'Gross', 'formula', ${{ expression: `{${subtotalRef}} + 1` }}::jsonb, 3),
+      (${grossId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Gross', 'formula', ${{ expression: `{${subtotalRef}} + 1` }}::jsonb, 3),
       (
         ${statusId}::uuid,
-        ${shortId("S")},
+        ${testShortId()},
         ${tableId}::uuid,
         'Status',
         'select',
@@ -87,29 +87,29 @@ const insertSqlFormulaFixture = async (): Promise<TestShape> => {
         }}::jsonb,
         4
       ),
-      (${relationId}::uuid, ${shortId("R")}, ${tableId}::uuid, 'Product', 'relation', ${{ targetTableId }}::jsonb, 5),
-      (${targetNameId}::uuid, ${shortId("N")}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+      (${relationId}::uuid, ${testShortId()}, ${tableId}::uuid, 'Product', 'relation', ${{ targetTableId }}::jsonb, 5),
+      (${targetNameId}::uuid, ${testShortId()}, ${targetTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
   `;
     await sql`
     INSERT INTO grids.records (id, short_id, table_id, data, version)
     VALUES
       (
         ${recordId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${tableId}::uuid,
         ${{ [priceId]: "0.10", [quantityId]: "1.00", [statusId]: ["open"] }}::jsonb,
         1
       ),
       (
         ${secondRecordId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${tableId}::uuid,
         ${{ [priceId]: "1.00", [quantityId]: "1.00", [statusId]: ["done"] }}::jsonb,
         1
       ),
       (
         ${targetRecordId}::uuid,
-        ${shortId("R")},
+        ${testShortId()},
         ${targetTableId}::uuid,
         ${{ [targetNameId]: "Product A" }}::jsonb,
         1
@@ -296,7 +296,7 @@ describe("records SQL formula projection integration", () => {
     try {
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data, version)
-        VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
+        VALUES (${uuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
       `;
       await materialize(fixture.tableId);
 
@@ -398,7 +398,7 @@ describe("records SQL formula projection integration", () => {
     try {
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data, version)
-        VALUES (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
+        VALUES (${uuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, ${{ [fixture.quantityId]: "2.00" }}::jsonb, 1)
       `;
       await materialize(fixture.tableId);
 
@@ -433,8 +433,8 @@ describe("records SQL formula projection integration", () => {
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data, version)
         VALUES
-          (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "0.10", [fixture.quantityId]: "2.00" }}::jsonb, 1),
-          (${uuid()}::uuid, ${shortId("R")}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "2.00", [fixture.quantityId]: "1.00" }}::jsonb, 1)
+          (${uuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "0.10", [fixture.quantityId]: "2.00" }}::jsonb, 1),
+          (${uuid()}::uuid, ${testShortId()}, ${fixture.tableId}::uuid, ${{ [fixture.priceId]: "2.00", [fixture.quantityId]: "1.00" }}::jsonb, 1)
       `;
       await materialize(fixture.tableId);
 

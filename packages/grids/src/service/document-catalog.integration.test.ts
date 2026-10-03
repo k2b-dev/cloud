@@ -21,7 +21,7 @@ beforeAll(async () => {
 
 type Named = { id: string; shortId: string; name: string };
 
-const named = (prefix: string, name: string): Named => ({ id: testUuid(), shortId: testShortId(prefix), name });
+const named = (name: string): Named => ({ id: testUuid(), shortId: testShortId(), name });
 
 const insertTable = async (baseId: string, table: Named) => {
   await sql`INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES (${table.id}::uuid, ${table.shortId}, ${baseId}::uuid, ${table.name}, 0)`;
@@ -37,17 +37,17 @@ const insertTemplate = async (tableId: string, template: Named) => {
 const insertRecord = async (baseId: string, tableId: string) => {
   const recordId = testUuid();
   const snapshotId = testUuid();
-  await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
+  await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId()}, ${tableId}::uuid, '{}'::jsonb)`;
   await sql`
     INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
-    VALUES (${snapshotId}::uuid, ${testShortId("S")}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{"version":1}'::jsonb, '{}'::jsonb)
+    VALUES (${snapshotId}::uuid, ${testShortId()}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{"version":1}'::jsonb, '{}'::jsonb)
   `;
   return { recordId, snapshotId };
 };
 
 const insertWorkflowRun = async (baseId: string, workflow: Named) => {
   const runId = testUuid();
-  const runShortId = testShortId("U");
+  const runShortId = testShortId();
   await insertTestWorkflowRun({ id: runId, shortId: runShortId, workflowId: workflow.id, baseId, state: "succeeded" });
   return { runId, runShortId };
 };
@@ -72,7 +72,7 @@ const insertDocument = async (input: DocumentInput): Promise<string> => {
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   await sql`
     INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
-    VALUES (${fileId}::uuid, ${testShortId("F")}, ${input.filename}, ${input.mimeType}, ${bytes.byteLength}, ${sha256}, ${bytes})
+    VALUES (${fileId}::uuid, ${testShortId()}, ${input.filename}, ${input.mimeType}, ${bytes.byteLength}, ${sha256}, ${bytes})
   `;
   await sql`
     INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id)
@@ -86,7 +86,7 @@ const insertDocument = async (input: DocumentInput): Promise<string> => {
       renderer_kind, renderer_version, template_revision, profile_id, profile_version, profile_snapshot, profile_output,
       snapshot_sha256, validator_version, validation_status, validation_report, issued_actor, created_at
     ) VALUES (
-      ${id}::uuid, ${testShortId("D")}, ${input.record?.templateId ?? null}::uuid, ${input.record?.snapshotId ?? null}::uuid,
+      ${id}::uuid, ${testShortId()}, ${input.record?.templateId ?? null}::uuid, ${input.record?.snapshotId ?? null}::uuid,
       ${input.baseId}::uuid, ${input.record?.tableId ?? null}::uuid, ${input.record?.recordId ?? null}::uuid,
       ${input.runId ?? null}::uuid, ${input.runId ? `step-${input.number}` : null},
       ${input.number}, ${input.filename}, ${key}, '{}'::text[], '{}'::jsonb, '{}'::jsonb,
@@ -114,22 +114,22 @@ const shortIdOf = async (documentId: string) => {
 const insertCatalog = async () => {
   const baseA = testUuid();
   const baseB = testUuid();
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseA}::uuid, ${testShortId("B")}, 'Catalog A'), (${baseB}::uuid, ${testShortId("B")}, 'Catalog B')`;
-  const invoices = named("T", "Invoices");
-  const payments = named("T", "Payments");
-  const otherTable = named("T", "Invoices");
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseA}::uuid, ${testShortId()}, 'Catalog A'), (${baseB}::uuid, ${testShortId()}, 'Catalog B')`;
+  const invoices = named("Invoices");
+  const payments = named("Payments");
+  const otherTable = named("Invoices");
   await insertTable(baseA, invoices);
   await insertTable(baseA, payments);
   await insertTable(baseB, otherTable);
-  const invoicePdf = named("P", "Invoice PDF");
-  const receipt = named("P", "Receipt");
-  const otherTemplate = named("P", "Invoice PDF");
+  const invoicePdf = named("Invoice PDF");
+  const receipt = named("Receipt");
+  const otherTemplate = named("Invoice PDF");
   await insertTemplate(invoices.id, invoicePdf);
   await insertTemplate(payments.id, receipt);
   await insertTemplate(otherTable.id, otherTemplate);
-  const monthly = named("W", "Monthly export");
-  const reminders = named("W", "Reminders");
-  const otherWorkflow = named("W", "Monthly export");
+  const monthly = named("Monthly export");
+  const reminders = named("Reminders");
+  const otherWorkflow = named("Monthly export");
   for (const [baseId, workflow] of [
     [baseA, monthly],
     [baseA, reminders],

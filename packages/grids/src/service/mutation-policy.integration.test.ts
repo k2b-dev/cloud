@@ -35,18 +35,18 @@ const fixture = (): Fixture => ({
 });
 
 const insertFixture = async (item: Fixture): Promise<void> => {
-  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${item.baseId}::uuid, ${testShortId("B")}, 'Mutation policy')`;
+  await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${item.baseId}::uuid, ${testShortId()}, 'Mutation policy')`;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position) VALUES
-      (${item.tableId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Requests', 0),
-      (${item.targetTableId}::uuid, ${testShortId("T")}, ${item.baseId}::uuid, 'Targets', 1)
+      (${item.tableId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Requests', 0),
+      (${item.targetTableId}::uuid, ${testShortId()}, ${item.baseId}::uuid, 'Targets', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position, presentable) VALUES
-      (${item.textFieldId}::uuid, ${testShortId("F")}, ${item.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE),
+      (${item.textFieldId}::uuid, ${testShortId()}, ${item.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 0, TRUE),
       (
         ${item.relationFieldId}::uuid,
-        ${testShortId("F")},
+        ${testShortId()},
         ${item.tableId}::uuid,
         'Target',
         'relation',
@@ -54,12 +54,12 @@ const insertFixture = async (item: Fixture): Promise<void> => {
         1,
         FALSE
       ),
-      (${item.fileFieldId}::uuid, ${testShortId("F")}, ${item.tableId}::uuid, 'Attachment', 'file', '{}'::jsonb, 2, FALSE)
+      (${item.fileFieldId}::uuid, ${testShortId()}, ${item.tableId}::uuid, 'Attachment', 'file', '{}'::jsonb, 2, FALSE)
   `;
   await sql`
     INSERT INTO grids.records (id, short_id, table_id, data) VALUES
-      (${item.targetRecordIds[0]}::uuid, ${testShortId("R")}, ${item.targetTableId}::uuid, '{}'::jsonb),
-      (${item.targetRecordIds[1]}::uuid, ${testShortId("R")}, ${item.targetTableId}::uuid, '{}'::jsonb)
+      (${item.targetRecordIds[0]}::uuid, ${testShortId()}, ${item.targetTableId}::uuid, '{}'::jsonb),
+      (${item.targetRecordIds[1]}::uuid, ${testShortId()}, ${item.targetTableId}::uuid, '{}'::jsonb)
   `;
 };
 
@@ -73,7 +73,7 @@ const cleanup = async (item: Fixture): Promise<void> => {
   await deleteTestWorkflowScope(item.baseId);
 };
 
-const formFor = (item: Fixture, id = testUuid(), shortId = testShortId("M")): Form => ({
+const formFor = (item: Fixture, id = testUuid(), shortId = testShortId()): Form => ({
   id,
   shortId,
   tableId: item.tableId,
@@ -416,7 +416,7 @@ describe("mutation policy integration", () => {
           INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position, deleted_at)
           VALUES (
             ${testUuid()}::uuid,
-            ${testShortId("M")},
+            ${testShortId()},
             ${item.tableId}::uuid,
             ${form.name},
             ${{ fields: [{ kind: "user_input", fieldId: item.textFieldId }] }}::jsonb,
@@ -426,7 +426,7 @@ describe("mutation policy integration", () => {
           )
         `;
       }
-      const inlineFormShortId = testShortId("M");
+      const inlineFormShortId = testShortId();
       await sql`
         INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position)
         VALUES (
@@ -480,7 +480,7 @@ describe("mutation policy integration", () => {
             id, short_id, base_id, workflow_id, name, kind, config, enabled, validated_revision, diagnostics, deleted_at
           ) VALUES (
             ${testUuid()}::uuid,
-            ${testShortId("L")},
+            ${testShortId()},
             ${item.baseId}::uuid,
             ${activeWorkflowId}::uuid,
             ${launcher.name},

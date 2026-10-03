@@ -17,11 +17,11 @@ const createFixture = async () => {
   const tableId = testUuid();
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${testShortId("B")}, ${`Number series ${baseId}`})
+    VALUES (${baseId}::uuid, ${testShortId()}, ${`Number series ${baseId}`})
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name)
-    VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Entries')
+    VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Entries')
   `;
   return { baseId, tableId };
 };

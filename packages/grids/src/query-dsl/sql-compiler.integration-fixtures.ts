@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { lockDurableHistoryMutationBoundary } from "../service/durable-history";
 import { listByTable } from "../service/field-read";
 import { compileLocalCalculationStorage } from "../service/local-calculation-storage";
@@ -16,7 +17,6 @@ export const integrationCursorSigningKey = "grids-query-dsl-integration-cursor";
 export const postgresTest = testFor("database");
 
 export const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 type DslDbFixture = {
   baseId: string;
@@ -87,8 +87,8 @@ export const refreshFixtureCalculations = async (fixture: Pick<DslDbFixture, "or
 
 export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
   const baseId = uuid();
-  const orders = { kind: "table" as const, id: uuid(), shortId: shortId("O"), name: "Orders" };
-  const customers = { kind: "table" as const, id: uuid(), shortId: shortId("C"), name: "Customers" };
+  const orders = { kind: "table" as const, id: uuid(), shortId: testShortId(), name: "Orders" };
+  const customers = { kind: "table" as const, id: uuid(), shortId: testShortId(), name: "Customers" };
   const orderAId = uuid();
   const orderBId = uuid();
   const orderCId = uuid();
@@ -203,7 +203,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'Query DSL integration')
+    VALUES (${baseId}::uuid, ${testShortId()}, 'Query DSL integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
@@ -246,9 +246,9 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
   await sql`
     INSERT INTO grids.records (short_id, id, table_id, data, version, deleted_at)
     VALUES
-      (${shortId("R")}, ${customerAId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Alice", [customerScoreId]: "8" }}::jsonb, 1, NULL),
-      (${shortId("R")}, ${customerBId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Bob", [customerScoreId]: "3" }}::jsonb, 1, NULL),
-      (${shortId("R")}, ${orderAId}::uuid, ${orders.id}::uuid, ${{
+      (${testShortId()}, ${customerAId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Alice", [customerScoreId]: "8" }}::jsonb, 1, NULL),
+      (${testShortId()}, ${customerBId}::uuid, ${customers.id}::uuid, ${{ [customerNameId]: "Bob", [customerScoreId]: "3" }}::jsonb, 1, NULL),
+      (${testShortId()}, ${orderAId}::uuid, ${orders.id}::uuid, ${{
         [amountId]: "12.50",
         [costId]: "5.00",
         [statusId]: "Open",
@@ -256,7 +256,7 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
         [tagsId]: ["priority", "remote"],
         [orderedAtId]: "2026-01-15",
       }}::jsonb, 1, NULL),
-      (${shortId("R")}, ${orderBId}::uuid, ${orders.id}::uuid, ${{
+      (${testShortId()}, ${orderBId}::uuid, ${orders.id}::uuid, ${{
         [amountId]: "4.00",
         [costId]: "6.00",
         [statusId]: "Closed",
@@ -264,14 +264,14 @@ export const insertDslDbFixture = async (): Promise<DslDbFixture> => {
         [tagsId]: ["remote"],
         [orderedAtId]: "2026-02-03",
       }}::jsonb, 1, NULL),
-      (${shortId("R")}, ${orderCId}::uuid, ${orders.id}::uuid, ${{
+      (${testShortId()}, ${orderCId}::uuid, ${orders.id}::uuid, ${{
         [costId]: "0",
         [statusId]: "Backlog",
         [stageId]: ["hold"],
         [tagsId]: ["priority"],
         [orderedAtId]: "2026-02-20",
       }}::jsonb, 1, NULL),
-      (${shortId("R")}, ${orderDeletedId}::uuid, ${orders.id}::uuid, ${{
+      (${testShortId()}, ${orderDeletedId}::uuid, ${orders.id}::uuid, ${{
         [amountId]: "99.00",
         [costId]: "1.00",
         [statusId]: "Deleted",

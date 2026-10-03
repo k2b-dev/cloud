@@ -20,10 +20,10 @@ describe("preservation hold routes", () => {
     const tableId = testUuid();
     const otherTableId = testUuid();
     const accessId = testUuid();
-    const baseShortId = testShortId("B");
-    const otherBaseShortId = testShortId("B");
-    const tableShortId = testShortId("T");
-    const otherTableShortId = testShortId("T");
+    const baseShortId = testShortId();
+    const otherBaseShortId = testShortId();
+    const tableShortId = testShortId();
+    const otherTableShortId = testShortId();
     const user: User = {
       id: userId,
       uid: `hold-${userId}`,
@@ -132,7 +132,7 @@ describe("preservation hold routes", () => {
       const searched = await app.request(`${path}?q=annual&page=1&per_page=1`);
       expect(await searched.json()).toMatchObject({ items: [{ id: created.id }], pagination: { total: 1 } });
       expect((await app.request(`${path}?q=${"a".repeat(201)}`)).status).toBe(400);
-      const unknownTableFilter = await app.request(`${path}?status=active&scope=table&tableId=${testShortId("T")}`);
+      const unknownTableFilter = await app.request(`${path}?status=active&scope=table&tableId=${testShortId()}`);
       expect(unknownTableFilter.status).toBe(200);
       expect(await unknownTableFilter.json()).toMatchObject({ items: [], pagination: { total: 0 } });
 

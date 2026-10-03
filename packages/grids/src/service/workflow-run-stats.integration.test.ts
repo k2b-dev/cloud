@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { getWorkflowRunStats } from "./workflow-runs";
 import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } from "./workflow-test-fixture";
@@ -8,7 +9,6 @@ import { deleteTestWorkflowScope, insertTestWorkflow, insertTestWorkflowRun } fr
 const postgresTest = testFor("database");
 
 const uuid = () => Bun.randomUUIDv7();
-const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -23,10 +23,10 @@ describe("workflow run statistics integration", () => {
     try {
       await sql`
         INSERT INTO grids.bases (id, short_id, name)
-        VALUES (${baseId}::uuid, ${shortId("B")}, 'Workflow run stats integration')
+        VALUES (${baseId}::uuid, ${testShortId()}, 'Workflow run stats integration')
       `;
-      await insertTestWorkflow({ id: workflowAId, baseId, name: "Workflow A", shortId: shortId("W"), enabled: true });
-      await insertTestWorkflow({ id: workflowBId, baseId, name: "Workflow B", shortId: shortId("W"), enabled: true });
+      await insertTestWorkflow({ id: workflowAId, baseId, name: "Workflow A", shortId: testShortId(), enabled: true });
+      await insertTestWorkflow({ id: workflowBId, baseId, name: "Workflow B", shortId: testShortId(), enabled: true });
       const now = Date.now();
       const at = (millisAgo: number) => new Date(now - millisAgo);
       const after = (start: Date, seconds: number) => new Date(start.getTime() + seconds * 1_000);

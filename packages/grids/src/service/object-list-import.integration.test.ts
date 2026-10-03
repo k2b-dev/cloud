@@ -16,9 +16,9 @@ describe("object-list atomic import", () => {
     async () => {
       const baseId = testUuid();
       const tableId = testUuid();
-      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId("B")}, 'List import test')`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${testShortId()}, 'List import test')`;
       try {
-        await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId("T")}, ${baseId}::uuid, 'Invoices')`;
+        await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${testShortId()}, ${baseId}::uuid, 'Invoices')`;
         const field = await fields.create(
           {
             tableId,
