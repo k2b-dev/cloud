@@ -1682,6 +1682,7 @@ suite("mail lifecycle control plane", () => {
           folderId: fixture.folderId,
           uidValidity: "62",
           draftsFolder: false,
+          fetchedUids: new Set(),
           signal: AbortSignal.timeout(10_000),
         }),
       ).rejects.toMatchObject({ code: "RECONCILE_WINDOW_UNTRUSTED" });
@@ -1714,6 +1715,7 @@ suite("mail lifecycle control plane", () => {
         folderId: fixture.folderId,
         uidValidity: "63",
         draftsFolder: false,
+        fetchedUids: new Set(),
         signal: AbortSignal.timeout(10_000),
       });
       expect(envelopes.mock.calls[0]?.[1]).toMatchObject({ uids: [2] });
@@ -1747,6 +1749,7 @@ suite("mail lifecycle control plane", () => {
         folderId: fixture.folderId,
         uidValidity: "66",
         draftsFolder: false,
+        fetchedUids: new Set(),
         signal: AbortSignal.timeout(10_000),
       });
     try {
@@ -1800,6 +1803,7 @@ suite("mail lifecycle control plane", () => {
           folderId: fixture.folderId,
           uidValidity: "64",
           draftsFolder,
+          fetchedUids: new Set(),
           signal: AbortSignal.timeout(10_000),
         });
       }
