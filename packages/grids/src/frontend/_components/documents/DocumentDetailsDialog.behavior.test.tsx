@@ -3,7 +3,7 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 
 const domTest = isServer ? test.skip : test;
-domTest("stored CSV and XML previews load authorized bytes and never activate markup", async () => {
+domTest("stored CSV, XML and JSON previews load authorized bytes and never activate markup", async () => {
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;
   const paths: string[] = [];
@@ -21,6 +21,8 @@ domTest("stored CSV and XML previews load authorized bytes and never activate ma
     for (const [key, mimeType] of [
       ["csv", "text/csv"],
       ["xml", "application/xml"],
+      // Not valid JSON: it falls back to text, which only the header can copy.
+      ["json", "application/json"],
     ]) {
       void openDocumentArtifactPreview("DOC001", {
         key: key!,
@@ -40,13 +42,15 @@ domTest("stored CSV and XML previews load authorized bytes and never activate ma
       expect(dialog.querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
       expect(dialog.querySelector(".k2b-content-code-display__header")).toBeNull();
       expect(dialog.querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button")?.disabled).toBeFalse();
+      // Focus starts on the content, so the keyboard scrolls it at once.
+      expect(dom.document.activeElement?.classList.contains("grids-artifact-preview__content")).toBeTrue();
       const facts = dialog.querySelector(".k2b-panel-dialog__heading p")?.textContent;
       expect(facts).toContain(`${source.length} B`);
       expect(facts).not.toContain("Preview");
       dialogCore.close();
       await Bun.sleep(20);
     }
-    expect(paths).toHaveLength(2);
+    expect(paths).toHaveLength(3);
   } finally {
     dialogCore.close();
     globalThis.fetch = originalFetch;

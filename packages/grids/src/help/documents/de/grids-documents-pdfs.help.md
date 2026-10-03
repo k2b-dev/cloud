@@ -455,7 +455,7 @@ Filtere **Alle Dokumente** nach **Workflow**, **Vorlage**, **Datensatztabelle** 
 
 Ein Dokument aus einem Workflow nennt seinen Workflow; wähle den Namen, um den Lauf zu öffnen, der es erzeugt hat. Die Details eines ZIP-Dokuments listen seinen **Archivinhalt**: jede verpackte Datei, ihre Größe und das Dokument, aus dem sie stammt. Das Archiv wird nicht mit den Datensätzen dieser Dokumente verknüpft.
 
-Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext; **Kopieren** kopiert CSV und XML. **Freigabelinks** erstellt öffentliche Links für die gespeicherte Hauptdatei; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
+Dokumentdetails zeigen Downloads, übernommene Zeilenanzahl und Datenstand. **Vorschau** zeigt CSV, JSON und XML bis 2 MiB; größere Dateien bleiben herunterladbar. CSV bleibt Originaltext; **Kopieren** kopiert die Datei. **Freigabelinks** erstellt öffentliche Links für die gespeicherte Hauptdatei; **Technische Details** zeigt IDs und Prüfsummen. Unterdialoge führen zurück. **Weitere Aktionen → Erneut erzeugen** folgt der Ausstellungsregel und überschreibt nie das Original.
 
 Vor der Generierung kannst du Tags ergänzen und bei einer HTML-Vorlage den Dateinamen überschreiben. Ein E-Rechnungsrenderer bestimmt seine Artefaktdateinamen selbst. Nummer, Dateiname, Tags und Artefakte eines abgeschlossenen Dokuments sind unveränderlich.
 
