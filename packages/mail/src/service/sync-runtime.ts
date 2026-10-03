@@ -36,7 +36,7 @@ import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbo
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
 import { hydrateMessageFromSource, recordMissingMessageSources } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
-import { normalizeMailSubject } from "./message-threading";
+import { hasReplySubjectPrefix, normalizeMailSubject } from "./message-threading";
 import { reopenUnprovenSendWithSentCopy } from "./outbound-message-projection";
 import { loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
 import { isProviderAuthenticationFailure, providerErrorCode, providerErrorMessage } from "./provider-errors";
@@ -232,6 +232,9 @@ const allParticipantEmails = (message: ConnectorEnvelope): string[] => [
   ),
 ];
 
+/** The form `mail.message_addresses.normalized_email` stores. */
+const storedAddress = (address: string): string => normalizeEmailAddress(address) ?? address.trim().toLowerCase();
+
 const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): string[] => {
   const addresses = outbound ? [...message.addresses.to, ...message.addresses.cc, ...message.addresses.bcc] : message.addresses.from;
   const labels = new Map<string, string>();
@@ -251,7 +254,7 @@ const upsertAddresses = async (db: typeof sql, messageId: string, message: Conne
       position,
       display_name: address.name,
       email: address.address,
-      normalized_email: normalizeEmailAddress(address.address) ?? address.address.trim().toLowerCase(),
+      normalized_email: storedAddress(address.address),
     })),
   );
   if (rows.length > 0) {
@@ -271,6 +274,8 @@ const findConversation = async (params: {
   messageId: string;
   message: ConnectorEnvelope;
   normalizedSubject: string;
+  /** The other side of the message: its recipients when the mailbox sent it, otherwise its sender and Reply-To, without the mailbox's own addresses. */
+  counterparties: string[];
 }): Promise<string | null> => {
   if (params.message.providerThreadId) {
     const [native] = await params.db<{ conversation_id: string }[]>`
@@ -287,9 +292,11 @@ const findConversation = async (params: {
   }
 
   // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
+  // The message's own Message-ID finds a copy that its envelope could not prove to be the same
+  // message (see findCanonicalMessageContent); hydration merges it there once the sources match.
   const replyIds = [
     ...new Set(
-      [params.message.inReplyTo, ...params.message.references]
+      [params.message.inReplyTo, ...params.message.references, params.message.messageId]
         .filter((value): value is string => Boolean(value))
         .map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES)),
     ),
@@ -317,13 +324,54 @@ const findConversation = async (params: {
     if (referenced) return referenced.conversation_id;
   }
 
-  if (!params.normalizedSubject || participants.length === 0) return null;
+  if (!params.normalizedSubject) return null;
+
+  // Sync does not import in conversation order: the initial sync runs newest first and every
+  // folder syncs on its own, so a reply can arrive before the message it answers. That message
+  // joins its replies here. Replies keep the subject, which bounds the lookup to an index.
+  if (params.message.messageId && participants.length > 0) {
+    const [answered] = await params.db<{ conversation_id: string }[]>`
+      SELECT cm.conversation_id
+      FROM mail.message_contents mc
+      JOIN mail.conversation_messages cm ON cm.message_id = mc.id
+      WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+        AND mc.id <> ${params.messageId}::uuid
+        AND mc.normalized_subject <> ''
+        AND mc.normalized_subject = ${params.normalizedSubject}
+        AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '1 day'
+          AND ${params.message.internalDate}::timestamptz + interval '2 years'
+        AND (
+          lower(mc.in_reply_to) = lower(${params.message.messageId})
+          OR EXISTS (
+            SELECT 1 FROM unnest(mc.reference_ids) AS reference(id) WHERE lower(reference.id) = lower(${params.message.messageId})
+          )
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM mail.message_addresses ma
+          WHERE ma.message_id = mc.id
+            AND ma.normalized_email = ANY(${toPgTextArray(participants)}::text[])
+        )
+      ORDER BY mc.internal_date, mc.id
+      LIMIT 1
+    `;
+    if (answered) return answered.conversation_id;
+  }
+
+  // A subject alone links only a message that presents itself as a reply or forward but whose
+  // referenced message is unknown, and only to mail with the same counterparty. Every inbound
+  // message carries the mailbox's own address, so that address proves no relation: two
+  // unrelated senders that both write "Invoice" stay two conversations.
+  const replyLike =
+    Boolean(params.message.inReplyTo) || params.message.references.length > 0 || hasReplySubjectPrefix(params.message.subject);
+  if (!replyLike || params.counterparties.length === 0) return null;
   const [fallback] = await params.db<{ conversation_id: string }[]>`
     SELECT cm.conversation_id
     FROM mail.message_contents mc
     JOIN mail.conversation_messages cm ON cm.message_id = mc.id
     WHERE mc.mailbox_id = ${params.mailboxId}::uuid
       AND mc.id <> ${params.messageId}::uuid
+      AND mc.normalized_subject <> ''
       AND mc.normalized_subject = ${params.normalizedSubject}
       AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '30 days'
         AND ${params.message.internalDate}::timestamptz + interval '1 day'
@@ -331,7 +379,7 @@ const findConversation = async (params: {
         SELECT 1
         FROM mail.message_addresses ma
         WHERE ma.message_id = mc.id
-          AND ma.normalized_email = ANY(${toPgTextArray(participants)}::text[])
+          AND ma.normalized_email = ANY(${toPgTextArray(params.counterparties)}::text[])
       )
     ORDER BY mc.internal_date DESC, mc.id DESC
     LIMIT 1
@@ -369,17 +417,51 @@ const findCanonicalMessageContent = async (params: {
     `;
     if (outbound) return outbound.message_id;
   }
-  if (!params.message.providerMessageId) return null;
-  const candidates = await params.db<{ message_id: string }[]>`
-    SELECT DISTINCT remote_ref.message_id
-    FROM mail.remote_message_refs remote_ref
-    JOIN mail.folders folder ON folder.id = remote_ref.folder_id
-    WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
-      AND remote_ref.connector_ref ->> 'providerMessageId' = ${params.message.providerMessageId}
-    ORDER BY remote_ref.message_id
-    LIMIT 2
+  if (params.message.providerMessageId) {
+    const candidates = await params.db<{ message_id: string }[]>`
+      SELECT DISTINCT remote_ref.message_id
+      FROM mail.remote_message_refs remote_ref
+      JOIN mail.folders folder ON folder.id = remote_ref.folder_id
+      WHERE folder.remote_resource_id = ${params.remoteResourceId}::uuid
+        AND remote_ref.connector_ref ->> 'providerMessageId' = ${params.message.providerMessageId}
+      ORDER BY remote_ref.message_id
+      LIMIT 2
+    `;
+    if (candidates.length === 1) return candidates[0]!.message_id;
+    if (candidates.length > 1) return null;
+  }
+  if (!params.message.messageId) return null;
+  // Most IMAP servers report no provider id, and a provider id differs between the copy in Sent
+  // and the delivered copy of the same mail. A message keeps its identity across folders through
+  // its Message-ID, sender, and Date header instead: a move or copy in another client, a Bcc to
+  // oneself, or a list echo of one's own mail stays one message and is not received again.
+  // Without a Date header, only an exact copy with the same size and INTERNALDATE matches.
+  const senders = [...new Set(params.message.addresses.from.map((address) => storedAddress(address.address)))];
+  const [sameMessage] = await params.db<{ id: string }[]>`
+    SELECT mc.id
+    FROM mail.message_contents mc
+    WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+      AND mc.message_id IS NOT NULL
+      AND lower(mc.message_id) = lower(${params.message.messageId})
+      AND mc.sent_at IS NOT DISTINCT FROM ${params.message.sentAt}::timestamptz
+      AND (
+        ${params.message.sentAt}::timestamptz IS NOT NULL
+        OR (mc.size_bytes = ${params.message.sizeBytes} AND mc.internal_date = ${params.message.internalDate}::timestamptz)
+      )
+      AND ARRAY(
+        SELECT sender.normalized_email
+        FROM mail.message_addresses sender
+        WHERE sender.message_id = mc.id AND sender.role = 'from'
+      ) <@ ${toPgTextArray(senders)}::text[]
+      AND ${toPgTextArray(senders)}::text[] <@ ARRAY(
+        SELECT sender.normalized_email
+        FROM mail.message_addresses sender
+        WHERE sender.message_id = mc.id AND sender.role = 'from'
+      )
+    ORDER BY mc.created_at, mc.id
+    LIMIT 1
   `;
-  return candidates.length === 1 ? candidates[0]!.message_id : null;
+  return sameMessage?.id ?? null;
 };
 
 /**
@@ -603,6 +685,26 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   `;
   if (existingConversation) return messageContentId;
 
+  const ownAddresses = await params.db<{ address: string; sender_identity: boolean }[]>`
+    SELECT from_address AS address, true AS sender_identity
+    FROM mail.sender_identities
+    WHERE mailbox_id = ${params.mailboxId}::uuid
+    UNION ALL
+    SELECT email AS address, false AS sender_identity
+    FROM mail.provider_connections
+    WHERE owner_mailbox_id = ${params.mailboxId}::uuid
+  `;
+  const senderIdentities = new Set(ownAddresses.filter((row) => row.sender_identity).map((row) => storedAddress(row.address)));
+  const mailboxAddresses = new Set(ownAddresses.map((row) => storedAddress(row.address)));
+  const isOutbound = params.message.addresses.from.some((address) => senderIdentities.has(storedAddress(address.address)));
+  const { addresses } = params.message;
+  const counterparties = [
+    ...new Set(
+      (isOutbound ? [...addresses.to, ...addresses.cc, ...addresses.bcc] : [...addresses.from, ...addresses.replyTo]).map((address) =>
+        storedAddress(address.address),
+      ),
+    ),
+  ].filter((address) => !mailboxAddresses.has(address));
   const manualConversationId = await findManualConversationOverride({
     db: params.db,
     mailboxId: params.mailboxId,
@@ -616,16 +718,9 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       messageId: messageContentId,
       message: params.message,
       normalizedSubject,
+      counterparties,
     }));
-  const outbound = await params.db<{ outbound: boolean }[]>`
-    SELECT EXISTS (
-      SELECT 1
-      FROM mail.sender_identities si
-      WHERE si.mailbox_id = ${params.mailboxId}::uuid
-        AND lower(si.from_address) = ANY(${toPgTextArray(params.message.addresses.from.map((item) => item.address))}::text[])
-    ) AS outbound
-  `;
-  const participantLabels = counterpartyLabels(params.message, Boolean(outbound[0]?.outbound));
+  const participantLabels = counterpartyLabels(params.message, isOutbound);
   if (!conversationId) {
     const conversationRows = await withShortIdDb(
       params.db,
@@ -646,11 +741,11 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         ${params.mailboxId}::uuid,
         ${params.message.subject},
         ${participantLabels.slice(0, 20).join(", ")},
-        ${outbound[0]?.outbound ? null : params.message.internalDate},
-        ${outbound[0]?.outbound ? params.message.internalDate : null},
+        ${isOutbound ? null : params.message.internalDate},
+        ${isOutbound ? params.message.internalDate : null},
         ${params.message.internalDate},
         ${
-          outbound[0]?.outbound &&
+          isOutbound &&
           (params.message.inReplyTo || params.message.references.length > 0) &&
           !isAutomaticSubmission(params.message.protocolFacts?.autoSubmitted)
             ? "waiting"
@@ -687,7 +782,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     RETURNING message_id
   `;
   if (!linked) return messageContentId;
-  if (params.captureWorkflowTriggers && !outbound[0]?.outbound) {
+  if (params.captureWorkflowTriggers && !isOutbound) {
     const deliveryKey = `message:${remoteRef.id}`;
     const snapshot = await getWorkflowSnapshot({
       mailboxId: params.mailboxId,

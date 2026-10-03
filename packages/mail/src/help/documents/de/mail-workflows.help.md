@@ -62,7 +62,7 @@ Mail akzeptiert höchstens 20 Eingaben, 500 Schritte, 20 verschachtelte Schritte
 
 ### `messageReceived`
 
-`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Der Trigger stellt Folgendes bereit:
+`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, oder kommt eine Kopie einer Nachricht an, die das Postfach schon enthält, startet der Trigger nicht erneut. Der Trigger stellt Folgendes bereit:
 
 - `trigger.message`
 - `trigger.conversation`

@@ -176,6 +176,10 @@ Lokale Tags sind Postfachkennzeichnungen für Personen, Suche und Automatisierun
 
 ## Unterhaltungsgruppierung korrigieren {icon="arrows-split-2"}
 
+Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen, auch wenn die Antwort vor der beantworteten Nachricht synchronisiert wurde. Eine Nachricht ohne Antwort-Header kommt nur dann in eine frühere Unterhaltung, wenn ihr Betreff mit einem Präfix wie `Re:`, `AW:` oder `Fwd:` beginnt und sie innerhalb von 30 Tagen mit derselben externen Person ausgetauscht wurde. Sonst beginnt sie eine eigene Unterhaltung. Zwei Absender, die beide „Rechnung“ schreiben, bleiben so getrennt.
+
+Eine Nachricht bleibt eine Nachricht, egal wo sie liegt. Verschiebt oder kopiert ein anderes E-Mail-Programm sie in einen anderen Ordner, oder kommt deine eigene Mail über eine Liste, eine Teamadresse oder eine Bcc an dich selbst zurück in den Posteingang, zeigt die Unterhaltung sie nur einmal. Mail erkennt solche Kopien an Message-ID, Absender und Datum.
+
 Verwende **Mit anderer Unterhaltung zusammenführen**, wenn zwei Cloud-Unterhaltungen zusammengehören. Wähle bei einer einzelnen Nachricht **Neue Unterhaltung mit dieser Nachricht beginnen**, wenn eine Antwort ein neues Thema einführt, oder **Nachricht in andere Unterhaltung verschieben**, wenn sie zu einem vorhandenen Verlauf gehört. Diese Aktionen erfordern Schreibzugriff und ändern die Unterhaltungsgruppierung in Cloud, nicht den Nachrichteninhalt.
 
 Suche die Zielunterhaltung im selben Postfach nach Absender oder Betreff. Prüfe vor dem Zusammenführen Quelle und Ziel in der Bestätigung. Zuständigkeit und Bearbeitungsstand der Zielunterhaltung bleiben erhalten. Nachrichten, Kommentare, Entwürfe, lokale Tags und Verweise der Quelle werden dorthin übernommen. Persönliche Erinnerungen ziehen ebenfalls um; hat eine Person in beiden Unterhaltungen eine Erinnerung, bleibt ihre Erinnerung am Ziel erhalten. Die Quellunterhaltung wird entfernt.
