@@ -525,7 +525,8 @@ const app = new Hono<AuthContext>()
       }
 
       const authenticatedSession = await auth.session.authenticate(token);
-      if (!authenticatedSession) {
+      // The mobile app's session never authorizes clients; it counts as no session.
+      if (!authenticatedSession || authenticatedSession.data.kind === "app") {
         return c.redirect(buildLoginRedirect());
       }
       const { user } = authenticatedSession;

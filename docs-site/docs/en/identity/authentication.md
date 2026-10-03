@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-09-27
+updated: 2026-10-03
 ---
 
 # Request identity
@@ -42,6 +42,7 @@ invalid explicit bearer does not silently fall back to the cookie.
 | Credential | Typical caller | Actor |
 | --- | --- | --- |
 | Session cookie | Browser | User |
+| App session cookie (preview) | The installed [mobile app](#app-sessions-preview) | User |
 | Personal API key | CLI or personal automation | Service account with delegated user |
 | Resource API key | Integration bound to one resource | Resource-bound service account |
 | Standalone API key | Integration or agent with its own identity | Standalone service account |
@@ -62,6 +63,21 @@ that JWT. Cloud verifies its exact target and operation, reloads the current
 principal, and exposes the same `actor` and `accessSubject` values to the
 provider. Optional `actor.delegation` records the calling app, original
 credential kind, and invocation ID for audit context; it grants no permission.
+
+### Which session a request uses
+
+A browser can hold the web session (`session_token`) and, on a paired phone,
+the mobile app's session (`pwa_session`). Cloud picks one per request:
+
+| Request | Credential |
+| --- | --- |
+| Anything below `/pwa/` except Core's `/pwa/_auth` (documents, iframes, fetches, WebSockets) | `pwa_session` only, and only an app session |
+| Navigation elsewhere (`Sec-Fetch-Mode: navigate`: documents, iframes, form posts) | Bearer as before, otherwise `session_token` only |
+| Any other request (fetch, images, WebSockets, requests without fetch metadata) | Bearer as before, otherwise `session_token` when it is valid, otherwise `pwa_session` |
+
+Without a `pwa_session` cookie every request behaves as described above. A
+WebSocket or stream handler reads the credential through
+`auth.session.getToken(c)` or the auth middleware, never from a cookie by name.
 
 ## Use actor and access subject
 
@@ -183,6 +199,46 @@ domain identifier.
 The browser session JWT is not a delegation credential. Background work and
 application-to-application calls use operation-bound invocation credentials;
 they must not persist or replay a browser cookie.
+
+## App sessions (preview)
+
+> **Preview:** the mobile app is not released yet. This contract may still
+> change in a minor release.
+
+A phone pairs with the [mobile app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
+through `/me/app`; it never sees a password. A paired phone holds two
+credentials:
+
+- a **device key** in the HTTP-only `pwa_device` cookie with the path
+  `/pwa/_auth`, so only Core receives it. It stays valid while the phone is used
+  at least every 150 days and changes on every renewal;
+- an **app session** in the HTTP-only `pwa_session` cookie with the path `/`,
+  valid for 24 hours. It is an ordinary Cloud session, validated by every
+  application like a web session. Core renews it with the device key.
+
+An app session resolves to the same `actor`, `accessSubject` and
+`credentialKind: "session"` as a web session. `c.get("sessionKind")` is
+`"app"`, and `auth.isAppSession(c)` returns `true`. The kind comes from the
+session record, not from the cookie name.
+
+The mobile app cannot create authority that outlives the phone:
+
+- app sessions never carry the installation `admin` role, also not in calls to
+  other applications;
+- passkeys, API keys, password changes, account deletion, background mandates,
+  OAuth grants, Cloud Login devices and browser push endpoints answer `403`
+  with `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }`.
+
+A phone's sessions end when the person removes it in `/me/app` or signs out of
+the app, when an administrator removes it, when `revokeAllForUser` runs, when
+the account expires or is deleted, and after 150 days without use. A disabled
+account category pauses the phone until it is enabled again. Signing out of the
+web does not end the app.
+
+On Android, Chrome and the installed app share cookies. Web pages in Chrome
+never use the app session, but fetches can: when Chrome holds a valid web
+session of another account, those fetches run as that account, and the app
+shows a notice.
 
 ## Bearer authentication
 

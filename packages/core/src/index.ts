@@ -6,7 +6,7 @@
  */
 
 import { aiLiveRoutes } from "@k2b/cloud/ai/live";
-import { createCoreApiRouter, createMcpProtectedResourceRoutes } from "@k2b/cloud/api";
+import { createCoreApiRouter, createMcpProtectedResourceRoutes, createPwaPhoneRoutes } from "@k2b/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
@@ -45,6 +45,8 @@ const router = new Hono<AuthContext>()
   .route("/api/_internal/identity/v1", identityMandateRoutes)
   .route("/api/_internal/identity/v1", identityOAuthIssuanceRoutes)
   .route("/api", coreApi)
+  // The mobile app's phone-side identity endpoints; only Core receives the device key.
+  .route("/pwa/_auth", createPwaPhoneRoutes())
   .route("/", pages);
 
 const result = await app.start({

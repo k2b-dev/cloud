@@ -7,7 +7,7 @@ import { isReservedWorkloadApiCredential } from "../../services/identity/workloa
 import { oauthTokens } from "../../services/oauth-tokens";
 import { serviceAccountCredentials } from "../../services/service-account-credentials";
 import type { ServiceAccount } from "../../services/service-accounts";
-import { session } from "../../services/session";
+import { type AuthenticatedSession, isAppPagePath, isNavigationRequest, type SessionKind, session } from "../../services/session";
 import { createLoginRedirectUrl } from "../../shared/redirect";
 import type { AccessSubject } from "../services/access";
 
@@ -62,6 +62,8 @@ export type RequestAuthority = {
   accessSubject: AccessSubject;
   credentialKind: RequestCredentialKind;
   scopes: string[];
+  /** Set for session credentials; `"app"` for the mobile app. */
+  sessionKind?: SessionKind;
 };
 
 /** Hono context with authenticated user variables. */
@@ -73,6 +75,8 @@ export type AuthContext = {
     sessionToken?: string;
     /** Credential class resolved once for downstream delegation. */
     credentialKind?: RequestCredentialKind;
+    /** With `credentialKind: "session"`: `"app"` for a paired phone in the mobile app, otherwise `"web"`. */
+    sessionKind?: SessionKind;
     /** Constraints carried by OAuth/API credentials; absent sessions are unrestricted by transport scope. */
     credentialScopes?: string[];
     /** OAuth scopes for bearer-token requests. Absent for sessions and API credentials. */
@@ -123,16 +127,34 @@ const loadAuthenticatedActorUncached = async (
   c: Context<AuthContext>,
   options: Pick<RoleOptions, "oauthAudience"> = {},
 ): Promise<AuthenticatedActorResult> => {
-  const token = session.getToken(c);
-  const authenticatedSession = token ? await session.authenticateRequest(c, token) : null;
+  const appPage = isAppPagePath(c.req.path);
+  let token = session.getToken(c);
+  let authenticatedSession: AuthenticatedSession | null = token ? await session.authenticateRequest(c, token) : null;
+  // A copied, expired or revoked web cookie must not hide a valid app session of the mobile app.
+  const appToken = session.getAppToken(c);
+  if (
+    !authenticatedSession &&
+    !appPage &&
+    appToken &&
+    token &&
+    token === session.getWebToken(c) &&
+    !c.req.header("Authorization") &&
+    !isNavigationRequest(c)
+  ) {
+    token = appToken;
+    authenticatedSession = await session.authenticateRequest(c, appToken);
+  }
+  // Below /pwa/ only an app session counts: no web session, bearer or API key reaches app pages.
+  if (appPage && authenticatedSession?.data.kind !== "app") return { token: null, user: null, actor: null };
   const user = authenticatedSession?.user ?? null;
 
-  if (user && token) {
+  if (authenticatedSession && user && token) {
     c.set("actor", { kind: "user", user });
     c.set("accessSubject", { type: "user", userId: user.id });
     c.set("user", user);
     c.set("sessionToken", token);
     c.set("credentialKind", "session");
+    c.set("sessionKind", authenticatedSession.data.kind);
   }
 
   if (user) return { token, user, actor: { kind: "user", user } };
@@ -334,13 +356,18 @@ const getAuthority = (c: Context<AuthContext>): RequestAuthority => {
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");
   if (!actor || !accessSubject || !credentialKind) throw new Error("Request authority has not been resolved");
+  const sessionKind = c.get("sessionKind");
   return {
     actor,
     accessSubject,
     credentialKind,
     scopes: [...(c.get("credentialScopes") ?? [])],
+    ...(credentialKind === "session" && sessionKind ? { sessionKind } : {}),
   };
 };
+
+/** True for an app session of the mobile app. Such sessions cannot create authority that outlives the phone. */
+const isAppSession = (c: Context<AuthContext>): boolean => c.get("sessionKind") === "app";
 
 /** Preset: Redirect to a fixed URL on rejection */
 const redirect = (url: string): RoleOptions => ({
@@ -379,6 +406,7 @@ export const auth = {
   session,
   requireRole,
   requireUser,
+  isAppSession,
   requireOAuthScope,
   getAuthority,
   requireAccount,

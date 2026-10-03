@@ -1,4 +1,4 @@
-import { type AuthContext, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { audit, get } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
@@ -32,6 +32,8 @@ const redirectWithDecision = (redirectUri: string, state: string | undefined, pa
 export const completeConsent = async (c: Context<AuthContext>, decisionInput: z.infer<typeof ConsentDecisionSchema>): Promise<Response> => {
   const { t } = oauthMessages.resolve([getLocale(c)]);
   const { request: requestId, decision } = decisionInput;
+  // A grant would outlive removing the phone, so only the web may decide.
+  if (auth.isAppSession(c)) return localError(c, t.webSessionRequired);
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const requestOrigin = c.req.header("origin");
   if (requestOrigin && requestOrigin !== issuer) return localError(c, t.consentOriginInvalid);

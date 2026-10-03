@@ -66,9 +66,11 @@ export const resolveInvocationAuthority = async (
   const delegation = provenance(claims);
 
   if (claims.principal_type === "user") {
-    const user = await loadCurrentUser({ userId: claims.sub, groupsAdmin }, query);
-    if (!user || isAccountExpired(user.accountExpires)) return null;
-    if (!(await isAccountCategoryAllowed(user, query))) return null;
+    const current = await loadCurrentUser({ userId: claims.sub, groupsAdmin }, query);
+    if (!current || isAccountExpired(current.accountExpires)) return null;
+    if (!(await isAccountCategoryAllowed(current, query))) return null;
+    // The mobile app's session never acts as an installation administrator, also not through another app.
+    const user = claims.session_kind === "app" ? { ...current, roles: current.roles.filter((role) => role !== "admin") } : current;
     return {
       actor: { kind: "user", user, delegation },
       accessSubject: { type: "user", userId: user.id },

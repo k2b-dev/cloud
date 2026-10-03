@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-09-30
+updated: 2026-10-03
 ---
 
 # Layout and navigation
@@ -168,7 +168,11 @@ The Core sign-in, password, and consent pages use the same class.
 ## Use the responsive profile menu
 
 Authenticated users change the theme or language from the profile control and
-can open `/me` for the remaining profile settings. Anonymous `Layout` pages
+can open `/me` for the remaining profile settings. While the installation runs
+the mobile app (the `pwa` application), the menu also shows **App**, which
+leads to `/me/app`, where people pair and remove phones. The item appears in
+the header, rail, and mobile menus; applications do not add their own link to
+it. Anonymous `Layout` pages
 expose the same preferences in the header without profile actions, and
 `MinimalLayout` pages show them in their footer. Applications must not add a
 second theme or language control to their own content.

@@ -26,7 +26,7 @@ export type AppLaunchpadLegalLink = {
 };
 
 export type AppLaunchpadContext = {
-  profile?: { name: string; theme: CloudTheme };
+  profile?: { name: string; theme: CloudTheme; appHref?: string };
   apps: AppLaunchpadApp[];
   legalLinks: AppLaunchpadLegalLink[];
 };

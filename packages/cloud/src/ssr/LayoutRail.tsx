@@ -12,6 +12,8 @@ export type LayoutAppLink = RailApp;
 
 type LayoutRailProps = {
   accent?: string;
+  /** Set while the installation offers the mobile app. */
+  appHref?: string;
   appsLabel: string;
   homeLabel: string;
   launchpadApps: AppLaunchpadApp[];
@@ -31,11 +33,12 @@ type LayoutRailProps = {
 const jsonScript = (value: unknown): string => JSON.stringify(value).replace(/</g, "\\u003c");
 
 export default function LayoutRail(props: LayoutRailProps) {
+  const profile = { name: props.profileName, theme: props.theme, ...(props.appHref ? { appHref: props.appHref } : {}) };
   return (
     <>
-      <AppLaunchpad profile={{ name: props.profileName, theme: props.theme }} apps={props.launchpadApps} legalLinks={props.legalLinks} />
+      <AppLaunchpad profile={profile} apps={props.launchpadApps} legalLinks={props.legalLinks} />
       <script id="cloud-app-launchpad-data" type="application/json">
-        {jsonScript({ apps: props.launchpadApps, legalLinks: props.legalLinks, profile: { name: props.profileName, theme: props.theme } })}
+        {jsonScript({ apps: props.launchpadApps, legalLinks: props.legalLinks, profile })}
       </script>
       <script id="cloud-rail-data" type="application/json">
         {jsonScript({ apps: props.apps, settings: props.railSettings })}
@@ -49,7 +52,7 @@ export default function LayoutRail(props: LayoutRailProps) {
         <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={props.appsLabel}>
           <RailApps apps={props.apps} settings={props.railSettings} currentPath={props.currentPath} />
           <AppLaunchpad
-            profile={{ name: props.profileName, theme: props.theme }}
+            profile={profile}
             apps={props.launchpadApps}
             legalLinks={props.legalLinks}
             variant="rail"
@@ -58,7 +61,13 @@ export default function LayoutRail(props: LayoutRailProps) {
           <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
             <GlobalSearchTrigger variant="rail" searchLinks={props.searchLinks} />
             <LayoutHelpTrigger variant="rail" registerCommand searchHelpApps={props.searchHelpApps} accent={props.accent} />
-            <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="rail" />
+            <ProfilePreferences
+              appHref={props.appHref}
+              avatarSrc={props.profileAvatarSrc}
+              initialTheme={props.theme}
+              name={props.profileName}
+              placement="rail"
+            />
           </div>
         </nav>
       </aside>

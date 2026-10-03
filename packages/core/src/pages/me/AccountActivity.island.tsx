@@ -25,6 +25,8 @@ const activityLabel = (entry: AccountActivityEntry, t: AccountMessages): string 
     "webauthn_credential.create": t.activityPasskeyAdded,
     "webauthn_credential.delete": t.activityPasskeyRemoved,
     "webauthn_credential.authenticate": t.activityPasskeyUsed,
+    "auth.pwa.device.enroll": t.activityAppPaired,
+    "auth.pwa.device.revoke": t.activityAppRemoved,
   })[entry.action] ?? entry.label;
 
 const outcomeClass = (outcome: AccountActivityEntry["outcome"]): string => {

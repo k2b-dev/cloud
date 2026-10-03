@@ -197,6 +197,7 @@ export type {
 export { latestTopicCursor } from "./topic-cursor";
 export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
 export { AppApprovalError, appApproval, type AppDeviceAdministrator, type AppDeviceEnrollmentNotice } from "./app-approval";
+export { PwaError, pwaDevices, type PwaDeviceAdministrator } from "./pwa-devices";
 export { legalConsent } from "./legal-consent";
 
 /** Core-owned app bar administration; service methods enforce administrator access. */

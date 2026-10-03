@@ -5,7 +5,8 @@ import { apiClient } from "../clients/core";
 import type { CloudTheme } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 
-export function createProfileActions(initialTheme: CloudTheme) {
+/** `appHref` is set while the installation offers the mobile app; the item then leads to `/me/app`. */
+export function createProfileActions(initialTheme: CloudTheme, appHref?: string) {
   const locale = useLocale();
   const preferences = createPreferenceController(initialTheme, locale);
   const [signingOut, setSigningOut] = createSignal(false);
@@ -30,6 +31,7 @@ export function createProfileActions(initialTheme: CloudTheme) {
       icon: "ti ti-user-circle",
       label: preferences.messages().profileSettings,
     },
+    ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
     {
       action: signOut,
       icon: "ti ti-logout",

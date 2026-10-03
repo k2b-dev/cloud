@@ -27,6 +27,7 @@ import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
+import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
 import { migrate as migrateSettings } from "./migrate/core/settings";
@@ -48,6 +49,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "app-approval", run: migrateAppApproval },
+    { name: "pwa", run: migratePwa },
     { name: "audit", run: migrateAudit },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },

@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-09-20
+updated: 2026-10-03
 ---
 
 # Background authority mandates
@@ -82,9 +82,10 @@ confirmation window. Paused pending mandates count too; expired ones do not.
 At HTTP 409, confirm or revoke outstanding registrations before creating more.
 
 Use `POST /api/me/mandates` from the signed-in browser session for that remote
-sequence. Core always derives the user subject from that session; the request
-contains only the bounded owner app, workload coordinates, policy, and optional
-expiry. Persist the returned ID and revision first, then call
+sequence. It needs a web session; the mobile app's session cannot create a
+mandate, because the mandate would keep acting after the phone is removed.
+Core always derives the user subject from that session; the request contains
+only the bounded owner app, workload coordinates, policy, and optional expiry. Persist the returned ID and revision first, then call
 `POST /api/_internal/identity/v1/mandates/<mandateId>/confirm` with the same
 revision and the app workload credential. Ordinary `mandates.create(...)`
 remains the atomic same-transaction path and is confirmed immediately.

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-09-27
+updated: 2026-10-03
 ---
 
 # API surface
@@ -17,6 +17,8 @@ writing.
 not make every symbol in a mixed barrel an application API. `Platform-owned`
 is for Cloud itself. `Advanced` paths are public exports, but application code
 should use them only when a feature guide gives the exact import.
+`Preview` marks a documented export whose contract may still change in a minor
+release; its guide says so at the top until the feature is released.
 
 ## Application entry points
 
