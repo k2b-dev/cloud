@@ -5,7 +5,7 @@ import { ssr } from "../../config";
 import { approvalAvailability } from "../app-approval/availability";
 import Devices from "../app-approval/Devices.island";
 import AccountActivity from "./AccountActivity.island";
-import AccountHub, { AccountPageHeader } from "./AccountHub";
+import AccountHub, { AccountPage } from "./AccountHub";
 import { accountMessages } from "./messages";
 import PasskeysSettings from "./PasskeysSettings.island";
 import ProfileSettings from "./ProfileSettings.island";
@@ -40,8 +40,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.security }]}>
       <AccountHub user={user} active="security" loginLabel={categoryPolicy.login.label}>
-        <div class="flex flex-col gap-2">
-          <AccountPageHeader title={t.security} description={t.securityDescription} />
+        <AccountPage title={t.security} description={t.securityDescription}>
           {(isAdmin || availability === "configured") && (
             <Devices
               initial={devices}
@@ -61,7 +60,7 @@ export default ssr<AuthContext>(async (c) => {
           <PasskeysSettings initialPasskeys={passkeys} />
           <ProfileSettings provider={user.provider} profile={user.profile} freeIpaEnabled={Boolean(freeIpaEnabledRaw)} />
           <AccountActivity initialItems={activityPage.items} days={activityDays} />
-        </div>
+        </AccountPage>
       </AccountHub>
     </Layout>
   );

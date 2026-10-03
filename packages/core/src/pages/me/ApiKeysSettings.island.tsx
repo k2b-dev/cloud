@@ -2,13 +2,12 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import type { ServiceAccountCredential } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, DateTimePicker, NoticeCard, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Button, CopyButton, DateTimePicker, NoticeCard, Placeholder, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 
 type Props = {
   initialKeys: ServiceAccountCredential[];
-  surface?: "paper" | "section";
 };
 
 const presetDate = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
@@ -105,7 +104,6 @@ export default function ApiKeysSettings(props: Props) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   const [keys, setKeys] = createSignal<ServiceAccountCredential[]>(props.initialKeys);
-  const rootClass = () => (props.surface === "section" ? "min-w-0" : "paper p-5");
 
   const createMutation = mutations.create<
     { credential: ServiceAccountCredential; token: string },
@@ -161,21 +159,16 @@ export default function ApiKeysSettings(props: Props) {
   };
 
   return (
-    <section class={rootClass()}>
-      <div class="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h2 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
-            <i class="ti ti-key text-sm" />
-            {t().apiKeys}
-          </h2>
-          <p class="mt-1 text-xs text-dimmed">{t().apiKeysDescription}</p>
-        </div>
-        <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={openCreate} disabled={createMutation.loading()}>
-          <i class="ti ti-plus" />
+    <SettingsSection
+      title={t().apiKeys}
+      subtitle={t().apiKeysDescription}
+      actions={
+        <Button type="button" variant="secondary" size="sm" onClick={openCreate} disabled={createMutation.loading()}>
+          <i class="ti ti-plus" aria-hidden="true" />
           {t().add}
         </Button>
-      </div>
-
+      }
+    >
       <Show when={keys().length > 0} fallback={<Placeholder icon="ti ti-key" description={<>{t().noApiKeys}</>} />}>
         <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
           <For each={keys()}>
@@ -207,6 +200,6 @@ export default function ApiKeysSettings(props: Props) {
           </For>
         </div>
       </Show>
-    </section>
+    </SettingsSection>
   );
 }

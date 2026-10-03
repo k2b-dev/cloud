@@ -428,7 +428,7 @@ export default function ProfileActions(props: Props) {
     return (
       <button
         type="button"
-        class="group relative shrink-0 self-start rounded-full sm:self-center transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--ui-focus)]"
+        class="group relative shrink-0 rounded-full transition-colors focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)]"
         aria-label={t().changeAvatar}
         title={t().changeAvatar}
         onClick={() => void handleChangeAvatar()}

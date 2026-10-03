@@ -2,7 +2,7 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
+import AccountHub, { AccountPage, AccountSubnav, notificationViews } from "./AccountHub";
 import BrowserNotificationSetup from "./BrowserNotificationSetup.island";
 import { accountMessages } from "./messages";
 import NotificationPreferences, { type NotificationAppMeta } from "./NotificationPreferences.island";
@@ -19,15 +19,14 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.notifications }]}>
       <AccountHub user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
-        <div class="flex flex-col gap-2">
-          <AccountPageHeader
-            title={t.notifications}
-            description={t.notificationsDescription}
-            actions={<AccountSubnav active="preferences" items={notificationViews(locale)} />}
-          />
+        <AccountPage
+          title={t.notifications}
+          description={t.notificationsDescription}
+          actions={<AccountSubnav active="preferences" items={notificationViews(locale)} />}
+        >
           <BrowserNotificationSetup />
           <NotificationPreferences initial={preferences} apps={apps} />
-        </div>
+        </AccountPage>
       </AccountHub>
     </Layout>
   );

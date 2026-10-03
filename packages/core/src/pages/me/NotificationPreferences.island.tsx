@@ -1,7 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserNotificationPreference, UserNotificationPreferencesResponse } from "@k2b/cloud/contracts";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Checkbox, Placeholder, toast, useLocale } from "@k2b/ui";
+import { Checkbox, Placeholder, SettingsSection, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
 import { notificationChannelAvailability, notificationChannelMeta } from "./notification-ui";
@@ -133,29 +133,22 @@ export default function NotificationPreferences(props: { initial: UserNotificati
     .sort((left, right) => left.app.name.localeCompare(right.app.name));
 
   return (
-    <Show when={groups.length > 0} fallback={<Placeholder surface="paper" description={<>{t().noConfigurableNotifications}</>} />}>
-      <div class="flex flex-col gap-2">
-        <For each={groups}>
-          {(group) => (
-            <section class="paper p-5 sm:p-6">
-              <div class="flex items-center gap-3">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-secondary dark:bg-zinc-800">
-                  <i class={group.app.icon} />
-                </span>
-                <div class="min-w-0">
-                  <h2 class="truncate text-sm font-semibold text-primary">{group.app.name}</h2>
-                  <p class="text-xs text-dimmed">{t().notificationTypeCount({ count: group.definitions.length })}</p>
-                </div>
-              </div>
-              <div class="mt-5 flex flex-col gap-6">
-                <For each={group.definitions}>
-                  {(preference) => <PreferenceRow preference={preference} availableChannels={props.initial.availableChannels} />}
-                </For>
-              </div>
-            </section>
-          )}
-        </For>
-      </div>
+    <Show when={groups.length > 0} fallback={<Placeholder description={<>{t().noConfigurableNotifications}</>} />}>
+      <For each={groups}>
+        {(group) => (
+          <SettingsSection
+            title={group.app.name}
+            subtitle={t().notificationTypeCount({ count: group.definitions.length })}
+            icon={group.app.icon}
+          >
+            <div class="flex flex-col gap-6">
+              <For each={group.definitions}>
+                {(preference) => <PreferenceRow preference={preference} availableChannels={props.initial.availableChannels} />}
+              </For>
+            </div>
+          </SettingsSection>
+        )}
+      </For>
     </Show>
   );
 }

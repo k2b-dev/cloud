@@ -134,3 +134,20 @@
   border-radius: 0.5rem;
   background: var(--k2b-surface);
 }
+
+/* Account pages space their flat sections with the page's gap. A section that
+   directly follows another keeps @k2b/ui's own 2rem margin outside a settings
+   page, which would double that space; island wrappers between sections would
+   make it uneven. */
+.k2b-ui .account-page .k2b-settings-section + .k2b-settings-section {
+  margin-top: 0;
+}
+
+/* Forced colours replace the fill that marks the current account tab, so the
+   tab keeps an outline that does not move its neighbours. */
+@media (forced-colors: active) {
+  .account-tabs [aria-current="page"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

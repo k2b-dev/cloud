@@ -1,7 +1,7 @@
 import type { User } from "@k2b/cloud/contracts";
 import { accountCategoryLabel } from "@k2b/cloud/contracts";
-import { Avatar, useLocale } from "@k2b/ui";
-import type { JSXElement } from "solid-js";
+import { Avatar, Paper, useLocale } from "@k2b/ui";
+import { createUniqueId, type JSXElement } from "solid-js";
 import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";
 
@@ -24,7 +24,6 @@ export default function AccountHub(props: {
   user: User;
   active: AccountSection;
   children: JSXElement;
-  actions?: JSXElement;
   /** Replaces the static avatar, for example with the avatar-change trigger on the profile page. */
   avatar?: JSXElement;
   loginLabel: string;
@@ -38,78 +37,90 @@ export default function AccountHub(props: {
       ? `/api/accounts/users/${encodeURIComponent(props.user.id)}/avatar?rev=${encodeURIComponent(props.user.avatarHash)}`
       : undefined;
 
+  // The identity and the section tabs sit on the page background; the active section's
+  // content is the only framed surface. Every tab renders the same avatar size, so
+  // switching tabs never moves the tabs or the content.
   return (
-    <div class="mx-auto flex w-full max-w-6xl flex-col gap-2 px-2">
-      <section class="paper p-4 sm:p-5" style="view-transition-name: account-hub">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-center">
-          {props.avatar ?? (
-            <Avatar
-              name={props.user.displayName || props.user.uid}
-              src={avatarSrc}
-              size={props.active === "profile" ? "lg" : "md"}
-              class="bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
-              style="view-transition-name: user-avatar"
-            />
-          )}
-          <div class="min-w-0 flex-1">
-            <h1 class="truncate text-xl font-semibold leading-tight text-primary">{props.user.displayName || props.user.uid}</h1>
-            <p class="mt-1 truncate text-xs text-dimmed">
-              {props.user.mail ?? props.user.uid}
-              {props.user.displayName && props.user.profile !== "guest" ? ` · ${props.user.uid}` : ""}
-            </p>
-            <div class="mt-2 flex flex-wrap gap-1.5">
-              <span class="tag tag-neutral">{accountCategoryLabel(props.user, props.loginLabel)}</span>
-              {supplementalRoles.map((role) => (
-                <span class={`tag ${roleClass(role)}`}>{role === "group-manager" ? t().roleGroupManager : t().roleAdmin}</span>
-              ))}
-              {expired && <span class="tag bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">{t().expired}</span>}
-            </div>
+    <div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-2 pt-2">
+      <header class="flex items-center gap-4 px-3" style="view-transition-name: account-hub">
+        {props.avatar ?? (
+          <Avatar
+            name={props.user.displayName || props.user.uid}
+            src={avatarSrc}
+            size="lg"
+            class="shrink-0 bg-zinc-100 shadow-[var(--ui-shadow-surface)] dark:bg-zinc-800"
+            style="view-transition-name: user-avatar"
+          />
+        )}
+        <div class="min-w-0 flex-1">
+          <h1 class="line-clamp-2 break-words text-xl font-semibold leading-tight text-primary">
+            {props.user.displayName || props.user.uid}
+          </h1>
+          <p class="mt-1 truncate text-xs text-dimmed">
+            {props.user.mail ?? props.user.uid}
+            {props.user.displayName && props.user.profile !== "guest" ? ` · ${props.user.uid}` : ""}
+          </p>
+          <div class="mt-2 flex flex-wrap gap-1.5">
+            <span class="tag tag-neutral">{accountCategoryLabel(props.user, props.loginLabel)}</span>
+            {supplementalRoles.map((role) => (
+              <span class={`tag ${roleClass(role)}`}>{role === "group-manager" ? t().roleGroupManager : t().roleAdmin}</span>
+            ))}
+            {expired && <span class="tag bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">{t().expired}</span>}
           </div>
-          {props.actions && <div class="flex shrink-0 flex-wrap items-center gap-2">{props.actions}</div>}
         </div>
+      </header>
 
-        <nav class="mt-5 flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
-          {(
-            [
-              { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
-              { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
-              { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
-              { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
-              { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
-            ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
-          ).map((section) => {
-            const active = section.id === props.active;
-            return (
-              <a
-                href={section.href}
-                aria-current={active ? "page" : undefined}
-                class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
-                  active ? "bg-[var(--ui-selected)] text-primary" : "text-secondary hover:bg-[var(--ui-surface-subtle)] hover:text-primary"
-                }`}
-              >
-                <i class={section.icon} />
-                {section.label}
-              </a>
-            );
-          })}
-        </nav>
-      </section>
+      <nav class="account-tabs flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
+        {(
+          [
+            { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
+            { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
+            { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
+            { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
+            { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
+          ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
+        ).map((section) => {
+          const active = section.id === props.active;
+          return (
+            <a
+              href={section.href}
+              aria-current={active ? "page" : undefined}
+              class={`flex min-h-9 shrink-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-3 text-xs font-medium no-underline transition-colors ${
+                active ? "bg-[var(--ui-selected)] text-primary" : "text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
+              }`}
+            >
+              <i class={section.icon} aria-hidden="true" />
+              {section.label}
+            </a>
+          );
+        })}
+      </nav>
 
       <div class="min-w-0">{props.children}</div>
     </div>
   );
 }
 
-export function AccountPageHeader(props: { title: string; description: string; actions?: JSXElement; eyebrow?: string }) {
+/**
+ * The framed content of one account section. The tabs already name the section, so its
+ * heading is only announced to assistive technology; the description and the section's
+ * page actions open the surface, and the content follows as flat sections.
+ */
+export function AccountPage(props: { title: string; description: string; actions?: JSXElement; children: JSXElement }) {
+  const headingId = `account-page-${createUniqueId()}`;
   return (
-    <header class="flex flex-col gap-3 px-1 py-2 sm:flex-row sm:items-start sm:justify-between">
-      <div class="min-w-0">
-        {props.eyebrow && <p class="section-label mb-1">{props.eyebrow}</p>}
-        <h2 class="text-xl font-semibold text-primary">{props.title}</h2>
-        <p class="mt-1 max-w-2xl text-sm text-dimmed">{props.description}</p>
-      </div>
-      {props.actions && <div class="flex shrink-0 flex-wrap items-center gap-2">{props.actions}</div>}
-    </header>
+    <Paper as="section" aria-labelledby={headingId} class="account-page flex flex-col gap-8 p-4 sm:p-6">
+      <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="min-w-0">
+          <h2 id={headingId} class="sr-only">
+            {props.title}
+          </h2>
+          <p class="max-w-2xl text-sm text-dimmed">{props.description}</p>
+        </div>
+        {props.actions && <div class="flex shrink-0 flex-wrap items-center gap-2">{props.actions}</div>}
+      </header>
+      {props.children}
+    </Paper>
   );
 }
 
@@ -144,7 +155,7 @@ export function AccountSubnav(props: { active: string; items: { id: string; href
   const t = () => accountMessages.resolve([locale()]).t;
   return (
     <nav
-      class="flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
+      class="account-tabs flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
       aria-label={t().sectionViews}
     >
       {props.items.map((item) => {
