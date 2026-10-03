@@ -9,7 +9,9 @@ export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
 /**
  * Jobs of one kind, such as folder syncs or sends, that one Mail process runs at once. Only the
  * job holding a remote mailbox's provider lease works on it, and the others resubmit, so each
- * place serves another mailbox: a slow or unreachable provider holds one place, not the queue.
+ * place serves another mailbox: an unreachable mailbox holds one place while it waits for its
+ * provider, not the queue. A provider host with as many unreachable mailboxes as places still
+ * holds every place for the length of its connection timeouts.
  */
 export const MAIL_PROVIDER_JOB_CONCURRENCY = 4;
 

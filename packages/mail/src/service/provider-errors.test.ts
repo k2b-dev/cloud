@@ -45,8 +45,22 @@ describe("provider connection failures", () => {
       expect(isTransientProviderFailure(refusal), serverResponseCode).toBe(true);
       expect(isProviderAuthenticationFailure(refusal), serverResponseCode).toBe(false);
     }
+    // Gmail refuses a login over its connection limit with [ALERT].
+    const connectionLimit = Object.assign(new Error("Command failed"), {
+      authenticationFailed: true,
+      serverResponseCode: "ALERT",
+      responseText: "Too many simultaneous connections. (Failure)",
+    });
+    expect(isTransientProviderFailure(connectionLimit)).toBe(true);
+    expect(isProviderAuthenticationFailure(connectionLimit)).toBe(false);
     for (const rejected of [
       Object.assign(new Error("Command failed"), { authenticationFailed: true, serverResponseCode: "AUTHENTICATIONFAILED" }),
+      // Any other alert, such as one that asks for an app password, needs the user.
+      Object.assign(new Error("Command failed"), {
+        authenticationFailed: true,
+        serverResponseCode: "ALERT",
+        responseText: "Application-specific password required",
+      }),
       // Many servers reject a wrong password without a response code.
       Object.assign(new Error("Command failed"), { authenticationFailed: true }),
     ]) {
@@ -75,6 +89,19 @@ describe("provider connection failures", () => {
     expect(isProviderAuthenticationFailure(smtpRejected)).toBe(true);
   });
 
+  test("count an SMTP server that closes the channel with 421 as transient", () => {
+    // Nodemailer reports a 421 greeting, such as at the server's connection limit, as EPROTOCOL.
+    const greeting = Object.assign(new Error("Invalid greeting. response=421 4.7.0 Error: too many connections"), {
+      code: "EPROTOCOL",
+      responseCode: 421,
+    });
+    expect(isTransientProviderFailure(greeting)).toBe(true);
+    expect(isProviderAuthenticationFailure(greeting)).toBe(false);
+    expect(
+      isTransientProviderFailure(Object.assign(new Error("Invalid greeting. response=554"), { code: "EPROTOCOL", responseCode: 554 })),
+    ).toBe(false);
+  });
+
   test("classify a failed IMAP and SMTP verification by the failures behind it", () => {
     const verification = (...failures: unknown[]) =>
       Object.assign(new Error("IMAP: ...; SMTP: ..."), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", failures });
@@ -84,6 +111,17 @@ describe("provider connection failures", () => {
     expect(isProviderAuthenticationFailure(verification(unreachable))).toBe(false);
     expect(isTransientProviderFailure(verification(unreachable, rejected))).toBe(false);
     expect(isProviderAuthenticationFailure(verification(unreachable, rejected))).toBe(true);
+    // A provider whose login service is down refuses IMAP and SMTP logins for now.
+    const imapUnavailable = Object.assign(new Error("Command failed"), { authenticationFailed: true, serverResponseCode: "UNAVAILABLE" });
+    const smtpTemporary = Object.assign(new Error("Invalid login: 454 4.7.0 Temporary authentication failure"), {
+      code: "EAUTH",
+      responseCode: 454,
+    });
+    expect(isTransientProviderFailure(verification(imapUnavailable, smtpTemporary))).toBe(true);
+    expect(isProviderAuthenticationFailure(verification(imapUnavailable, smtpTemporary))).toBe(false);
+    const smtpRejected = Object.assign(new Error("Invalid login: 535 5.7.8 rejected"), { code: "EAUTH", responseCode: 535 });
+    expect(isTransientProviderFailure(verification(smtpRejected))).toBe(false);
+    expect(isProviderAuthenticationFailure(verification(smtpRejected))).toBe(true);
     expect(isTransientProviderFailure(verification(failure("ETLS")))).toBe(false);
     expect(isTransientProviderFailure(verification())).toBe(false);
   });
