@@ -1167,10 +1167,24 @@ export const messageStateChangeSchema = z
   });
 export type MessageStateChange = z.infer<typeof messageStateChangeSchema>;
 
+/** The most provider messages one conversation action may change. */
+export const MAX_CONVERSATION_ACTION_MESSAGES = 500;
+
+const conversationTriageMessageIdsSchema = z
+  .array(ResourceShortIdSchema)
+  .min(1)
+  .max(MAX_CONVERSATION_ACTION_MESSAGES)
+  .refine((ids) => new Set(ids).size === ids.length, "Message ids must be unique")
+  .optional()
+  .describe(
+    "Message IDs of the conversation to act on, such as the rows of a message list. Without it, the action applies to every message of the conversation in the source folder.",
+  );
+
 export const conversationTriageInputSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("change_state"),
     sourceFolderId: ResourceShortIdSchema,
+    messageIds: conversationTriageMessageIdsSchema,
     change: messageStateChangeSchema,
     idempotencyKey: z.string().trim().min(1).max(150),
     correlationId: z.string().trim().max(200).optional(),
@@ -1178,6 +1192,7 @@ export const conversationTriageInputSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("move_to_role"),
     sourceFolderId: ResourceShortIdSchema,
+    messageIds: conversationTriageMessageIdsSchema,
     role: z.enum(["inbox", "archive", "trash", "junk"]),
     idempotencyKey: z.string().trim().min(1).max(150),
     correlationId: z.string().trim().max(200).optional(),
@@ -1185,6 +1200,7 @@ export const conversationTriageInputSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("move_to_folder"),
     sourceFolderId: ResourceShortIdSchema,
+    messageIds: conversationTriageMessageIdsSchema,
     destinationFolderId: ResourceShortIdSchema,
     idempotencyKey: z.string().trim().min(1).max(150),
     correlationId: z.string().trim().max(200).optional(),

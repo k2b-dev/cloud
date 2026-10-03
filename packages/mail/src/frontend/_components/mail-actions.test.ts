@@ -4,6 +4,7 @@ import {
   getMailAction,
   MAIL_ACTION_IDS,
   type MailActionId,
+  mailActionTargetForItem,
   mailMoveSourceFolderIds,
   mailRoleDestinationFolderId,
   spamActionForConversation,
@@ -140,5 +141,42 @@ describe("Mail actions", () => {
     const reassigned = [folder("provider-archive", "junk", "archive", "junk"), folder("all-mail", "all")];
     expect(mailRoleDestinationFolderId("archive", reassigned)).toBe("provider-archive");
     expect(mailRoleDestinationFolderId("junk", reassigned)).toBe("provider-archive");
+  });
+
+  test("acts on the message of a message-list row, not on the rest of its conversation", () => {
+    const folders = [folder("inbox", "inbox"), folder("archive", "archive")];
+    const row = {
+      id: "message-a",
+      conversationId: "conversation-1",
+      selectionKind: "message" as const,
+      subject: "Invoice",
+      unreadFolderIds: ["inbox"],
+      activeFolderIds: ["inbox"],
+    };
+    const target = (item: typeof row | (Omit<typeof row, "selectionKind"> & { selectionKind: "conversation" }), actionId: MailActionId) =>
+      mailActionTargetForItem({ item, actionId, viewFolderId: "inbox", folders, noSubject: "(no subject)" });
+
+    for (const actionId of ["trash", "move", "mark_read", "flag"] satisfies MailActionId[]) {
+      expect(target(row, actionId)).toEqual({
+        conversationId: "conversation-1",
+        label: "Invoice",
+        sourceFolderIds: ["inbox"],
+        messageIds: ["message-a"],
+      });
+    }
+    expect(target({ ...row, id: "conversation-1", selectionKind: "conversation" }, "trash")).toEqual({
+      conversationId: "conversation-1",
+      label: "Invoice",
+      sourceFolderIds: ["inbox"],
+    });
+    expect(
+      buildMailActionInput({
+        actionId: "trash",
+        sourceFolderId: "inbox",
+        messageIds: ["message-a"],
+        idempotencyKey: "i",
+        correlationId: "c",
+      }),
+    ).toMatchObject({ kind: "move_to_role", messageIds: ["message-a"] });
   });
 });

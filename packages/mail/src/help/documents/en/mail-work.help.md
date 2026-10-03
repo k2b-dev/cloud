@@ -88,13 +88,15 @@ Mail collapses the quoted history of earlier messages. Select **Show quoted text
 
 The top actions take the conversation out of the folder you are viewing, such as Inbox, even when your newest reply is stored in Sent. In views that span folders, such as **All mail** or **Needs action**, they take it out of every folder it is filed in. Your copies in Sent and Drafts, and messages in Junk, Trash, or Gmail's **All Mail**, stay where they are unless the conversation is only there. On Gmail, where folders are labels, these views act on one label: the Inbox when the conversation is in it. Archive removes only the Inbox label and keeps your other labels and stars, so a conversation outside the Inbox has nothing to archive. Delete and Spam move the messages in that one label to Trash or Spam, which takes them out of every other label too. Messages filed only under other labels stay where they are. **Move to folder** and dragging a row follow the same rule.
 
+In **Message view**, each row is one message. Actions on a row, dragging it, and the actions of the message you opened change only that message, not the other messages of its conversation. If the same message arrived twice in a folder, Mail shows it once and the action changes both copies.
+
 - **Archive** moves it to the mapped archive folder. Gmail has no archive folder, so without a mapping Archive removes the conversation from the current folder, such as Inbox, and keeps it in **All Mail**.
 - **Move to junk** moves it to the mapped junk folder. In Junk, the same action becomes **Not spam** and moves the conversation back to Inbox.
 - **Delete** moves it to the mapped trash folder.
 
 These actions require write access and the corresponding folder mapping. If Mail reports that the conversation has no active provider placement, refresh the mailbox or ask an administrator to review folder discovery and mappings.
 
-Mail queues every action and the mail server applies it moments later. If the server does not make the change, for example because the message was moved in another email client, Mail names the conversation that stayed as it was and offers **Try again**. If it is unclear whether the server made the change, Mail asks you to check the conversation instead of repeating it.
+Mail queues every action and the mail server applies it moments later. If the server does not make the change, for example because the message was moved in another email client, Mail names the conversation that stayed as it was and offers **Try again**. Read and flag changes show right away; one the server did not make shows its earlier state again, even when you made several changes in a row. If it is unclear whether the server made the change, Mail asks you to check the conversation instead of repeating it.
 
 Select **Mail commands** above the conversation list to search the same actions that appear in buttons and menus. Common commands also have keyboard shortcuts. Open **Configure keyboard shortcuts** from Mail commands to change or disable them on this device. Shortcuts do not run while you are typing in an input or message editor.
 
