@@ -23,6 +23,8 @@ The tools can work together, but creating one does not activate another. Referen
 
 Mailbox admins create one guided flow under **Automations > Incoming mail** or start it directly from a message's organization menu. Choose **All incoming mail** when no condition is needed, or combine up to eight sender, domain, subject, body-text, or attachment-presence conditions and choose whether all or any condition must match.
 
+An incoming automation runs once per received message. When someone moves the message to another folder in a different email client, for example back to the Inbox after the automation moved it away, the automation does not run again.
+
 Add steps in the order they should run. A flow can freely mix:
 
 - **Mail action** to move, mark, add a local tag, assign, or change conversation status.
