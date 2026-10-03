@@ -756,6 +756,7 @@ export default function KanbanBoard(props: Props) {
     onFinally: () => setMovingItemId(null),
   });
 
+  const currentCard = (item: SpaceItem): SpaceItem => findItemLocation(item.id)?.item ?? item;
   const assignCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
     onBefore: (item) => ({ item }),
     mutation: async (item) => {
@@ -785,7 +786,9 @@ export default function KanbanBoard(props: Props) {
           .catch(() => toastErrorWithRetry(t.itemRefreshFailed, t.retry, refresh));
       refresh();
     },
-    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && assignCardMutation.mutate(context.item)),
+    // Retry starts from the card as the board shows it now, so it cannot drop an assignee added in the meantime.
+    onError: (error, context) =>
+      toastErrorWithRetry(error.message, t.retry, () => context && assignCardMutation.mutate(currentCard(context.item))),
   });
 
   const completeCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
@@ -802,7 +805,8 @@ export default function KanbanBoard(props: Props) {
       setOptimisticBuckets(null);
       refreshWorkspace(t.listRefreshFailed);
     },
-    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && completeCardMutation.mutate(context.item)),
+    onError: (error, context) =>
+      toastErrorWithRetry(error.message, t.retry, () => context && completeCardMutation.mutate(currentCard(context.item))),
   });
 
   const [claimingItemId, setClaimingItemId] = createSignal<string | null>(null);

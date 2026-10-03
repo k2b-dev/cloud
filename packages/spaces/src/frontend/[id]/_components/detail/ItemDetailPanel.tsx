@@ -505,20 +505,22 @@ export default function ItemDetailPanel(props: Props) {
     onError: (err) => toast.error(err.message),
   });
 
-  const deleteMutation = mutations.create<void, { itemId: string }, { itemId: string }>({
-    onBefore: ({ itemId }) => ({ itemId }),
-    mutation: async ({ itemId }) => {
+  type DeleteIntent = { spaceId: string; itemId: string };
+  const deleteMutation = mutations.create<void, DeleteIntent, { intent: DeleteIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ spaceId, itemId }) => {
       const res = await apiClient[":id"].items[":itemId"].$delete({
-        param: { id: props.spaceId, itemId },
+        param: { id: spaceId, itemId },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.deleteItemFailed));
     },
-    onSuccess: () => {
+    onSuccess: (_, context) => {
       toast.success(t.itemDeleted);
-      requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
+      // A retry can succeed after the user opened another item; only the deleted item's panel closes.
+      if (context?.intent.itemId === props.item.id) requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
+      else reconcileAfterWrite();
     },
-    onError: (err, context) =>
-      toastErrorWithRetry(err.message, t.retry, () => context && deleteMutation.mutate({ itemId: context.itemId })),
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && deleteMutation.mutate(context.intent)),
   });
 
   const transferMutation = mutations.create<WormholeTransferResult, string>({
@@ -553,7 +555,7 @@ export default function ItemDetailPanel(props: Props) {
         variant: "danger",
         confirmText: t.delete,
       });
-      if (confirmed) void deleteMutation.mutate({ itemId: props.item.id });
+      if (confirmed) void deleteMutation.mutate({ spaceId: props.spaceId, itemId: props.item.id });
     } finally {
       deletePromptPending = false;
     }

@@ -58,7 +58,8 @@ export default function ItemRow(props: ItemRowProps) {
     onCleanup(unsubscribe);
   });
 
-  const completeMutation = mutations.create<boolean, boolean>({
+  const completeMutation = mutations.create<boolean, boolean, { completed: boolean }>({
+    onBefore: (completed) => ({ completed }),
     mutation: async (completed: boolean) => {
       const res = await apiClient[":id"].items[":itemId"].completed.$post({
         param: { id: props.spaceId, itemId: props.item.id },
@@ -72,7 +73,7 @@ export default function ItemRow(props: ItemRowProps) {
     },
     // The row shows the new state itself; only a failure needs a message.
     onSuccess: () => refreshList(),
-    onError: (err) => toastErrorWithRetry(err.message, t.retry, () => completeMutation.retry()),
+    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && completeMutation.mutate(context.completed)),
   });
   const refreshList = (): void => void invalidateSpacesData().catch(() => toastErrorWithRetry(t.listRefreshFailed, t.retry, refreshList));
   const isCompleted = () => !!props.item.completedAt;
