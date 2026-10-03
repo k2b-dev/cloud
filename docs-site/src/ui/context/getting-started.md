@@ -59,6 +59,10 @@ import "@k2b/ui/icons/tabler.css";
 
 Omit either preset when your application already provides that asset.
 
+The icon preset gives every Tabler icon a fixed width of one em. An icon keeps
+that width while the icon font loads, so buttons and text next to it do not
+grow or move sideways when the font arrives.
+
 The Plex preset references separate WOFF2 files in its adjacent `fonts/`
 directory. Keep these assets with the stylesheet when copying it for direct
 serving. Their filenames contain a content hash, so they can be cached
