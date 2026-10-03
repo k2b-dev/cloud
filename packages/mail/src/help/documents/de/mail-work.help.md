@@ -176,7 +176,7 @@ Lokale Tags sind Postfachkennzeichnungen für Personen, Suche und Automatisierun
 
 ## Unterhaltungsgruppierung korrigieren {icon="arrows-split-2"}
 
-Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen, auch wenn die Antwort vor der beantworteten Nachricht synchronisiert wurde. Eine Nachricht ohne Antwort-Header kommt nur dann in eine frühere Unterhaltung, wenn ihr Betreff mit einem Präfix wie `Re:`, `AW:` oder `Fwd:` beginnt und sie innerhalb von 30 Tagen mit derselben externen Person ausgetauscht wurde. Sonst beginnt sie eine eigene Unterhaltung. Zwei Absender, die beide „Rechnung“ schreiben, bleiben so getrennt.
+Mail ordnet eine Nachricht der Unterhaltung zu, auf die ihre Antwort-Header verweisen. Das gilt auch, wenn eine Antwort vor der beantworteten Nachricht synchronisiert wurde, und Antworten auf eine Nachricht, die das Postfach nicht enthält, bleiben zusammen. Eine Nachricht ohne Antwort-Header kommt nur dann in eine frühere Unterhaltung, wenn ihr Betreff mit einem Präfix wie `Re:`, `AW:` oder `Fwd:` beginnt und sie innerhalb von 30 Tagen mit derselben externen Person ausgetauscht wurde. Sonst beginnt sie eine eigene Unterhaltung. Zwei Absender, die beide „Rechnung“ schreiben, bleiben so getrennt.
 
 Eine Nachricht bleibt eine Nachricht, egal wo sie liegt. Verschiebt oder kopiert ein anderes E-Mail-Programm sie in einen anderen Ordner, oder kommt deine eigene Mail über eine Liste, eine Teamadresse oder eine Bcc an dich selbst zurück in den Posteingang, zeigt die Unterhaltung sie nur einmal. Mail erkennt solche Kopien an Message-ID, Absender, Betreff und Datum, die Kopie einer fremden Nachricht zusätzlich an ihrer unveränderten Größe.
 

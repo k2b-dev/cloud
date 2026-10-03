@@ -176,7 +176,7 @@ Local tags are mailbox labels used by people, search, and automations. Select a 
 
 ## Correct conversation grouping {icon="arrows-split-2"}
 
-Mail groups a message with the conversation that its reply headers point to, even when the reply synchronized before the message it answers. A message without reply headers joins an earlier conversation only when its subject starts with a prefix such as `Re:`, `AW:`, or `Fwd:` and it was exchanged with the same outside person within 30 days. Otherwise it starts its own conversation, so two senders who both write "Invoice" stay apart.
+Mail groups a message with the conversation that its reply headers point to. This also works when a reply synchronized before the message it answers, and replies to a message that the mailbox does not hold stay together. A message without reply headers joins an earlier conversation only when its subject starts with a prefix such as `Re:`, `AW:`, or `Fwd:` and it was exchanged with the same outside person within 30 days. Otherwise it starts its own conversation, so two senders who both write "Invoice" stay apart.
 
 A message stays one message wherever it is stored. If another email client moves or copies it to another folder, or your own mail arrives back in the Inbox through a list, a team address, or a Bcc to yourself, the conversation shows it once. Mail recognizes such a copy by its Message-ID, sender, subject, and date, and a copy of someone else's mail also by its unchanged size.
 

@@ -360,31 +360,54 @@ const findConversation = async (params: {
   if (!params.normalizedSubject) return null;
 
   // Sync does not import in conversation order: the initial sync runs newest first and every
-  // folder syncs on its own, so a reply can arrive before the message it answers. That message
-  // joins its replies here. Replies keep the subject and follow the message among the mail with
-  // that subject, so the lookup reads at most one envelope batch of the next such messages: a
-  // subject that repeats thousands of times, such as a daily report, cannot make every import
-  // of the initial sync read all of them.
-  if (params.message.messageId && participants.length > 0) {
-    const [answered] = await params.db<{ conversation_id: string }[]>`
+  // folder syncs on its own, so a reply can arrive before the message it answers, and two replies
+  // to a message Mail does not hold yet arrive without it. A message therefore also joins a
+  // conversation whose messages reference it or share a referenced message with it. Replies keep
+  // the subject, so the lookup reads at most one envelope batch of the closest messages with that
+  // subject on each side: a subject that repeats thousands of times, such as a daily report,
+  // cannot make every import of the initial sync read all of them.
+  const threadIds = [
+    ...new Set(
+      [params.message.messageId, params.message.inReplyTo, ...params.message.references]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => value.toLowerCase()),
+    ),
+  ];
+  if (threadIds.length > 0 && participants.length > 0) {
+    const [related] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
       FROM (
-        SELECT mc.id, mc.internal_date, mc.in_reply_to, mc.reference_ids
-        FROM mail.message_contents mc
-        WHERE mc.mailbox_id = ${params.mailboxId}::uuid
-          AND mc.id <> ${params.messageId}::uuid
-          AND mc.normalized_subject <> ''
-          AND mc.normalized_subject = ${params.normalizedSubject}
-          AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '1 day'
-            AND ${params.message.internalDate}::timestamptz + interval '2 years'
-        ORDER BY mc.internal_date, mc.id
-        LIMIT ${ENVELOPE_BATCH_SIZE}
+        (
+          SELECT mc.id, mc.internal_date, mc.in_reply_to, mc.reference_ids
+          FROM mail.message_contents mc
+          WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+            AND mc.id <> ${params.messageId}::uuid
+            AND mc.normalized_subject <> ''
+            AND mc.normalized_subject = ${params.normalizedSubject}
+            AND mc.internal_date >= ${params.message.internalDate}::timestamptz
+            AND mc.internal_date <= ${params.message.internalDate}::timestamptz + interval '2 years'
+          ORDER BY mc.internal_date, mc.id
+          LIMIT ${ENVELOPE_BATCH_SIZE}
+        )
+        UNION ALL
+        (
+          SELECT mc.id, mc.internal_date, mc.in_reply_to, mc.reference_ids
+          FROM mail.message_contents mc
+          WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+            AND mc.id <> ${params.messageId}::uuid
+            AND mc.normalized_subject <> ''
+            AND mc.normalized_subject = ${params.normalizedSubject}
+            AND mc.internal_date >= ${params.message.internalDate}::timestamptz - interval '2 years'
+            AND mc.internal_date < ${params.message.internalDate}::timestamptz
+          ORDER BY mc.internal_date DESC, mc.id DESC
+          LIMIT ${ENVELOPE_BATCH_SIZE}
+        )
       ) candidate
       JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
       WHERE (
-          lower(candidate.in_reply_to) = lower(${params.message.messageId})
+          lower(candidate.in_reply_to) = ANY(${toPgTextArray(threadIds)}::text[])
           OR EXISTS (
-            SELECT 1 FROM unnest(candidate.reference_ids) AS reference(id) WHERE lower(reference.id) = lower(${params.message.messageId})
+            SELECT 1 FROM unnest(candidate.reference_ids) AS reference(id) WHERE lower(reference.id) = ANY(${toPgTextArray(threadIds)}::text[])
           )
         )
         AND EXISTS (
@@ -396,7 +419,7 @@ const findConversation = async (params: {
       ORDER BY candidate.internal_date, candidate.id
       LIMIT 1
     `;
-    if (answered) return answered.conversation_id;
+    if (related) return related.conversation_id;
   }
 
   // A subject alone links only a message that presents itself as a reply or forward but whose
