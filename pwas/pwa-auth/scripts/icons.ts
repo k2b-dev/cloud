@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import subsetFont from "subset-font";
 
-/** Preserve Tabler's glyphs and CSS API, shipping only names present in emitted JavaScript. */
+/** Preserve Tabler's glyphs and CSS API and the @k2b/ui icon box, shipping only names present in emitted JavaScript. */
 export async function iconStyles(javascript: string) {
   const uiRoot = dirname(Bun.resolveSync("@k2b/ui/package.json", import.meta.dir));
   const tablerRoot = dirname(Bun.resolveSync("@tabler/icons-webfont/package.json", uiRoot));
@@ -19,6 +19,11 @@ export async function iconStyles(javascript: string) {
   );
   const base = css.match(/\.ti\s*\{[^}]+\}/)?.[0];
   if (!base) throw new Error("Missing Tabler base style");
+  // The inlined font still decodes after the first frame on a busy device; the preset's box gives each icon its
+  // final width until then, so nothing next to it moves when the glyph appears.
+  const preset = await Bun.file(Bun.resolveSync("@k2b/ui/icons/tabler.css", import.meta.dir)).text();
+  const box = preset.match(/\.ti::?before\s*\{[^}]+\}/)?.[0];
+  if (!box) throw new Error("Missing @k2b/ui icon box style");
   console.log(`Tabler subset: ${rules.length} icons, ${font.length} bytes`);
-  return `@font-face{font-family:tabler-icons;font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,${font.toString("base64")}) format("woff2")}\n${base}\n${rules.map((match) => match[0]).join("\n")}`;
+  return `@font-face{font-family:tabler-icons;font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,${font.toString("base64")}) format("woff2")}\n${base}\n${box}\n${rules.map((match) => match[0]).join("\n")}`;
 }

@@ -98,7 +98,9 @@ Stop the fixture after testing; never deploy it.
 The build extracts literal Tabler names from all emitted JavaScript chunks and
 subsets the existing font using `subset-font`. It keeps Tabler's public CSS
 classes without shipping the whole icon catalog. Use literal icon names in this
-app so they remain discoverable by the build.
+app so they remain discoverable by the build. The build also copies the one-em
+icon box from `@k2b/ui/icons/tabler.css`: the inlined font can still decode
+after the first frame, and until then each icon already has its final width.
 
 `ti ti-cloud-lock-open` comes from Tabler 3.46.0 (MIT). `public/favicon.svg`
 was generated with the repository's Cloud favicon renderer in
