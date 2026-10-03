@@ -3,7 +3,7 @@ import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
-import { NOTE_DELETE_ADMIN_ONLY } from "../lib/note-delete-permission";
+import { NOTE_DELETE_ADMIN_ONLY, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";
 import { notebooksService } from "../service";
 import notebooksApi from ".";
 
@@ -40,8 +40,8 @@ const apiAs = async (serviceAccountId: string, scopes: string[]) => {
     });
 };
 
-suite("Notebooks note deletion rule", () => {
-  test("admins can reserve deleting notes for themselves; writers and agents with write still edit but cannot delete", async () => {
+suite("Notebooks note deletion and locking rule", () => {
+  test("admins can reserve deleting and locking notes for themselves; writers and agents with write still edit but cannot delete or lock", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const notebook = { id: crypto.randomUUID(), shortId: shortId() };
     await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebook.id}::uuid, ${notebook.shortId}, ${`Delete rule ${suffix}`})`;
@@ -79,10 +79,12 @@ suite("Notebooks note deletion rule", () => {
         return `/${notebook.shortId}/notes/${created.data.shortId}`;
       };
 
-      // By default everyone who can write deletes notes, as before.
+      // By default everyone who can write deletes and locks notes, as before.
       expect(await (await asWriter(`/${notebook.shortId}`)).json()).toMatchObject({ noteDeletePermission: "write" });
       expect((await asWriter(await createNote("Writer default"), { method: "DELETE" })).status).toBe(200);
       expect((await asAgent(await createNote("Agent default"), { method: "DELETE" })).status).toBe(200);
+      expect((await asWriter(`${await createNote("Writer lock default")}/lock`, { method: "POST" })).status).toBe(200);
+      expect((await asAgent(`${await createNote("Agent lock default")}/lock`, { method: "POST" })).status).toBe(200);
 
       // Only admins choose the rule.
       expect((await asWriter(`/${notebook.shortId}`, { method: "PATCH", body: { noteDeletePermission: "admin" } })).status).toBe(403);
@@ -104,6 +106,21 @@ suite("Notebooks note deletion rule", () => {
         message: "Löschen ist in diesem Notizbuch Admins vorbehalten.",
       });
 
+      // The same rule reserves locking, which cannot be undone either; a refused lock leaves the note unlocked.
+      const writerLock = await asWriter(`${notePath}/lock`, { method: "POST" });
+      expect(writerLock.status).toBe(403);
+      expect(await writerLock.json()).toEqual({
+        code: NOTE_LOCK_ADMIN_ONLY,
+        message: "Locking notes is reserved for admins in this notebook.",
+      });
+      const agentLock = await asAgent(`${notePath}/lock`, { method: "POST", locale: "de" });
+      expect(agentLock.status).toBe(403);
+      expect(await agentLock.json()).toEqual({
+        code: NOTE_LOCK_ADMIN_ONLY,
+        message: "Sperren ist in diesem Notizbuch Admins vorbehalten.",
+      });
+      expect((await notebooksService.note.getByShortId({ shortId: notePath.split("/").at(-1)! }))?.lockedAt).toBeNull();
+
       // Editing, including removing content, stays open to writers and agents.
       for (const call of [asWriter, asAgent]) {
         const edited = await call(`${notePath}/content`, {
@@ -115,7 +132,10 @@ suite("Notebooks note deletion rule", () => {
       }
       expect((await asWriter(`${notePath}/content`)).status).toBe(200);
 
-      // Admins still delete; a missing note stays a 404, not the rule.
+      // Admins still lock and delete; a missing note stays a 404, not the rule.
+      const adminLock = await asAdmin(`${await createNote("Admin lock")}/lock`, { method: "POST" });
+      expect(adminLock.status).toBe(200);
+      expect((await adminLock.json()).lockedAt).toEqual(expect.any(String));
       expect((await asAdmin(notePath, { method: "DELETE" })).status).toBe(200);
       expect((await asAdmin(notePath, { method: "DELETE" })).status).toBe(404);
 
@@ -127,11 +147,19 @@ suite("Notebooks note deletion rule", () => {
       const readOnly = await notebooksService.note.remove({ id: direct!.id, permission: "read" });
       expect(readOnly.ok ? null : readOnly.error.code).toBe("FORBIDDEN");
       expect(await notebooksService.note.get({ id: direct!.id })).not.toBeNull();
+      const lockDenied = await notebooksService.note.lock({ id: direct!.id, permission: "write" });
+      expect(lockDenied).toMatchObject({ ok: false, status: 403, code: NOTE_LOCK_ADMIN_ONLY });
+      const lockReadOnly = await notebooksService.note.lock({ id: direct!.id, permission: "read" });
+      expect(lockReadOnly).toMatchObject({ ok: false, status: 403 });
+      expect("code" in lockReadOnly).toBe(false);
+      expect(await notebooksService.note.isLocked({ id: direct!.id })).toBe(false);
+      expect((await notebooksService.note.lock({ id: direct!.id, permission: "admin" })).ok).toBe(true);
       expect((await notebooksService.note.remove({ id: direct!.id, permission: "admin" })).ok).toBe(true);
 
-      // Switching back restores deleting for writers.
+      // Switching back restores deleting and locking for writers.
       expect((await asAdmin(`/${notebook.shortId}`, { method: "PATCH", body: { noteDeletePermission: "write" } })).status).toBe(200);
       expect((await asWriter(await createNote("Writer again"), { method: "DELETE" })).status).toBe(200);
+      expect((await asWriter(`${await createNote("Writer lock again")}/lock`, { method: "POST" })).status).toBe(200);
     } finally {
       await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebook.id}::uuid`;
       for (const id of accountIds) {

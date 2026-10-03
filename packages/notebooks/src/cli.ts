@@ -1566,8 +1566,8 @@ function notebooksCommands(locale?: string) {
           noteDeletePermission: flag.enum(NOTE_DELETE_PERMISSIONS, {
             name: "note-delete-permission",
             description: t({
-              en: "Who may delete notes: write (everyone who can write) or admin (admins only)",
-              de: "Wer Notizen löschen darf: write (alle mit Schreibrechten) oder admin (nur Admins)",
+              en: "Who may delete and lock notes: write (everyone who can write) or admin (admins only)",
+              de: "Wer Notizen löschen und sperren darf: write (alle mit Schreibrechten) oder admin (nur Admins)",
             }),
           }),
         },

@@ -4,7 +4,7 @@ import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result }
 import { RetentionGapError } from "@k2b/sync";
 import { sql } from "bun";
 import * as Y from "yjs";
-import { mayDeleteNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS } from "../lib/note-delete-permission";
+import { mayDeleteOrLockNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";
 import {
   applyNoteEdits,
   NoteEditError,
@@ -339,9 +339,16 @@ export const isLocked = async (params: { id: string }): Promise<boolean> => {
 
 /**
  * Lock a note permanently. Once locked, the note cannot be edited or restored.
+ * `permission` is the caller's effective notebook permission; a notebook that
+ * reserves deleting notes for its admins reserves locking for them too.
  */
-export const lock = async (params: { id: string }): Promise<MutationResult<Note>> => {
+export const lock = async (params: {
+  id: string;
+  permission: PermissionLevel;
+}): Promise<MutationResult<Note> | { ok: false; error: string; status: 403; code: typeof NOTE_LOCK_ADMIN_ONLY }> => {
   const { id } = params;
+  // Below write permission no rule allows locking; the admin-only reason would mislead.
+  if (!mayDeleteOrLockNotes(params.permission, "write")) return { ok: false, error: "Access denied", status: 403 };
 
   const existing = await get({ id });
   if (!existing) {
@@ -352,20 +359,25 @@ export const lock = async (params: { id: string }): Promise<MutationResult<Note>
     return { ok: false, error: "Note is already locked", status: 400 };
   }
 
+  const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
+  // The rule is checked in the same statement, so a concurrent settings change cannot slip a lock through.
   const [row] = await sql<DbNote[]>`
-    UPDATE notebooks.notes
+    UPDATE notebooks.notes n
     SET locked_at = now(), updated_at = now()
-    WHERE id = ${id}::uuid
-      AND locked_at IS NULL
-    RETURNING id, short_id, notebook_id, parent_id, title, position,
-              yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
+    FROM notebooks.notebooks nb
+    WHERE n.id = ${id}::uuid
+      AND n.locked_at IS NULL
+      AND nb.id = n.notebook_id
+      AND nb.note_delete_permission = ANY(${toPgTextArray(allowedRules)}::text[])
+    RETURNING n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+              n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at
   `;
 
   if (!row) {
     const current = await get({ id });
     if (!current) return { ok: false, error: "Note not found", status: 404 };
     if (current.lockedAt) return { ok: false, error: "Note is already locked", status: 400 };
-    return { ok: false, error: "Failed to lock note", status: 500 };
+    return { ok: false, error: "Locking notes is reserved for admins in this notebook.", status: 403, code: NOTE_LOCK_ADMIN_ONLY };
   }
 
   const note = mapToNote({ ...row, has_children: existing.hasChildren });
@@ -941,8 +953,8 @@ const checkIsDescendant = async (ancestorId: string, descendantId: string): Prom
  */
 export const remove = async (params: { id: string; permission: PermissionLevel }): Promise<Result<void>> => {
   // Below write permission no rule allows deleting; the admin-only reason would mislead.
-  if (!mayDeleteNotes(params.permission, "write")) return fail(err.forbidden());
-  const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteNotes(params.permission, rule));
+  if (!mayDeleteOrLockNotes(params.permission, "write")) return fail(err.forbidden());
+  const allowedRules = NOTE_DELETE_PERMISSIONS.filter((rule) => mayDeleteOrLockNotes(params.permission, rule));
   // The rule is checked in the same statement, so a concurrent settings change cannot slip a delete through.
   const [deleted] = await sql<{ id: string; notebook_id: string; short_id: string }[]>`
     DELETE FROM notebooks.notes n

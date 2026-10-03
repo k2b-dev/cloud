@@ -1,6 +1,6 @@
 import { prompts, SettingsModal, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import { ApiKeysSection, NoteDeletionSection, PermissionsSection } from "./AccessSection";
+import { ApiKeysSection, NoteDeleteAndLockSection, PermissionsSection } from "./AccessSection";
 import { DangerZone } from "./DangerZone";
 import { ExportSection } from "./ExportSection";
 import { FeaturesSection } from "./FeaturesSection";
@@ -73,7 +73,7 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
             <SettingsModal.Group title={t().sharing}>
               <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
                 <PermissionsSection notebook={notebook()} />
-                <NoteDeletionSection notebook={notebook()} onNotebookChange={setNotebook} />
+                <NoteDeleteAndLockSection notebook={notebook()} onNotebookChange={setNotebook} />
               </SettingsModal.Tab>
               <SettingsModal.Tab id="api-keys" title={t().apiKeys} icon="ti ti-key" description={t().apiKeysDescription}>
                 <ApiKeysSection notebook={notebook()} />

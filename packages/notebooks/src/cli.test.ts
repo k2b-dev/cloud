@@ -118,6 +118,22 @@ test("rm reports a notebook that reserves deleting notes for admins", async () =
   expect(result.stderr).toContain(message);
 });
 
+test("lock reports a notebook that reserves locking notes for admins", async () => {
+  const message = "Locking notes is reserved for admins in this notebook.";
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      if (request.method === "POST" && new URL(request.url).pathname.endsWith("/lock"))
+        return Response.json({ message, code: "NOTE_LOCK_ADMIN_ONLY" }, { status: 403 });
+      return Response.json(new URL(request.url).pathname === "/api/notebooks/wiki01" ? notebookFixture : noteFixture);
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["notebooks", "lock", "note01", "--yes"]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain(message);
+});
+
 test("rejects ambiguous edit operations before a write", async () => {
   const { server, writes } = editingServer();
   const result = await runCli(server, [

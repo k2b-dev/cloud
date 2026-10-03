@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-02
+updated: 2026-10-03
 ---
 
 # Notebooks
@@ -92,23 +92,26 @@ behavior**. The initial default for editors and admins is Write. An explicit
 view in the page URL overrides this default; read permission still forces
 Book. Locked notes open in Read-only instead of Write.
 
-## Reserve deleting notes for admins
+## Reserve deleting and locking notes for admins
 
-By default, everyone with write access can delete notes. A notebook admin can
-set **Who can delete notes** to **Admins only** under **Settings → Sharing →
-Access**; the change saves immediately. People and agents with write access
-keep editing, including removing content, and saved versions keep earlier
-content recoverable. Their **Delete** action stays visible but disabled with
-the reason. The rule covers only deleting whole notes. Locking a note stays
-open to writers; a locked note keeps its saved versions readable but can no
-longer be restored from them.
+By default, everyone with write access can delete notes and lock them
+permanently. Neither can be undone. A notebook admin can set **Who can delete
+and lock notes** to **Admins only** under **Settings → Sharing → Access**; the
+change saves immediately. People and agents with write access keep editing,
+including removing content, and saved versions keep earlier content
+recoverable. Their **Delete** and **Lock note** actions stay visible but
+disabled with the reason. A locked note keeps its saved versions readable but
+can no longer be edited or restored from them.
 
 The API carries the rule as the notebook's `noteDeletePermission` (`write` or
-`admin`). Only notebook admins change it with `PATCH /api/notebooks/:id` or
+`admin`); the one setting covers both actions. Only notebook admins change it
+with `PATCH /api/notebooks/:id` or
 `cld notebooks update <notebook> --note-delete-permission admin`. Under
-`admin`, `DELETE /api/notebooks/:id/notes/:noteId` returns 403 with code
-`NOTE_DELETE_ADMIN_ONLY` for everyone else, including agents and API keys with
-write access, and `cld notebooks rm` fails with the same message.
+`admin`, everyone else, including agents and API keys with write access, gets
+403: `DELETE /api/notebooks/:id/notes/:noteId` with code
+`NOTE_DELETE_ADMIN_ONLY`, and `POST /api/notebooks/:id/notes/:noteId/lock`
+with code `NOTE_LOCK_ADMIN_ONLY`. `cld notebooks rm` and `cld notebooks lock`
+fail with the same messages.
 
 ## Understand the Notebooks model
 
