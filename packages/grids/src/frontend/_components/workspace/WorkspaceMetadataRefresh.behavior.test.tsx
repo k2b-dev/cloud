@@ -175,6 +175,15 @@ domTest("revocation hides SSR content and closes resource dialogs immediately", 
   }
 });
 
+/** Waits for an outcome of timers (debounce, retry backoff, toast exit) instead of guessing their total duration. */
+const until = async (condition: () => boolean, timeoutMs = 5_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("The expected state did not occur in time");
+    await Bun.sleep(20);
+  }
+};
+
 domTest("a failed check is retried, and a lasting failure informs in a toast without moving the workspace", async () => {
   const dom = createDomTestHarness();
   const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
@@ -213,20 +222,18 @@ domTest("a failed check is retried, and a lasting failure informs in a toast wit
   try {
     // The tab returns while the network is still coming back.
     callbacks.onReady?.(null);
-    await Bun.sleep(1_200);
-    expect(requests).toBe(3);
+    await until(() => requests === 3);
     expect(reloadAction()).toBeUndefined();
 
     failuresLeft = Number.POSITIVE_INFINITY;
     callbacks.onEvent?.("s6t.test.1");
-    await Bun.sleep(1_200);
-    expect(reloadAction()).toBeDefined();
+    await until(() => reloadAction() !== undefined);
+    expect(requests).toBe(6);
     expect(dom.root.querySelector('[role="status"]')).toBeNull();
 
     failuresLeft = 0;
     callbacks.onEvent?.("s6t.test.2");
-    await Bun.sleep(600);
-    expect(reloadAction()).toBeUndefined();
+    await until(() => reloadAction() === undefined);
   } finally {
     dispose();
     fetchMock.mockRestore();
