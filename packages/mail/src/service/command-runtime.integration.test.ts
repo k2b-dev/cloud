@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
@@ -508,6 +509,47 @@ suite("mail command runtime provider safety", () => {
         SELECT folder_id FROM mail.message_placements WHERE message_id = ${message.id}::uuid AND deleted_at IS NULL
       `;
       expect(placement?.folder_id).toBe(archiveFolderId);
+    } finally {
+      await provider.restore();
+    }
+  }, 15_000);
+
+  test("a move queued with a personal API key runs as its user", async () => {
+    const message = await inboxMessage("personal-key-move", 424264);
+    const provider = await movingProvider(message.rfcMessageId);
+    try {
+      if (adminContext.actor.kind !== "user") throw new Error("The test context must be a user");
+      // A personal API key is minted without scopes and acts with its user's mailbox access.
+      const created = await serviceAccountCredentials.createUserApiToken({ user: adminContext.actor.user, name: `Mail CLI ${suffix}` });
+      if (!created.ok) throw new Error(created.error.message);
+      const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
+      if (!authenticated?.delegatedUser) throw new Error("The personal API key did not authenticate as its user");
+      const command = await createActorCommand({
+        context: {
+          actor: {
+            kind: "service_account",
+            serviceAccount: authenticated.serviceAccount,
+            delegatedUser: authenticated.delegatedUser,
+            scopes: authenticated.credential.scopes,
+            credentialId: authenticated.credential.id,
+            credentialExpiresAt: authenticated.credential.expiresAt,
+          },
+          accessSubject: { type: "user", userId: authenticated.delegatedUser.id },
+          requestId: `mail-command-runtime-personal-key-${suffix}`,
+        },
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "move",
+          messageId: message.id,
+          sourceFolderId: inboxFolderId,
+          destinationFolderId: archiveFolderId,
+          idempotencyKey: `personal-key-move-${suffix}`,
+        },
+      });
+      if (!command.ok) throw new Error(JSON.stringify(command.error));
+      expect(await executeMutationCommand(command.data.id)).toBe("confirmed");
+      expect(provider.move).toHaveBeenCalledTimes(1);
     } finally {
       await provider.restore();
     }
