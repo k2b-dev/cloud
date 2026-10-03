@@ -2088,6 +2088,9 @@ export const commitSyncBatch = async (params: {
           draftImportsQueued: draftImportSnapshotIds.length,
           flagsUpdated,
           removed,
+          // The provider state this batch saw, so a requested sync can tell once Mail holds it.
+          statusHighUid: Math.max(0, params.status.uidNext - 1),
+          statusModseq: params.status.highestModseq,
         }}::jsonb,
         finished_at = now()
       WHERE id = ${params.fence.runId}::uuid
@@ -2249,8 +2252,11 @@ export const syncFolderBatch = async (
 
         await enqueueDraftImports(result.draftImportSnapshotIds);
         await Promise.all(result.draftExportSnapshotIds.map((snapshotId) => enqueueDraftProjectionSnapshot(snapshotId)));
+        // A sweep that started before this batch ends at its own target; mail that arrived after
+        // it is next, without waiting for the next scheduled sync.
+        const newMailPending = cursor.incrementalNextHigh != null || cursor.highestSeenUid < currentHighUid;
         const hasMore =
-          cursor.incrementalNextHigh != null ||
+          newMailPending ||
           !cursor.backfillComplete ||
           cursor.flagNextLow != null ||
           cursor.reconcileNextLow != null ||
@@ -2258,7 +2264,7 @@ export const syncFolderBatch = async (
           cursor.sweepOlderDue === true;
         return {
           hasMore,
-          syncPending: cursor.incrementalNextHigh != null || cursor.flagNextLow != null,
+          syncPending: newMailPending || cursor.flagNextLow != null,
           imported: result.hydratedIds.length,
           flagsUpdated: result.flagsUpdated,
           removed: result.removed,
@@ -2305,10 +2311,25 @@ const SYNC_FOLDER_MAX_ATTEMPTS = 5;
 // errored binding waits for its next verification instead of repeating the failure every minute.
 const SYNC_FOLDER_DATA_ERROR_RECHECK_MS = 15 * 60_000;
 
+/** The folder's job gave up. Its last run says so, for a sync request that waits for the folder. */
 const markFolderDegraded = async (folderId: string): Promise<void> => {
-  await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid`.catch((cause: Error) =>
-    log.error("Failed to mark a Mail folder as degraded", { folderId, error: cause.message }),
-  );
+  await sql
+    .begin(async (tx) => {
+      await tx`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${folderId}::uuid`;
+      await tx`
+        UPDATE mail.sync_runs
+        SET stats = stats || '{"gaveUp": true}'::jsonb
+        WHERE state = 'failed' AND id = (
+          SELECT run.id
+          FROM mail.sync_runs run
+          JOIN mail.folders folder ON folder.remote_resource_id = run.remote_resource_id
+          WHERE folder.id = ${folderId}::uuid AND run.stats ->> 'folderId' = ${folderId}
+          ORDER BY run.started_at DESC
+          LIMIT 1
+        )
+      `;
+    })
+    .catch((cause: Error) => log.error("Failed to mark a Mail folder as degraded", { folderId, error: cause.message }));
 };
 
 /** `backfill` marks a continuation that only imports older mail or reconciliation windows. */
@@ -3001,9 +3022,10 @@ export const enqueueFolderSync = async (folderId: string): Promise<void> => {
 
 /**
  * How far a sync requested at `since` has come, across the mailbox's synchronized folders or for
- * one of them. A folder has synced once a batch that started after the request committed with no
- * new mail or flag changes left to fetch; older mail may still be importing. It has failed once a
- * batch after the request failed and its job gave up, which leaves the folder degraded.
+ * one of them. A batch that started after the request saw every message delivered before it, and,
+ * with CONDSTORE, every flag change made before it. A folder has synced once Mail holds that
+ * state: its cursor reached the batch's highest UID and modification sequence. Older mail may
+ * still be importing. It has failed once its job gave up after a failed batch since the request.
  */
 export const requestedSyncProgress = async (params: {
   mailboxId: string;
@@ -3024,16 +3046,21 @@ export const requestedSyncProgress = async (params: {
             AND run.started_at >= ${params.since}::timestamptz
             AND run.stats ->> 'folderId' = f.id::text
             AND run.state = 'completed'
-            AND run.cursor_after ->> 'incrementalNextHigh' IS NULL
-            AND run.cursor_after ->> 'flagNextLow' IS NULL
+            AND run.cursor_after ->> 'uidValidity' = f.envelope_cursor ->> 'uidValidity'
+            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= (run.stats ->> 'statusHighUid')::bigint
+            AND (
+              run.stats ->> 'statusModseq' IS NULL
+              OR (f.envelope_cursor ->> 'highestModseq')::numeric >= (run.stats ->> 'statusModseq')::numeric
+            )
         ) AS synced,
-        f.sync_status = 'degraded' AND EXISTS (
+        EXISTS (
           SELECT 1
           FROM mail.sync_runs run
           WHERE run.remote_resource_id = f.remote_resource_id
             AND run.started_at >= ${params.since}::timestamptz
             AND run.stats ->> 'folderId' = f.id::text
             AND run.state = 'failed'
+            AND run.stats ->> 'gaveUp' = 'true'
         ) AS failed
       FROM mail.folders f
       JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id

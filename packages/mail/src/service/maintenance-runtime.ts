@@ -317,7 +317,7 @@ const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | n
   const [command] = await sql<
     (Pick<DbMaintenanceCommand, "id" | "mailbox_id" | "kind" | "target" | "attempt"> & {
       result: JsonRecord | string;
-      created_at: Date;
+      started_at: Date;
       expired: boolean;
     })[]
   >`
@@ -325,7 +325,7 @@ const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | n
     SET worker_heartbeat_at = now(), updated_at = now()
     WHERE id = ${commandId}::uuid AND state = 'executing' AND kind IN ('sync_mailbox', 'sync_folder')
     RETURNING
-      id, mailbox_id, kind, target, attempt, result, created_at,
+      id, mailbox_id, kind, target, attempt, result, started_at,
       started_at < now() - (${FOLDER_SYNC_REQUEST_MS}::int * interval '1 millisecond') AS expired
   `;
   if (!command) return null;
@@ -336,8 +336,10 @@ const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | n
     await finishMaintenanceCommand({ command, state: "failed", result, error: syncCommandFailure(unavailable.code, unavailable.message) });
     return { state: "failed", busyRetryAfterMs: null };
   }
-  // Mail delivered before the request is in once each folder synced after it.
-  const progress = await requestedSyncProgress({ mailboxId: command.mailbox_id, folderId, since: command.created_at });
+  // Mail delivered before the request is in once each folder synced after it. The request counts
+  // from this attempt, which queued the folder syncs: a retried command does not settle on runs
+  // of its earlier attempt.
+  const progress = await requestedSyncProgress({ mailboxId: command.mailbox_id, folderId, since: command.started_at });
   if (progress.synced === progress.folders) {
     await finishMaintenanceCommand({ command, state: "confirmed", result });
     return { state: "confirmed", busyRetryAfterMs: null };
