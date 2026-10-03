@@ -8,7 +8,7 @@ order: 20
 
 ## Find the conversation you need {icon="search"}
 
-Use **Search mailbox** for a quick search across the current mailbox. **Everything** is selected by default and includes synchronized message fields plus extracted attachment text. Use the search-in button to narrow the search to any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**.
+Use **Search mailbox** for a quick search across the current mailbox. **Everything** is selected by default and includes synchronized message fields plus extracted attachment text. Use the search-in button to narrow the search to any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**. When you enter several words, a message matches if each word appears somewhere in it, for example the sender's name and a word from the subject.
 
 Select **Search filters** when you need additional conditions such as dates, recipients, attachments, folders, tags, or collaboration state.
 
@@ -38,7 +38,7 @@ When extracted attachment text matches, the result names the attachment, shows a
 
 ## Use follow-up, assignment, and folders for different purposes {icon="layout-list"}
 
-The built-in **Follow-up** views show what should happen next. **Assignment** shows who owns it:
+The built-in **Follow-up** views show what should happen next. **Assignment** shows who owns it. Both leave out conversations that are only in Trash or Junk, such as spam your provider filed there or mail someone deleted; moving a conversation back shows it again with its next step:
 
 | Section | View | What it shows |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ The built-in **Follow-up** views show what should happen next. **Assignment** sh
 | Follow-up | Later | Conversations hidden until the selected time. The due time reveals them without changing their next step; new incoming mail reveals them immediately. |
 | Follow-up | Done | Conversations marked Done |
 | Assignment | Assigned to me | Conversations assigned to you |
-| Assignment | Unassigned | Conversations without an assignee |
+| Assignment | Unassigned | Conversations without an assignee, or whose assignee can no longer write in this mailbox |
 | Mail / More | All mail | Mail from every provider folder except Trash and Junk |
 | More | Recent activity | Recently changed conversations |
 | Mail | Scheduled | Messages waiting for future delivery |
@@ -56,7 +56,7 @@ Provider folders are a different layer. Moving a conversation to Archive, Trash,
 
 Use **Waiting for reply** when your team's next step depends on another person. Mail applies it after a human reply or reply-all is confirmed as sent, including replies synchronized from another email client. Use **Show later** when the next review depends on a date or time. Choose when the conversation should appear again. It stays under **Later**, outside active views, until that time unless new incoming mail arrives first.
 
-New incoming mail always changes the conversation to **Needs action** and removes it from **Later**. Sending a human reply or reply-all changes it to **Waiting for reply** only after delivery is confirmed. New messages, forwards, automatic replies, retries, and ambiguous delivery outcomes do not infer a new next step. In **Conversation details**, you only decide whether the conversation is **Done**. Clearing Done reopens it and Mail derives the next step from the latest verified message.
+New incoming mail always changes the conversation to **Needs action** and removes it from **Later**. Sending a human reply or reply-all changes it to **Waiting for reply** only after delivery is confirmed. A new message you write, in Cloud or another email client, starts a conversation in **Waiting for reply**. Forwards, automatic replies, retries, and ambiguous delivery outcomes do not infer a new next step. A reply scheduled for later counts only once it is sent: if new mail arrives first, the conversation moves to **Needs action** and keeps its place by the newest real message. The scheduled reply is still sent at its time unless you cancel it under **Scheduled**. In **Conversation details**, you only decide whether the conversation is **Done**. Clearing Done reopens it and Mail derives the next step from the latest verified message.
 
 Use **Move to folder** from the conversation actions or Mail commands to choose a destination with the keyboard, pointer, or touch. On desktop you can also drag a conversation row onto a selectable folder in the left navigation. Mail queues the move and synchronization confirms the provider result.
 

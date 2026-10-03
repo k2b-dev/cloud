@@ -11,6 +11,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
+import { refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
 import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
@@ -2481,6 +2482,15 @@ const finishOutbox = async (params: {
     if (["accepted", "sent_sync_pending", "sent", "reconciled_accepted"].includes(params.outboxState)) {
       await recordOutboundSentAt(tx, params.outbox.id);
     }
+    // A reply that waited for its send time joins its conversation's timeline once it is sent; a
+    // failed one leaves it.
+    const [link] = await tx<{ conversation_id: string }[]>`
+      SELECT link.conversation_id
+      FROM mail.outbox_submissions outbox
+      JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
+      WHERE outbox.id = ${params.outbox.id}::uuid
+    `;
+    if (link) await refreshConversationTimeline(tx, link.conversation_id);
     await tx`
       UPDATE mail.commands
       SET

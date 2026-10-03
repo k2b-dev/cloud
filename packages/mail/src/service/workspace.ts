@@ -27,6 +27,7 @@ import * as conversationSummaries from "./conversation-summary";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
 import { latestMailInvalidationCursor } from "./events";
+import { FOLLOW_UP_VIEWS } from "./follow-up-scope";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
 import * as mailboxes from "./mailboxes";
@@ -632,9 +633,10 @@ export const loadMailboxPageData = async (params: {
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
   const defaultAllMail = !scheduledMode && !searchExpression && !folderId && !activeView && !activeSavedView;
-  const excludedFolderIds = defaultAllMail
-    ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
-    : [];
+  const excludedFolderIds =
+    defaultAllMail || (!searchExpression && activeView && FOLLOW_UP_VIEWS.includes(activeView))
+      ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
+      : [];
   const [list, scheduledPageResult] = await Promise.all([
     scheduledMode
       ? Promise.resolve({ items: [], nextCursor: null, error: null })

@@ -62,7 +62,7 @@ Mail accepts at most 20 inputs, 500 steps, 20 nested step levels, 500 conditions
 
 ### `messageReceived`
 
-`messageReceived` starts once for a stable newly imported message. A message that another email client moves or copies to another folder, or a copy of a message the mailbox already holds, does not start it again. It exposes:
+`messageReceived` starts once for a stable newly imported message. It does not start for mail the provider delivers straight to Trash or Junk. A message that another email client moves or copies to another folder, or a copy of a message the mailbox already holds, does not start it again. It exposes:
 
 - `trigger.message`
 - `trigger.conversation`

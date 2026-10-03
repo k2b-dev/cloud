@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";
+import { refreshConversationTimeline } from "./conversation-timeline";
 import { enqueueMailInvalidation } from "./events";
 import { normalizeMailSubject } from "./message-threading";
 import type { OutboundDraftSnapshot } from "./outbound-mime";
@@ -46,12 +47,16 @@ const participantSummary = (snapshot: OutboundDraftSnapshot): string => {
   return [...participants.values()].slice(0, 20).join(", ");
 };
 
+/**
+ * A new message starts a conversation that waits for an answer: the team has nothing to do until
+ * someone replies. Until the message joins the timeline, the conversation dates from now rather
+ * than from a later send time.
+ */
 const ensureConversation = async (params: {
   db: SqlClient;
   mailboxId: string;
   conversationId: string | null;
   snapshot: OutboundDraftSnapshot;
-  internalDate: Date;
 }): Promise<string> => {
   if (params.conversationId) {
     const [conversation] = await params.db<{ id: string }[]>`
@@ -82,9 +87,9 @@ const ensureConversation = async (params: {
       ${params.mailboxId}::uuid,
       ${params.snapshot.subject},
       ${participantSummary(params.snapshot)},
-      ${params.internalDate},
-      ${params.internalDate},
-      'needs_action'
+      NULL,
+      now(),
+      'waiting'
     )
     RETURNING id
   `,
@@ -231,7 +236,6 @@ export const materializeOutboundMessage = async (params: {
     mailboxId: params.mailboxId,
     conversationId: params.conversationId,
     snapshot: params.snapshot,
-    internalDate: params.internalDate,
   });
   await params.db`
     INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
@@ -242,24 +246,15 @@ export const materializeOutboundMessage = async (params: {
       'outbox'
     )
   `;
-  if (params.conversationId) {
-    await params.db`
-      UPDATE mail.conversations
-      SET
-        subject = ${params.snapshot.subject},
-        participant_summary = ${participantSummary(params.snapshot)},
-        latest_outbound_at = GREATEST(COALESCE(latest_outbound_at, ${params.internalDate}), ${params.internalDate}),
-        latest_message_at = GREATEST(latest_message_at, ${params.internalDate}),
-        revision = revision + 1,
-        updated_at = now()
-      WHERE id = ${conversationId}::uuid
-    `;
-  }
   await params.db`
     UPDATE mail.outbox_submissions
     SET message_id = ${message.id}::uuid
     WHERE id = ${params.outboxId}::uuid
   `;
+  await refreshConversationTimeline(params.db, conversationId);
+  if (params.conversationId) {
+    await params.db`UPDATE mail.conversations SET revision = revision + 1, updated_at = now() WHERE id = ${conversationId}::uuid`;
+  }
   return { outboxId: params.outboxId, mailboxId: params.mailboxId, messageId: message.id, conversationId };
 };
 
@@ -368,64 +363,8 @@ export const removeUnsentOutboundMessage = async (db: SqlClient, outboxId: strin
     await db`DELETE FROM mail.conversations WHERE id = ${projection.conversation_id}::uuid`;
     return;
   }
-  await db`
-    WITH classified AS (
-      SELECT
-        message.id,
-        message.subject,
-        message.internal_date,
-        EXISTS (
-          SELECT 1
-          FROM mail.message_addresses sender
-          JOIN mail.sender_identities identity
-            ON identity.mailbox_id = conversation.mailbox_id
-           AND lower(identity.from_address) = sender.normalized_email
-          WHERE sender.message_id = message.id AND sender.role = 'from'
-        ) AS outbound
-      FROM mail.conversations conversation
-      JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
-      JOIN mail.message_contents message ON message.id = link.message_id
-      WHERE conversation.id = ${projection.conversation_id}::uuid
-    ),
-    timeline AS (
-      SELECT
-        MAX(internal_date) AS latest_message_at,
-        MAX(internal_date) FILTER (WHERE NOT outbound) AS latest_inbound_at,
-        MAX(internal_date) FILTER (WHERE outbound) AS latest_outbound_at
-      FROM classified
-    ),
-    latest AS (
-      SELECT id, subject, outbound
-      FROM classified
-      ORDER BY internal_date DESC, id DESC
-      LIMIT 1
-    ),
-    participant_labels AS (
-      SELECT DISTINCT ON (address.normalized_email)
-        address.normalized_email,
-        COALESCE(NULLIF(address.display_name, ''), address.email) AS label
-      FROM mail.message_addresses address
-      JOIN latest ON latest.id = address.message_id
-      WHERE (latest.outbound AND address.role IN ('to', 'cc', 'bcc'))
-         OR (NOT latest.outbound AND address.role = 'from')
-      ORDER BY address.normalized_email, address.position
-    ),
-    participants AS (
-      SELECT COALESCE(string_agg(label, ', ' ORDER BY label), '') AS summary
-      FROM participant_labels
-    )
-    UPDATE mail.conversations conversation
-    SET
-      subject = latest.subject,
-      participant_summary = participants.summary,
-      latest_message_at = timeline.latest_message_at,
-      latest_inbound_at = timeline.latest_inbound_at,
-      latest_outbound_at = timeline.latest_outbound_at,
-      revision = conversation.revision + 1,
-      updated_at = now()
-    FROM timeline, latest, participants
-    WHERE conversation.id = ${projection.conversation_id}::uuid
-  `;
+  await refreshConversationTimeline(db, projection.conversation_id);
+  await db`UPDATE mail.conversations SET revision = revision + 1, updated_at = now() WHERE id = ${projection.conversation_id}::uuid`;
 };
 
 /**

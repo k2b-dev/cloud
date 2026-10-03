@@ -342,6 +342,13 @@ const compileTextTerm = (term: Extract<MailSearchExpression, { type: "text" }>, 
   if (term.field === "tag") return tagMatch(query, term.match, conversationId);
   if (term.field === "keyword") return keywordMatch(query, term.match);
 
+  // Several words may sit in different fields, such as a sender's name and a subject word.
+  const words = term.match === "words" ? wordTokens(query) : [];
+  if (words.length > 1) {
+    const parts = words.map((word) => compileTextTerm({ ...term, query: word }, conversationId));
+    return parts.slice(1).reduce((combined, part) => sql`(${combined} AND ${part})`, parts[0]!);
+  }
+
   const body =
     term.match === "words" || term.match === "phrase"
       ? combineOr([bodyChunkMatch(query, term.match), attachmentWordOrPhraseMatch(query, term.match)])
@@ -507,6 +514,14 @@ const findIndexedSeed = (expression: MailSearchExpression): IndexedSeed | null =
 
 const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment => {
   const query = seed.query.trim();
+  // Each word may match a different field, so the seed holds the messages every word matches somewhere.
+  const words = wordTokens(query);
+  if (words.length > 1) {
+    const parts = words.map(
+      (word) => sql`SELECT seed_word.message_id FROM (${compileAnyWordsSeed({ ...seed, query: word }, mailboxId)}) seed_word`,
+    );
+    return parts.slice(1).reduce((combined, part) => sql`${combined} INTERSECT ${part}`, parts[0]!);
+  }
   const bodyTokenQueries = wordTokens(query).map(
     (token) => sql`
       SELECT seed_chunk.message_id

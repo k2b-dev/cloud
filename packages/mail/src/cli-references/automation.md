@@ -256,7 +256,7 @@ steps:
           status: waiting
 ```
 
-`messageReceived` is emitted once for a stable inbound message imported by live incremental sync. Historical backfill does not emit it. Activation grants the active version mailbox-owned automation authority. Deactivation stops new automatic runs without changing existing versions or runs.
+`messageReceived` is emitted once for a stable inbound message imported by live incremental sync. Historical backfill does not emit it, and neither does mail the provider delivers straight to Trash or Junk. Activation grants the active version mailbox-owned automation authority. Deactivation stops new automatic runs without changing existing versions or runs.
 
 Every active Mail workflow needs a `messageReceived` or `schedule` trigger. An empty `triggers: {}` is invalid.
 

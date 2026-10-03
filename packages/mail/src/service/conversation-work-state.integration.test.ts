@@ -285,6 +285,25 @@ suite("mail conversation work-state projection", () => {
     expect(afterInbound).toEqual({ work_status: "needs_action", snoozed_until: null });
   }, 30_000);
 
+  test("starts a conversation with a message sent from another client as waiting", async () => {
+    const message = envelope({
+      uid: 6,
+      messageId: `<work-state-announcement-${suffix}@example.test>`,
+      inReplyTo: null,
+      from: "support@example.test",
+      to: "customer@example.test",
+      date: new Date("2026-07-22T09:00:00.000Z"),
+    });
+    const messageId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message });
+    const [conversation] = await sql<{ work_status: string }[]>`
+      SELECT conversation.work_status
+      FROM mail.conversation_messages link
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      WHERE link.message_id = ${messageId}::uuid
+    `;
+    expect(conversation?.work_status).toBe("waiting");
+  }, 30_000);
+
   test("releases due snoozes once without changing their work state", async () => {
     const [conversation] = await sql<{ id: string; revision: number }[]>`
       INSERT INTO mail.conversations (short_id,

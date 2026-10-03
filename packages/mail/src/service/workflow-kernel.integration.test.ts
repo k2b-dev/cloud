@@ -542,6 +542,23 @@ steps:
       message: envelope({ uid: 7004, providerMessageId: `workflow-outbound-${suffix}`, from: "support@example.test" }),
       captureWorkflowTriggers: true,
     });
+    // Spam the provider files straight into Junk is not received mail for automations.
+    const [junk] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${remoteResourceId}::uuid, ${`workflow-junk-${suffix}`}, 'Junk', 'junk', 'current')
+      RETURNING id
+    `;
+    await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: junk!.id,
+      message: {
+        ...envelope({ uid: 7005, providerMessageId: `workflow-spam-${suffix}` }),
+        remoteRef: { folderStableKey: `workflow-junk-${suffix}`, uidValidity: "1", uid: "7005", modseq: "7005" },
+      },
+      captureWorkflowTriggers: true,
+    });
     expect((await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId })).dispatched).toBe(2);
 
     const persisted = await sql<{ target_workflow_id: string; events: number; runs: number }[]>`
