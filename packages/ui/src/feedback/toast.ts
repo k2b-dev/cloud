@@ -111,14 +111,43 @@ const pointerHolds = new Set<HTMLElement>();
 const focusHolds = new Set<HTMLElement>();
 const railHeld = (): boolean => pointerHolds.size + focusHolds.size > 0;
 
-const setHold = (holds: Set<HTMLElement>, card: HTMLElement, held: boolean): void => {
+/**
+ * Firefox and WebKit fire no focusout when a focused element leaves the document, and WebKit no pointerleave when
+ * the hovered element inside a card is removed, as when custom content replaces a button or the rail's scope
+ * unmounts. While anything holds the rail, a change to the document or the pointer moving onto something else
+ * drops the holds that no longer apply, so one stale hold never freezes the rail.
+ */
+const releaseStaleHolds = (pointerTarget?: Node | null): void => {
+  for (const card of Array.from(pointerHolds))
+    if (!card.isConnected || (pointerTarget !== undefined && !card.contains(pointerTarget))) setHold(pointerHolds, card, false);
+  for (const card of Array.from(focusHolds))
+    if (!card.isConnected || !card.contains(card.ownerDocument.activeElement)) setHold(focusHolds, card, false);
+};
+
+const watchStaleHolds = (doc: Document): (() => void) => {
+  const observer = new MutationObserver(() => releaseStaleHolds());
+  observer.observe(doc, { childList: true, subtree: true });
+  const onPointerOver = (event: Event) => releaseStaleHolds(event.target instanceof Node ? event.target : null);
+  doc.addEventListener("pointerover", onPointerOver, true);
+  return () => {
+    observer.disconnect();
+    doc.removeEventListener("pointerover", onPointerOver, true);
+  };
+};
+let unwatchStaleHolds: (() => void) | null = null;
+
+function setHold(holds: Set<HTMLElement>, card: HTMLElement, held: boolean): void {
   const wasHeld = railHeld();
   if (held) holds.add(card);
   else holds.delete(card);
-  if (railHeld() !== wasHeld) for (const item of Array.from(liveToasts)) (wasHeld ? item.resume : item.pause)();
+  if (railHeld() !== wasHeld) {
+    for (const item of Array.from(liveToasts)) (wasHeld ? item.resume : item.pause)();
+    unwatchStaleHolds?.();
+    unwatchStaleHolds = wasHeld ? null : watchStaleHolds(card.ownerDocument);
+  }
   // A released card may be the one the rail limit had to wait for.
   if (!held) enforceCap();
-};
+}
 
 const VISUALLY_HIDDEN =
   "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;";
@@ -464,27 +493,31 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   renderProgress();
 
   let actionElement: HTMLAnchorElement | HTMLButtonElement | null = null;
-  const renderAction = (action: ToastAction | null | undefined) => {
-    actionElement?.remove();
-    actionElement = null;
-    currentAction = action ?? null;
-    if (!action) return;
+  const createAction = (action: ToastAction): HTMLAnchorElement | HTMLButtonElement => {
+    let element: HTMLAnchorElement | HTMLButtonElement;
     if ("href" in action) {
-      const link = doc.createElement("a");
-      link.href = action.href;
-      actionElement = link;
+      element = doc.createElement("a");
+      element.href = action.href;
     } else {
-      const button = doc.createElement("button");
-      button.type = "button";
-      actionElement = button;
+      element = doc.createElement("button");
+      element.type = "button";
     }
-    actionElement.className = "k2b-toast__action";
-    actionElement.textContent = action.label;
-    actionElement.addEventListener("click", () => {
+    element.className = "k2b-toast__action";
+    element.textContent = action.label;
+    element.addEventListener("click", () => {
       if ("onClick" in action) action.onClick();
       else dismiss();
     });
-    contentElement.appendChild(actionElement);
+    return element;
+  };
+  const renderAction = (action: ToastAction | null | undefined) => {
+    const previous = actionElement;
+    currentAction = action ?? null;
+    actionElement = action ? createAction(action) : null;
+    if (actionElement) contentElement.appendChild(actionElement);
+    // The keyboard stays in the toast, on the new action or the close button, instead of falling to the page.
+    if (previous?.contains(doc.activeElement)) (actionElement ?? closeButton).focus({ preventScroll: true });
+    previous?.remove();
   };
   renderAction(options?.action);
 
@@ -517,6 +550,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     const halfway =
       typeof currentProgress === "number" && currentProgress >= 0.5 && !(typeof previousProgress === "number" && previousProgress >= 0.5);
     if ((!ticking || halfway || variantChanged) && spoken() !== lastAnnouncement) say();
+    // Finished progress or a new duration can make this toast one the rail limit removes.
+    enforceCap();
   };
 
   closeButton.addEventListener("click", () => dismiss());

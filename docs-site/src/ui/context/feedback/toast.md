@@ -54,11 +54,11 @@ Without a `duration`, a toast stays long enough to read and reach:
 - an error or any toast with an action: at least 8 seconds;
 - an error longer than 120 characters, and a toast with progress: until it is closed.
 
-An explicit `duration` wins. Every toast's timer pauses while the pointer is over any toast or custom slot in the rail, while one of them holds keyboard focus, and while the browser tab is hidden, so a toast never slides away from under the pointer or focus because a neighbour expired.
+An explicit `duration` wins. Every toast's timer pauses while the pointer is over any toast or custom slot in the rail, while one of them holds keyboard focus, and while the browser tab is hidden, so a toast never slides away from under the pointer or focus because a neighbour expired. The pause ends when the pointer moves elsewhere or focus leaves the rail, also when the hovered or focused control, or the whole rail, is removed from the page.
 
 ## Stacking
 
-At most three toasts are visible, two on a phone. When another arrives, older timed success and info toasts leave first, then older errors and toasts that stay until closed (`duration: 0`, or a long error). Running progress, the newest toast, and a toast under the pointer or with keyboard focus stay; while only such toasts remain, the rail shows more than the limit until the pointer or focus leaves. A closing toast collapses its space, so its neighbours glide instead of jumping; with reduced motion they move at once.
+At most three toasts are visible, two on a phone. When another arrives, older timed success and info toasts leave first, then older errors and toasts that stay until closed (`duration: 0`, or a long error). Running progress, the newest toast, and a toast under the pointer or with keyboard focus stay; while only such toasts remain, the rail shows more than the limit until the pointer or focus leaves. The limit applies again when an update ends a toast's progress or changes its duration. A closing toast collapses its space, so its neighbours glide instead of jumping; with reduced motion they move at once.
 
 ## Update or dismiss
 
@@ -134,7 +134,7 @@ Do not place a destructive action in a toast. Ask for confirmation before the op
 
 The rail is a region named "Notifications" ("Benachrichtigungen"). Two persistent, empty live regions beside it announce toasts: default and success toasts politely, errors assertively with the localized word "Error:" ("Fehler:") before the message. The announcement holds the title and the message, never the action label. A progress toast is announced when it starts, when it passes half way, and when it ends, each time only if its message changed; it is not announced at every update. A change to the error variant is announced even when the text stays the same. The regions are not atomic, so each announcement is read once on its own.
 
-A toast closes only through its close button, through Escape while it has focus, through its link action, or when its time runs out. Clicking the text does not close it, so an error message can be selected and copied. When a focused toast closes, focus moves to the next toast or back to where it was before the toast appeared.
+A toast closes only through its close button, through Escape while it has focus, through its link action, or when its time runs out. Clicking the text does not close it, so an error message can be selected and copied. When a focused toast closes, focus moves to the next toast or back to where it was before the toast appeared. When an update replaces or removes the focused action, focus stays in the toast, on the new action or on the close button.
 
 On a coarse pointer, such as a phone, the close button and the action accept taps in an invisible area at least 44 px (2.75rem) tall and wide, the same touch target as buttons; neither reaches the other or a neighboring toast.
 
