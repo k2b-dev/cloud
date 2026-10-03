@@ -24,7 +24,7 @@ import {
 import { descriptionPreview } from "@/presentation/description-preview";
 import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
@@ -144,6 +144,7 @@ const shiftTotals = (bucket: KanbanBucketInitial, delta: number) => ({
 export default function KanbanBoard(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   // The route mounts a new board for every snapshot, so one board keeps one filter for its lifetime.
   const filter = props.filter;
   const filtered = hasActiveFilters(filter);
@@ -466,9 +467,9 @@ export default function KanbanBoard(props: Props) {
 
   /** Reconciles after a confirmed write; a failed refresh says the change was saved and retries the refresh. */
   const refreshBoard = (failure: string): void =>
-    void invalidateSpacesData(["view"]).catch(() => toastErrorWithRetry(failure, t.retry, () => refreshBoard(failure)));
+    void invalidateSpacesData(["view"]).catch(() => retryToast(failure, t.retry, () => refreshBoard(failure)));
   const refreshWorkspace = (failure: string): void =>
-    void invalidateSpacesData().catch(() => toastErrorWithRetry(failure, t.retry, () => refreshWorkspace(failure)));
+    void invalidateSpacesData().catch(() => retryToast(failure, t.retry, () => refreshWorkspace(failure)));
 
   // ---- Column order: people who may change the statuses reorder the board for everyone. ----
   const [columnAnnouncement, setColumnAnnouncement] = createSignal("");
@@ -783,12 +784,11 @@ export default function KanbanBoard(props: Props) {
       const refresh = (): void =>
         void invalidateSpacesData()
           .then(refocus)
-          .catch(() => toastErrorWithRetry(t.itemRefreshFailed, t.retry, refresh));
+          .catch(() => retryToast(t.itemRefreshFailed, t.retry, refresh));
       refresh();
     },
     // Retry starts from the card as the board shows it now, so it cannot drop an assignee added in the meantime.
-    onError: (error, context) =>
-      toastErrorWithRetry(error.message, t.retry, () => context && assignCardMutation.mutate(currentCard(context.item))),
+    onError: (error, context) => retryToast(error.message, t.retry, () => context && assignCardMutation.mutate(currentCard(context.item))),
   });
 
   const completeCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
@@ -806,7 +806,7 @@ export default function KanbanBoard(props: Props) {
       refreshWorkspace(t.listRefreshFailed);
     },
     onError: (error, context) =>
-      toastErrorWithRetry(error.message, t.retry, () => context && completeCardMutation.mutate(currentCard(context.item))),
+      retryToast(error.message, t.retry, () => context && completeCardMutation.mutate(currentCard(context.item))),
   });
 
   const [claimingItemId, setClaimingItemId] = createSignal<string | null>(null);

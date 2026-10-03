@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, mock, spyOn, test } from "bun:test";
 import type { ToastOptions } from "@k2b/ui";
-import { createComponent } from "solid-js";
+import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { SpaceItem } from "../src/contracts";
@@ -173,6 +173,33 @@ describe("Spaces feedback channels", () => {
     successes.mockRestore();
     errors.mockRestore();
     assign.mockRestore();
+  });
+
+  test("a Retry toast closes with its component, and a failure after it is gone shows none", async () => {
+    const { toast } = await import("@k2b/ui");
+    const notices: Array<{ dismissed: boolean }> = [];
+    const errors = spyOn(toast, "error").mockImplementation(() => {
+      const notice = { dismissed: false };
+      notices.push(notice);
+      return {
+        dismiss: () => {
+          notice.dismissed = true;
+        },
+        update: () => {},
+      };
+    });
+    const { createRetryToasts } = await import("../src/frontend/lib/feedback");
+    try {
+      const [retryToast, dispose] = createRoot((dispose) => [createRetryToasts(), dispose] as const);
+      retryToast("The list could not be refreshed", "Retry", () => {});
+      expect(notices).toEqual([{ dismissed: false }]);
+      dispose();
+      expect(notices).toEqual([{ dismissed: true }]);
+      retryToast("The list could not be refreshed", "Retry", () => {});
+      expect(notices).toHaveLength(1);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   test("a rejected comment stays in the composer with the reason under it", async () => {

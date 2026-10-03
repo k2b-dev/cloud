@@ -5,7 +5,7 @@ import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemLink, SpaceItemLinkPreview, SpaceItemResourceReferenceInput } from "@/contracts";
 import { linkHostname, parseGitHubLink } from "@/lib/link-targets";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
@@ -60,6 +60,7 @@ function LinkFavicon(props: { url: string }) {
  */
 export default function ItemLinksSection(props: Props) {
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const [filled, setFilled] = createSignal<SpaceItemLink[] | null>(null);
   const links = () => filled() ?? props.links;
 
@@ -100,7 +101,7 @@ export default function ItemLinksSection(props: Props) {
     },
     onSuccess: () => props.onChanged(),
     // The picker has closed, so Retry links the captured choice to the same item.
-    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && linkReference.mutate(context.intent)),
+    onError: (error, context) => retryToast(error.message, t.retry, () => context && linkReference.mutate(context.intent)),
   });
 
   type AddLinkIntent = { itemId: string; link: { url: string; label: string | null } };
@@ -118,7 +119,7 @@ export default function ItemLinksSection(props: Props) {
       props.onChanged();
     },
     // The form has closed, so Retry adds the captured link to the same item.
-    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && addLink.mutate(context.intent)),
+    onError: (error, context) => retryToast(error.message, t.retry, () => context && addLink.mutate(context.intent)),
   });
 
   const removeLink = mutations.create<void, string>({

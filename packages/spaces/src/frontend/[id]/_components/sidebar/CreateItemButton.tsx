@@ -4,7 +4,7 @@ import { AppWorkspace, Button, dialogCore, toast } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceTag } from "@/contracts";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -24,6 +24,7 @@ type Props = {
 
 export function createItemController(props: Props) {
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const defaultType = () => props.defaultType ?? "task";
   const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
   const [dialogPending, setDialogPending] = createSignal(false);
@@ -53,10 +54,10 @@ export function createItemController(props: Props) {
       if (context?.intent.returnTo) window.location.assign(context.intent.returnTo);
     },
     // The form has closed, so Retry sends the captured entry again instead of losing it.
-    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && mutation.mutate(context.intent)),
+    onError: (err, context) => retryToast(err.message, t.retry, () => context && mutation.mutate(context.intent)),
   });
   const refreshWorkspace = (): void =>
-    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.workspaceRefreshAfterCreateFailed, t.retry, refreshWorkspace));
+    void invalidateSpacesData().catch(() => retryToast(t.workspaceRefreshAfterCreateFailed, t.retry, refreshWorkspace));
   const createItem = async (options: { type?: ItemType; references?: SpaceItemResourceReferenceInput[]; returnTo?: string } = {}) => {
     if (dialogPending() || mutation.loading()) return;
     setDialogPending(true);

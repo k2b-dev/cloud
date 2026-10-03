@@ -38,7 +38,7 @@ import type {
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
@@ -160,6 +160,7 @@ function AssigneesSection(props: {
 export default function ItemDetailPanel(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const priorityOptions = [
     { value: "urgent", label: t.urgent, icon: "ti ti-alert-circle", color: "#ef4444" },
     { value: "high", label: t.high, icon: "ti ti-arrow-up", color: "#f97316" },
@@ -167,7 +168,7 @@ export default function ItemDetailPanel(props: Props) {
     { value: "low", label: t.low, icon: "ti ti-arrow-down", color: "#3b82f6" },
   ] as const;
   const reconcileAfterWrite = (): void =>
-    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.itemRefreshFailed, t.retry, reconcileAfterWrite));
+    void invalidateSpacesData().catch(() => retryToast(t.itemRefreshFailed, t.retry, reconcileAfterWrite));
 
   const unlinkReference = mutations.create<void, { type: string; id: string }>({
     mutation: async (ref, { abortSignal }) => {
@@ -313,7 +314,7 @@ export default function ItemDetailPanel(props: Props) {
       }),
   });
   const refreshComments = (): void =>
-    void commentsQuery.invalidate().catch(() => toastErrorWithRetry(t.commentRefreshAfterSaveFailed, t.retry, refreshComments));
+    void commentsQuery.invalidate().catch(() => retryToast(t.commentRefreshAfterSaveFailed, t.retry, refreshComments));
   const commentsPage = () => {
     const pages = commentsQuery.pages();
     const first = pages[0] ?? props.initialCommentsPage;
@@ -428,7 +429,7 @@ export default function ItemDetailPanel(props: Props) {
       return completed;
     },
     onSuccess: () => reconcileAfterWrite(),
-    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && completeMutation.mutate(context.intent)),
+    onError: (err, context) => retryToast(err.message, t.retry, () => context && completeMutation.mutate(context.intent)),
   });
 
   const claimMutation = mutations.create<string | null, "claim" | "release" | "take-over">({
@@ -520,7 +521,7 @@ export default function ItemDetailPanel(props: Props) {
       if (context?.intent.itemId === props.item.id) requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
       else reconcileAfterWrite();
     },
-    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && deleteMutation.mutate(context.intent)),
+    onError: (err, context) => retryToast(err.message, t.retry, () => context && deleteMutation.mutate(context.intent)),
   });
 
   const transferMutation = mutations.create<WormholeTransferResult, string>({
@@ -567,7 +568,7 @@ export default function ItemDetailPanel(props: Props) {
     onBefore: (intent) => ({ intent }),
     mutation: saveItemFormData,
     onSuccess: () => reconcileAfterWrite(),
-    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && editItemMutation.mutate(context.intent)),
+    onError: (err, context) => retryToast(err.message, t.retry, () => context && editItemMutation.mutate(context.intent)),
   });
   let editPromptPending = false;
   const handleEdit = async () => {

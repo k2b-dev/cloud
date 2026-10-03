@@ -18,18 +18,30 @@ Use a toast after a non-blocking action when the user can continue without respo
 
 Toasts confirm only what the user cannot see. A toast for every visible change teaches people to ignore the rail, including its errors. An error dialog for a one-click action interrupts more than the failure deserves: the toast names it and offers the retry.
 
-Retry repeats the failed request with the intent captured when it started: the target, such as the item or Space ID, the values, and any follow-up such as a return address. It then still applies to the same object after the user has moved on. Offer it when repeating cannot do harm, such as setting a value, deleting, refreshing, or a request with an idempotency key, and when the input would otherwise be lost because its form or picker has already closed. A create without an idempotency key can then create the object twice if the first request reached the server, the same risk as entering it again. When a change was saved but the view could not refresh, say that the change was saved and let Retry refresh the view, not repeat the change. Dismiss the error toast when its Retry starts, so a second failure shows a fresh one:
+Retry repeats the failed request with the intent captured when it started: the target, such as the item or Space ID, the values, and any follow-up such as a return address. It then still applies to the same object after the user has moved on. Offer it when repeating cannot do harm, such as setting a value, deleting, refreshing, or a request with an idempotency key, and when the input would otherwise be lost because its form or picker has already closed. A create without an idempotency key can then create the object twice if the first request reached the server, the same risk as entering it again. When a change was saved but the view could not refresh, say that the change was saved and let Retry refresh the view as it is now, not repeat the change or its navigation. Dismiss the error toast when its Retry starts, so a second failure shows a fresh one. A toast outlives the component that showed it, so dismiss its Retry toasts when that component is cleaned up and show none for a failure that arrives later; a late click then cannot act on a view that is gone:
 
 ```ts
-const notice = toast.error("Could not complete the task", {
-  action: {
-    label: "Retry",
-    onClick: () => {
-      notice.dismiss();
-      void completeTask({ taskId, completed: true });
-    },
-  },
+// In the component's setup:
+const notices = new Set<ToastHandle>();
+let disposed = false;
+onCleanup(() => {
+  disposed = true;
+  for (const notice of notices) notice.dismiss();
 });
+
+const reportFailedCompletion = (taskId: string) => {
+  if (disposed) return;
+  const notice = toast.error("Could not complete the task", {
+    action: {
+      label: "Retry",
+      onClick: () => {
+        notice.dismiss();
+        void completeTask({ taskId, completed: true });
+      },
+    },
+  });
+  notices.add(notice);
+};
 ```
 
 A toast over a modal dialog is not announced and cannot be reached until the dialog closes. Show feedback for work inside a dialog in the dialog itself, and keep a failure that prevents the current task visible in the page.

@@ -5,7 +5,7 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid
 import { apiClient } from "@/api/client";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
@@ -45,6 +45,7 @@ const formatEstimate = (minutes: number) => {
  */
 export default function ItemRow(props: ItemRowProps) {
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const [isSelectedLocal, setIsSelectedLocal] = createSignal(props.isSelected);
 
   createEffect(() => {
@@ -73,9 +74,9 @@ export default function ItemRow(props: ItemRowProps) {
     },
     // The row shows the new state itself; only a failure needs a message.
     onSuccess: () => refreshList(),
-    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && completeMutation.mutate(context.completed)),
+    onError: (err, context) => retryToast(err.message, t.retry, () => context && completeMutation.mutate(context.completed)),
   });
-  const refreshList = (): void => void invalidateSpacesData().catch(() => toastErrorWithRetry(t.listRefreshFailed, t.retry, refreshList));
+  const refreshList = (): void => void invalidateSpacesData().catch(() => retryToast(t.listRefreshFailed, t.retry, refreshList));
   const isCompleted = () => !!props.item.completedAt;
   const completionBlocked = () => !isCompleted() && props.item.activeBlockerCount > 0;
   const isEvent = () => !!(props.item.startsAt && props.item.endsAt);

@@ -4,7 +4,7 @@ import { Avatar, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast }
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
-import { toastErrorWithRetry } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
@@ -28,6 +28,7 @@ type Props = {
 
 export default function CommentsSection(props: Props) {
   const t = useSpaceMessages();
+  const retryToast = createRetryToasts();
   const createCommentMutation = mutations.create({
     mutation: async (content: string) => {
       const res = await apiClient[":id"].items[":itemId"].comments.$post({
@@ -70,7 +71,7 @@ export default function CommentsSection(props: Props) {
     },
     onSuccess: () => props.onUpdate(),
     // The edit dialog has closed, so Retry saves the captured text again instead of losing it.
-    onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && updateCommentMutation.mutate(context.edit)),
+    onError: (err, context) => retryToast(err.message, t.retry, () => context && updateCommentMutation.mutate(context.edit)),
   });
   const editComment = async (comment: SpaceComment) => {
     const values = await prompts.form({
