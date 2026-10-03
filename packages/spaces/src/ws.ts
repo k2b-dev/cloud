@@ -17,8 +17,9 @@ const MAX_PENDING_MESSAGES = 8;
 /**
  * Close code for a thrown lookup (session, access, public ID, or stream
  * cursor), which is an infrastructure failure rather than an access decision.
- * The live client reconnects on 1012 with backoff and the new subscription
- * checks access again; 1011 would end live updates and reload the page.
+ * 1012 (service restart) marks it as temporary, like the gateway does for an
+ * upstream restart. The live client reconnects with backoff and the new
+ * subscription checks access again.
  */
 const RETRYABLE_CLOSE_CODE = 1012;
 

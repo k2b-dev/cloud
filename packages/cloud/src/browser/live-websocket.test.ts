@@ -242,7 +242,31 @@ describe("createLiveWebSocket", () => {
     connection.dispose();
   });
 
-  test("only resets reconnect backoff after a valid message", () => {
+  test("keeps backing off while the server answers and then fails", () => {
+    installBrowser();
+    const connection = createLiveWebSocket<{ type: "error" }>({
+      url: "/api/example/ws",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: (raw) => JSON.parse(raw) as { type: "error" },
+      onMessage: () => undefined,
+      reconnect: { baseDelayMs: 10, maxDelayMs: 100, jitterMs: 0 },
+    });
+
+    connection.connect();
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ type: "error", payload: { code: "internal_error" } });
+      now += 5;
+      socket.close(1011, "internal_error");
+      runNextTimer();
+    }
+
+    expect(timerDelays.filter((delay) => delay !== 10_000)).toEqual([10, 20, 40, 80, 100, 100]);
+    connection.dispose();
+  });
+
+  test("starts the backoff over once a connection stayed up for the longest delay after its first message", () => {
     installBrowser();
     const connection = createLiveWebSocket<{ type: "ready" }>({
       url: "/api/example/ws",
@@ -257,15 +281,25 @@ describe("createLiveWebSocket", () => {
     FakeWebSocket.instances[0]!.close(1012);
     expect(timerDelays.at(-1)).toBe(10);
 
+    // Open for a long time, but the server never answered.
     runNextTimer();
     FakeWebSocket.instances[1]!.open();
+    now += 1_000;
     FakeWebSocket.instances[1]!.close(1012);
     expect(timerDelays.at(-1)).toBe(20);
 
     runNextTimer();
     FakeWebSocket.instances[2]!.open();
     FakeWebSocket.instances[2]!.message({ type: "ready" });
+    now += 99;
     FakeWebSocket.instances[2]!.close(1012);
+    expect(timerDelays.at(-1)).toBe(40);
+
+    runNextTimer();
+    FakeWebSocket.instances[3]!.open();
+    FakeWebSocket.instances[3]!.message({ type: "ready" });
+    now += 100;
+    FakeWebSocket.instances[3]!.close(1012);
     expect(timerDelays.at(-1)).toBe(10);
     connection.dispose();
   });
@@ -313,6 +347,58 @@ describe("createLiveWebSocket", () => {
     expect(errors).toEqual(["access_denied"]);
     expect(FakeWebSocket.instances).toHaveLength(1);
     expect(timers.filter(Boolean)).toHaveLength(0);
+    connection.dispose();
+  });
+
+  test.each([1011, 1012, 1013])("reconnects with backoff after close code %i by default", (code) => {
+    installBrowser();
+    const errors: string[] = [];
+    const statuses: string[] = [];
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+      onStatus: (status) => statuses.push(status),
+      onFatal: (error) => errors.push(error.code),
+    });
+
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    FakeWebSocket.instances[0]!.close(code, "temporarily_unavailable");
+    expect(statuses.at(-1)).toBe("reconnecting");
+    runNextTimer();
+
+    expect(errors).toEqual([]);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    connection.dispose();
+  });
+
+  test("tells a ready handler which cursor the current connection resumed from", () => {
+    installBrowser();
+    const resumedFrom: Array<string | null> = [];
+    const connection = createLiveWebSocket<{ type: "ready" | "event"; cursor: string }>({
+      url: "/api/example/ws",
+      subscribe: (cursor) => ({ type: "subscribe", payload: { fromCursor: cursor } }),
+      parse: (raw) => JSON.parse(raw) as { type: "ready" | "event"; cursor: string },
+      onMessage: (message, controls) => {
+        if (message.type === "ready") resumedFrom.push(controls.subscribedCursor());
+        else controls.markApplied(message.cursor);
+      },
+    });
+
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    FakeWebSocket.instances[0]!.message({ type: "ready", cursor: "5-0" });
+    FakeWebSocket.instances[0]!.message({ type: "event", cursor: "5-1" });
+    // The subscribed cursor stays fixed for the connection while events advance the applied cursor.
+    FakeWebSocket.instances[0]!.message({ type: "ready", cursor: "5-1" });
+    document.setVisibility("hidden");
+    document.setVisibility("visible");
+    FakeWebSocket.instances[1]!.open();
+    FakeWebSocket.instances[1]!.message({ type: "ready", cursor: "5-1" });
+
+    expect(resumedFrom).toEqual([null, null, "5-1"]);
     connection.dispose();
   });
 

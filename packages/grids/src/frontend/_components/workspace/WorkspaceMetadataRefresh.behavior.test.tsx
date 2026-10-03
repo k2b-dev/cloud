@@ -174,3 +174,113 @@ domTest("revocation hides SSR content and closes resource dialogs immediately", 
     dom.cleanup();
   }
 });
+
+/** Waits for an outcome of timers (debounce, retry backoff, toast exit) instead of guessing their total duration. */
+const until = async (condition: () => boolean, timeoutMs = 5_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("The expected state did not occur in time");
+    await Bun.sleep(20);
+  }
+};
+
+domTest("a failed check is retried, and a lasting failure informs in a toast without moving the workspace", async () => {
+  const dom = createDomTestHarness();
+  const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
+  const initial = { revision: "one", resources: { "table:TABLE1": "one" } };
+  let failuresLeft = 2;
+  let requests = 0;
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () => {
+        requests++;
+        if (failuresLeft > 0) {
+          failuresLeft--;
+          return new Response("Bad gateway", { status: 502 });
+        }
+        return Response.json({ ...initial, canWrite: true, canAdmin: true });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const reloadAction = () =>
+    Array.from(dom.document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Reload" && !dom.root.contains(button),
+    );
+  const dispose = render(
+    () =>
+      createComponent(WorkspaceMetadataRefresh, {
+        baseId: "BASE01",
+        initialCursor: null,
+        revision: initial,
+        activeKeys: ["table:TABLE1"],
+        canWrite: true,
+        canAdmin: true,
+      }),
+    dom.root,
+  );
+  try {
+    // The tab returns while the network is still coming back.
+    callbacks.onReady?.(null);
+    await until(() => requests === 3);
+    expect(reloadAction()).toBeUndefined();
+
+    failuresLeft = Number.POSITIVE_INFINITY;
+    callbacks.onEvent?.("s6t.test.1");
+    await until(() => reloadAction() !== undefined);
+    expect(requests).toBe(6);
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+
+    failuresLeft = 0;
+    callbacks.onEvent?.("s6t.test.2");
+    await until(() => reloadAction() === undefined);
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});
+
+domTest("after live updates end, a successful check keeps the toast", async () => {
+  const dom = createDomTestHarness();
+  const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
+  const initial = { revision: "one", resources: { "table:TABLE1": "one" } };
+  let requests = 0;
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () => {
+        requests++;
+        return Response.json({ ...initial, canWrite: true, canAdmin: true });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const reloadAction = () =>
+    Array.from(dom.document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Reload" && !dom.root.contains(button),
+    );
+  const dispose = render(
+    () =>
+      createComponent(WorkspaceMetadataRefresh, {
+        baseId: "BASE01",
+        initialCursor: null,
+        revision: initial,
+        activeKeys: ["table:TABLE1"],
+        canWrite: true,
+        canAdmin: true,
+      }),
+    dom.root,
+  );
+  try {
+    // The server closed the socket for good, for example after an invalid message.
+    callbacks.onFatal?.({ code: "invalid_message", message: "Invalid" });
+    await until(() => requests === 1);
+    await Bun.sleep(300);
+    expect(reloadAction()).toBeDefined();
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});

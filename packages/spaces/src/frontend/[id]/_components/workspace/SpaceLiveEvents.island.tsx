@@ -1,7 +1,8 @@
 import { createLiveWebSocket } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
-import { Button, NoticeCard } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { type DateContext, dates } from "@k2b/stdlib";
+import { type ToastHandle, toast } from "@k2b/ui";
+import { onCleanup, onMount } from "solid-js";
 import {
   parseSpaceLiveServerMessage,
   SPACE_LIVE_WS_TYPE,
@@ -14,16 +15,23 @@ import { createSpacesLiveCursorQueue, invalidateSpacesData } from "./workspace-e
 type Props = {
   spaceId: string;
   initialCursor: string | null;
+  /** The day the SSR snapshot's deadline views were computed for. */
+  snapshotDay: string;
+  dateConfig?: DateContext;
 };
 
 export default function SpaceLiveEvents(props: Props) {
   const t = useSpaceMessages();
-  const [unavailable, setUnavailable] = createSignal(false);
   onMount(() => {
-    let disposed = false;
+    const lifecycle = new AbortController();
+    let unavailable: ToastHandle | null = null;
+    // Deadline views (overdue, today, this week) depend on the current day, and no event announces a new day.
+    const today = () => dates.formatDateKey(new Date(), props.dateConfig);
+    let snapshotDay = props.snapshotDay;
     // A condition that persists across loads must not reload the page forever.
     const reload = () => {
-      if (!disposed && !reloadOnce(`spaces:live:${props.spaceId}`)) setUnavailable(true);
+      if (lifecycle.signal.aborted || unavailable || reloadOnce(`spaces:live:${props.spaceId}`)) return;
+      unavailable = toast(t.liveUpdatesUnavailable, { duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
     };
     const connection = createLiveWebSocket<SpaceLiveServerMessage>({
       url: "/api/spaces/ws",
@@ -36,14 +44,20 @@ export default function SpaceLiveEvents(props: Props) {
         }) satisfies SpaceLiveClientMessage,
       parse: parseSpaceLiveServerMessage,
       onMessage: (message, controls) => {
-        if (disposed) return;
+        if (lifecycle.signal.aborted) return;
         if (message.payload.spaceId && message.payload.spaceId !== props.spaceId) return;
         if (message.type === SPACE_LIVE_WS_TYPE.error && message.payload.code === "resync_required") {
           controls.terminate({ code: message.payload.code, message: message.payload.message });
           return;
         }
         if (message.type === SPACE_LIVE_WS_TYPE.ready) {
-          void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
+          // A ready that confirms the subscribed cursor resumes the stream after it, as when a tab returns on the
+          // same day. Any other cursor skipped events, and a new day moves deadline views, so the snapshot refreshes.
+          const day = today();
+          if (message.payload.cursor !== controls.subscribedCursor() || day !== snapshotDay) {
+            snapshotDay = day;
+            void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
+          }
           return;
         }
         if (message.type === SPACE_LIVE_WS_TYPE.event) {
@@ -63,29 +77,21 @@ export default function SpaceLiveEvents(props: Props) {
       onFatal: reload,
     });
     const applyCursor = createSpacesLiveCursorQueue({
-      invalidate: (domains, cursor, itemId) => (disposed ? Promise.resolve() : invalidateSpacesData(domains, cursor, itemId)),
+      invalidate: invalidateSpacesData,
       markApplied: (cursor) => {
-        if (!disposed) connection.markApplied(cursor);
+        if (!lifecycle.signal.aborted) connection.markApplied(cursor);
       },
       onFailure: reload,
+      signal: lifecycle.signal,
     });
 
     connection.connect();
     onCleanup(() => {
-      disposed = true;
+      lifecycle.abort();
       connection.dispose();
+      unavailable?.dismiss();
     });
   });
 
-  return (
-    <Show when={unavailable()}>
-      <div class="mb-[var(--ui-space-shell)] shrink-0" role="status">
-        <NoticeCard tone="neutral" icon="ti ti-refresh" title={t.liveUpdatesUnavailable}>
-          <Button variant="secondary" class="mt-3" onClick={() => window.location.reload()}>
-            {t.reload}
-          </Button>
-        </NoticeCard>
-      </div>
-    </Show>
-  );
+  return null;
 }

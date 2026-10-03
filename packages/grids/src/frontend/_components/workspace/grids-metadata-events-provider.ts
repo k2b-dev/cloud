@@ -23,8 +23,6 @@ type ProviderMessage = {
   payload?: unknown;
 };
 
-const TERMINAL_ERROR_CODES = new Set(["login_required", "access_denied", "not_found", "internal_error"]);
-
 const parseJsonMessage = (raw: string): ProviderMessage | null => {
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -96,8 +94,7 @@ export const createGridsMetadataEventsProvider = (opts: GridsMetadataEventsProvi
           } finally {
             controls.terminate(error);
           }
-        } else if (TERMINAL_ERROR_CODES.has(error.code)) controls.terminate(error);
-        else opts.onError?.(error);
+        } else opts.onError?.(error);
         return;
       }
 

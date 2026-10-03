@@ -255,6 +255,8 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
           controls.terminate({ code: "resource_mismatch", message: messages().liveResourceChanged });
           return;
         }
+        // A ready that confirms the subscribed cursor resumes the replay and needs no refresh.
+        if (message.type === MAIL_LIVE_WS_TYPE.ready && message.payload.cursor === controls.subscribedCursor()) return;
         if (message.type === MAIL_LIVE_WS_TYPE.ready || message.type === MAIL_LIVE_WS_TYPE.event) {
           liveHub.schedule({
             cursor: message.payload.cursor,

@@ -364,6 +364,7 @@ describe("Spaces detail navigation", () => {
       onFailure: (error) => {
         failures.push(error);
       },
+      signal: new AbortController().signal,
     });
     await queue(["view", "detail", "wormholes"], "ready");
     await queue(["view", "detail"], "next", SERIES_ID);
@@ -415,6 +416,7 @@ describe("Spaces detail navigation", () => {
       onFailure: (error) => {
         failures.push(error);
       },
+      signal: new AbortController().signal,
     });
     const ready = queue(["view", "detail", "wormholes"], "ready");
     await flush();

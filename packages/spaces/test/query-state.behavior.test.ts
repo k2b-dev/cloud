@@ -123,7 +123,7 @@ describe("Spaces owner-local query behavior", () => {
     dom.cleanup();
   });
 
-  test("serializes live cursor coverage and stops before a later cursor can pass a failed snapshot", async () => {
+  test("serializes live cursor coverage, retries a failed snapshot, and stops before a later cursor can pass it", async () => {
     const first = deferred<void>();
     const invalidations: string[] = [];
     const applied: string[] = [];
@@ -135,6 +135,7 @@ describe("Spaces owner-local query behavior", () => {
       },
       markApplied: (cursor) => applied.push(cursor ?? "null"),
       onFailure: (error) => failures.push(error.message),
+      signal: new AbortController().signal,
     });
 
     const failed = apply(["view", "detail", "wormholes"], "10-0");
@@ -142,10 +143,11 @@ describe("Spaces owner-local query behavior", () => {
     await flush();
     expect(invalidations).toEqual(["10-0"]);
 
+    // Every retry of the first cursor fails too; the later cursor never runs.
     first.reject(new Error("snapshot failed"));
     await Promise.all([failed, later]);
     expect(applied).toEqual([]);
-    expect(invalidations).toEqual(["10-0"]);
+    expect(invalidations).toEqual(["10-0", "10-0", "10-0"]);
     expect(failures).toEqual(["snapshot failed"]);
   });
 
@@ -160,6 +162,7 @@ describe("Spaces owner-local query behavior", () => {
       },
       markApplied: (cursor) => order.push(`ack:${cursor}`),
       onFailure: (error) => order.push(`fail:${error.message}`),
+      signal: new AbortController().signal,
     });
 
     const reconcile = apply(["view", "detail", "wormholes"], "20-0");

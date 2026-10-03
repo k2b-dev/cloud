@@ -826,6 +826,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
   // Capture after authorization but before any snapshot reads. Replaying an
   // event already reflected below is harmless; starting after it can miss one.
   const eventCursor = await loadEventCursor(params.spaceId);
+  const snapshotDay = calendar.formatDateKey(new Date(), params.dateConfig);
   const context = await loadWorkspaceContext(params, authorized.value);
   if (!context.ok) return context.error;
   const { route, space, publicSpace, permissions, calendarFilter, publicCalendarFilter, columnIds } = context.value;
@@ -868,6 +869,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     query: route.url.searchParams.toString(),
     icalBaseUrl: `${route.url.protocol}//${route.url.host}`,
     eventCursor,
+    snapshotDay,
     itemsResult: publicItemsResult,
     kanbanBuckets: publicKanbanBuckets,
     calendarView: calendarState.calendarView,
