@@ -273,6 +273,22 @@ steps:
     expect(await receivedEvents()).toBe(eventsBefore + 1);
   });
 
+  test("a message without a Message-ID stays one message when another client moves it", async () => {
+    const fields = {
+      messageId: "",
+      subject: "Disk usage alert",
+      from: { name: "Monitor", address: "monitor@example.test" },
+      to: [supportAddress],
+      date: new Date("2026-08-01T10:00:00.000Z"),
+    };
+    const inInbox = { ...envelope({ folder: "inbox", ...fields }), messageId: null };
+    const eventsBefore = await receivedEvents();
+    const originalId = await ingest("inbox", inInbox, true);
+    await leaveFolder("inbox", inInbox);
+    expect(await ingest("archive", { ...envelope({ folder: "archive", ...fields }), messageId: null }, true)).toBe(originalId);
+    expect(await receivedEvents()).toBe(eventsBefore + 1);
+  });
+
   test("a message moved before its body was loaded is loaded once from its new folder", async () => {
     const messageId = `<moved-early-${suffix}@example.test>`;
     const date = new Date("2026-08-02T09:00:00.000Z");
@@ -422,6 +438,112 @@ steps:
       }),
     );
     expect(await conversationOf(replyToA)).toBe(await conversationOf(nextFromA));
+  });
+
+  test("a reply without reply headers joins its original when the initial sync imports it first", async () => {
+    const reply = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: `<headerless-reply-${suffix}@example.test>`,
+        subject: "Re: Offer",
+        from: customer,
+        to: [supportAddress],
+        date: new Date("2026-08-21T10:00:00.000Z"),
+      }),
+    );
+    const original = await ingest(
+      "sent",
+      envelope({
+        folder: "sent",
+        messageId: `<headerless-original-${suffix}@example.test>`,
+        subject: "Offer",
+        from: supportAddress,
+        to: [customer],
+        date: new Date("2026-08-21T09:00:00.000Z"),
+      }),
+    );
+    expect(await conversationOf(original)).toBe(await conversationOf(reply));
+
+    // Newest first, a reply that already found its message claims no earlier one with the subject.
+    const shop: Address = { name: "Shop", address: "orders@shop.example.test" };
+    const answer = await ingest(
+      "sent",
+      envelope({
+        folder: "sent",
+        messageId: `<order-answer-${suffix}@example.test>`,
+        subject: "Re: Order",
+        from: supportAddress,
+        to: [shop],
+        date: new Date("2026-08-25T10:00:00.000Z"),
+      }),
+    );
+    const secondOrder = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: `<order-2-${suffix}@shop.example.test>`,
+        subject: "Order",
+        from: shop,
+        to: [supportAddress],
+        date: new Date("2026-08-25T09:00:00.000Z"),
+      }),
+    );
+    const firstOrder = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: `<order-1-${suffix}@shop.example.test>`,
+        subject: "Order",
+        from: shop,
+        to: [supportAddress],
+        date: new Date("2026-08-15T09:00:00.000Z"),
+      }),
+    );
+    expect(await conversationOf(secondOrder)).toBe(await conversationOf(answer));
+    expect(await conversationOf(firstOrder)).not.toBe(await conversationOf(answer));
+  });
+
+  test("a sender that reuses its Message-ID does not continue an old conversation", async () => {
+    const notices: Address = { name: "Notices", address: "notices@example.test" };
+    const fixedId = `<fixed-notice-${suffix}@example.test>`;
+    const firstNotice = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: fixedId,
+        subject: "Quarterly notice",
+        from: notices,
+        to: [supportAddress],
+        date: new Date("2026-01-05T09:00:00.000Z"),
+      }),
+    );
+    await ingest(
+      "sent",
+      envelope({
+        folder: "sent",
+        messageId: `<fixed-notice-reply-${suffix}@example.test>`,
+        subject: "Re: Quarterly notice",
+        from: supportAddress,
+        to: [notices],
+        date: new Date("2026-01-06T09:00:00.000Z"),
+        inReplyTo: fixedId,
+        references: [fixedId],
+      }),
+    );
+    const nextNotice = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: fixedId,
+        subject: "Quarterly notice",
+        from: notices,
+        to: [supportAddress],
+        date: new Date("2026-04-05T09:00:00.000Z"),
+      }),
+    );
+    expect(nextNotice).not.toBe(firstNotice);
+    expect(await conversationOf(nextNotice)).not.toBe(await conversationOf(firstNotice));
   });
 
   test("a thread synchronized out of order becomes one conversation", async () => {

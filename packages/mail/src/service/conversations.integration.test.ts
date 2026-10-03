@@ -1191,13 +1191,16 @@ suite("mail manual conversation threading", () => {
   test("keeps generic IMAP messages apart that only a reused Message-ID connects", async () => {
     const messageId = `<generic-collision-${suffix}@example.com>`;
     const date = new Date("2026-07-13T12:00:00.000Z");
-    const envelope = (uid: string, change: { from?: string; sentAt?: Date | null; subject?: string; sizeBytes?: number } = {}) => ({
+    const envelope = (
+      uid: string,
+      change: { from?: string; sentAt?: Date | null; subject?: string; sizeBytes?: number; inReplyTo?: string } = {},
+    ) => ({
       remoteRef: { folderStableKey: folderId, uidValidity: "3", uid, modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId,
-      inReplyTo: null,
-      references: [],
+      inReplyTo: change.inReplyTo ?? null,
+      references: change.inReplyTo ? [change.inReplyTo] : [],
       subject: change.subject ?? "Generic IMAP collision guard",
       sentAt: change.sentAt === undefined ? date : change.sentAt,
       internalDate: date,
@@ -1221,13 +1224,14 @@ suite("mail manual conversation threading", () => {
     // A different body changes the size; a move or copy keeps it.
     const otherSizeId = await ingest(envelope("5", { sizeBytes: 300 }));
     const noDateId = await ingest(envelope("6", { sentAt: null, sizeBytes: 300 }));
-    expect(new Set([firstId, otherSenderId, otherDateId, otherSubjectId, otherSizeId, noDateId]).size).toBe(6);
+    const otherReplyId = await ingest(envelope("7", { inReplyTo: `<generic-collision-parent-${suffix}@example.com>` }));
+    expect(new Set([firstId, otherSenderId, otherDateId, otherSubjectId, otherSizeId, noDateId, otherReplyId]).size).toBe(7);
     const [projection] = await sql<{ contents: number }[]>`
       SELECT COUNT(*)::int AS contents
       FROM mail.message_contents
       WHERE mailbox_id = ${mailboxId}::uuid AND message_id = ${messageId}
     `;
-    expect(projection).toEqual({ contents: 6 });
+    expect(projection).toEqual({ contents: 7 });
     const conversations = await sql<{ message_id: string; conversation_id: string }[]>`
       SELECT message_id::text, conversation_id::text
       FROM mail.conversation_messages
