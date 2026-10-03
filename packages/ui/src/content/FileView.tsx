@@ -4,6 +4,7 @@
  * without it every renderer is read-only. IDE-style chrome: editors reuse
  * the markdown editor's surface (toolbar with an in-toolbar save, Ctrl/Cmd+S),
  * previews are quiet paper panels with icon-only actions overlaid top-right.
+ * A plain preview drops the panel and sits on its host's surface instead.
  * Custom renderers are passed per instance, which keeps SSR requests and
  * independently mounted applications isolated.
  */
@@ -11,6 +12,7 @@
 import { mutation } from "@k2b/stdlib/solid";
 import {
   type Component,
+  createContext,
   createEffect,
   createMemo,
   createResource,
@@ -23,6 +25,7 @@ import {
   Show,
   Switch,
   untrack,
+  useContext,
 } from "solid-js";
 import { Button } from "../actions/Button";
 import { prompts } from "../feedback/prompts";
@@ -36,6 +39,7 @@ import CodeDisplay, { type CodeDisplayLanguage } from "./CodeDisplay";
 import { type DelimitedPreferences, decodeDelimitedContent, readDelimitedPreferences } from "./delimited-preferences";
 import { type FileViewFile, fileViewExtension, getFileViewPreviewKind, parseDelimitedText } from "./file-view-preview";
 import MarkdownView from "./MarkdownView";
+import { leadingMarkdownTitle } from "./markdown-title";
 import PdfPreview from "./PdfPreview";
 import StructuredDataPreview, { type StructuredDataValue } from "./StructuredDataPreview";
 
@@ -44,8 +48,17 @@ export { canPreviewFile, getFileViewPreviewKind } from "./file-view-preview";
 export type FileViewContent = { encoding: "utf8" | "base64"; content: string; mediaType: string };
 
 export type FileViewProps = {
-  /** Plain previews inherit the surrounding surface without a frame or inset padding. */
+  /**
+   * Plain previews inherit the surrounding surface without a frame or inset padding. They keep their natural height,
+   * so the host scrolls them and owns the actions around them; a host that stretches one gets its scrolling back.
+   */
   variant?: "default" | "plain";
+  /**
+   * Lifts a leading Markdown level-one heading into the host, for example a dialog title. Reports its plain text and
+   * leaves that heading out of the preview, or reports null when the shown file has none, the heading holds a link or
+   * image or is the whole document, or the file fails to load.
+   */
+  onDocumentTitle?: (title: string | null) => void;
   /** Read-only excerpt limit; omitted renders the complete preview. */
   previewLines?: number;
   onExpandPreview?: () => void;
@@ -105,6 +118,9 @@ export type FileViewRenderer = {
   /** Text renderers that support the edit affordance when `save` is present. */
   editable?: boolean;
 };
+
+/** Instance options that reach the built-in renderers without widening the public renderer props. */
+const FileViewHost = createContext({ plain: false, liftTitle: false });
 
 const codeLanguage = (path: string): CodeDisplayLanguage => {
   const extension = fileViewExtension(path);
@@ -224,8 +240,13 @@ function TextExcerpt(props: { renderer: FileViewRendererProps; text: string; mar
   const lines = createMemo(() => props.text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"));
   const limit = () => (props.renderer.previewLines === undefined ? lines().length : Math.max(1, props.renderer.previewLines));
   const text = () => lines().slice(0, limit()).join("\n");
+  const host = useContext(FileViewHost);
+  // A plain preview has no code box: the host frames the file and owns its copy action.
   const content = () => (
-    <Show when={props.markdown} fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} />}>
+    <Show
+      when={props.markdown}
+      fallback={<CodeDisplay code={text()} language={codeLanguage(props.renderer.file.path)} copy={host.plain ? false : undefined} />}
+    >
       <MarkdownView markdown={text()} headingScale={props.renderer.headingScale ?? "compact"} />
     </Show>
   );
@@ -243,7 +264,12 @@ function TextExcerpt(props: { renderer: FileViewRendererProps; text: string; mar
 
 function MarkdownRenderer(props: FileViewRendererProps) {
   const messages = useUiMessages();
+  const host = useContext(FileViewHost);
   const [editing, setEditing] = createSignal(false);
+  const markdown = () => {
+    const text = stripFrontmatter(props.editor?.draft() ?? props.content.content);
+    return host.liftTitle ? (leadingMarkdownTitle(text)?.body ?? text) : text;
+  };
   return (
     <Show
       when={props.editor && editing()}
@@ -259,7 +285,7 @@ function MarkdownRenderer(props: FileViewRendererProps) {
           }
         >
           <div class="k2b-content-file-view__document">
-            <TextExcerpt renderer={props} text={stripFrontmatter(props.editor?.draft() ?? props.content.content)} markdown />
+            <TextExcerpt renderer={props} text={markdown()} markdown />
           </div>
         </OverlayPanel>
       }
@@ -581,12 +607,16 @@ function PdfRenderer(props: FileViewRendererProps) {
           fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={messages().noInlinePreview} />}
         >
           {(pdf) => (
-            <PdfPreview
-              autoLoad
-              title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
-              request={async () => pdf}
-              class="k2b-content-file-view__pdf"
-            />
+            // Composed without the standalone heading: the host already names the file, and the frame keeps the
+            // file name as its accessible title.
+            <PdfPreview autoLoad title={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)} request={async () => pdf}>
+              {(parts) => (
+                <div class="k2b-content-file-view__pdf-viewer">
+                  {parts.actions}
+                  {parts.content}
+                </div>
+              )}
+            </PdfPreview>
           )}
         </Show>
       }
@@ -761,7 +791,8 @@ export default function FileView(props: FileViewProps) {
     });
     if (unregister) onCleanup(unregister);
   });
-  const resolvedContent = createMemo(() => browserPreviewContent() ?? content());
+  // An errored resource throws when read; the error state below shows it instead.
+  const resolvedContent = createMemo(() => browserPreviewContent() ?? (content.error ? undefined : content()));
 
   const renderer = createMemo(() => {
     const loaded = resolvedContent();
@@ -789,40 +820,65 @@ export default function FileView(props: FileViewProps) {
         }
       : null;
 
+  // Undefined while loading; the host keeps its own placeholder until the shown file decides.
+  const documentTitle = createMemo<string | null | undefined>(() => {
+    if (!props.onDocumentTitle) return undefined;
+    if (content.error) return null;
+    const loaded = resolvedContent();
+    if (!loaded) return undefined;
+    if (renderer()?.component !== MarkdownRenderer) return null;
+    return leadingMarkdownTitle(stripFrontmatter(editor()?.draft() ?? loaded.content))?.title ?? null;
+  });
+  createEffect(() => {
+    const title = documentTitle();
+    if (title !== undefined) props.onDocumentTitle?.(title);
+  });
+
   return (
     <div
       class={`k2b-content-file-view ${props.class ?? ""}`}
       data-variant={props.variant}
       data-excerpt={props.previewLines !== undefined ? "true" : undefined}
     >
-      <Switch>
-        <Match when={content.loading && content() === undefined}>
-          <Placeholder icon="ti ti-loader-2" title={messages().loading} />
-        </Match>
-        <Match when={content.error}>
-          <Placeholder icon="ti ti-alert-circle" title={messages().failedLoadFile} description={String(content.error?.message ?? "")} />
-        </Match>
-        <Match when={resolvedContent() && renderer()}>
-          {(active) => {
-            const Renderer = active().component;
-            return (
-              <Renderer
-                previewLines={props.previewLines}
-                onExpandPreview={props.onExpandPreview}
-                headingScale={props.headingScale}
-                previewPreferencesKey={props.previewPreferencesKey}
-                file={props.file}
-                content={resolvedContent()!}
-                previewHref={nativePreviewHref()}
-                crossOrigin={props.crossOrigin}
-                onPreviewError={props.onPreviewError}
-                downloadHref={props.downloadHref ?? null}
-                editor={editor()}
-              />
-            );
-          }}
-        </Match>
-      </Switch>
+      <FileViewHost.Provider
+        value={{
+          get plain() {
+            return props.variant === "plain";
+          },
+          get liftTitle() {
+            return Boolean(props.onDocumentTitle);
+          },
+        }}
+      >
+        <Switch>
+          <Match when={content.loading && content() === undefined}>
+            <Placeholder icon="ti ti-loader-2" title={messages().loading} />
+          </Match>
+          <Match when={content.error}>
+            <Placeholder icon="ti ti-alert-circle" title={messages().failedLoadFile} description={String(content.error?.message ?? "")} />
+          </Match>
+          <Match when={resolvedContent() && renderer()}>
+            {(active) => {
+              const Renderer = active().component;
+              return (
+                <Renderer
+                  previewLines={props.previewLines}
+                  onExpandPreview={props.onExpandPreview}
+                  headingScale={props.headingScale}
+                  previewPreferencesKey={props.previewPreferencesKey}
+                  file={props.file}
+                  content={resolvedContent()!}
+                  previewHref={nativePreviewHref()}
+                  crossOrigin={props.crossOrigin}
+                  onPreviewError={props.onPreviewError}
+                  downloadHref={props.downloadHref ?? null}
+                  editor={editor()}
+                />
+              );
+            }}
+          </Match>
+        </Switch>
+      </FileViewHost.Provider>
     </div>
   );
 }

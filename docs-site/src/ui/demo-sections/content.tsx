@@ -13,6 +13,7 @@ import {
   dialogCore,
   FileBrowserPanel,
   type FileSource,
+  FileView,
   FilterChip,
   Format,
   InlineGuidance,
@@ -26,6 +27,7 @@ import {
   PanelDialog,
   PdfPreview,
   panelDialogFixedOptions,
+  panelDialogOptions,
   StatusBadge,
   StructuredDataPreview,
   TemplateEditor,
@@ -464,6 +466,28 @@ const demoMediaType = (path: string): string => {
   return "text/plain";
 };
 
+/** A host-owned document dialog: the Markdown heading becomes the dialog title, and the preview sits on its surface. */
+const openDocumentPreview = (path: string, file: DemoFile) => {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return dialogCore.open<void>((close) => {
+    const [title, setTitle] = createSignal<string | null | undefined>(undefined);
+    return (
+      <PanelDialog>
+        <PanelDialog.Header title={title() ?? name} subtitle={name} close={() => close()} />
+        <PanelDialog.Body>
+          <FileView
+            variant="plain"
+            headingScale="normal"
+            file={{ path, mediaType: file.mediaType }}
+            load={async () => file}
+            onDocumentTitle={setTitle}
+          />
+        </PanelDialog.Body>
+      </PanelDialog>
+    );
+  }, panelDialogOptions);
+};
+
 const FilesDemo = () => {
   const [files, setFiles] = createSignal<Record<string, DemoFile>>({ ...initialFileContent });
   const fileSource: FileSource = {
@@ -531,7 +555,7 @@ const FilesDemo = () => {
         { kind: "component", name: "FileTree", from: "@k2b/ui" },
         { kind: "component", name: "FileView", from: "@k2b/ui" },
       ]}
-      description="A fully interactive, path-first browser over an application-owned in-memory source. Create, upload, rename, move, delete, edit, save, and download without a backend."
+      description="A fully interactive, path-first browser over an application-owned in-memory source. Create, upload, rename, move, delete, edit, save, and download without a backend. The preview dialog shows a plain FileView whose Markdown heading becomes the dialog title."
       code={`const source: FileSource = {
   list: async () => entries,
   read: async (path) => content[path],
@@ -541,11 +565,25 @@ const FilesDemo = () => {
   upload: async (dir, files) => upload(dir, files),
 };
 
-<FileBrowserPanel source={source} initialPath="/README.md" />`}
+<FileBrowserPanel source={source} initialPath="/README.md" />
+
+// A dialog that shows the document's own heading as its title.
+<PanelDialog.Header title={title() ?? name} subtitle={name} close={close} />
+<PanelDialog.Body>
+  <FileView variant="plain" file={file} load={load} onDocumentTitle={setTitle} />
+</PanelDialog.Body>`}
     >
       {/* No showcase wrapper: FileBrowserPanel sizes itself when it is not given
           a `class`, so any sizing failure has to stay visible here. */}
       <FileBrowserPanel source={fileSource} initialPath="/README.md" />
+      <div class="ui-demo-row">
+        <Button
+          variant="secondary"
+          onClick={() => void openDocumentPreview("/README.md", files()["/README.md"] ?? initialFileContent["/README.md"]!)}
+        >
+          Preview dialog · document title
+        </Button>
+      </div>
       <FileGridDemo />
     </DemoCard>
   );

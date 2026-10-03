@@ -24,6 +24,8 @@ export default function FileInspector(props: {
   onClose: () => void;
   onMarksChanged?: () => void;
   onOpen: (entry: FileEntry) => void;
+  /** Opens the large preview; `onNotPdf` reports a `.pdf` whose bytes are no PDF. */
+  onPreview: (entry: FileEntry, onNotPdf?: () => void) => void;
   /** Files Collabora can open; the primary action then edits instead of previewing. */
   editable?: (entry: FileEntry) => boolean;
   canEdit?: boolean;
@@ -139,19 +141,7 @@ export default function FileInspector(props: {
       <i class="ti ti-x" aria-hidden="true" />
     </IconButton>
   );
-  const expand = (item: FileEntry) =>
-    prompts.dialog(
-      () => (
-        <FilePreview
-          baseId={props.base.id}
-          locationKey={props.base.locationKey}
-          entry={item}
-          onDownload={() => props.onDownload([item])}
-          onNotPdf={() => setNotPdf(revision(item))}
-        />
-      ),
-      { title: item.name, size: "large" },
-    );
+  const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
   const actionRow = (
     title: string,
     icon: string,
@@ -282,6 +272,7 @@ export default function FileInspector(props: {
                             <Show keyed when={revision(item())}>
                               {(key) => (
                                 <FilePreview
+                                  variant="plain"
                                   previewLines={5}
                                   onExpandPreview={() => void expand(item())}
                                   baseId={props.base.id}

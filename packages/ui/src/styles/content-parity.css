@@ -1511,6 +1511,20 @@
   @apply min-h-0 w-full flex-1 rounded-md;
 }
 
+/* A PDF from loaded bytes: the preview frame with its actions above the
+   document, without the standalone viewer's heading and toolbar line. */
+.k2b-ui .k2b-content-file-view__pdf-viewer {
+  @apply flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md;
+  box-sizing: border-box;
+  border: 1px solid var(--k2b-border);
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-content-file-view__pdf-viewer > .k2b-content-pdf-preview__actions {
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem;
+}
+
 .k2b-ui .k2b-content-file-view :is(img, video) {
   @apply rounded-md;
   max-width: 100%;
@@ -1924,9 +1938,9 @@
   background: var(--k2b-surface);
 }
 
+/* Spacing, not a divider line, separates the toolbar from the document. */
 .k2b-ui .k2b-content-pdf-preview__toolbar {
   @apply flex items-center justify-between gap-2 px-3 py-2;
-  border-bottom: 1px solid var(--k2b-border);
 }
 
 .k2b-ui .k2b-content-pdf-preview__heading {
@@ -2208,10 +2222,66 @@
   gap: 0.5rem;
 }
 
+/* A plain preview has no frame: it keeps its natural height and the host
+   scrolls, so there is one scroller. Wide content, such as a CSV table,
+   scrolls sideways in place. A host that bounds the preview's height and
+   stretches it gets the preview's own scrolling back, with the table header
+   and the action overlay in view. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] {
+  flex: none;
+}
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__preview {
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+/* The expander lines up with the content instead of the old frame's inset. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__truncated {
+  padding-inline: 0;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__truncated > .k2b-button {
+  margin-inline-start: -0.625rem;
+}
+/* JSON data sits on the host surface like every other plain preview, without
+   its own card, and its raw view scrolls with the host. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-structured-data__surface {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-structured-data__surface pre {
+  max-height: none;
+}
+/* Text is the file itself: line numbers and soft-wrapped lines on the host
+   surface, without the code box. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-code-display {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-code-display__body {
+  padding: 0;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-code-display__lines {
+  min-width: 0;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-code-display__line code {
+  padding-right: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__media {
+  padding: 0;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__pdf-viewer {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__pdf-viewer > .k2b-content-pdf-preview__actions {
+  padding: 0 0 0.5rem;
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__document {
   padding: 0;

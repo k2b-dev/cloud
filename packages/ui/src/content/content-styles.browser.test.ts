@@ -11,7 +11,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "content-styles.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { FileView, MarkdownView } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { FileView, MarkdownView, PdfPreview } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const code = Array.from({ length: 3 }, (_, index) => "const value" + index + " = " + index + ";").join("\\n");
 const file = (id, previewLines) => {
@@ -68,6 +68,75 @@ render(
     }),
   plain,
 );
+// A plain text preview in a host that bounds its height: the host scrolls, not the preview.
+const plainText = app.appendChild(document.createElement("section"));
+plainText.id = "plain-text";
+plainText.style.cssText = "display:flex;flex-direction:column;height:60px;overflow:auto;width:320px";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "notes.txt", size: 400 },
+      load: async () => ({ encoding: "utf8", content: code + "\\n" + "word ".repeat(80), mediaType: "text/plain" }),
+      variant: "plain",
+    }),
+  plainText,
+);
+const pdf = app.appendChild(document.createElement("section"));
+pdf.id = "pdf";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "reports/q3.pdf" },
+      load: async () => ({ encoding: "utf8", content: "%PDF-1.4\\n%%EOF", mediaType: "application/pdf" }),
+    }),
+  pdf,
+);
+// A plain excerpt with its expander, plain JSON, and a plain table in a host that bounds and stretches it.
+const plainExcerpt = app.appendChild(document.createElement("section"));
+plainExcerpt.id = "plain-excerpt";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "notes.txt", size: 80 },
+      load: async () => ({ encoding: "utf8", content: "one\\ntwo\\nthree\\nfour\\nfive", mediaType: "text/plain" }),
+      variant: "plain",
+      previewLines: 2,
+      onExpandPreview: () => {},
+    }),
+  plainExcerpt,
+);
+const plainJson = app.appendChild(document.createElement("section"));
+plainJson.id = "plain-json";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "data.json", size: 40 },
+      load: async () => ({ encoding: "utf8", content: JSON.stringify({ team: "Grill", members: 4 }), mediaType: "application/json" }),
+      variant: "plain",
+    }),
+  plainJson,
+);
+const plainSheet = app.appendChild(document.createElement("section"));
+plainSheet.id = "plain-sheet";
+plainSheet.style.cssText = "display:flex;flex-direction:column;height:160px;width:320px";
+const sheetRows = Array.from({ length: 30 }, (_, row) => Array.from({ length: 12 }, (_, column) => "Cell " + row + "." + column).join(","));
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "table.csv", size: 4000 },
+      load: async () => ({
+        encoding: "utf8",
+        content: [Array.from({ length: 12 }, (_, column) => "Column " + column).join(","), ...sheetRows].join("\\n"),
+        mediaType: "text/csv",
+      }),
+      variant: "plain",
+      class: "stretched",
+    }),
+  plainSheet,
+);
+const standalone = app.appendChild(document.createElement("section"));
+standalone.id = "standalone-pdf";
+render(() => createComponent(PdfPreview, { title: "Report", request: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) }), standalone);
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the content fixture for the browser.");
@@ -79,7 +148,7 @@ beforeAll(async () => {
   browser = await chromium.launch();
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
-    `<!doctype html><html><head><style>${css}</style></head>` +
+    `<!doctype html><html><head><style>${css}</style><style>#plain-sheet .stretched{flex:1 1 auto;min-height:0}</style></head>` +
       `<body class="k2b-ui"><button id="before">Before</button><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span><span id="text" style="color:var(--k2b-text)"></span>` +
       `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
       `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
@@ -87,6 +156,11 @@ beforeAll(async () => {
   await page.addScriptTag({ content: script });
   await page.locator("#excerpt .k2b-content-code-display").waitFor();
   await page.locator("#plain .k2b-content-markdown").waitFor();
+  await page.locator("#plain-text .k2b-content-code-display").waitFor();
+  await page.locator("#pdf iframe").waitFor();
+  await page.locator("#plain-excerpt .k2b-content-file-view__truncated button").waitFor();
+  await page.locator("#plain-json .k2b-content-structured-data").waitFor();
+  await page.locator("#plain-sheet thead").waitFor();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -247,6 +321,83 @@ describe("@k2b/ui content previews apply their own styles", () => {
     });
     expect(host).toBeGreaterThan(ch);
     expect(width).toBeCloseTo(ch, 0);
+  });
+
+  test("a plain FileView shows text without a code box and leaves scrolling to its host", async () => {
+    const result = await page.evaluate(() => {
+      const host = document.querySelector<HTMLElement>("#plain-text")!;
+      const view = host.querySelector<HTMLElement>(".k2b-content-file-view")!;
+      const preview = host.querySelector<HTMLElement>(".k2b-content-file-view__preview")!;
+      const code = getComputedStyle(host.querySelector(".k2b-content-code-display")!);
+      return {
+        header: host.querySelector(".k2b-content-code-display__header") !== null,
+        fill: code.backgroundColor,
+        ring: code.boxShadow,
+        previewScrolls: preview.scrollHeight > preview.clientHeight + 1,
+        natural: view.getBoundingClientRect().height > host.clientHeight,
+        hostScrolls: host.scrollHeight > host.clientHeight,
+        wraps: host.scrollWidth <= host.clientWidth,
+      };
+    });
+    expect(result).toEqual({
+      header: false,
+      fill: "rgba(0, 0, 0, 0)",
+      ring: "none",
+      previewScrolls: false,
+      natural: true,
+      hostScrolls: true,
+      wraps: true,
+    });
+  });
+
+  test("a PDF from loaded bytes has no visible heading or toolbar line, and neither has a standalone PDF toolbar", async () => {
+    const result = await page.evaluate(() => {
+      const viewer = document.querySelector("#pdf .k2b-content-file-view__pdf-viewer")!;
+      return {
+        headings: document.querySelectorAll("#pdf h2").length,
+        frameTitle: document.querySelector("#pdf iframe")!.getAttribute("title"),
+        frame: getComputedStyle(viewer).borderTopWidth,
+        actionsLine: getComputedStyle(viewer.querySelector(".k2b-content-pdf-preview__actions")!).borderBottomWidth,
+        toolbarLine: getComputedStyle(document.querySelector("#standalone-pdf .k2b-content-pdf-preview__toolbar")!).borderBottomWidth,
+      };
+    });
+    expect(result).toEqual({ headings: 0, frameTitle: "q3.pdf", frame: "1px", actionsLine: "0px", toolbarLine: "0px" });
+  });
+
+  test("a plain excerpt lines its expander up with the content", async () => {
+    const [content, label] = await page.evaluate(() => {
+      const host = document.querySelector("#plain-excerpt")!;
+      const range = document.createRange();
+      range.selectNodeContents(host.querySelector(".k2b-content-file-view__truncated button")!);
+      return [host.querySelector(".k2b-content-code-display")!.getBoundingClientRect().left, range.getBoundingClientRect().left];
+    });
+    expect(Math.abs(label - content)).toBeLessThanOrEqual(1);
+  });
+
+  test("plain JSON sits on the host surface without its own card", async () => {
+    const surface = await page.$eval("#plain-json .k2b-content-structured-data__surface", (element) => {
+      const style = getComputedStyle(element);
+      return [style.borderTopWidth, style.backgroundColor, style.paddingLeft];
+    });
+    expect(surface).toEqual(["0px", "rgba(0, 0, 0, 0)", "0px"]);
+  });
+
+  test("a stretched plain table scrolls in itself and keeps its header row and actions in view", async () => {
+    const result = await page.evaluate(() => {
+      const host = document.querySelector<HTMLElement>("#plain-sheet")!;
+      const preview = host.querySelector<HTMLElement>(".k2b-content-file-view__preview")!;
+      const overlay = host.querySelector<HTMLElement>(".k2b-content-file-view__overlay")!;
+      const before = overlay.getBoundingClientRect().toJSON();
+      preview.scrollTop = 200;
+      preview.scrollLeft = 400;
+      return {
+        scrolled: preview.scrollTop > 0 && preview.scrollLeft > 0,
+        hostScrolls: host.scrollHeight > host.clientHeight,
+        header: Math.round(host.querySelector("thead")!.getBoundingClientRect().top - preview.getBoundingClientRect().top),
+        overlay: JSON.stringify(overlay.getBoundingClientRect().toJSON()) === JSON.stringify(before),
+      };
+    });
+    expect(result).toEqual({ scrolled: true, hostScrolls: false, header: 0, overlay: true });
   });
 
   test("a Markdown code block keeps its edge in forced colours", async () => {

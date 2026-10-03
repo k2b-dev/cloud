@@ -248,6 +248,8 @@ describe("Filesv2 interactions", () => {
       dom.root,
     );
     cleanup = () => {
+      // The dialog stack outlives this document; close the preview so later tests open theirs in their own.
+      dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
       dispose();
       globalThis.fetch = originalFetch;
       URL.createObjectURL = originalCreate;
@@ -273,10 +275,12 @@ describe("Filesv2 interactions", () => {
 
     const dialog = dom.document.querySelector("dialog")!;
     expect(dialog.querySelector("iframe")?.getAttribute("src")).toMatch(/^blob:preview-/);
-    const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".filesv2-preview :is(a, button)")];
-    // Visible text names each action for keyboard and screen-reader users; reloading an unchanged file is not offered.
-    expect([open, download].map((action) => action?.textContent?.trim())).toEqual(["Open in new tab", "Download"]);
-    expect([open, download].every((action) => !action!.hasAttribute("disabled") && !action!.hasAttribute("aria-label"))).toBe(true);
+    // The dialog header owns the viewer actions; the preview below is only the document.
+    expect(dialog.querySelectorAll(".filesv2-preview :is(a, button)")).toHaveLength(0);
+    const [open, download] = [...dialog.querySelectorAll<HTMLElement>(".k2b-panel-dialog__actions :is(a, button)")];
+    // Each icon action keeps its name for keyboard and screen-reader users; reloading an unchanged file is not offered.
+    expect([open, download].map((action) => action?.getAttribute("aria-label"))).toEqual(["Open in new tab", "Download"]);
+    expect([open, download].every((action) => !action!.hasAttribute("disabled"))).toBe(true);
     // The tab reads the stored file from a Files page, so it reloads, signs in again, and the viewer names it after the file.
     expect(open).toBeInstanceOf(dom.window.HTMLAnchorElement);
     expect(open!.getAttribute("href")).toBe("/app/filesv2/pdf/base-1/Budget%20%231/Bericht%20Q3.pdf");
@@ -426,21 +430,23 @@ describe("Filesv2 interactions", () => {
   test("PDF preview actions follow the German locale", async () => {
     const dom = createDomTestHarness();
     dom.document.documentElement.lang = "de";
+    const { openFilePreview } = await import("../src/frontend/FilePreviewDialog");
     const { default: FilePreview } = await import("../src/frontend/FilePreview");
-    const dispose = render(
-      () =>
-        createComponent(FilePreview, {
-          baseId: "base-1",
-          entry: { name: "Bericht.pdf", path: "Bericht.pdf", directory: false, size: 8, modified: "2026-09-17T10:00:00Z" },
-          onDownload: () => {},
-        }),
-      dom.root,
-    );
+    const entry = { name: "Bericht.pdf", path: "Bericht.pdf", directory: false, size: 8, modified: "2026-09-17T10:00:00Z" };
+    // On its own, the preview of a PDF is only the document.
+    const dispose = render(() => createComponent(FilePreview, { baseId: "base-1", entry, onDownload: () => {} }), dom.root);
+    expect(dom.root.querySelectorAll("a, button")).toHaveLength(0);
+    void openFilePreview({ baseId: "base-1", entry, onDownload: () => {} });
+    await flush();
     cleanup = () => {
+      dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
       dispose();
       dom.cleanup();
     };
-    const labels = [...dom.root.querySelectorAll("a, button")].map((action) => action.textContent?.trim());
+    const actions = dom.document
+      .querySelector("dialog")!
+      .querySelectorAll(".k2b-panel-dialog__actions a, .k2b-panel-dialog__actions button");
+    const labels = [...actions].map((action) => action.getAttribute("aria-label"));
     expect(labels).toEqual(["In neuem Tab öffnen", "Herunterladen"]);
   });
 });

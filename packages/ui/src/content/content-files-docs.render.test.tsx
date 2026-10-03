@@ -329,6 +329,20 @@ describe("@k2b/ui content behaviour", () => {
     expect(html).toContain('data-heading-scale="compact"');
   });
 
+  test("FileView with a document title host renders on the server", async () => {
+    // The title reaches the host from an effect, so in the browser; the server renders the document without it.
+    const html = await renderFileView({
+      variant: "plain",
+      file: { path: "/README.md", mediaType: "text/markdown" },
+      load: async () => ({ encoding: "utf8" as const, mediaType: "text/markdown", content: "# Summer party\n\nBody text\n" }),
+      onDocumentTitle: () => {},
+    });
+
+    expect(html).not.toContain("ReferenceError");
+    expect(html).toContain("Body text");
+    expect(html).not.toContain("<h1>");
+  });
+
   test("StructuredDataPreview caps rows and reports the remainder", () => {
     const html = renderToString(() => createComponent(StructuredDataPreview, { data: { a: 1, b: 2, c: 3 }, maxRows: 1 }));
 
