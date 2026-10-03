@@ -929,8 +929,11 @@ suite("mail provider lease fairness", () => {
         internalDate: new Date(Date.UTC(2025, 0, 1) + index * 60_000),
       });
     }
-    // Archive's job has started importing old mail; its next batch would be background work.
-    expect((await syncFolderBatch(mailbox.folderId(ARCHIVE), async () => undefined)).hasMore).toBe(true);
+    // Archive's job has started importing old mail; its next batch would be background work. The
+    // import above queued the mailbox's body downloads, so the batch waits for the provider lease
+    // like the job does.
+    const archive = mailbox.folderId(ARCHIVE);
+    expect(await syncFolderTurn(archive)).toEqual({ delayMs: 0, input: { folderId: archive, backfill: true } });
     const moves = await queueMoves(mailbox, backlog, "requested-move", { startTogether: true });
     await waitFor(async () => (await confirmed(moves)) >= 3, "the moves to start");
 
