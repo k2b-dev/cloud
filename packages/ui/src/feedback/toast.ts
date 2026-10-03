@@ -444,6 +444,9 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const resetDismissTimer = () => {
     clearDismissTimer();
     remainingDuration = effectiveDuration();
+    // A toast that stays until it is closed; a phone shell keeps the end of its content clear of it.
+    if (remainingDuration === 0) toastElement.dataset.persistent = "true";
+    else delete toastElement.dataset.persistent;
     resumeDismissTimer();
   };
 

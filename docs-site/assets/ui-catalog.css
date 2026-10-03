@@ -516,6 +516,44 @@
   height: 18rem;
 }
 
+/* A phone-sized frame for the parts of a MobileShell, which itself takes over the page. */
+.ui-phone-frame {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 24.375rem);
+  height: 30rem;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-canvas);
+}
+
+.ui-phone-frame[data-size="bar"] {
+  height: auto;
+}
+
+.ui-phone-frame__body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  overflow: auto;
+  list-style: none;
+}
+
+.ui-phone-frame__body > li {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--k2b-border);
+}
+
+.ui-install-guide-demo,
+.ui-qr-scanner-demo {
+  display: grid;
+  gap: 1.25rem;
+  width: min(100%, 24rem);
+}
+
 .ui-pull-to-refresh-demo {
   width: min(100%, 34rem);
   margin: 0 auto;

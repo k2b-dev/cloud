@@ -18,12 +18,12 @@ async function _run(page) {
       const intro = target.getByRole("button", { name: "Continue in browser", exact: true });
       if (await intro.isVisible()) {
         await intro.click();
-        await target.waitForFunction(() => !history.state?.cloudLoginDialog);
+        await target.waitForFunction(() => !history.state?.k2bDialog);
       }
       if (!(await target.getByRole("dialog").count())) await target.getByRole("button", { name: "Unlock", exact: true }).click();
     }
     await fillAppPin(target, "012345");
-    if (!dialog) await target.waitForFunction(() => !history.state?.cloudLoginDialog);
+    if (!dialog) await target.waitForFunction(() => !history.state?.k2bDialog);
   };
   const events = [];
   let intentionallyDropped = false;

@@ -606,6 +606,7 @@
         "@k2b/stdlib": "0.27.0",
         "@tabler/icons-webfont": "3.48.0",
         "marked": "18.0.14",
+        "qr-scanner": "1.4.2",
       },
       "devDependencies": {
         "@babel/core": "8.0.6",
@@ -675,7 +676,6 @@
         "@k2b/ui": "workspace:*",
         "@nats-io/transport-node": "catalog:",
         "hono": "catalog:",
-        "qr-scanner": "1.4.2",
         "solid-js": "catalog:",
         "zod": "catalog:",
       },

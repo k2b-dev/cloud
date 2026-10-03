@@ -16,14 +16,14 @@ async function _run(page) {
     await p.goto("http://127.0.0.1:4179/");
     await p.getByRole("button", { name: "Continue in browser", exact: true }).click();
     await p.waitForFunction(() => navigator.serviceWorker.controller !== null);
-    await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await p.waitForFunction(() => !history.state?.k2bDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
     await fillAppPin(p, "012345");
     await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
     await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await p.getByRole("button", { name: "Close", exact: true }).click();
-    await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await p.waitForFunction(() => !history.state?.k2bDialog);
     const cache = await p.evaluate(async () => {
       const names = await caches.keys();
       return { names, paths: (await (await caches.open(names[0])).keys()).map((r) => new URL(r.url).pathname) };
@@ -40,7 +40,7 @@ async function _run(page) {
     await p.getByText("You are offline. Connect to the internet to pair or approve sign-ins.", { exact: true }).waitFor();
     if (!(await p.getByRole("dialog").count())) await p.getByRole("button", { name: "Unlock", exact: true }).click();
     await fillAppPin(p, "012345");
-    await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await p.waitForFunction(() => !history.state?.k2bDialog);
     await p.getByRole("button", { name: "Add Cloud", exact: true }).waitFor();
     if ((await p.evaluate(() => document.body.dataset.testVersion)) !== "1") throw new Error("Offline shell absent");
     await context.setOffline(false);

@@ -96,6 +96,8 @@ export {
   fitFloatingWindowRect,
   openFloatingWindow,
 } from "./FloatingWindow";
+export type { MobileShellHeaderProps, MobileShellProps } from "./MobileShell";
+export { default as MobileShell } from "./MobileShell";
 export { default as Navigation, type NavigationProps } from "./Navigation";
 export {
   createNavigation,
@@ -195,3 +197,5 @@ export type {
   SettingsModalTabTone,
 } from "./SettingsModal";
 export { default as SettingsModal } from "./SettingsModal";
+export type { TabBarItem, TabBarProps } from "./TabBar";
+export { default as TabBar } from "./TabBar";

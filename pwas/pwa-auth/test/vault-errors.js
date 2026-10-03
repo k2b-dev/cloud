@@ -15,7 +15,7 @@ async function _run(page) {
       .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
     const p = await context.newPage();
     const button = (name) => p.getByRole("button", { name, exact: true });
-    const ready = () => p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    const ready = () => p.waitForFunction(() => !history.state?.k2bDialog);
     const menu = async (name) => {
       await button("Menu").click();
       await p.getByRole("menuitem", { name, exact: true }).click();

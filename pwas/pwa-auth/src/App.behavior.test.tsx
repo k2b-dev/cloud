@@ -132,12 +132,16 @@ test("the welcome screen has no recovery footer", async () => {
   dispose();
 });
 
-// happy-dom cascades the app's own stylesheet, media queries included; the imported @k2b/ui rules are not loaded.
+// happy-dom cascades the built @k2b/ui stylesheet, which owns the MobileShell rules, and the app's own stylesheet,
+// media queries included, inside the same `k2b-ui` body as the real page.
 async function style(viewport: { width: number; height: number }) {
   dom.window.happyDOM.setViewport(viewport);
-  const sheet = dom.document.createElement("style");
-  sheet.textContent = await Bun.file(new URL("./styles.css", import.meta.url)).text();
-  dom.document.head.append(sheet);
+  dom.document.body.classList.add("k2b-ui");
+  for (const url of [new URL("../../../packages/ui/dist/styles.css", import.meta.url), new URL("./styles.css", import.meta.url)]) {
+    const sheet = dom.document.createElement("style");
+    sheet.textContent = await Bun.file(url).text();
+    dom.document.head.append(sheet);
+  }
   return (selector: string) => getComputedStyle(dom.document.querySelector(selector)!);
 }
 

@@ -25,6 +25,7 @@ import contentTemplateEditor from "./content/template-editor.md" with { type: "t
 import feedbackBadges from "./feedback/badges.md" with { type: "text" };
 import feedbackBlocks from "./feedback/blocks.md" with { type: "text" };
 import feedbackHoverPreview from "./feedback/hover-preview.md" with { type: "text" };
+import feedbackInstallGuide from "./feedback/install-guide.md" with { type: "text" };
 import feedbackPrompts from "./feedback/prompts.md" with { type: "text" };
 import feedbackToast from "./feedback/toast.md" with { type: "text" };
 import feedbackTooltip from "./feedback/tooltip.md" with { type: "text" };
@@ -41,6 +42,7 @@ import inputImage from "./input/image.md" with { type: "text" };
 import inputImageCropper from "./input/image-cropper.md" with { type: "text" };
 import inputNumber from "./input/number.md" with { type: "text" };
 import inputPin from "./input/pin.md" with { type: "text" };
+import inputQrScanner from "./input/qr-scanner.md" with { type: "text" };
 import inputSelect from "./input/select.md" with { type: "text" };
 import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
@@ -50,6 +52,7 @@ import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
 import layoutDiscussion from "./layout/discussion.md" with { type: "text" };
 import layoutFloatingWindow from "./layout/floating-window.md" with { type: "text" };
+import layoutMobileShell from "./layout/mobile-shell.md" with { type: "text" };
 import layoutNavigation from "./layout/navigation.md" with { type: "text" };
 import layoutOverview from "./layout/overview.md" with { type: "text" };
 import contentPagination from "./layout/pagination.md" with { type: "text" };
@@ -59,6 +62,7 @@ import layoutPermissions from "./layout/permissions.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
+import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
 import layoutWorkspace from "./layout/workspace.md" with { type: "text" };
 import inputMarkdownEditor from "./markdown-editor.md" with { type: "text" };
 import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
@@ -87,6 +91,7 @@ const catalogContextSources = {
   "input/tags": { file: "input/tags.md", content: inputTags },
   "input/tag-editor": { file: "input/tag-editor.md", content: inputTagEditor },
   "input/pin": { file: "input/pin.md", content: inputPin },
+  "input/qr-scanner": { file: "input/qr-scanner.md", content: inputQrScanner },
   "input/image": { file: "input/image.md", content: inputImage },
   "input/image-cropper": { file: "input/image-cropper.md", content: inputImageCropper },
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },
@@ -104,6 +109,8 @@ const catalogContextSources = {
   "actions/spotlight": { file: "actions/spotlight.md", content: actionSpotlight },
   "layout/navigation": { file: "layout/navigation.md", content: layoutNavigation },
   "layout/bottom-sheet": { file: "layout/bottom-sheet.md", content: layoutBottomSheet },
+  "layout/mobile-shell": { file: "layout/mobile-shell.md", content: layoutMobileShell },
+  "layout/tab-bar": { file: "layout/tab-bar.md", content: layoutTabBar },
   "layout/workspace": { file: "layout/workspace.md", content: layoutWorkspace },
   "layout/detail-panel": { file: "layout/detail-panel.md", content: layoutDetailPanel },
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },
@@ -128,6 +135,7 @@ const catalogContextSources = {
   "feedback/tooltip": { file: "feedback/tooltip.md", content: feedbackTooltip },
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
+  "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
   "content/charts": { file: "content/charts.md", content: contentCharts },
   "content/tables": { file: "content/tables.md", content: contentTables },
   "content/calendar": { file: "surfaces/calendar.md", content: contentCalendar },

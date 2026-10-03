@@ -5,16 +5,8 @@ html {
   color-scheme: light dark;
 }
 
-/* The document never scrolls, so iOS has nothing to rubber-band; only .auth-scroll does. */
-html,
-body {
-  overflow: hidden;
-  overscroll-behavior: none;
-}
-
-/* Apply at every scroll surface, including portalled dialogs. */
+/* MobileShell owns the app feel: no document scrolling, no pinch zoom, 44 px targets and 16 px fields. */
 * {
-  touch-action: pan-x pan-y;
   box-sizing: border-box;
 }
 
@@ -24,39 +16,17 @@ body {
   margin: 0;
 }
 
-/* Sized to the initial containing block rather than in vh units, so the shell adds no document height.
- * Not a fixed layer: Safari colors the status bar from a fixed layer at the top edge, and keeps the
- * color it had for one that covers the whole viewport, which after a dialog is the backdrop's dim. */
+/* The shell is MobileShell; Cloud Login keeps its roomier spacing. */
 .auth-app {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  --k2b-mobile-shell-gutter: 1.5rem;
   font-family: var(--k2b-font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
-.auth-header {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.auth-app .k2b-mobile-shell__header {
   gap: 1rem;
-  padding: calc(env(safe-area-inset-top) + 1.25rem) max(1.5rem, env(safe-area-inset-right)) 1.25rem max(1.5rem, env(safe-area-inset-left));
-}
-
-.auth-header h1 {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 650;
-  letter-spacing: -0.035em;
-}
-
-.auth-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  padding-top: calc(env(safe-area-inset-top) + 1.25rem);
+  padding-bottom: 1.25rem;
 }
 .auth-menu-button {
   min-width: 44px;
@@ -77,7 +47,7 @@ body {
   gap: 1.25rem;
   padding-block: 0.5rem;
 }
-.auth-install-dialog p {
+.auth-install-heading p {
   margin: 0;
   color: var(--k2b-text-muted);
   font-size: 0.875rem;
@@ -96,56 +66,13 @@ body {
   margin: 0 0 0.25rem;
   font-size: 1.125rem;
 }
-.auth-install-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 1.25rem;
-}
-.auth-install-steps li {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.auth-install-steps h3 {
-  margin: 0 0 0.25rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-.auth-step-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 50%;
-  background: var(--k2b-surface-muted);
-  color: var(--k2b-text-secondary);
-  font-size: 1.25rem;
-}
-.auth-install-dialog .k2b-button {
-  min-height: 44px;
-}
-.auth-install-dialog code {
-  overflow-wrap: anywhere;
-}
 
-.auth-main {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.auth-scroll {
-  flex: 1;
-  overscroll-behavior-y: contain;
+.auth-app .k2b-mobile-shell__body {
   display: grid;
-  padding: 2rem max(1.5rem, env(safe-area-inset-right)) calc(2rem + env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
-}
-/* ScrollArea reserves the classic-scrollbar gutter at the end only; both edges keep the list centered under the header and the note. */
-.k2b-ui .auth-scroll {
-  scrollbar-gutter: stable both-edges;
+  padding-top: 2rem;
+  padding-bottom: calc(
+    2rem + max(0px, env(safe-area-inset-bottom) - var(--k2b-mobile-shell-footer-height, 0px)) + var(--k2b-mobile-shell-toast-inset, 0px)
+  );
 }
 
 /* The note stays pinned only where the height can spare it. On a phone in landscape it would cover a quarter of the screen, so the list gets that room. */
@@ -158,8 +85,8 @@ body {
   .auth-footer {
     display: block;
   }
-  .auth-main:has(+ .auth-footer) > .auth-scroll {
-    padding-bottom: 1rem;
+  .auth-app .k2b-mobile-shell__main:has(+ .auth-footer) > .k2b-mobile-shell__body {
+    padding-bottom: calc(1rem + var(--k2b-mobile-shell-toast-inset, 0px));
   }
 }
 .auth-footer > p {
@@ -181,7 +108,7 @@ body {
 }
 
 @media (min-width: 40rem) {
-  .auth-header {
+  .auth-app .k2b-mobile-shell__header {
     width: 100%;
     max-width: 36rem;
     margin-inline: auto;
@@ -285,38 +212,6 @@ body {
 .auth-flow > strong {
   font-size: 0.875rem;
   font-weight: 600;
-}
-.auth-camera {
-  display: grid;
-  gap: 0.875rem;
-}
-.auth-camera-preview {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--k2b-radius-surface);
-  background: #09090b;
-}
-.auth-camera-preview video {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-}
-
-.auth-camera-preview--invalid .scan-region-highlight-svg {
-  stroke: var(--k2b-danger-500) !important;
-}
-
-/* Touch sizing belongs to this mobile-first app, not desktop UI defaults. */
-body.k2b-ui .k2b-button,
-body.k2b-ui .k2b-dropdown__trigger,
-body.k2b-ui .k2b-segmented-control button {
-  min-height: 44px;
-}
-body.k2b-ui input:not([type="checkbox"]):not([type="radio"]),
-body.k2b-ui textarea {
-  min-height: 44px;
-  font-size: 16px;
 }
 
 .auth-security-feedback {
@@ -459,7 +354,7 @@ body.k2b-ui textarea {
 }
 
 /* Push onboarding sits above the main content without taking its space. */
-.auth-scroll:has(> .auth-push-card) {
+.auth-app .k2b-mobile-shell__body:has(> .auth-push-card) {
   grid-template-rows: auto 1fr;
   row-gap: 1.5rem;
 }

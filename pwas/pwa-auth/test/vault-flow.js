@@ -25,7 +25,7 @@ async function _run(page) {
     await p.getByRole("menuitem", { name, exact: true }).click();
   };
   const pin = async (value) => fillAppPin(p, value);
-  const ready = async () => p.waitForFunction(() => !history.state?.cloudLoginDialog);
+  const ready = async () => p.waitForFunction(() => !history.state?.k2bDialog);
   try {
     await p.goto("http://127.0.0.1:4178/");
     await button("Continue in browser").click();
@@ -108,7 +108,7 @@ async function _run(page) {
     await other.goto("http://127.0.0.1:4178/");
     if (!(await other.getByRole("dialog").count())) await other.getByRole("button", { name: "Unlock", exact: true }).click();
     await fillAppPin(other, "654321");
-    await other.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await other.waitForFunction(() => !history.state?.k2bDialog);
     await menu("Lock app");
     await other.getByRole("button", { name: "Unlock", exact: true }).waitFor();
     await other.close();

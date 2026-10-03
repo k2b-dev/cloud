@@ -1,4 +1,4 @@
-import { Button, Dropdown, type DropdownItem, LocaleProvider, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
+import { Button, Dropdown, type DropdownItem, LocaleProvider, MobileShell, Placeholder, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { consumePairingLocation, createAuthenticator } from "./authenticator";
 import { Clouds, openManageAccounts } from "./Clouds";
@@ -220,80 +220,82 @@ export function App(props: { preferences: Preferences }) {
       : []),
   ]);
   return (
-    <div class="auth-app">
-      <header class="auth-header">
-        <h1>{t().appName}</h1>
-        <div class="auth-header-actions">
-          <Dropdown.Root items={items()} align="end" variant="touch">
-            <Dropdown.Trigger iconOnly label={t().menu} class="auth-menu-button" tooltip={false}>
-              <span aria-hidden="true">···</span>
-            </Dropdown.Trigger>
-          </Dropdown.Root>
-        </div>
-      </header>
-      <main class="auth-main">
-        <ScrollArea class="auth-scroll">
-          <Show when={auth.storageError()}>
-            <p role="alert">{t().storage}</p>
-          </Show>
-          <Show when={!auth.online()}>
-            <p role="status">{t().offline}</p>
-          </Show>
-          <Show when={vault.status() === "open" || vault.status() === "empty"}>
-            <PushCard push={push} installation={installation} showInstall={() => void showInstall()} />
-          </Show>
-          <Show
-            when={vault.status() === "open" || vault.status() === "empty"}
-            fallback={
-              <section class="auth-welcome">
-                <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
-                <Show when={vault.status() === "locked"}>
-                  <Placeholder title={t().unlockApp} description={t().lockedHelp} />
-                  <Button onClick={() => void showUnlock()}>{t().unlockApp}</Button>
-                </Show>
-                <Show when={vault.status() === "unsupported"}>
-                  <Placeholder title={t().resetApp} description={t().unsupportedProtection} />
-                  <Button onClick={() => void openSecurity(vault, props.preferences, "reset")}>{t().resetApp}</Button>
-                </Show>
-                <Show when={vault.status() === "legacy"}>
-                  <Placeholder title={t().legacyTitle} description={t().legacyHelp} />
-                  <Button onClick={() => void openSecurity(vault, props.preferences, "reset")}>{t().resetApp}</Button>
-                </Show>
-                <Show when={vault.status() === "loading"}>
-                  <p role="status">{t().loadingSecurity}</p>
-                </Show>
-                <Show when={vault.status() === "error"}>
-                  <p role="alert">{t().storage}</p>
-                </Show>
-              </section>
-            }
-          >
-            <Show
-              when={auth.bindings().length > 0}
-              fallback={
-                <section class="auth-welcome">
-                  <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
-                  <Placeholder title={t().emptyTitle} description={t().emptyDescription} />
-                  <Button
-                    onClick={() => {
-                      void showPairing();
-                    }}
-                  >
-                    {t().addCloud}
-                  </Button>
-                </section>
-              }
-            >
-              <Clouds auth={auth} preferences={props.preferences} focus={focusRequest} focused={() => setFocusRequest(undefined)} />
-            </Show>
-          </Show>
-        </ScrollArea>
-      </main>
-      <Show when={(vault.status() === "open" || vault.status() === "empty") && auth.bindings().length > 0}>
-        <footer class="auth-footer">
-          <p class="auth-recovery">{t().recoveryHelp}</p>
-        </footer>
+    <MobileShell
+      class="auth-app"
+      header={
+        <MobileShell.Header
+          title={t().appName}
+          actions={
+            <Dropdown.Root items={items()} align="end" variant="touch">
+              <Dropdown.Trigger iconOnly label={t().menu} class="auth-menu-button" tooltip={false}>
+                <span aria-hidden="true">···</span>
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          }
+        />
+      }
+      footer={
+        <Show when={(vault.status() === "open" || vault.status() === "empty") && auth.bindings().length > 0}>
+          <footer class="auth-footer">
+            <p class="auth-recovery">{t().recoveryHelp}</p>
+          </footer>
+        </Show>
+      }
+    >
+      <Show when={auth.storageError()}>
+        <p role="alert">{t().storage}</p>
       </Show>
-    </div>
+      <Show when={!auth.online()}>
+        <p role="status">{t().offline}</p>
+      </Show>
+      <Show when={vault.status() === "open" || vault.status() === "empty"}>
+        <PushCard push={push} installation={installation} showInstall={() => void showInstall()} />
+      </Show>
+      <Show
+        when={vault.status() === "open" || vault.status() === "empty"}
+        fallback={
+          <section class="auth-welcome">
+            <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
+            <Show when={vault.status() === "locked"}>
+              <Placeholder title={t().unlockApp} description={t().lockedHelp} />
+              <Button onClick={() => void showUnlock()}>{t().unlockApp}</Button>
+            </Show>
+            <Show when={vault.status() === "unsupported"}>
+              <Placeholder title={t().resetApp} description={t().unsupportedProtection} />
+              <Button onClick={() => void openSecurity(vault, props.preferences, "reset")}>{t().resetApp}</Button>
+            </Show>
+            <Show when={vault.status() === "legacy"}>
+              <Placeholder title={t().legacyTitle} description={t().legacyHelp} />
+              <Button onClick={() => void openSecurity(vault, props.preferences, "reset")}>{t().resetApp}</Button>
+            </Show>
+            <Show when={vault.status() === "loading"}>
+              <p role="status">{t().loadingSecurity}</p>
+            </Show>
+            <Show when={vault.status() === "error"}>
+              <p role="alert">{t().storage}</p>
+            </Show>
+          </section>
+        }
+      >
+        <Show
+          when={auth.bindings().length > 0}
+          fallback={
+            <section class="auth-welcome">
+              <img class="auth-mark" src="/favicon.svg" width="80" height="80" alt="" />
+              <Placeholder title={t().emptyTitle} description={t().emptyDescription} />
+              <Button
+                onClick={() => {
+                  void showPairing();
+                }}
+              >
+                {t().addCloud}
+              </Button>
+            </section>
+          }
+        >
+          <Clouds auth={auth} preferences={props.preferences} focus={focusRequest} focused={() => setFocusRequest(undefined)} />
+        </Show>
+      </Show>
+    </MobileShell>
   );
 }

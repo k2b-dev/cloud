@@ -16,7 +16,7 @@ async function _run(page) {
   p.on("pageerror", (e) => errors.push(e.message));
   const button = (name) => p.getByRole("button", { name, exact: true });
   const pin = async (value) => fillAppPin(p, value);
-  const ready = async () => p.waitForFunction(() => !history.state?.cloudLoginDialog);
+  const ready = async () => p.waitForFunction(() => !history.state?.k2bDialog);
   try {
     await p.goto("http://127.0.0.1:4178/");
     await button("Continue in browser").click();

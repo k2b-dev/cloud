@@ -7,7 +7,7 @@ async function _run(page) {
   try {
     await p.goto("http://127.0.0.1:4178/");
     await p.getByRole("button", { name: "Continue in browser", exact: true }).click();
-    await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await p.waitForFunction(() => !history.state?.k2bDialog);
     const buttons = await p.evaluate(() =>
       [...document.querySelectorAll("button")]
         .filter((b) => b.getBoundingClientRect().width)
@@ -31,12 +31,12 @@ async function _run(page) {
     if (p.url() !== "http://127.0.0.1:4178/") throw new Error("Back left app");
     await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
     await p.getByRole("button", { name: "Close", exact: true }).click();
-    await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await p.waitForFunction(() => !history.state?.k2bDialog);
     await p.getByRole("button", { name: "Menu", exact: true }).click();
     await p.getByRole("menuitem", { name: "Settings", exact: true }).click();
     await p.getByRole("dialog").getByText("Dark", { exact: true }).click();
     await p.getByRole("button", { name: "Done", exact: true }).click();
-    await p.waitForFunction(() => !history.state?.cloudLoginDialog);
+    await p.waitForFunction(() => !history.state?.k2bDialog);
     await context.route("**/assets/*.js", (r) => r.abort());
     await p.reload();
     const earlyTheme = await p.evaluate(() => ({
