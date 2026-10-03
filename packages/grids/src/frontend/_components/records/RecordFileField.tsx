@@ -12,11 +12,13 @@ import {
   panelDialogWorkspaceOptions,
   prompts,
   Tooltip,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PublicField as Field, PublicGridFile as GridFile } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
+import { createRetryToasts } from "../utils/feedback";
 import { recordMessages } from "./messages";
 import { uploadRecordFile } from "./record-transfer-client";
 
@@ -128,6 +130,7 @@ export default function RecordFileField(props: {
 }) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const retryToast = createRetryToasts();
   const [uploading, setUploading] = createSignal(false);
   const [files, setFiles] = createSignal<GridFile[]>(props.initialFiles);
 
@@ -138,10 +141,13 @@ export default function RecordFileField(props: {
     if (!res.ok) throw new Error(await errorMessage(res, t().loadFilesFailed));
     setFiles(((await res.json()) as { items: GridFile[] }).items);
   };
+  // The file change was saved, only the list is stale, so Retry repeats the refresh, not the change.
+  const refreshFiles = (): Promise<void> =>
+    refetch().catch(() => retryToast(t().filesRefreshFailed, { retryLabel: t().retry, retry: refreshFiles }));
   const refreshAfterCommittedChange = () =>
-    refreshFilesAfterCommittedChange(props.onChanged, refetch, () => {
-      prompts.error(t().filesRefreshFailed);
-    });
+    refreshFilesAfterCommittedChange(props.onChanged, refetch, () =>
+      retryToast(t().filesRefreshFailed, { retryLabel: t().retry, retry: refreshFiles }),
+    );
 
   const accept = () => {
     const raw = (props.field.config as { accept?: string[] }).accept;
@@ -178,7 +184,7 @@ export default function RecordFileField(props: {
       if (!res.ok) throw new Error(await errorMessage(res, t().uploadFailed));
       await refreshAfterCommittedChange();
     } catch (e) {
-      prompts.error(e instanceof Error ? e.message : t().uploadFailed);
+      toast.error(e instanceof Error ? e.message : t().uploadFailed);
     } finally {
       setUploading(false);
     }
@@ -193,7 +199,7 @@ export default function RecordFileField(props: {
       if (!res.ok) throw new Error(await errorMessage(res, t().replaceFailed));
       await refreshAfterCommittedChange();
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : t().replaceFailed);
+      toast.error(error instanceof Error ? error.message : t().replaceFailed);
     } finally {
       setUploading(false);
     }
@@ -207,7 +213,7 @@ export default function RecordFileField(props: {
       if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) {
         return;
       }
-      prompts.error(error instanceof Error ? error.message : t().pickerFailed);
+      toast.error(error instanceof Error ? error.message : t().pickerFailed);
     }
   };
 
@@ -219,7 +225,7 @@ export default function RecordFileField(props: {
       if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) {
         return;
       }
-      prompts.error(error instanceof Error ? error.message : t().pickerFailed);
+      toast.error(error instanceof Error ? error.message : t().pickerFailed);
     }
   };
 
@@ -232,7 +238,7 @@ export default function RecordFileField(props: {
     if (!confirmed) return;
     const res = await fetch(recordFileHref(location(), file), { method: "DELETE" });
     if (!res.ok) {
-      prompts.error(await errorMessage(res, t().removeAttachmentFailed));
+      toast.error(await errorMessage(res, t().removeAttachmentFailed));
       return;
     }
     await refreshAfterCommittedChange();

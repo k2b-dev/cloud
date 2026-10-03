@@ -43,6 +43,7 @@ export default function RecordComments(props: Props) {
   const [composerOpen, setComposerOpen] = createSignal(false);
   const [editingId, setEditingId] = createSignal<string | null>(null);
   const [editingBody, setEditingBody] = createSignal("");
+  const [editError, setEditError] = createSignal<string | null>(null);
   const [savingId, setSavingId] = createSignal<string | null>(null);
   let requestSequence = 0;
 
@@ -91,6 +92,7 @@ export default function RecordComments(props: Props) {
     !comment.deletedAt &&
     Boolean(permissions().canModerate || (comment.authorUserId && comment.authorUserId === permissions().actorUserId));
 
+  // The new comment appears in the list; a failure stays under the composer, which keeps the draft.
   const post = async (body: string): Promise<boolean> => {
     const normalized = body.trim();
     if (!normalized) return false;
@@ -119,12 +121,10 @@ export default function RecordComments(props: Props) {
       const created = (await response.json()) as RecordComment;
       setComments((current) => current.map((comment) => (comment.id === temporaryId ? created : comment)));
       setComposerOpen(false);
-      toast.success(t().commentPosted);
       return true;
     } catch (cause) {
       setComments((current) => current.filter((comment) => comment.id !== temporaryId));
-      prompts.error(cause instanceof Error ? cause.message : t().commentPostFailed);
-      return false;
+      throw cause instanceof Error ? cause : new Error(t().commentPostFailed);
     }
   };
 
@@ -132,6 +132,7 @@ export default function RecordComments(props: Props) {
     const normalized = editingBody().trim();
     if (!normalized || savingId()) return;
     setSavingId(comment.id);
+    setEditError(null);
     try {
       const response = await fetch(recordCommentUrl(props.endpoint, comment.id), {
         method: "PATCH",
@@ -142,9 +143,9 @@ export default function RecordComments(props: Props) {
       const updated = (await response.json()) as RecordComment;
       setComments((current) => current.map((item) => (item.id === comment.id ? updated : item)));
       setEditingId(null);
-      toast.success(t().commentUpdated);
     } catch (cause) {
-      prompts.error(cause instanceof Error ? cause.message : t().commentUpdateFailed);
+      // The edit form stays open with the text, so the reason belongs under the field.
+      setEditError(cause instanceof Error ? cause.message : t().commentUpdateFailed);
     } finally {
       setSavingId(null);
     }
@@ -167,9 +168,8 @@ export default function RecordComments(props: Props) {
       setComments((current) =>
         current.map((item) => (item.id === comment.id ? { ...item, body: null, deletedAt: now, updatedAt: now } : item)),
       );
-      toast.success(t().deletedComment);
     } catch (cause) {
-      prompts.error(cause instanceof Error ? cause.message : t().commentDeleteFailed);
+      toast.error(cause instanceof Error ? cause.message : t().commentDeleteFailed);
     } finally {
       setSavingId(null);
     }
@@ -241,6 +241,7 @@ export default function RecordComments(props: Props) {
                             onClick={() => {
                               setEditingId(comment.id);
                               setEditingBody(comment.body ?? "");
+                              setEditError(null);
                             }}
                           >
                             <i class="ti ti-pencil" aria-hidden="true" />
@@ -284,7 +285,11 @@ export default function RecordComments(props: Props) {
                       <TextInput
                         aria-label={t().editComment}
                         value={() => editingBody()}
-                        onValueChange={setEditingBody}
+                        onValueChange={(value) => {
+                          setEditingBody(value);
+                          setEditError(null);
+                        }}
+                        error={() => editError() ?? undefined}
                         markdown
                         disabled={savingId() === comment.id}
                       />
