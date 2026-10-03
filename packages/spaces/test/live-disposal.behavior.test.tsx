@@ -39,6 +39,7 @@ describe("Spaces live owner disposal", () => {
         { type: "spaces.live.ready", payload: { spaceId: "Space1", cursor: "1-0" } },
         {
           markApplied,
+          subscribedCursor: () => null,
           send: () => true,
           terminate: () => {},
         },
@@ -48,6 +49,7 @@ describe("Spaces live owner disposal", () => {
         { type: "spaces.live.ready", payload: { spaceId: "Space1", cursor: "2-0" } },
         {
           markApplied,
+          subscribedCursor: () => null,
           send: () => true,
           terminate: () => {},
         },

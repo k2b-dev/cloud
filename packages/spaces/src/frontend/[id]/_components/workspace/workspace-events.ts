@@ -1,3 +1,5 @@
+import { retry } from "@k2b/sync/retry";
+
 export const SPACES_DETAIL_NAVIGATION_EVENT = "spaces-detail-navigation";
 export const SPACES_DETAIL_STATE_EVENT = "spaces-detail-state";
 export const SPACES_DATA_INVALIDATED_EVENT = "spaces-data-invalidated";
@@ -71,10 +73,14 @@ export const invalidateSpacesData = (
   return Promise.all(coverage).then(() => undefined);
 };
 
+/** Attempts per live refresh before the page gives up; a brief gateway or upstream hiccup usually clears within them. */
+const LIVE_REFRESH_ATTEMPTS = 3;
+
 export const createSpacesLiveCursorQueue = (options: {
   invalidate: (domains: SpacesDataDomain[], cursor: string | null, itemId: string | null) => Promise<void>;
   markApplied: (cursor: string | null) => void;
   onFailure: (error: Error) => void;
+  signal: AbortSignal;
 }) => {
   let queue = Promise.resolve();
   let failed = false;
@@ -83,11 +89,18 @@ export const createSpacesLiveCursorQueue = (options: {
     queue = queue
       .then(async () => {
         if (failed) return;
-        await options.invalidate(domains, cursor, itemId);
+        await retry({
+          signal: options.signal,
+          run: () => options.invalidate(domains, cursor, itemId),
+          after: ({ ctx }) => {
+            if (ctx.error && ctx.attempt < LIVE_REFRESH_ATTEMPTS)
+              ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 150, maxMs: 1_000 }) });
+          },
+        });
         if (!failed) options.markApplied(cursor);
       })
       .catch((error) => {
-        if (failed) return;
+        if (failed || options.signal.aborted) return;
         failed = true;
         options.onFailure(error instanceof Error ? error : new Error(String(error)));
       });
@@ -99,13 +112,24 @@ export const subscribeToSpacesDataInvalidation = (
   domains: SpacesDataDomain[],
   invalidate: (invalidation: { cursor: string | null; itemId: string | null }) => Promise<void>,
 ) => {
+  let subscribed = true;
   const onInvalidated = (event: Event) => {
     const detail = (event as CustomEvent<SpacesDataInvalidation>).detail;
     if (!detail || !domains.some((domain) => detail.domains.includes(domain))) return;
-    detail.cover(invalidate({ cursor: detail.cursor, itemId: detail.itemId }));
+    // A query disposed during its refresh (a board column rebuilt from the new
+    // snapshot, a detail that closed) no longer shows data, so its rejection
+    // leaves nothing uncovered.
+    detail.cover(
+      invalidate({ cursor: detail.cursor, itemId: detail.itemId }).catch((error: unknown) => {
+        if (subscribed) throw error;
+      }),
+    );
   };
   window.addEventListener(SPACES_DATA_INVALIDATED_EVENT, onInvalidated);
-  return () => window.removeEventListener(SPACES_DATA_INVALIDATED_EVENT, onInvalidated);
+  return () => {
+    subscribed = false;
+    window.removeEventListener(SPACES_DATA_INVALIDATED_EVENT, onInvalidated);
+  };
 };
 
 const publishDetailNavigation = (target: URL, history: "push" | "replace" | "none", reconcile?: true) => {

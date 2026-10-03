@@ -4,7 +4,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import { subscribeToSpacesDataInvalidation } from "../src/frontend/[id]/_components/workspace/workspace-events";
 
-type Controls = { markApplied: (cursor: string | null) => void; terminate: () => void };
+type Controls = { markApplied: (cursor: string | null) => void; subscribedCursor: () => string | null; terminate: () => void };
 type LiveOptions = {
   onMessage: (message: never, controls: Controls) => void;
   onFatal: (error: { code: string; message: string }) => void;
@@ -54,6 +54,7 @@ describe("Spaces live events", () => {
 
     options.onMessage({ type: "spaces.live.ready", payload: { spaceId: "space-1", cursor: "2-0" } } as never, {
       markApplied: () => undefined,
+      subscribedCursor: () => "1-0",
       terminate: () => undefined,
     });
     await flush();
@@ -65,7 +66,7 @@ describe("Spaces live events", () => {
         type: "spaces.live.event",
         payload: { spaceId: "space-2", cursor: "3-0", event: { type: "item.updated", spaceId: "space-2", itemId: "item-1", at: "" } },
       } as never,
-      { markApplied: () => undefined, terminate: () => undefined },
+      { markApplied: () => undefined, subscribedCursor: () => "1-0", terminate: () => undefined },
     );
     await flush();
     expect(transport.applied).toEqual(["2-0"]);
@@ -89,7 +90,7 @@ describe("Spaces live events", () => {
         type: "spaces.live.event",
         payload: { spaceId: "space-1", cursor: "4-0", event: { type: "item.updated", spaceId: "space-1", itemId: "Item01", at: "" } },
       } as never,
-      { markApplied: () => undefined, terminate: () => undefined },
+      { markApplied: () => undefined, subscribedCursor: () => "1-0", terminate: () => undefined },
     );
     await flush();
     expect(detailItems).toEqual(["Item01"]);
@@ -100,23 +101,30 @@ describe("Spaces live events", () => {
     dom.cleanup();
   });
 
-  test("a fatal live failure that persists across loads reloads once, then offers a manual reload", async () => {
+  test("a fatal live failure that persists across loads reloads once, then offers a manual reload in a toast", async () => {
     const dom = createDomTestHarness();
     const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
     const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
+    const reloadAction = () => Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent === "Reload");
     try {
       // Every load mounts the island afresh; sessionStorage survives the reload.
+      let dispose = () => {};
       for (let load = 0; load < 3; load += 1) {
-        const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
+        dispose();
+        dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
         options.onFatal({ code: "internal_error", message: "Live updates failed." });
         await flush();
-        if (load < 2) dispose();
       }
       expect(reload).toHaveBeenCalledTimes(1);
-      expect(dom.root.textContent).toContain("Live updates are unavailable right now");
-      const button = Array.from(dom.root.querySelectorAll("button")).find((candidate) => candidate.textContent === "Reload");
-      button?.click();
+      // A toast, not a banner: the island adds nothing to the page layout.
+      expect(dom.root.textContent).toBe("");
+      expect(dom.document.body.textContent).toContain("Live updates are unavailable right now");
+      reloadAction()?.click();
       expect(reload).toHaveBeenCalledTimes(2);
+
+      dispose();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(reloadAction()).toBeUndefined();
     } finally {
       reload.mockRestore();
       dom.cleanup();
