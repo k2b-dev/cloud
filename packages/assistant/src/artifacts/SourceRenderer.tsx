@@ -1,13 +1,31 @@
-import { Button, CodeDisplay, type FileViewRenderer, type FileViewRendererProps, getFileViewPreviewKind, useLocale } from "@k2b/ui";
+import {
+  Button,
+  CodeDisplay,
+  type CodeDisplayLanguage,
+  type FileViewRenderer,
+  type FileViewRendererProps,
+  getFileViewPreviewKind,
+  useLocale,
+} from "@k2b/ui";
 import { Show } from "solid-js";
 import { artifactMessages } from "./messages";
 import { SourceEditor } from "./SourceEditor";
+
+/** Highlights read-only source the way the FileView text preview does: by the file's extension. */
+const sourceLanguage = (path: string): CodeDisplayLanguage => {
+  const extension = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  if (extension === "ts" || extension === "mts" || extension === "cts") return "ts";
+  if (extension === "tsx") return "tsx";
+  if (extension === "js" || extension === "mjs" || extension === "cjs") return "js";
+  if (extension === "jsx") return "jsx";
+  return "text";
+};
 
 function SourceRenderer(props: FileViewRendererProps) {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
   return (
-    <Show when={props.editor} fallback={<CodeDisplay code={props.content.content} language="js" />}>
+    <Show when={props.editor} fallback={<CodeDisplay code={props.content.content} language={sourceLanguage(props.file.path)} />}>
       {(editor) => (
         <div class="artifact-source-editor">
           <div class="artifact-source-editor__actions">
@@ -62,6 +80,6 @@ export const readOnlySourceRenderers: readonly FileViewRenderer[] = [
     id: "assistant-source-text",
     match: (file, content) =>
       content.encoding === "utf8" && getFileViewPreviewKind({ path: file.path, mediaType: content.mediaType }) === "text",
-    component: (props) => <CodeDisplay code={props.content.content} language="text" />,
+    component: (props) => <CodeDisplay code={props.content.content} language={sourceLanguage(props.file.path)} />,
   },
 ];
