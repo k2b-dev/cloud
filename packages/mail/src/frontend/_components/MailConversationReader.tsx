@@ -52,7 +52,7 @@ import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
-import { toastErrorWithRetry } from "./mail-feedback";
+import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import type { MailReadingFormat } from "./mail-user-preferences";
@@ -121,6 +121,7 @@ export default function MailConversationReader(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const retryToast = createRetryToasts();
   const intentLabel = (intent: DraftIntent): string =>
     intent === "reply"
       ? t().replyIntent
@@ -167,11 +168,11 @@ export default function MailConversationReader(props: {
     },
     // The form has closed, so Retry sends the captured text again instead of losing it.
     onError: (error, context) =>
-      toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => context && summarySave.mutate(context.edit) }),
+      retryToast(error.message, { retryLabel: t().retry, retry: () => context && summarySave.mutate(context.edit) }),
   });
   /** The summary was saved, only the view is stale, so Retry repeats the refresh, not the save. */
   const reportSummaryRefreshFailure = (error: Error, refresh: () => Promise<void>): void => {
-    toastErrorWithRetry(error.message, {
+    retryToast(error.message, {
       title: t().summaryRefreshFailed,
       retryLabel: t().retry,
       retry: async () => {

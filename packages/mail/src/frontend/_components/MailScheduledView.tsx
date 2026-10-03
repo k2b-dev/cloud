@@ -8,7 +8,7 @@ import type { CancelScheduledSendInput, CancelScheduledSendResult, ScheduledSend
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { toastErrorWithRetry } from "./mail-feedback";
+import { createRetryToasts } from "./mail-feedback";
 
 const recipients = (item: ScheduledSendPage["items"][number], t: ReturnType<typeof mailConversationUiMessages.resolve>["t"]): string => {
   const all = [...item.to, ...item.cc, ...item.bcc];
@@ -51,6 +51,7 @@ export default function MailScheduledView(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const retryToast = createRetryToasts();
   const [cancellingId, setCancellingId] = createSignal<string | null>(null);
   const cancel = mutation.create<
     {
@@ -99,7 +100,7 @@ export default function MailScheduledView(props: {
   onCleanup(cancel.abort);
   /** The scheduled send was cancelled, only the list is stale, so Retry repeats the refresh, not the cancellation. */
   const reportRefreshFailure = (error: Error): void => {
-    toastErrorWithRetry(error.message, {
+    retryToast(error.message, {
       title: t().cancelledRefreshFailed,
       retryLabel: t().retry,
       retry: () => props.onRefresh().catch((next: unknown) => reportRefreshFailure(next instanceof Error ? next : new Error(String(next)))),

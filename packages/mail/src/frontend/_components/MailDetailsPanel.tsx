@@ -59,7 +59,7 @@ import {
   reconcileConversationTags,
   reconcileReminder,
 } from "./mail-details-reconciliation";
-import { toastErrorWithRetry } from "./mail-feedback";
+import { createRetryToasts } from "./mail-feedback";
 
 const avatarSource = (userId: string | undefined, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
@@ -94,6 +94,7 @@ export default function MailDetailsPanel(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const retryToast = createRetryToasts();
   const [state, setState] = createSignal(props.initialState);
   const [availableTags, setAvailableTags] = createSignal(props.initialLocalTags);
   const [tagState, setTagState] = createSignal(props.initialConversationLocalTags);
@@ -440,7 +441,7 @@ export default function MailDetailsPanel(props: {
     onSuccess: (updated) => setComments((current) => current.map((item) => (item.id === updated.id ? updated : item))),
     // The form has closed, so Retry saves the captured text again instead of losing it.
     onError: (error, context) =>
-      toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => context && editComment.mutate(context.edit) }),
+      retryToast(error.message, { retryLabel: t().retry, retry: () => context && editComment.mutate(context.edit) }),
   });
   const promptCommentEdit = async (comment: ConversationComment) => {
     const mailboxId = props.mailboxId;

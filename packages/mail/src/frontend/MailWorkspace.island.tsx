@@ -4,7 +4,7 @@ import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, openSpotlightSearch, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -52,7 +52,7 @@ import type { MailConversationToolbarActionId } from "./_components/mail-convers
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
-import { toastErrorWithRetry } from "./_components/mail-feedback";
+import { createRetryToasts } from "./_components/mail-feedback";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -672,7 +672,6 @@ function MailWorkspaceView(props: {
 
   onCleanup(() => {
     disposed = true;
-    for (const notice of refreshNotices) notice.dismiss();
     if (preferenceTimer) clearTimeout(preferenceTimer);
     if (liveTransportTimer) clearTimeout(liveTransportTimer);
     workspaceTransition?.resolve("stale");
@@ -797,22 +796,20 @@ function MailWorkspaceView(props: {
   };
 
   /**
-   * The change was saved, only this view is stale: say so, and let Try again repeat the refresh, not the change. The
-   * notice leaves with the workspace, because a refresh of a view that is gone could navigate back into it.
+   * The change was saved, only this view is stale: say so, and let Try again reload what the workspace shows now. It
+   * repeats neither the change nor its navigation, so a late click cannot pull the user away from where they are.
    */
-  const refreshNotices = new Set<ToastHandle>();
-  const reportRefreshFailure = (error: Error, title: string, refresh: () => Promise<void>): void => {
+  const retryToast = createRetryToasts();
+  const reportRefreshFailure = (error: Error, title: string): void => {
     if (disposed) return;
-    const notice = toastErrorWithRetry(error.message, {
+    retryToast(error.message, {
       title,
       retryLabel: t().tryAgain,
       retry: async () => {
-        refreshNotices.delete(notice);
-        const next = await captureMailWorkspaceRefreshError(refresh);
-        if (next) reportRefreshFailure(next, title, refresh);
+        const next = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+        if (next) reportRefreshFailure(next, title);
       },
     });
-    refreshNotices.add(notice);
   };
 
   const applySavedConversationSummary = async (conversationId: string, summary: NonNullable<MailboxPageData["conversationSummary"]>) => {
@@ -1006,7 +1003,7 @@ function MailWorkspaceView(props: {
   };
 
   const mergeConversationMutation = mutation.create<
-    { refreshError: Error | null; refresh: () => Promise<void> } | undefined,
+    { refreshError: Error | null } | undefined,
     { conversationId: string; revision: number; subject: string }
   >({
     mutation: async (source, { abortSignal }) => {
@@ -1037,16 +1034,16 @@ function MailWorkspaceView(props: {
       );
       if (!response.ok) throw new Error(await readApiError(response, t().mergeFailed));
       if (abortSignal.aborted || disposed) return;
-      const targetHref = conversationHref(target.conversationId);
-      const refresh = () => requireMailWorkspaceRefresh(() => transitionWorkspaceHref(targetHref, true), t().mergedOpenFailed);
-      const refreshError = await captureMailWorkspaceRefreshError(refresh);
+      const refreshError = await captureMailWorkspaceRefreshError(() =>
+        requireMailWorkspaceRefresh(() => transitionWorkspaceHref(conversationHref(target.conversationId), true), t().mergedOpenFailed),
+      );
       if (abortSignal.aborted || disposed) return;
-      return { refreshError, refresh };
+      return { refreshError };
     },
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().merged);
-      if (result.refreshError) reportRefreshFailure(result.refreshError, t().mergedRefreshFailed, result.refresh);
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().mergedRefreshFailed);
     },
     onError: (error) =>
       prompts.error(error.message, {
@@ -1106,7 +1103,7 @@ function MailWorkspaceView(props: {
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().messageMoved);
-      if (result.refreshError) reportRefreshFailure(result.refreshError, t().messageMovedRefreshFailed, requireWorkspaceReconcile);
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().messageMovedRefreshFailed);
     },
     onError: (error) => prompts.error(error.message, { title: t().messageNotMoved }),
   });
@@ -1118,7 +1115,7 @@ function MailWorkspaceView(props: {
   };
 
   const splitMessageMutation = mutation.create<
-    { refreshError: Error | null; refresh: () => Promise<void> } | undefined,
+    { refreshError: Error | null } | undefined,
     { messageId: string; conversationId: string; revision: number }
   >({
     mutation: async ({ messageId, conversationId, revision }, { abortSignal }) => {
@@ -1143,16 +1140,16 @@ function MailWorkspaceView(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().splitFailed));
       const result = await response.json();
       if (abortSignal.aborted || disposed) return;
-      const createdHref = conversationHref(result.created.id);
-      const refresh = () => requireMailWorkspaceRefresh(() => transitionWorkspaceHref(createdHref, true), t().splitOpenFailed);
-      const refreshError = await captureMailWorkspaceRefreshError(refresh);
+      const refreshError = await captureMailWorkspaceRefreshError(() =>
+        requireMailWorkspaceRefresh(() => transitionWorkspaceHref(conversationHref(result.created.id), true), t().splitOpenFailed),
+      );
       if (abortSignal.aborted || disposed) return;
-      return { refreshError, refresh };
+      return { refreshError };
     },
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().splitCreated);
-      if (result.refreshError) reportRefreshFailure(result.refreshError, t().splitRefreshFailed, result.refresh);
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().splitRefreshFailed);
     },
     onError: (error) => prompts.error(error.message, { title: t().conversationUnchanged }),
   });
@@ -1320,16 +1317,16 @@ function MailWorkspaceView(props: {
             removedConversationIds: succeededConversationIds,
           })
         : null;
-      const refresh = removesActiveConversation
-        ? () =>
-            requireMailWorkspaceRefresh(
+      const refreshError = await captureMailWorkspaceRefreshError(() =>
+        removesActiveConversation
+          ? requireMailWorkspaceRefresh(
               () => transitionWorkspaceHref(buildMailListHref(mailRouteUrl(requestPath())), true),
               t().actionRefreshFailed,
             )
-        : requireWorkspaceReconcile;
-      const refreshError = await captureMailWorkspaceRefreshError(refresh);
+          : requireWorkspaceReconcile(),
+      );
       if (!disposed && focusAfterRemoval && !refreshError) focusConversation(focusAfterRemoval, "row");
-      if (refreshError) reportRefreshFailure(refreshError, t().actionQueuedRefreshFailed, refresh);
+      if (refreshError) reportRefreshFailure(refreshError, t().actionQueuedRefreshFailed);
     },
     reconcile: reconcileWorkspace,
     showMissingTarget: async () => {
@@ -1422,7 +1419,7 @@ function MailWorkspaceView(props: {
           ? t().tagsAlreadyPresent
           : t().tagsAdded({ count: result.updatedConversationIds.length }),
       );
-      if (refreshError) reportRefreshFailure(refreshError, t().tagsRefreshFailed, requireWorkspaceReconcile);
+      if (refreshError) reportRefreshFailure(refreshError, t().tagsRefreshFailed);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -1485,7 +1482,7 @@ function MailWorkspaceView(props: {
           success: (message, undo) =>
             toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, onClick: undo.run } } : undefined),
           error: (message, title) => void toast.error(message, title ? { title } : undefined),
-          refreshFailed: (error, title) => reportRefreshFailure(error, title, requireWorkspaceReconcile),
+          refreshFailed: (error, title) => reportRefreshFailure(error, title),
           active: () => !abortSignal.aborted && !disposed,
         },
         t(),

@@ -11,7 +11,7 @@ import { readApiError } from "./api-response";
 import { createContact, listWritableContactBooks } from "./contact-capabilities";
 import { buildMailContactParticipantRows } from "./mail-contact-context";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
-import { toastErrorWithRetry } from "./mail-feedback";
+import { createRetryToasts } from "./mail-feedback";
 import { buildExactParticipantSearchHref } from "./mail-navigation";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -28,6 +28,7 @@ export default function MailConversationContext(props: {
   });
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const retryToast = createRetryToasts();
   const contactDirectory = useMailContactDirectory();
   const canCreateContact = canCreateDirectoryContacts(contactDirectory);
   const contexts = query.createInfinite<string, MailConversationContext, string>({
@@ -99,7 +100,7 @@ export default function MailConversationContext(props: {
         await refreshContext(messages().contactCreatedRefreshFailed, messages().contactsRefreshFailed);
     },
     onError: (error, context) =>
-      toastErrorWithRetry(error.message, {
+      retryToast(error.message, {
         title: messages().couldNotCreateContact,
         retryLabel: messages().retry,
         retry: () => context && createParticipantContact.mutate(context.intent),
@@ -110,7 +111,7 @@ export default function MailConversationContext(props: {
     try {
       await contexts.invalidate();
     } catch (error) {
-      toastErrorWithRetry(error instanceof Error ? error.message : fallback, {
+      retryToast(error instanceof Error ? error.message : fallback, {
         title,
         retryLabel: messages().retry,
         retry: () => refreshContext(title, fallback),

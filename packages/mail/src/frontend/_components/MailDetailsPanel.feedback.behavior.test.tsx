@@ -188,4 +188,34 @@ describe("Mail details feedback", () => {
       errors.mockRestore();
     }
   });
+
+  test("a Retry toast closes with the panel, so it cannot write for a view that is gone", async () => {
+    const { prompts, toast } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ body: "Call the customer back on Monday." });
+    const notices: Array<{ dismissed: boolean }> = [];
+    const errors = spyOn(toast, "error").mockImplementation(() => {
+      const notice = { dismissed: false };
+      notices.push(notice);
+      return {
+        dismiss: () => {
+          notice.dismissed = true;
+        },
+        update: () => {},
+      };
+    });
+    answer = (request) =>
+      request.method === "PATCH" ? Response.json({ message: "Mail is unavailable" }, { status: 503 }) : Response.json({ items: [] });
+    const dispose = await renderPanel();
+    try {
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit comment"]')!.click();
+      for (let attempt = 0; attempt < 30 && notices.length === 0; attempt++) await flush();
+      expect(notices).toEqual([{ dismissed: false }]);
+
+      dispose();
+      expect(notices).toEqual([{ dismissed: true }]);
+    } finally {
+      form.mockRestore();
+      errors.mockRestore();
+    }
+  });
 });
