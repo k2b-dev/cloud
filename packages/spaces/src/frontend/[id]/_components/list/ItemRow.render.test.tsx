@@ -50,6 +50,8 @@ test("disables overview completion while a task has active blockers", () => {
       isSelected: false,
       baseUrl: "/app/spaces/Space1",
       canWrite: true,
+      isListed: () => true,
+      retryToast: () => {},
     }),
   );
 

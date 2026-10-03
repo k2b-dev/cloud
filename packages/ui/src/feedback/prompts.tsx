@@ -171,6 +171,9 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
   const messages = resolveUiMessages();
   const [values, setValues] = createStore<Record<string, PromptFormValue>>({});
   const [errors, setErrors] = createStore<Record<string, string | undefined>>({});
+  // Errors appear with the first submit and then follow every change. Before that, a check that fails mid-input,
+  // such as a URL still being typed, would interrupt the user with an alert on the first character.
+  let submitted = false;
 
   for (const [key, field] of Object.entries(schema)) {
     if (field.type !== "info" && "default" in field) setValues(key, field.default as PromptFormValue);
@@ -198,10 +201,11 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
 
   const updateField = (key: string, value: PromptFormValue) => {
     setValues(key, value);
-    setErrors(key, validateField(key, value) ?? undefined);
+    if (submitted) setErrors(key, validateField(key, value) ?? undefined);
   };
 
   const validateAll = (): boolean => {
+    submitted = true;
     let valid = true;
     for (const [key, field] of Object.entries(schema)) {
       if (field.type === "info") continue;
@@ -213,6 +217,7 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
   };
 
   const reset = () => {
+    submitted = false;
     for (const [key, field] of Object.entries(schema)) {
       if (field.type === "info") continue;
       setValues(key, "default" in field ? (field.default as PromptFormValue) : undefined);

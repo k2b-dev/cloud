@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { createMemo } from "solid-js";
 import type { ItemGroupBy, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { createRetryToasts } from "../../../lib/feedback";
 import ItemRow from "./ItemRow";
 import { groupItems, type ItemListGroup } from "./item-list-groups";
 
@@ -52,6 +53,9 @@ function GroupHeader(props: { config: ItemListGroup; count: number; id: string }
  * Renders items grouped by column, priority, tag, deadline, or flat.
  */
 export default function ItemList(props: ItemListProps) {
+  // The rows render again with every refresh; their Retry toasts belong to the list, so a refresh cannot close them.
+  const retryToast = createRetryToasts();
+  const isListed = (itemId: string) => props.items.some((item) => item.id === itemId);
   const grouped = createMemo(() => groupItems(props.items, props.groupBy, props.columns, props.tags, props.dateConfig));
   const nonEmptyGroups = createMemo(() => {
     const current = grouped();
@@ -72,6 +76,8 @@ export default function ItemList(props: ItemListProps) {
               baseUrl={props.baseUrl}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
+              isListed={isListed}
+              retryToast={retryToast}
             />
           ))}
         </div>
@@ -95,6 +101,8 @@ export default function ItemList(props: ItemListProps) {
                       dateConfig={props.dateConfig}
                       canWrite={props.canWrite}
                       agenda={props.groupBy === "deadline"}
+                      isListed={isListed}
+                      retryToast={retryToast}
                     />
                   ))}
                 </div>

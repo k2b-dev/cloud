@@ -4,7 +4,6 @@ import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { SpaceItem } from "../src/contracts";
-import type { ItemFormData } from "../src/frontend/[id]/_components/shared/ItemForm";
 
 const now = "2026-10-03T10:00:00.000Z";
 const item: SpaceItem = {
@@ -37,6 +36,11 @@ const flush = async () => {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 10));
 };
+/** The lines the polite Spaces status region reads, once its announcement delay has passed. */
+const announcements = async (document: Document) => {
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  return [...document.querySelectorAll("[data-spaces-status] > div")].map((line) => line.textContent);
+};
 
 let completionAnswers: Response[] = [];
 const completions: unknown[] = [];
@@ -61,6 +65,7 @@ describe("Spaces feedback channels", () => {
             return createAnswers.shift() ?? Response.json({ ...item, spaceId: param.id, title: json.title });
           },
           [":itemId"]: {
+            $patch: async () => Response.json({ message: "Spaces is unavailable" }, { status: 503 }),
             completed: {
               $post: async ({ json }: { json: unknown }) => {
                 completions.push(json);
@@ -88,6 +93,7 @@ describe("Spaces feedback channels", () => {
       return { dismiss, update: () => {} };
     });
     const { default: ItemRow } = await import("../src/frontend/[id]/_components/list/ItemRow");
+    const { createRetryToasts } = await import("../src/frontend/lib/feedback");
     const dispose = render(
       () =>
         createComponent(ItemRow, {
@@ -98,6 +104,8 @@ describe("Spaces feedback channels", () => {
           isSelected: false,
           baseUrl: "/app/spaces/Space1",
           canWrite: true,
+          isListed: () => true,
+          retryToast: createRetryToasts(),
         }),
       dom.root,
     );
@@ -118,7 +126,10 @@ describe("Spaces feedback channels", () => {
     expect(notices[0]!.dismissed).toBe(true);
     expect(completions).toEqual([{ completed: true }, { completed: true }]);
     expect(notices).toHaveLength(1);
+    // The row stays in the list and shows its new state; only a screen reader is told, because the refresh
+    // renders the row again and its focus is lost.
     expect(successes).not.toHaveBeenCalled();
+    expect(await announcements(dom.document)).toEqual(["Item completed"]);
 
     dispose();
     dialogs.mockRestore();
@@ -126,17 +137,71 @@ describe("Spaces feedback channels", () => {
     errors.mockRestore();
   });
 
-  test("Retry of a failed create keeps the Space it was written for and returns to where the command came from", async () => {
-    const { dialogCore, toast } = await import("@k2b/ui");
-    const { createItemController } = await import("../src/frontend/[id]/_components/sidebar/CreateItemButton");
-    const draft: ItemFormData = { columnId: "Col001", title: "Order name labels" };
-    const form = spyOn(dialogCore, "open").mockResolvedValue(draft);
-    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
-    const notices: Array<{ message: string; options?: ToastOptions }> = [];
-    const errors = spyOn(toast, "error").mockImplementation((message, options) => {
-      notices.push({ message, options });
+  test("a row the filter now hides is confirmed with Undo that reopens the same item", async () => {
+    const { toast } = await import("@k2b/ui");
+    const successes: Array<{ message: string; options?: ToastOptions }> = [];
+    const success = spyOn(toast, "success").mockImplementation((message, options) => {
+      successes.push({ message, options });
       return { dismiss: () => {}, update: () => {} };
     });
+    const { default: ItemRow } = await import("../src/frontend/[id]/_components/list/ItemRow");
+    const { createRetryToasts } = await import("../src/frontend/lib/feedback");
+    const dispose = render(
+      () =>
+        createComponent(ItemRow, {
+          item,
+          spaceId: item.spaceId,
+          columns: [],
+          tags: [],
+          isSelected: false,
+          baseUrl: "/app/spaces/Space1",
+          canWrite: true,
+          // The list shows only active items, so the completed row is gone after the refresh.
+          isListed: () => false,
+          retryToast: createRetryToasts(),
+        }),
+      dom.root,
+    );
+
+    completions.length = 0;
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Mark complete"]')!.click();
+    await flush();
+    expect(successes.map((notice) => notice.message)).toEqual(["Item completed"]);
+    const undo = successes[0]!.options?.action;
+    expect(undo?.label).toBe("Undo");
+    if (!undo || !("onClick" in undo)) throw new Error("The success toast has no Undo callback");
+
+    dispose();
+    // Undo still works once the row is gone, because it names the item itself.
+    undo.onClick();
+    await flush();
+    expect(completions).toEqual([{ completed: true }, { completed: false }]);
+
+    success.mockRestore();
+  });
+
+  test("a failed create keeps its dialog open with the reason and the Space it was opened for", async () => {
+    const { dialogCore, toast } = await import("@k2b/ui");
+    const { createItemController } = await import("../src/frontend/[id]/_components/sidebar/CreateItemButton");
+    // Render the dialog in place, as the real dialog layer would.
+    const form = spyOn(dialogCore, "open").mockImplementation(
+      (view) =>
+        new Promise((resolve) => {
+          const host = dom.document.createElement("div");
+          dom.root.append(host);
+          const disposeDialog = render(
+            () =>
+              view((value) => {
+                disposeDialog();
+                host.remove();
+                resolve(value);
+              }),
+            host,
+          );
+        }),
+    );
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {});
     let spaceId = "SpaceA";
     let controller: ReturnType<typeof createItemController> | undefined;
@@ -145,7 +210,7 @@ describe("Spaces feedback channels", () => {
         get spaceId() {
           return spaceId;
         },
-        columns: [],
+        columns: [{ id: "Col001", spaceId: "SpaceA", name: "Open", color: null, rank: "1024", isDone: false }],
         tags: [],
       });
       return null;
@@ -153,19 +218,31 @@ describe("Spaces feedback channels", () => {
 
     creations.length = 0;
     createAnswers = [Response.json({ message: "Spaces is unavailable" }, { status: 503 })];
-    await controller!.createItem({ returnTo: "/app/mail/inbox" });
-    expect(assign).not.toHaveBeenCalled();
-    const action = notices[0]?.options?.action;
-    if (!action || !("onClick" in action)) throw new Error("The error toast has no Retry callback");
-
-    // A later compose command selects another Space before the user retries.
-    spaceId = "SpaceB";
-    action.onClick();
+    const created = controller!.createItem({ returnTo: "/app/mail/inbox" });
     await flush();
+    const title = dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
+    title.value = "Order name labels";
+    title.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    const submit = () => dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    submit();
+    await flush();
+
+    // The form stays with the input and the reason; nothing is retried from a toast.
+    const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent?.trim()).filter(Boolean);
+    expect(alerts).toEqual(["Spaces is unavailable"]);
+    expect(title.value).toBe("Order name labels");
+    expect(errors).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+
+    // A later compose command selects another Space before the user submits again.
+    spaceId = "SpaceB";
+    submit();
+    await created;
     expect(creations).toEqual([
       { spaceId: "SpaceA", title: "Order name labels" },
       { spaceId: "SpaceA", title: "Order name labels" },
     ]);
+    expect(successes).toHaveBeenCalledWith("Task created");
     expect(assign).toHaveBeenCalledWith("/app/mail/inbox");
 
     dispose();
@@ -173,6 +250,44 @@ describe("Spaces feedback channels", () => {
     successes.mockRestore();
     errors.mockRestore();
     assign.mockRestore();
+  });
+
+  test("a failed edit keeps its dialog open, so a later inline change is never overwritten by a stale Retry", async () => {
+    const { dialogCore, toast } = await import("@k2b/ui");
+    const { openEditItemDialog } = await import("../src/frontend/[id]/_components/shared/editItem");
+    let closeDialog: ((value?: unknown) => void) | undefined;
+    const form = spyOn(dialogCore, "open").mockImplementation(
+      (view) =>
+        new Promise((resolve) => {
+          const host = dom.document.createElement("div");
+          dom.root.append(host);
+          const disposeDialog = render(() => {
+            closeDialog = (value) => {
+              disposeDialog();
+              host.remove();
+              resolve(value as never);
+            };
+            return view(closeDialog);
+          }, host);
+        }),
+    );
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const columns = [{ id: "Col001", spaceId: item.spaceId, name: "Open", color: null, rank: "1024", isDone: false }];
+
+    const saved = openEditItemDialog({ spaceId: item.spaceId, item: { ...item, columnId: "Col001" }, columns, tags: [] });
+    await flush();
+    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    await flush();
+
+    const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent?.trim()).filter(Boolean);
+    expect(alerts).toEqual(["Spaces is unavailable"]);
+    expect(dom.root.querySelector("form")).not.toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+
+    closeDialog!(null);
+    expect(await saved).toBeNull();
+    form.mockRestore();
+    errors.mockRestore();
   });
 
   test("a Retry toast closes with its component, and a failure after it is gone shows none", async () => {

@@ -4,7 +4,7 @@ import { Avatar, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast }
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
-import { createRetryToasts } from "../../../lib/feedback";
+import { announceStatus, createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
@@ -41,8 +41,12 @@ export default function CommentsSection(props: Props) {
       }
       return res.json();
     },
-    // The new comment appears in the list; a failure stays under the composer, which keeps the draft.
-    onSuccess: () => props.onUpdate(),
+    // The new comment appears in the list, and a screen reader is told because focus stays in the composer. A failure
+    // stays under the composer, which keeps the draft.
+    onSuccess: () => {
+      announceStatus(t.commentAdded);
+      props.onUpdate();
+    },
   });
 
   const deleteCommentMutation = mutations.create<void, string>({
@@ -55,7 +59,11 @@ export default function CommentsSection(props: Props) {
       }
       await res.json();
     },
-    onSuccess: () => props.onUpdate(),
+    // The comment leaves the list together with the control that had focus, so a screen reader is told.
+    onSuccess: () => {
+      announceStatus(t.commentDeleted);
+      props.onUpdate();
+    },
     onError: (err) => toast.error(err.message),
   });
   type CommentEdit = { itemId: string; id: string; content: string };
@@ -69,9 +77,13 @@ export default function CommentsSection(props: Props) {
       if (!res.ok) throw new Error(await readResponseError(res, t.updateCommentFailed));
       await res.json();
     },
-    onSuccess: () => props.onUpdate(),
-    // The edit dialog has closed, so Retry saves the captured text again instead of losing it.
-    onError: (err, context) => retryToast(err.message, t.retry, () => context && updateCommentMutation.mutate(context.edit)),
+    onSuccess: () => {
+      announceStatus(t.commentUpdated);
+      props.onUpdate();
+    },
+    // The edit dialog has closed, so Retry saves the captured text again instead of losing it, and stays until closed.
+    onError: (err, context) =>
+      retryToast(err.message, t.retry, () => context && updateCommentMutation.mutate(context.edit), { untilClosed: true }),
   });
   const editComment = async (comment: SpaceComment) => {
     const values = await prompts.form({

@@ -29,7 +29,8 @@ export type ItemFormProps = {
   defaults?: Partial<ItemFormData> & { type?: ItemType };
   columns: SpaceColumn[];
   tags?: SpaceTag[];
-  onSubmit: (data: ItemFormData) => void;
+  /** May return a promise: the form then stays busy until it settles and shows a rejection as its error. */
+  onSubmit: (data: ItemFormData) => void | Promise<void>;
   onCancel: () => void;
   submitLabel?: string;
   title?: string;

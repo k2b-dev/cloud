@@ -19,6 +19,7 @@ import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySche
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
+import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
@@ -468,30 +469,13 @@ export default function Calendar(props: CalendarProps) {
       updateSubmitting = false;
     }
   };
-  type CreateEventIntent = { spaceId: string; data: ItemFormData };
-  const createEvent = mutations.create<SpaceItem, CreateEventIntent, { intent: CreateEventIntent }>({
-    onBefore: (intent) => ({ intent }),
-    mutation: async ({ spaceId, data }) => {
-      const res = await apiClient[":id"].items.$post({
-        param: { id: spaceId },
-        json: { ...normalizeCreatePayload(data) },
-      });
-      if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
-      return res.json();
-    },
-    onSuccess: (item) => {
-      toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
-      reconcileAfterWrite();
-    },
-    // The form has closed, so Retry sends the captured entry again instead of losing it.
-    onError: (error, context) => retryToast(error.message, t.retry, () => context && createEvent.mutate(context.intent)),
-  });
   const createEventFromSlot = async (slot: CalendarEventTimeChange) => {
-    if (createDialogPending() || createEvent.loading()) return;
+    if (createDialogPending()) return;
     setCreateDialogPending(true);
     const spaceId = props.spaceId;
     try {
-      const data = await dialogCore.open<ItemFormData | null>(
+      // The dialog stays open until the create answers, so a failure shows in it with the input still there.
+      const item = await dialogCore.open<SpaceItem | null>(
         (close) => (
           <ItemForm
             spaceId={spaceId}
@@ -506,19 +490,22 @@ export default function Calendar(props: CalendarProps) {
               tagIds: props.filter.tagIds,
               columnId: props.filter.columnIds.length === 1 ? props.filter.columnIds[0] : undefined,
             }}
-            onSubmit={(data) => close(data)}
+            onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
             onCancel={() => close(null)}
             dateConfig={props.dateConfig}
           />
         ),
         itemCreateDialogOptions,
       );
-      if (data) void createEvent.mutate({ spaceId, data });
+      if (item) {
+        toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
+        reconcileAfterWrite();
+      }
     } finally {
       setCreateDialogPending(false);
     }
   };
-  const creatingEvent = () => createDialogPending() || createEvent.loading();
+  const creatingEvent = createDialogPending;
   const defaultNewEventSlot = (): CalendarEventTimeChange => {
     const dateKey = calendar.formatDateKey(props.date, props.dateConfig);
     const start = props.dateConfig?.timeZone

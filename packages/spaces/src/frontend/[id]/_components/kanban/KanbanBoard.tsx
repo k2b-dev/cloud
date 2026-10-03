@@ -24,13 +24,14 @@ import {
 import { descriptionPreview } from "@/presentation/description-preview";
 import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
-import { createRetryToasts } from "../../../lib/feedback";
+import { announceStatus, createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import ClaimButton from "../shared/claim/ClaimButton";
 import { claimTask, ownClaimId, releaseTask } from "../shared/claim/claim";
+import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
@@ -776,11 +777,13 @@ export default function KanbanBoard(props: Props) {
       );
       const refocus = () => focusCard(kanbanCards().find((card) => card.dataset.itemId === item.id));
       queueMicrotask(refocus);
-      // The card shows the new avatar; only an assignment that changed nothing needs saying.
+      // The card shows the new avatar; only an assignment that changed nothing needs a visible message. The command
+      // came from a shortcut or the palette, so a screen reader is told what the card now shows.
       if (alreadyAssigned) {
         toast(t.alreadyAssignedToYou);
         return;
       }
+      announceStatus(t.assignedToYou);
       const refresh = (): void =>
         void invalidateSpacesData()
           .then(refocus)
@@ -793,17 +796,16 @@ export default function KanbanBoard(props: Props) {
 
   const completeCardMutation = mutations.create<SpaceItem, SpaceItem, { item: SpaceItem }>({
     onBefore: (item) => ({ item }),
-    mutation: async (item) => {
-      const response = await apiClient[":id"].items[":itemId"].completed.$post({
-        param: { id: props.spaceId, itemId: item.id },
-        json: { completed: true, claimId: ownClaimId(item.claim, props.currentUserId) },
-      });
-      if (!response.ok) throw new Error(await readResponseError(response, t.updateFailed));
-      return response.json();
-    },
-    onSuccess: () => {
+    mutation: (item) =>
+      setItemCompleted(
+        { spaceId: props.spaceId, itemId: item.id, completed: true, claimId: ownClaimId(item.claim, props.currentUserId) },
+        t.updateFailed,
+      ),
+    // The shortcut moves the card away from where the user acted, often out of view, so it is confirmed with Undo.
+    onSuccess: (item) => {
       setOptimisticBuckets(null);
       refreshWorkspace(t.listRefreshFailed);
+      confirmCompletion({ spaceId: props.spaceId, itemId: item.id, completed: true }, t);
     },
     onError: (error, context) =>
       retryToast(error.message, t.retry, () => context && completeCardMutation.mutate(currentCard(context.item))),

@@ -10,7 +10,7 @@ Use a prompt when the user must acknowledge information, choose a result, or pro
 
 Use a toast for non-blocking feedback. Use `PanelDialog` for a persistent editor with tabs, sections, or a larger application workflow.
 
-Use `prompts.error` only when the user must read a failure and decide how to continue. A failed one-click action gets an error toast with Retry, and invalid input stays inline next to its field; [Toast](/en/ui/feedback/toast#use-toast) lists the whole rule. Validate a `prompts.form` field with `validate`, so the form stays open with the message under the field instead of closing and opening an error dialog.
+Use `prompts.error` only when the user must read a failure and decide how to continue. A failed one-click action gets an error toast with Retry, and invalid input stays inline next to its field; [Toast](/en/ui/feedback/toast#use-toast) lists the whole rule. Validate a `prompts.form` field with `validate`, so the form stays open with the message under the field instead of closing and opening an error dialog. A field shows its errors from the first submit on and then updates them with every change, so a check that fails mid-input, such as a URL still being typed, does not interrupt the user.
 
 ## Import
 
@@ -95,7 +95,7 @@ await deleteProject("atlas");
 - `datetime`, with optional date-only mode;
 - `info`, which displays content and is excluded from the result.
 
-Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages. The built-in messages follow the document locale ("At least 3 characters" / "Mindestens 3 Zeichen"); a `validate` result is shown as returned, so the app localizes it.
+Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. Errors appear when the form is first submitted and follow each change after that. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages. The built-in messages follow the document locale ("At least 3 characters" / "Mindestens 3 Zeichen"); a `validate` result is shown as returned, so the app localizes it.
 
 ```tsx
 const values = await prompts.form({

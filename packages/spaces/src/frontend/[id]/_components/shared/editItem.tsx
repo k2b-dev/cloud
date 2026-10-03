@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { dialogCore, panelDialogOptions } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
+import { readResponseError } from "../../../lib/response";
 import { spaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "./ItemForm";
 
@@ -11,6 +12,23 @@ type EditItemParams = {
   columns: SpaceColumn[];
   tags: SpaceTag[];
   dateConfig?: DateContext;
+};
+
+/** Creates one item in the given Space; a refusal throws the server's reason, or `failure` when it gives none. */
+export const createSpaceItem = async (spaceId: string, data: ItemFormData, failure: string): Promise<SpaceItem> => {
+  const res = await apiClient[":id"].items.$post({
+    param: { id: spaceId },
+    json: {
+      ...data,
+      location: data.location ?? undefined,
+      url: data.url ?? undefined,
+      priority: data.priority ?? undefined,
+      recurrence: data.recurrence ?? undefined,
+      estimatedDurationMinutes: data.estimatedDurationMinutes ?? undefined,
+    },
+  });
+  if (!res.ok) throw new Error(await readResponseError(res, failure));
+  return res.json();
 };
 
 export const saveItemFormData = async (params: { spaceId: string; itemId: string; data: ItemFormData; locale?: string }): Promise<void> => {
@@ -29,11 +47,16 @@ export const saveItemFormData = async (params: { spaceId: string; itemId: string
       endsAt: params.data.endsAt ?? null,
     },
   });
-  if (!res.ok) throw new Error(t.itemUpdateFailed);
+  if (!res.ok) throw new Error(await readResponseError(res, t.itemUpdateFailed));
 };
 
+/**
+ * Opens the edit dialog and saves from it. The dialog stays open until the save answers, so a failure shows in it with
+ * the input still there; it resolves with the saved values, or `null` when the user cancels.
+ */
 export const openEditItemDialog = async (params: EditItemParams): Promise<ItemFormData | null> => {
-  const { t } = spaceMessages.resolve(params.dateConfig?.locale ? [params.dateConfig.locale] : []);
+  const locale = params.dateConfig?.locale;
+  const { t } = spaceMessages.resolve(locale ? [locale] : []);
   return (
     (await dialogCore.open<ItemFormData | null>(
       (close) => (
@@ -42,7 +65,10 @@ export const openEditItemDialog = async (params: EditItemParams): Promise<ItemFo
           item={params.item}
           columns={params.columns}
           tags={params.tags}
-          onSubmit={(data) => close(data)}
+          onSubmit={async (data) => {
+            await saveItemFormData({ spaceId: params.spaceId, itemId: params.item.id, data, locale });
+            close(data);
+          }}
           onCancel={() => close(null)}
           submitLabel={t.saveItem}
           title={t.editItem}
