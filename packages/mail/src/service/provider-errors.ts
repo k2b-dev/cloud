@@ -13,17 +13,32 @@ export const providerErrorMessage = (error: unknown, fallback: string): string =
 // reached.
 const TEMPORARY_LOGIN_REFUSAL_CODES = new Set(["UNAVAILABLE", "INUSE", "LIMIT"]);
 
+// Gmail refuses a login over its connection limit with [ALERT] instead of [LIMIT]. Gmail also uses
+// [ALERT] for logins that need the user, such as an app password, so only this text counts.
+const isConnectionLimitAlert = (value: { serverResponseCode?: unknown; responseText?: unknown }): boolean =>
+  typeof value.serverResponseCode === "string" &&
+  value.serverResponseCode.toUpperCase() === "ALERT" &&
+  typeof value.responseText === "string" &&
+  /too many simultaneous connections/i.test(value.responseText);
+
 /**
  * A login that failed for now, not because of the credentials. ImapFlow marks every failed LOGIN
  * or AUTHENTICATE as an authentication failure, also one whose connection broke before the reply
- * and one the server refused with a temporary RFC 5530 code. An SMTP server answers a login it
- * cannot check for now with a 4xx reply, such as 454 (RFC 4954).
+ * and one the server refused with a temporary RFC 5530 code or at Gmail's connection limit. An
+ * SMTP server answers a login it cannot check for now with a 4xx reply, such as 454 (RFC 4954).
  */
 export const isTemporaryLoginFailure = (error: unknown): boolean => {
-  const value = error as { code?: unknown; authenticationFailed?: unknown; serverResponseCode?: unknown; responseCode?: unknown } | null;
+  const value = error as {
+    code?: unknown;
+    authenticationFailed?: unknown;
+    serverResponseCode?: unknown;
+    responseText?: unknown;
+    responseCode?: unknown;
+  } | null;
   if (value?.authenticationFailed === true) {
     return (
       (typeof value.serverResponseCode === "string" && TEMPORARY_LOGIN_REFUSAL_CODES.has(value.serverResponseCode.toUpperCase())) ||
+      isConnectionLimitAlert(value) ||
       (typeof value.code === "string" && TRANSIENT_PROVIDER_CODES.has(value.code))
     );
   }
@@ -107,6 +122,9 @@ export const isTransientProviderFailure = (error: unknown): boolean => {
   // The raw code, because providerErrorCode drops ImapFlow's mixed-case codes such as NoConnection.
   const code = (error as { code?: unknown } | null)?.code;
   if (typeof code === "string" && TRANSIENT_PROVIDER_CODES.has(code)) return true;
+  // RFC 5321: 421 closes the channel because the service is not available, such as an SMTP server
+  // at its connection limit. Nodemailer reports one in the greeting as EPROTOCOL.
+  if (Number((error as { responseCode?: unknown } | null)?.responseCode) === 421) return true;
   // A failed verification counts when IMAP, SMTP, or both failed only transiently.
   const failures = verificationFailures(error);
   return isTemporaryLoginFailure(error) || (failures.length > 0 && failures.every(isTransientProviderFailure));

@@ -5,6 +5,7 @@ import { type FetchMessageObject, ImapFlow, type ListResponse } from "imapflow";
 import nodemailer from "nodemailer";
 import SMTPConnection from "nodemailer/lib/smtp-connection";
 import type { ProviderConnectionInput } from "../../contracts";
+import { EndpointPolicyError } from "./endpoint-policy";
 import {
   assertProviderKeywordsSupported,
   assertSelectedMailbox,
@@ -60,6 +61,24 @@ describe("Provider transport diagnostics", () => {
     expect(transportDiagnostic({ status: "rejected", reason }, ["s3cret-value"]).message).toBe(
       "Authentication failed: Invalid login: 535 5.7.8 rejected [redacted]",
     );
+  });
+
+  test("a failed verification carries the IMAP and SMTP failures behind it", async () => {
+    // Callers tell a provider that is down from one that rejects the account by these failures.
+    const config: ProviderConnectionInput = {
+      name: "Verification fixture",
+      email: "verify@example.test",
+      username: "verify@example.test",
+      imap: { host: "127.0.0.1", port: 993, tlsMode: "implicit" },
+      smtp: { host: "127.0.0.1", port: 587, tlsMode: "starttls" },
+      secret: { kind: "password", password: "fixture" },
+    };
+    const error = await imapSmtpConnector.verify(config).then(
+      () => null,
+      (reason: unknown) => reason as { code?: unknown; failures?: unknown },
+    );
+    expect(error?.code).toBe("PROVIDER_TRANSPORT_VERIFICATION_FAILED");
+    expect(error?.failures).toEqual([expect.any(EndpointPolicyError), expect.any(EndpointPolicyError)]);
   });
 });
 

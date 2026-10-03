@@ -193,8 +193,11 @@ const continuesFolder = (candidate: ExistingFolderProjection, folder: FolderEvid
 /**
  * The known folder that a discovered folder without a path match was renamed from, or null.
  * UIDVALIDITY is unique only per mailbox name, so another folder may share it: it counts only
- * when exactly one discovered and one known folder of the same role have it and the counters
- * show the same mailbox. Anything else is a new folder with its own cursor.
+ * when exactly one discovered and one known folder of the same role have it and the counters do
+ * not rule out the same mailbox. Anything else is a new folder with its own cursor. This is a
+ * heuristic, because IMAP LIST and STATUS expose no folder identity: a new folder that a server
+ * gives a deleted folder's UIDVALIDITY, and whose counters have passed the deleted folder's, is
+ * still taken for it.
  */
 const renameSource = (
   folder: FolderEvidence,
