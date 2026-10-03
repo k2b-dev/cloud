@@ -48,7 +48,9 @@ const buildCss = async (entry: string): Promise<string> => {
 const schedule = Array.from({ length: 60 }, (_, index) => `- ${String(10 + (index % 10))}:00 Stand ${index + 1}`).join("\n");
 const pdf =
   "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
-const files: Record<string, { filename: string; mimeType: string; body: string }> = {
+// A 1x1 PNG, which an image tile scales up to fill its square.
+const png = Uint8Array.fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC");
+const files: Record<string, { filename: string; mimeType: string; body: string | Uint8Array<ArrayBuffer> }> = {
   Att001: {
     filename: "Summer_party.md",
     mimeType: "text/markdown",
@@ -56,10 +58,11 @@ const files: Record<string, { filename: string; mimeType: string; body: string }
   },
   Att002: { filename: "Floor_plan.pdf", mimeType: "application/pdf", body: pdf },
   Att003: { filename: "Stands.csv", mimeType: "text/csv", body: "Stand,Team\nGrill,Team A\nDrinks,Team B\n" },
+  Att004: { filename: "Stage.png", mimeType: "image/png", body: png },
 };
 const attachments: Attachment[] = Object.entries(files).map(([id, file]) => ({
   id,
-  kind: "file",
+  kind: file.mimeType.startsWith("image/") ? "image" : "file",
   filename: file.filename,
   mimeType: file.mimeType,
   sizeBytes: file.body.length,
@@ -133,6 +136,25 @@ const layout = (page: Page) =>
   });
 
 describe("Notebook attachment preview layout", () => {
+  test("a focused image tile shows its focus ring above the thumbnail", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    try {
+      await page.goto(server.url.href);
+      await page.evaluate((list) => window.mountAttachments(list, "en"), [attachments[3]!]);
+      const tile = page.locator(".notebooks-attachment-tile__open");
+      await tile.locator("img").evaluate((image: HTMLImageElement) => image.decode());
+      // The left edge in the middle of the tile, away from the action buttons that appear in its top-right corner.
+      const box = (await tile.boundingBox())!;
+      const edge = { x: box.x, y: box.y + box.height / 2, width: 2, height: 8 };
+      const unfocused = await page.screenshot({ clip: edge });
+      await page.keyboard.press("Tab");
+      expect(await tile.evaluate((element) => element.matches(":focus-visible"))).toBeTrue();
+      expect((await page.screenshot({ clip: edge })).equals(unfocused)).toBeFalse();
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("a document reads in a column whose title holds still while the file loads", async () => {
     delay = 400;
     const page = await (await browser.newContext(desktop)).newPage();

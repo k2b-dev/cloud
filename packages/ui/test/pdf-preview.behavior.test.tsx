@@ -331,6 +331,46 @@ domTest(
   },
 );
 
+domTest("a host that shows only the content gets keyboard focus on the document after a retry", async () => {
+  const dom = createDomTestHarness();
+  const browser = stubPdfBrowser(dom);
+  const { default: PdfPreview } = await import("../src/content/PdfPreview");
+  let calls = 0;
+  let resolveRetry!: (blob: Blob) => void;
+  const dispose = render(
+    () => (
+      <PdfPreview
+        autoLoad
+        title="Report.pdf"
+        buttonLabel="Try again"
+        request={() => {
+          if (++calls === 1) return Promise.reject(new Error("Network error"));
+          return new Promise<Blob>((resolve) => {
+            resolveRetry = resolve;
+          });
+        }}
+      >
+        {(parts) => <div>{parts.content}</div>}
+      </PdfPreview>
+    ),
+    dom.root,
+  );
+  try {
+    await Bun.sleep(0);
+    const retry = dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+    retry.focus();
+    click(retry);
+    resolveRetry(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
+    await Bun.sleep(0);
+    // No open action is shown, so focus continues on the document instead of the page.
+    expect(dom.document.activeElement).toBe(dom.root.querySelector("iframe"));
+  } finally {
+    dispose();
+    browser.restore();
+    dom.cleanup();
+  }
+});
+
 domTest("beside a caller's error content, an automatic preview keeps its own retry in place while it loads", async () => {
   const dom = createDomTestHarness();
   const browser = stubPdfBrowser(dom);

@@ -973,15 +973,20 @@
   }
 }
 
-/* An attachment tile opens its preview; the focus ring sits inside the tile, which clips its content. */
+/* An attachment tile opens its preview; the focus ring sits inside the tile, which clips its content. It is drawn on
+   a layer after the thumbnail, which would otherwise paint over a ring on the button itself. */
 .notebooks-attachment-tile__open {
   position: absolute;
   inset: 0;
   cursor: pointer;
   outline: none;
 }
-.notebooks-attachment-tile__open:focus-visible {
+.notebooks-attachment-tile__open:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   box-shadow: var(--k2b-focus-inset);
+  pointer-events: none;
 }
 /* An attachment image in Book opens the lightbox. The inline link around it draws no visible ring of its own, so the
    image carries the focus ring of Book links. */

@@ -48,6 +48,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
   // An automatic preview shows one fixed document; the open action reuses it instead of requesting it again.
   let shownBlob: Blob | null = null;
   let openButton: HTMLElement | undefined;
+  let frame: HTMLIFrameElement | undefined;
   let renderButton: HTMLButtonElement | undefined;
   let errorRetryButton: HTMLButtonElement | undefined;
   let disposed = false;
@@ -97,8 +98,9 @@ export default function PdfPreview(props: PdfPreviewProps) {
       setUrl(nextUrl);
       setLoading(false);
       if (previousUrl) URL.revokeObjectURL(previousUrl);
-      // The shown document removes the retry action; keep keyboard focus in the actions instead of the page.
-      if (retryFocused && document.activeElement === document.body) openButton?.focus();
+      // The shown document removes the retry action; keep keyboard focus in the actions instead of the page, or on the
+      // document itself when the host shows only the content.
+      if (retryFocused && document.activeElement === document.body) (openButton?.isConnected ? openButton : frame)?.focus();
     } catch (e) {
       if (disposed || generation !== loadGeneration) return;
       shownBlob = null;
@@ -235,7 +237,12 @@ export default function PdfPreview(props: PdfPreviewProps) {
           }
         >
           {(currentUrl) => (
-            <iframe class="k2b-content-pdf-preview__frame" src={currentUrl()} title={props.title ?? messages().pdfPreview} />
+            <iframe
+              ref={(element) => (frame = element)}
+              class="k2b-content-pdf-preview__frame"
+              src={currentUrl()}
+              title={props.title ?? messages().pdfPreview}
+            />
           )}
         </Show>
       }

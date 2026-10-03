@@ -23,6 +23,7 @@ const attachments = [
   attachment("Att005", "Photos.zip", "application/zip", 8192),
   attachment("Att006", "Welcome.mp3", "audio/mpeg", 4096),
   attachment("Att007", "Stands.csv", "text/csv", 25),
+  attachment("Att008", "Diagram.svg", "image/svg+xml", 512),
 ];
 const bodies: Record<string, BodyInit> = {
   Att001: "# Summer party 2026\n\nEverything the organising team needs.\n",
@@ -140,11 +141,12 @@ describe("Notebook attachment preview", () => {
       await settle();
       expect(dom.document.querySelector("dialog.k2b-content-lightbox")).toBeNull();
 
-      // A table keeps its original bytes, so its encoding setting can read a Windows-1252 export.
+      // A table keeps its original bytes, so its encoding setting can read a Windows-1252 export. The header offers no
+      // Copy, which could not follow that setting.
       tile(6).click();
       await settle();
       expect(dialog()?.className).toContain("notebooks-attachment-dialog--stretch");
-      expect(dialog()?.querySelector(".k2b-panel-dialog__actions .k2b-copy-button")).not.toBeNull();
+      expect(dialog()?.querySelector(".k2b-panel-dialog__actions .k2b-copy-button")).toBeNull();
       dialog()?.querySelector<HTMLButtonElement>("button[aria-label='CSV preview settings']")?.click();
       await settle();
       const encodingSelect = [
@@ -181,6 +183,69 @@ describe("Notebook attachment preview", () => {
       await openAttachmentById("nb0001", "Gone01", "Old plan");
       await settle();
       expect(dialog()?.textContent).toContain("Download “Old plan”?");
+    } finally {
+      await closeAll();
+      dom.cleanup();
+    }
+  });
+
+  test("only the latest reference opens, even when an earlier lookup answers after it", async () => {
+    const { dom, dialog, closeAll } = await mount();
+    const { openAttachmentById } = await import("./attachment-preview");
+    const serve = globalThis.fetch;
+    // Holds each lookup until the test answers it.
+    const held: Array<{ signal: AbortSignal | null | undefined; answer: () => void }> = [];
+    globalThis.fetch = Object.assign(
+      (input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((resolve, reject) =>
+          held.push({ signal: init?.signal, answer: () => void serve(input, init).then(resolve, reject) }),
+        ),
+      { preconnect: serve.preconnect },
+    );
+    try {
+      const first = openAttachmentById("nb0001", "Att002", "Packing list");
+      const second = openAttachmentById("nb0001", "Att003", "Floor plan");
+      expect(held).toHaveLength(2);
+      // The earlier lookup is cancelled, so it opens nothing even when it answers last.
+      expect(held[0]!.signal?.aborted).toBeTrue();
+      globalThis.fetch = serve;
+      held[1]!.answer();
+      await second;
+      held[0]!.answer();
+      await first;
+      await settle();
+      expect(dom.document.querySelectorAll(".k2b-dialog[open]")).toHaveLength(1);
+      expect(dialog()?.querySelector("h2")?.textContent).toBe("Floor_plan.pdf");
+    } finally {
+      globalThis.fetch = serve;
+      await closeAll();
+      dom.cleanup();
+    }
+  });
+
+  test("an attached image opens in the lightbox once shown, and reads its stored type when it could not be shown", async () => {
+    const { dom, requests, dialog, closeAll } = await mount();
+    const { openAttachedImage } = await import("./attachment-preview");
+    const image = (naturalWidth: number) => {
+      const element = dom.document.createElement("img");
+      Object.defineProperties(element, { complete: { value: true }, naturalWidth: { value: naturalWidth } });
+      return element;
+    };
+    try {
+      // The content endpoint serves an SVG only as a download, so the note shows no image and it asks to download.
+      openAttachedImage(image(0), "nb0001", "Att008", "Diagram");
+      await settle();
+      expect(requests).toEqual(["/api/notebooks/nb0001/attachments/Att008"]);
+      expect(dom.document.querySelector("dialog.k2b-content-lightbox")).toBeNull();
+      expect(dialog()?.textContent).toContain("Download “Diagram.svg”?");
+      await closeAll();
+
+      openAttachedImage(image(640), "nb0001", "Att004", "Stage");
+      await settle();
+      const lightbox = dom.document.querySelector<HTMLDialogElement>("dialog.k2b-content-lightbox");
+      expect(lightbox?.querySelector("img")?.getAttribute("src")).toBe("/api/notebooks/nb0001/attachments/Att004/content?v=1");
+      expect(lightbox?.textContent).toContain("Stage");
+      expect(requests).toHaveLength(1);
     } finally {
       await closeAll();
       dom.cleanup();

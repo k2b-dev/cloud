@@ -175,6 +175,7 @@ export default function BookController(props: Props) {
         return target !== null;
       }),
     );
+    let previewLoading = false;
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;
@@ -198,12 +199,20 @@ export default function BookController(props: Props) {
       const attachment = article?.contains(anchor) ? attachmentFromContentUrl(href, window.location.href) : null;
       if (attachment) {
         event.preventDefault();
+        // One click opens one preview, also while its code loads for the first time.
+        if (previewLoading) return;
+        previewLoading = true;
         const image = anchor.classList.contains("notebook-book-image-link") ? anchor.querySelector("img") : null;
-        void import("../../../lib/attachment-preview").then((preview) =>
-          image
-            ? preview.openAttachmentImage(href, image.alt)
-            : preview.openAttachmentById(attachment.notebookId, attachment.attachmentId, anchor.textContent ?? ""),
-        );
+        import("../../../lib/attachment-preview")
+          .then((preview) => {
+            if (image) preview.openAttachedImage(image, attachment.notebookId, attachment.attachmentId, image.alt);
+            else void preview.openAttachmentById(attachment.notebookId, attachment.attachmentId, anchor.textContent ?? "");
+          })
+          // Without the preview code, for example after a release replaced it, the link downloads the file as before.
+          .catch(() => window.location.assign(href))
+          .finally(() => {
+            previewLoading = false;
+          });
         return;
       }
       const url = bookNavigationTarget(anchor.href, window.location.href, props.notebookId);

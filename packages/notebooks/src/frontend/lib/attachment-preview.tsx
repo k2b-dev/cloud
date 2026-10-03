@@ -41,7 +41,7 @@ export const attachmentPreviewKind = (attachment: PreviewAttachment): FileViewPr
 };
 
 /** Shows one image in the shared lightbox, captioned with its name, with a download action. */
-export const openAttachmentImage = (src: string, name: string): void => {
+const openAttachmentImage = (src: string, name: string): void => {
   const host = document.createElement("div");
   document.body.append(host);
   const dispose = render(
@@ -69,33 +69,47 @@ export const openAttachment = (notebookId: string, attachment: PreviewAttachment
   else void confirmAndDownload(attachment.filename, contentUrl);
 };
 
-let opening: string | null = null;
+/** The reference lookup still in flight; a newer one replaces it. */
+let lookup: AbortController | null = null;
 
 /**
  * Opens an attachment known only by its reference, as in a note. Its stored type and size decide the preview; when
- * they cannot be read, the reference keeps the confirmed download it always had.
+ * they cannot be read, the reference keeps the confirmed download it always had. Only the latest request opens
+ * anything, so a double click or a second reference clicked while the first loads opens one preview.
  */
 export const openAttachmentById = async (notebookId: string, attachmentId: string, label: string): Promise<void> => {
-  // A double click asks once.
-  if (opening === attachmentId) return;
-  opening = attachmentId;
-  try {
-    const response = await apiClient[":id"].attachments[":attId"]
-      .$get({ param: { id: notebookId, attId: attachmentId } })
-      .catch(() => null);
-    if (response?.ok) openAttachment(notebookId, await response.json());
-    else void confirmAndDownload(label, buildAttachmentContentUrl(notebookId, attachmentId));
-  } finally {
-    opening = null;
-  }
+  lookup?.abort();
+  const request = new AbortController();
+  lookup = request;
+  const response = await apiClient[":id"].attachments[":attId"]
+    .$get({ param: { id: notebookId, attId: attachmentId } }, { init: { signal: request.signal } })
+    .catch(() => null);
+  const attachment = response?.ok ? await response.json().catch(() => null) : null;
+  if (request.signal.aborted) return;
+  lookup = null;
+  if (attachment) openAttachment(notebookId, attachment);
+  else void confirmAndDownload(label, buildAttachmentContentUrl(notebookId, attachmentId));
+};
+
+/**
+ * Opens an attachment a note shows as an image. One the browser has shown opens in the lightbox at once; one it could
+ * not show, such as an SVG the content endpoint serves only as a download or a PDF written with image syntax, reads
+ * its stored type first like a file reference.
+ */
+export const openAttachedImage = (image: HTMLImageElement, notebookId: string, attachmentId: string, label: string): void => {
+  if (image.complete && image.naturalWidth > 0) openAttachmentImage(buildAttachmentContentUrl(notebookId, attachmentId), label);
+  else void openAttachmentById(notebookId, attachmentId, label || "image");
 };
 
 /** Documents and text read in a column; PDFs and tables get the wide workspace frame. */
 const READING = new Set<FileViewPreviewKind>(["markdown", "text", "json"]);
 /** These take the body's height: a PDF fills the frame, and a table scrolls inside it with its header row in view. */
 const STRETCH = new Set<FileViewPreviewKind>(["pdf", "delimited-text"]);
-/** Plain text, a table and JSON show no code box with its own Copy, so copying sits in the header. */
-const COPY = new Set<FileViewPreviewKind>(["text", "delimited-text", "json"]);
+/**
+ * Plain text and JSON show no code box with its own Copy, so copying sits in the header. A table offers none: its
+ * encoding setting can read the file differently from the text the header would copy, as in the Files preview.
+ */
+const COPY = new Set<FileViewPreviewKind>(["text", "json"]);
 
 const openAttachmentDialog = (attachment: PreviewAttachment, kind: FileViewPreviewKind, contentUrl: string) => {
   const classes = [panelDialogWorkspaceOptions.panelClassName, "notebooks-attachment-dialog"];

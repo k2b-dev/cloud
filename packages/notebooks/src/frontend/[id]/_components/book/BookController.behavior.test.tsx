@@ -171,6 +171,8 @@ describe("Book controller", () => {
     const content = "/api/notebooks/book01/attachments";
     app.article.innerHTML = `<p><a id="file" href="${content}/Att001/content?v=1">Floor plan</a></p>
       <p><a id="image" class="notebook-book-image-link" href="${content}/Att002/content?v=1"><img alt="Stage" src="${content}/Att002/content?v=1"></a></p>`;
+    // The browser has shown the image.
+    Object.defineProperties(app.article.querySelector("#image img")!, { complete: { value: true }, naturalWidth: { value: 640 } });
     try {
       expect(app.click("file").defaultPrevented).toBe(true);
       await flush();
@@ -184,8 +186,11 @@ describe("Book controller", () => {
       dialogCore.close();
       await flush();
 
+      // A double click lands twice before the preview code has loaded, and still opens one lightbox.
+      expect(app.click("image").defaultPrevented).toBe(true);
       expect(app.click("image").defaultPrevented).toBe(true);
       await flush();
+      expect(document.querySelectorAll("dialog.k2b-content-lightbox")).toHaveLength(1);
       const lightbox = document.querySelector("dialog.k2b-content-lightbox");
       expect(lightbox?.querySelector("img")?.getAttribute("src")).toBe(`${content}/Att002/content?v=1`);
       expect(lightbox?.textContent).toContain("Stage");

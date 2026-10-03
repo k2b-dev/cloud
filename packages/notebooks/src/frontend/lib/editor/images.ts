@@ -2,7 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
-import { openAttachmentImage } from "../attachment-preview";
+import { openAttachedImage } from "../attachment-preview";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -94,7 +94,8 @@ class ImageWidget extends WidgetType {
     // download confirm. Stop propagation so CM doesn't reposition the cursor
     // (consistent with the file-pill widget).
     const open = () => {
-      if (attachmentFromContentUrl(this.url, window.location.href)) openAttachmentImage(this.url, this.alt);
+      const attachment = attachmentFromContentUrl(this.url, window.location.href);
+      if (attachment) openAttachedImage(img, attachment.notebookId, attachment.attachmentId, this.alt);
       else void confirmAndDownload(this.alt || "image", this.url);
     };
     container.onmousedown = (e) => {

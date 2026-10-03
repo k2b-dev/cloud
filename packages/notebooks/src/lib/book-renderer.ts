@@ -222,8 +222,11 @@ export const renderNotebookBook = (
   };
   const imageLabel = (alt: string) => `<span class="notebook-book-image-label">${escape(t.image({ alt }))}</span>`;
   // An attached image links to its file, so a reader can open it from the keyboard too; Book shows it in the lightbox.
-  const imageHtml = (href: string, url: string, img: string) =>
-    /^attach:\/\//.test(href) && !insideLink ? `<a class="notebook-book-image-link" href="${escape(url)}">${img}</a>` : img;
+  // The image's text names the link; an image without text keeps its empty alt, and the link takes the image label.
+  const imageHtml = (href: string, url: string, alt: string, img: string) =>
+    /^attach:\/\//.test(href) && !insideLink
+      ? `<a class="notebook-book-image-link" href="${escape(url)}"${alt ? "" : ` aria-label="${escape(t.image({ alt }))}"`}>${img}</a>`
+      : img;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
     if (input.print) return imageLabel(alt);
@@ -232,6 +235,7 @@ export const renderNotebookBook = (
     return imageHtml(
       href,
       url,
+      alt,
       `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${title ? ` title="${escape(title)}"` : ""}>`,
     );
   };
@@ -338,6 +342,7 @@ export const renderNotebookBook = (
             ? imageHtml(
                 String(token.href),
                 url,
+                alt,
                 `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`,
               )
             : escape(alt);

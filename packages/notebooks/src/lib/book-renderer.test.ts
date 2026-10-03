@@ -267,6 +267,19 @@ describe("Notebook Book HTML", () => {
     expect(html.match(/notebook-book-image-link/g)).toHaveLength(2);
   });
 
+  test("an attached image without text still gives its link a name", () => {
+    const { html } = render("![](attach://GHI789)\n\n![](attach://JKL012 =64x)");
+    expect(html).toContain(
+      '<a class="notebook-book-image-link" aria-label="Image" href="/api/notebooks/ABC123/attachments/GHI789/content?v=1"><img class="notebook-book-image" src="/api/notebooks/ABC123/attachments/GHI789/content?v=1" alt=""',
+    );
+    expect(html).toContain(
+      '<a class="notebook-book-image-link" aria-label="Image" href="/api/notebooks/ABC123/attachments/JKL012/content?v=1"><img class="notebook-book-image" src="/api/notebooks/ABC123/attachments/JKL012/content?v=1" alt=""',
+    );
+    expect(render("![](attach://GHI789)", "de").html).toContain('aria-label="Bild"');
+    // An image with text names its link itself.
+    expect(render("![Floor plan](attach://GHI789)").html).not.toContain("aria-label");
+  });
+
   test("tags are links outside code and link labels", () => {
     const { html } = render("#team/News `#code` [#label](https://example.test)");
     expect(html).toContain("/tags/team%2Fnews?mode=book");
