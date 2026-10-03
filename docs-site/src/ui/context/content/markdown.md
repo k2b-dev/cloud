@@ -43,8 +43,13 @@ boundary and bypasses the renderer.
 Embedded components such as `NoticeCard` keep their own paragraph spacing;
 ordinary Markdown paragraphs retain the standard prose spacing.
 
-Links and inline code use the action colour. Code in a fenced block keeps the
-text colour of its block.
+Prose stays flat on the surrounding surface. Links use the action colour and
+an underline. Inline code and fenced code blocks are text on a light fill
+without a frame; quotes are marked by a rule at their start edge. Inside a
+tinted group such as a dialog section, code fills follow
+`--k2b-field-surface`, so they stay visible. Any other tinted host sets
+`--k2b-field-surface` to its base surface, as it does for field wells.
+Long words and URLs wrap instead of widening the page.
 
 ### Highlight known inline tokens
 
@@ -61,7 +66,7 @@ destinations, or trusted HTML. Callers must provide the complete allowlist;
 unknown text stays ordinary Markdown. Use
 `renderSafeMarkdown(source, { inlineTokens })` at non-component boundaries.
 
-The component does not impose a reading width. The parent owns width, scrolling, and surrounding layout.
+The component does not impose a reading width. The parent owns width, scrolling, and surrounding layout. A `FileView` with `variant="plain"` caps Markdown at a reading measure of 72 characters.
 
 Set `headingScale` to `"compact"`, `"normal"`, or `"large"`. Compact mode uses smaller headings and tighter paragraph spacing for embedded content such as comments and dialogs. Normal is the default prose hierarchy, and large gives standalone pages a stronger hierarchy. The scale changes presentation only; Markdown heading levels remain intact. Use `class` for other context-specific text sizing.
 
@@ -106,8 +111,11 @@ const [source, setSource] = createSignal("# Release notes");
 ## Tables
 
 Markdown tables omit the header row when all header cells are blank. Partially
-filled headers stay visible. Tables use rounded borders, alternating row
-backgrounds and horizontal separators. Header cells align with their column: at
-the start by default, or with the column's GFM alignment (`:-:`, `--:`).
-Inline formatting is preserved. Wide tables scroll within a keyboard-focusable
-container.
+filled headers stay visible. Tables are hairlines on the reading surface: no
+frame or fill, a stronger line under the header, and a fine line between rows,
+so a cell that wraps still belongs to one row. The first and last columns line
+up with the surrounding prose. Header cells align with their column: at the
+start by default, or with the column's GFM alignment (`:-:`, `--:`).
+Body cells use tabular figures, so numbers line up. Inline formatting is
+preserved. Wide tables scroll within a keyboard-focusable container. Its focus
+ring sits just outside its edge, so it never covers the flush columns.

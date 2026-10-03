@@ -318,4 +318,6 @@ Use `headingScale="normal"` for a full-document view. The default remains
 `FileViewRendererProps`.
 
 Use `variant="plain"` to embed a preview in an existing surface without a frame,
-background, or document padding. The default retains the preview frame.
+background, or document padding. Markdown in a plain preview keeps a reading
+measure of 72 characters in wider hosts; its tables and code blocks scroll
+within that column. The default retains the preview frame.

@@ -1,7 +1,8 @@
-/* Markdown tables use the same quiet visual language as DataTable: one
-   contained surface, one header band, and hairline row separators. Used by
-   both the server-side `marked` renderer and the CodeMirror table widget so
-   read-mode and edit-mode look identical.
+/* Markdown tables use the same hairline language as @k2b/ui MarkdownView:
+   no frame or header fill, a stronger line under the header, hairline row
+   separators, and the outer columns flush with the prose. Used by both the
+   server-side `marked` renderer and the CodeMirror table widget so read-mode
+   and edit-mode look identical.
 
    Three-layer markup:
      <div class="md-table-wrap">      ← horizontal scroll owner
@@ -13,10 +14,13 @@
   overflow: clip;
   margin-top: 0.5rem;
   margin-bottom: 0.5rem;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-surface);
+}
+
+/* Inside MarkdownView a table takes the same block spacing as its own
+   tables, so two tables in a row do not read as one. Hosts such as Help keep
+   their own spacing. */
+:where(.k2b-ui .k2b-content-markdown) .md-table-wrap {
+  margin-block: 1em;
 }
 
 .md-table {
@@ -39,12 +43,8 @@
   border: 0;
 }
 
-.md-table thead {
-  background: var(--ui-data-header);
-}
-
 .md-table thead tr {
-  border-bottom: 1px solid var(--ui-data-divider);
+  border-bottom: 1px solid var(--ui-border-strong);
 }
 
 .md-table tbody tr:not(:last-child) {
@@ -87,10 +87,27 @@
   color: inherit;
 }
 
-/* Headers inherit the single shared band instead of drawing per-cell fills. */
 .md-table thead .md-table-cell {
+  padding-top: 0;
   background: transparent;
   font-weight: 600;
+}
+
+.md-table th:first-child > .md-table-cell,
+.md-table td:first-child > .md-table-cell {
+  padding-left: 0;
+}
+
+.md-table th:last-child > .md-table-cell,
+.md-table td:last-child > .md-table-cell {
+  padding-right: 0;
+}
+
+/* Inside MarkdownView the span stays the only padding owner. */
+.k2b-ui .k2b-content-markdown .md-table th,
+.k2b-ui .k2b-content-markdown .md-table td {
+  padding: 0;
+  font-size: inherit;
 }
 
 .dark .md-table thead .md-table-cell {
@@ -109,9 +126,10 @@
   justify-content: center;
 }
 
-/* Summary rows use the same quiet band as a DataTable footer. */
-.md-table tbody tr.md-table-total-row {
-  background: var(--ui-data-header);
+/* A summary row sits under the same stronger line as the header. The line is
+   on the cells, so it also wins over a row separator or MarkdownView's. */
+.k2b-ui .md-table tbody tr.md-table-total-row > td {
+  border-top: 1px solid var(--ui-border-strong);
 }
 
 .md-table tbody tr.md-table-total-row .md-table-cell {
