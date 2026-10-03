@@ -68,7 +68,7 @@ The builder saves changes automatically into a draft. When that draft differs fr
 
 Published apps continue to use the referenced Grids resources through their immutable capabilities. App grant changes take effect immediately. If a referenced resource is later disabled, deleted, or changed incompatibly, the affected page, block, or action fails closed. The rest of the page remains usable.
 
-Run preflight again after changing a referenced View, Form, template, field, or workflow launcher. Republish when the app definition or derived capability set must change.
+When a change to a referenced View, Form, template, field, or workflow alters what the live app may read, write, or start, the builder shows **Used resources changed** and offers **Publish changes**, even if the app definition itself is unchanged. Until you publish again, the live app keeps its last reviewed capabilities, so affected parts may stay unavailable. Publishing derives the capability set from the current resources. `cld grids apps get` reports this state as `used resources changed: yes`. Changes that keep those capabilities, such as a new Form label, reach the live app right away.
 
 ## Verify the published journey {icon="checks"}
 

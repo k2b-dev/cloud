@@ -81,6 +81,7 @@ const app = (): PublicCustomApp => {
     draftValid: true,
     publishedValid: false,
     hasUnpublishedChanges: true,
+    dependenciesChanged: false,
   };
 };
 
@@ -683,6 +684,28 @@ describe("CustomAppBuilder", () => {
     expect(html).not.toContain("Unpublished changes");
     expect(html).toContain("Changes are in a draft");
     expect(html).not.toContain('label="Published"');
+  });
+
+  test("offers publishing an unchanged draft after a used resource changed", () => {
+    const outdated = app();
+    outdated.publishedAt = "2026-08-11T10:00:00.000Z";
+    outdated.publishedDefinition = outdated.draftDefinition;
+    outdated.publishedCapabilities = outdated.draftCapabilities;
+    outdated.publishedValid = true;
+    outdated.hasUnpublishedChanges = false;
+    const render = () =>
+      renderToString(() => createComponent(CustomAppBuilder, { app: outdated, baseId: "BASE01", catalog: catalog(), editMode: true }));
+
+    expect(render()).not.toContain("Publish changes");
+
+    outdated.dependenciesChanged = true;
+    const html = render();
+    expect(html).toContain("Used resources changed");
+    expect(html).toContain("Publish again so the live app uses the current version");
+    expect(html).toContain("Publish changes");
+    expect(html).not.toContain("Changes are in a draft");
+    // Restoring would copy the identical live definition back into the draft.
+    expect(html).not.toContain("Restore live version");
   });
 
   test("previews and authors page-independent sidebar Forms", async () => {

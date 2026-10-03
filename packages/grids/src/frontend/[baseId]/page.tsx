@@ -47,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
       });
       return {
         loadedState,
-        state: loadedState.kind === "ok" ? await projectPublicWorkspaceState(await withInitialGqlResults(c, loadedState)) : null,
+        state: loadedState.kind === "ok" ? await projectPublicWorkspaceState(await withInitialGqlResults(c, loadedState), locale) : null,
       };
     },
     c.req.raw.signal,

@@ -1644,6 +1644,37 @@ const planCompilation = async (compilation: CustomAppCompilation, client: SqlCli
 export const plan = async (input: unknown, locale?: string): Promise<CustomAppPlan> =>
   planCompilation(await compile(input, sql, locale), sql, locale);
 
+export type CustomAppAuthoringState = CustomApp & {
+  /** A Form, View, field, template, or launcher used by the live app changed; publishing updates the live app. */
+  dependenciesChanged: boolean;
+};
+
+/**
+ * Stored capabilities are derived when a draft is saved or published. A used
+ * resource can change later without touching the app definition, so authoring
+ * reads recompile against the current resources instead of trusting them.
+ */
+export const currentAuthoringState = async (app: CustomApp, locale?: string): Promise<CustomAppAuthoringState> => {
+  const draft = app.draftDefinition ? await compile(app.draftDefinition, sql, locale) : null;
+  const live =
+    app.publishedDefinition && app.publishedCapabilities
+      ? app.hasUnpublishedChanges
+        ? await compile(app.publishedDefinition, sql, locale)
+        : draft
+      : null;
+  const draftCapabilities = draft?.ok ? draft.compiled.capabilities : null;
+  return {
+    ...app,
+    // Name what a used resource broke, so the author can fix the draft before publishing.
+    draftDiagnostics: draft && !draft.ok ? draft.diagnostics : app.draftDiagnostics,
+    draftCapabilities,
+    draftValid: draftCapabilities !== null,
+    dependenciesChanged:
+      live !== null &&
+      (!live.ok || stableCustomAppStringify(live.compiled.capabilities) !== stableCustomAppStringify(app.publishedCapabilities)),
+  };
+};
+
 export type CustomAppDraftSave = {
   app: CustomApp;
   valid: boolean;

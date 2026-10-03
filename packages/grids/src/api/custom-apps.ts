@@ -246,7 +246,9 @@ const projectCapabilities = async (capabilities: CustomApp["draftCapabilities"])
   return projected;
 };
 
-export const projectCustomApp = async (app: CustomApp) => {
+/** Authoring projection: capabilities reflect the resources the app uses now. */
+export const projectCustomApp = async (stored: CustomApp, locale?: string) => {
+  const app = await gridsService.customApp.currentAuthoringState(stored, locale);
   const baseId = await requiredPublicId("base", app.baseId);
   const draftCapabilities = await projectCapabilities(app.draftCapabilities);
   const publishedCapabilities = await projectCapabilities(app.publishedCapabilities);
@@ -267,6 +269,7 @@ export const projectCustomApp = async (app: CustomApp) => {
     draftValid: app.draftValid && draftCapabilities !== null,
     publishedValid: app.publishedValid && publishedCapabilities !== null,
     hasUnpublishedChanges: app.hasUnpublishedChanges,
+    dependenciesChanged: app.dependenciesChanged,
   };
 };
 
@@ -282,10 +285,11 @@ export const projectCustomAppSummaries = async (apps: readonly CustomAppSummary[
   }));
 };
 
-const projectDraftSave = async ({ workspaceRevision: _revision, ...saved }: CustomAppDraftSave) => ({
-  ...saved,
-  app: await projectCustomApp(saved.app),
-});
+const projectDraftSave = async ({ app }: CustomAppDraftSave, locale?: string) => {
+  const projected = await projectCustomApp(app, locale);
+  // Report the projection's validation, so a resource changed since the save cannot contradict it.
+  return { app: projected, valid: projected.draftValid, diagnostics: projected.draftValid ? [] : projected.draftDiagnostics };
+};
 
 const projectRecordParams = async (params: Readonly<Record<string, string>>): Promise<Record<string, string>> => {
   const recordIds = await projectPublicIds("record", Object.values(params));
@@ -1765,7 +1769,7 @@ export const createCustomAppsApi = (
       const gate = await gateAt(c, { baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const projected: Awaited<ReturnType<typeof projectCustomApp>>[] = [];
-      for (const app of await gridsService.customApp.listByBase(baseId)) projected.push(await projectCustomApp(app));
+      for (const app of await gridsService.customApp.listByBase(baseId)) projected.push(await projectCustomApp(app, getLocale(c)));
       return c.json(projected);
     })
     .post("/by-base/:baseId", requirePublicIdParam("baseId", "base", "Base"), v("json", CustomAppCreateSchema), async (c) => {
@@ -1774,7 +1778,7 @@ export const createCustomAppsApi = (
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.customApp.createBlank(baseId, c.req.valid("json").name, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
-      return c.json(await projectCustomApp(result.data));
+      return c.json(await projectCustomApp(result.data, getLocale(c)));
     })
     .post("/validate", v("json", CustomAppDefinitionInputSchema), async (c) => {
       const input = c.req.valid("json").definition;
@@ -1799,14 +1803,14 @@ export const createCustomAppsApi = (
       if (denied) return denied;
       const result = await gridsService.customApp.apply(input, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
-      return c.json(await projectCustomApp(result.data));
+      return c.json(await projectCustomApp(result.data, getLocale(c)));
     })
     .get("/:appId", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
       const app = await gridsService.customApp.get(internalIdParam(c, "appId")!);
       if (!app) return c.json({ message: apiMessages(c).gridsAppNotFound }, 404);
       const gate = await gateAt(c, { baseId: app.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      return c.json(await projectCustomApp(app));
+      return c.json(await projectCustomApp(app, getLocale(c)));
     })
     .put("/:appId/draft", requirePublicIdParam("appId", "customApp", "Grids App"), v("json", CustomAppDefinitionInputSchema), async (c) => {
       const app = await gridsService.customApp.get(internalIdParam(c, "appId")!);
@@ -1816,7 +1820,7 @@ export const createCustomAppsApi = (
       const result = await gridsService.customApp.saveDraft(app.id, c.req.valid("json").definition, getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       c.header(workspaceRevisionHeader, `app:${app.shortId}=${result.data.workspaceRevision}`);
-      return c.json(await projectDraftSave(result.data));
+      return c.json(await projectDraftSave(result.data, getLocale(c)));
     })
     .post("/:appId/restore", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
       const app = await gridsService.customApp.get(internalIdParam(c, "appId")!);
@@ -1825,7 +1829,7 @@ export const createCustomAppsApi = (
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const result = await gridsService.customApp.restoreDraft(app.id, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
-      return c.json(await projectCustomApp(result.data));
+      return c.json(await projectCustomApp(result.data, getLocale(c)));
     })
     .get("/:appId/export", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
       const app = await gridsService.customApp.get(internalIdParam(c, "appId")!);
@@ -1842,7 +1846,7 @@ export const createCustomAppsApi = (
       const result = await gridsService.customApp.publish(app.id, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       await acknowledgeWorkspaceWrite(c, app.baseId, `app:${app.shortId}`);
-      return c.json(await projectCustomApp(result.data));
+      return c.json(await projectCustomApp(result.data, getLocale(c)));
     })
     .post("/:appId/unpublish", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
       const app = await gridsService.customApp.get(internalIdParam(c, "appId")!);
@@ -1852,7 +1856,7 @@ export const createCustomAppsApi = (
       const result = await gridsService.customApp.unpublish(app.id, currentActorUserId(c), getLocale(c));
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       await acknowledgeWorkspaceWrite(c, app.baseId, `app:${app.shortId}`);
-      return c.json(await projectCustomApp(result.data));
+      return c.json(await projectCustomApp(result.data, getLocale(c)));
     })
     .delete("/:appId", requirePublicIdParam("appId", "customApp", "Grids App"), async (c) => {
       const app = await gridsService.customApp.get(internalIdParam(c, "appId")!);

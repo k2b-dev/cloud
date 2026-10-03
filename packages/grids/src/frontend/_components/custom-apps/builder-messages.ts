@@ -228,6 +228,9 @@ const deCopy = {
   "Changes are saved automatically. Publish the draft when it is ready for everyone.":
     "Änderungen werden automatisch gespeichert. Veröffentliche den Entwurf, sobald er für alle bereit ist.",
   "Publish changes": "Änderungen veröffentlichen",
+  "Used resources changed": "Verwendete Ressourcen wurden geändert",
+  "A Form, View, field, template, or workflow used by this app changed. Publish again so the live app uses the current version; until then, affected parts may be unavailable.":
+    "Ein Formular, eine Ansicht, ein Feld, eine Vorlage oder ein Workflow dieser App wurde geändert. Veröffentliche die App erneut, damit sie den aktuellen Stand verwendet. Bis dahin sind betroffene Bereiche möglicherweise nicht verfügbar.",
   "App canvas": "App-Arbeitsfläche",
   "Add block": "Block hinzufügen",
   Action: "Aktion",

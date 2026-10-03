@@ -158,13 +158,17 @@ export const projectPublicWorkspaceWorkflowRunDetail = async (detail: WorkspaceW
   };
 };
 
-const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCatalog): Promise<PublicWorkspaceRoute> => {
+const projectRoute = async (
+  state: OkWorkspaceState,
+  catalog: PublicWorkspaceCatalog,
+  locale: string | undefined,
+): Promise<PublicWorkspaceRoute> => {
   const route = state.route;
   if (route.kind === "empty" || route.kind === "overview") return route;
   if (route.kind === "customApp") {
     return {
       ...route,
-      app: await projectCustomApp(route.app),
+      app: await projectCustomApp(route.app, locale),
     };
   }
   if (route.kind === "records") {
@@ -306,11 +310,11 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
   };
 };
 
-export const projectPublicWorkspaceState = async (state: OkWorkspaceState): Promise<PublicOkWorkspaceState> => {
+export const projectPublicWorkspaceState = async (state: OkWorkspaceState, locale?: string): Promise<PublicOkWorkspaceState> => {
   const catalog = await projectCatalog(state.catalog);
   const { baseShortId: _baseShortId, ...rest } = state;
   const stored = await getBaseNavigation(state.base.id);
   const visible = new Set(navigationResources(state.base.shortId, catalog).map(navigationReferenceKey));
   const navigation = stored ? { revision: stored.revision, groups: visibleNavigationGroups(stored.groups, visible) } : undefined;
-  return { ...rest, base: toPublicBase(state.base), navigation, catalog, route: await projectRoute(state, catalog) };
+  return { ...rest, base: toPublicBase(state.base), navigation, catalog, route: await projectRoute(state, catalog, locale) };
 };
