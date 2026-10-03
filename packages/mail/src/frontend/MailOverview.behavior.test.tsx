@@ -205,7 +205,10 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     permission: "admin" as const,
     receivingAddress: `${name.toLowerCase()}@example.test`,
   });
-  document.cookie = `cloud_mail_workspace=${encodeURIComponent(JSON.stringify({ pinnedMailboxIds: ["Mail02"] }))}; Path=/app/mail`;
+  // Gone01 was hidden before it left the listed mailboxes; Focus still leaves it out, as on the server.
+  document.cookie = `cloud_mail_workspace=${encodeURIComponent(
+    JSON.stringify({ pinnedMailboxIds: ["Mail02"], hiddenMailboxIds: ["Gone01"] }),
+  )}; Path=/app/mail`;
   const dispose = render(
     () =>
       createComponent(MailOverview, {
@@ -214,7 +217,7 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
         initialSelection: null,
         initialDetail: null,
         initialPinnedMailboxIds: ["Mail02"],
-        initialHiddenMailboxIds: [],
+        initialHiddenMailboxIds: ["Gone01"],
         currentUserEmail: null,
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
@@ -236,21 +239,37 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
   };
   const sectionToggle = () => dom.root.querySelector<HTMLButtonElement>(".k2b-app-workspace__sidebar-section-toggle");
   const hiddenRows = () => dom.root.querySelectorAll('.mail-overview-mailbox[data-hidden="true"]');
+  const rowLink = (mailboxId: string) => dom.root.querySelector(`.mail-overview-mailbox[data-mailbox="${mailboxId}"] a`);
+  // A keyboard user activates the button that has focus.
+  const press = (label: string) => {
+    const element = button(label);
+    element.focus();
+    element.click();
+  };
+  const scope = () => dom.root.querySelector(".mail-overview-scope")?.textContent;
   try {
     await settle();
     expect(requests).toHaveLength(0);
     expect(sectionToggle()).toBeNull();
+    expect(scope()).toBe("All mailboxes");
 
-    button("Hide Notifications").click();
+    press("Hide Notifications");
     // Its rows leave Focus at once; the refreshed page brings counts without it.
     expect(dom.root.textContent).not.toContain("Automatic notice");
     expect(dom.root.textContent).toContain("Refund request");
+    expect(scope()).toBe("All mailboxes except 1 hidden");
+    // Focus moves to the row that took its place and stays there when the refreshed page arrives.
+    expect(document.activeElement).toBe(rowLink("Mail01"));
     await settle();
+    expect(document.activeElement).toBe(rowLink("Mail01"));
     expect(requests).toHaveLength(1);
     expect(requests[0]!.searchParams.get("view")).toBe("unassigned");
-    expect(requests[0]!.searchParams.get("excludeMailboxIds")).toBe("Mail02");
-    expect(dom.root.textContent).toContain("1 conversation without an assignee");
-    expect(readMailWorkspacePreferences(document.cookie)).toMatchObject({ pinnedMailboxIds: ["Mail02"], hiddenMailboxIds: ["Mail02"] });
+    expect(requests[0]!.searchParams.get("excludeMailboxIds")).toBe("Mail02,Gone01");
+    expect(dom.root.textContent).toContain("1 conversation without an assignee · All mailboxes except 1 hidden");
+    expect(readMailWorkspacePreferences(document.cookie)).toMatchObject({
+      pinnedMailboxIds: ["Mail02"],
+      hiddenMailboxIds: ["Mail02", "Gone01"],
+    });
 
     // The Hidden section starts collapsed and reveals the mailbox with its counts.
     expect(sectionToggle()?.textContent).toBe("Hidden1");
@@ -262,14 +281,34 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     expect(hiddenRows()[0]!.closest("[hidden]")).toBeNull();
     expect(hiddenRows()[0]!.getAttribute("title")).toContain("4 unread");
 
-    button("Show Notifications").click();
+    press("Show Notifications");
+    // Focus follows the mailbox back into the list.
+    expect(document.activeElement).toBe(rowLink("Mail02"));
     await settle();
+    expect(document.activeElement).toBe(rowLink("Mail02"));
+    expect(rowLink("Mail02")?.closest("[data-hidden]")).toBeNull();
     expect(sectionToggle()).toBeNull();
-    expect(readMailWorkspacePreferences(document.cookie).hiddenMailboxIds).toEqual([]);
+    expect(scope()).toBe("All mailboxes");
+    expect(readMailWorkspacePreferences(document.cookie).hiddenMailboxIds).toEqual(["Gone01"]);
     expect(requests).toHaveLength(2);
-    expect(requests[1]!.searchParams.has("excludeMailboxIds")).toBe(false);
+    expect(requests[1]!.searchParams.get("excludeMailboxIds")).toBe("Gone01");
     // Pinned again at the top, as before hiding it.
     expect(dom.root.querySelector(".mail-overview-mailbox")?.getAttribute("data-pinned")).toBe("true");
+
+    // Pinning moves Support above Notifications, and focus stays with it. Browsers drop focus from
+    // a moved row, then focus lands on its link; this DOM keeps it on the button.
+    press("Pin Support");
+    expect(dom.root.querySelector(".mail-overview-mailbox")?.getAttribute("data-mailbox")).toBe("Mail01");
+    expect(rowLink("Mail01")?.parentElement?.contains(document.activeElement)).toBe(true);
+
+    // Hiding the last row focuses the row above; hiding the only one left focuses the Hidden section.
+    press("Hide Notifications");
+    expect(document.activeElement).toBe(rowLink("Mail01"));
+    press("Hide Support");
+    expect(document.activeElement).toBe(sectionToggle());
+    await settle();
+    expect(document.activeElement).toBe(sectionToggle());
+    expect(scope()).toBe("All mailboxes except 2 hidden");
   } finally {
     dispose();
     globalThis.fetch = originalFetch;

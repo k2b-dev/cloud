@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS } from "./mail-conversation-toolbar";
-import { readMailWorkspacePreferences, updateMailWorkspacePreferences } from "./mail-workspace-preferences";
+import { DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS, MAIL_CONVERSATION_TOOLBAR_ACTION_IDS } from "./mail-conversation-toolbar";
+import { readMailWorkspacePreferences, updateMailWorkspacePreferences, writeMailWorkspacePreferences } from "./mail-workspace-preferences";
 
 describe("Mail workspace preferences", () => {
   test("reads the list layout preference", () => {
@@ -70,6 +70,33 @@ describe("Mail workspace preferences", () => {
   test("keeps unique public IDs of hidden mailboxes", () => {
     const value = encodeURIComponent(JSON.stringify({ hiddenMailboxIds: ["Box003", "Box003", "not a mailbox", 7] }));
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).hiddenMailboxIds).toEqual(["Box003"]);
+  });
+
+  test("keeps the newest pinned and hidden mailboxes within one browser cookie", () => {
+    const previousDocument = globalThis.document;
+    const cookieJar = { cookie: "" };
+    Object.defineProperty(globalThis, "document", { value: cookieJar, configurable: true });
+    const ids = (prefix: string) => Array.from({ length: 250 }, (_, index) => `${prefix}${String(index).padStart(5, "0")}`);
+    try {
+      const saved = writeMailWorkspacePreferences({
+        listCollapsed: true,
+        detailsOpen: true,
+        toolbarActions: [...MAIL_CONVERSATION_TOOLBAR_ACTION_IDS],
+        listMode: "conversations",
+        lastMailboxId: "Box001",
+        pinnedMailboxIds: ids("P"),
+        hiddenMailboxIds: ids("H"),
+      });
+      // Browsers drop a larger cookie, and with it every workspace preference.
+      expect(cookieJar.cookie.split(";")[0]!.length).toBeLessThan(4096);
+      const stored = readMailWorkspacePreferences(cookieJar.cookie);
+      expect(stored.pinnedMailboxIds).toEqual(ids("P").slice(0, 100));
+      expect(stored.hiddenMailboxIds).toEqual(ids("H").slice(0, 100));
+      // The overview shows what was stored, not the longer list it asked for.
+      expect(saved).toEqual(stored);
+    } finally {
+      Object.defineProperty(globalThis, "document", { value: previousDocument, configurable: true });
+    }
   });
 
   test("an older document changes only the preference it writes", () => {

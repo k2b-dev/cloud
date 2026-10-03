@@ -153,6 +153,10 @@ describe("Mail overview", () => {
     expect(row).not.toContain("Pin Support");
     // A row the server sent before the mailbox was hidden stays out of Focus.
     expect(html).not.toContain("Release update");
+    // The Focus scope no longer claims every mailbox.
+    expect(html).toContain("assigned to you · All mailboxes except 1 hidden");
+    expect(html).toMatch(/class="k2b-tag mail-overview-scope"[^>]*>.*All mailboxes except 1 hidden/);
+    expect(renderOverview(null, [], undefined, "de", ["Mail01"])).toContain("Alle Postfächer außer 1 ausgeblendeten");
   });
 
   test("offers hiding next to pinning", () => {

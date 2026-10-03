@@ -33,14 +33,7 @@ import { assertCursorProgress } from "./pagination";
 type MailboxWithPermission = Mailbox & { permission: "read" | "write" | "admin"; receivingAddress: string | null };
 type MailFocusSelection = { mailboxId: string; conversationId: string };
 type FocusSource = { view: MailFocusView; excludedMailboxIds: string[] };
-type MailboxOverviewItem = {
-  id: string;
-  href: string;
-  name: string;
-  subtitle: string;
-  unread: number;
-  needsAction: number;
-};
+type MailboxOverviewItem = { id: string; href: string; name: string; subtitle: string };
 
 /** The object list needs room for a title and an address; the overview does not resize. */
 const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
@@ -85,11 +78,9 @@ function MailOverviewView(props: {
   const [mailboxAnnouncement, setMailboxAnnouncement] = createSignal("");
   const [initialFocusError, setInitialFocusError] = createSignal(props.initialFocusError);
   const mailboxIsHidden = (mailboxId: string) => hiddenMailboxIds().includes(mailboxId);
-  // Focus leaves out the hidden mailboxes; hidden IDs of mailboxes no longer listed change nothing.
-  const excludedMailboxIds = createMemo(() =>
-    props.mailboxes.filter((mailbox) => mailboxIsHidden(mailbox.id)).map((mailbox) => mailbox.id),
-  );
-  const focusSource = (): FocusSource => ({ view: view(), excludedMailboxIds: excludedMailboxIds() });
+  // Focus leaves out every stored hidden mailbox, as on the server, including one beyond the
+  // listed mailboxes; the server ignores IDs of mailboxes that are gone or unreadable.
+  const focusSource = (): FocusSource => ({ view: view(), excludedMailboxIds: hiddenMailboxIds() });
   const focusResults = queries.createInfinite<FocusSource, MailFocusPage, string>({
     source: focusSource,
     isSameSource: (left, right) => left.view === right.view && left.excludedMailboxIds.join() === right.excludedMailboxIds.join(),
@@ -113,24 +104,22 @@ function MailOverviewView(props: {
     focusResults
       .pages()
       .flatMap((page) => page.items)
-      .filter((item) => !excludedMailboxIds().includes(item.mailboxId)),
+      .filter((item) => !mailboxIsHidden(item.mailboxId)),
   );
   const counts = () => focusResults.pages()[0]?.counts ?? props.initialFocus.counts;
   const mailboxCounts = () => focusResults.pages()[0]?.mailboxCounts ?? props.initialFocus.mailboxCounts;
   const mailboxCountsById = createMemo(() => new Map(mailboxCounts().map((item) => [item.mailboxId, item])));
+  // Counts stay out of the items: a refreshed Focus page then updates the rows in place
+  // instead of recreating them, which would drop keyboard focus.
   const mailboxOverviewItems = createMemo<MailboxOverviewItem[]>(() =>
-    props.mailboxes.map((mailbox) => {
-      const mailboxStats = mailboxCountsById().get(mailbox.id) ?? { unread: 0, needsAction: 0 };
-      return {
-        id: mailbox.id,
-        href: `/app/mail/${mailbox.id}?view=needs_action`,
-        name: mailbox.name,
-        subtitle: mailboxOverviewSubtitle(mailbox, locale()),
-        unread: mailboxStats.unread,
-        needsAction: mailboxStats.needsAction,
-      };
-    }),
+    props.mailboxes.map((mailbox) => ({
+      id: mailbox.id,
+      href: `/app/mail/${mailbox.id}?view=needs_action`,
+      name: mailbox.name,
+      subtitle: mailboxOverviewSubtitle(mailbox, locale()),
+    })),
   );
+  const mailboxStats = (mailboxId: string) => mailboxCountsById().get(mailboxId) ?? { unread: 0, needsAction: 0 };
   const orderedMailboxOverviewItems = createMemo(() => {
     return [...mailboxOverviewItems()].sort((left, right) => {
       const leftIndex = pinnedMailboxIds().indexOf(left.id);
@@ -144,34 +133,59 @@ function MailOverviewView(props: {
   const visibleMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => !mailboxIsHidden(mailbox.id)));
   const hiddenMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => mailboxIsHidden(mailbox.id)));
   const mailboxIsPinned = (mailboxId: string) => pinnedMailboxIds().includes(mailboxId);
+  const mailboxRowElement = (mailboxId: string | undefined) =>
+    mailboxId ? document.querySelector<HTMLElement>(`.mail-overview-mailbox[data-mailbox="${mailboxId}"]`) : null;
+  const mailboxLink = (mailboxId: string | undefined) => mailboxRowElement(mailboxId)?.querySelector<HTMLElement>("a") ?? null;
+  const mailboxHasFocus = (mailboxId: string) => mailboxRowElement(mailboxId)?.contains(document.activeElement) ?? false;
+  // Pinning, hiding, and showing move a row or recreate it in the other section, and the
+  // browser then drops keyboard focus on the page body. Put it on the given target instead.
+  const restoreMailboxFocus = (hadFocus: boolean, target: HTMLElement | null) => {
+    if (hadFocus && (!document.activeElement || document.activeElement === document.body)) target?.focus();
+  };
   const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
     // This document may come from history or run beside another tab: apply the
     // shown pin or unpin to the stored list so newer pins survive.
     const pin = !mailboxIsPinned(mailbox.id);
+    const hadFocus = mailboxHasFocus(mailbox.id);
     const stored = readMailWorkspacePreferences(document.cookie);
     const others = stored.pinnedMailboxIds.filter((id) => id !== mailbox.id);
     const next = pin ? [mailbox.id, ...others] : others;
-    writeMailWorkspacePreferences({ ...stored, pinnedMailboxIds: next });
-    setPinnedMailboxIds(next);
+    setPinnedMailboxIds(writeMailWorkspacePreferences({ ...stored, pinnedMailboxIds: next }).pinnedMailboxIds);
     setMailboxAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
+    restoreMailboxFocus(hadFocus, mailboxLink(mailbox.id));
   };
   const toggleMailboxHidden = (mailbox: MailboxOverviewItem) => {
     // Like pins, apply the shown change to the stored list so another tab's changes survive.
     const hide = !mailboxIsHidden(mailbox.id);
+    const hadFocus = mailboxHasFocus(mailbox.id);
+    const visible = visibleMailboxItems();
+    const index = visible.findIndex((item) => item.id === mailbox.id);
+    const neighborId = (visible[index + 1] ?? visible[index - 1])?.id;
     const stored = readMailWorkspacePreferences(document.cookie);
     const others = stored.hiddenMailboxIds.filter((id) => id !== mailbox.id);
     const next = hide ? [mailbox.id, ...others] : others;
-    writeMailWorkspacePreferences({ ...stored, hiddenMailboxIds: next });
-    setHiddenMailboxIds(next);
+    setHiddenMailboxIds(writeMailWorkspacePreferences({ ...stored, hiddenMailboxIds: next }).hiddenMailboxIds);
     setMailboxAnnouncement(hide ? messages().mailboxHidden({ name: mailbox.name }) : messages().mailboxShown({ name: mailbox.name }));
     if (hide && selection()?.mailboxId === mailbox.id) {
       setSelection(null);
       updateSelectionUrl(null);
     }
+    // A hidden row lands in the collapsed Hidden section: focus the row that took its place, or
+    // that section once the list is empty. A shown row stays reachable, so focus follows it.
+    restoreMailboxFocus(
+      hadFocus,
+      hide
+        ? (mailboxLink(neighborId) ?? document.querySelector<HTMLElement>(".mail-overview-hidden-mailboxes button[aria-expanded]"))
+        : mailboxLink(mailbox.id),
+    );
   };
   const canWriteMailbox = (mailboxId: string) => {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;
     return permission === "write" || permission === "admin";
+  };
+  const focusScope = () => {
+    const hidden = hiddenMailboxItems().length;
+    return hidden > 0 ? messages().allMailboxesExceptHidden({ count: hidden }) : messages().allMailboxes;
   };
   const focusDescription = () => {
     const count = counts()[view()];
@@ -357,10 +371,11 @@ function MailOverviewView(props: {
   const mailboxRow = (mailbox: MailboxOverviewItem) => {
     const pinned = () => mailboxIsPinned(mailbox.id);
     const hidden = () => mailboxIsHidden(mailbox.id);
+    const stats = () => mailboxStats(mailbox.id);
     // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
     const countLabels = () => [
-      ...(mailbox.needsAction > 0 ? [messages().needsActionCount({ count: mailbox.needsAction })] : []),
-      ...(mailbox.unread > 0 ? [messages().unreadCount({ count: mailbox.unread })] : []),
+      ...(stats().needsAction > 0 ? [messages().needsActionCount({ count: stats().needsAction })] : []),
+      ...(stats().unread > 0 ? [messages().unreadCount({ count: stats().unread })] : []),
     ];
     return (
       <AppWorkspace.SidebarItem
@@ -369,7 +384,7 @@ function MailOverviewView(props: {
         title={[mailbox.name, mailbox.subtitle, ...countLabels()].join(" · ")}
         description={mailbox.subtitle}
         class="mail-overview-mailbox"
-        data={{ pinned: pinned() && !hidden() ? "true" : undefined, hidden: hidden() ? "true" : undefined }}
+        data={{ mailbox: mailbox.id, pinned: pinned() && !hidden() ? "true" : undefined, hidden: hidden() ? "true" : undefined }}
         actions={
           <AppWorkspace.SidebarItemActions visibility="hover">
             <Show
@@ -408,14 +423,14 @@ function MailOverviewView(props: {
       >
         <AppWorkspace.SidebarItemIcon>
           <i class={hidden() ? "ti ti-eye-off" : pinned() ? "ti ti-flag" : "ti ti-mail"} />
-          <Show when={mailbox.unread > 0}>
+          <Show when={stats().unread > 0}>
             <span class="mail-overview-unread-dot" />
           </Show>
         </AppWorkspace.SidebarItemIcon>
         <AppWorkspace.SidebarItemLabel>{mailbox.name}</AppWorkspace.SidebarItemLabel>
         <AppWorkspace.SidebarItemMeta>
           <span class="mail-overview-needs-action" aria-hidden="true">
-            {mailbox.needsAction > 0 ? formatCount(mailbox.needsAction) : ""}
+            {stats().needsAction > 0 ? formatCount(stats().needsAction) : ""}
           </span>
           <Show when={countLabels().length > 0}>
             <span class="sr-only">{countLabels().join(", ")}</span>
@@ -545,6 +560,7 @@ function MailOverviewView(props: {
             </AppWorkspace.SidebarSection>
             <Show when={hiddenMailboxItems().length > 0}>
               <AppWorkspace.SidebarSection
+                class="mail-overview-hidden-mailboxes"
                 title={messages().hiddenMailboxes}
                 count={hiddenMailboxItems().length}
                 collapsible
@@ -633,7 +649,7 @@ function MailOverviewView(props: {
               as="h2"
               size="lg"
               title={messages().focus}
-              subtitle={`${focusDescription()} · ${messages().allMailboxes}`}
+              subtitle={`${focusDescription()} · ${focusScope()}`}
               actions={
                 <ButtonLink href="/app/mail/compose" class="mail-compose-action">
                   <i class="ti ti-pencil" aria-hidden="true" /> {messages().compose}
@@ -650,7 +666,7 @@ function MailOverviewView(props: {
                 options={focusViewOptions()}
               />
               <Tag icon="ti ti-inbox" size="lg" class="mail-overview-scope">
-                {messages().allMailboxes}
+                {focusScope()}
               </Tag>
             </div>
             <Paper class="mail-overview-list">{focusPanel()}</Paper>
