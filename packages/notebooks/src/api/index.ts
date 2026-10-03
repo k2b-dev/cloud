@@ -37,7 +37,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
-import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS } from "@/lib/note-delete-permission";
+import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "@/lib/note-delete-permission";
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
@@ -74,7 +74,9 @@ const NotebookSchema = z.object({
   defaultPresentationMode: z.enum(PRESENTATION_MODES).describe("Default view for notebook editors and admins; readers always use Book"),
   noteDeletePermission: z
     .enum(NOTE_DELETE_PERMISSIONS)
-    .describe("Permission needed to delete notes: `write` (default) or `admin`. Editing note content stays open to writers."),
+    .describe(
+      "Permission needed to delete or permanently lock notes: `write` (default) or `admin`. Editing note content stays open to writers.",
+    ),
   createdBy: z.uuid().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -2199,12 +2201,12 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Lock note",
-      description: "Lock a note permanently. Locked notes cannot be edited or restored from versions. This action cannot be undone.",
+      description: `Lock a note permanently. Locked notes cannot be edited or restored from versions. This action cannot be undone. Requires write permission, or admin permission when the notebook's \`noteDeletePermission\` is \`admin\`; that case returns 403 with code \`${NOTE_LOCK_ADMIN_ONLY}\`.`,
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Locked note"),
         400: jsonResponse(ErrorResponseSchema, "Note already locked"),
-        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        403: jsonResponse(ErrorResponseSchema, `Access denied, or code \`${NOTE_LOCK_ADMIN_ONLY}\` when only admins may lock notes`),
         404: jsonResponse(ErrorResponseSchema, "Note not found"),
       },
     }),
@@ -2212,13 +2214,17 @@ const app = new Hono<AuthContext>()
       let notebookId = c.req.param("id")!;
       let noteId = c.req.param("noteId")!;
 
-      const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
+      const { notebook, permission, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
       const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
-      return respond(c, toPublicNoteResult(notebooksService.note.lock({ id: noteId }), notebook!.shortId, getLocale(c)));
+      const locked = await notebooksService.note.lock({ id: noteId, permission });
+      if (!locked.ok && "code" in locked && locked.code === NOTE_LOCK_ADMIN_ONLY) {
+        return respond(c, fail({ code: locked.code, message: messages(c).noteLockAdminOnly, status: locked.status }));
+      }
+      return respond(c, toPublicNoteResult(Promise.resolve(locked), notebook!.shortId, getLocale(c)));
     },
   )
 

@@ -2,7 +2,7 @@ import { type DateContext, dates, searchParams } from "@k2b/stdlib";
 import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { type NavigatorQuery, navigatorDestinationHref, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
-import { mayDeleteNotes } from "../../../../lib/note-delete-permission";
+import { mayDeleteOrLockNotes } from "../../../../lib/note-delete-permission";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
@@ -169,7 +169,7 @@ export default function NotebookNavigator(props: Props) {
   const [treeMode, setTreeMode] = createSignal<TreeMode>("deep");
   const [activeNoteId, setActiveNoteId] = createSignal(props.selectedNoteId);
   const actions = useNoteActions(props.notebook.id, () => props.tree);
-  const canDeleteNotes = () => mayDeleteNotes(props.permission, props.notebook.noteDeletePermission);
+  const canDeleteOrLockNotes = () => mayDeleteOrLockNotes(props.permission, props.notebook.noteDeletePermission);
   const { favoriteNoteIds: favoriteIds, toggleFavorite } = useFavoriteNotes({
     notebookId: props.notebook.id,
     initialFavoriteNoteIds: () => props.favoriteNoteIds,
@@ -437,7 +437,7 @@ export default function NotebookNavigator(props: Props) {
                         <Dropdown.Root
                           position="bottom-right"
                           width="12rem"
-                          items={noteActionItems(note(), actions, t(), canDeleteNotes())}
+                          items={noteActionItems(note(), actions, t(), canDeleteOrLockNotes())}
                         >
                           <Dropdown.Trigger
                             iconOnly
@@ -510,7 +510,11 @@ export default function NotebookNavigator(props: Props) {
                         <i class="ti ti-star" />
                       </IconButton>
                       <Show when={props.canWrite}>
-                        <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(note, actions, t(), canDeleteNotes())}>
+                        <Dropdown.Root
+                          position="bottom-right"
+                          width="12rem"
+                          items={noteActionItems(note, actions, t(), canDeleteOrLockNotes())}
+                        >
                           <Dropdown.Trigger
                             iconOnly
                             label={t().noteActions({ title: note.title || t().untitled })}

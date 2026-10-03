@@ -166,8 +166,8 @@ export function PermissionsSection(props: { notebook: Notebook }) {
   );
 }
 
-/** Admins choose whether everyone who can write, or only admins, may delete notes. Editing stays open to writers. */
-export function NoteDeletionSection(props: { notebook: Notebook; onNotebookChange: (notebook: Notebook) => void }) {
+/** Admins choose whether everyone who can write, or only admins, may delete and lock notes. Editing stays open to writers. */
+export function NoteDeleteAndLockSection(props: { notebook: Notebook; onNotebookChange: (notebook: Notebook) => void }) {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const mutation = mutations.create<Notebook, NoteDeletePermission>({
@@ -184,10 +184,10 @@ export function NoteDeletionSection(props: { notebook: Notebook; onNotebookChang
   onCleanup(mutation.abort);
 
   return (
-    <SettingsGroup title={t().deletingNotes} description={t().deletingNotesDescription}>
-      <SettingsField label={t().whoMayDeleteNotes} description={t().whoMayDeleteNotesHelp} error={() => undefined}>
+    <SettingsGroup title={t().deletingAndLockingNotes} description={t().deletingAndLockingNotesDescription}>
+      <SettingsField label={t().whoMayDeleteAndLockNotes} description={t().whoMayDeleteAndLockNotesHelp} error={() => undefined}>
         <Select
-          aria-label={t().whoMayDeleteNotes}
+          aria-label={t().whoMayDeleteAndLockNotes}
           value={() => props.notebook.noteDeletePermission}
           onValueChange={(next) => {
             if (!mutation.loading() && isNoteDeletePermission(next) && next !== props.notebook.noteDeletePermission) {

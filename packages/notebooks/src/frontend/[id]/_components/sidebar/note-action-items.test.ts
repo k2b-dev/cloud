@@ -20,6 +20,7 @@ const node: NoteTreeNode = {
 };
 
 const deleted: string[] = [];
+const locked: string[] = [];
 const actions = {
   handleCreateNote: async () => undefined,
   handleMove: async () => undefined,
@@ -27,16 +28,20 @@ const actions = {
   handleDelete: async (target: NoteTreeNode) => {
     deleted.push(target.id);
   },
-  handleLock: async () => undefined,
+  handleLock: async (target: NoteTreeNode) => {
+    locked.push(target.id);
+  },
   loading: () => false,
 } satisfies ReturnType<typeof useNoteActions>;
 
-const deleteItem = (canDelete: boolean, locale: string) => {
+const actionItem = (icon: string, canDeleteOrLock: boolean, locale: string, target = node) => {
   const { t } = notebookWorkspaceMessages.resolve([locale]);
-  return noteActionItems(node, actions, t, canDelete)
+  return noteActionItems(target, actions, t, canDeleteOrLock)
     .flatMap((item) => ("items" in item ? item.items : [item]))
-    .find((item) => item.icon === "ti ti-trash");
+    .find((item) => item.icon === icon);
 };
+const deleteItem = (canDelete: boolean, locale: string) => actionItem("ti ti-trash", canDelete, locale);
+const lockItem = (canLock: boolean, locale: string) => actionItem("ti ti-lock", canLock, locale);
 
 test("a notebook that reserves deleting for admins keeps the delete action visible but disabled, with the reason", () => {
   expect(deleteItem(false, "en")).toMatchObject({
@@ -53,4 +58,22 @@ test("people who may delete keep the delete action", () => {
   expect(item?.disabled).toBeUndefined();
   item?.action?.();
   expect(deleted).toEqual(["Note01"]);
+});
+
+test("a notebook that reserves deleting for admins also keeps the lock action visible but disabled, with the reason", () => {
+  expect(lockItem(false, "en")).toMatchObject({
+    disabled: true,
+    description: "Locking is reserved for admins in this notebook.",
+  });
+  expect(lockItem(false, "de")?.description).toBe("Sperren ist in diesem Notizbuch Admins vorbehalten.");
+  expect(lockItem(false, "en")?.action).toBeUndefined();
+});
+
+test("people who may lock keep the lock action; a locked note offers none", () => {
+  const item = lockItem(true, "en");
+  expect(item).toMatchObject({ variant: "danger" });
+  expect(item?.disabled).toBeUndefined();
+  item?.action?.();
+  expect(locked).toEqual(["Note01"]);
+  expect(actionItem("ti ti-lock", false, "en", { ...node, lockedAt: "2026-01-02T00:00:00.000Z" })).toBeUndefined();
 });

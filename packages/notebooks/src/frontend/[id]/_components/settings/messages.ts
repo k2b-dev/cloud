@@ -84,11 +84,11 @@ export const notebookSettingsMessages = i18n.define({
       accessReconcileFailed: "The change was saved, but notebook access could not be reloaded.",
       peopleGroups: "People and groups",
       peopleGroupsDescription: "Choose who can read, edit, or administer this notebook.",
-      deletingNotes: "Deleting notes",
-      deletingNotesDescription: "Choose who can delete notes. Changes save immediately.",
-      whoMayDeleteNotes: "Who can delete notes",
-      whoMayDeleteNotesHelp:
-        "Everyone who can write still edits notes and can remove content; the version history keeps earlier versions. A deleted note is gone with its subnotes.",
+      deletingAndLockingNotes: "Deleting and locking notes",
+      deletingAndLockingNotesDescription: "Choose who can delete and permanently lock notes. Changes save immediately.",
+      whoMayDeleteAndLockNotes: "Who can delete and lock notes",
+      whoMayDeleteAndLockNotesHelp:
+        "Neither can be undone: a deleted note is gone with its subnotes, and a locked note can no longer be edited or restored. Everyone who can write still edits notes and can remove content; the version history keeps earlier versions.",
       deleteByWriters: "Everyone who can write",
       deleteByAdmins: "Admins only",
       loadingAccess: "Loading notebook access",
@@ -228,11 +228,12 @@ export const notebookSettingsMessages = i18n.define({
       accessReconcileFailed: "Die Änderung wurde gespeichert, aber der Zugriff auf das Notizbuch konnte nicht neu geladen werden.",
       peopleGroups: "Personen und Gruppen",
       peopleGroupsDescription: "Lege fest, wer dieses Notizbuch lesen, bearbeiten oder verwalten darf.",
-      deletingNotes: "Notizen löschen",
-      deletingNotesDescription: "Lege fest, wer Notizen löschen darf. Änderungen werden sofort gespeichert.",
-      whoMayDeleteNotes: "Wer darf Notizen löschen",
-      whoMayDeleteNotesHelp:
-        "Alle mit Schreibrechten bearbeiten Notizen weiterhin und können Inhalte entfernen; der Versionsverlauf bewahrt frühere Fassungen. Eine gelöschte Notiz ist mit ihren Unternotizen weg.",
+      deletingAndLockingNotes: "Notizen löschen und sperren",
+      deletingAndLockingNotesDescription:
+        "Lege fest, wer Notizen löschen und endgültig sperren darf. Änderungen werden sofort gespeichert.",
+      whoMayDeleteAndLockNotes: "Wer darf Notizen löschen und sperren",
+      whoMayDeleteAndLockNotesHelp:
+        "Beides lässt sich nicht rückgängig machen: Eine gelöschte Notiz ist mit ihren Unternotizen weg, eine gesperrte Notiz lässt sich weder bearbeiten noch wiederherstellen. Alle mit Schreibrechten bearbeiten Notizen weiterhin und können Inhalte entfernen; der Versionsverlauf bewahrt frühere Fassungen.",
       deleteByWriters: "Alle mit Schreibrechten",
       deleteByAdmins: "Nur Admins",
       loadingAccess: "Zugriff auf das Notizbuch wird geladen",

@@ -25,8 +25,8 @@ type Props = {
   notebookName: string;
   selectedNoteId: string | null;
   canWrite?: boolean;
-  /** Whether this person may delete notes under the notebook's deletion rule. */
-  canDeleteNotes?: boolean;
+  /** Whether this person may delete and lock notes under the notebook's rule for both. */
+  canDeleteOrLockNotes?: boolean;
   showSearch?: boolean;
   showHeaderActions?: boolean;
   favoriteNoteIds?: string[];
@@ -265,7 +265,7 @@ export const noteActionItems = (
   node: NoteTreeNode,
   actions: ReturnType<typeof useNoteActions>,
   t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
-  canDelete: boolean,
+  canDeleteOrLock: boolean,
 ): DropdownItem[] => [
   {
     icon: "ti ti-file-plus",
@@ -293,23 +293,20 @@ export const noteActionItems = (
   },
   ...(node.lockedAt
     ? []
-    : [
+    : ([
         {
           sectionLabel: t.security,
           items: [
-            {
-              icon: "ti ti-lock",
-              label: t.lockNote,
-              variant: "danger" as const,
-              action: () => actions.handleLock(node),
-            },
+            canDeleteOrLock
+              ? { icon: "ti ti-lock", label: t.lockNote, variant: "danger", action: () => actions.handleLock(node) }
+              : { icon: "ti ti-lock", label: t.lockNote, description: t.lockAdminOnly, disabled: true },
           ],
         },
-      ]),
+      ] satisfies DropdownItem[])),
   {
     sectionLabel: "",
     items: [
-      canDelete
+      canDeleteOrLock
         ? { icon: "ti ti-trash", label: t.delete, variant: "danger", action: () => actions.handleDelete(node) }
         : { icon: "ti ti-trash", label: t.delete, description: t.deleteAdminOnly, disabled: true },
     ],
@@ -321,7 +318,7 @@ function NoteTreeItems(props: {
   notebookId: string;
   presentationMode?: PresentationMode;
   canWrite: boolean;
-  canDeleteNotes: boolean;
+  canDeleteOrLockNotes: boolean;
   actions: ReturnType<typeof useNoteActions>;
   favoriteNoteIds?: () => Set<string>;
   onToggleFavorite?: (node: NoteTreeNode, event: MouseEvent) => void;
@@ -370,7 +367,7 @@ function NoteTreeItems(props: {
                       <Dropdown.Root
                         position="bottom-right"
                         width="12rem"
-                        items={noteActionItems(node, props.actions, t(), props.canDeleteNotes)}
+                        items={noteActionItems(node, props.actions, t(), props.canDeleteOrLockNotes)}
                       >
                         <Dropdown.Trigger
                           iconOnly
@@ -392,7 +389,7 @@ function NoteTreeItems(props: {
               notebookId={props.notebookId}
               presentationMode={props.presentationMode}
               canWrite={props.canWrite}
-              canDeleteNotes={props.canDeleteNotes}
+              canDeleteOrLockNotes={props.canDeleteOrLockNotes}
               actions={props.actions}
               favoriteNoteIds={props.favoriteNoteIds}
               onToggleFavorite={props.onToggleFavorite}
@@ -474,7 +471,7 @@ export default function NoteTree(props: Props) {
               notebookId={props.notebookId}
               presentationMode={props.presentationMode}
               canWrite={props.canWrite ?? false}
-              canDeleteNotes={props.canDeleteNotes ?? false}
+              canDeleteOrLockNotes={props.canDeleteOrLockNotes ?? false}
               actions={actions}
               favoriteNoteIds={favoriteNoteIds}
               onToggleFavorite={toggleFavorite}
