@@ -4,7 +4,7 @@ import { ssr } from "../config";
 import { requestContactDirectory } from "../contact-directory-settings";
 import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import type { MailRequestContext } from "../service";
-import { focus, mailboxes } from "../service";
+import { focus, mailboxes, publicResources } from "../service";
 import { localizeMailError } from "../service/error-messages";
 import { loadMailboxConversationDetail } from "../service/workspace";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
@@ -69,7 +69,12 @@ export default ssr<AuthContext>(async (c) => {
       return detail ? projectMailConversationDetail(detail) : null;
     })(),
     publicMailboxesPromise,
-    focus.listFocusConversations({ context, view }),
+    (async () =>
+      focus.listFocusConversations({
+        context,
+        view,
+        excludedMailboxIds: await publicResources.resolveExistingPublicIds("mailboxes", workspacePreferences.hiddenMailboxIds),
+      }))(),
   ]);
   const initialFocus = focusResult.ok
     ? await projectSsrFocusPage(focusResult.data)
@@ -84,6 +89,7 @@ export default ssr<AuthContext>(async (c) => {
         initialSelection={initialSelection}
         initialDetail={initialDetail}
         initialPinnedMailboxIds={workspacePreferences.pinnedMailboxIds}
+        initialHiddenMailboxIds={workspacePreferences.hiddenMailboxIds}
         currentUserEmail={user.mail}
         contactDirectory={requestContactDirectory(c)}
         dateConfig={getDateConfig(c)}

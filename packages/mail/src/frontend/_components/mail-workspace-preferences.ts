@@ -8,12 +8,17 @@ export type MailWorkspacePreferences = {
   listMode: MailListMode;
   lastMailboxId: string | null;
   pinnedMailboxIds: string[];
+  /** Mailboxes left out of the overview sidebar and Focus; opening them directly still works. */
+  hiddenMailboxIds: string[];
 };
 
 const MAIL_WORKSPACE_COOKIE = "cloud_mail_workspace";
 const isMailResourceId = (value: unknown): value is string => typeof value === "string" && /^[0-9A-Za-z]{6}$/.test(value);
-const normalizePinnedMailboxIds = (value: unknown): string[] =>
-  Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, 200) : [];
+// Browsers drop a cookie over 4096 bytes, and then no workspace preference saves. An encoded ID
+// costs 15 bytes, so the pinned and hidden lists keep their newest 100 each and stay near 3 KB.
+const MAX_MAILBOX_IDS = 100;
+const normalizeMailboxIds = (value: unknown): string[] =>
+  Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, MAX_MAILBOX_IDS) : [];
 
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
   listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
@@ -26,8 +31,11 @@ const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePrefere
     value && typeof value === "object" && isMailResourceId((value as { lastMailboxId?: unknown }).lastMailboxId)
       ? (value as { lastMailboxId: string }).lastMailboxId
       : null,
-  pinnedMailboxIds: normalizePinnedMailboxIds(
+  pinnedMailboxIds: normalizeMailboxIds(
     value && typeof value === "object" ? (value as { pinnedMailboxIds?: unknown }).pinnedMailboxIds : undefined,
+  ),
+  hiddenMailboxIds: normalizeMailboxIds(
+    value && typeof value === "object" ? (value as { hiddenMailboxIds?: unknown }).hiddenMailboxIds : undefined,
   ),
 });
 
@@ -45,11 +53,13 @@ export const readMailWorkspacePreferences = (cookieHeader: string | null | undef
   }
 };
 
-export const writeMailWorkspacePreferences = (preferences: MailWorkspacePreferences): void => {
+/** Returns the preferences as stored, so a list past its limit shows what a reload will show. */
+export const writeMailWorkspacePreferences = (preferences: MailWorkspacePreferences): MailWorkspacePreferences => {
   const normalized = normalizeMailWorkspacePreferences(preferences);
   document.cookie = `${MAIL_WORKSPACE_COOKIE}=${encodeURIComponent(
     JSON.stringify(normalized),
   )}; Path=/app/mail; Max-Age=31536000; SameSite=Lax`;
+  return normalized;
 };
 
 /**

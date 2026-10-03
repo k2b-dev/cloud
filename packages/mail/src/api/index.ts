@@ -212,6 +212,14 @@ const conversationQuerySchema = cursorQuerySchema.extend({
 });
 const mailFocusQuerySchema = cursorQuerySchema.extend({
   view: mailFocusViewSchema.default("mine"),
+  /** The overview hides at most as many mailboxes as it lists. */
+  excludeMailboxIds: z
+    .string()
+    .max(1_400)
+    .default("")
+    .transform((value) => value.split(",").filter(Boolean))
+    .pipe(z.array(ResourceShortIdSchema).max(200))
+    .describe("Comma-separated mailbox IDs whose conversations leave the list and view counts, such as mailboxes hidden in the overview"),
 });
 const collaboratorQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
@@ -756,6 +764,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
           view: query.view,
           cursor: query.cursor,
           limit: query.limit,
+          excludedMailboxIds: await publicResources.resolveExistingPublicIds("mailboxes", query.excludeMailboxIds),
         }),
       );
     },

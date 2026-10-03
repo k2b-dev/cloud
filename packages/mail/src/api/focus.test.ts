@@ -93,6 +93,29 @@ suite("Mail focus API", () => {
     expect(JSON.stringify(body)).not.toContain(mailboxId);
   });
 
+  test("passes mailboxes hidden in the overview as internal IDs and rejects malformed ones", async () => {
+    const mailboxId = "33333333-3333-4333-8333-333333333333";
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    const resolve = spyOn(publicResources, "resolveExistingPublicIds").mockResolvedValue([mailboxId]);
+    const list = spyOn(focus, "listFocusConversations").mockResolvedValue({
+      ok: true,
+      data: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+    });
+
+    const response = await app.request("/overview/conversations?view=all&excludeMailboxIds=Mail01,Mail02", {
+      headers: { authorization: "Bearer mail-focus-api-test" },
+    });
+    expect(response.status).toBe(200);
+    expect(resolve).toHaveBeenCalledWith("mailboxes", ["Mail01", "Mail02"]);
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ view: "all", excludedMailboxIds: [mailboxId] }));
+
+    const malformed = await app.request("/overview/conversations?excludeMailboxIds=not-an-id", {
+      headers: { authorization: "Bearer mail-focus-api-test" },
+    });
+    expect(malformed.status).toBe(400);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   test("resolves public mailbox and conversation IDs for overview details", async () => {
     const mailboxId = "33333333-3333-4333-8333-333333333333";
     const conversationId = "22222222-2222-4222-8222-222222222222";

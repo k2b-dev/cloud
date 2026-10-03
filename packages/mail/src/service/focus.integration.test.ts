@@ -211,6 +211,24 @@ suite("cross-mailbox focus", () => {
     if (outsiderPage.ok) expect(outsiderPage.data.items.map((item) => item.subject)).toEqual(["Hidden mail"]);
   });
 
+  test("leaves hidden mailboxes out of the list and view counts but keeps their mailbox counts", async () => {
+    const [support, finance] = mailboxIds;
+    const page = await listFocusConversations({ context: ownerContext, view: "all", excludedMailboxIds: [finance!] });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+    expect(page.data.items.map((item) => item.subject)).toEqual(["Assigned support", "Waiting support"]);
+    expect(page.data.counts).toEqual({ mine: 1, unassigned: 0, waiting: 1, all: 2 });
+    expect(page.data.mailboxCounts).toEqual(
+      expect.arrayContaining([
+        { mailboxId: support, unread: 2, needsAction: 1 },
+        { mailboxId: finance, unread: 1, needsAction: 1 },
+      ]),
+    );
+    // Hiding a mailbox this person cannot read changes nothing.
+    const outsiderPage = await listFocusConversations({ context: outsiderContext, view: "mine", excludedMailboxIds: [support!] });
+    expect(outsiderPage.ok && outsiderPage.data.items.map((item) => item.subject)).toEqual(["Hidden mail"]);
+  });
+
   test("leaves Trash and Junk out of follow-up and treats assignees without access as unassigned", async () => {
     const lead = await createUser("lead");
     const former = await createUser("former");
