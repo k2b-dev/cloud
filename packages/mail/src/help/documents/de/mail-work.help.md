@@ -138,7 +138,7 @@ Mail öffnet niemals einen Abbestelllink, nur weil du eine Nachricht in der Vors
 
 Empfangene Anhänge bleiben mit der Nachricht verbunden, mit der sie eingegangen sind. Wähle einen Anhang, um ihn in einem neuen Browser-Tab zu öffnen oder herunterzuladen.
 
-**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Oben im Dialog stehen **Anhang herunterladen** und, für Text und CSV, **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
+**Vorschau** öffnet Text, CSV, JSON, Bilder, PDFs, Audio und Video in einem Dialog. Ist eine Textdatei Markdown und beginnt mit einer Überschrift, wird diese Überschrift zum Titel, darunter stehen Dateiname und Größe. Oben im Dialog stehen **Anhang herunterladen** und, für Text, CSV und JSON, **Kopieren**. Auf dem Smartphone füllt die Vorschau den Bildschirm.
 
 Personen mit Postfach-Adminrechten können außerdem einen öffentlichen Download-Link für einen Anhang erstellen. Die URL wird nur bei der Erstellung angezeigt und kann durch Passwort, Ablaufzeit und eine Höchstzahl an Download-Sitzungen geschützt werden. Bestehende Links verwaltest oder widerrufst du unter **Postfachwerkzeuge > Geteilte Links**.
 

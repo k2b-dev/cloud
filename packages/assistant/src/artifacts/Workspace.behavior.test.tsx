@@ -59,44 +59,51 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
   }
 });
 
-test("a read-only source text tab keeps its copy action without the preview frame", async () => {
-  const dom = createDomTestHarness();
-  const { ArtifactWorkspace, createArtifactWorkspace } = await import("./Workspace");
-  const { sourceTab, workspaceSelectionHref } = await import("./workspace-state");
-  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
-  const id = "00000000-0000-4000-8000-000000000001";
-  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(
-      async () =>
-        Response.json({
-          id,
-          title: "Example",
-          revision: 1,
-          permission: "read",
-          source: { entry: "main.js", files: [{ path: "style.css", content: "body {\n  margin: 0;\n}\n" }] },
-        }),
-      { preconnect: globalThis.fetch.preconnect },
-    ),
-  );
-  const controller = createArtifactWorkspace(workspaceSelectionHref("/app/assistant", sourceTab(id, "style.css")));
-  const dispose = render(
-    () => (
-      <AssistantLiveProvider value={live}>
-        <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" onEditTask={() => {}} />
-      </AssistantLiveProvider>
-    ),
-    dom.root,
-  );
-  try {
-    await tick();
-    const view = dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view');
-    expect(view?.getAttribute("data-variant")).toBe("plain");
-    expect(view?.textContent).toContain("margin: 0;");
-    expect(view?.querySelector("textarea")).toBeNull();
-    expect(view?.querySelector(".k2b-copy-button")).not.toBeNull();
-  } finally {
-    dispose();
-    fetchMock.mockRestore();
-    dom.cleanup();
-  }
-});
+// Read-only source text keeps Copy without the preview frame, and code keeps the highlighting of its file type.
+for (const [path, content, highlighted] of [
+  ["style.css", "body {\n  margin: 0;\n}\n", false],
+  ["widget.tsx", "export const Widget = () => <p>Stand</p>;\n", true],
+] as const) {
+  test(`a read-only ${path} tab keeps its copy action without the preview frame`, async () => {
+    const dom = createDomTestHarness();
+    const { ArtifactWorkspace, createArtifactWorkspace } = await import("./Workspace");
+    const { sourceTab, workspaceSelectionHref } = await import("./workspace-state");
+    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const id = "00000000-0000-4000-8000-000000000001";
+    const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async () =>
+          Response.json({
+            id,
+            title: "Example",
+            revision: 1,
+            permission: "read",
+            source: { entry: "main.js", files: [{ path, content }] },
+          }),
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const controller = createArtifactWorkspace(workspaceSelectionHref("/app/assistant", sourceTab(id, path)));
+    const dispose = render(
+      () => (
+        <AssistantLiveProvider value={live}>
+          <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" onEditTask={() => {}} />
+        </AssistantLiveProvider>
+      ),
+      dom.root,
+    );
+    try {
+      await tick();
+      const view = dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view');
+      expect(view?.getAttribute("data-variant")).toBe("plain");
+      expect(view?.textContent).toContain(content.split("\n")[0]!.slice(0, 12));
+      expect(view?.querySelector("textarea")).toBeNull();
+      expect(view?.querySelector(".k2b-copy-button")).not.toBeNull();
+      expect(view?.querySelector(".cd-k") !== null).toBe(highlighted);
+    } finally {
+      dispose();
+      fetchMock.mockRestore();
+      dom.cleanup();
+    }
+  });
+}
