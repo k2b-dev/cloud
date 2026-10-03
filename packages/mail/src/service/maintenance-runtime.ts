@@ -525,13 +525,17 @@ export const submitDueMaintenanceCommands = async (): Promise<{ queued: number; 
       ) IS NOT TRUE
     RETURNING id
   `;
+  // A running checker refreshes its commands' heartbeats every second, so the mailboxes whose
+  // checker is missing come first.
   const waiting = await sql<{ mailbox_id: string }[]>`
-    SELECT DISTINCT mailbox_id
+    SELECT mailbox_id
     FROM mail.commands
     WHERE state = 'executing'
       AND kind IN ('sync_mailbox', 'sync_folder')
       AND payload ->> 'wait' = 'true'
       AND (result ->> 'queued' = 'true' OR (result ->> 'queuedFolders')::int > 0)
+    GROUP BY mailbox_id
+    ORDER BY min(COALESCE(worker_heartbeat_at, started_at)), mailbox_id
     LIMIT 500
   `;
   for (const command of waiting) await submitSyncCheck(command.mailbox_id);

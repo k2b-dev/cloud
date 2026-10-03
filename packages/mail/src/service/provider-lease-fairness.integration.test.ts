@@ -1287,21 +1287,34 @@ suite("mail provider lease fairness", () => {
     }
   }, 60_000);
 
-  test("a waiting sync whose worker was away is left to its mailbox's checker, which ends it when its request ran out", async () => {
+  test("the commands-due schedule starts a missing checker and leaves a waiting sync to it instead of running it anew", async () => {
     const mailbox = await connect("away");
-    const commandId = await startWaitedSync(mailbox, "away-sync", SENT);
+    // No maintenance worker runs, so the two requests wait without a checker.
+    const synced = await startWaitedSync(mailbox, "away-synced", INBOX);
+    const expired = await startWaitedSync(mailbox, "away-expired", SENT);
+    await runFolderSyncJob(mailbox.folderId(INBOX));
+    // The workers were away for longer than a request counts.
     await sql`
       UPDATE mail.commands
       SET
         started_at = now() - (${FOLDER_SYNC_REQUEST_MS + 60_000}::int * interval '1 millisecond'),
         worker_heartbeat_at = now() - (${FOLDER_SYNC_REQUEST_MS + 60_000}::int * interval '1 millisecond')
-      WHERE id = ${commandId}::uuid
+      WHERE id = ${expired}::uuid
     `;
-    // Running the command anew would make it wait again.
-    await submitDueMaintenanceCommands();
-    expect(await commandOutcome(commandId)).toMatchObject({ state: "executing", code: null });
-    expect(await checkTurn(mailbox)).toBeNull();
-    expect(await commandOutcome(commandId)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
+    await startMaintenanceRuntime();
+    try {
+      await submitDueMaintenanceCommands();
+      await waitFor(
+        async () => (await commandOutcome(synced)).state !== "executing" && (await commandOutcome(expired)).state !== "executing",
+        "the checker to end both syncs",
+        15_000,
+      );
+      expect(await commandOutcome(synced)).toMatchObject({ state: "confirmed", code: null });
+      // Run anew, the request would have waited again for a sync of Sent.
+      expect(await commandOutcome(expired)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
+    } finally {
+      await stopMaintenanceRuntime();
+    }
   }, 60_000);
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {

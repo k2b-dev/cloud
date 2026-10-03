@@ -936,14 +936,15 @@ const waitForCommand = async (
   return result;
 };
 
-// A sync request is confirmed once each folder it queued holds the mail delivered before it, or
-// with the reason why the mailbox cannot synchronize, before or after it queued its folders.
+// A waited sync request is confirmed once each folder it queued holds the mail delivered before
+// it, one that does not wait once its folder syncs are queued. Either is confirmed with the reason
+// why the mailbox cannot synchronize, before or after it queued its folders.
 const printSyncRequest = (ctx: CloudCliContext, label: string, command: MailCommand): void => {
   const reason = typeof command.result.reason === "string" ? command.result.reason : null;
   const queued = command.result.queued === true || Number(command.result.queuedFolders) > 0;
   if (command.state !== "confirmed") ctx.print(`${label} request ${command.state} (${command.id}).`);
   else if (reason) ctx.print(`${label} ${queued ? "stopped" : "not queued"}: ${reason} (${command.id}).`);
-  else ctx.print(`${label} finished (${command.id}).`);
+  else ctx.print(`${label} ${command.payload.wait === true ? "finished" : "queued"} (${command.id}).`);
 };
 
 const waitForCommands = async (
