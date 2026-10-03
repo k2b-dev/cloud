@@ -22,7 +22,7 @@ const host = (overrides: Partial<MailWorkspaceActionRunnerHost> = {}) => {
     chooseDestinationFolder: async () => "archive",
     roleDestinationFolderId: () => null,
     applyOptimistic: () => events.push("optimistic"),
-    clearOptimistic: (ids) => events.push(`clear:${ids.join(",")}`),
+    clearOptimistic: (targets) => events.push(`clear:${targets.map((item) => item.conversationId).join(",")}`),
     submit: async ({ target: item, sourceFolderId }) => {
       events.push(`submit:${item.conversationId}`);
       return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
@@ -278,5 +278,30 @@ describe("Mail workspace action runner", () => {
     const silent = host();
     await runMailWorkspaceAction("mark_read", { silent: true }, silent.host, signal());
     expect(silent.events.some((event) => event.startsWith("follow:"))).toBe(false);
+  });
+
+  test("sends the messages of message-list rows, and the whole conversation once a row stands for it", async () => {
+    const submitted: string[] = [];
+    const followed: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [
+        { ...target("one", ["inbox"]), messageIds: ["a"] },
+        { ...target("one", ["projects"]), messageIds: ["b"] },
+        { ...target("two", ["inbox"]), messageIds: ["c"] },
+        target("two", ["inbox"]),
+      ],
+      submit: async ({ target: item, sourceFolderId }) => {
+        submitted.push(`${item.conversationId}:${sourceFolderId}:${item.messageIds?.join("+") ?? "all"}`);
+        return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
+      },
+      followOutcomes: ({ conversations }) => {
+        for (const conversation of conversations)
+          followed.push(`${conversation.conversationId}:${conversation.messageIds?.join("+") ?? "all"}`);
+      },
+    });
+
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    expect(submitted.sort()).toEqual(["one:inbox:a+b", "one:projects:a+b", "two:inbox:all"]);
+    expect(followed).toEqual(["one:a+b", "two:all"]);
   });
 });

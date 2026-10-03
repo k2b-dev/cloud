@@ -3692,7 +3692,7 @@ suite("mail lifecycle control plane", () => {
     expect(created?.count).toBe(0);
   });
 
-  test("conversation triage picks the newest placement when a message has duplicate active refs", async () => {
+  test("conversation triage changes every copy when a message has duplicate active refs", async () => {
     const [conversation] = await sql<{ id: string }[]>`
       INSERT INTO mail.conversations (short_id, mailbox_id, subject, participant_summary, latest_message_at)
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Duplicate refs', 'fixture', now())
@@ -3715,8 +3715,8 @@ suite("mail lifecycle control plane", () => {
       INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
       VALUES (${conversation!.id}::uuid, ${message!.id}::uuid, 0)
     `;
-    // The same message twice in one folder: what a duplicated provider UID looks
-    // like locally until the sync's duplicate merge retires the older placement.
+    // The same message delivered twice into one folder: two provider UIDs of one
+    // message, which stay until the provider removes one of them.
     const duplicateRefs: string[] = [];
     for (const [position, placedAt] of ["1 hour", "1 minute"].entries()) {
       const [remoteRef] = await sql<{ id: string }[]>`
@@ -3745,17 +3745,16 @@ suite("mail lifecycle control plane", () => {
     });
     expect(triage.ok).toBe(true);
     if (!triage.ok) return;
-    expect(triage.data.commands).toHaveLength(1);
-    const created = await sql<{ idempotency_key: string; target: Record<string, unknown> | string }[]>`
-      SELECT idempotency_key, target
+    expect(triage.data.commands).toHaveLength(2);
+    const created = await sql<{ idempotency_key: string; ref_id: string }[]>`
+      SELECT idempotency_key, target ->> 'remoteMessageRefId' AS ref_id
       FROM mail.commands
       WHERE mailbox_id = ${mailboxId}::uuid
         AND correlation_id = ${triage.data.correlationId}
+      ORDER BY ref_id
     `;
-    expect(created).toHaveLength(1);
-    expect(created[0]!.idempotency_key).toBe(`${idempotencyKey}:${duplicateRefs[1]}`);
-    const target = typeof created[0]!.target === "string" ? JSON.parse(created[0]!.target as string) : created[0]!.target;
-    expect(target).toMatchObject({ remoteMessageRefId: duplicateRefs[1] });
+    // Each command is pinned to its own copy, never twice to the newest one.
+    expect(created).toEqual([...duplicateRefs].sort().map((refId) => ({ idempotency_key: `${idempotencyKey}:${refId}`, ref_id: refId })));
   });
 
   test("command idempotency stays actor-bound and rechecks write access on replay", async () => {

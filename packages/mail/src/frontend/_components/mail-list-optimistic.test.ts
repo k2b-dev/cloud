@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailListItem } from "../../service/workspace";
-import { reconcileMailListOptimisticState } from "./mail-list-optimistic";
+import { mailListMessagePendingKey, reconcileMailListOptimisticState } from "./mail-list-optimistic";
 
 const item = (unread: boolean, flagged: boolean, overrides: Partial<MailListItem> = {}): MailListItem => ({
   id: "00000000-0000-4000-8000-000000000001",
@@ -112,5 +112,13 @@ describe("Mail list optimistic state", () => {
 
     expect(result.pending.size).toBe(0);
     expect(result.items[0]?.localTags).toEqual([canonicalTag]);
+  });
+
+  test("keeps a message row's change on that row, not on the other messages of its conversation", () => {
+    const conversationId = "00000000-0000-4000-8000-0000000000c1";
+    const row = (id: string) => item(true, false, { id, conversationId, selectionKind: "message" });
+    const pending = new Map([[mailListMessagePendingKey("message-a"), { unread: false, expiresAt: 2_000 }]]);
+    const reconciled = reconcileMailListOptimisticState([row("message-a"), row("message-b")], pending, 1_000);
+    expect(reconciled.items.map((entry) => entry.unread)).toEqual([false, true]);
   });
 });

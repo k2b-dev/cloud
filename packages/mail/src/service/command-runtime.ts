@@ -16,6 +16,7 @@ import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
 import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { localStateProjectionSchema, rollbackLocalStateProjection } from "./local-state-projection";
 import {
   enqueueMaintenanceCommand,
   startMaintenanceRuntime,
@@ -114,16 +115,6 @@ type DbDestinationFolder = {
 };
 
 const parseJsonRecord = (value: JsonRecord | string): JsonRecord => (typeof value === "string" ? (JSON.parse(value) as JsonRecord) : value);
-
-const localStateProjectionSchema = z
-  .object({
-    remoteMessageRefId: z.string().uuid(),
-    previousFlags: z.array(z.string().min(1).max(100)).max(100),
-    previousKeywords: z.array(z.string().min(1).max(100)).max(100),
-    projectedFlags: z.array(z.string().min(1).max(100)).max(100),
-    projectedKeywords: z.array(z.string().min(1).max(100)).max(100),
-  })
-  .strict();
 
 const normalizeCode = (error: unknown, fallback: string): string => {
   const code = (error as { code?: unknown } | null)?.code;
@@ -292,20 +283,7 @@ const commandState = async (
     if (!updated) return null;
     if (state === "failed" || state === "cancelled") {
       const projection = localStateProjectionSchema.safeParse(parseJsonRecord(updated.transport_metadata).localStateProjection);
-      if (projection.success) {
-        await tx`
-          UPDATE mail.message_placements
-          SET
-            flags = ${toPgTextArray(projection.data.previousFlags)}::text[],
-            keywords = ${toPgTextArray(projection.data.previousKeywords)}::text[],
-            updated_at = now()
-          WHERE remote_message_ref_id = ${projection.data.remoteMessageRefId}::uuid
-            AND flags @> ${toPgTextArray(projection.data.projectedFlags)}::text[]
-            AND flags <@ ${toPgTextArray(projection.data.projectedFlags)}::text[]
-            AND keywords @> ${toPgTextArray(projection.data.projectedKeywords)}::text[]
-            AND keywords <@ ${toPgTextArray(projection.data.projectedKeywords)}::text[]
-        `;
-      }
+      if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
     }
     await tx`
       INSERT INTO mail.activity_events (

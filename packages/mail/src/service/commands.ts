@@ -202,21 +202,27 @@ const actorDatabaseId = (actor: ActorRef): string | null => {
 const commandActorMatches = (command: DbCommand, actor: ActorRef): boolean =>
   command.actor_kind === actor.kind && command.actor_id === actorDatabaseId(actor);
 
+/**
+ * A message command, optionally pinned to one provider copy of the message. Internal callers that act on every copy
+ * of a message in a folder pin each command to its copy; the public input schemas do not accept the field.
+ */
+type ProviderMessageCommandInput = ActorCommandInput & { remoteMessageRefId?: string };
+
 const resolveActorCommandInput = async (
-  input: ActorCommandInput,
+  input: ProviderMessageCommandInput,
   mailboxId: string,
   db: typeof sql,
-): Promise<Result<ActorCommandInput & { remoteMessageRefId?: string }>> => {
+): Promise<Result<ProviderMessageCommandInput>> => {
   const resolveProviderMessage = async (messageId: string, folderId: string): Promise<Result<string>> => {
-    // Duplicate active refs for one message in one folder are a transient sync
-    // state the user cannot see or resolve: act on the newest placement and let
-    // the sync's duplicate merge retire the rest instead of dead-ending here.
+    // Without a pinned copy, act on the newest placement of the message in the folder.
+    const pinnedRefId = input.remoteMessageRefId ?? null;
     const rows = await db<{ id: string }[]>`
       SELECT remote_ref.id
       FROM mail.remote_message_refs remote_ref
       JOIN mail.message_placements placement ON placement.remote_message_ref_id = remote_ref.id
       WHERE remote_ref.message_id = ${messageId}::uuid
         AND remote_ref.folder_id = ${folderId}::uuid
+        AND (${pinnedRefId}::uuid IS NULL OR remote_ref.id = ${pinnedRefId}::uuid)
         AND remote_ref.stale_at IS NULL
         AND placement.deleted_at IS NULL
       ORDER BY placement.updated_at DESC, remote_ref.id
@@ -245,7 +251,7 @@ const resolveActorCommandInput = async (
 const accessSubjectDatabaseId = (context: MailRequestContext): string =>
   context.accessSubject.type === "user" ? context.accessSubject.userId : context.accessSubject.serviceAccountId;
 
-const prepareActorCommand = (input: ActorCommandInput & { remoteMessageRefId?: string }): Result<PreparedActorCommand> => {
+const prepareActorCommand = (input: ProviderMessageCommandInput): Result<PreparedActorCommand> => {
   if ((input.kind === "move" || input.kind === "copy") && input.sourceFolderId === input.destinationFolderId) {
     return fail(err.badInput("Source and destination folders must differ"));
   }
@@ -726,8 +732,9 @@ type CreateActorCommandParams = {
   enqueue?: boolean;
 };
 
-type CreateActorCommandInternalParams = Omit<CreateActorCommandParams, "context"> & {
+type CreateActorCommandInternalParams = Omit<CreateActorCommandParams, "context" | "input"> & {
   context: MailRequestContext | null;
+  input: ProviderMessageCommandInput;
   actorOverride?: ActorRef;
   beforeCreate?: (tx: typeof sql) => Promise<{ workflowExecutionGeneration: number } | void>;
   afterCreate?: (tx: typeof sql, command: MailCommand) => Promise<void>;
@@ -999,7 +1006,7 @@ export const createActorCommandsInTransaction = async (
   params: {
     context: MailRequestContext;
     mailboxId: string;
-    inputs: ActorCommandInput[];
+    inputs: ProviderMessageCommandInput[];
     afterCreate?: (tx: typeof sql, commands: MailCommand[]) => Promise<void>;
   },
   tx: typeof sql,
@@ -1070,7 +1077,7 @@ export const createWorkflowCommand = async (params: {
 export const createActorCommands = async (params: {
   context: MailRequestContext;
   mailboxId: string;
-  inputs: ActorCommandInput[];
+  inputs: ProviderMessageCommandInput[];
   afterCreate?: (tx: typeof sql, commands: MailCommand[]) => Promise<void>;
 }): Promise<Result<MailCommand[]>> => {
   try {

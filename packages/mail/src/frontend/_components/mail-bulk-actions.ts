@@ -8,6 +8,8 @@ export type MailBulkTarget = {
   conversationId: string;
   label: string;
   sourceFolderIds: readonly string[];
+  /** The messages of the conversation a message-list row stands for; without them, the action takes the whole conversation. */
+  messageIds?: readonly string[];
 };
 
 type MailBulkFailure = {

@@ -1,4 +1,6 @@
 import type { ConversationTriageInput } from "../../contracts";
+import type { MailListItem } from "../../service/workspace";
+import type { MailBulkTarget } from "./mail-bulk-actions";
 
 export const MAIL_ACTION_IDS = ["mark_read", "mark_unread", "flag", "unflag", "archive", "junk", "not_spam", "trash", "move"] as const;
 export type MailActionId = (typeof MAIL_ACTION_IDS)[number];
@@ -106,6 +108,38 @@ export const mailMoveSourceFolderIds = (params: {
   return [inbox ?? tier[0]!];
 };
 
+/**
+ * What an action on one list row acts on, and in which folders. A conversation row stands for its conversation; a
+ * row of a message list stands for its message only, never for the other messages of its conversation.
+ */
+export const mailActionTargetForItem = (params: {
+  item: Pick<MailListItem, "id" | "conversationId" | "selectionKind" | "subject" | "unreadFolderIds" | "activeFolderIds">;
+  actionId: MailActionId;
+  viewFolderId: string | null;
+  folders: readonly MailActionFolder[];
+  noSubject: string;
+}): MailBulkTarget | null => {
+  const { item, actionId } = params;
+  if (!item.conversationId) return null;
+  const sourceFolderIds =
+    actionId === "mark_read" && item.unreadFolderIds.length > 0
+      ? item.unreadFolderIds
+      : ["mark_unread", "flag", "unflag"].includes(actionId)
+        ? item.activeFolderIds
+        : mailMoveSourceFolderIds({
+            actionId,
+            viewFolderId: params.viewFolderId,
+            activeFolderIds: item.activeFolderIds,
+            folders: params.folders,
+          });
+  return {
+    conversationId: item.conversationId,
+    label: item.subject || params.noSubject,
+    sourceFolderIds,
+    ...(item.selectionKind === "message" ? { messageIds: [item.id] } : {}),
+  };
+};
+
 const ROLE_DESTINATIONS: Partial<Record<MailActionId, string>> = { archive: "archive", junk: "junk", trash: "trash", not_spam: "inbox" };
 
 /**
@@ -142,15 +176,18 @@ export const spamActionForConversation = (params: {
 export const buildMailActionInput = (params: {
   actionId: MailActionId;
   sourceFolderId: string;
+  messageIds?: readonly string[];
   destinationFolderId?: string;
   idempotencyKey: string;
   correlationId: string;
 }): ConversationTriageInput => {
+  const messageIds = params.messageIds ? { messageIds: [...params.messageIds] } : {};
   if (params.actionId === "move") {
     if (!params.destinationFolderId) throw new Error(MAIL_ACTION_MISSING_DESTINATION);
     return {
       kind: "move_to_folder",
       sourceFolderId: params.sourceFolderId,
+      ...messageIds,
       destinationFolderId: params.destinationFolderId,
       idempotencyKey: params.idempotencyKey,
       correlationId: params.correlationId,
@@ -160,6 +197,7 @@ export const buildMailActionInput = (params: {
     return {
       kind: "move_to_role",
       sourceFolderId: params.sourceFolderId,
+      ...messageIds,
       role: params.actionId === "not_spam" ? "inbox" : params.actionId,
       idempotencyKey: params.idempotencyKey,
       correlationId: params.correlationId,
@@ -168,6 +206,7 @@ export const buildMailActionInput = (params: {
   return {
     kind: "change_state",
     sourceFolderId: params.sourceFolderId,
+    ...messageIds,
     change: {
       addFlags: params.actionId === "mark_read" ? ["seen"] : params.actionId === "flag" ? ["flagged"] : [],
       removeFlags: params.actionId === "mark_unread" ? ["seen"] : params.actionId === "unflag" ? ["flagged"] : [],

@@ -16,15 +16,23 @@ const sameTagSelection = (left: MailListItem["localTags"], right: MailListItem["
   return left.every((tag) => rightIds.has(tag.id));
 };
 
+/** The pending-state key of one message row, apart from the state its whole conversation is waiting for. */
+export const mailListMessagePendingKey = (messageId: string): string => `message:${messageId}`;
+
+/** The pending states that apply to a row: its conversation's, and in a message list its own message's. */
+const pendingKeys = (item: MailListItem): string[] => [
+  ...(item.conversationId ? [item.conversationId] : []),
+  ...(item.selectionKind === "message" ? [mailListMessagePendingKey(item.id)] : []),
+];
+
 export const reconcileMailListOptimisticState = (
   items: MailListItem[],
   pending: ReadonlyMap<string, PendingMailListState>,
   now = Date.now(),
 ): { items: MailListItem[]; pending: Map<string, PendingMailListState> } => {
   const nextPending = new Map([...pending].filter(([, state]) => state.expiresAt > now));
-  const nextItems = items.map((item) => {
-    if (!item.conversationId) return item;
-    const state = nextPending.get(item.conversationId);
+  const applyPending = (item: MailListItem, key: string): MailListItem => {
+    const state = nextPending.get(key);
     if (!state) return item;
 
     const confirmed = {
@@ -37,7 +45,7 @@ export const reconcileMailListOptimisticState = (
       revision: state.revision === undefined || item.revision >= state.revision,
     } satisfies Record<MailListOptimisticField, boolean>;
     if (Object.values(confirmed).every(Boolean)) {
-      nextPending.delete(item.conversationId);
+      nextPending.delete(key);
       return item;
     }
 
@@ -51,7 +59,7 @@ export const reconcileMailListOptimisticState = (
       ...(confirmed.localTags ? {} : { localTags: state.localTags }),
       ...(confirmed.revision ? {} : { revision: state.revision }),
     };
-    nextPending.set(item.conversationId, remaining);
+    nextPending.set(key, remaining);
     return {
       ...item,
       ...(remaining.unread === undefined ? {} : { unread: remaining.unread }),
@@ -62,7 +70,8 @@ export const reconcileMailListOptimisticState = (
       ...(remaining.localTags === undefined ? {} : { localTags: remaining.localTags }),
       ...(remaining.revision === undefined ? {} : { revision: remaining.revision }),
     };
-  });
+  };
+  const nextItems = items.map((item) => pendingKeys(item).reduce(applyPending, item));
 
   return { items: nextItems, pending: nextPending };
 };

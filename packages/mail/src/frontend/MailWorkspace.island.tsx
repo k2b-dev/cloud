@@ -34,6 +34,7 @@ import {
   buildMailActionInput,
   MAIL_ACTION_MISSING_DESTINATION,
   type MailActionId,
+  mailActionTargetForItem,
   mailMoveSourceFolderIds,
   mailRoleDestinationFolderId,
   spamActionForConversation,
@@ -57,6 +58,7 @@ import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
   type MailListOptimisticPatch,
+  mailListMessagePendingKey,
   type PendingMailListState,
   reconcileMailListOptimisticState,
 } from "./_components/mail-list-optimistic";
@@ -164,21 +166,22 @@ function MailWorkspaceView(props: {
     return { ...snapshot, listItems: reconciled.items };
   };
 
-  const rememberPendingListState = (conversationId: string, patch: MailListOptimisticPatch) => {
-    pendingListState.set(conversationId, {
-      ...pendingListState.get(conversationId),
+  /** `key` is a conversation ID, or `mailListMessagePendingKey` for one message row of a message list. */
+  const rememberPendingListState = (key: string, patch: MailListOptimisticPatch) => {
+    pendingListState.set(key, {
+      ...pendingListState.get(key),
       ...patch,
       expiresAt: Date.now() + 30_000,
     });
   };
 
-  const clearPendingListState = (conversationId: string, fields: MailListOptimisticField[]) => {
-    const current = pendingListState.get(conversationId);
+  const clearPendingListState = (key: string, fields: MailListOptimisticField[]) => {
+    const current = pendingListState.get(key);
     if (!current) return;
     const next = { ...current };
     for (const field of fields) delete next[field];
-    if (Object.keys(next).length === 1) pendingListState.delete(conversationId);
-    else pendingListState.set(conversationId, next);
+    if (Object.keys(next).length === 1) pendingListState.delete(key);
+    else pendingListState.set(key, next);
   };
 
   const fetchWorkspaceRoute = async (
@@ -712,12 +715,17 @@ function MailWorkspaceView(props: {
     setSelectionMode(false);
   });
 
-  const setConversationUnread = (conversationId: string, unread: boolean) => {
-    setData("listItems", (items) => items.map((item) => (item.conversationId === conversationId ? { ...item, unread } : item)));
-  };
-
-  const setConversationFlagged = (conversationId: string, flagged: boolean) => {
-    setData("listItems", (items) => items.map((item) => (item.conversationId === conversationId ? { ...item, flagged } : item)));
+  /** Shows a read or flag change on the rows an action target stands for, until the list confirms it. */
+  const setTargetListState = (target: MailBulkTarget, patch: Pick<MailListOptimisticPatch, "unread" | "flagged">) => {
+    const messageIds = target.messageIds ? new Set(target.messageIds) : null;
+    for (const key of target.messageIds?.map(mailListMessagePendingKey) ?? [target.conversationId]) rememberPendingListState(key, patch);
+    setData("listItems", (items) =>
+      items.map((item) =>
+        item.conversationId === target.conversationId && (!messageIds || (item.selectionKind === "message" && messageIds.has(item.id)))
+          ? { ...item, ...patch }
+          : item,
+      ),
+    );
   };
 
   const setConversationListState = (conversationId: string, patch: MailListOptimisticPatch) => {
@@ -867,39 +875,29 @@ function MailWorkspaceView(props: {
     else setSelectionMode(true);
   };
 
-  const actionTargetForItem = (item: MailListItem, actionId: MailActionId): MailBulkTarget | null => {
-    if (!item.conversationId) return null;
-    const sourceFolderIds =
-      actionId === "mark_read" && item.unreadFolderIds.length > 0
-        ? item.unreadFolderIds
-        : ["mark_unread", "flag", "unflag"].includes(actionId)
-          ? item.activeFolderIds
-          : mailMoveSourceFolderIds({
-              actionId,
-              viewFolderId: data.folderId,
-              activeFolderIds: item.activeFolderIds,
-              folders: data.folders,
-            });
-    return {
-      conversationId: item.conversationId,
-      label: item.subject || t().noSubject,
-      sourceFolderIds,
-    };
-  };
+  const actionTargetForItem = (item: MailListItem, actionId: MailActionId): MailBulkTarget | null =>
+    mailActionTargetForItem({ item, actionId, viewFolderId: data.folderId, folders: data.folders, noSubject: t().noSubject });
 
   const actionTargets = (actionId: MailActionId): MailBulkTarget[] => {
     const selectedIds = selectedConversationIds();
-    const ids = selectedIds.size > 0 ? selectedIds : new Set(data.selectedConversationId ? [data.selectedConversationId] : []);
-    const targets = data.listItems.flatMap((item) => {
-      if (!item.conversationId || !ids.has(item.conversationId)) return [];
-      const target = actionTargetForItem(item, actionId);
-      return target ? [target] : [];
-    });
-    if (targets.length > 0 || selectedIds.size > 0 || !data.selectedConversationId) return targets;
+    if (selectedIds.size > 0)
+      return data.listItems.flatMap((item) => {
+        if (!item.conversationId || !selectedIds.has(item.conversationId)) return [];
+        const target = actionTargetForItem(item, actionId);
+        return target ? [target] : [];
+      });
+    if (!data.selectedConversationId) return [];
+    // The open row, which in a message list is one message of its conversation.
+    const item = selectedListItem();
+    const target = item ? actionTargetForItem(item, actionId) : null;
+    if (target) return [target];
+    // The open conversation or message is not in the loaded list: act on what the reader shows.
+    const messageId = data.listMode === "messages" ? data.selectedMessageId : null;
+    const detailMessages = messageId ? data.detailMessages.filter((message) => message.id === messageId) : data.detailMessages;
     const detailFolderIds = ["mark_read", "mark_unread", "flag", "unflag"].includes(actionId)
       ? [
           ...new Set(
-            data.detailMessages
+            detailMessages
               .filter((message) => actionId !== "mark_read" || !message.flags.includes("\\Seen"))
               .map((message) => message.folderId),
           ),
@@ -907,14 +905,15 @@ function MailWorkspaceView(props: {
       : mailMoveSourceFolderIds({
           actionId,
           viewFolderId: data.folderId,
-          activeFolderIds: data.detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
+          activeFolderIds: detailMessages.flatMap((message) => (message.folderId ? [message.folderId] : [])),
           folders: data.folders,
         });
     return [
       {
-        conversationId: data.selectedConversationId!,
+        conversationId: data.selectedConversationId,
         label: data.selectedSubject || t().noSubject,
         sourceFolderIds: detailFolderIds.filter((folderId): folderId is string => Boolean(folderId)),
+        ...(messageId ? { messageIds: [messageId] } : {}),
       },
     ];
   };
@@ -1261,22 +1260,17 @@ function MailWorkspaceView(props: {
     roleDestinationFolderId: (nextActionId) => mailRoleDestinationFolderId(nextActionId, data.folders),
     applyOptimistic: (nextActionId, targets) => {
       if (nextActionId === "mark_read" || nextActionId === "mark_unread") {
-        const unread = nextActionId === "mark_unread";
-        for (const target of targets) {
-          rememberPendingListState(target.conversationId, { unread });
-          setConversationUnread(target.conversationId, unread);
-        }
+        for (const target of targets) setTargetListState(target, { unread: nextActionId === "mark_unread" });
       }
       if (nextActionId === "flag" || nextActionId === "unflag") {
-        const flagged = nextActionId === "flag";
-        for (const target of targets) {
-          rememberPendingListState(target.conversationId, { flagged });
-          setConversationFlagged(target.conversationId, flagged);
-        }
+        for (const target of targets) setTargetListState(target, { flagged: nextActionId === "flag" });
       }
     },
-    clearOptimistic: (conversationIds, fields) => {
-      for (const conversationId of conversationIds) clearPendingListState(conversationId, [...fields]);
+    clearOptimistic: (targets, fields) => {
+      for (const target of targets) {
+        for (const key of target.messageIds?.map(mailListMessagePendingKey) ?? [target.conversationId])
+          clearPendingListState(key, [...fields]);
+      }
     },
     submit: async ({ actionId: nextActionId, target, sourceFolderId, destinationFolderId, correlationId, idempotencyKey, signal }) => {
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].actions.$post(
@@ -1285,6 +1279,7 @@ function MailWorkspaceView(props: {
           json: buildMailActionInput({
             actionId: nextActionId,
             sourceFolderId,
+            messageIds: target.messageIds,
             destinationFolderId,
             correlationId,
             idempotencyKey,
@@ -1309,9 +1304,14 @@ function MailWorkspaceView(props: {
       });
       if (ids.size === 0) setSelectionMode(false);
     },
+    // In a message list, moving another message of the open conversation leaves the open message where it is.
     removesActiveConversation: (nextActionId, succeeded) =>
       ["archive", "junk", "not_spam", "trash", "move"].includes(nextActionId) &&
-      Boolean(data.selectedConversationId && succeeded.has(data.selectedConversationId)),
+      succeeded.some(
+        (target) =>
+          target.conversationId === data.selectedConversationId &&
+          (!target.messageIds || !data.selectedMessageId || target.messageIds.includes(data.selectedMessageId)),
+      ),
     refreshAfterSuccess: async ({ removesActiveConversation, succeededConversationIds }) => {
       const focusAfterRemoval = removesActiveConversation
         ? findMailFocusAfterRemoval({

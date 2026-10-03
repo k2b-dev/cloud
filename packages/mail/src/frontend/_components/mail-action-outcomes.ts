@@ -19,8 +19,17 @@ const FAILED_STATES = new Set<MailCommandOutcome["state"]>(["failed", "cancelled
 /** Why a command did not complete: its error code, or its state when the state says more. */
 const failureCode = (outcome: MailActionCommand): string => (outcome.state === "failed" ? (outcome.code ?? "failed") : outcome.state);
 
-/** A conversation the action did not change, with the folders where it failed, so Try again repeats only those. */
-export type MailActionFailure = { conversationId: string; label: string; sourceFolderIds: string[]; code: string };
+/**
+ * A conversation the action did not change, with the folders where it failed and the messages it was limited to, so
+ * Try again repeats only those.
+ */
+export type MailActionFailure = {
+  conversationId: string;
+  label: string;
+  sourceFolderIds: string[];
+  messageIds?: readonly string[];
+  code: string;
+};
 
 /** A followed action that ended with at least one conversation the mail server did not change. */
 export type MailActionFailureReport = {
@@ -33,6 +42,7 @@ export type MailActionFailureReport = {
 type FollowedConversation = {
   conversationId: string;
   label: string;
+  messageIds?: readonly string[];
   folderByCommand: Map<string, string>;
   pending: Set<string>;
   /** Pending commands no outcome request has answered yet. */
@@ -76,6 +86,7 @@ const failureReport = (action: FollowedAction): MailActionFailureReport | null =
         conversationId: conversation.conversationId,
         label: conversation.label,
         sourceFolderIds: [...conversation.failedFolderIds],
+        ...(conversation.messageIds ? { messageIds: conversation.messageIds } : {}),
         code,
       },
     ];
@@ -106,7 +117,12 @@ export const createMailActionOutcomes = () => {
     follow: (params: {
       actionId: MailActionId;
       destinationFolderId: string | null;
-      conversations: readonly { conversationId: string; label: string; commands: readonly MailActionQueuedCommand[] }[];
+      conversations: readonly {
+        conversationId: string;
+        label: string;
+        messageIds?: readonly string[];
+        commands: readonly MailActionQueuedCommand[];
+      }[];
       now?: number;
     }): MailActionFailureReport | null => {
       const action: FollowedAction = {
@@ -118,6 +134,7 @@ export const createMailActionOutcomes = () => {
           const followed: FollowedConversation = {
             conversationId: conversation.conversationId,
             label: conversation.label,
+            ...(conversation.messageIds ? { messageIds: conversation.messageIds } : {}),
             folderByCommand: new Map(conversation.commands.map((command) => [command.id, command.sourceFolderId])),
             pending: new Set(ids),
             unchecked: new Set(ids),
