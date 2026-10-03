@@ -220,6 +220,9 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     }
     socket = next;
     connectStartedAt = Date.now();
+    // When the server first answered. A server can accept a subscription and fail right after, often with an error
+    // frame, so the backoff starts over only once the connection stayed up for the longest delay after that.
+    let answeredAt: number | null = null;
     connectTimer = setTimeout(() => {
       connectTimer = null;
       if (next.readyState === WebSocket.CONNECTING) abandonAttempt(next);
@@ -243,8 +246,8 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       try {
         const message = options.parse(event.data);
         if (message) {
+          answeredAt ??= Date.now();
           options.onMessage(message, controls);
-          reconnectAttempt = 0;
         }
       } catch (error) {
         fatal(
@@ -260,8 +263,12 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       clearConnectDeadline();
       if (disposed || terminated) return;
       const closeError = classifyClose({ code: event.code, reason: event.reason.trim() });
-      if (closeError) fatal(closeError, { code: event.code, reason: event.reason });
-      else scheduleReconnect();
+      if (closeError) {
+        fatal(closeError, { code: event.code, reason: event.reason });
+        return;
+      }
+      if (answeredAt !== null && Date.now() - answeredAt >= reconnect.maxDelayMs) reconnectAttempt = 0;
+      scheduleReconnect();
     };
 
     next.onerror = () => {

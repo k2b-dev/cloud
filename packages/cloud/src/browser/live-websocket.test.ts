@@ -242,7 +242,31 @@ describe("createLiveWebSocket", () => {
     connection.dispose();
   });
 
-  test("only resets reconnect backoff after a valid message", () => {
+  test("keeps backing off while the server answers and then fails", () => {
+    installBrowser();
+    const connection = createLiveWebSocket<{ type: "error" }>({
+      url: "/api/example/ws",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: (raw) => JSON.parse(raw) as { type: "error" },
+      onMessage: () => undefined,
+      reconnect: { baseDelayMs: 10, maxDelayMs: 100, jitterMs: 0 },
+    });
+
+    connection.connect();
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ type: "error", payload: { code: "internal_error" } });
+      now += 5;
+      socket.close(1011, "internal_error");
+      runNextTimer();
+    }
+
+    expect(timerDelays.filter((delay) => delay !== 10_000)).toEqual([10, 20, 40, 80, 100, 100]);
+    connection.dispose();
+  });
+
+  test("starts the backoff over once a connection stayed up for the longest delay after its first message", () => {
     installBrowser();
     const connection = createLiveWebSocket<{ type: "ready" }>({
       url: "/api/example/ws",
@@ -257,15 +281,25 @@ describe("createLiveWebSocket", () => {
     FakeWebSocket.instances[0]!.close(1012);
     expect(timerDelays.at(-1)).toBe(10);
 
+    // Open for a long time, but the server never answered.
     runNextTimer();
     FakeWebSocket.instances[1]!.open();
+    now += 1_000;
     FakeWebSocket.instances[1]!.close(1012);
     expect(timerDelays.at(-1)).toBe(20);
 
     runNextTimer();
     FakeWebSocket.instances[2]!.open();
     FakeWebSocket.instances[2]!.message({ type: "ready" });
+    now += 99;
     FakeWebSocket.instances[2]!.close(1012);
+    expect(timerDelays.at(-1)).toBe(40);
+
+    runNextTimer();
+    FakeWebSocket.instances[3]!.open();
+    FakeWebSocket.instances[3]!.message({ type: "ready" });
+    now += 100;
+    FakeWebSocket.instances[3]!.close(1012);
     expect(timerDelays.at(-1)).toBe(10);
     connection.dispose();
   });

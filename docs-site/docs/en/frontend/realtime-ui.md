@@ -72,6 +72,12 @@ because it started on the network that was gone. In both cases the backoff
 starts over. An open socket is left alone. Each new socket resubscribes from
 the last applied cursor, and `onOpen` runs again.
 
+Without such an event, the backoff starts over only after a connection
+stayed open for the longest backoff delay (10 seconds by default) after the
+server's first message. A server that accepts a subscription and then keeps
+failing, for example with an error message and a `1011` close, is retried less
+and less often instead of about once per second.
+
 Terminal closes and `dispose()` end recovery. Neither reconnects.
 
 ## Refresh on ready only when the cursor moved
