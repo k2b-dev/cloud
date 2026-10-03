@@ -1,7 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { PasswordSetupFields } from "../auth/PasswordSetupFields";
 import { signOutCurrentSession } from "./account-session";
@@ -30,7 +30,8 @@ function ActionRow(props: { icon: string; label: string; description: string; on
         <span class="text-xs text-dimmed block">{props.description}</span>
       </div>
       <i
-        class={`ti ti-chevron-right shrink-0 text-xs text-dimmed transition-transform group-hover:translate-x-0.5 ${props.variant === "danger" ? "group-hover:text-red-500" : "group-hover:text-primary"}`}
+        class={`ti ti-chevron-right shrink-0 text-xs text-dimmed transition-colors ${props.variant === "danger" ? "group-hover:text-red-500" : "group-hover:text-primary"}`}
+        aria-hidden="true"
       />
     </button>
   );
@@ -174,41 +175,36 @@ export default function ProfileSettings(props: Props) {
   const isGuest = props.profile === "guest";
 
   return (
-    <section class="paper p-5">
-      <div class="mb-5">
-        <h2 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
-          <i class="ti ti-user-cog text-sm" />
-          {t().signInAndAccount}
-        </h2>
-        <p class="mt-1 text-xs text-dimmed">{t().signInAndAccountDescription}</p>
-      </div>
+    <SettingsSection title={t().signInAndAccount} subtitle={t().signInAndAccountDescription}>
+      {/* The section body sets its children's margins; the inner list bleeds its row padding past the text edge. */}
+      <div>
+        <div class="-mx-3 flex flex-col gap-1">
+          <Show when={isIpa}>
+            <ActionRow icon="ti-lock" label={t().changePassword} description={t().changeFreeIpaPassword} onClick={handleChangePassword} />
+          </Show>
 
-      <div class="flex flex-col gap-1">
-        <Show when={isIpa}>
-          <ActionRow icon="ti-lock" label={t().changePassword} description={t().changeFreeIpaPassword} onClick={handleChangePassword} />
-        </Show>
-
-        <ActionRow
-          icon="ti-logout"
-          label={t().signOut}
-          description={t().signOutDescription}
-          onClick={() =>
-            void signOutCurrentSession(t().signOutFailed).catch((error) =>
-              prompts.error(error instanceof Error ? error.message : t().signOutFailed),
-            )
-          }
-        />
-
-        <Show when={isGuest}>
           <ActionRow
-            icon="ti-trash"
-            label={t().deleteAccount}
-            description={t().deleteAccountDescription}
-            onClick={handleDelete}
-            variant="danger"
+            icon="ti-logout"
+            label={t().signOut}
+            description={t().signOutDescription}
+            onClick={() =>
+              void signOutCurrentSession(t().signOutFailed).catch((error) =>
+                prompts.error(error instanceof Error ? error.message : t().signOutFailed),
+              )
+            }
           />
-        </Show>
+
+          <Show when={isGuest}>
+            <ActionRow
+              icon="ti-trash"
+              label={t().deleteAccount}
+              description={t().deleteAccountDescription}
+              onClick={handleDelete}
+              variant="danger"
+            />
+          </Show>
+        </div>
       </div>
-    </section>
+    </SettingsSection>
   );
 }

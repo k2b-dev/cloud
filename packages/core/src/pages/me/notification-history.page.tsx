@@ -3,9 +3,9 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
+import { DataTable, type DataTableColumn, Pagination, Placeholder, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
+import AccountHub, { AccountPage, AccountSubnav, notificationViews } from "./AccountHub";
 import { type AccountMessages, accountMessages } from "./messages";
 import NotificationHistoryFilters from "./NotificationHistoryFilters.island";
 import { notificationChannelMeta, notificationErrorText, notificationStatusMeta } from "./notification-ui";
@@ -49,22 +49,16 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <AccountHub user={user} active="notifications" loginLabel={categoryPolicy.login.label}>
-        <div class="flex flex-col gap-2">
-          <AccountPageHeader
-            title={t.deliveryHistory}
-            description={t.deliveryHistoryDescription}
-            actions={<AccountSubnav active="history" items={notificationViews(locale)} />}
-          />
-
-          <section class="paper p-5 sm:p-6">
-            <div class="mb-5 flex items-start justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-semibold text-primary">{t.recentDeliveries}</h3>
-                <p class="mt-1 text-xs text-dimmed">{t.deliveryMetadataOnly}</p>
-              </div>
-              <NotificationHistoryFilters status={status} />
-            </div>
-
+        <AccountPage
+          title={t.deliveryHistory}
+          description={t.deliveryHistoryDescription}
+          actions={<AccountSubnav active="history" items={notificationViews(locale)} />}
+        >
+          <SettingsSection
+            title={t.recentDeliveries}
+            subtitle={t.deliveryMetadataOnly}
+            actions={<NotificationHistoryFilters status={status} />}
+          >
             {history.items.length === 0 ? (
               <Placeholder description={<>{t.noNotificationDeliveries}</>} />
             ) : (
@@ -122,8 +116,8 @@ export default ssr<AuthContext>(async (c) => {
               />
             )}
             <Pagination currentPage={history.page} totalPages={history.totalPages} baseUrl={baseUrl} />
-          </section>
-        </div>
+          </SettingsSection>
+        </AccountPage>
       </AccountHub>
     </Layout>
   );

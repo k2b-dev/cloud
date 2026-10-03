@@ -1,6 +1,6 @@
 import type { BrowserNotificationState } from "@k2b/cloud/browser/notifications";
 import { browserNotificationClient } from "@k2b/cloud/browser/notifications";
-import { Button, InlineGuidance, toast, useLocale } from "@k2b/ui";
+import { Button, InlineGuidance, SettingsSection, toast, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
 import { type AccountMessages, accountMessages } from "./messages";
 
@@ -63,51 +63,44 @@ export default function BrowserNotificationSetup() {
   const status = () => statusMeta(state(), t());
 
   return (
-    <section class="paper p-5 sm:p-6">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-start gap-3">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
-            <i class="ti ti-bell" />
-          </span>
-          <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-2">
-              <h2 class="text-sm font-semibold text-primary">{t().browserNotifications}</h2>
-              <span class={`tag ${status().class}`}>{status().label}</span>
-            </div>
-            <p class="mt-1 text-xs leading-relaxed text-dimmed">{t().browserNotificationsDescription}</p>
-            <Show when={state()?.reason} keyed>
-              {(reason) => (
-                <InlineGuidance class="mt-2" tone="info" icon="ti ti-info-circle">
-                  {localizeBrowserReason(reason, t())}
-                </InlineGuidance>
-              )}
-            </Show>
-            <Show when={error()} keyed>
-              {(message) => (
-                <InlineGuidance class="mt-2" tone="danger" icon="ti ti-alert-circle" role="alert">
-                  {message}
-                </InlineGuidance>
-              )}
-            </Show>
-          </div>
-        </div>
-
-        <Show when={state()?.supported && state()?.permission !== "denied"}>
-          <Button
-            type="button"
-            variant={state()?.enabled ? "secondary" : "primary"}
-            size="sm"
-            class="shrink-0"
-            loading={pending()}
-            loadingLabel={state()?.enabled ? t().disabling : t().enabling}
-            onClick={() => void (state()?.enabled ? disable() : enable())}
-          >
-            <i class={pending() ? "ti ti-loader-2 animate-spin" : state()?.enabled ? "ti ti-bell-off" : "ti ti-bell-plus"} />
-            {pending() ? t().working : state()?.enabled ? t().disable : t().enable}
-          </Button>
-        </Show>
-      </div>
-    </section>
+    <SettingsSection
+      title={t().browserNotifications}
+      subtitle={t().browserNotificationsDescription}
+      icon="ti ti-bell"
+      actions={
+        <>
+          <span class={`tag ${status().class}`}>{status().label}</span>
+          <Show when={state()?.supported && state()?.permission !== "denied"}>
+            <Button
+              type="button"
+              variant={state()?.enabled ? "secondary" : "primary"}
+              size="sm"
+              loading={pending()}
+              loadingLabel={state()?.enabled ? t().disabling : t().enabling}
+              onClick={() => void (state()?.enabled ? disable() : enable())}
+            >
+              <i class={pending() ? "ti ti-loader-2 animate-spin" : state()?.enabled ? "ti ti-bell-off" : "ti ti-bell-plus"} />
+              {pending() ? t().working : state()?.enabled ? t().disable : t().enable}
+            </Button>
+          </Show>
+        </>
+      }
+    >
+      <Show when={state()?.reason} keyed>
+        {(reason) => (
+          <InlineGuidance tone="info" icon="ti ti-info-circle">
+            {localizeBrowserReason(reason, t())}
+          </InlineGuidance>
+        )}
+      </Show>
+      <Show when={error()} keyed>
+        {(message) => (
+          <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+            {message}
+          </InlineGuidance>
+        )}
+      </Show>
+    </SettingsSection>
   );
 }
 

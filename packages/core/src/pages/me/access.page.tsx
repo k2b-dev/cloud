@@ -1,12 +1,11 @@
-import { accountCategoryLabel } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { accountsAppService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { canManageAnyGroups, groupDisplayName } from "@k2b/cloud/shared";
 import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, NoticeCard } from "@k2b/ui";
+import { ButtonLink, NoticeCard, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
+import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
 import { accountMessages } from "./messages";
 import RequestFreeIpaAccount from "./RequestFreeIpaAccount.island";
 import WithdrawAccountRequest from "./WithdrawAccountRequest.island";
@@ -35,46 +34,23 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
       <AccountHub user={user} active="access" loginLabel={categoryPolicy.login.label}>
-        <div class="flex flex-col gap-2">
-          <AccountPageHeader
-            title={t.accessAndGroups}
-            description={t.accessDescription}
-            actions={
-              <div class="flex flex-wrap items-center gap-2">
-                {accountsUiAvailable && (
-                  <ButtonLink href="/app/accounts/groups" variant="secondary" size="sm">
-                    <i class="ti ti-users-group" />
-                    {t.browseGroups}
-                  </ButtonLink>
-                )}
-                <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["extend"]} />
-              </div>
-            }
-          />
-
-          <section class="paper p-5 sm:p-6">
-            <div class="grid gap-5 sm:grid-cols-3">
-              <div>
-                <p class="section-label mb-1">{t.accountType}</p>
-                <p class="text-sm font-medium text-primary">{accountCategoryLabel(user, categoryPolicy.login.label)}</p>
-              </div>
-              <div>
-                <p class="section-label mb-1">{t.directMemberships}</p>
-                <p class="text-sm font-medium text-primary">{directGroups.length}</p>
-              </div>
-              <div>
-                <p class="section-label mb-1">{t.managedGroups}</p>
-                <p class="text-sm font-medium text-primary">{user.manages.length}</p>
-              </div>
-            </div>
-          </section>
-
+        <AccountPage
+          title={t.accessAndGroups}
+          description={t.accessDescription}
+          actions={
+            <>
+              {accountsUiAvailable && (
+                <ButtonLink href="/app/accounts/groups" variant="secondary" size="sm">
+                  <i class="ti ti-users-group" aria-hidden="true" />
+                  {t.browseGroups}
+                </ButtonLink>
+              )}
+              <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["extend"]} />
+            </>
+          }
+        >
           {user.provider === "local" && ((requestsEnabled && freeIpaEnabled && categoryPolicy.freeipa.enabled) || pendingRequest) && (
-            <section class="paper p-5 sm:p-6">
-              <div class="mb-4">
-                <h3 class="text-sm font-semibold text-primary">{t.freeIpaAccount}</h3>
-                <p class="mt-1 text-xs text-dimmed">{t.freeIpaAccountDescription}</p>
-              </div>
+            <SettingsSection title={t.freeIpaAccount} subtitle={t.freeIpaAccountDescription}>
               {pendingRequest ? (
                 <div class="flex flex-col gap-3">
                   <NoticeCard tone="info" icon={false}>
@@ -95,23 +71,26 @@ export default ssr<AuthContext>(async (c) => {
                   appName={appName}
                 />
               )}
-            </section>
+            </SettingsSection>
           )}
 
-          <section class="grid gap-2 lg:grid-cols-2">
-            <div class="paper p-5 sm:p-6">
-              <div class="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <h3 class="text-sm font-semibold text-primary">{t.groupMemberships}</h3>
-                  <p class="mt-1 text-xs text-dimmed">{t.groupMembershipsDescription}</p>
-                </div>
-                {displayGroups.length > 0 && (
-                  <ButtonLink href={showAllGroups ? "/me/access" : "/me/access?groups=all"} variant="ghost" size="sm" class="shrink-0">
-                    <i class="ti ti-git-branch" />
+          <div class="grid gap-8 lg:grid-cols-2">
+            <SettingsSection
+              title={
+                <>
+                  {t.groupMemberships} <span class="font-normal text-dimmed">{displayGroups.length}</span>
+                </>
+              }
+              subtitle={t.groupMembershipsDescription}
+              actions={
+                displayGroups.length > 0 && (
+                  <ButtonLink href={showAllGroups ? "/me/access" : "/me/access?groups=all"} variant="ghost" size="sm">
+                    <i class="ti ti-git-branch" aria-hidden="true" />
                     {showAllGroups ? t.directOnly : t.showInherited}
                   </ButtonLink>
-                )}
-              </div>
+                )
+              }
+            >
               {displayGroups.length > 0 ? (
                 <div class="flex flex-wrap gap-1.5">
                   {displayGroups.map((group) => {
@@ -143,15 +122,18 @@ export default ssr<AuthContext>(async (c) => {
                   })}
                 </div>
               ) : (
-                <p class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-xs text-dimmed">{t.noGroups}</p>
+                <p class="text-xs text-dimmed">{t.noGroups}</p>
               )}
-            </div>
+            </SettingsSection>
 
-            <div class="paper p-5 sm:p-6">
-              <div class="mb-4">
-                <h3 class="text-sm font-semibold text-primary">{t.delegatedManagement}</h3>
-                <p class="mt-1 text-xs text-dimmed">{t.delegatedManagementDescription}</p>
-              </div>
+            <SettingsSection
+              title={
+                <>
+                  {t.delegatedManagement} <span class="font-normal text-dimmed">{canManageGroups ? user.manages.length : 0}</span>
+                </>
+              }
+              subtitle={t.delegatedManagementDescription}
+            >
               {canManageGroups && user.manages.length > 0 ? (
                 <div class="flex flex-wrap gap-1.5">
                   {user.manages.map((group) =>
@@ -170,11 +152,11 @@ export default ssr<AuthContext>(async (c) => {
                   )}
                 </div>
               ) : (
-                <p class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-xs text-dimmed">{t.noManagedGroups}</p>
+                <p class="text-xs text-dimmed">{t.noManagedGroups}</p>
               )}
-            </div>
-          </section>
-        </div>
+            </SettingsSection>
+          </div>
+        </AccountPage>
       </AccountHub>
     </Layout>
   );

@@ -1,0 +1,319 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import type { User } from "@k2b/cloud/contracts";
+import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
+import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
+import * as server from "@k2b/cloud/server";
+import * as services from "@k2b/cloud/services";
+import { railPreferences } from "@k2b/cloud/services/rail-preferences";
+import * as cloudSsr from "@k2b/cloud/ssr";
+import { createConfig } from "@k2b/ssr";
+import { LocaleProvider } from "@k2b/ui";
+import tailwind from "bun-plugin-tailwind";
+import { Hono } from "hono";
+import { type Browser, chromium } from "playwright";
+import { createComponent, type JSX } from "solid-js";
+
+// Whether the account pages draw one frame or nested ones, and whether switching tabs moves
+// anything, is decided by the cascade of Tailwind, Cloud and @k2b/ui styles, which only a
+// real engine resolves.
+const root = mkdtempSync(join(tmpdir(), "core-account-pages-browser-"));
+const { plugin } = createConfig({ dev: true, rootDir: root });
+Bun.plugin(plugin());
+process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+
+// Core's canvas paint. The tests render the pages in a stand-in for the page shell without
+// the rail and header, which have tests of their own, and measure what the pages put into it.
+const CORE_CANVAS =
+  "--app-accent:#0284c7;--app-canvas-from:#38bdf8;--app-canvas-via:#ffffff;--app-canvas-to:#60a5fa;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%";
+
+const pages = {
+  "/me": (await import("./page")).default,
+  "/me/security": (await import("./security.page")).default,
+  "/me/access": (await import("./access.page")).default,
+  "/me/notifications": (await import("./notifications.page")).default,
+  "/me/notifications/history": (await import("./notification-history.page")).default,
+  "/me/developer": (await import("./developer.page")).default,
+} as const;
+type Path = keyof typeof pages;
+const tabs: Path[] = ["/me", "/me/security", "/me/access", "/me/notifications", "/me/developer"];
+const { buildFontAssets } = await import("../../../scripts/font-assets");
+const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets");
+const publicDir = join(root, "public");
+const origin = "https://cloud.example.test";
+
+/** Invented demo account. */
+const user: User = {
+  id: "00000000-0000-4000-8000-000000000042",
+  uid: "jbeispiel",
+  roles: ["local", "user", "admin", "group-manager"],
+  provider: "local",
+  profile: "user",
+  givenname: "Jonas",
+  sn: "Beispiel",
+  displayName: "Jonas Beispiel",
+  mail: "jonas.beispiel@example.test",
+  avatarHash: null,
+  ipa: null,
+  accountExpires: "2027-03-31T00:00:00.000Z",
+  lastLoginLocal: null,
+  memberofGroup: ["team-design", "team-events", "summer-party-2026"],
+  memberofGroupIds: [],
+  manages: ["team-events"],
+  managesGroupIds: [],
+};
+const now = "2026-09-30T10:00:00.000Z";
+
+const spies: Array<{ mockRestore(): void }> = [];
+beforeEach(() => {
+  spies.push(
+    spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) =>
+      createComponent(LocaleProvider, {
+        locale: server.getLocale(props.c),
+        get children() {
+          return props.children;
+        },
+      })) as never),
+    spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
+    spyOn(services.coreSettings, "get").mockImplementation(
+      async (key) => (key === "app.name" ? "Cloud" : key === "app.url" ? origin : key === "freeipa.enable" ? false : undefined) as never,
+    ),
+    spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
+    spyOn(services.accountsAppService.accountRequest, "isEnabled").mockResolvedValue(false),
+    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue([
+      {
+        id: "00000000-0000-4000-8000-000000000101",
+        serviceAccountId: "00000000-0000-4000-8000-000000000102",
+        name: "Laptop scripts",
+        kind: "api_token",
+        status: "active",
+        tokenPrefix: "cld_7f3a",
+        scopes: [],
+        expiresAt: "2026-12-31T00:00:00.000Z",
+        lastUsedAt: now,
+        createdBy: null,
+        createdAt: now,
+        revokedAt: null,
+        revokedBy: null,
+      },
+    ] as never),
+    spyOn(services.webauthn, "listForUser").mockResolvedValue([
+      {
+        id: "00000000-0000-4000-8000-000000000201",
+        userId: user.id,
+        name: "Work laptop",
+        transports: ["internal"],
+        deviceType: "multiDevice",
+        backedUp: true,
+        createdAt: now,
+        lastUsedAt: now,
+      },
+    ]),
+    spyOn(services.audit, "listSelfServiceActivity").mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          createdAt: now,
+          action: "webauthn_credential.authenticate",
+          label: "Signed in with a passkey",
+          outcome: "allowed",
+          context: null,
+        },
+        { id: 2, createdAt: now, action: "accounts.user.update", label: "Profile updated", outcome: "allowed", context: "Display name" },
+      ],
+    } as never),
+    spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
+      availableChannels: ["inbox", "email"],
+      definitions: [
+        {
+          id: "core.account-expiry",
+          appId: "core",
+          kind: "account-expiry",
+          label: "Account expiry",
+          description: "Before your account expires.",
+          recommendedChannels: ["inbox", "email"],
+          requiredChannels: [],
+          selectedChannels: ["inbox", "email"],
+          effectiveChannels: ["inbox", "email"],
+          customized: false,
+        },
+      ],
+    }),
+    spyOn(services.notifications.user.history, "list").mockResolvedValue({ items: [], total: 0, page: 1, perPage: 25, totalPages: 0 }),
+    spyOn(services.appApproval, "config").mockResolvedValue({
+      issuer: origin,
+      appOrigin: "https://auth.example.test",
+      enabled: true,
+      adminPairing: false,
+    }),
+    spyOn(services.appApproval, "listDevices").mockResolvedValue({
+      items: [
+        {
+          id: "00000000-0000-4000-8000-000000000301",
+          name: "Phone",
+          createdAt: now,
+          lastUsedAt: now,
+          revokedAt: null,
+          assisted: false,
+        },
+      ],
+      nextCursor: null,
+    }),
+    spyOn(server.auth.session, "getToken").mockReturnValue("demo-session" as never),
+    spyOn(server.auth.session, "authenticateRequest").mockResolvedValue({ user, data: { sid: "demo-session" } } as never),
+    // The page shell's own reads.
+    spyOn(railPreferences, "get").mockResolvedValue(defaultRailPreferences()),
+    spyOn(services.railShortcuts, "forUser").mockResolvedValue([]),
+    spyOn(services.announcements.active, "forState").mockResolvedValue({
+      banners: [],
+      announcements: [],
+      latestAnnouncementVersion: null,
+    } as never),
+  );
+});
+afterEach(() => {
+  for (const spy of spies.splice(0)) spy.mockRestore();
+});
+
+let browser: Browser;
+let css: string;
+beforeAll(async () => {
+  // As the page template does: the layer order first, then Core's stylesheet, then the global one.
+  const styles = [resolve(import.meta.dir, "../../styles/app.css"), resolve(import.meta.dir, "../../../../../styles.css")];
+  const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
+  for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
+  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
+  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  await buildFontAssets(publicDir);
+  await buildTablerIconAssets(publicDir);
+  browser = await chromium.launch();
+}, 60_000);
+afterAll(async () => {
+  await browser?.close();
+});
+
+/** The server-rendered content of one account page. */
+const content = async (path: Path, locale: "en" | "de") => {
+  const app = new Hono()
+    .use("*", async (c, next) => {
+      c.set("user" as never, user as never);
+      c.set("runtime" as never, { apps: [] } as never);
+      await next();
+    })
+    .get(path, ...pages[path]);
+  const response = await app.request(`${origin}${path}`, { headers: { Cookie: `cloud.locale=${locale}` } });
+  expect(response.status).toBe(200);
+  return /<body[^>]*>([\s\S]*)<\/body>/.exec(await response.text())![1]!;
+};
+
+type View = { width: number; height: number; touch: boolean };
+const desktop: View = { width: 1440, height: 900, touch: false };
+const phone: View = { width: 390, height: 844, touch: true };
+
+/** A tab with the server-rendered page on Core's canvas, before any island hydrates; the caller closes it. */
+const open = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
+  const tab = await browser.newPage({
+    javaScriptEnabled: false,
+    viewport: { width: view.width, height: view.height },
+    deviceScaleFactor: 1,
+    isMobile: view.touch,
+    hasTouch: view.touch,
+  });
+  await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
+  await tab.setContent(
+    `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-screen w-full" style="${CORE_CANVAS}" data-app-id="core">` +
+      `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
+      `${await content(path, locale)}</main></div></div></body></html>`,
+  );
+  await tab.evaluate(() => document.fonts.ready);
+  return tab;
+};
+
+/** Where the avatar, the tabs and the content sit, which frames the page draws, and whether it overflows. */
+const measure = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
+  const tab = await open(view, path, locale, dark);
+  try {
+    return await tab.evaluate(() => {
+      const main = document.querySelector("main")!;
+      const nav = main.querySelector("nav")!;
+      const panel = main.querySelector(".account-page")!;
+      const visible = (value: string) => value !== "none" && !/rgba\(.*,\s*0\)$/.test(value) && value !== "transparent";
+      // Every block that paints a border or a shadow: a frame. Controls, tags, table cells and
+      // the notices' forced-colours border are content, not frames.
+      const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, header, nav"))
+        .filter((element) => element.checkVisibility() && !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-notice-card"))
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          const border = Number.parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none" && visible(style.borderTopColor);
+          return border || visible(style.boxShadow);
+        })
+        .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
+      const heading = panel.querySelector("h2")!;
+      const headingBox = heading.getBoundingClientRect();
+      const avatar = main.querySelector("header .k2b-avatar")!.getBoundingClientRect();
+      return {
+        avatar: `${Math.round(avatar.left)},${Math.round(avatar.top)} ${Math.round(avatar.width)}x${Math.round(avatar.height)}`,
+        navTop: Math.round(nav.getBoundingClientRect().top),
+        panelTop: Math.round(panel.getBoundingClientRect().top),
+        identityInFrame: !!main.querySelector("h1")!.closest(".paper, .k2b-paper"),
+        frames,
+        current: nav.querySelector('[aria-current="page"]')?.getAttribute("href"),
+        pageHeading: { text: heading.textContent, width: headingBox.width, height: headingBox.height },
+        sectionFrames: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).map((section) => {
+          const style = getComputedStyle(section);
+          return `${style.borderTopWidth} ${style.backgroundColor}`;
+        }),
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+  } finally {
+    await tab.close();
+  }
+};
+
+describe("account pages in a browser", () => {
+  test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
+    for (const view of [desktop, phone])
+      for (const dark of [false, true])
+        for (const path of Object.keys(pages) as Path[]) {
+          const result = await measure(view, path, "en", dark);
+          const label = `${path} ${view.width}px ${dark ? "dark" : "light"}`;
+          expect({ label, identityInFrame: result.identityInFrame, frames: result.frames }).toEqual({
+            label,
+            identityInFrame: false,
+            frames: ["k2b-paper account-page flex"],
+          });
+          for (const frame of result.sectionFrames) expect(frame).toBe("0px rgba(0, 0, 0, 0)");
+          expect(result.overflow).toBeLessThanOrEqual(0);
+        }
+  }, 120_000);
+
+  test("keep the avatar, the tabs and the content in place when switching tabs, in English and German", async () => {
+    for (const view of [desktop, phone])
+      for (const locale of ["en", "de"] as const) {
+        const results = [];
+        for (const path of tabs) results.push({ path, ...(await measure(view, path, locale)) });
+        for (const result of results) {
+          expect(result.current).toBe(result.path);
+          expect({ path: result.path, avatar: result.avatar, navTop: result.navTop, panelTop: result.panelTop }).toEqual({
+            path: result.path,
+            avatar: results[0]!.avatar,
+            navTop: results[0]!.navTop,
+            panelTop: results[0]!.panelTop,
+          });
+          expect(result.overflow).toBeLessThanOrEqual(0);
+        }
+      }
+  }, 120_000);
+
+  test("announce the section heading the tabs already show only to assistive technology", async () => {
+    const result = await measure(desktop, "/me/access", "de");
+    expect(result.pageHeading.text).toBe("Gruppen und Zugriff");
+    expect(result.pageHeading.width).toBeLessThanOrEqual(1);
+    expect(result.pageHeading.height).toBeLessThanOrEqual(1);
+  }, 30_000);
+});
