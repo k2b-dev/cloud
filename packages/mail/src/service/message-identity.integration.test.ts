@@ -380,21 +380,26 @@ steps:
       "sent",
       envelope({ folder: "sent", ...fields, bcc: [{ name: "Manager", address: "manager@example.test" }], sizeBytes: 900 }),
     );
-    const deliveredId = await ingest(
-      "inbox",
-      envelope({ folder: "inbox", ...fields, sizeBytes: 1_400, internalDate: new Date("2026-08-03T09:00:04.000Z") }),
-      true,
-    );
+    const delivered = envelope({ folder: "inbox", ...fields, sizeBytes: 1_400, internalDate: new Date("2026-08-03T09:00:04.000Z") });
+    const deliveredId = await ingest("inbox", delivered, true);
     expect(deliveredId).toBe(sentId);
     expect(await projection(messageId)).toEqual({ contents: 1, links: 1, live_placements: 2 });
     const addresses = await sql<{ role: string; normalized_email: string }[]>`
       SELECT role, normalized_email FROM mail.message_addresses WHERE message_id = ${sentId}::uuid ORDER BY role, position
     `;
-    expect(addresses).toEqual([
+    const expectedAddresses = [
       { role: "bcc", normalized_email: "manager@example.test" },
       { role: "from", normalized_email: support },
       { role: "to", normalized_email: "team@example.test" },
-    ]);
+    ];
+    expect(addresses).toEqual(expectedAddresses);
+    // A folder rebuild imports the delivered copy again under its known reference.
+    expect(await ingest("inbox", delivered)).toBe(sentId);
+    expect(
+      await sql<{ role: string; normalized_email: string }[]>`
+        SELECT role, normalized_email FROM mail.message_addresses WHERE message_id = ${sentId}::uuid ORDER BY role, position
+      `,
+    ).toEqual(expectedAddresses);
   });
 
   test("unrelated mail with the same subject from different senders stays apart", async () => {
@@ -649,6 +654,23 @@ steps:
       }),
     );
     expect(await conversationOf(olderNotice)).not.toBe(await conversationOf(firstNotice));
+
+    // A reply to a notice that the mailbox no longer holds names the reused Message-ID too, which
+    // does not make it a sibling of the replies to other notices.
+    const strayReply = await ingest(
+      "sent",
+      envelope({
+        folder: "sent",
+        messageId: `<fixed-notice-old-reply-${suffix}@example.test>`,
+        subject: "Re: Quarterly notice",
+        from: supportAddress,
+        to: [notices],
+        date: new Date("2025-07-10T09:00:00.000Z"),
+        inReplyTo: fixedId,
+        references: [fixedId],
+      }),
+    );
+    expect(await conversationOf(strayReply)).not.toBe(await conversationOf(firstNotice));
   });
 
   test("a thread synchronized out of order becomes one conversation", async () => {

@@ -251,21 +251,14 @@ const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): stri
 };
 
 /**
- * Stores the envelope's addresses. Another copy of a known message only adds the addresses the
- * stored message lacks: the copy in Sent keeps its Bcc recipients, the delivered copy does not.
+ * Adds the envelope's addresses that the stored message lacks. A message is immutable on the
+ * server, but several copies can share one stored message, and not every copy carries every
+ * address: the copy in Sent keeps its Bcc recipients, the delivered copy does not.
  */
-const upsertAddresses = async (
-  db: typeof sql,
-  messageId: string,
-  message: ConnectorEnvelope,
-  copyOfKnownMessage: boolean,
-): Promise<void> => {
-  const existing = copyOfKnownMessage
-    ? await db<{ role: string; position: number; normalized_email: string }[]>`
-        SELECT role, position, normalized_email FROM mail.message_addresses WHERE message_id = ${messageId}::uuid
-      `
-    : [];
-  if (!copyOfKnownMessage) await db`DELETE FROM mail.message_addresses WHERE message_id = ${messageId}::uuid`;
+const upsertAddresses = async (db: typeof sql, messageId: string, message: ConnectorEnvelope): Promise<void> => {
+  const existing = await db<{ role: string; position: number; normalized_email: string }[]>`
+    SELECT role, position, normalized_email FROM mail.message_addresses WHERE message_id = ${messageId}::uuid
+  `;
   const stored = new Set(existing.map((row) => `${row.role} ${row.normalized_email}`));
   const nextPosition = new Map<string, number>();
   for (const row of existing) nextPosition.set(row.role, Math.max(nextPosition.get(row.role) ?? 0, row.position + 1));
@@ -275,6 +268,7 @@ const upsertAddresses = async (
       .map((address) => ({ address, normalized: storedAddress(address.address) }))
       .filter(({ normalized }) => !stored.has(`${role} ${normalized}`))
       .map(({ address, normalized }) => {
+        stored.add(`${role} ${normalized}`);
         const position = nextPosition.get(role) ?? 0;
         nextPosition.set(role, position + 1);
         return { message_id: messageId, role, position, display_name: address.name, email: address.address, normalized_email: normalized };
@@ -391,21 +385,41 @@ const findConversation = async (params: {
   // folder syncs on its own, so a reply can arrive before the message it answers, and two replies
   // to a message Mail does not hold yet arrive without it. A message therefore also joins a
   // conversation with a later message that references it, or with a message that shares a
-  // referenced message with it. Only a later message can answer this one, and only while no other
-  // message carries its Message-ID: a reply names a Message-ID, and one that its sender reuses
-  // does not tell which of those messages the reply answers. Replies keep the subject, so the
-  // lookup reads at most one envelope
-  // batch of the closest messages with that subject on each side: a subject that repeats
-  // thousands of times, such as a daily report, cannot make every import of the initial sync read
-  // all of them.
-  const parentIds = [
-    ...new Set(
-      [params.message.inReplyTo, ...params.message.references]
-        .filter((value): value is string => Boolean(value))
-        .map((value) => value.toLowerCase()),
-    ),
+  // referenced message with it. Only a later message can answer this one. A Message-ID that
+  // several stored messages carry, because their sender reuses it, does not tell which of them a
+  // reply answers, so it proves nothing here. Replies keep the subject, so the lookup reads at
+  // most one envelope batch of the closest messages with that subject on each side: a subject
+  // that repeats thousands of times, such as a daily report, cannot make every import of the
+  // initial sync read all of them.
+  const lowered = (values: (string | null)[]): string[] => [
+    ...new Set(values.filter((value): value is string => Boolean(value)).map((value) => value.toLowerCase())),
   ];
-  const threadIds = params.message.messageId ? [...new Set([params.message.messageId.toLowerCase(), ...parentIds])] : parentIds;
+  const referenced = lowered([params.message.messageId, params.message.inReplyTo, ...params.message.references]);
+  const reused =
+    referenced.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await params.db<{ id: string }[]>`
+              SELECT reference.id
+              FROM unnest(${toPgTextArray(referenced)}::text[]) AS reference(id)
+              WHERE (
+                SELECT count(*)
+                FROM (
+                  SELECT 1
+                  FROM mail.message_contents carrier
+                  WHERE carrier.mailbox_id = ${params.mailboxId}::uuid
+                    AND carrier.message_id IS NOT NULL
+                    AND lower(carrier.message_id) = reference.id
+                  LIMIT 2
+                ) carriers
+              ) > 1
+            `
+          ).map((row) => row.id),
+        );
+  const parentIds = lowered([params.message.inReplyTo, ...params.message.references]).filter((id) => !reused.has(id));
+  const ownId = params.message.messageId?.toLowerCase();
+  const threadIds = ownId && !reused.has(ownId) ? [...new Set([ownId, ...parentIds])] : parentIds;
   if (threadIds.length > 0 && participants.length > 0) {
     const [related] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
@@ -439,18 +453,7 @@ const findConversation = async (params: {
       ) candidate
       JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
       CROSS JOIN LATERAL (
-        SELECT CASE
-          WHEN candidate.later AND NOT EXISTS (
-            SELECT 1
-            FROM mail.message_contents other
-            WHERE other.mailbox_id = ${params.mailboxId}::uuid
-              AND other.id <> ${params.messageId}::uuid
-              AND other.message_id IS NOT NULL
-              AND lower(other.message_id) = lower(${params.message.messageId}::text)
-          )
-            THEN ${toPgTextArray(threadIds)}::text[]
-          ELSE ${toPgTextArray(parentIds)}::text[]
-        END AS ids
+        SELECT CASE WHEN candidate.later THEN ${toPgTextArray(threadIds)}::text[] ELSE ${toPgTextArray(parentIds)}::text[] END AS ids
       ) matching
       WHERE (
           lower(candidate.in_reply_to) = ANY(matching.ids)
@@ -852,7 +855,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       protocol_facts = ${protocolFacts}::jsonb
     WHERE id = ${messageContentId}::uuid
   `;
-  await upsertAddresses(params.db, messageContentId, params.message, copyOfKnownMessage);
+  await upsertAddresses(params.db, messageContentId, params.message);
   await params.db`
     INSERT INTO mail.message_placements (
       remote_message_ref_id, folder_id, message_id, flags, keywords, deleted_at
