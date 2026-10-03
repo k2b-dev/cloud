@@ -11,12 +11,12 @@ import {
   type FilterChipSection,
   PanelDialog,
   panelDialogOptions,
-  prompts,
   toast,
 } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySchema, type Recurrence, type SpaceItem } from "@/contracts";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
@@ -181,7 +181,8 @@ export default function Calendar(props: CalendarProps) {
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
-  const reconcileAfterWrite = () => void invalidateSpacesData().catch(() => prompts.error(t.calendarRefreshFailed));
+  const reconcileAfterWrite = (): void =>
+    void invalidateSpacesData().catch(() => toastErrorWithRetry(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
   const seriesItemQuery = query.create<string | null, { source: string; item: SpaceItem }, { cursor: string | null }>({
     source: seriesItemSource,
     enabled: () => seriesItemSource() !== null,
@@ -393,15 +394,14 @@ export default function Calendar(props: CalendarProps) {
       sourceItem: CalendarItem | undefined;
       parent: SpaceItem | undefined;
       next: CalendarEventTimeChange;
-      action: "move" | "resize";
       recurringScope?: RecurringEditScope;
     },
-    { eventId: string; next: CalendarEventTimeChange; action: "move" | "resize" }
+    { eventId: string }
   >({
-    onBefore: ({ event, sourceItem, next, action }) => {
+    onBefore: ({ event, sourceItem, next }) => {
       const optimistic = sourceItem?.deadline && !sourceItem.startsAt ? { ...next, end: next.start, allDay: true } : next;
       setOptimisticTimes({ ...optimisticTimes(), [event.id]: optimistic });
-      return { eventId: event.id, next, action };
+      return { eventId: event.id };
     },
     mutation: async ({ event, sourceItem, parent, next, recurringScope }) => {
       if (sourceItem?.deadline && !sourceItem.startsAt) {
@@ -435,33 +435,19 @@ export default function Calendar(props: CalendarProps) {
         if (context) clearOptimisticTime(context.eventId);
         return;
       }
-      if (!context) {
-        reconcileAfterWrite();
-        return;
-      }
-      const target = context.next.allDay
-        ? context.next.start.toLocaleDateString(props.dateConfig?.locale ?? "en", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            timeZone: props.dateConfig?.timeZone,
-          })
-        : context.next.start.toLocaleTimeString(props.dateConfig?.locale ?? "en", {
-            hour: "2-digit",
-            minute: "2-digit",
-            timeZone: props.dateConfig?.timeZone,
-          });
-      toast.success(context.action === "resize" ? t.eventDurationUpdated : t.eventMoved({ target }));
+      // The event already sits where it was dropped, so the move needs no confirmation.
       reconcileAfterWrite();
     },
     onError: (error, context) => {
       if (context) clearOptimisticTime(context.eventId);
-      prompts.error(error.message);
-      void invalidateSpacesData().catch(() => prompts.error(t.eventStateUnconfirmed));
+      toast.error(error.message);
+      const confirmState = (): void =>
+        void invalidateSpacesData().catch(() => toastErrorWithRetry(t.eventStateUnconfirmed, t.retry, confirmState));
+      confirmState();
     },
   });
   let updateSubmitting = false;
-  const updateTime = async (event: CalendarEvent, next: CalendarEventTimeChange, action: "move" | "resize") => {
+  const updateTime = async (event: CalendarEvent, next: CalendarEventTimeChange) => {
     if (updateSubmitting || updateEventTime.loading()) return;
     updateSubmitting = true;
     try {
@@ -475,18 +461,20 @@ export default function Calendar(props: CalendarProps) {
         const seriesItemId = sourceItem?.recurringEventId ?? event.dataSpaceItemId ?? event.id;
         parent = await loadSeriesItem(seriesItemId);
       }
-      await updateEventTime.mutate({ event, sourceItem, parent, next, action, recurringScope });
+      await updateEventTime.mutate({ event, sourceItem, parent, next, recurringScope });
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : String(error));
+      toast.error(error instanceof Error ? error.message : String(error));
     } finally {
       updateSubmitting = false;
     }
   };
-  const createEvent = mutations.create<SpaceItem, ItemFormData>({
-    mutation: async (intent) => {
+  type CreateEventIntent = { spaceId: string; data: ItemFormData };
+  const createEvent = mutations.create<SpaceItem, CreateEventIntent, { intent: CreateEventIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ spaceId, data }) => {
       const res = await apiClient[":id"].items.$post({
-        param: { id: props.spaceId },
-        json: { ...normalizeCreatePayload(intent) },
+        param: { id: spaceId },
+        json: { ...normalizeCreatePayload(data) },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
       return res.json();
@@ -495,16 +483,18 @@ export default function Calendar(props: CalendarProps) {
       toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
       reconcileAfterWrite();
     },
-    onError: (error) => prompts.error(error.message),
+    // The form has closed, so Retry sends the captured entry again instead of losing it.
+    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && createEvent.mutate(context.intent)),
   });
   const createEventFromSlot = async (slot: CalendarEventTimeChange) => {
     if (createDialogPending() || createEvent.loading()) return;
     setCreateDialogPending(true);
+    const spaceId = props.spaceId;
     try {
-      const intent = await dialogCore.open<ItemFormData | null>(
+      const data = await dialogCore.open<ItemFormData | null>(
         (close) => (
           <ItemForm
-            spaceId={props.spaceId}
+            spaceId={spaceId}
             columns={props.columns}
             tags={props.tags}
             quickCreate
@@ -523,7 +513,7 @@ export default function Calendar(props: CalendarProps) {
         ),
         itemCreateDialogOptions,
       );
-      if (intent) void createEvent.mutate(intent);
+      if (data) void createEvent.mutate({ spaceId, data });
     } finally {
       setCreateDialogPending(false);
     }
@@ -626,8 +616,8 @@ export default function Calendar(props: CalendarProps) {
         onPrefetch={props.onPrefetch}
         navigationPending={props.navigationPending}
         onEventActivate={selectEvent}
-        onEventDrop={props.canWrite && !updateEventTime.loading() ? (event, next) => void updateTime(event, next, "move") : undefined}
-        onEventResize={props.canWrite && !updateEventTime.loading() ? (event, next) => void updateTime(event, next, "resize") : undefined}
+        onEventDrop={props.canWrite && !updateEventTime.loading() ? (event, next) => void updateTime(event, next) : undefined}
+        onEventResize={props.canWrite && !updateEventTime.loading() ? (event, next) => void updateTime(event, next) : undefined}
         onSlotActivate={
           props.canWrite && !creatingEvent() && (props.view === "day" || props.view === "week")
             ? (slot) => void createEventFromSlot(slot)

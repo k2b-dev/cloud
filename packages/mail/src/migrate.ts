@@ -1,11 +1,12 @@
 /**
- * Mail owns everything in the `mail` schema. `src/schema.sql` is the single
- * source of truth for it: a fresh installation runs that file once inside one
- * transaction and records version 1 (`baseline`) in `mail.schema_migrations`.
+ * Mail owns everything in the `mail` schema. `src/schema.sql` is its baseline:
+ * a fresh installation runs that file once inside one transaction and records
+ * version 1 (`baseline`) in `mail.schema_migrations`. Objects added after the
+ * baseline live in `applyAdditions` below.
  *
- * The historical 1..126 migration chain was collapsed into that baseline. Mail
- * has never been deployed, so no database needs an upgrade path; a developer
- * machine that still holds the old chain is reset by dropping the schema.
+ * The historical 1..126 migration chain was collapsed into that baseline before
+ * Mail was first deployed; a developer machine that still holds the old chain
+ * is reset by dropping the schema.
  */
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
@@ -51,6 +52,35 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
   `;
 };
 
+/**
+ * Objects added after the baseline. Every statement is idempotent and runs on
+ * each start, so a database installed from the baseline gains them, and an
+ * older Mail image, which records no version for them, still starts on it.
+ */
+const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // Pinned and hidden mailboxes in the overview, kept per principal so they apply on every device.
+  // A person's rows go with the person, a service account's with the account.
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.personal_mailbox_preferences (
+      mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+      user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+      service_account_id uuid REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      pinned_at timestamp with time zone,
+      hidden_at timestamp with time zone,
+      CONSTRAINT personal_mailbox_preferences_principal_check CHECK (num_nonnulls(user_id, service_account_id) = 1),
+      CONSTRAINT personal_mailbox_preferences_key UNIQUE NULLS NOT DISTINCT (user_id, service_account_id, mailbox_id)
+    )
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_service_account_idx
+    ON mail.personal_mailbox_preferences USING btree (service_account_id, mailbox_id)
+    WHERE service_account_id IS NOT NULL
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_mailbox_idx ON mail.personal_mailbox_preferences USING btree (mailbox_id)
+  `.simple();
+};
+
 const migrationErrorCode = (error: unknown): string | null => {
   const code = (error as { code?: unknown } | null)?.code;
   return typeof code === "string" ? code : null;
@@ -69,6 +99,7 @@ export const migrate = async (): Promise<void> => {
         await tx`SET LOCAL lock_timeout = '10s'`;
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
+        await applyAdditions(tx);
         await migrateWorkflowAi(tx);
       });
       return;

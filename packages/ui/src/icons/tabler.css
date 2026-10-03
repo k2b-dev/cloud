@@ -1,1 +1,14 @@
 @import "@tabler/icons-webfont/dist/tabler-icons.min.css";
+
+/*
+ * Every Tabler glyph is one em wide. Until the icon font has loaded, the
+ * browser lays the icon out with a fallback font whose replacement glyph is
+ * narrower, so buttons and the text next to them would move when the font
+ * arrives. A fixed box keeps the loaded width from the first frame. The
+ * pseudo-element carries it, so display and size utilities on the icon itself
+ * keep working.
+ */
+.ti::before {
+  display: inline-block;
+  width: 1em;
+}

@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { prompts, SettingsGroup, TagEditor, toast } from "@k2b/ui";
+import { prompts, SettingsGroup, TagEditor } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { SpaceTag } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -27,7 +27,6 @@ export function TagsSection(props: {
       return res.json();
     },
     onSuccess: () => {
-      toast.success(m.tagCreated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -45,7 +44,6 @@ export function TagsSection(props: {
       return res.json();
     },
     onSuccess: () => {
-      toast.success(m.tagUpdated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -62,7 +60,6 @@ export function TagsSection(props: {
       return tag;
     },
     onSuccess: () => {
-      toast.success(m.tagDeleted);
       props.onWorkspaceChange?.();
       reconcile();
     },

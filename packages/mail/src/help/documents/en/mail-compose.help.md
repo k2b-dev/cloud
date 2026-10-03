@@ -118,16 +118,16 @@ Scheduled messages appear under **Scheduled** with recipients, content preview, 
 - return it to a shared draft, or
 - discard it.
 
-After successful delivery, the message becomes normal sent mail. Scheduled delivery and Undo Send require an active mailbox transport. Pausing the mailbox stops queued delivery until an administrator resumes it.
+After successful delivery, the message becomes normal sent mail, dated when it went out rather than when you scheduled it. Scheduled delivery and Undo Send require an active mailbox transport. Pausing the mailbox stops queued delivery until an administrator resumes it. If the mailbox's password was replaced after you scheduled a message, it goes out with the new password when the mailbox and the sending identity are verified with it again by the time it is due.
 
 ## Recover from a send problem {icon="alert-circle"}
 
 Select the delivery status below an outgoing message to see what happened and the safest available next step.
 
-If the mail server can't be reached before Mail hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes; the delivery status shows the next attempt. If the server stays unreachable, the message shows **Couldn’t send**.
+If the mail server can't be reached before Mail hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes; the delivery status shows the next attempt. The same happens when the mailbox needs its password again or is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**.
 
 - **Couldn’t send** means Mail knows the message was not sent. Choose **Review and resend** to reopen the preserved draft before trying again. Recipient, size, or delivery-option errors use a more specific review label.
-- **Partially sent** means the receiving server accepted some recipients but not others. Choose **Review remaining recipients** to create an independent draft containing only the addresses that were not accepted. **Review everyone again…** includes the original recipients too and can therefore create duplicate messages.
+- **Partially sent** means the receiving server accepted some recipients but not others. Mail stores the message in the Sent folder like other sent mail. If storing that copy fails at that moment, Mail doesn't try again, so the Sent folder may not have it. Choose **Review remaining recipients** to create an independent draft containing only the addresses that were not accepted. **Review everyone again…** includes the original recipients too and can therefore create duplicate messages.
 - **Delivery status unclear** means the connection ended before Mail could prove the outcome. Mail looks for the provider's copy in the Sent folder a few more times and marks the message as sent when that copy shows up, even if it shows up later. Choose **Check again** first. Only create a resend draft when you have considered that the original message may already have arrived.
 - **Sent, but not saved** means delivery succeeded but Mail could not store its copy in the Sent folder. Do not resend the message.
 

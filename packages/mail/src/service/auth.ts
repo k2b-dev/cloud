@@ -34,6 +34,16 @@ export const permissionFromScopes = (scopes: readonly string[]): PermissionLevel
 export const userBackedActor = (context: MailRequestContext) =>
   context.actor.kind === "user" ? context.actor.user : context.actor.delegatedUser;
 
+/** Whose personal Mail state a request reads and changes: its person, or a service account acting without one. */
+export type PersonalPrincipal = { kind: "user" | "service_account"; id: string };
+
+export const personalPrincipal = (context: MailRequestContext): PersonalPrincipal => {
+  const user = userBackedActor(context);
+  if (user) return { kind: "user", id: user.id };
+  if (context.actor.kind === "service_account") return { kind: "service_account", id: context.actor.serviceAccount.id };
+  throw new Error("Mail request actor has no personal principal");
+};
+
 export const isPlatformAdmin = (context: MailRequestContext): boolean => userBackedActor(context)?.roles.includes("admin") ?? false;
 
 export const isResourceBoundToMailbox = (context: MailRequestContext, mailboxId: string): boolean => {

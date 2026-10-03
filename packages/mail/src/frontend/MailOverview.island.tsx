@@ -18,7 +18,14 @@ import {
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
-import type { DeletedMailbox, DeletedMailboxPage, Mailbox, MailFocusPage, MailFocusView } from "../contracts";
+import {
+  type DeletedMailbox,
+  type DeletedMailboxPage,
+  MAX_MAILBOX_PREFERENCES,
+  type Mailbox,
+  type MailFocusPage,
+  type MailFocusView,
+} from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
@@ -26,7 +33,6 @@ import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
-import { readMailWorkspacePreferences, writeMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import { mailOverviewMessages } from "./mail-overview-messages";
 import { assertCursorProgress } from "./pagination";
 
@@ -142,29 +148,60 @@ function MailOverviewView(props: {
   const restoreMailboxFocus = (hadFocus: boolean, target: HTMLElement | null) => {
     if (hadFocus && (!document.activeElement || document.activeElement === document.body)) target?.focus();
   };
+  // Pins and hidden mailboxes belong to the person and apply on every device. The row moves at
+  // once and saves run in order. A failed save puts the mailbox back where the server last
+  // confirmed it, so overlapping changes never leave a state the server does not have.
+  const confirmedPreferences = { pinned: props.initialPinnedMailboxIds, hidden: props.initialHiddenMailboxIds };
+  let preferenceSaves = Promise.resolve();
+  /** Puts the mailbox at `index`, or leaves it out with -1. */
+  const placeMailbox = (ids: string[], mailboxId: string, index: number) => {
+    const others = ids.filter((id) => id !== mailboxId);
+    return index === -1 ? others : [...others.slice(0, index), mailboxId, ...others.slice(index)];
+  };
+  // A new pin or hide is the newest; an existing one keeps its place.
+  const withPreference = (ids: string[], mailboxId: string, value: boolean) =>
+    ids.includes(mailboxId) === value ? ids : placeMailbox(ids, mailboxId, value ? 0 : -1);
+  /** Returns false when the list is full, so the row stays where it is. */
+  const changeMailboxPreference = (mailboxId: string, preference: "pinned" | "hidden", value: boolean): boolean => {
+    const [shown, setShown] = preference === "pinned" ? [pinnedMailboxIds, setPinnedMailboxIds] : [hiddenMailboxIds, setHiddenMailboxIds];
+    // Focus leaves out every hidden mailbox in one request, so the lists stay within its limit.
+    if (value && shown().length >= MAX_MAILBOX_PREFERENCES) {
+      const count = formatCount(MAX_MAILBOX_PREFERENCES);
+      toast.error(preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count }));
+      return false;
+    }
+    setShown((ids) => withPreference(ids, mailboxId, value));
+    preferenceSaves = preferenceSaves.then(async () => {
+      try {
+        const response = await apiClient.mailboxes[":mailboxId"].preference.$patch({
+          param: { mailboxId },
+          json: preference === "pinned" ? { pinned: value } : { hidden: value },
+        });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveMailboxPreference));
+        const saved = await response.json();
+        confirmedPreferences[preference] = withPreference(confirmedPreferences[preference], mailboxId, saved[preference]);
+      } catch (error) {
+        const index = confirmedPreferences[preference].indexOf(mailboxId);
+        setShown((ids) => placeMailbox(ids, mailboxId, index));
+        toast.error(error instanceof Error ? error.message : messages().failedSaveMailboxPreference);
+      }
+    });
+    return true;
+  };
   const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
-    // This document may come from history or run beside another tab: apply the
-    // shown pin or unpin to the stored list so newer pins survive.
     const pin = !mailboxIsPinned(mailbox.id);
     const hadFocus = mailboxHasFocus(mailbox.id);
-    const stored = readMailWorkspacePreferences(document.cookie);
-    const others = stored.pinnedMailboxIds.filter((id) => id !== mailbox.id);
-    const next = pin ? [mailbox.id, ...others] : others;
-    setPinnedMailboxIds(writeMailWorkspacePreferences({ ...stored, pinnedMailboxIds: next }).pinnedMailboxIds);
+    if (!changeMailboxPreference(mailbox.id, "pinned", pin)) return;
     setMailboxAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
     restoreMailboxFocus(hadFocus, mailboxLink(mailbox.id));
   };
   const toggleMailboxHidden = (mailbox: MailboxOverviewItem) => {
-    // Like pins, apply the shown change to the stored list so another tab's changes survive.
     const hide = !mailboxIsHidden(mailbox.id);
     const hadFocus = mailboxHasFocus(mailbox.id);
     const visible = visibleMailboxItems();
-    const index = visible.findIndex((item) => item.id === mailbox.id);
-    const neighborId = (visible[index + 1] ?? visible[index - 1])?.id;
-    const stored = readMailWorkspacePreferences(document.cookie);
-    const others = stored.hiddenMailboxIds.filter((id) => id !== mailbox.id);
-    const next = hide ? [mailbox.id, ...others] : others;
-    setHiddenMailboxIds(writeMailWorkspacePreferences({ ...stored, hiddenMailboxIds: next }).hiddenMailboxIds);
+    const position = visible.findIndex((item) => item.id === mailbox.id);
+    const neighborId = (visible[position + 1] ?? visible[position - 1])?.id;
+    if (!changeMailboxPreference(mailbox.id, "hidden", hide)) return;
     setMailboxAnnouncement(hide ? messages().mailboxHidden({ name: mailbox.name }) : messages().mailboxShown({ name: mailbox.name }));
     if (hide && selection()?.mailboxId === mailbox.id) {
       setSelection(null);

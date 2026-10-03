@@ -172,7 +172,7 @@ export const createRecordsBulkController = (options: RecordsBulkControllerOption
     },
     onError: (error) => {
       setQueueing(false);
-      void prompts.error(error.message);
+      toast.error(error.message);
     },
   });
 

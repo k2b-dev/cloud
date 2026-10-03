@@ -192,6 +192,44 @@ suite("Mail REST access for service-account credentials", () => {
     expect((await createTag(writer)).status).toBe(200);
   });
 
+  test("an agent pins and hides mailboxes for itself, like a person, and loses them with its account", async () => {
+    const agent = await insertAccount(`Mail tidy agent ${suffix}`);
+    await grant(agent, "read");
+    const token = await tokenFor(agent, ["mail:read"]);
+    const preferences = async (bearer: string) => {
+      const response = await call(bearer, "/mailboxes/preferences");
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+
+    const hidden = await call(token, `/mailboxes/${mailboxShortId}/preference`, { method: "PATCH", body: { hidden: true } });
+    expect(hidden.status).toBe(200);
+    expect(await hidden.json()).toEqual({ pinned: false, hidden: true });
+    expect(await preferences(token)).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [mailboxShortId] });
+    // The owner's overview is the owner's own; a personal API key acts as the owner.
+    expect(await preferences("owner-session")).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [] });
+    const personal = await serviceAccountCredentials.createUserApiToken({ user: owner, name: `personal preferences ${suffix}` });
+    if (!personal.ok) throw new Error(personal.error.message);
+    expect(
+      (await call(personal.data.token, `/mailboxes/${mailboxShortId}/preference`, { method: "PATCH", body: { pinned: true } })).status,
+    ).toBe(200);
+    expect(await preferences("owner-session")).toEqual({ pinnedMailboxIds: [mailboxShortId], hiddenMailboxIds: [] });
+
+    // Without a Mail scope the agent reads no mailbox, so it can neither change nor see a preference.
+    const openidOnly = await tokenFor(agent, ["openid"]);
+    expect((await call(openidOnly, `/mailboxes/${mailboxShortId}/preference`, { method: "PATCH", body: { pinned: true } })).status).toBe(
+      403,
+    );
+    expect(await preferences(openidOnly)).toEqual({ pinnedMailboxIds: [], hiddenMailboxIds: [] });
+
+    await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id = ${agent}::uuid`;
+    await sql`DELETE FROM auth.access WHERE service_account_id = ${agent}::uuid`;
+    await sql`DELETE FROM auth.service_accounts WHERE id = ${agent}::uuid`;
+    const [left] = await sql<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM mail.personal_mailbox_preferences WHERE service_account_id = ${agent}::uuid`;
+    expect(left?.count).toBe(0);
+  });
+
   test("user sessions and personal API keys keep acting with the user's grant", async () => {
     expect(await listedPermission("owner-session")).toBe("admin");
     expect((await createTag("owner-session")).status).toBe(200);

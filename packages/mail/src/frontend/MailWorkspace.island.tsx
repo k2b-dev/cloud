@@ -52,6 +52,7 @@ import type { MailConversationToolbarActionId } from "./_components/mail-convers
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { createRetryToasts } from "./_components/mail-feedback";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -794,6 +795,25 @@ function MailWorkspaceView(props: {
     if (refreshError) toast.error(refreshError.message);
   };
 
+  /**
+   * The change was saved, only this view is stale: say so, and let Try again reload what the workspace shows now. It
+   * repeats neither the change nor its navigation, so a late click cannot pull the user away from where they are.
+   */
+  const retryToast = createRetryToasts();
+  const reportRefreshFailure = (error: Error, title: string): void => {
+    if (disposed) return;
+    retryToast(error.message, {
+      title,
+      retryLabel: t().tryAgain,
+      retry: async () => {
+        // A navigation in flight loads the workspace anew; reloading the route it leaves would cancel it.
+        if (workspaceTransition) return;
+        const next = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+        if (next) reportRefreshFailure(next, title);
+      },
+    });
+  };
+
   const applySavedConversationSummary = async (conversationId: string, summary: NonNullable<MailboxPageData["conversationSummary"]>) => {
     if (disposed) return;
     rememberPendingListState(conversationId, { revision: summary.conversationRevision });
@@ -1025,7 +1045,7 @@ function MailWorkspaceView(props: {
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().merged);
-      if (result.refreshError) void prompts.error(result.refreshError.message, { title: t().mergedRefreshFailed });
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().mergedRefreshFailed);
     },
     onError: (error) =>
       prompts.error(error.message, {
@@ -1085,7 +1105,7 @@ function MailWorkspaceView(props: {
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().messageMoved);
-      if (result.refreshError) void prompts.error(result.refreshError.message, { title: t().messageMovedRefreshFailed });
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().messageMovedRefreshFailed);
     },
     onError: (error) => prompts.error(error.message, { title: t().messageNotMoved }),
   });
@@ -1131,7 +1151,7 @@ function MailWorkspaceView(props: {
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().splitCreated);
-      if (result.refreshError) void prompts.error(result.refreshError.message, { title: t().splitRefreshFailed });
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().splitRefreshFailed);
     },
     onError: (error) => prompts.error(error.message, { title: t().conversationUnchanged }),
   });
@@ -1308,7 +1328,7 @@ function MailWorkspaceView(props: {
           : requireWorkspaceReconcile(),
       );
       if (!disposed && focusAfterRemoval && !refreshError) focusConversation(focusAfterRemoval, "row");
-      if (refreshError) void prompts.error(refreshError.message, { title: t().actionQueuedRefreshFailed });
+      if (refreshError) reportRefreshFailure(refreshError, t().actionQueuedRefreshFailed);
     },
     reconcile: reconcileWorkspace,
     showMissingTarget: async () => {
@@ -1339,7 +1359,7 @@ function MailWorkspaceView(props: {
     },
     showError: async (error) => {
       const message = error instanceof Error ? error.message : "";
-      await prompts.error(
+      toast.error(
         message === MAIL_ACTION_MISSING_DESTINATION ? t().chooseDestinationBeforeMoving : message || t().updateConversationsFailed,
       );
     },
@@ -1401,9 +1421,9 @@ function MailWorkspaceView(props: {
           ? t().tagsAlreadyPresent
           : t().tagsAdded({ count: result.updatedConversationIds.length }),
       );
-      if (refreshError) void prompts.error(refreshError.message, { title: t().tagsRefreshFailed });
+      if (refreshError) reportRefreshFailure(refreshError, t().tagsRefreshFailed);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
   const addTagsToSelection = () => {
     const conversationIds = [...selectedConversationIds()];
@@ -1426,8 +1446,8 @@ function MailWorkspaceView(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().updateTagsFailed));
       const next = await response.json();
       if (abortSignal.aborted || disposed) return;
+      // The row and the details show the new tags, so the change needs no confirmation.
       applyConversationTags(next);
-      toast.success(t().tagsUpdated);
     },
     onError: (error) => {
       void reconcileWorkspace()
@@ -1463,12 +1483,13 @@ function MailWorkspaceView(props: {
           refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
           success: (message, undo) =>
             toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, onClick: undo.run } } : undefined),
-          error: (message, title) => void prompts.error(message, title ? { title } : undefined),
+          error: (message, title) => void toast.error(message, title ? { title } : undefined),
+          refreshFailed: (error, title) => reportRefreshFailure(error, title),
           active: () => !abortSignal.aborted && !disposed,
         },
         t(),
       ),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
   const assignSelection = () => {
     const conversationIds = [...selectedConversationIds()];

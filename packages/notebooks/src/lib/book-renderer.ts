@@ -221,12 +221,23 @@ export const renderNotebookBook = (
     return `<a href="${escape(url)}"${title ? ` title="${escape(title)}"` : ""}${/^https?:/i.test(url) ? ' rel="noopener noreferrer"' : ""}>${body}</a>`;
   };
   const imageLabel = (alt: string) => `<span class="notebook-book-image-label">${escape(t.image({ alt }))}</span>`;
+  // An attached image links to its file, so a reader can open it from the keyboard too; Book shows it in the lightbox.
+  // The image's text names the link; an image without text keeps its empty alt, and the link takes the image label.
+  const imageHtml = (href: string, url: string, alt: string, img: string) =>
+    /^attach:\/\//.test(href) && !insideLink
+      ? `<a class="notebook-book-image-link" href="${escape(url)}"${alt ? "" : ` aria-label="${escape(t.image({ alt }))}"`}>${img}</a>`
+      : img;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
     if (input.print) return imageLabel(alt);
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
-    return `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${title ? ` title="${escape(title)}"` : ""}>`;
+    return imageHtml(
+      href,
+      url,
+      alt,
+      `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${title ? ` title="${escape(title)}"` : ""}>`,
+    );
   };
   renderer.code = ({ text: code, lang }) => {
     const language = lang?.split(/\s+/)[0]?.toLowerCase() ?? "";
@@ -328,7 +339,12 @@ export const renderNotebookBook = (
           if (input.print) return imageLabel(alt);
           const url = resolveUrl(String(token.href), true);
           return url
-            ? `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`
+            ? imageHtml(
+                String(token.href),
+                url,
+                alt,
+                `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`,
+              )
             : escape(alt);
         },
       },

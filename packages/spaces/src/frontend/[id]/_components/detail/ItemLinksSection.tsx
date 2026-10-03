@@ -1,10 +1,11 @@
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { DetailPanel, prompts, StatusBadge, type StatusTone } from "@k2b/ui";
+import { DetailPanel, prompts, StatusBadge, type StatusTone, toast } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemLink, SpaceItemLinkPreview, SpaceItemResourceReferenceInput } from "@/contracts";
 import { linkHostname, parseGitHubLink } from "@/lib/link-targets";
+import { toastErrorWithRetry } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
@@ -84,25 +85,30 @@ export default function ItemLinksSection(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.unlinkResourceFailed));
     },
     onSuccess: () => props.onChanged(),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
-  const linkReference = mutations.create<void, SpaceItemResourceReferenceInput>({
-    mutation: async (reference, { abortSignal }) => {
+  type LinkReferenceIntent = { itemId: string; reference: SpaceItemResourceReferenceInput };
+  const linkReference = mutations.create<void, LinkReferenceIntent, { intent: LinkReferenceIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ itemId, reference }, { abortSignal }) => {
       const response = await apiClient[":id"].items[":itemId"].references.$post(
-        { param: { id: props.spaceId, itemId: props.itemId }, json: reference },
+        { param: { id: props.spaceId, itemId }, json: reference },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readResponseError(response, t.linkResourceFailed));
     },
     onSuccess: () => props.onChanged(),
-    onError: (error) => prompts.error(error.message),
+    // The picker has closed, so Retry links the captured choice to the same item.
+    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && linkReference.mutate(context.intent)),
   });
 
-  const addLink = mutations.create<void, { url: string; label: string | null }>({
-    mutation: async (link, { abortSignal }) => {
+  type AddLinkIntent = { itemId: string; link: { url: string; label: string | null } };
+  const addLink = mutations.create<void, AddLinkIntent, { intent: AddLinkIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ itemId, link }, { abortSignal }) => {
       const response = await apiClient[":id"].items[":itemId"].links.$post(
-        { param: { id: props.spaceId, itemId: props.itemId }, json: link },
+        { param: { id: props.spaceId, itemId }, json: link },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readResponseError(response, t.addLinkFailed));
@@ -111,7 +117,8 @@ export default function ItemLinksSection(props: Props) {
       setFilled(null);
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    // The form has closed, so Retry adds the captured link to the same item.
+    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && addLink.mutate(context.intent)),
   });
 
   const removeLink = mutations.create<void, string>({
@@ -126,7 +133,7 @@ export default function ItemLinksSection(props: Props) {
       setFilled(null);
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const busy = () => unlinkReference.loading() || linkReference.loading() || addLink.loading() || removeLink.loading();
@@ -138,7 +145,7 @@ export default function ItemLinksSection(props: Props) {
       requireReader: true,
     });
     if (!selected) return;
-    await linkReference.mutate({ ref: selected.ref, label: selected.title });
+    await linkReference.mutate({ itemId: props.itemId, reference: { ref: selected.ref, label: selected.title } });
   };
 
   const promptLink = async () => {
@@ -146,18 +153,19 @@ export default function ItemLinksSection(props: Props) {
       title: t.addLink,
       icon: "ti ti-link-plus",
       fields: {
-        url: { type: "text", label: t.linkUrl, placeholder: "https://", required: true },
+        url: {
+          type: "text",
+          label: t.linkUrl,
+          placeholder: "https://",
+          required: true,
+          validate: (value) => (value && !isHttpUrl(value.trim()) ? t.invalidLinkUrl : null),
+        },
         label: { type: "text", label: t.linkLabel, description: t.linkLabelDescription },
       },
       confirmText: t.addLink,
     });
     if (!values) return;
-    const url = values.url.trim();
-    if (!isHttpUrl(url)) {
-      await prompts.error(t.invalidLinkUrl);
-      return;
-    }
-    await addLink.mutate({ url, label: values.label?.trim() || null });
+    await addLink.mutate({ itemId: props.itemId, link: { url: values.url.trim(), label: values.label?.trim() || null } });
   };
 
   const menu = (label: string, action: () => void) =>

@@ -1,6 +1,6 @@
 import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { Button, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, Placeholder, prompts, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import ApprovalStatus from "./ApprovalStatus";
@@ -108,21 +108,20 @@ export default function Devices(props: {
     }
   };
   return (
-    <section class="paper flex flex-col gap-4 p-5">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 class="text-sm font-semibold">{t().devices}</h2>
-          <p class="mt-1 text-xs text-dimmed">{t().description}</p>
-        </div>
-        <div class="flex flex-wrap gap-2">
+    <SettingsSection
+      title={t().devices}
+      subtitle={t().description}
+      actions={
+        <>
           <Show when={props.pairing?.appOrigin}>{(origin) => <InstallApp origin={origin()} />}</Show>
           <Show when={props.availability === "configured"}>
             <Button size="sm" disabled={!props.pairing} onClick={() => setPairingOpen(true)}>
               {t().pair}
             </Button>
           </Show>
-        </div>
-      </div>
+        </>
+      }
+    >
       <Show when={pairingOpen() && props.pairing}>
         {(pairing) => (
           <Pairing
@@ -151,10 +150,10 @@ export default function Devices(props: {
                 </Show>
               }
             >
-              <div class="divide-y divide-[var(--k2b-border)]">
+              <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
                 <For each={activeDevices()}>
                   {(device) => (
-                    <div class="flex flex-wrap items-start justify-between gap-3 py-3">
+                    <div class="flex flex-wrap items-start justify-between gap-3 p-3">
                       <div class="min-w-0">
                         <p class="break-words font-medium">{device.name}</p>
                         <p class="text-xs text-dimmed">{device.assisted ? t().assisted : t().self}</p>
@@ -220,6 +219,6 @@ export default function Devices(props: {
           </>
         )}
       </Show>
-    </section>
+    </SettingsSection>
   );
 }

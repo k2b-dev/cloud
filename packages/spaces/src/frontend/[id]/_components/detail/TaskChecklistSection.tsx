@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Checkbox, IconButton, prompts } from "@k2b/ui";
+import { Checkbox, IconButton, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceTaskChecklistEntry } from "@/contracts";
@@ -43,7 +43,7 @@ export default function TaskChecklistSection(props: Props) {
       setNewLabel("");
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const updateEntry = mutations.create<SpaceTaskChecklistEntry, { id: string; label?: string; completed?: boolean }>({
@@ -59,7 +59,7 @@ export default function TaskChecklistSection(props: Props) {
       setEntries((current) => current.map((candidate) => (candidate.id === entry.id ? entry : candidate)));
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const deleteEntry = mutations.create<string, string>({
@@ -74,7 +74,7 @@ export default function TaskChecklistSection(props: Props) {
       setEntries((current) => current.filter((entry) => entry.id !== id));
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const submit = (event: SubmitEvent) => {

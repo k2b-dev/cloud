@@ -1,5 +1,5 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, ColorInput, IconButton, prompts, Select, SettingsCollection, SettingsGroup, toast } from "@k2b/ui";
+import { Button, ColorInput, IconButton, prompts, Select, SettingsCollection, SettingsGroup } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceWormhole, SpaceWormholeDestination } from "@/contracts";
@@ -117,7 +117,6 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success(m.wormholeCreated);
       refreshWormholes();
     },
     onError: (error) => prompts.error(error.message),
@@ -134,7 +133,6 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success(m.wormholeUpdated);
       refreshWormholes();
     },
     onError: (error) => prompts.error(error.message),
@@ -150,7 +148,6 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     },
     onSuccess: (id) => {
       if (editingId() === id) setEditingId(null);
-      toast.success(m.wormholeDeleted);
       refreshWormholes();
     },
     onError: (error) => prompts.error(error.message),

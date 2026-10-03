@@ -21,7 +21,6 @@ import {
   SegmentedControl,
   Tag,
   TextInput,
-  toast,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -29,6 +28,7 @@ import { apiClient } from "@/api/client";
 import type { Space } from "@/contracts";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { setLastSpaceId, setPinnedSpaceIds, type ViewType, writeSpaceSettings } from "./[id]/_components/settings/SpaceSettingsStore";
+import { toastErrorWithRetry } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
 import { createSpaceCommands } from "./space-commands";
 
@@ -88,7 +88,6 @@ export const overviewMessages = i18n.define({
       newSpace: "New space",
       createSpace: "Create Space",
       createFailed: "Failed to create space",
-      created: "Space created",
       pinned: ({ name }: { name: string }) => `Pinned ${name}`,
       unpinned: ({ name }: { name: string }) => `Unpinned ${name}`,
       pin: ({ name }: { name: string }) => `Pin ${name}`,
@@ -179,7 +178,6 @@ export const overviewMessages = i18n.define({
       newSpace: "Neuer Space",
       createSpace: "Space erstellen",
       createFailed: "Der Space konnte nicht erstellt werden",
-      created: "Space erstellt",
       pinned: ({ name }) => `${name} angeheftet`,
       unpinned: ({ name }) => `${name} nicht mehr angeheftet`,
       pin: ({ name }) => `${name} anheften`,
@@ -449,7 +447,9 @@ export default function SpacesOverview(props: Props) {
   const activityItems = createMemo(() => activity.pages().flatMap((page) => page.data));
   const activityError = () => activity.error()?.message ?? initialActivityError();
 
-  const createSpaceMutation = mutations.create<{ space: Space; starter: SpaceStarter }, { starter: SpaceStarter; draft: SpaceDraft }>({
+  type CreateSpaceIntent = { starter: SpaceStarter; draft: SpaceDraft };
+  const createSpaceMutation = mutations.create<{ space: Space; starter: SpaceStarter }, CreateSpaceIntent, { intent: CreateSpaceIntent }>({
+    onBefore: (intent) => ({ intent }),
     mutation: async ({ starter, draft }) => {
       const response = await apiClient.index.$post({
         json: {
@@ -462,13 +462,14 @@ export default function SpacesOverview(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.createFailed));
       return { space: await response.json(), starter };
     },
+    // Opening the new space is the confirmation.
     onSuccess: ({ space, starter }) => {
-      toast.success(t.created);
       setLastSpaceId(space.id);
       writeSpaceSettings(space.id, { view: starterView[starter.id] });
       navigateTo(`/app/spaces/${space.id}`);
     },
-    onError: (error) => prompts.error(error.message),
+    // The form has closed, so Retry sends the captured draft again instead of losing it.
+    onError: (error, context) => toastErrorWithRetry(error.message, t.retry, () => context && createSpaceMutation.mutate(context.intent)),
   });
   const createSpace = async (starter: SpaceStarter) => {
     if (dialogPending() || createSpaceMutation.loading()) return;

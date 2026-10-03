@@ -26,6 +26,21 @@ export const extractAttachmentIds = (md: string | null): string[] => {
 export const buildAttachmentContentUrl = (notebookId: string, attachmentId: string): string =>
   `/api/notebooks/${encodeURIComponent(notebookId)}/attachments/${encodeURIComponent(attachmentId)}/content?v=1`;
 
+const ATTACHMENT_CONTENT_PATH_RE = /^\/api\/notebooks\/([0-9a-zA-Z-]+)\/attachments\/([0-9a-zA-Z]{6})\/content$/;
+
+/** The notebook and attachment a same-origin content URL points to, as Book renders `attach://` links. */
+export const attachmentFromContentUrl = (href: string, base: string): { notebookId: string; attachmentId: string } | null => {
+  let url: URL;
+  try {
+    url = new URL(href, base);
+  } catch {
+    return null;
+  }
+  if (url.origin !== new URL(base).origin) return null;
+  const [, notebookId, attachmentId] = ATTACHMENT_CONTENT_PATH_RE.exec(url.pathname) ?? [];
+  return notebookId && attachmentId ? { notebookId, attachmentId } : null;
+};
+
 const SAFE_URL_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 
 export const isSafeMarkdownUrl = (url: string): boolean => {

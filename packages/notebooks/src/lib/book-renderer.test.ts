@@ -253,6 +253,33 @@ describe("Notebook Book HTML", () => {
     expect(html).toContain('loading="lazy"');
   });
 
+  test("attached images link to their file, so Book can open them, while remote and linked images stay as they are", () => {
+    const { html } = render(
+      "![Floor plan](attach://GHI789)\n\n![Logo](attach://JKL012 =64x)\n\n![remote](https://example.test/a.png)\n\n[![Badge](attach://MNO345)](https://example.test)",
+    );
+    expect(html).toContain(
+      '<a class="notebook-book-image-link" href="/api/notebooks/ABC123/attachments/GHI789/content?v=1"><img class="notebook-book-image"',
+    );
+    expect(html).toContain('<a class="notebook-book-image-link" href="/api/notebooks/ABC123/attachments/JKL012/content?v=1"><img');
+    expect(html).not.toContain('notebook-book-image-link" href="https://example.test/a.png"');
+    // An image that is already a link's label keeps that link, without a second one inside it.
+    expect(html).toContain('<a rel="noopener noreferrer" href="https://example.test"><img class="notebook-book-image"');
+    expect(html.match(/notebook-book-image-link/g)).toHaveLength(2);
+  });
+
+  test("an attached image without text still gives its link a name", () => {
+    const { html } = render("![](attach://GHI789)\n\n![](attach://JKL012 =64x)");
+    expect(html).toContain(
+      '<a class="notebook-book-image-link" aria-label="Image" href="/api/notebooks/ABC123/attachments/GHI789/content?v=1"><img class="notebook-book-image" src="/api/notebooks/ABC123/attachments/GHI789/content?v=1" alt=""',
+    );
+    expect(html).toContain(
+      '<a class="notebook-book-image-link" aria-label="Image" href="/api/notebooks/ABC123/attachments/JKL012/content?v=1"><img class="notebook-book-image" src="/api/notebooks/ABC123/attachments/JKL012/content?v=1" alt=""',
+    );
+    expect(render("![](attach://GHI789)", "de").html).toContain('aria-label="Bild"');
+    // An image with text names its link itself.
+    expect(render("![Floor plan](attach://GHI789)").html).not.toContain("aria-label");
+  });
+
   test("tags are links outside code and link labels", () => {
     const { html } = render("#team/News `#code` [#label](https://example.test)");
     expect(html).toContain("/tags/team%2Fnews?mode=book");

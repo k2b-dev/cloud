@@ -52,6 +52,7 @@ import {
   draftEditableContentInputSchema,
   draftLeaseTokenSchema,
   draftSchema,
+  MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
   mailCommandInputSchema,
@@ -218,7 +219,7 @@ const mailFocusQuerySchema = cursorQuerySchema.extend({
     .max(1_400)
     .default("")
     .transform((value) => value.split(",").filter(Boolean))
-    .pipe(z.array(ResourceShortIdSchema).max(200))
+    .pipe(z.array(ResourceShortIdSchema).max(MAX_MAILBOX_PREFERENCES))
     .describe("Comma-separated mailbox IDs whose conversations leave the list and view counts, such as mailboxes hidden in the overview"),
 });
 const collaboratorQuerySchema = z.object({

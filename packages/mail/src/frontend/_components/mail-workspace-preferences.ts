@@ -7,15 +7,17 @@ export type MailWorkspacePreferences = {
   toolbarActions: MailConversationToolbarActionId[];
   listMode: MailListMode;
   lastMailboxId: string | null;
+  /**
+   * Pins and hidden mailboxes this browser kept before Mail stored them per person. The overview
+   * imports them once and removes them; until then every other write keeps them.
+   */
   pinnedMailboxIds: string[];
-  /** Mailboxes left out of the overview sidebar and Focus; opening them directly still works. */
   hiddenMailboxIds: string[];
 };
 
 const MAIL_WORKSPACE_COOKIE = "cloud_mail_workspace";
 const isMailResourceId = (value: unknown): value is string => typeof value === "string" && /^[0-9A-Za-z]{6}$/.test(value);
-// Browsers drop a cookie over 4096 bytes, and then no workspace preference saves. An encoded ID
-// costs 15 bytes, so the pinned and hidden lists keep their newest 100 each and stay near 3 KB.
+// Browsers dropped a cookie over 4096 bytes, so the browser kept at most 100 IDs per list.
 const MAX_MAILBOX_IDS = 100;
 const normalizeMailboxIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, MAX_MAILBOX_IDS) : [];
@@ -53,14 +55,11 @@ export const readMailWorkspacePreferences = (cookieHeader: string | null | undef
   }
 };
 
-/** Returns the preferences as stored, so a list past its limit shows what a reload will show. */
-export const writeMailWorkspacePreferences = (preferences: MailWorkspacePreferences): MailWorkspacePreferences => {
-  const normalized = normalizeMailWorkspacePreferences(preferences);
-  document.cookie = `${MAIL_WORKSPACE_COOKIE}=${encodeURIComponent(
-    JSON.stringify(normalized),
+/** The cookie as a browser stores it, for `document.cookie` and a `Set-Cookie` header alike. */
+export const mailWorkspaceCookie = (preferences: MailWorkspacePreferences): string =>
+  `${MAIL_WORKSPACE_COOKIE}=${encodeURIComponent(
+    JSON.stringify(normalizeMailWorkspacePreferences(preferences)),
   )}; Path=/app/mail; Max-Age=31536000; SameSite=Lax`;
-  return normalized;
-};
 
 /**
  * Changes only the given preferences on top of the stored cookie. A document
@@ -68,5 +67,5 @@ export const writeMailWorkspacePreferences = (preferences: MailWorkspacePreferen
  * would overwrite what a newer document has saved since.
  */
 export const updateMailWorkspacePreferences = (patch: Partial<MailWorkspacePreferences>): void => {
-  writeMailWorkspacePreferences({ ...readMailWorkspacePreferences(document.cookie), ...patch });
+  document.cookie = mailWorkspaceCookie({ ...readMailWorkspacePreferences(document.cookie), ...patch });
 };

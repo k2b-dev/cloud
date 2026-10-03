@@ -1,7 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, prompts, Tooltip, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, on, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicForm as Form, PublicGridRecord, PublicView } from "../../../api/public-dto";
@@ -200,7 +200,7 @@ export default function GridToolbar(props: Props) {
       return res.json();
     },
     onSuccess: () => refreshCurrentPath(),
-    onError: (e) => prompts.error(e.message),
+    onError: (e) => toast.error(e.message),
   });
 
   const handleSaveView = async () => {

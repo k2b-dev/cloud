@@ -317,6 +317,9 @@ const firstFrameAndLoad = async (viewport: View, locale: "en" | "de" = "en") => 
   // runner; a face without a preload is only requested after the stylesheets and layout.
   const served = new Map(preloads.map((href) => [href, Promise.withResolvers<void>()]));
   const fontsFirst = Promise.all([...served.values()].map((font) => font.promise));
+  // The icon font is half a megabyte, so on a slow connection it arrives after the first frame even preloaded; it is
+  // held until then, and the icons must already have their final box.
+  const firstFrame = Promise.withResolvers<void>();
   const tab = await browser.newPage({
     viewport: { width: viewport.width, height: viewport.height },
     deviceScaleFactor: 2,
@@ -327,6 +330,11 @@ const firstFrameAndLoad = async (viewport: View, locale: "en" | "de" = "en") => 
     await tab.route(`${origin}/**`, async (route) => {
       const { pathname } = new URL(route.request().url());
       if (pathname === "/share/minimal-layout-probe") return route.fulfill({ contentType: "text/html", body: html });
+      if (pathname === "/public/tabler-icons.woff2") {
+        served.get(pathname)?.resolve();
+        await firstFrame.promise;
+        return route.fulfill({ path: file(pathname)! });
+      }
       const stylesheet = stylesheets[pathname];
       if (stylesheet !== undefined) {
         await fontsFirst;
@@ -337,6 +345,7 @@ const firstFrameAndLoad = async (viewport: View, locale: "en" | "de" = "en") => 
       await (path ? route.fulfill({ path }) : route.fulfill({ status: 404, body: "" }));
       served.get(pathname)?.resolve();
     });
+    await tab.exposeFunction("firstFramePainted", () => firstFrame.resolve());
     // The islands' scripts answer 404, so only the fonts can move anything.
     await tab.addInitScript(() => {
       const state = window as unknown as { firstFrame?: string[]; shifts: number[]; boxes: () => string[] };
@@ -349,7 +358,12 @@ const firstFrameAndLoad = async (viewport: View, locale: "en" | "de" = "en") => 
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) state.shifts.push((entry as PerformanceEntry & { value: number }).value);
       }).observe({ type: "layout-shift", buffered: true });
-      document.addEventListener("DOMContentLoaded", () => requestAnimationFrame(() => (state.firstFrame = state.boxes())));
+      document.addEventListener("DOMContentLoaded", () =>
+        requestAnimationFrame(() => {
+          state.firstFrame = state.boxes();
+          (window as unknown as { firstFramePainted: () => void }).firstFramePainted();
+        }),
+      );
     });
     await tab.goto(`${origin}/share/minimal-layout-probe`, { waitUntil: "load" });
     await tab.waitForFunction(() => "firstFrame" in window);
@@ -375,6 +389,7 @@ const firstFrameAndLoad = async (viewport: View, locale: "en" | "de" = "en") => 
       return { firstFrame: state.firstFrame, loaded: state.boxes(), shifts: state.shifts, fonts, controls };
     });
   } finally {
+    firstFrame.resolve();
     await tab.close();
   }
 };
@@ -388,7 +403,9 @@ describe("standalone page load in a browser", () => {
       for (const locale of ["en", "de"] as const) {
         const context = `${viewport.name} ${locale}`;
         const page = await firstFrameAndLoad(viewport, locale);
-        expect(page.fonts, context).toEqual(expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600"]));
+        expect(page.fonts, context).toEqual(
+          expect.arrayContaining(["IBM Plex Sans 400", "IBM Plex Sans 500", "IBM Plex Sans 600", "tabler-icons 400"]),
+        );
         expect(page.loaded, context).toEqual(page.firstFrame);
         expect(page.shifts, context).toEqual([]);
       }

@@ -11,16 +11,23 @@ import {
 } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, NoticeCard, Placeholder } from "@k2b/ui";
+import { ButtonLink, NoticeCard, Placeholder, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
+import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
 import { type AccountMessages, accountMessages } from "./messages";
 
-const accountExpiryCopy = (expiresAt: string, t: AccountMessages): string => {
+// The page shell starts warning about an expiry 14 days ahead; the notice here only turns
+// urgent from the same point, so an account with a distant expiry reads as a fact.
+const EXPIRY_WARNING_DAYS = 14;
+
+const accountExpiryNotice = (expiresAt: string, t: AccountMessages) => {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return t.accountExpired;
-  if (days === 0) return t.accountExpiresToday;
-  return t.accountExpiresIn({ count: days });
+  if (days < 0) return { title: t.accountExpired, tone: "danger", icon: "ti ti-calendar-x" } as const;
+  return {
+    title: days === 0 ? t.accountExpiresToday : t.accountExpiresIn({ count: days }),
+    tone: days <= EXPIRY_WARNING_DAYS ? "warning" : "info",
+    icon: days <= EXPIRY_WARNING_DAYS ? "ti ti-calendar-exclamation" : "ti ti-calendar-event",
+  } as const;
 };
 
 const formatAddress = (address: {
@@ -53,6 +60,9 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   const customizedNotifications = notificationPreferences.definitions.filter((preference) => preference.customized).length;
   const action = c.req.query("action");
+  // Mirrors when the profile actions offer Extend account, so the notice has no empty action row.
+  const canExtend = user.provider !== "ipa" || freeIpaEnabled;
+  const expiryNotice = user.accountExpires ? accountExpiryNotice(user.accountExpires, t) : null;
   const address = formatAddress(user.ipa?.address ?? { street: null, postalCode: null, city: null, state: null });
 
   return () => (
@@ -65,212 +75,186 @@ export default ssr<AuthContext>(async (c) => {
           <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["avatar"]} trigger="avatar" />
         }
       >
-        <div class="flex flex-col gap-2">
-          <AccountPageHeader title={t.profile} description={t.profilePageDescription} />
+        <AccountPage title={t.profile} description={t.profilePageDescription}>
+          {(action === "extend" || user.accountExpires || pendingRequest || (user.provider === "ipa" && user.profile === "guest")) && (
+            <div class="flex flex-col gap-2">
+              {action === "extend" && (
+                <NoticeCard tone="info" icon={false}>
+                  {t.extendHint}
+                </NoticeCard>
+              )}
 
-          {action === "extend" && (
-            <NoticeCard tone="info" icon={false}>
-              {t.extendHint}
-            </NoticeCard>
-          )}
+              {expiryNotice && user.accountExpires && (
+                <NoticeCard tone={expiryNotice.tone} icon={expiryNotice.icon} title={expiryNotice.title}>
+                  <p>{t.extendBefore({ date: dates.formatDate(user.accountExpires, { locale }) })}</p>
+                  {canExtend && (
+                    <div class="mt-2">
+                      <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["extend"]} />
+                    </div>
+                  )}
+                </NoticeCard>
+              )}
 
-          {user.accountExpires && (
-            <section class="paper flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                <i class="ti ti-calendar-exclamation" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-primary">{accountExpiryCopy(user.accountExpires, t)}</h3>
-                <p class="mt-1 text-xs text-dimmed">{t.extendBefore({ date: dates.formatDate(user.accountExpires, { locale }) })}</p>
-              </div>
-              <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["extend"]} />
-            </section>
-          )}
+              {pendingRequest && (
+                <NoticeCard tone="info" icon="ti ti-clock" title={t.requestPending}>
+                  <p>{t.requestSubmitted({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) })}</p>
+                  <ButtonLink href="/me/access" variant="secondary" size="sm" class="mt-2">
+                    {t.access}
+                    <i class="ti ti-arrow-right" aria-hidden="true" />
+                  </ButtonLink>
+                </NoticeCard>
+              )}
 
-          {pendingRequest && (
-            <a
-              href="/me/access"
-              class="paper flex items-center gap-3 p-4 no-underline transition-colors hover:bg-[var(--ui-surface-subtle)]"
-            >
-              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                <i class="ti ti-clock" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-primary">{t.requestPending}</h3>
-                <p class="mt-1 text-xs text-dimmed">
-                  {t.requestSubmitted({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) })}
-                </p>
-              </div>
-              <i class="ti ti-chevron-right text-dimmed" />
-            </a>
-          )}
-
-          {user.provider === "ipa" && user.profile === "guest" && (
-            <NoticeCard tone="info" icon={false}>
-              {t.limitedAccess}
-            </NoticeCard>
-          )}
-
-          <section class="paper p-5 sm:p-6">
-            <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div class="min-w-0">
-                <h3 class="text-sm font-semibold text-primary">{t.profileTitle}</h3>
-                <p class="mt-1 text-xs text-dimmed">{t.profileDescription}</p>
-              </div>
-              <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["profile", "details"]} />
+              {user.provider === "ipa" && user.profile === "guest" && (
+                <NoticeCard tone="info" icon={false}>
+                  {t.limitedAccess}
+                </NoticeCard>
+              )}
             </div>
-            <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          )}
+
+          <SettingsSection
+            title={t.profileTitle}
+            subtitle={t.profileDescription}
+            actions={
+              <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["profile", "details"]} />
+            }
+          >
+            <dl class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
               <div>
-                <p class="section-label mb-1">{t.displayName}</p>
-                <p class="text-sm font-medium text-primary">{user.displayName || user.uid}</p>
+                <dt class="section-label mb-1">{t.displayName}</dt>
+                <dd class="text-sm font-medium text-primary">{user.displayName || user.uid}</dd>
               </div>
               <div>
-                <p class="section-label mb-1">{t.username}</p>
-                <p class="text-sm text-secondary">{user.uid}</p>
+                <dt class="section-label mb-1">{t.username}</dt>
+                <dd class="text-sm text-secondary">{user.uid}</dd>
               </div>
               <div>
-                <p class="section-label mb-1">{t.email}</p>
-                <p class="break-words text-sm text-secondary">{user.mail ?? t.notSet}</p>
+                <dt class="section-label mb-1">{t.email}</dt>
+                <dd class="break-words text-sm text-secondary">{user.mail ?? t.notSet}</dd>
               </div>
               <div>
-                <p class="section-label mb-1">{t.phone}</p>
-                <p class="text-sm text-secondary">{user.ipa?.phone ?? t.notSet}</p>
+                <dt class="section-label mb-1">{t.phone}</dt>
+                <dd class="text-sm text-secondary">{user.ipa?.phone ?? t.notSet}</dd>
               </div>
               {user.ipa?.mobile && user.ipa.mobile !== user.ipa.phone && (
                 <div>
-                  <p class="section-label mb-1">{t.mobile}</p>
-                  <p class="text-sm text-secondary">{user.ipa.mobile}</p>
+                  <dt class="section-label mb-1">{t.mobile}</dt>
+                  <dd class="text-sm text-secondary">{user.ipa.mobile}</dd>
                 </div>
               )}
               {user.ipa?.employeeType && (
                 <div>
-                  <p class="section-label mb-1">{t.employeeType}</p>
-                  <p class="text-sm text-secondary">{user.ipa.employeeType}</p>
+                  <dt class="section-label mb-1">{t.employeeType}</dt>
+                  <dd class="text-sm text-secondary">{user.ipa.employeeType}</dd>
                 </div>
               )}
               <div class="sm:col-span-2">
-                <p class="section-label mb-1">{t.address}</p>
-                <p class="text-sm text-secondary">{address ?? t.notSet}</p>
+                <dt class="section-label mb-1">{t.address}</dt>
+                <dd class="text-sm text-secondary">{address ?? t.notSet}</dd>
               </div>
-            </div>
-          </section>
+            </dl>
+          </SettingsSection>
 
-          <section class="paper p-5 sm:p-6">
-            <div class="mb-5">
-              <h3 class="text-sm font-semibold text-primary">{t.accountFacts}</h3>
-              <p class="mt-1 text-xs text-dimmed">{t.accountFactsDescription}</p>
-            </div>
-            <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          <SettingsSection title={t.accountFacts} subtitle={t.accountFactsDescription}>
+            <dl class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
               <div>
-                <p class="section-label mb-1">{t.accountType}</p>
-                <p class="text-sm text-secondary">{accountCategoryLabel(user, categoryPolicy.login.label)}</p>
+                <dt class="section-label mb-1">{t.accountType}</dt>
+                <dd class="text-sm text-secondary">{accountCategoryLabel(user, categoryPolicy.login.label)}</dd>
               </div>
               <div>
-                <p class="section-label mb-1">{t.accountExpiry}</p>
-                <p class="text-sm text-secondary">{user.accountExpires ? dates.formatDate(user.accountExpires, { locale }) : t.noExpiry}</p>
+                <dt class="section-label mb-1">{t.accountExpiry}</dt>
+                <dd class="text-sm text-secondary">
+                  {user.accountExpires ? dates.formatDate(user.accountExpires, { locale }) : t.noExpiry}
+                </dd>
               </div>
               <div>
-                <p class="section-label mb-1">{t.passwordExpiry}</p>
-                <p class="text-sm text-secondary">
+                <dt class="section-label mb-1">{t.passwordExpiry}</dt>
+                <dd class="text-sm text-secondary">
                   {user.ipa?.passwordExpires ? dates.formatDate(user.ipa.passwordExpires, { locale }) : t.notApplicable}
-                </p>
+                </dd>
               </div>
               <div>
-                <p class="section-label mb-1">{t.sshKeys}</p>
-                <p class="text-sm text-secondary">{t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 })}</p>
+                <dt class="section-label mb-1">{t.sshKeys}</dt>
+                <dd class="text-sm text-secondary">{t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 })}</dd>
               </div>
-            </div>
-          </section>
+            </dl>
+          </SettingsSection>
 
-          <section class="grid gap-2 sm:grid-cols-2">
-            <a href="/me/security" class="paper group p-4 no-underline transition-colors hover:bg-[var(--ui-surface-subtle)]">
-              <div class="flex items-start gap-3">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                  <i class="ti ti-shield-lock" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.security}</h3>
-                  <p class="mt-1 text-xs text-dimmed">
-                    {t.passkeyCount({ count: passkeys.length })} ·{" "}
-                    {activityPage.items.length > 0 ? t.recentActivityAvailable : t.noRecentActivity}
-                  </p>
-                </div>
-                <i class="ti ti-chevron-right text-dimmed" />
-              </div>
-            </a>
+          <ul class="-mx-3 grid gap-1 sm:grid-cols-2">
+            {(
+              [
+                {
+                  href: "/me/security",
+                  icon: "ti ti-shield-lock",
+                  title: t.security,
+                  summary: `${t.passkeyCount({ count: passkeys.length })} · ${
+                    activityPage.items.length > 0 ? t.recentActivityAvailable : t.noRecentActivity
+                  }`,
+                },
+                {
+                  href: "/me/access",
+                  icon: "ti ti-users-group",
+                  title: t.accessAndGroups,
+                  summary: t.membershipSummary({ direct: user.memberofGroup.length, managed: user.manages.length }),
+                },
+                {
+                  href: "/me/notifications",
+                  icon: "ti ti-bell",
+                  title: t.notifications,
+                  summary: customizedNotifications > 0 ? t.customizedPreferences({ count: customizedNotifications }) : t.usingAppDefaults,
+                },
+                {
+                  href: "/me/developer",
+                  icon: "ti ti-terminal-2",
+                  title: t.developer,
+                  summary: t.apiKeySummary({ count: apiKeys.length }),
+                },
+              ] satisfies { href: string; icon: string; title: string; summary: string }[]
+            ).map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  class="flex items-start gap-3 rounded-[var(--ui-radius-surface)] p-3 no-underline transition-colors hover:bg-[var(--ui-hover)]"
+                >
+                  <i class={`${link.icon} mt-0.5 text-dimmed`} aria-hidden="true" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block text-sm font-semibold text-primary">{link.title}</span>
+                    <span class="mt-1 block text-xs text-dimmed">{link.summary}</span>
+                  </span>
+                  <i class="ti ti-chevron-right mt-0.5 text-dimmed" aria-hidden="true" />
+                </a>
+              </li>
+            ))}
+          </ul>
 
-            <a href="/me/access" class="paper group p-4 no-underline transition-colors hover:bg-[var(--ui-surface-subtle)]">
-              <div class="flex items-start gap-3">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                  <i class="ti ti-users-group" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.accessAndGroups}</h3>
-                  <p class="mt-1 text-xs text-dimmed">
-                    {t.membershipSummary({ direct: user.memberofGroup.length, managed: user.manages.length })}
-                  </p>
-                </div>
-                <i class="ti ti-chevron-right text-dimmed" />
-              </div>
-            </a>
-
-            <a href="/me/notifications" class="paper group p-4 no-underline transition-colors hover:bg-[var(--ui-surface-subtle)]">
-              <div class="flex items-start gap-3">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                  <i class="ti ti-bell" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.notifications}</h3>
-                  <p class="mt-1 text-xs text-dimmed">
-                    {customizedNotifications > 0 ? t.customizedPreferences({ count: customizedNotifications }) : t.usingAppDefaults}
-                  </p>
-                </div>
-                <i class="ti ti-chevron-right text-dimmed" />
-              </div>
-            </a>
-
-            <a href="/me/developer" class="paper group p-4 no-underline transition-colors hover:bg-[var(--ui-surface-subtle)]">
-              <div class="flex items-start gap-3">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-                  <i class="ti ti-terminal-2" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.developer}</h3>
-                  <p class="mt-1 text-xs text-dimmed">{t.apiKeySummary({ count: apiKeys.length })}</p>
-                </div>
-                <i class="ti ti-chevron-right text-dimmed" />
-              </div>
-            </a>
-          </section>
-
-          <section class="paper p-5">
-            <div class="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h3 class="text-sm font-semibold text-primary">{t.recentSecurityActivity}</h3>
-                <p class="mt-1 text-xs text-dimmed">{t.recentSecurityActivityDescription}</p>
-              </div>
-              <ButtonLink href="/me/security" variant="ghost" size="sm" class="shrink-0">
+          <SettingsSection
+            title={t.recentSecurityActivity}
+            subtitle={t.recentSecurityActivityDescription}
+            actions={
+              <ButtonLink href="/me/security" variant="ghost" size="sm">
                 {t.viewAll}
-                <i class="ti ti-arrow-right" />
+                <i class="ti ti-arrow-right" aria-hidden="true" />
               </ButtonLink>
-            </div>
+            }
+          >
             {activityPage.items.length > 0 ? (
-              <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
+              <ul class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
                 {activityPage.items.slice(0, 3).map((entry) => (
-                  <div class="grid gap-1 rounded-[var(--ui-radius-control)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                  <li class="grid gap-1 rounded-[var(--ui-radius-control)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div class="min-w-0">
                       <p class="truncate text-sm font-medium text-primary">{entry.label}</p>
                       <p class="mt-0.5 truncate text-xs text-dimmed">{entry.context || t.accountContext}</p>
                     </div>
                     <span class="text-xs text-dimmed">{dates.formatDateTimeRelative(entry.createdAt, { locale })}</span>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
               <Placeholder align="left" description={t.noRecentAccountActivity} />
             )}
-          </section>
-        </div>
+          </SettingsSection>
+        </AccountPage>
       </AccountHub>
     </Layout>
   );

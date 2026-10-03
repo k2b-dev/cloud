@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import type { WebAuthnPasskey } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
+import { Button, Placeholder, prompts, SettingsSection, TextInput, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { createSignal, For, Show } from "solid-js";
 import { accountMessages } from "./messages";
@@ -16,7 +16,6 @@ const safeErrorCode = async (res: { status: number; json: () => Promise<unknown>
 
 type Props = {
   initialPasskeys: WebAuthnPasskey[];
-  surface?: "paper" | "section";
 };
 
 function PasskeyCreateDialog(props: { close: (value: { name: string } | null) => void }) {
@@ -72,7 +71,6 @@ export default function PasskeysSettings(props: Props) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   const [passkeys, setPasskeys] = createSignal<WebAuthnPasskey[]>(props.initialPasskeys);
-  const rootClass = () => (props.surface === "section" ? "min-w-0" : "paper p-5");
 
   const createMutation = mutations.create<WebAuthnPasskey, { name: string }>({
     mutation: async (vars) => {
@@ -157,21 +155,16 @@ export default function PasskeysSettings(props: Props) {
   };
 
   return (
-    <section class={rootClass()}>
-      <div class="mb-5 flex items-start justify-between gap-3">
-        <div>
-          <h2 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
-            <i class="ti ti-fingerprint text-sm" />
-            {t().passkeys}
-          </h2>
-          <p class="mt-1 text-xs text-dimmed">{t().passkeysDescription}</p>
-        </div>
-        <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={openCreate} disabled={createMutation.loading()}>
-          <i class="ti ti-plus" />
+    <SettingsSection
+      title={t().passkeys}
+      subtitle={t().passkeysDescription}
+      actions={
+        <Button type="button" variant="secondary" size="sm" onClick={openCreate} disabled={createMutation.loading()}>
+          <i class="ti ti-plus" aria-hidden="true" />
           {t().add}
         </Button>
-      </div>
-
+      }
+    >
       <Show when={passkeys().length > 0} fallback={<Placeholder icon="ti ti-fingerprint" description={<>{t().noPasskeys}</>} />}>
         <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
           <For each={passkeys()}>
@@ -210,6 +203,6 @@ export default function PasskeysSettings(props: Props) {
           </For>
         </div>
       </Show>
-    </section>
+    </SettingsSection>
   );
 }

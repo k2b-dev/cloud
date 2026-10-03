@@ -60,8 +60,9 @@ the page surface, with no card, header rule, or lines between fields. About
 2rem of space separates sections, so the page stays the only frame, and the
 page title sits one size step above the section titles. Header actions stay
 beside the heading while it keeps about 16rem and wrap below it otherwise, so
-a single icon action still fits on a phone. The section icon and its heading
-always share a line. Keep `PanelDialog.Section` inside dialogs; it
+a single icon action still fits on a phone. Actions that do not fit on one
+row wrap onto further rows and never reach past the section's edge. The
+section icon and its heading always share a line. Keep `PanelDialog.Section` inside dialogs; it
 intentionally has a different containment contract.
 
 Put a shared action, such as a documentation link, once in the page

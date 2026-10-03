@@ -11,6 +11,7 @@ import { type CorrectionDraftIntent, correctionDraftIntent } from "../../../work
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import { isUserEditable } from "../fields/field-prompt-schema";
 import { errorMessage } from "../utils/api-helpers";
+import { createRetryToasts } from "../utils/feedback";
 import type {
   PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
   PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
@@ -72,6 +73,7 @@ const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraf
 export default function RecordDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const retryToast = createRetryToasts();
   let disposed = false;
   let correctionOperation: { key: string; id: string } | null = null;
   let correctionRecordId: string | null = null;
@@ -126,11 +128,12 @@ export default function RecordDetailPanel(props: Props) {
     if (!rec) return;
     void refreshFinalization(rec).catch(() => prompts.error(t().actionRefreshFailed));
   };
-  const refreshAfterFinalizationMutation = () => {
+  /** The change was saved, only the finalization state is stale, so Retry repeats the refresh, not the change. */
+  const refreshAfterFinalizationMutation = (): void => {
     void (async () => {
       await finalizationQuery.refresh();
       if (finalizationQuery.error()) throw finalizationQuery.error();
-    })().catch(() => prompts.error(t().successRefreshFailed));
+    })().catch(() => retryToast(t().successRefreshFailed, { retryLabel: t().retry, retry: refreshAfterFinalizationMutation }));
   };
 
   // ---- Mutations ---------------------------------------------------------
@@ -163,7 +166,7 @@ export default function RecordDetailPanel(props: Props) {
       return rec.id;
     },
     onSuccess: () => props.onRemoved(),
-    onError: (e) => prompts.error(e.message),
+    onError: (e) => toast.error(e.message),
   });
 
   const restoreMut = mutations.create<string, { rec: GridRecord; audit?: RecordMutationAudit }>({
@@ -176,7 +179,7 @@ export default function RecordDetailPanel(props: Props) {
       return rec.id;
     },
     onSuccess: () => props.onRemoved(),
-    onError: (e) => prompts.error(e.message),
+    onError: (e) => toast.error(e.message),
   });
 
   const createCorrectionMut = mutations.create<
@@ -209,7 +212,7 @@ export default function RecordDetailPanel(props: Props) {
     onError: (error) => {
       correctionRecordId = null;
       if (error instanceof CorrectionDraftInvocationError && !error.retrySameOperation) correctionOperation = null;
-      prompts.error(error.message);
+      toast.error(error.message);
     },
     onAbort: () => {
       correctionRecordId = null;

@@ -4,7 +4,7 @@ import { oauthTokens } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { generateSpecs } from "hono-openapi";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
-import { focus, mailboxAccess, publicResources } from "../service";
+import { focus, mailboxAccess, mailboxPreferences, publicResources } from "../service";
 import * as workspace from "../service/workspace";
 import app from ".";
 
@@ -114,6 +114,32 @@ suite("Mail focus API", () => {
     });
     expect(malformed.status).toBe(400);
     expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  test("saves a pin or hide for the signed-in person on the mailbox's internal ID", async () => {
+    const mailboxId = "33333333-3333-4333-8333-333333333333";
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    const save = spyOn(mailboxPreferences, "setMailboxPreference").mockResolvedValue(ok({ pinned: false, hidden: true }));
+    const request = (body: unknown) =>
+      app.request("/mailboxes/Mail01/preference", {
+        method: "PATCH",
+        headers: { authorization: "Bearer mail-focus-api-test", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    const response = await request({ hidden: true });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ pinned: false, hidden: true });
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ actor: expect.anything() }), mailboxId, { hidden: true });
+
+    // A change must say what to change.
+    expect((await request({})).status).toBe(400);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    const spec = await generateSpecs(app);
+    expect(spec.paths?.["/mailboxes/{mailboxId}/preference"]?.patch?.tags).toContain("Mail:Mailboxes");
+    expect(spec.paths?.["/mailboxes/preferences"]?.get?.tags).toContain("Mail:Mailboxes");
   });
 
   test("resolves public mailbox and conversation IDs for overview details", async () => {
