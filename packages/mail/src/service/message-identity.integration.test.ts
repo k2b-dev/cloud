@@ -51,6 +51,7 @@ suite("mail message identity and threading on generic IMAP", () => {
     from: Address;
     to: Address[];
     cc?: Address[];
+    bcc?: Address[];
     date: Date;
     internalDate?: Date;
     sizeBytes?: number;
@@ -71,7 +72,7 @@ suite("mail message identity and threading on generic IMAP", () => {
       sizeBytes: params.sizeBytes ?? 512,
       flags: [],
       labels: [],
-      addresses: { from: [params.from], replyTo: [], to: params.to, cc: params.cc ?? [], bcc: [] },
+      addresses: { from: [params.from], replyTo: [], to: params.to, cc: params.cc ?? [], bcc: params.bcc ?? [] },
       mimeStructure: {},
     };
   };
@@ -373,8 +374,12 @@ steps:
     const date = new Date("2026-08-03T09:00:00.000Z");
     const team: Address = { name: "Team", address: "team@example.test" };
     const fields = { messageId, subject: "Team update", from: supportAddress, to: [team], date };
-    // The delivered copy carries extra Received headers and arrives a little later.
-    const sentId = await ingest("sent", envelope({ folder: "sent", ...fields, sizeBytes: 900 }));
+    // The delivered copy carries extra Received headers and arrives a little later; only the copy
+    // in Sent keeps the Bcc recipient.
+    const sentId = await ingest(
+      "sent",
+      envelope({ folder: "sent", ...fields, bcc: [{ name: "Manager", address: "manager@example.test" }], sizeBytes: 900 }),
+    );
     const deliveredId = await ingest(
       "inbox",
       envelope({ folder: "inbox", ...fields, sizeBytes: 1_400, internalDate: new Date("2026-08-03T09:00:04.000Z") }),
@@ -382,6 +387,14 @@ steps:
     );
     expect(deliveredId).toBe(sentId);
     expect(await projection(messageId)).toEqual({ contents: 1, links: 1, live_placements: 2 });
+    const addresses = await sql<{ role: string; normalized_email: string }[]>`
+      SELECT role, normalized_email FROM mail.message_addresses WHERE message_id = ${sentId}::uuid ORDER BY role, position
+    `;
+    expect(addresses).toEqual([
+      { role: "bcc", normalized_email: "manager@example.test" },
+      { role: "from", normalized_email: support },
+      { role: "to", normalized_email: "team@example.test" },
+    ]);
   });
 
   test("unrelated mail with the same subject from different senders stays apart", async () => {
@@ -622,6 +635,20 @@ steps:
     );
     expect(nextNotice).not.toBe(firstNotice);
     expect(await conversationOf(nextNotice)).not.toBe(await conversationOf(firstNotice));
+
+    // Newest first, an older notice with the reused Message-ID joins no later reply either.
+    const olderNotice = await ingest(
+      "inbox",
+      envelope({
+        folder: "inbox",
+        messageId: fixedId,
+        subject: "Quarterly notice",
+        from: notices,
+        to: [supportAddress],
+        date: new Date("2025-10-05T09:00:00.000Z"),
+      }),
+    );
+    expect(await conversationOf(olderNotice)).not.toBe(await conversationOf(firstNotice));
   });
 
   test("a thread synchronized out of order becomes one conversation", async () => {
