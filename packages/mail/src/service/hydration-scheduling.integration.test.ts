@@ -10,6 +10,7 @@ import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
 import { createMailbox } from "./mailboxes";
+import { getOperatorActionEligibility } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
 import { mailProviderOperationMutex } from "./provider-operation-lock";
 import {
@@ -473,7 +474,14 @@ suite("mail body hydration scheduling", () => {
     const retried = await insertClaimed(1, 1, "1 hour");
     const exhausted = await insertClaimed(2, 5, "1 hour");
     const running = await insertClaimed(3, 1, "0 seconds");
-    // Nothing else in the mailbox is pending, so no batch would come across these claims.
+    // Nothing else in the mailbox is pending, so no batch would come across these claims, but the
+    // operator's hydration repair is offered for them.
+    await expect(
+      getOperatorActionEligibility({
+        mailboxId: fixture.mailboxId,
+        input: { kind: "hydrate_missing", idempotencyKey: `interrupted-${suffix}` },
+      }),
+    ).resolves.toMatchObject({ eligible: true });
     expect(await recoverInterruptedHydrations()).toBeGreaterThanOrEqual(2);
     await waitFor(async () => (await hydrationState(retried))?.hydration_status === "complete");
     expect(await hydrationState(retried)).toEqual({ hydration_status: "complete", hydration_attempt: 2, hydration_error_code: null });

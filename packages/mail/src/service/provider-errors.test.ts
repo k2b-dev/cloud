@@ -55,6 +55,26 @@ describe("provider connection failures", () => {
     }
   });
 
+  test("count a login whose connection broke, or that the SMTP server cannot check for now, as transient", () => {
+    // ImapFlow marks every failed LOGIN as an authentication failure, also one whose connection closed before the reply.
+    const dropped = Object.assign(new Error("Connection not available"), { code: "NoConnection", authenticationFailed: true });
+    // RFC 4954: 454 4.7.0 Temporary authentication failure.
+    const smtpTemporary = Object.assign(new Error("Invalid login: 454 4.7.0 Temporary authentication failure"), {
+      code: "EAUTH",
+      responseCode: 454,
+    });
+    for (const error of [dropped, smtpTemporary]) {
+      expect(isTransientProviderFailure(error), error.message).toBe(true);
+      expect(isProviderAuthenticationFailure(error), error.message).toBe(false);
+    }
+    const smtpRejected = Object.assign(new Error("Invalid login: 535 5.7.8 Authentication credentials invalid"), {
+      code: "EAUTH",
+      responseCode: 535,
+    });
+    expect(isTransientProviderFailure(smtpRejected)).toBe(false);
+    expect(isProviderAuthenticationFailure(smtpRejected)).toBe(true);
+  });
+
   test("classify a failed IMAP and SMTP verification by the failures behind it", () => {
     const verification = (...failures: unknown[]) =>
       Object.assign(new Error("IMAP: ...; SMTP: ..."), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", failures });

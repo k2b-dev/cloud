@@ -29,7 +29,7 @@ import type {
   SmtpTransportCapabilities,
 } from "../../contracts";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS, extractMessageProtocolFacts } from "../message-protocol";
-import { isTemporaryLoginRefusal, providerErrorDetail } from "../provider-errors";
+import { isTemporaryLoginFailure, providerErrorDetail } from "../provider-errors";
 import type {
   ConnectorAddress,
   ConnectorChangeListener,
@@ -599,7 +599,7 @@ export const transportDiagnostic = (
   const error = result.reason as { code?: unknown; message?: unknown; authenticationFailed?: unknown } | null;
   const code = typeof error?.code === "string" ? error.code.toUpperCase() : "";
   const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
-  const category = isTemporaryLoginRefusal(result.reason)
+  const category = isTemporaryLoginFailure(result.reason)
     ? "unavailable"
     : error?.authenticationFailed === true || code.includes("AUTH") || message.includes("auth") || message.includes("credential")
       ? "authentication"

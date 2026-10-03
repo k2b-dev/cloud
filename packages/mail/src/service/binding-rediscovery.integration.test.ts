@@ -297,6 +297,12 @@ suite("mail binding rediscovery", () => {
       `;
       return row;
     };
+    const mailboxHealth = async () => {
+      const [row] = await sql<{ health: string; health_reason: string | null }[]>`
+        SELECT health, health_reason FROM mail.mailboxes WHERE id = ${bound.mailboxId}::uuid
+      `;
+      return row;
+    };
     try {
       await rediscoverProviderBinding({ bindingId: bound.bindingId });
       const inboxId = (await projectedFolders(bound.bindingId)).INBOX!.id;
@@ -320,6 +326,21 @@ suite("mail binding rediscovery", () => {
             responseText: "Temporary authentication failure",
           }),
         ],
+        // ImapFlow marks a LOGIN whose connection closed before the reply as an authentication failure.
+        [
+          "connection lost during login",
+          Object.assign(new Error("Connection not available"), { code: "NoConnection", authenticationFailed: true }),
+        ],
+        // RFC 4954: the SMTP server cannot check the credentials for now.
+        [
+          "temporary SMTP login failure",
+          Object.assign(new Error("IMAP: Verified; SMTP: Authentication failed"), {
+            code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED",
+            failures: [
+              Object.assign(new Error("Invalid login: 454 4.7.0 Temporary authentication failure"), { code: "EAUTH", responseCode: 454 }),
+            ],
+          }),
+        ],
       ];
       for (const [label, error] of outages) {
         // Every attempt of the job, as during an outage longer than its retry budget.
@@ -331,7 +352,14 @@ suite("mail binding rediscovery", () => {
         verify.mockImplementation(async (config) => fixtureVerification(config.username));
         expect(await bindingState(), label).toMatchObject({ binding: "active", connection: "active" });
         expect(await submitDueFolderSyncs(100_000), label).toContain(inboxId);
+        // The mailbox shows the outage, as after a failed folder sync, instead of restored access.
+        expect(await mailboxHealth(), label).toEqual({ health: "degraded", health_reason: error.message });
       }
+      await rediscoverProviderBinding({ bindingId: bound.bindingId });
+      expect(await mailboxHealth()).toEqual({
+        health: "bootstrapping",
+        health_reason: "Provider access restored; synchronization pending",
+      });
 
       const rejected = Object.assign(new Error("Command failed"), {
         authenticationFailed: true,
@@ -341,8 +369,7 @@ suite("mail binding rediscovery", () => {
       verify.mockRejectedValueOnce(rejected);
       await expect(rediscoverProviderBinding({ bindingId: bound.bindingId })).rejects.toThrow();
       expect(await bindingState()).toMatchObject({ binding: "degraded", connection: "degraded" });
-      const [mailbox] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${bound.mailboxId}::uuid`;
-      expect(mailbox?.health).toBe("auth_required");
+      expect(await mailboxHealth()).toMatchObject({ health: "auth_required" });
     } finally {
       discover.mockRestore();
       verify.mockRestore();

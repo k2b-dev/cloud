@@ -607,18 +607,21 @@ const updateMailboxBindingHealth = async (
     WHERE resource.mailbox_id = ${mailboxId}::uuid
   `;
   if ((state?.active ?? 0) > 0) {
+    // A binding that stays active through a failure, such as a provider that cannot be reached,
+    // shows the failure as a failed folder sync does, not restored access.
     await sql`
       UPDATE mail.mailboxes
       SET
         health = CASE
           WHEN sync_enabled = false THEN 'paused'
-          WHEN ${state?.degraded ?? 0} > 0 OR ${state?.ambiguous ?? 0} > 0 THEN 'degraded'
+          WHEN ${state?.degraded ?? 0} > 0 OR ${state?.ambiguous ?? 0} > 0 OR ${failure !== undefined} THEN 'degraded'
           WHEN health IN ('auth_required', 'connection_required', 'degraded', 'reconnecting') THEN 'bootstrapping'
           ELSE health
         END,
         health_reason = CASE
           WHEN sync_enabled = false THEN 'Synchronization paused by a mailbox administrator'
           WHEN ${state?.degraded ?? 0} > 0 THEN 'One or more provider bindings require attention'
+          WHEN ${failure !== undefined} THEN ${failure?.message ?? null}
           WHEN ${state?.ambiguous ?? 0} > 0 THEN 'One or more remote folders require identity review'
           WHEN health IN ('auth_required', 'connection_required', 'degraded', 'reconnecting') THEN 'Provider access restored; synchronization pending'
           ELSE health_reason
@@ -649,6 +652,7 @@ const markRediscoveryFailure = async (
   const code = providerErrorCode(error, "PROVIDER_REDISCOVERY_FAILED");
   const message = providerErrorMessage(error, "Provider rediscovery failed");
   const authFailure = isProviderAuthenticationFailure(error, code);
+  const transient = !authFailure && isTransientProviderFailure(error);
   const affected = authFailure
     ? await sql.begin(async (tx) => {
         const [connection] = await tx<{ id: string }[]>`
@@ -677,7 +681,7 @@ const markRediscoveryFailure = async (
       await sql<{ mailbox_id: string }[]>`
         UPDATE mail.provider_bindings binding
         SET
-          state = CASE WHEN ${isTransientProviderFailure(error)} THEN binding.state ELSE 'degraded' END,
+          state = CASE WHEN ${transient} THEN binding.state ELSE 'degraded' END,
           last_error_code = ${code},
           last_error_message = ${message}
         FROM mail.remote_resources resource, mail.provider_connections connection
