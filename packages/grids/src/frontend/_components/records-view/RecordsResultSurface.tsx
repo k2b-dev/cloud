@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, Placeholder, useLocale } from "@k2b/ui";
-import { type ComponentProps, Match, Switch } from "solid-js";
+import { type ComponentProps, type JSX, Match, Switch } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { AggregationSpec, ColumnSpec, GroupBySpec, RecordDisplayConfig } from "../../../contracts";
 import type { GridFilePreview } from "../../../service";
@@ -49,6 +49,8 @@ type Props = {
   canEditView: boolean;
   resultNarrowed: boolean;
   onClearResultNarrowing: () => void;
+  /** Creation controls offered when the table has no records yet; omitted when the user cannot add any. */
+  emptyAction?: JSX.Element;
   bulkSelection: DatabaseTableProps["bulkSelection"];
   dateConfig?: DateContext;
   onRecordClick: (record: GridRecord) => void;
@@ -72,6 +74,17 @@ export default function RecordsResultSurface(props: Props) {
   const loadingMore = () => props.loading && Boolean(props.cursor);
   const emptyNarrowedResult = () =>
     props.resultNarrowed && !props.loading && (props.grouped ? props.buckets.length === 0 : props.items.length === 0);
+  // A table without any records says so with room for its first one. Edit mode keeps the column headers, which carry the
+  // field settings, and saved views or the trash keep the table because their own filters decide what is empty.
+  const emptyTable = () =>
+    props.mode === "table" &&
+    !props.grouped &&
+    !props.trashMode &&
+    !props.adminMode &&
+    !props.savedView &&
+    !props.resultNarrowed &&
+    !props.loading &&
+    props.items.length === 0;
 
   return (
     <div class="flex-1 min-h-0 flex flex-col gap-2">
@@ -116,6 +129,16 @@ export default function RecordsResultSurface(props: Props) {
                 {t().clearSearchFilters}
               </Button>
             }
+          />
+        </Match>
+        <Match when={emptyTable()}>
+          <Placeholder
+            variant="panel"
+            icon="ti ti-table"
+            title={t().noRecordsYet}
+            description={t().noRecordsYetDescription}
+            class="flex-1"
+            action={props.emptyAction}
           />
         </Match>
         <Match when={props.grouped}>

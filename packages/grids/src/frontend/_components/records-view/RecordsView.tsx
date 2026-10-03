@@ -38,6 +38,7 @@ import type { QueryWorkspaceCurrentSource } from "../query/query-workspace-model
 import { openCombinedAuditDialog } from "../records/CombinedAuditDialog";
 import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
 import type { GroupBucket } from "../table/GroupedTable";
+import { GridCreateActions } from "../toolbar/GridCreateActions";
 import GridToolbar from "../toolbar/GridToolbar";
 // Plain children share RecordsView's hydrated state; nested islands cannot
 // serialize the callback props used by these controls.
@@ -892,6 +893,26 @@ export default function RecordsView(props: Props) {
               canEditView={!!props.canEditActiveView}
               resultNarrowed={resultNarrowed()}
               onClearResultNarrowing={clearResultNarrowing}
+              emptyAction={
+                props.canWrite ? (
+                  <div class="flex flex-wrap items-center justify-center gap-2">
+                    <GridCreateActions
+                      baseId={props.baseId}
+                      tableId={props.tableId}
+                      tableName={tableName()}
+                      disableDirectInsert={disableDirectInsert()}
+                      fields={fields()}
+                      forms={forms()}
+                      canWrite={props.canWrite}
+                      canDirectWrite={canDirectWrite()}
+                      canSubmitForms={props.canWrite && mutationSourceAllowed("form")}
+                      onRecordCreated={onRecordCreated}
+                      onRecordsChanged={() => void refreshVisibleRecords({ force: true })}
+                      dateConfig={props.dateConfig}
+                    />
+                  </div>
+                ) : undefined
+              }
               bulkSelection={
                 bulkSelectionEnabled()
                   ? {
