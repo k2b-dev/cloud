@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from application events while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-09-23
+updated: 2026-10-03
 ---
 
 # Realtime UI
@@ -74,6 +74,28 @@ the last applied cursor, and `onOpen` runs again.
 
 Terminal closes and `dispose()` end recovery. Neither reconnects.
 
+## Refresh on ready only when the cursor moved
+
+A returning tab opens a new socket, so the server confirms the subscription
+again. `controls.subscribedCursor()` returns the cursor the current connection
+subscribed from. When the server's ready cursor equals it, the stream resumes
+right after that cursor and replays every missed event, so the page needs no
+snapshot refresh. Any other cursor, for example the head after a subscription
+without a cursor or after skipped replay, means events were missed: refresh
+the snapshot, then mark that cursor applied.
+
+```ts
+if (message.type === "ready") {
+  if (message.cursor !== controls.subscribedCursor()) {
+    void refreshSnapshot().then(() => controls.markApplied(message.cursor));
+  }
+  return;
+}
+```
+
+Refresh on every ready only when replay cannot cover the page, for example
+when it shows values derived from other resources or from the current time.
+
 ## Advance only after coverage
 
 For a server-backed snapshot, call `markApplied()` only after the matching
@@ -83,6 +105,12 @@ several queries, wait for all matching invalidations.
 Apply an event directly only when it contains the complete authoritative
 projection. If apply or invalidation fails, do not advance. A reconnect can
 replay the event from the last known good cursor.
+
+A query whose owner is disposed while it refreshes rejects its invalidation,
+for example a list column that the refreshed snapshot replaced. The disposed
+query no longer shows data, so treat that rejection as covered, not as a
+failure. Retry a real failure a few times with backoff, for example with
+`retry` from `@k2b/sync/retry`, before the page gives up and reloads.
 
 When the server reports cursor overflow or the local state cannot reconcile,
 reload the authorized snapshot.
@@ -98,9 +126,10 @@ streams.
 Close code `1008` is terminal by default and surfaces an access error. Do not
 keep reconnecting after permission is lost.
 
-Close codes `1011` and `1013` are also terminal by default. Return `null` from
-a custom `classifyClose` handler only when the application can safely
-reconnect.
+Every other close reconnects with backoff by default, including `1011`
+(internal error) and `1013` (try again later). The gateway also sends these
+for a failed or overloaded proxy connection. Return an error from a custom
+`classifyClose` handler only for a close that a new subscription cannot fix.
 
 On the server, close with `1012` when a lookup throws because infrastructure
 is briefly unavailable, for example the stream cursor or the session store.
@@ -111,7 +140,7 @@ again. Keep `1008` for access decisions.
 
 The gateway reports abnormal upstream disconnects and failed upstream connection
 attempts as `1012`, so the live client retries during an application restart.
-Explicit application close codes, including terminal `1011`, are preserved.
+Explicit application close codes are preserved.
 
 The URL must still identify the visible resource and view. A reload asks the
 server for a fresh authorized result.
@@ -120,15 +149,24 @@ Reload automatically, from a live event, a terminal close, or a failed
 invalidation, only through `reloadOnce(key)` from `@k2b/cloud/browser/reload`.
 It reloads at most once per key within 30 seconds in the tab, so a condition
 that persists after the reload cannot reload the page in a loop. When it
-returns `false`, keep the page usable and offer a reload button instead:
+returns `false`, keep the page usable and offer a reload action in a
+persistent toast. A banner above the content would push the page down; a
+reconnect that succeeds shows nothing.
 
 ```ts
 import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { toast } from "@k2b/ui";
 
 onFatal: () => {
-  if (!reloadOnce(`tasks:live:${boardId}`)) setLiveUnavailable(true);
+  if (reloadOnce(`tasks:live:${boardId}`)) return;
+  unavailable = toast(t.liveUpdatesUnavailable, {
+    duration: 0,
+    action: { label: t.reload, onClick: () => window.location.reload() },
+  });
 },
 ```
+
+Dismiss the toast when the island is cleaned up.
 
 `reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
 reload that follows an explicit user action does not need the guard.

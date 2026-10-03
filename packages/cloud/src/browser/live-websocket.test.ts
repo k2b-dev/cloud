@@ -316,6 +316,58 @@ describe("createLiveWebSocket", () => {
     connection.dispose();
   });
 
+  test.each([1011, 1012, 1013])("reconnects with backoff after close code %i by default", (code) => {
+    installBrowser();
+    const errors: string[] = [];
+    const statuses: string[] = [];
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+      onStatus: (status) => statuses.push(status),
+      onFatal: (error) => errors.push(error.code),
+    });
+
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    FakeWebSocket.instances[0]!.close(code, "temporarily_unavailable");
+    expect(statuses.at(-1)).toBe("reconnecting");
+    runNextTimer();
+
+    expect(errors).toEqual([]);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    connection.dispose();
+  });
+
+  test("tells a ready handler which cursor the current connection resumed from", () => {
+    installBrowser();
+    const resumedFrom: Array<string | null> = [];
+    const connection = createLiveWebSocket<{ type: "ready" | "event"; cursor: string }>({
+      url: "/api/example/ws",
+      subscribe: (cursor) => ({ type: "subscribe", payload: { fromCursor: cursor } }),
+      parse: (raw) => JSON.parse(raw) as { type: "ready" | "event"; cursor: string },
+      onMessage: (message, controls) => {
+        if (message.type === "ready") resumedFrom.push(controls.subscribedCursor());
+        else controls.markApplied(message.cursor);
+      },
+    });
+
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    FakeWebSocket.instances[0]!.message({ type: "ready", cursor: "5-0" });
+    FakeWebSocket.instances[0]!.message({ type: "event", cursor: "5-1" });
+    // The subscribed cursor stays fixed for the connection while events advance the applied cursor.
+    FakeWebSocket.instances[0]!.message({ type: "ready", cursor: "5-1" });
+    document.setVisibility("hidden");
+    document.setVisibility("visible");
+    FakeWebSocket.instances[1]!.open();
+    FakeWebSocket.instances[1]!.message({ type: "ready", cursor: "5-1" });
+
+    expect(resumedFrom).toEqual([null, null, "5-1"]);
+    connection.dispose();
+  });
+
   test.each([...resumeEvents])("recovers a stalled reconnect on %s and resumes from the applied cursor", (event) => {
     installBrowser();
     const statuses: string[] = [];
