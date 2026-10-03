@@ -1,7 +1,7 @@
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { listenPopState, navigate, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
-import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
+import { query as queries } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
   Avatar,
@@ -11,6 +11,7 @@ import {
   Dropdown,
   dialogCore,
   IconButton,
+  InlineGuidance,
   NoticeCard,
   PanelDialog,
   PanelHeader,
@@ -28,7 +29,6 @@ import { apiClient } from "@/api/client";
 import type { Space } from "@/contracts";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { setLastSpaceId, setPinnedSpaceIds, type ViewType, writeSpaceSettings } from "./[id]/_components/settings/SpaceSettingsStore";
-import { createRetryToasts } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
 import { createSpaceCommands } from "./space-commands";
 
@@ -280,18 +280,37 @@ const blankStarter: SpaceStarter = {
   color: "#3b82f6",
 };
 
-function CreateSpaceForm(props: { starter: SpaceStarter; close: (value: SpaceDraft | null) => void }) {
+/** Creates the Space from the dialog, which stays open until the server answers; a refusal shows here with the input. */
+function CreateSpaceForm(props: {
+  starter: SpaceStarter;
+  create: (draft: SpaceDraft) => Promise<Space>;
+  close: (value: Space | null) => void;
+}) {
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
   const [name, setName] = createSignal(props.starter.id === "blank" ? "" : props.starter.name);
   const [description, setDescription] = createSignal(props.starter.id === "blank" ? "" : props.starter.description);
   const [color, setColor] = createSignal(props.starter.color);
+  const [submitting, setSubmitting] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const submit = async () => {
+    if (!name().trim() || submitting()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      props.close(await props.create({ name: name().trim(), description: description().trim(), color: color() }));
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : t.createFailed);
+    } finally {
+      setSubmitting(false);
+    }
+  };
   return (
     <form
       class="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        if (name().trim()) props.close({ name: name().trim(), description: description().trim(), color: color() });
+        void submit();
       }}
     >
       <NoticeCard tone="info" icon={false}>
@@ -317,11 +336,18 @@ function CreateSpaceForm(props: { starter: SpaceStarter; close: (value: SpaceDra
         lines={3}
       />
       <ColorInput label={t.color} description={t.colorDescription} value={color} onValueChange={setColor} />
+      <Show when={error()}>
+        {(message) => (
+          <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+            {message()}
+          </InlineGuidance>
+        )}
+      </Show>
       <div class="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
+        <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)} disabled={submitting()}>
           {t.cancel}
         </Button>
-        <Button type="submit" size="sm">
+        <Button type="submit" size="sm" loading={submitting()}>
           {t.create}
         </Button>
       </div>
@@ -346,7 +372,6 @@ export default function SpacesOverview(props: Props) {
   createSpaceCommands({ dateConfig: props.dateConfig });
   const locale = useLocale();
   const { t } = overviewMessages.resolve([locale()]);
-  const retryToast = createRetryToasts();
   const localizeStarter = (starter: SpaceStarter): SpaceStarter => ({
     ...starter,
     name:
@@ -448,39 +473,31 @@ export default function SpacesOverview(props: Props) {
   const activityItems = createMemo(() => activity.pages().flatMap((page) => page.data));
   const activityError = () => activity.error()?.message ?? initialActivityError();
 
-  type CreateSpaceIntent = { starter: SpaceStarter; draft: SpaceDraft };
-  const createSpaceMutation = mutations.create<{ space: Space; starter: SpaceStarter }, CreateSpaceIntent, { intent: CreateSpaceIntent }>({
-    onBefore: (intent) => ({ intent }),
-    mutation: async ({ starter, draft }) => {
-      const response = await apiClient.index.$post({
-        json: {
-          name: draft.name,
-          description: draft.description || undefined,
-          color: draft.color,
-          starter: starter.id as "blank" | "tasks" | "calendar" | "project",
-        },
-      });
-      if (!response.ok) throw new Error(await readResponseError(response, t.createFailed));
-      return { space: await response.json(), starter };
-    },
-    // Opening the new space is the confirmation.
-    onSuccess: ({ space, starter }) => {
+  const createSpaceFromDraft = async (starter: SpaceStarter, draft: SpaceDraft): Promise<Space> => {
+    const response = await apiClient.index.$post({
+      json: {
+        name: draft.name,
+        description: draft.description || undefined,
+        color: draft.color,
+        starter: starter.id as "blank" | "tasks" | "calendar" | "project",
+      },
+    });
+    if (!response.ok) throw new Error(await readResponseError(response, t.createFailed));
+    return response.json();
+  };
+  const createSpace = async (starter: SpaceStarter) => {
+    if (dialogPending()) return;
+    setDialogPending(true);
+    try {
+      const space = await prompts.dialog<Space | null>(
+        (close) => <CreateSpaceForm starter={starter} create={(draft) => createSpaceFromDraft(starter, draft)} close={close} />,
+        { title: starter.id === "blank" ? t.newSpace : starter.name, icon: starter.icon },
+      );
+      // Opening the new space is the confirmation.
+      if (!space) return;
       setLastSpaceId(space.id);
       writeSpaceSettings(space.id, { view: starterView[starter.id] });
       navigateTo(`/app/spaces/${space.id}`);
-    },
-    // The form has closed, so Retry sends the captured draft again instead of losing it.
-    onError: (error, context) => retryToast(error.message, t.retry, () => context && createSpaceMutation.mutate(context.intent)),
-  });
-  const createSpace = async (starter: SpaceStarter) => {
-    if (dialogPending() || createSpaceMutation.loading()) return;
-    setDialogPending(true);
-    try {
-      const draft = await prompts.dialog<SpaceDraft | null>((close) => <CreateSpaceForm starter={starter} close={close} />, {
-        title: starter.id === "blank" ? t.newSpace : starter.name,
-        icon: starter.icon,
-      });
-      if (draft) void createSpaceMutation.mutate({ starter, draft });
     } finally {
       setDialogPending(false);
     }
@@ -703,7 +720,6 @@ export default function SpacesOverview(props: Props) {
     </Show>
   );
 
-  onCleanup(() => createSpaceMutation.abort());
   return (
     <AppWorkspace mobileSurface="flush" class="spaces-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Spaces</h1>
@@ -788,7 +804,7 @@ export default function SpacesOverview(props: Props) {
                   width="min(38rem, calc(100vw - 1rem))"
                   label={t.createSpace}
                 >
-                  <Dropdown.Trigger variant="primary" disabled={createSpaceMutation.loading()}>
+                  <Dropdown.Trigger variant="primary">
                     <i class="ti ti-plus" aria-hidden="true" /> {t.newSpace}
                     <i class="ti ti-chevron-down" aria-hidden="true" />
                   </Dropdown.Trigger>

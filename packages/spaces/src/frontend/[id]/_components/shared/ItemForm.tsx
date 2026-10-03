@@ -39,7 +39,7 @@ import {
   scheduleDatePresets,
 } from "./item-form/date";
 import { priorityOptions } from "./item-form/options";
-import type { ItemFormProps, ItemType, Priority } from "./item-form/types";
+import type { ItemFormData, ItemFormProps, ItemType, Priority } from "./item-form/types";
 import SpaceAssigneePicker from "./SpaceAssigneePicker";
 
 export type { ItemFormData } from "./item-form/types";
@@ -86,6 +86,7 @@ export default function ItemForm(props: ItemFormProps) {
   const [assignees, setAssignees] = createSignal<SpaceItemAssignee[]>(props.item?.assignees ?? []);
   const [selectedTags, setSelectedTags] = createSignal<string[]>(props.item?.tags?.map((t) => t.id) ?? props.defaults?.tagIds ?? []);
   const [error, setError] = createSignal("");
+  const [submitting, setSubmitting] = createSignal(false);
   const [showFullEditor, setShowFullEditor] = createSignal(!props.quickCreate || isEditMode());
 
   const isEvent = () => itemType() === "event";
@@ -166,8 +167,9 @@ export default function ItemForm(props: ItemFormProps) {
     return range.end ? allDayEnd(range.end, props.dateConfig) : undefined;
   };
 
-  const handleSubmit = (e: Event) => {
+  const handleSubmit = async (e: Event) => {
     e.preventDefault();
+    if (submitting()) return;
     setError("");
 
     if (!title().trim()) {
@@ -202,7 +204,7 @@ export default function ItemForm(props: ItemFormProps) {
       }
     }
 
-    props.onSubmit({
+    const data: ItemFormData = {
       ...(!isEditMode() && references().length ? { references: references() } : {}),
       columnId: columnId() || defaultColumnId(),
       title: title().trim(),
@@ -233,7 +235,16 @@ export default function ItemForm(props: ItemFormProps) {
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
       assigneeIds: isEditMode() || assignees().length > 0 ? assignees().map((assignee) => assignee.id) : undefined,
       tagIds: isEditMode() || selectedTags().length > 0 ? selectedTags() : undefined,
-    });
+    };
+    // A save that runs from the dialog keeps it open until the server answers; a refusal stays here with the input.
+    setSubmitting(true);
+    try {
+      await props.onSubmit(data);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : String(submitError));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -579,7 +590,7 @@ export default function ItemForm(props: ItemFormProps) {
           </Show>
 
           <Show when={error()}>
-            <div class="flex items-center gap-1 text-sm text-red-500">
+            <div class="flex items-center gap-1 text-sm text-red-500" role="alert">
               <i class="ti ti-alert-circle" />
               {error()}
             </div>
@@ -593,10 +604,10 @@ export default function ItemForm(props: ItemFormProps) {
             </Button>
           </Show>
           <div class="ml-auto flex items-center gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={props.onCancel}>
+            <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={submitting()}>
               {t.cancel}
             </Button>
-            <Button type="submit" size="sm">
+            <Button type="submit" size="sm" loading={submitting()}>
               {props.submitLabel ?? defaultSubmitLabel()}
             </Button>
           </div>
