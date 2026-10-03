@@ -6,6 +6,19 @@ import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
 import type { CustomAppBlock } from "../../../custom-apps/contracts";
 import type { CustomAppCatalog } from "./custom-app-catalog";
 
+// The first import runs the Solid DOM transform over the preview's whole source graph, which took longer than the
+// 5 s test timeout on a busy machine. Load it once, outside any test, so the timeout measures behavior.
+// The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return (await import("./CustomAppBlockPreview")).default;
+  } finally {
+    dom.cleanup();
+  }
+};
+const Preview = isServer ? undefined : await load();
+
 const catalog: CustomAppCatalog = {
   customApps: [],
   workflows: [],
@@ -45,7 +58,6 @@ describe("Custom App block preview recovery", () => {
 
   async function setup(initialResult?: PublicDslQueryPreviewResponse) {
     const dom = createDomTestHarness();
-    const { default: Preview } = await import("./CustomAppBlockPreview");
     const originalFetch = globalThis.fetch;
     const pending: ReturnType<typeof Promise.withResolvers<Response>>[] = [];
     const results: PublicDslQueryPreviewResponse[] = [];
@@ -63,7 +75,7 @@ describe("Custom App block preview recovery", () => {
         createComponent(ErrorBoundary, {
           fallback: () => "Escaped preview error",
           get children() {
-            return createComponent(Preview, {
+            return createComponent(Preview!, {
               baseId: "BASE01",
               appId: "APP001",
               catalog,
