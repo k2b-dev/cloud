@@ -59,6 +59,7 @@ import {
   reconcileConversationTags,
   reconcileReminder,
 } from "./mail-details-reconciliation";
+import { toastErrorWithRetry } from "./mail-feedback";
 
 const avatarSource = (userId: string | undefined, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
@@ -302,7 +303,7 @@ export default function MailDetailsPanel(props: {
       );
       toast.success(t().createdTag({ name: created.name }));
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const createTag = async () => {
@@ -353,10 +354,10 @@ export default function MailDetailsPanel(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().addCommentFailed));
       return response.json();
     },
+    // The new note appears in the list; a failure stays under the composer, which keeps the draft.
     onSuccess: (comment) => {
       setComments((current) => [...current, comment]);
     },
-    onError: (error) => prompts.error(error.message),
   });
 
   const loadOlderComments = async (): Promise<boolean> => {
@@ -410,34 +411,17 @@ export default function MailDetailsPanel(props: {
       if (!commentId) return;
       setComments((current) => current.filter((comment) => comment.id !== commentId));
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
-  const editComment = mutations.create<ConversationComment | null, ConversationComment>({
-    mutation: async (comment, { abortSignal }) => {
-      const conversationId = props.conversationId;
-      const values = await prompts.form({
-        title: t().editCommentTitle,
-        icon: "ti ti-pencil",
-        fields: {
-          body: {
-            type: "text",
-            label: t().comment,
-            default: comment.body ?? "",
-            required: true,
-            multiline: true,
-            lines: 6,
-          },
-        },
-        confirmText: t().saveComment,
-      });
-      if (!values || abortSignal.aborted || conversationId !== props.conversationId) return null;
-      const body = String(values.body ?? "").trim();
-      if (!body) throw new Error(t().commentEmpty);
+  type CommentEdit = { mailboxId: string; conversationId: string; comment: ConversationComment; body: string };
+  const editComment = mutations.create<ConversationComment, CommentEdit, { edit: CommentEdit }>({
+    onBefore: (edit) => ({ edit }),
+    mutation: async ({ mailboxId, conversationId, comment, body }, { abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].comments[":commentId"].$patch(
         {
           param: {
-            mailboxId: props.mailboxId,
+            mailboxId,
             conversationId,
             commentId: comment.id,
           },
@@ -451,13 +435,34 @@ export default function MailDetailsPanel(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().updateCommentFailed));
       return response.json();
     },
-    onSuccess: (comment) => {
-      if (!comment) return;
-      setComments((current) => current.map((item) => (item.id === comment.id ? comment : item)));
-      toast.success(t().commentUpdated);
-    },
-    onError: (error) => prompts.error(error.message),
+    // The note shows its new text, so the change needs no confirmation.
+    onSuccess: (updated) => setComments((current) => current.map((item) => (item.id === updated.id ? updated : item))),
+    // The form has closed, so Retry saves the captured text again instead of losing it.
+    onError: (error, context) =>
+      toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => context && editComment.mutate(context.edit) }),
   });
+  const promptCommentEdit = async (comment: ConversationComment) => {
+    const mailboxId = props.mailboxId;
+    const conversationId = props.conversationId;
+    const values = await prompts.form({
+      title: t().editCommentTitle,
+      icon: "ti ti-pencil",
+      fields: {
+        body: {
+          type: "text",
+          label: t().comment,
+          default: comment.body ?? "",
+          required: true,
+          multiline: true,
+          lines: 6,
+          validate: (value) => (value?.trim() ? null : t().commentEmpty),
+        },
+      },
+      confirmText: t().saveComment,
+    });
+    if (!values || mailboxId !== props.mailboxId || conversationId !== props.conversationId) return;
+    await editComment.mutate({ mailboxId, conversationId, comment, body: String(values.body ?? "").trim() });
+  };
 
   createEffect(
     on(
@@ -815,7 +820,12 @@ export default function MailDetailsPanel(props: {
                             <>
                               <Show when={comment.canEdit}>
                                 <Tooltip.Anchor content={t().editComment}>
-                                  <IconButton type="button" label={t().editComment} size="xs" onClick={() => editComment.mutate(comment)}>
+                                  <IconButton
+                                    type="button"
+                                    label={t().editComment}
+                                    size="xs"
+                                    onClick={() => void promptCommentEdit(comment)}
+                                  >
                                     <i class="ti ti-pencil" aria-hidden="true" />
                                   </IconButton>
                                 </Tooltip.Anchor>
@@ -849,7 +859,8 @@ export default function MailDetailsPanel(props: {
                     submitLabel={t().postComment}
                     onSubmit={async (body) => {
                       await addComment.mutate(body);
-                      return addComment.error() === null;
+                      const error = addComment.error();
+                      if (error) throw error;
                     }}
                   />
                 </Show>

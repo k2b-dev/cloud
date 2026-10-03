@@ -52,6 +52,7 @@ import type { MailConversationToolbarActionId } from "./_components/mail-convers
 import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
+import { toastErrorWithRetry } from "./_components/mail-feedback";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -794,6 +795,19 @@ function MailWorkspaceView(props: {
     if (refreshError) toast.error(refreshError.message);
   };
 
+  /** The change was saved, only this view is stale: say so, and let Try again repeat the refresh, not the change. */
+  const reportRefreshFailure = (error: Error, title: string, refresh: () => Promise<void>): void => {
+    if (disposed) return;
+    toastErrorWithRetry(error.message, {
+      title,
+      retryLabel: t().tryAgain,
+      retry: async () => {
+        const next = await captureMailWorkspaceRefreshError(refresh);
+        if (next) reportRefreshFailure(next, title, refresh);
+      },
+    });
+  };
+
   const applySavedConversationSummary = async (conversationId: string, summary: NonNullable<MailboxPageData["conversationSummary"]>) => {
     if (disposed) return;
     rememberPendingListState(conversationId, { revision: summary.conversationRevision });
@@ -985,7 +999,7 @@ function MailWorkspaceView(props: {
   };
 
   const mergeConversationMutation = mutation.create<
-    { refreshError: Error | null } | undefined,
+    { refreshError: Error | null; refresh: () => Promise<void> } | undefined,
     { conversationId: string; revision: number; subject: string }
   >({
     mutation: async (source, { abortSignal }) => {
@@ -1016,16 +1030,16 @@ function MailWorkspaceView(props: {
       );
       if (!response.ok) throw new Error(await readApiError(response, t().mergeFailed));
       if (abortSignal.aborted || disposed) return;
-      const refreshError = await captureMailWorkspaceRefreshError(() =>
-        requireMailWorkspaceRefresh(() => transitionWorkspaceHref(conversationHref(target.conversationId), true), t().mergedOpenFailed),
-      );
+      const targetHref = conversationHref(target.conversationId);
+      const refresh = () => requireMailWorkspaceRefresh(() => transitionWorkspaceHref(targetHref, true), t().mergedOpenFailed);
+      const refreshError = await captureMailWorkspaceRefreshError(refresh);
       if (abortSignal.aborted || disposed) return;
-      return { refreshError };
+      return { refreshError, refresh };
     },
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().merged);
-      if (result.refreshError) void prompts.error(result.refreshError.message, { title: t().mergedRefreshFailed });
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().mergedRefreshFailed, result.refresh);
     },
     onError: (error) =>
       prompts.error(error.message, {
@@ -1085,7 +1099,7 @@ function MailWorkspaceView(props: {
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().messageMoved);
-      if (result.refreshError) void prompts.error(result.refreshError.message, { title: t().messageMovedRefreshFailed });
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().messageMovedRefreshFailed, requireWorkspaceReconcile);
     },
     onError: (error) => prompts.error(error.message, { title: t().messageNotMoved }),
   });
@@ -1097,7 +1111,7 @@ function MailWorkspaceView(props: {
   };
 
   const splitMessageMutation = mutation.create<
-    { refreshError: Error | null } | undefined,
+    { refreshError: Error | null; refresh: () => Promise<void> } | undefined,
     { messageId: string; conversationId: string; revision: number }
   >({
     mutation: async ({ messageId, conversationId, revision }, { abortSignal }) => {
@@ -1122,16 +1136,16 @@ function MailWorkspaceView(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().splitFailed));
       const result = await response.json();
       if (abortSignal.aborted || disposed) return;
-      const refreshError = await captureMailWorkspaceRefreshError(() =>
-        requireMailWorkspaceRefresh(() => transitionWorkspaceHref(conversationHref(result.created.id), true), t().splitOpenFailed),
-      );
+      const createdHref = conversationHref(result.created.id);
+      const refresh = () => requireMailWorkspaceRefresh(() => transitionWorkspaceHref(createdHref, true), t().splitOpenFailed);
+      const refreshError = await captureMailWorkspaceRefreshError(refresh);
       if (abortSignal.aborted || disposed) return;
-      return { refreshError };
+      return { refreshError, refresh };
     },
     onSuccess: (result) => {
       if (!result) return;
       toast.success(t().splitCreated);
-      if (result.refreshError) void prompts.error(result.refreshError.message, { title: t().splitRefreshFailed });
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().splitRefreshFailed, result.refresh);
     },
     onError: (error) => prompts.error(error.message, { title: t().conversationUnchanged }),
   });
@@ -1299,16 +1313,16 @@ function MailWorkspaceView(props: {
             removedConversationIds: succeededConversationIds,
           })
         : null;
-      const refreshError = await captureMailWorkspaceRefreshError(() =>
-        removesActiveConversation
-          ? requireMailWorkspaceRefresh(
+      const refresh = removesActiveConversation
+        ? () =>
+            requireMailWorkspaceRefresh(
               () => transitionWorkspaceHref(buildMailListHref(mailRouteUrl(requestPath())), true),
               t().actionRefreshFailed,
             )
-          : requireWorkspaceReconcile(),
-      );
+        : requireWorkspaceReconcile;
+      const refreshError = await captureMailWorkspaceRefreshError(refresh);
       if (!disposed && focusAfterRemoval && !refreshError) focusConversation(focusAfterRemoval, "row");
-      if (refreshError) void prompts.error(refreshError.message, { title: t().actionQueuedRefreshFailed });
+      if (refreshError) reportRefreshFailure(refreshError, t().actionQueuedRefreshFailed, refresh);
     },
     reconcile: reconcileWorkspace,
     showMissingTarget: async () => {
@@ -1339,7 +1353,7 @@ function MailWorkspaceView(props: {
     },
     showError: async (error) => {
       const message = error instanceof Error ? error.message : "";
-      await prompts.error(
+      toast.error(
         message === MAIL_ACTION_MISSING_DESTINATION ? t().chooseDestinationBeforeMoving : message || t().updateConversationsFailed,
       );
     },
@@ -1401,9 +1415,9 @@ function MailWorkspaceView(props: {
           ? t().tagsAlreadyPresent
           : t().tagsAdded({ count: result.updatedConversationIds.length }),
       );
-      if (refreshError) void prompts.error(refreshError.message, { title: t().tagsRefreshFailed });
+      if (refreshError) reportRefreshFailure(refreshError, t().tagsRefreshFailed, requireWorkspaceReconcile);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
   const addTagsToSelection = () => {
     const conversationIds = [...selectedConversationIds()];
@@ -1426,8 +1440,8 @@ function MailWorkspaceView(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().updateTagsFailed));
       const next = await response.json();
       if (abortSignal.aborted || disposed) return;
+      // The row and the details show the new tags, so the change needs no confirmation.
       applyConversationTags(next);
-      toast.success(t().tagsUpdated);
     },
     onError: (error) => {
       void reconcileWorkspace()
@@ -1463,12 +1477,13 @@ function MailWorkspaceView(props: {
           refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
           success: (message, undo) =>
             toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, onClick: undo.run } } : undefined),
-          error: (message, title) => void prompts.error(message, title ? { title } : undefined),
+          error: (message, title) => void toast.error(message, title ? { title } : undefined),
+          refreshFailed: (error, title) => reportRefreshFailure(error, title, requireWorkspaceReconcile),
           active: () => !abortSignal.aborted && !disposed,
         },
         t(),
       ),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
   const assignSelection = () => {
     const conversationIds = [...selectedConversationIds()];

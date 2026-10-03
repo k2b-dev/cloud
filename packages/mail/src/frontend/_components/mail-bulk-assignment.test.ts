@@ -9,10 +9,12 @@ const maria = { id: "00000000-0000-4000-8000-000000000001", uid: "maria", displa
 const harness = (
   choice: MailAssigneeChoice | null,
   respond: (ids: string[], assigneeUserId: string | null) => ConversationAssignmentResult,
+  refreshError: Error | null = null,
 ) => {
   const calls: Array<{ ids: string[]; assigneeUserId: string | null }> = [];
   const successes: Array<{ message: string; undo?: { label: string; run: () => void } }> = [];
   const errors: Array<{ message: string; title?: string }> = [];
+  const refreshFailures: Array<{ message: string; title: string }> = [];
   let cleared = 0;
   let refreshes = 0;
   const host: MailBulkAssignmentHost = {
@@ -26,13 +28,14 @@ const harness = (
     },
     refresh: async () => {
       refreshes += 1;
-      return null;
+      return refreshError;
     },
     success: (message, undo) => successes.push({ message, undo }),
     error: (message, title) => errors.push({ message, title }),
+    refreshFailed: (error, title) => refreshFailures.push({ message: error.message, title }),
     active: () => true,
   };
-  return { host, calls, successes, errors, cleared: () => cleared, refreshes: () => refreshes };
+  return { host, calls, successes, errors, refreshFailures, cleared: () => cleared, refreshes: () => refreshes };
 };
 
 const allOk = (ids: string[], assigneeUserId: string | null): ConversationAssignmentResult => ({
@@ -95,5 +98,16 @@ describe("Mail bulk assignment", () => {
     await runMailBulkAssignment(["Conv01"], dismissed.host, t);
     expect(dismissed.calls).toEqual([]);
     expect(dismissed.cleared()).toBe(0);
+  });
+
+  test("a failed reload after a saved assignment is reported as a refresh failure, not as a failed assignment", async () => {
+    const t = mailWorkspaceMessages.resolve(["en"]).t;
+    const run = harness({ assigneeUserId: maria.id }, allOk, new Error(t.refreshMailboxFailed));
+
+    await runMailBulkAssignment(["Conv01"], run.host, t);
+
+    expect(run.successes.map((success) => success.message)).toEqual(["1 conversation assigned to Maria"]);
+    expect(run.refreshFailures).toEqual([{ message: t.refreshMailboxFailed, title: "Assignment saved, refresh failed" }]);
+    expect(run.errors).toEqual([]);
   });
 });

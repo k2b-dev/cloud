@@ -8,6 +8,7 @@ import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../commands";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
+import { toastErrorWithRetry } from "./mail-feedback";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export default function MailCalendarInvitation(props: {
@@ -99,15 +100,21 @@ export default function MailCalendarInvitation(props: {
             ? messages().eventUpToDate
             : messages().eventUpdated,
       );
-      try {
-        await previewQuery.invalidate();
-      } catch (error) {
-        void prompts.error(error instanceof Error ? error.message : messages().invitationRefreshFailed, {
-          title: messages().eventImportedRefreshFailed,
-        });
-      }
+      await refreshPreview();
     },
   });
+  /** The event was saved, only the invitation is stale, so Retry repeats the refresh, not the import. */
+  const refreshPreview = async (): Promise<void> => {
+    try {
+      await previewQuery.invalidate();
+    } catch (error) {
+      toastErrorWithRetry(error instanceof Error ? error.message : messages().invitationRefreshFailed, {
+        title: messages().eventImportedRefreshFailed,
+        retryLabel: messages().retry,
+        retry: refreshPreview,
+      });
+    }
+  };
 
   const respond = mutation.create<void, "accepted" | "tentative" | "declined">({
     onBefore: (participationStatus) => setPendingResponse(participationStatus),

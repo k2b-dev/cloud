@@ -8,6 +8,7 @@ import type { CancelScheduledSendInput, CancelScheduledSendResult, ScheduledSend
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { toastErrorWithRetry } from "./mail-feedback";
 
 const recipients = (item: ScheduledSendPage["items"][number], t: ReturnType<typeof mailConversationUiMessages.resolve>["t"]): string => {
   const all = [...item.to, ...item.cc, ...item.bcc];
@@ -90,14 +91,19 @@ export default function MailScheduledView(props: {
         navigateTo(mailDraftHref(props.mailboxId, result.draftId, `/app/mail/${props.mailboxId}?scheduled=1`));
         return;
       }
-      if (refreshError) {
-        void prompts.error(refreshError.message, { title: t().cancelledRefreshFailed });
-      }
+      if (refreshError) reportRefreshFailure(refreshError);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
     onFinally: () => setCancellingId(null),
   });
   onCleanup(cancel.abort);
+  /** The scheduled send was cancelled, only the list is stale, so Retry repeats the refresh, not the cancellation. */
+  const reportRefreshFailure = (error: Error): void =>
+    toastErrorWithRetry(error.message, {
+      title: t().cancelledRefreshFailed,
+      retryLabel: t().retry,
+      retry: () => props.onRefresh().catch((next: unknown) => reportRefreshFailure(next instanceof Error ? next : new Error(String(next)))),
+    });
 
   return (
     <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-busy={props.loading}>

@@ -12,6 +12,8 @@ export type MailBulkAssignmentHost = {
   refresh: () => Promise<Error | null>;
   success: (message: string, undo?: { label: string; run: () => void }) => void;
   error: (message: string, title?: string) => void;
+  /** The assignment was saved but the list could not be reloaded. */
+  refreshFailed: (error: Error, title: string) => void;
   /** False once the workspace was disposed or the mutation aborted. */
   active: () => boolean;
 };
@@ -24,7 +26,7 @@ const undoAssignment = async (conversationIds: string[], host: MailBulkAssignmen
     const refreshError = await host.refresh();
     if (!host.active()) return;
     host.success(t.assignmentUndone({ count: conversationIds.length }));
-    if (refreshError) host.error(refreshError.message, t.assignRefreshFailed);
+    if (refreshError) host.refreshFailed(refreshError, t.assignRefreshFailed);
   } catch (error) {
     if (host.active()) host.error(error instanceof Error ? error.message : t.assignFailed);
   }
@@ -53,5 +55,5 @@ export const runMailBulkAssignment = async (
   }
   const missing = result.results.length - changedIds.length;
   if (missing > 0) host.error(t.notAssignedBody, t.notAssignedTitle({ failed: missing, total: result.results.length }));
-  if (refreshError) host.error(refreshError.message, t.assignRefreshFailed);
+  if (refreshError) host.refreshFailed(refreshError, t.assignRefreshFailed);
 };

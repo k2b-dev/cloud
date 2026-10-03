@@ -1,6 +1,6 @@
 import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { Button, DetailPanel, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../commands";
@@ -11,6 +11,7 @@ import { readApiError } from "./api-response";
 import { createContact, listWritableContactBooks } from "./contact-capabilities";
 import { buildMailContactParticipantRows } from "./mail-contact-context";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
+import { toastErrorWithRetry } from "./mail-feedback";
 import { buildExactParticipantSearchHref } from "./mail-navigation";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
@@ -74,13 +75,16 @@ export default function MailConversationContext(props: {
     });
   });
 
-  const createParticipantContact = mutation.create<
-    void,
-    { participant: { email: string; displayName: string | null }; book: { id: string; name: string }; conversationId: string },
-    { idempotencyKey: string }
-  >({
-    onBefore: () => ({ idempotencyKey: crypto.randomUUID() }),
-    mutation: async ({ participant, book, conversationId }, { abortSignal, idempotencyKey }) => {
+  // The idempotency key belongs to the intent, so Retry repeats the same creation instead of adding a second contact.
+  type ParticipantContactIntent = {
+    participant: { email: string; displayName: string | null };
+    book: { id: string; name: string };
+    conversationId: string;
+    idempotencyKey: string;
+  };
+  const createParticipantContact = mutation.create<void, ParticipantContactIntent, { intent: ParticipantContactIntent }>({
+    onBefore: (intent) => ({ intent }),
+    mutation: async ({ participant, book, conversationId, idempotencyKey }, { abortSignal }) => {
       await createContact(
         contactDirectory.create,
         {
@@ -91,18 +95,28 @@ export default function MailConversationContext(props: {
         idempotencyKey,
         abortSignal,
       );
-      if (conversationId === props.conversationId) {
-        try {
-          await contexts.invalidate();
-        } catch (error) {
-          void prompts.error(error instanceof Error ? error.message : messages().contactsRefreshFailed, {
-            title: messages().contactCreatedRefreshFailed,
-          });
-        }
-      }
+      if (conversationId === props.conversationId)
+        await refreshContext(messages().contactCreatedRefreshFailed, messages().contactsRefreshFailed);
     },
-    onError: (error) => void prompts.error(error.message, { title: messages().couldNotCreateContact }),
+    onError: (error, context) =>
+      toastErrorWithRetry(error.message, {
+        title: messages().couldNotCreateContact,
+        retryLabel: messages().retry,
+        retry: () => context && createParticipantContact.mutate(context.intent),
+      }),
   });
+  /** The change was saved, only this context is stale, so Retry repeats the refresh, not the change. */
+  const refreshContext = async (title: string, fallback: string): Promise<void> => {
+    try {
+      await contexts.invalidate();
+    } catch (error) {
+      toastErrorWithRetry(error instanceof Error ? error.message : fallback, {
+        title,
+        retryLabel: messages().retry,
+        retry: () => refreshContext(title, fallback),
+      });
+    }
+  };
 
   const chooseBookAndCreate = async (participant: { email: string; displayName: string | null }) => {
     const selected = await prompts.search<{ id: string; name: string }>(
@@ -129,16 +143,17 @@ export default function MailConversationContext(props: {
       },
     );
     if (!selected?.value) return;
-    createParticipantContact.mutate({ participant, book: selected.value, conversationId: props.conversationId });
+    createParticipantContact.mutate({
+      participant,
+      book: selected.value,
+      conversationId: props.conversationId,
+      idempotencyKey: crypto.randomUUID(),
+    });
   };
 
   const reconcileSpacesAfterWrite = async (mailboxId: string, conversationId: string, title: string) => {
     if (mailboxId !== props.mailboxId || conversationId !== props.conversationId) return;
-    try {
-      await contexts.invalidate();
-    } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : messages().linkedSpacesRefreshFailed, { title });
-    }
+    await refreshContext(title, messages().linkedSpacesRefreshFailed);
   };
 
   const linkExistingSpaceItem = async () => {
@@ -179,7 +194,7 @@ export default function MailConversationContext(props: {
       param: { mailboxId, conversationId },
       json: { itemId: selected.value.id },
     });
-    if (!response.ok) return void prompts.error(await readApiError(response, messages().couldNotLinkSpaceItem));
+    if (!response.ok) return void toast.error(await readApiError(response, messages().couldNotLinkSpaceItem));
     await reconcileSpacesAfterWrite(mailboxId, conversationId, messages().spaceItemLinkedRefreshFailed);
   };
 
@@ -190,7 +205,7 @@ export default function MailConversationContext(props: {
       param: { mailboxId, conversationId },
       json: { itemId },
     });
-    if (!response.ok) return void prompts.error(await readApiError(response, messages().couldNotUnlinkSpaceItem));
+    if (!response.ok) return void toast.error(await readApiError(response, messages().couldNotUnlinkSpaceItem));
     await reconcileSpacesAfterWrite(mailboxId, conversationId, messages().spaceItemUnlinkedRefreshFailed);
   };
 
@@ -198,7 +213,7 @@ export default function MailConversationContext(props: {
     try {
       await openCommand(`spaces.${kind}.compose`, { source: { type: "mail.conversation", id: props.conversationId } }, commandOptions());
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : messages().couldNotLoadSpaces);
+      toast.error(error instanceof Error ? error.message : messages().couldNotLoadSpaces);
     }
   };
   const commandOptions = () => {
