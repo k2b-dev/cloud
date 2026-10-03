@@ -3,6 +3,49 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.28.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.27.0...cloud-v0.28.0) (2026-10-03)
+
+
+### Features
+
+* **files:** open previews with the document title and no second frame ([#563](https://github.com/k2b-dev/cloud/issues/563)) ([79864a1](https://github.com/k2b-dev/cloud/commit/79864a1d21e4e11db9ae22545ed09651588c9e5e))
+* **files:** show every upload in one calm list with the total progress ([#533](https://github.com/k2b-dev/cloud/issues/533)) ([5100c3e](https://github.com/k2b-dev/cloud/commit/5100c3eb32c1d7fa98f13ef781aa1413c771ff4f))
+* **grids:** show an empty table as one calm empty state with a way to add the first record ([#557](https://github.com/k2b-dev/cloud/issues/557)) ([17f4085](https://github.com/k2b-dev/cloud/commit/17f40859190dd5a83f576f99fecd54e387875a3f))
+* **mail:** hide mailboxes from your sidebar and focus ([#566](https://github.com/k2b-dev/cloud/issues/566)) ([f6e1996](https://github.com/k2b-dev/cloud/commit/f6e199629e5ecec6bb596da2bfa4d11007f3ead9))
+* **mail:** move many messages at once with one IMAP command ([#554](https://github.com/k2b-dev/cloud/issues/554)) ([a79d3bf](https://github.com/k2b-dev/cloud/commit/a79d3bf8e03299dadcc01965521b338896860503))
+* **notebooks:** let admins reserve deleting notes for themselves ([#552](https://github.com/k2b-dev/cloud/issues/552)) ([53c89c1](https://github.com/k2b-dev/cloud/commit/53c89c153079fb43b99b382916b8897558619fe2))
+* show attachment and artifact previews the same calm way as Files ([#565](https://github.com/k2b-dev/cloud/issues/565)) ([4352fe5](https://github.com/k2b-dev/cloud/commit/4352fe548a23cf7b64c81932a031a35287a15ee1))
+* **spaces:** show blockers, properties and who is working at a glance ([#551](https://github.com/k2b-dev/cloud/issues/551)) ([7348cf8](https://github.com/k2b-dev/cloud/commit/7348cf8d8088e16f5a5d20d56c2b2fb7635110b6))
+* **ui:** calmer Markdown tables, quotes and code ([#561](https://github.com/k2b-dev/cloud/issues/561)) ([666ebae](https://github.com/k2b-dev/cloud/commit/666ebae2669bcc2054ed964dab64231464ab54e5))
+* **ui:** give every surface a single frame ([#541](https://github.com/k2b-dev/cloud/issues/541)) ([9d613ed](https://github.com/k2b-dev/cloud/commit/9d613edf6afd047fb0f56c95bf0e02d7ae691f59))
+* **ui:** group dialog sections without frames ([#558](https://github.com/k2b-dev/cloud/issues/558)) ([e6ec679](https://github.com/k2b-dev/cloud/commit/e6ec67959355bbca8c296b1cd64d76714dc9a402))
+* **ui:** show toasts as one calm line ([#536](https://github.com/k2b-dev/cloud/issues/536)) ([8b3b358](https://github.com/k2b-dev/cloud/commit/8b3b358ee3c627e5b58cd037d7cee3bbb8c5f692))
+
+
+### Bug Fixes
+
+* **mail:** act on the folder in view, report refused actions, and run automations on Gmail labels ([#547](https://github.com/k2b-dev/cloud/issues/547)) ([7ba01c7](https://github.com/k2b-dev/cloud/commit/7ba01c704a4a74ea7dd193db8bd95ab5d2bc289d))
+* **mail:** keep a message's date and size when another copy of it syncs ([#560](https://github.com/k2b-dev/cloud/issues/560)) ([e6b6675](https://github.com/k2b-dev/cloud/commit/e6b6675e043ba9d6e48707075629bc0f05aae2fa))
+* **mail:** keep finding removals that race a search and show recent flag changes at every sync without CONDSTORE ([#556](https://github.com/k2b-dev/cloud/issues/556)) ([7444566](https://github.com/k2b-dev/cloud/commit/744456688ab93528ecedb0a39421ef1b1636f633))
+* **mail:** keep Gmail labels when archiving from views across folders ([#549](https://github.com/k2b-dev/cloud/issues/549)) ([02dc11e](https://github.com/k2b-dev/cloud/commit/02dc11ecba67ae38175118896fd5469db8e16ea8))
+* **mail:** keep mail that arrived after Send in Needs action ([#564](https://github.com/k2b-dev/cloud/issues/564)) ([c5b0ffe](https://github.com/k2b-dev/cloud/commit/c5b0ffe459b8f544b685aeb15a5feefbe68741e7))
+* **mail:** keep Needs action, Unassigned, counts and search results accurate ([#562](https://github.com/k2b-dev/cloud/issues/562)) ([82a06b3](https://github.com/k2b-dev/cloud/commit/82a06b302d39c47414f2c853815a837c4a2af758))
+* **mail:** keep quoted text open across live updates and show it with a proper toggle ([#544](https://github.com/k2b-dev/cloud/issues/544)) ([19ca148](https://github.com/k2b-dev/cloud/commit/19ca1486eb32d220c8f6548888473a4142196cda))
+* **mail:** let folder sync take its turn while commands and hydration run ([#548](https://github.com/k2b-dev/cloud/issues/548)) ([adc5e07](https://github.com/k2b-dev/cloud/commit/adc5e077122865246306932506bf897b42e5f157))
+* **mail:** retry sends and actions after brief provider failures instead of dropping them ([#545](https://github.com/k2b-dev/cloud/issues/545)) ([d770035](https://github.com/k2b-dev/cloud/commit/d770035d196e0eaffc2b7b139df3f7082298b168))
+* **mail:** show deletes, moves and flag changes from other apps within minutes and finish large Drafts reconciliations ([#553](https://github.com/k2b-dev/cloud/issues/553)) ([b00d16f](https://github.com/k2b-dev/cloud/commit/b00d16f721663e3b8af9112dd15637d058ea6609))
+* **mail:** show sent messages in Sent right after sending and store the copy once ([#538](https://github.com/k2b-dev/cloud/issues/538)) ([92371af](https://github.com/k2b-dev/cloud/commit/92371af43370655faff99bfcd766e39cce141265))
+* **mail:** treat moved and copied messages as one message and thread only related mail together ([#559](https://github.com/k2b-dev/cloud/issues/559)) ([90e0ae6](https://github.com/k2b-dev/cloud/commit/90e0ae6393355e9487e8eca2c9bdc4c5cb73065d))
+* **pwa-auth:** give the status bar its color back after a dialog closes ([#542](https://github.com/k2b-dev/cloud/issues/542)) ([ce7fab8](https://github.com/k2b-dev/cloud/commit/ce7fab85741204aa5364a6a0d81dfa8880b37786))
+* **spaces:** center the column drop indicator and show previews without Markdown syntax ([#546](https://github.com/k2b-dev/cloud/issues/546)) ([d2cb394](https://github.com/k2b-dev/cloud/commit/d2cb394ca92d0f782f81ede670d7beba85eaeefd))
+* **ui:** keep dialog headers in view and apply the code and table styles meant for previews ([#532](https://github.com/k2b-dev/cloud/issues/532)) ([cc93131](https://github.com/k2b-dev/cloud/commit/cc931312f21e7b11d05528c1a418c8072bd0c35a))
+* **ui:** keep toasts timing out after a held control leaves the page ([#555](https://github.com/k2b-dev/cloud/issues/555)) ([e191790](https://github.com/k2b-dev/cloud/commit/e191790f56a3c5a67313d5df19e70f8bc4c4c099))
+
+
+### Performance Improvements
+
+* **mail:** run each message action in one IMAP session ([#550](https://github.com/k2b-dev/cloud/issues/550)) ([9ff5ce5](https://github.com/k2b-dev/cloud/commit/9ff5ce507163e1887f6ff8195dea041f5472bdd1))
+
 ## [0.27.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.26.0...cloud-v0.27.0) (2026-10-01)
 
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.12.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.11.0...npm-ui-v0.12.0) (2026-10-03)
+
+
+### Features
+
+* **files:** open previews with the document title and no second frame ([#563](https://github.com/k2b-dev/cloud/issues/563)) ([79864a1](https://github.com/k2b-dev/cloud/commit/79864a1d21e4e11db9ae22545ed09651588c9e5e))
+* **files:** show every upload in one calm list with the total progress ([#533](https://github.com/k2b-dev/cloud/issues/533)) ([5100c3e](https://github.com/k2b-dev/cloud/commit/5100c3eb32c1d7fa98f13ef781aa1413c771ff4f))
+* **notebooks:** let admins reserve deleting notes for themselves ([#552](https://github.com/k2b-dev/cloud/issues/552)) ([53c89c1](https://github.com/k2b-dev/cloud/commit/53c89c153079fb43b99b382916b8897558619fe2))
+* **spaces:** show blockers, properties and who is working at a glance ([#551](https://github.com/k2b-dev/cloud/issues/551)) ([7348cf8](https://github.com/k2b-dev/cloud/commit/7348cf8d8088e16f5a5d20d56c2b2fb7635110b6))
+* **ui:** calmer Markdown tables, quotes and code ([#561](https://github.com/k2b-dev/cloud/issues/561)) ([666ebae](https://github.com/k2b-dev/cloud/commit/666ebae2669bcc2054ed964dab64231464ab54e5))
+* **ui:** give every surface a single frame ([#541](https://github.com/k2b-dev/cloud/issues/541)) ([9d613ed](https://github.com/k2b-dev/cloud/commit/9d613edf6afd047fb0f56c95bf0e02d7ae691f59))
+* **ui:** group dialog sections without frames ([#558](https://github.com/k2b-dev/cloud/issues/558)) ([e6ec679](https://github.com/k2b-dev/cloud/commit/e6ec67959355bbca8c296b1cd64d76714dc9a402))
+* **ui:** show toasts as one calm line ([#536](https://github.com/k2b-dev/cloud/issues/536)) ([8b3b358](https://github.com/k2b-dev/cloud/commit/8b3b358ee3c627e5b58cd037d7cee3bbb8c5f692))
+
+
+### Bug Fixes
+
+* **ui:** keep dialog headers in view and apply the code and table styles meant for previews ([#532](https://github.com/k2b-dev/cloud/issues/532)) ([cc93131](https://github.com/k2b-dev/cloud/commit/cc931312f21e7b11d05528c1a418c8072bd0c35a))
+* **ui:** keep toasts timing out after a held control leaves the page ([#555](https://github.com/k2b-dev/cloud/issues/555)) ([e191790](https://github.com/k2b-dev/cloud/commit/e191790f56a3c5a67313d5df19e70f8bc4c4c099))
+
 ## [0.11.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.10.0...npm-ui-v0.11.0) (2026-10-01)
 
 
