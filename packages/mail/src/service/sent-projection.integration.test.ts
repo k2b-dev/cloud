@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { FetchMessageObject, MessageAddressObject } from "imapflow";
 import { type AddressObject, simpleParser } from "mailparser";
@@ -10,7 +11,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
-import { executeOutboxSubmission } from "./command-runtime";
+import { executeOutboxSubmission, executeOutboxSubmissionWithHeartbeat, recoverStaleExecutions } from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
@@ -20,6 +21,7 @@ import { createDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations } from "./messages";
+import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { createProviderConnection } from "./provider-connections";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 
@@ -83,6 +85,9 @@ const createProvider = (kind: ProviderKind) => {
   // The next SMTP submission fails: before the server received the message, or after it stored it.
   let submissionFailure: { error: Error; afterTransfer: boolean } | null = null;
   let submissions = 0;
+  let searches = 0;
+  // Recipients the SMTP server refuses at RCPT while it accepts the others.
+  const refusedRecipients = new Set<string>();
 
   const folder = (path: string): StoredFolder => {
     const found = folders.get(path);
@@ -101,7 +106,12 @@ const createProvider = (kind: ProviderKind) => {
     for (const [uid, entry] of target.entries) if (entry === message) target.entries.delete(uid);
     message.flags.delete(path);
   };
-  const store = async (source: Buffer, path: string, flags: string[]): Promise<{ message: StoredMessage; uid: number }> => {
+  const store = async (
+    source: Buffer,
+    path: string,
+    flags: string[],
+    internalDate = new Date(),
+  ): Promise<{ message: StoredMessage; uid: number }> => {
     const parsed = await simpleParser(source);
     const parent = parsed.inReplyTo
       ? [...folders.values()].flatMap((entry) => [...entry.entries.values()]).find((entry) => entry.messageId === parsed.inReplyTo)
@@ -112,7 +122,7 @@ const createProvider = (kind: ProviderKind) => {
       threadId: parent?.threadId ?? String(8_000_000 + sequence),
       source,
       messageId: parsed.messageId ?? null,
-      internalDate: new Date(),
+      internalDate,
       flags: new Map(),
     };
     const uid = place(message, path, flags);
@@ -202,14 +212,20 @@ const createProvider = (kind: ProviderKind) => {
       if (failure) throw failure.error;
       failingSearches = searchFailuresAfterSubmission;
       searchFailuresAfterSubmission = 0;
-      return { accepted: request.recipients, rejected: [], response: "250 2.0.0 OK", messageId: request.messageId };
+      return {
+        accepted: request.recipients.filter((recipient) => !refusedRecipients.has(recipient)),
+        rejected: request.recipients.filter((recipient) => refusedRecipients.has(recipient)),
+        response: "250 2.0.0 OK",
+        messageId: request.messageId,
+      };
     }),
-    spyOn(imapSmtpConnector, "appendSource").mockImplementation(async (_config, path, source, _length, flags) => {
+    spyOn(imapSmtpConnector, "appendSource").mockImplementation(async (_config, path, source, _length, flags, internalDate) => {
       appends.push(path);
-      const stored = await store(await readAll(source), path, flags ?? []);
+      const stored = await store(await readAll(source), path, flags ?? [], internalDate ?? undefined);
       return { uidValidity: folder(path).uidValidity, uid: stored.uid };
     }),
     spyOn(imapSmtpConnector, "findMessageById").mockImplementation(async (_config, path, messageId) => {
+      searches += 1;
       if (failingSearches > 0) {
         failingSearches -= 1;
         throw Object.assign(new Error("Connection failed"), { code: searchFailureCode });
@@ -273,7 +289,11 @@ const createProvider = (kind: ProviderKind) => {
     failNextSubmission: (code: string, afterTransfer: boolean) => {
       submissionFailure = { error: Object.assign(new Error(`SMTP failure ${code}`), { code, command: "CONN" }), afterTransfer };
     },
+    refuseRecipient: (address: string) => {
+      refusedRecipients.add(address);
+    },
     submissions: () => submissions,
+    searches: () => searches,
     messagesWithId: (path: string, messageId: string) =>
       [...folder(path).entries.values()].filter((message) => message.messageId?.toLowerCase() === messageId.toLowerCase()),
     restore: () => {
@@ -555,9 +575,16 @@ suite("mail sent message projection", () => {
       `draft export ${states.join("/")}`,
     );
 
-  const send = async (mailbox: Connected, draftId: string, revision: number, key: string, expectedState = "sent") => {
+  const send = async (
+    mailbox: Connected,
+    draftId: string,
+    revision: number,
+    key: string,
+    expectedState = "sent",
+    options: { as?: MailRequestContext } = {},
+  ) => {
     const command = await createActorCommand({
-      context,
+      context: options.as ?? context,
       mailboxId: mailbox.mailboxId,
       input: {
         kind: "send",
@@ -985,6 +1012,415 @@ suite("mail sent message projection", () => {
       expect(provider.submissions()).toBe(1);
       expect(provider.messagesWithId(SENT, outbox.stable_message_id)).toHaveLength(1);
       expect(provider.appends.filter((path) => path === SENT)).toEqual([]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  /** A Mail request made with the user's personal API key, resolved the way the auth middleware resolves it. */
+  const personalKeyContext = async (): Promise<MailRequestContext> => {
+    if (context.actor.kind !== "user") throw new Error("The test context must be a user");
+    const created = await serviceAccountCredentials.createUserApiToken({ user: context.actor.user, name: `Mail CLI ${suffix}` });
+    if (!created.ok) throw new Error(created.error.message);
+    const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
+    if (!authenticated?.delegatedUser) throw new Error("The personal API key did not authenticate as its user");
+    return {
+      actor: {
+        kind: "service_account",
+        serviceAccount: authenticated.serviceAccount,
+        delegatedUser: authenticated.delegatedUser,
+        scopes: authenticated.credential.scopes,
+        credentialId: authenticated.credential.id,
+        credentialExpiresAt: authenticated.credential.expiresAt,
+      },
+      accessSubject: { type: "user", userId: authenticated.delegatedUser.id },
+      requestId: `mail-sent-projection-personal-key-${suffix}`,
+    };
+  };
+
+  test("a send queued with a personal API key goes out as its user", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Sent from the CLI");
+      // A personal API key is minted without scopes and acts with its user's mailbox access.
+      const outbox = await send(mailbox, draft.id, draft.revision, "personal-key", "sent", { as: await personalKeyContext() });
+      expect(await delivery(outbox.id)).toEqual({ state: "sent", last_error_code: null, command_state: "confirmed", draft_state: "sent" });
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  /** Schedules a send for an hour from now; `sendRetryNow` makes it due. */
+  const schedule = async (mailbox: Connected, draftId: string, revision: number, key: string) => {
+    const command = await createActorCommand({
+      context,
+      mailboxId: mailbox.mailboxId,
+      input: {
+        kind: "send",
+        draftId,
+        expectedDraftRevision: revision,
+        senderIdentityId: mailbox.identityId,
+        scheduledAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+        undoSeconds: 0,
+        idempotencyKey: `${key}-${suffix}`,
+      },
+      enqueue: false,
+    });
+    if (!command.ok) throw new Error(JSON.stringify(command.error));
+    // Without an undo window, the send is due at its scheduled time alone.
+    const [outbox] = await sql<{ id: string; stable_message_id: string; message_id: string; command_id: string }[]>`
+      UPDATE mail.outbox_submissions SET undo_until = NULL
+      WHERE command_id = ${command.data.id}::uuid
+      RETURNING id, stable_message_id, message_id, command_id
+    `;
+    return outbox!;
+  };
+
+  /** Leaves the outbox as a worker does that claimed it eleven minutes ago and then stopped. */
+  const stopWorkerAfterClaim = async (outboxId: string, state: "sending" | "unknown", effectStarted: boolean) => {
+    await sql`
+      UPDATE mail.outbox_submissions
+      SET state = ${state}, attempt = attempt + 1, scheduled_at = now() - interval '11 minutes', undo_until = NULL
+      WHERE id = ${outboxId}::uuid
+    `;
+    await sql`
+      UPDATE mail.commands command
+      SET
+        state = 'executing',
+        attempt = command.attempt + 1,
+        started_at = now() - interval '11 minutes',
+        worker_heartbeat_at = now() - interval '11 minutes',
+        finished_at = NULL,
+        provider_effect_started_at = CASE WHEN ${effectStarted} THEN now() - interval '11 minutes' ELSE command.provider_effect_started_at END,
+        provider_effect_attempt = CASE WHEN ${effectStarted} THEN command.attempt + 1 ELSE command.provider_effect_attempt END
+      FROM mail.outbox_submissions outbox
+      WHERE outbox.id = ${outboxId}::uuid AND command.id = outbox.command_id
+    `;
+    if (state === "sending") {
+      await sql`
+        UPDATE mail.drafts draft SET state = 'sending'
+        FROM mail.outbox_submissions outbox
+        WHERE outbox.id = ${outboxId}::uuid AND draft.id = outbox.draft_id
+      `;
+    }
+  };
+
+  test("a send whose worker stopped before SMTP goes back to the queue, and one that reached SMTP is checked instead", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const unsent = await newDraft(mailbox, "Worker stopped early");
+      const early = await schedule(mailbox, unsent.id, unsent.revision, "stopped-before-smtp");
+      await stopWorkerAfterClaim(early.id, "sending", false);
+      const dispatched = await newDraft(mailbox, "Worker stopped during SMTP");
+      const late = await schedule(mailbox, dispatched.id, dispatched.revision, "stopped-during-smtp");
+      await stopWorkerAfterClaim(late.id, "sending", true);
+
+      await recoverStaleExecutions();
+      // Nothing reached SMTP, so the message is still unsent and goes out on its next attempt.
+      expect(await delivery(early.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "WORKER_LEASE_EXPIRED",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      expect(await sendRetryNow(early.id)).toBe("sent");
+      expect(provider.submissions()).toBe(1);
+      // SMTP may have the other message already, so it is checked and never sent twice.
+      expect(await delivery(late.id)).toMatchObject({
+        state: "unknown",
+        last_error_code: "WORKER_LEASE_EXPIRED",
+        command_state: "ambiguous",
+      });
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose lease is lost after the Sent check and before SMTP goes back to the queue", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Lease lost before SMTP");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "lease-lost-before-smtp");
+      await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outbox.id}::uuid`;
+      const searchesBefore = provider.searches();
+      // The job's lease renews fine until the send has looked for an earlier copy in Sent.
+      const leaseLost = executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
+        if (provider.searches() > searchesBefore) {
+          throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
+        }
+      });
+      await expect(leaseLost).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "OUTBOX_PREDISPATCH_RETRY",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      expect(provider.submissions()).toBe(0);
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an unproven send whose check stopped with its worker is checked again", async () => {
+    const provider = createProvider("gmail");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Check interrupted");
+      provider.indexNewMessagesLate();
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "check-interrupted", "unknown");
+      await stopWorkerAfterClaim(outbox.id, "unknown", true);
+      expect(await executeOutboxSubmission(outbox.id)).toBeNull();
+
+      await recoverStaleExecutions();
+      expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+      provider.indexEverything();
+      expect(await executeOutboxSubmission(outbox.id)).toBe("reconciled_accepted");
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  const MISTYPED = "custmer@example.test";
+
+  /** A draft to the customer and to a mistyped address that SMTP refuses. */
+  const partlyDeliverableDraft = async (mailbox: Connected, subject: string) => {
+    const created = await createDraft({
+      context,
+      mailboxId: mailbox.mailboxId,
+      input: {
+        senderIdentityId: mailbox.identityId,
+        to: [
+          { name: "Customer", address: CUSTOMER },
+          { name: "Typo", address: MISTYPED },
+        ],
+        cc: [],
+        bcc: [],
+        subject,
+        body: "The report is ready.",
+        format: "plain",
+      },
+    });
+    if (!created.ok) throw new Error(JSON.stringify(created.error));
+    await waitForDraftExport(created.data.id, ["active"]);
+    return created.data;
+  };
+
+  test("a check whose worker stopped during the last attempt gives up without asking the provider again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Last check interrupted");
+      provider.failNextSubmission("ECONNECTION", true);
+      const outbox = await send(mailbox, draft.id, draft.revision, "last-check-interrupted", "unknown");
+      await sql`UPDATE mail.outbox_submissions SET attempt = ${OUTBOX_MAX_ATTEMPTS - 1} WHERE id = ${outbox.id}::uuid`;
+      await stopWorkerAfterClaim(outbox.id, "unknown", true);
+      await recoverStaleExecutions();
+
+      const searches = provider.searches();
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(provider.searches()).toBe(searches);
+      expect(await delivery(outbox.id)).toEqual({
+        state: "needs_attention",
+        last_error_code: "AMBIGUOUS_SMTP_OUTCOME",
+        command_state: "needs_attention",
+        draft_state: "sent",
+      });
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a message only some recipients accept is stored in Sent and still needs attention", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Partly delivered");
+      provider.refuseRecipient(MISTYPED);
+      const outbox = await send(mailbox, draft.id, draft.revision, "partial", "needs_attention");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "needs_attention",
+        last_error_code: "SMTP_PARTIAL_ACCEPTANCE",
+        command_state: "needs_attention",
+        draft_state: "sent",
+      });
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+      const projection = await sentProjection(mailbox, outbox.stable_message_id);
+      expect(projection.placements).toEqual(["Sent"]);
+      expect(projection.messages[0]!.sent_at).not.toBeNull();
+      const [accepted] = await sql<{ accepted_at: Date | null }[]>`
+        SELECT accepted_at FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      expect(accepted?.accepted_at).not.toBeNull();
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a partly accepted send whose lease is lost after SMTP answered keeps its partial outcome", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await partlyDeliverableDraft(mailbox, "Lease lost after a partial answer");
+      provider.refuseRecipient(MISTYPED);
+      // This server stores what it sends in Sent itself, so the copy is there right after SMTP.
+      provider.setStoresSubmissions(true);
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "lease-lost-after-partial-answer");
+      await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${outbox.id}::uuid`;
+      const leaseLost = executeOutboxSubmissionWithHeartbeat(outbox.id, async () => {
+        if (provider.submissions() > 0) {
+          throw Object.assign(new Error("Mail outbox job lease was lost"), { code: "COMMAND_JOB_LEASE_LOST" });
+        }
+      });
+      await expect(leaseLost).rejects.toMatchObject({ code: "COMMAND_JOB_LEASE_LOST" });
+      expect(await delivery(outbox.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+
+      // The check finds the copy in Sent, and the recorded answer still says who did not get it.
+      expect(await executeOutboxSubmission(outbox.id)).toBe("needs_attention");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "needs_attention",
+        last_error_code: "SMTP_PARTIAL_ACCEPTANCE",
+        command_state: "needs_attention",
+        draft_state: "sent",
+      });
+      expect(provider.messagesWithId("Sent", outbox.stable_message_id)).toHaveLength(1);
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose worker stopped after SMTP answered settles with that answer instead of staying unclear", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const partlyDraft = await partlyDeliverableDraft(mailbox, "Stopped after a partial answer");
+      const partly = await schedule(mailbox, partlyDraft.id, partlyDraft.revision, "stopped-after-partial-answer");
+      const fullDraft = await newDraft(mailbox, "Stopped after SMTP accepted");
+      const full = await schedule(mailbox, fullDraft.id, fullDraft.revision, "stopped-after-acceptance");
+      // SMTP answered and Mail recorded the answer; the worker stopped before the Sent copy was stored.
+      for (const [outbox, rejected] of [
+        [partly, [MISTYPED]],
+        [full, []],
+      ] as const) {
+        await stopWorkerAfterClaim(outbox.id, "sending", true);
+        await sql`
+          UPDATE mail.outbox_submissions
+          SET provider_response = ${{ accepted: [CUSTOMER], rejected, response: "250 2.0.0 OK", messageId: outbox.stable_message_id }}::jsonb
+          WHERE id = ${outbox.id}::uuid
+        `;
+      }
+      await recoverStaleExecutions();
+      expect(await delivery(partly.id)).toMatchObject({ state: "unknown", command_state: "ambiguous" });
+
+      // Only some recipients got the message, so it still needs attention for the others.
+      expect(await executeOutboxSubmission(partly.id)).toBe("needs_attention");
+      expect(await delivery(partly.id)).toEqual({
+        state: "needs_attention",
+        last_error_code: "SMTP_PARTIAL_ACCEPTANCE",
+        command_state: "needs_attention",
+        draft_state: "sent",
+      });
+      expect(provider.messagesWithId("Sent", partly.stable_message_id)).toHaveLength(1);
+      expect(await executeOutboxSubmission(full.id)).toBe("sent");
+      expect(await delivery(full.id)).toEqual({ state: "sent", last_error_code: null, command_state: "confirmed", draft_state: "sent" });
+      expect(provider.messagesWithId("Sent", full.stable_message_id)).toHaveLength(1);
+      expect(provider.submissions()).toBe(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a scheduled send goes out after the mailbox's credentials were replaced and verified again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Monday morning");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "replaced-credentials");
+      // The password was replaced; until the account is verified with it again, the send waits.
+      await sql`
+        UPDATE mail.provider_connections connection
+        SET secret_revision = connection.secret_revision + 1
+        FROM mail.provider_bindings binding
+        WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+          AND connection.id = binding.connection_id
+      `;
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      expect(await delivery(outbox.id)).toMatchObject({ state: "scheduled", last_error_code: "OUTBOX_PREDISPATCH_RETRY" });
+      // The account and its sender were verified with the new password.
+      await sql`
+        UPDATE mail.provider_bindings binding
+        SET verified_secret_revision = connection.secret_revision
+        FROM mail.provider_connections connection
+        WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
+          AND connection.id = binding.connection_id
+      `;
+      await sql`
+        UPDATE mail.sender_identity_bindings sender_binding
+        SET verified_secret_revision = binding.verified_secret_revision
+        FROM mail.provider_bindings binding
+        WHERE sender_binding.sender_identity_id = ${mailbox.identityId}::uuid AND binding.id = sender_binding.binding_id
+      `;
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a scheduled send waits while its mailbox needs its password again instead of failing", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Due during an outage");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "auth-required");
+      await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailbox.mailboxId}::uuid`;
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "scheduled",
+        last_error_code: "OUTBOX_PREDISPATCH_RETRY",
+        command_state: "queued",
+        draft_state: "scheduled",
+      });
+      expect(provider.submissions()).toBe(0);
+      await sql`UPDATE mail.mailboxes SET health = 'active' WHERE id = ${mailbox.mailboxId}::uuid`;
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      expect(provider.submissions()).toBe(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a scheduled message is dated when it goes out, not when it was scheduled", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Dated at dispatch");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "dated-at-dispatch");
+      // As if Send was chosen three days ago.
+      await sql`
+        UPDATE mail.outbox_submissions
+        SET created_at = created_at - interval '3 days', mime_date = mime_date - interval '3 days'
+        WHERE id = ${outbox.id}::uuid
+      `;
+      const dispatchedFrom = Date.now() - 1_000;
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      const [copy] = provider.messagesWithId("Sent", outbox.stable_message_id);
+      if (!copy) throw new Error("The Sent copy is missing");
+      const parsed = await simpleParser(copy.source);
+      expect(parsed.date?.getTime()).toBeGreaterThanOrEqual(Math.floor(dispatchedFrom / 1_000) * 1_000);
+      expect(copy.internalDate.getTime()).toBeGreaterThanOrEqual(dispatchedFrom);
+      const projection = await sentProjection(mailbox, outbox.stable_message_id);
+      expect(projection.messages[0]!.sent_at!.getTime()).toBeGreaterThanOrEqual(dispatchedFrom);
     } finally {
       provider.restore();
     }

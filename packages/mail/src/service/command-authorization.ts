@@ -42,23 +42,9 @@ const serviceAccountActorAllowed = async (
   const actorKind = command.initiator_actor_kind ?? command.actor_kind;
   const actorId = command.initiator_actor_id ?? command.actor_id;
   if (actorKind !== "service_account") return true;
-  if (!actorId || scopeRank(command.credential_scopes ?? []) < requiredRank(permission)) return false;
-  if (command.credential_id) {
-    const [credential] = await db<{ active: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1
-        FROM auth.service_account_credentials credential
-        WHERE credential.id = ${command.credential_id}::uuid
-          AND credential.service_account_id = ${actorId}::uuid
-          AND credential.status = 'active'
-          AND credential.revoked_at IS NULL
-          AND (credential.expires_at IS NULL OR credential.expires_at > now())
-          AND credential.scopes @> ${toPgTextArray(command.credential_scopes ?? [])}::text[]
-          AND credential.scopes <@ ${toPgTextArray(command.credential_scopes ?? [])}::text[]
-      ) AS active
-    `;
-    if (credential?.active !== true) return false;
-  } else {
+  if (!actorId) return false;
+  // Service work without a stored credential fails closed before any database lookup.
+  if (!command.credential_id) {
     const expiresAt = command.credential_expires_at ? new Date(command.credential_expires_at).getTime() : Number.NaN;
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
   }
@@ -76,6 +62,25 @@ const serviceAccountActorAllowed = async (
     WHERE id = ${actorId}::uuid
   `;
   if (!serviceAccount || serviceAccount.status !== "active") return false;
+  // A personal API key acts as its user and is minted without scopes, the same exemption the
+  // request applied when it accepted the command; the user's mailbox grant decides below.
+  if (serviceAccount.kind !== "user_delegated" && scopeRank(command.credential_scopes ?? []) < requiredRank(permission)) return false;
+  if (command.credential_id) {
+    const [credential] = await db<{ active: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM auth.service_account_credentials credential
+        WHERE credential.id = ${command.credential_id}::uuid
+          AND credential.service_account_id = ${actorId}::uuid
+          AND credential.status = 'active'
+          AND credential.revoked_at IS NULL
+          AND (credential.expires_at IS NULL OR credential.expires_at > now())
+          AND credential.scopes @> ${toPgTextArray(command.credential_scopes ?? [])}::text[]
+          AND credential.scopes <@ ${toPgTextArray(command.credential_scopes ?? [])}::text[]
+      ) AS active
+    `;
+    if (credential?.active !== true) return false;
+  }
   if (serviceAccount.kind !== "resource_bound") return true;
   return (
     serviceAccount.app_id === "mail" && serviceAccount.resource_type === "mailbox" && serviceAccount.resource_id === command.mailbox_id

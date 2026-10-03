@@ -1894,6 +1894,7 @@ type DbOutboxExecution = {
   draft_snapshot: JsonRecord | string;
   mime_blob_id: string | null;
   mime_date: Date | string;
+  provider_response: JsonRecord | string;
   attempt: number;
   created_at: Date | string;
 };
@@ -1947,6 +1948,7 @@ const loadOutbox = async (outboxId: string): Promise<{ outbox: DbOutboxExecution
       o.draft_snapshot,
       o.mime_blob_id,
       o.mime_date,
+      o.provider_response,
       o.attempt,
       o.created_at,
       c.mailbox_id AS command_mailbox_id,
@@ -1994,6 +1996,7 @@ const loadOutbox = async (outboxId: string): Promise<{ outbox: DbOutboxExecution
       draft_snapshot: row.draft_snapshot,
       mime_blob_id: row.mime_blob_id,
       mime_date: row.mime_date,
+      provider_response: row.provider_response,
       attempt: row.attempt,
       created_at: row.created_at,
     },
@@ -2023,7 +2026,16 @@ const loadOutbox = async (outboxId: string): Promise<{ outbox: DbOutboxExecution
   };
 };
 
-const lockOutboxFence = async (db: SqlClient, outbox: DbOutboxExecution, command: DbCommandExecution): Promise<boolean> => {
+/**
+ * Locks the outbox at the attempt it was loaded at. `staleUnsent` also requires that the
+ * attempt's worker stopped renewing its heartbeat and never reached SMTP.
+ */
+const lockOutboxFence = async (
+  db: SqlClient,
+  outbox: DbOutboxExecution,
+  command: DbCommandExecution,
+  staleUnsent = false,
+): Promise<boolean> => {
   const [active] = await db<{ id: string }[]>`
     SELECT o.id
     FROM mail.outbox_submissions o
@@ -2034,6 +2046,13 @@ const lockOutboxFence = async (db: SqlClient, outbox: DbOutboxExecution, command
       AND c.id = ${command.id}::uuid
       AND c.attempt = ${command.attempt}
       AND c.state = ${command.state}
+      AND (
+        ${!staleUnsent}
+        OR (
+          c.provider_effect_attempt IS DISTINCT FROM c.attempt
+          AND COALESCE(c.worker_heartbeat_at, c.started_at) < now() - (${STALE_EXECUTION_MINUTES}::text || ' minutes')::interval
+        )
+      )
     FOR UPDATE OF o, c
   `;
   return Boolean(active);
@@ -2205,6 +2224,27 @@ const claimOutbox = async (outboxId: string): Promise<OutboxClaim | null> =>
           updated_at = now()
         WHERE id = ${current.command_id}::uuid AND state = 'queued'
       `;
+      // Nothing was sent yet, so a send scheduled before the mailbox's credentials were replaced
+      // goes out with the new ones once the account and the sender are verified with them again.
+      await tx`
+        UPDATE mail.commands command
+        SET selected_secret_revision = binding.verified_secret_revision
+        FROM mail.outbox_submissions outbox
+        JOIN mail.provider_bindings binding ON binding.id = outbox.selected_binding_id
+        JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
+        JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+        JOIN mail.sender_identity_bindings sender_binding
+          ON sender_binding.sender_identity_id = outbox.sender_identity_id
+         AND sender_binding.binding_id = binding.id
+         AND sender_binding.verified_secret_revision = binding.verified_secret_revision
+         AND sender_binding.revoked_at IS NULL
+        WHERE outbox.id = ${outboxId}::uuid
+          AND command.id = outbox.command_id
+          AND binding.verified_secret_revision > command.selected_secret_revision
+          AND binding.state IN ('active', 'degraded')
+          AND binding.verified_scope_fingerprint = resource.scope_fingerprint
+          AND connection.secret_revision = binding.verified_secret_revision
+      `;
       await tx`UPDATE mail.drafts SET state = 'sending' WHERE id = (SELECT draft_id FROM mail.outbox_submissions WHERE id = ${outboxId}::uuid)`;
     } else if (current.state === "unknown") {
       await tx`
@@ -2363,32 +2403,46 @@ const loadSenderBinding = async (command: DbCommandExecution, senderIdentityId: 
   return sender;
 };
 
-const ensureMimeBlob = async (
-  outbox: DbOutboxExecution,
-): Promise<{ blobId: string; byteLength: number; snapshot: z.infer<typeof outboundDraftSnapshotSchema> }> => {
+type OutboxMime = {
+  blobId: string;
+  byteLength: number;
+  snapshot: z.infer<typeof outboundDraftSnapshotSchema>;
+  /** The message's Date header, which also dates its Sent copy and when Mail shows it as sent. */
+  date: Date;
+};
+
+/**
+ * Builds the message once, when it is first sent, so a message scheduled for later carries the
+ * time it went out. Later attempts and the Sent copy reuse the stored bytes and their date.
+ */
+const ensureMimeBlob = async (outbox: DbOutboxExecution): Promise<OutboxMime> => {
   const snapshot = outboundDraftSnapshotSchema.parse(parseJsonRecord(outbox.draft_snapshot));
   if (outbox.mime_blob_id) {
     const blob = await getStoredBlob(outbox.mime_blob_id);
-    return { blobId: blob.id, byteLength: blob.byteLength, snapshot };
+    return { blobId: blob.id, byteLength: blob.byteLength, snapshot, date: new Date(outbox.mime_date) };
   }
+  const date = new Date();
   const source = buildMimeStream({
     snapshot,
     messageId: outbox.stable_message_id,
-    date: new Date(outbox.mime_date),
+    date,
     openAttachment: createBlobReadable,
   });
   const blob = await storeReadableBlob(source);
-  const [updated] = await sql<{ mime_blob_id: string }[]>`
+  const [updated] = await sql<{ mime_blob_id: string; mime_date: Date | string }[]>`
     UPDATE mail.outbox_submissions
-    SET mime_blob_id = COALESCE(mime_blob_id, ${blob.id}::uuid), updated_at = now()
+    SET
+      mime_date = CASE WHEN mime_blob_id IS NULL THEN ${date} ELSE mime_date END,
+      mime_blob_id = COALESCE(mime_blob_id, ${blob.id}::uuid),
+      updated_at = now()
     WHERE id = ${outbox.id}::uuid
       AND attempt = ${outbox.attempt}
       AND state = ${outbox.state}
-    RETURNING mime_blob_id
+    RETURNING mime_blob_id, mime_date
   `;
   if (!updated) throw Object.assign(new Error("Outbox execution fence is stale"), { code: "STALE_COMMAND_FENCE" });
   const selected = updated.mime_blob_id === blob.id ? blob : await getStoredBlob(updated.mime_blob_id);
-  return { blobId: selected.id, byteLength: selected.byteLength, snapshot };
+  return { blobId: selected.id, byteLength: selected.byteLength, snapshot, date: new Date(updated.mime_date) };
 };
 
 type ConfirmedSendWorkStateEvent = { conversationId: string; activityId: string };
@@ -2488,25 +2542,29 @@ const finishOutbox = async (params: {
   draftState: "draft" | "sent";
   providerResponse?: JsonRecord;
   error?: unknown;
+  /** SMTP accepted the message for some recipients even though the send needs attention. */
+  delivered?: boolean;
+  /** Settle only an attempt whose worker stopped before SMTP. */
+  staleUnsent?: boolean;
 }): Promise<boolean> => {
   const code = params.error ? normalizeCode(params.error, "MAIL_SEND_FAILED") : null;
+  const delivered =
+    params.delivered === true || ["accepted", "sent_sync_pending", "sent", "reconciled_accepted"].includes(params.outboxState);
   const message = params.error ? errorMessage(params.error, "Mail send failed") : null;
   const result = await sql.begin(async (tx) => {
-    if (!(await lockOutboxFence(tx, params.outbox, params.command))) return { updated: false, transition: null };
+    if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return { updated: false, transition: null };
     await tx`
       UPDATE mail.outbox_submissions
       SET
         state = ${params.outboxState},
-        accepted_at = CASE WHEN ${params.outboxState} IN ('accepted', 'sent_sync_pending', 'sent', 'reconciled_accepted') THEN COALESCE(accepted_at, now()) ELSE accepted_at END,
+        accepted_at = CASE WHEN ${delivered} THEN COALESCE(accepted_at, now()) ELSE accepted_at END,
         provider_response = provider_response || ${params.providerResponse ?? {}}::jsonb,
         last_error_code = ${code},
         last_error_message = ${message},
         updated_at = now()
       WHERE id = ${params.outbox.id}::uuid
     `;
-    if (["accepted", "sent_sync_pending", "sent", "reconciled_accepted"].includes(params.outboxState)) {
-      await recordOutboundSentAt(tx, params.outbox.id);
-    }
+    if (delivered) await recordOutboundSentAt(tx, params.outbox.id);
     await tx`
       UPDATE mail.commands
       SET
@@ -2591,8 +2649,12 @@ const finishOutbox = async (params: {
   return result.updated;
 };
 
+// The mailbox's connection can be briefly unavailable, such as while it needs its password again
+// or its new credentials are being verified; the send waits for it like for an unreachable provider.
+const RETRYABLE_PRE_DISPATCH_CODES = new Set(["COMMAND_JOB_LEASE_LOST", "BINDING_UNAVAILABLE", "CREDENTIAL_REVISION_CHANGED"]);
+
 const isRetryablePreDispatchError = (error: unknown): boolean =>
-  isTransientProviderFailure(error) || isTransientDatabaseError(error) || normalizeCode(error, "") === "COMMAND_JOB_LEASE_LOST";
+  isTransientProviderFailure(error) || isTransientDatabaseError(error) || RETRYABLE_PRE_DISPATCH_CODES.has(normalizeCode(error, ""));
 
 const scheduleOutboxRetry = async (params: {
   outbox: DbOutboxExecution;
@@ -2600,10 +2662,12 @@ const scheduleOutboxRetry = async (params: {
   error: unknown;
   code: string;
   fallbackMessage: string;
+  /** Settle only an attempt whose worker stopped before SMTP. */
+  staleUnsent?: boolean;
 }): Promise<void> => {
   const delaySeconds = Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
   const updated = await sql.begin(async (tx) => {
-    if (!(await lockOutboxFence(tx, params.outbox, params.command))) return false;
+    if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return false;
     await tx`
       UPDATE mail.outbox_submissions
       SET
@@ -2657,17 +2721,14 @@ const sentMatches = async (params: {
 
 // The Sent copy keeps Bcc so any client shows whom the user blind-copied; the
 // copy handed to SMTP never carries it. Without Bcc both copies are identical.
-const sentCopySource = async (
-  outbox: DbOutboxExecution,
-  mime: { blobId: string; byteLength: number },
-): Promise<{ blobId: string; byteLength: number }> => {
-  const snapshot = outboundDraftSnapshotSchema.parse(parseJsonRecord(outbox.draft_snapshot));
+const sentCopySource = async (outbox: DbOutboxExecution, mime: OutboxMime): Promise<{ blobId: string; byteLength: number }> => {
+  const snapshot = mime.snapshot;
   if (snapshot.bcc.length === 0) return mime;
   const blob = await storeReadableBlob(
     buildMimeStream({
       snapshot,
       messageId: outbox.stable_message_id,
-      date: new Date(outbox.mime_date),
+      date: mime.date,
       openAttachment: createBlobReadable,
       keepBcc: true,
     }),
@@ -2690,8 +2751,7 @@ const appendSentCopy = async (params: {
   outbox: DbOutboxExecution;
   sender: DbSenderBinding;
   runtime: Awaited<ReturnType<typeof loadProviderConnectionRuntime>>;
-  mimeBlobId: string;
-  mimeByteLength: number;
+  mime: OutboxMime;
   assertLeaseActive: LeaseAssertion;
   signal: AbortSignal;
   appendMissing: boolean;
@@ -2716,7 +2776,7 @@ const appendSentCopy = async (params: {
   });
   if (existing.length > 0) return { stored: true, uids: existing };
   if (!params.appendMissing) return { stored: false, uids: [] };
-  const source = await sentCopySource(params.outbox, { blobId: params.mimeBlobId, byteLength: params.mimeByteLength });
+  const source = await sentCopySource(params.outbox, params.mime);
   await params.assertLeaseActive();
   // A completed APPEND stores the copy even when the provider's search does not list it yet;
   // treating that as missing would append a second copy on the next attempt.
@@ -2728,7 +2788,7 @@ const appendSentCopy = async (params: {
       createBlobReadable(source.blobId),
       source.byteLength,
       ["\\Seen"],
-      new Date(params.outbox.created_at),
+      params.mime.date,
       params.signal,
     );
     appended = true;
@@ -2778,6 +2838,21 @@ const recordSentCopy = async (outbox: DbOutboxExecution, sender: DbSenderBinding
 const providerStoresSubmission = (binding: DbPinnedBinding, outbox: DbOutboxExecution): boolean =>
   outbox.selected_identity_transport_revision === null && parseJsonRecord(binding.capabilities).gmailExtensions === true;
 
+/** Nothing reached SMTP: a temporary failure sends again later, any other one returns the draft. */
+const settlePreDispatchFailure = async (outbox: DbOutboxExecution, command: DbCommandExecution, error: unknown): Promise<void> => {
+  if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
+    await scheduleOutboxRetry({
+      outbox,
+      command,
+      error,
+      code: "OUTBOX_PREDISPATCH_RETRY",
+      fallbackMessage: "Mail provider was temporarily unavailable before dispatch",
+    });
+  } else {
+    await finishOutbox({ outbox, command, outboxState: "failed", commandState: "failed", draftState: "draft", error });
+  }
+};
+
 const prepareFreshOutbox = async (
   outbox: DbOutboxExecution,
   command: DbCommandExecution,
@@ -2787,14 +2862,13 @@ const prepareFreshOutbox = async (
   sender: DbSenderBinding;
   mailboxRuntime: Awaited<ReturnType<typeof loadProviderConnectionRuntime>>;
   sendRuntime: SmtpConnectionConfig;
-  mimeBlobId: string;
-  mimeByteLength: number;
-  snapshot: z.infer<typeof outboundDraftSnapshotSchema>;
+  mime: OutboxMime;
   alreadySent: number[];
   providerStoresSubmission: boolean;
 }> => {
-  const sender = await loadSenderBinding(command, outbox.sender_identity_id);
+  // The mailbox's connection comes first: while it is unavailable, its sender cannot be checked either.
   const binding = await loadPinnedBinding(command);
+  const sender = await loadSenderBinding(command, outbox.sender_identity_id);
   const mailboxRuntime = await loadPinnedRuntime(binding);
   const customTransport =
     outbox.selected_identity_transport_revision === null
@@ -2828,7 +2902,7 @@ const prepareFreshOutbox = async (
     }
   }
   await assertLeaseActive();
-  await beginProviderEffect(command, outbox.sender_identity_id, outbox.selected_identity_transport_revision);
+  // Only reads the Sent folder, so the provider effect starts later, right before SMTP.
   const beforeSend = await sentMatches({
     runtime: mailboxRuntime,
     sentPath: sender.sent_path,
@@ -2839,9 +2913,7 @@ const prepareFreshOutbox = async (
     sender,
     mailboxRuntime,
     sendRuntime,
-    mimeBlobId: mime.blobId,
-    mimeByteLength: mime.byteLength,
-    snapshot: mime.snapshot,
+    mime,
     alreadySent: beforeSend,
     providerStoresSubmission: providerStoresSubmission(binding, outbox),
   };
@@ -2858,19 +2930,90 @@ const prepareFreshOutboxOrFinish = async (
   try {
     return await prepareFreshOutbox(outbox, command, assertLeaseActive, signal);
   } catch (error) {
-    if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
-      await scheduleOutboxRetry({
-        outbox,
-        command,
-        error,
-        code: "OUTBOX_PREDISPATCH_RETRY",
-        fallbackMessage: "Mail provider was temporarily unavailable before dispatch",
-      });
-    } else {
-      await finishOutbox({ outbox, command, outboxState: "failed", commandState: "failed", draftState: "draft", error });
-    }
+    await settlePreDispatchFailure(outbox, command, error);
     return null;
   }
+};
+
+const smtpOutcomeSchema = z.object({ accepted: z.array(z.string()).min(1), rejected: z.array(z.string()) });
+
+/** What SMTP accepted for this send, once an attempt recorded it; a worker that stopped after SMTP leaves it. */
+const recordedSmtpOutcome = (outbox: DbOutboxExecution): z.infer<typeof smtpOutcomeSchema> | null => {
+  const parsed = smtpOutcomeSchema.safeParse(parseJsonRecord(outbox.provider_response));
+  return parsed.success ? parsed.data : null;
+};
+
+/** Records what SMTP accepted before the Sent copy is stored, so a worker that stops there leaves a known outcome. */
+const recordSmtpOutcome = async (outbox: DbOutboxExecution, command: DbCommandExecution, response: JsonRecord): Promise<void> => {
+  await sql.begin(async (tx) => {
+    if (!(await lockOutboxFence(tx, outbox, command))) return;
+    await tx`
+      UPDATE mail.outbox_submissions
+      SET provider_response = provider_response || ${response}::jsonb, updated_at = now()
+      WHERE id = ${outbox.id}::uuid
+    `;
+  });
+};
+
+type SentCopyTarget = {
+  sender: DbSenderBinding;
+  runtime: Awaited<ReturnType<typeof loadProviderConnectionRuntime>>;
+  mime: OutboxMime;
+  appendMissing: boolean;
+};
+
+/**
+ * Stores the Sent copy of a message SMTP accepted and settles the send. An IMAP failure while
+ * storing the copy, or a missing `copy` target, leaves the send confirmed and the copy to the
+ * next attempt instead of making the delivery look uncertain. A message only some recipients
+ * got is stored in Sent too, but needs attention for the others.
+ */
+const settleAcceptedSend = async (params: {
+  outbox: DbOutboxExecution;
+  command: DbCommandExecution;
+  copy: SentCopyTarget | null;
+  response: JsonRecord & { rejected: string[] };
+  assertLeaseActive: LeaseAssertion;
+  signal: AbortSignal;
+}): Promise<void> => {
+  const { outbox, command, copy } = params;
+  let sentCopy: SentCopy = { stored: false, uids: [] };
+  if (copy) {
+    sentCopy = await appendSentCopy({
+      outbox,
+      sender: copy.sender,
+      runtime: copy.runtime,
+      mime: copy.mime,
+      assertLeaseActive: params.assertLeaseActive,
+      signal: params.signal,
+      appendMissing: copy.appendMissing,
+    }).catch((error: unknown): SentCopy => {
+      log.warn("Sent copy waits for the next attempt", { outboxId: outbox.id, code: normalizeCode(error, "SENT_APPEND_FAILED") });
+      return { stored: false, uids: [] };
+    });
+    await recordSentCopy(outbox, copy.sender, sentCopy.uids);
+  }
+  if (params.response.rejected.length > 0) {
+    await finishOutbox({
+      outbox,
+      command,
+      outboxState: "needs_attention",
+      commandState: "needs_attention",
+      draftState: "sent",
+      providerResponse: params.response,
+      delivered: true,
+      error: Object.assign(new Error("SMTP provider accepted only some recipients"), { code: "SMTP_PARTIAL_ACCEPTANCE" }),
+    });
+    return;
+  }
+  await finishOutbox({
+    outbox,
+    command,
+    outboxState: sentCopy.stored ? "sent" : "sent_sync_pending",
+    commandState: "confirmed",
+    draftState: "sent",
+    providerResponse: params.response,
+  });
 };
 
 const persistSmtpResult = async (params: {
@@ -2895,41 +3038,20 @@ const persistSmtpResult = async (params: {
     });
     return;
   }
-  if (result.rejected.length > 0) {
-    await finishOutbox({
-      outbox,
-      command,
-      outboxState: "needs_attention",
-      commandState: "needs_attention",
-      draftState: "sent",
-      providerResponse: response,
-      error: Object.assign(new Error("SMTP provider accepted only some recipients"), { code: "SMTP_PARTIAL_ACCEPTANCE" }),
-    });
-    return;
-  }
-  // SMTP accepted the message, so an IMAP failure while storing the Sent copy leaves the send
-  // confirmed and the copy to the next attempt instead of making the delivery look uncertain.
-  const sentCopy = await appendSentCopy({
-    outbox,
-    sender: prepared.sender,
-    runtime: prepared.mailboxRuntime,
-    mimeBlobId: prepared.mimeBlobId,
-    mimeByteLength: prepared.mimeByteLength,
-    assertLeaseActive: params.assertLeaseActive,
-    signal: params.signal,
-    appendMissing: !prepared.providerStoresSubmission,
-  }).catch((error: unknown): SentCopy => {
-    log.warn("Sent copy waits for the next attempt", { outboxId: outbox.id, code: normalizeCode(error, "SENT_APPEND_FAILED") });
-    return { stored: false, uids: [] };
-  });
-  await recordSentCopy(outbox, prepared.sender, sentCopy.uids);
-  await finishOutbox({
+  await recordSmtpOutcome(outbox, command, response);
+  await params.assertLeaseActive();
+  await settleAcceptedSend({
     outbox,
     command,
-    outboxState: sentCopy.stored ? "sent" : "sent_sync_pending",
-    commandState: "confirmed",
-    draftState: "sent",
-    providerResponse: response,
+    copy: {
+      sender: prepared.sender,
+      runtime: prepared.mailboxRuntime,
+      mime: prepared.mime,
+      appendMissing: !prepared.providerStoresSubmission,
+    },
+    response,
+    assertLeaseActive: params.assertLeaseActive,
+    signal: params.signal,
   });
 };
 
@@ -3026,27 +3148,31 @@ const executeFreshOutbox = async (
   try {
     await beginProviderEffect(command, outbox.sender_identity_id, outbox.selected_identity_transport_revision);
   } catch (error) {
-    await finishOutbox({ outbox, command, outboxState: "failed", commandState: "failed", draftState: "draft", error });
+    await settlePreDispatchFailure(outbox, command, error);
     return;
   }
 
-  const source = createBlobReadable(prepared.mimeBlobId);
+  const source = createBlobReadable(prepared.mime.blobId);
+  let result: Awaited<ReturnType<typeof imapSmtpConnector.sendSource>>;
   try {
-    const result = await imapSmtpConnector.sendSource(prepared.sendRuntime, {
+    result = await imapSmtpConnector.sendSource(prepared.sendRuntime, {
       source,
-      envelopeFrom: prepared.snapshot.useNullEnvelopeSender ? null : (prepared.snapshot.envelopeFrom ?? prepared.snapshot.from.address),
-      recipients: outboundRecipients(prepared.snapshot),
+      envelopeFrom: prepared.mime.snapshot.useNullEnvelopeSender
+        ? null
+        : (prepared.mime.snapshot.envelopeFrom ?? prepared.mime.snapshot.from.address),
+      recipients: outboundRecipients(prepared.mime.snapshot),
       messageId: outbox.stable_message_id,
       deliveryStatusNotification:
-        prepared.snapshot.requestDeliveryReceipt && prepared.snapshot.receiptAddress ? { id: outbox.id } : undefined,
+        prepared.mime.snapshot.requestDeliveryReceipt && prepared.mime.snapshot.receiptAddress ? { id: outbox.id } : undefined,
       signal,
     });
-    await assertLeaseActive();
-    await persistSmtpResult({ outbox, command, prepared, result, assertLeaseActive, signal });
   } catch (error) {
     const messageUnread = source.readableFlowing === null && !source.readableDidRead;
     await persistSmtpFailure({ outbox, command, prepared, error, messageUnread });
+    return;
   }
+  // SMTP answered, so a failure from here on leaves the send unclear, and its check settles it with the recorded answer.
+  await persistSmtpResult({ outbox, command, prepared, result, assertLeaseActive, signal });
 };
 
 /**
@@ -3072,12 +3198,50 @@ const giveUpUnknownOutbox = async (outbox: DbOutboxExecution, command: DbCommand
   }
 };
 
-const reconcileUnknownOutbox = async (outbox: DbOutboxExecution, command: DbCommandExecution, signal: AbortSignal): Promise<void> => {
+const loadSentCopyTarget = async (outbox: DbOutboxExecution, command: DbCommandExecution): Promise<SentCopyTarget> => {
+  const binding = await loadPinnedBinding(command);
+  const sender = await loadSenderBinding(command, outbox.sender_identity_id);
+  const runtime = await loadPinnedRuntime(binding);
+  return { sender, runtime, mime: await ensureMimeBlob(outbox), appendMissing: !providerStoresSubmission(binding, outbox) };
+};
+
+const reconcileUnknownOutbox = async (
+  outbox: DbOutboxExecution,
+  command: DbCommandExecution,
+  assertLeaseActive: LeaseAssertion,
+  signal: AbortSignal,
+): Promise<void> => {
+  // Only a check whose worker stopped during the last attempt gets another one; it settles
+  // without the provider, so a worker that keeps stopping cannot keep the send checking.
+  const exhausted = outbox.attempt > OUTBOX_MAX_ATTEMPTS;
+  // SMTP already answered, and its worker stopped before it settled the send: the outcome is known.
+  const accepted = recordedSmtpOutcome(outbox);
+  if (accepted) {
+    const copy = exhausted
+      ? null
+      : await loadSentCopyTarget(outbox, command).catch((error: unknown) => {
+          log.warn("Sent copy of an accepted send waits for the next attempt", {
+            outboxId: outbox.id,
+            code: normalizeCode(error, "SENT_COPY_TARGET_UNAVAILABLE"),
+          });
+          return null;
+        });
+    await settleAcceptedSend({ outbox, command, copy, response: accepted, assertLeaseActive, signal });
+    return;
+  }
   // A synced copy proves the send without the provider, so it settles the delivery even when the
   // pinned binding, credentials, or sender can no longer be loaded. Otherwise such a failure would
   // give up, and the copy would reopen the delivery for the next check again and again.
   if (await hasSyncedSentCopy(sql, outbox.id)) {
     await finishOutbox({ outbox, command, outboxState: "reconciled_accepted", commandState: "reconciled", draftState: "sent" });
+    return;
+  }
+  if (exhausted) {
+    await giveUpUnknownOutbox(
+      outbox,
+      command,
+      Object.assign(new Error("SMTP outcome could not be proven; the message was not resent"), { code: "AMBIGUOUS_SMTP_OUTCOME" }),
+    );
     return;
   }
   const binding = await loadPinnedBinding(command);
@@ -3115,8 +3279,7 @@ const reconcileSentCopy = async (
     outbox,
     sender,
     runtime,
-    mimeBlobId: mime.blobId,
-    mimeByteLength: mime.byteLength,
+    mime,
     assertLeaseActive,
     signal,
     appendMissing: !providerStoresSubmission(binding, outbox) || outbox.attempt >= OUTBOX_MAX_ATTEMPTS,
@@ -3159,7 +3322,7 @@ const runClaimedOutbox = async (
   signal: AbortSignal,
 ): Promise<string | null> => {
   try {
-    if (claim.previousOutboxState === "unknown") await reconcileUnknownOutbox(loaded.outbox, loaded.command, signal);
+    if (claim.previousOutboxState === "unknown") await reconcileUnknownOutbox(loaded.outbox, loaded.command, assertLeaseActive, signal);
     else if (claim.previousOutboxState === "sent_sync_pending") {
       await reconcileSentCopy(loaded.outbox, loaded.command, assertLeaseActive, signal);
     } else await executeFreshOutbox(loaded.outbox, loaded.command, assertLeaseActive, signal);
@@ -3168,12 +3331,26 @@ const runClaimedOutbox = async (
       log.warn("Sent copy reconciliation failed", { outboxId, code: normalizeCode(error, "SENT_RECONCILIATION_FAILED") });
       await deferSentCopy(loaded.outbox, error);
     } else if (claim.previousOutboxState === "unknown") {
-      // A connection failure proves nothing either way, so the check is repeated while attempts remain.
-      if (isTransientProviderFailure(error) && loaded.outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
+      // A connection or database failure proves nothing either way, so the check is repeated while attempts remain.
+      const accepted = recordedSmtpOutcome(loaded.outbox);
+      if ((isTransientProviderFailure(error) || isTransientDatabaseError(error)) && loaded.outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
         await recheckUnknownOutboxLater(loaded.outbox, loaded.command);
+      } else if (accepted) {
+        // SMTP's recorded answer still settles the send; only its Sent copy waits.
+        await settleAcceptedSend({
+          outbox: loaded.outbox,
+          command: loaded.command,
+          copy: null,
+          response: accepted,
+          assertLeaseActive,
+          signal,
+        });
       } else {
         await giveUpUnknownOutbox(loaded.outbox, loaded.command, error);
       }
+    } else if (!(await providerEffectStartedForAttempt(loaded.command))) {
+      // The attempt stopped before SMTP, such as when its lease was lost, so nothing was sent.
+      await settlePreDispatchFailure(loaded.outbox, loaded.command, error);
     } else {
       await finishOutbox({
         outbox: loaded.outbox,
@@ -3272,7 +3449,56 @@ export const executeOutboxSubmissionWithHeartbeat = async (
 
 export const executeOutboxSubmission = async (outboxId: string): Promise<string | null> => executeOutboxSubmissionWithHeartbeat(outboxId);
 
-const recoverStaleExecutions = async (): Promise<number> => {
+/**
+ * A send whose worker stopped before SMTP sent nothing, so it goes back to the queue like any
+ * send that could not reach its provider, and fails after its last attempt.
+ */
+const recoverStaleUnsentSends = async (): Promise<number> => {
+  const stale = await sql<{ id: string }[]>`
+    SELECT o.id
+    FROM mail.outbox_submissions o
+    JOIN mail.commands c ON c.id = o.command_id
+    WHERE o.state = 'sending'
+      AND c.state = 'executing'
+      AND c.kind = 'send'
+      AND c.provider_effect_attempt IS DISTINCT FROM c.attempt
+      AND COALESCE(c.worker_heartbeat_at, c.started_at) < now() - (${STALE_EXECUTION_MINUTES}::text || ' minutes')::interval
+    ORDER BY o.id
+    LIMIT 500
+  `;
+  let recovered = 0;
+  for (const { id } of stale) {
+    const loaded = await loadOutbox(id);
+    if (!loaded || loaded.outbox.state !== "sending" || loaded.command.state !== "executing") continue;
+    const { outbox, command } = loaded;
+    const error = Object.assign(new Error("Send worker stopped before the message was sent"), { code: "WORKER_LEASE_EXPIRED" });
+    if (outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
+      await scheduleOutboxRetry({
+        outbox,
+        command,
+        error,
+        code: "WORKER_LEASE_EXPIRED",
+        fallbackMessage: "Send worker stopped before the message was sent",
+        staleUnsent: true,
+      });
+    } else {
+      await finishOutbox({
+        outbox,
+        command,
+        outboxState: "failed",
+        commandState: "failed",
+        draftState: "draft",
+        error,
+        staleUnsent: true,
+      });
+    }
+    recovered += 1;
+  }
+  return recovered;
+};
+
+/** Settles commands whose worker stopped mid-run; part of the commands-due schedule, exported so tests can drive it. */
+export const recoverStaleExecutions = async (): Promise<number> => {
   const result = await sql.begin(async (tx) => {
     const staleOutboxes = await tx<{ id: string; command_id: string }[]>`
       WITH stale AS MATERIALIZED (
@@ -3282,6 +3508,7 @@ const recoverStaleExecutions = async (): Promise<number> => {
         WHERE o.state = 'sending'
           AND c.state = 'executing'
           AND c.kind = 'send'
+          AND c.provider_effect_attempt = c.attempt
           AND COALESCE(c.worker_heartbeat_at, c.started_at) < now() - (${STALE_EXECUTION_MINUTES}::text || ' minutes')::interval
         ORDER BY c.id, o.id
         FOR UPDATE OF o, c SKIP LOCKED
@@ -3308,6 +3535,26 @@ const recoverStaleExecutions = async (): Promise<number> => {
       JOIN recovered_commands c ON c.id = stale.command_id
       WHERE o.id = stale.outbox_id
       RETURNING o.id, o.command_id
+    `;
+    // A check whose worker stopped is checked again; the check only reads the provider.
+    const staleChecks = await tx<{ id: string }[]>`
+      WITH stale AS MATERIALIZED (
+        SELECT c.id
+        FROM mail.outbox_submissions o
+        JOIN mail.commands c ON c.id = o.command_id
+        WHERE o.state = 'unknown'
+          AND c.state = 'executing'
+          AND c.kind = 'send'
+          AND COALESCE(c.worker_heartbeat_at, c.started_at) < now() - (${STALE_EXECUTION_MINUTES}::text || ' minutes')::interval
+        ORDER BY c.id
+        FOR UPDATE OF o, c SKIP LOCKED
+        LIMIT 500
+      )
+      UPDATE mail.commands c
+      SET state = 'ambiguous', worker_heartbeat_at = NULL, updated_at = now()
+      FROM stale
+      WHERE c.id = stale.id
+      RETURNING c.id
     `;
     const staleMutations = await tx<{ id: string }[]>`
       WITH stale AS MATERIALIZED (
@@ -3354,9 +3601,9 @@ const recoverStaleExecutions = async (): Promise<number> => {
       WHERE o.id = stale.id
       RETURNING o.id
     `;
-    return staleOutboxes.length + staleMutations.length + staleSentCopies.length;
+    return staleOutboxes.length + staleChecks.length + staleMutations.length + staleSentCopies.length;
   });
-  return result;
+  return result + (await recoverStaleUnsentSends());
 };
 
 // An ambiguous outcome is checked again after a short pause. A command that went back to the

@@ -112,16 +112,16 @@ Geplante Nachrichten erscheinen unter **Geplant** mit Empfängern, Inhaltsvorsch
 - es in einen gemeinsamen Entwurf zurückführen oder
 - es verwerfen.
 
-Nach erfolgreicher Zustellung wird die Nachricht zu einer normalen gesendeten E-Mail. Geplanter Versand und das Rückgängigmachen des Sendens benötigen einen aktiven Postfachtransport. Wird das Postfach pausiert, stoppt die eingereihte Zustellung, bis ein Administrator das Postfach fortsetzt.
+Nach erfolgreicher Zustellung wird die Nachricht zu einer normalen gesendeten E-Mail. Sie trägt den Zeitpunkt, zu dem sie verschickt wurde, nicht den Zeitpunkt der Planung. Geplanter Versand und das Rückgängigmachen des Sendens benötigen einen aktiven Postfachtransport. Wird das Postfach pausiert, stoppt die eingereihte Zustellung, bis ein Administrator das Postfach fortsetzt. Wurde das Passwort des Postfachs nach dem Planen ersetzt, geht die Nachricht mit dem neuen Passwort hinaus, wenn Postfach und Absenderidentität bis zum geplanten Zeitpunkt damit erneut bestätigt sind.
 
 ## Ein Sendeproblem beheben {icon="alert-circle"}
 
 Wähle unter einer ausgehenden Nachricht den Zustellstatus, um zu sehen, was geschehen ist und welcher nächste Schritt am sichersten ist.
 
-Ist der Mailserver nicht erreichbar, bevor Mail die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut; der Zustellstatus zeigt den nächsten Versuch. Bleibt der Server unerreichbar, zeigt die Nachricht **Senden fehlgeschlagen**.
+Ist der Mailserver nicht erreichbar, bevor Mail die Nachricht übergibt, wurde nichts gesendet. Mail behält die Nachricht und versucht es über einige Minuten mehrmals erneut; der Zustellstatus zeigt den nächsten Versuch. Genauso geht Mail vor, wenn das Postfach in diesem Moment sein Passwort erneut braucht oder sich neu verbindet, oder wenn Mail neu gestartet wurde, bevor es die Nachricht übergeben hat. Hält das Problem an, zeigt die Nachricht **Senden fehlgeschlagen**.
 
 - **Senden fehlgeschlagen** bedeutet, dass Mail sicher weiß, dass die Nachricht nicht gesendet wurde. Wähle **Prüfen und erneut senden**, um den erhaltenen Entwurf vor einem neuen Versuch zu öffnen. Fehler bei Empfängern, Größe oder Zustelloptionen verwenden eine genauere Prüfaktion.
-- **Teilweise gesendet** bedeutet, dass der empfangende Server einige Empfänger akzeptiert und andere abgelehnt hat. Wähle **Verbleibende Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den nicht akzeptierten Adressen zu erstellen. **Alle erneut prüfen…** nimmt auch die ursprünglichen Empfänger auf und kann deshalb doppelte Nachrichten verursachen.
+- **Teilweise gesendet** bedeutet, dass der empfangende Server einige Empfänger akzeptiert und andere abgelehnt hat. Die Nachricht liegt wie jede gesendete E-Mail im Ordner Gesendet. Wähle **Verbleibende Empfänger prüfen**, um einen unabhängigen Entwurf nur mit den nicht akzeptierten Adressen zu erstellen. **Alle erneut prüfen…** nimmt auch die ursprünglichen Empfänger auf und kann deshalb doppelte Nachrichten verursachen.
 - **Zustellstatus unklar** bedeutet, dass die Verbindung beendet wurde, bevor Mail das Ergebnis nachweisen konnte. Mail sucht noch einige Male im Ordner Gesendet nach der Kopie des Anbieters und markiert die Nachricht als gesendet, sobald diese Kopie erscheint, auch wenn das erst später geschieht. Wähle zuerst **Erneut prüfen**. Erstelle erst dann einen neuen Sendeentwurf, wenn du berücksichtigt hast, dass die ursprüngliche Nachricht bereits angekommen sein könnte.
 - **Gesendet, aber nicht gespeichert** bedeutet, dass die Zustellung erfolgreich war, Mail die Kopie aber nicht im Ordner Gesendet speichern konnte. Sende die Nachricht nicht erneut.
 
