@@ -2409,6 +2409,13 @@
   flex-wrap: wrap;
 }
 
+/* Plain meta text reads like the subtitle beside it; badges and buttons keep their own size. */
+.k2b-ui .k2b-detail-panel__meta {
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
 .k2b-ui .k2b-detail-panel__body {
   display: flex;
   min-width: 0;
@@ -2465,21 +2472,60 @@
 }
 
 /* A group is one quiet surface like the summary. Its sections are separated
-   by space and their headings, not by rules or a border. */
+   by space and their headings, not by rules or a border. A section placed
+   directly in the body and a discussion inside the panel are a group of one:
+   the same surface, and their heading and content start where a grouped
+   section's do. */
 .k2b-ui .k2b-detail-panel__group {
   display: flex;
   min-width: 0;
   flex-direction: column;
   padding-block: 0.25rem;
+}
+
+.k2b-ui
+  :is(
+    .k2b-detail-panel__group,
+    .k2b-detail-panel__body > .k2b-detail-panel__section,
+    .k2b-detail-panel .k2b-discussion[data-surface="default"]
+  ) {
+  border: 0;
   border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface);
+}
+
+.k2b-ui :is(.k2b-detail-panel__body > .k2b-detail-panel__section, .k2b-detail-panel .k2b-discussion[data-surface="default"]) {
+  padding: 0.75rem 0.875rem 1rem;
+}
+
+.k2b-ui .k2b-detail-panel .k2b-discussion[data-surface="default"] {
+  gap: 0.375rem;
+}
+
+/* Placed in a group, a discussion is one of its sections; deeper in a
+   section or summary, that host already frames it. */
+.k2b-ui .k2b-detail-panel__group > .k2b-discussion[data-surface="default"] {
+  padding: 0.5rem 0.875rem 0.75rem;
+  border-radius: 0;
+  background: transparent;
+}
+
+.k2b-ui
+  :is(.k2b-detail-panel__section, .k2b-detail-panel__summary)
+  .k2b-discussion[data-surface="default"] {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section {
   padding: 0.5rem 0.875rem 0.75rem;
 }
 
-.k2b-ui .k2b-detail-panel__group > .k2b-detail-panel__section + .k2b-detail-panel__section {
+.k2b-ui
+  .k2b-detail-panel__group
+  > :is(.k2b-detail-panel__section, .k2b-discussion)
+  + :is(.k2b-detail-panel__section, .k2b-discussion[data-surface="default"]) {
   padding-top: 0.75rem;
 }
 
@@ -2508,7 +2554,8 @@
   flex: 1;
 }
 
-.k2b-ui .k2b-detail-panel__section-icon {
+.k2b-ui .k2b-detail-panel__section-icon,
+.k2b-ui .k2b-discussion__icon {
   display: grid;
   width: 1.5rem;
   height: 1.5rem;
@@ -2552,26 +2599,22 @@
   background: transparent;
 }
 
+/* The header is a detail panel section heading: the same icon slot, title
+   type, count and action columns, wherever the discussion is placed. */
 .k2b-ui .k2b-discussion__header {
   display: flex;
   min-width: 0;
-  min-height: 2rem;
+  min-height: 1.75rem;
   align-items: center;
   gap: 0.5rem;
 }
 
-.k2b-ui .k2b-discussion__header :is(h2, h3) {
+.k2b-ui .k2b-discussion__header > :is(h2, h3) {
   min-width: 0;
   margin: 0;
   flex: 1;
   overflow: hidden;
-  color: var(--k2b-text-secondary);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  line-height: 1rem;
-  letter-spacing: 0.04em;
   text-overflow: ellipsis;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -2582,16 +2625,6 @@
   line-height: 1.5rem;
   letter-spacing: normal;
   text-transform: none;
-}
-
-.k2b-ui .k2b-discussion__icon {
-  display: grid;
-  width: 1.5rem;
-  height: 1.5rem;
-  flex: 0 0 1.5rem;
-  place-items: center;
-  color: var(--k2b-detail-panel-accent, var(--k2b-action));
-  font-size: 0.75rem;
 }
 
 .k2b-ui .k2b-discussion__count,
@@ -2631,6 +2664,25 @@
 .k2b-ui .k2b-discussion__composer-field {
   position: relative;
   min-width: 0;
+}
+
+/* The composer is a field like the inputs beside it: a recessed well without
+   a border, not a second white box inside the discussion's surface. */
+.k2b-ui .k2b-discussion__composer-field .k2b-markdown-editor:not([data-invalid="true"]) {
+  border-color: transparent;
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-discussion__composer-field .k2b-markdown-editor:not([data-invalid="true"]):hover {
+  border-color: var(--k2b-border);
+  background: var(--k2b-field-hover, var(--k2b-hover));
+}
+
+.k2b-ui .k2b-discussion__composer-field .k2b-markdown-editor:not([data-invalid="true"]):focus-within {
+  border-color: transparent;
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-focus-inset);
 }
 
 .k2b-ui .k2b-discussion__composer-inset-action {
@@ -2703,6 +2755,8 @@
   align-self: flex-start;
   align-items: center;
   gap: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-discussion__status button:hover,
@@ -2819,7 +2873,8 @@
 }
 
 .k2b-ui .k2b-detail-panel__section-header h3,
-.k2b-ui .k2b-detail-panel__section-title {
+.k2b-ui .k2b-detail-panel__section-title,
+.k2b-ui .k2b-discussion__header :is(h2, h3) {
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
@@ -2833,14 +2888,18 @@
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"],
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"],
 .k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"],
-.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="text"] {
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
+.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="text"],
+.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"],
+.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="text"] {
+  /* Text, so the fallback is the theme-aware action colour, not the fixed accent the icons use. */
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover,
-.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover {
-  color: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
-  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 9%, transparent);
+.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover,
+.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"]:not(:disabled):hover {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
 }
 
 .k2b-ui .k2b-detail-panel__section-description {
@@ -8071,7 +8130,8 @@
   .k2b-ui .k2b-color-input[data-invalid="true"] .k2b-color-input__value:focus-visible,
   .k2b-ui .k2b-data-table__row:focus-visible,
   .k2b-ui .k2b-pagination__page:focus-visible,
-  .k2b-ui .k2b-range-picker__option:focus-visible {
+  .k2b-ui .k2b-range-picker__option:focus-visible,
+  .k2b-ui .k2b-discussion__composer-field .k2b-markdown-editor:not([data-invalid="true"]):focus-within {
     outline: var(--k2b-focus-width) solid CanvasText;
     outline-offset: calc(-1 * var(--k2b-focus-width));
   }

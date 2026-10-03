@@ -5,6 +5,7 @@ import {
   type DataTableColumn,
   dialogCore,
   IconButton,
+  NoticeCard,
   PanelDialog,
   Placeholder,
   panelDialogWideOptions,
@@ -86,9 +87,7 @@ function MemoryLearningRunDetails(props: { run: AiMemoryLearningRun; close: () =
           icon="ti ti-message-circle"
           actions={<StatusBadge label={status().label} tone={status().tone} />}
         >
-          <Show when={props.run.error}>
-            {(error) => <p class="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error()}</p>}
-          </Show>
+          <Show when={props.run.error}>{(error) => <NoticeCard tone="danger" title={error()} />}</Show>
           <Show
             when={props.run.changes.length > 0}
             fallback={

@@ -1,6 +1,18 @@
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, CopyButton, DateTimePicker, NoticeCard, Placeholder, prompts, Select, Tag, TextInput, useLocale } from "@k2b/ui";
+import {
+  Button,
+  CopyButton,
+  DateTimePicker,
+  DetailPanel,
+  NoticeCard,
+  Placeholder,
+  prompts,
+  Select,
+  Tag,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PermissionLevel, ServiceAccountCredential } from "../contracts/shared";
 import { accessMessages } from "./messages";
@@ -203,39 +215,29 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
     if (confirmed) await revokeMutation.mutate({ id: key.id, name: key.name });
   };
 
+  // The heading is a detail panel section heading: in a detail panel the keys line up with the sections around them,
+  // and below a settings group title they read as one level down.
   return (
-    <section class="flex flex-col gap-4">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <h3 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
-            <i class="ti ti-key text-sm" />
-            {props.title ?? t().apiKeys}
-          </h3>
-          <p class="mt-1 text-xs text-dimmed">{props.description ?? t().apiKeysDescription}</p>
-        </div>
-        <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={openCreate} disabled={createMutation.loading()}>
-          <i class="ti ti-plus" />
+    <DetailPanel.Section
+      title={props.title ?? t().apiKeys}
+      icon="ti ti-key"
+      description={props.description ?? t().apiKeysDescription}
+      actions={
+        <Button type="button" variant="secondary" size="sm" onClick={openCreate} disabled={createMutation.loading()}>
+          <i class="ti ti-plus" aria-hidden="true" />
           {t().add}
         </Button>
-      </div>
-
-      <Show
-        when={keys().length > 0}
-        fallback={
-          <Placeholder
-            icon="ti ti-key"
-            class="rounded-lg border border-dashed border-zinc-200 dark:border-zinc-800"
-            description={t().noApiKeys}
-          />
-        }
-      >
+      }
+    >
+      <Show when={keys().length > 0} fallback={<Placeholder icon="ti ti-key" align="left" description={t().noApiKeys} />}>
         <div class="flex flex-col gap-2">
           <For each={keys()}>
             {(key) => (
               <div class="group/api-key flex items-center gap-3 rounded-lg bg-zinc-50/70 p-3 dark:bg-zinc-900/35">
                 <div class="min-w-0 flex-1">
-                  <div class="flex min-w-0 items-center gap-2">
-                    <span class="truncate text-sm font-medium text-primary">{key.name}</span>
+                  {/* The name and its tags wrap instead of squeezing the name to a few letters in a narrow section. */}
+                  <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <span class="max-w-full truncate text-sm font-medium text-primary">{key.name}</span>
                     <Tag color={key.permission === "none" ? "#dc2626" : "#2563eb"}>
                       {permissionLabel(key.permission, options(), t().noAccess)}
                     </Tag>
@@ -266,6 +268,6 @@ export default function ResourceApiKeys(props: ResourceApiKeysProps) {
           </For>
         </div>
       </Show>
-    </section>
+    </DetailPanel.Section>
   );
 }

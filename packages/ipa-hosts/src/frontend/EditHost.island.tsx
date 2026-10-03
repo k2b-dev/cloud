@@ -279,10 +279,7 @@ const EditHostDialog = (props: {
         </div>
 
         <div class="flex flex-col gap-2">
-          <Show
-            when={macAddresses().length > 0}
-            fallback={<Placeholder align="left" class="rounded-xl border border-dashed border-subtle p-3" description={<>{t().noMac}</>} />}
-          >
+          <Show when={macAddresses().length > 0} fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noMac}</>} />}>
             <Index each={macAddresses()}>
               {(macAddress, index) => (
                 <MacAddressRow

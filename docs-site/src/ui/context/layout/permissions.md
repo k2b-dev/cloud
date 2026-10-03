@@ -14,6 +14,8 @@ Use `PermissionEditor` for a complete sharing surface. Use `EntitySearch` alone 
 
 Use `ResourceApiKeys` for integrations that need machine access to one resource. Do not create or reveal credentials in `PermissionEditor`.
 
+`ResourceApiKeys` renders one section with a [detail panel section](/en/ui/layout/detail-panel) heading: a key icon, the title, the description, and the Add button at the trailing edge. Below a settings group title it reads one level down. Placed directly in a `DetailPanel.Body`, it gets the panel's flat frame like every other section, so do not wrap it or add a heading of your own.
+
 ## Import
 
 ```tsx

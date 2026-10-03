@@ -134,7 +134,7 @@ export default function AdminOperations(props: { freeIpaEnabled: boolean }) {
           .map((operation) => {
             const isLoading = () => runMutation.loading() && activeOperationKey() === operation.key;
             return (
-              <div class="flex flex-col gap-3 border-t border-[var(--ui-border)] py-3 md:flex-row md:items-center md:gap-4">
+              <div class="flex flex-col gap-3 py-3 md:flex-row md:items-center md:gap-4">
                 <div class="flex min-w-0 flex-1 items-start gap-3">
                   <i class={isLoading() ? "ti ti-loader-2 animate-spin text-sm" : `${operation.icon} text-sm`} />
                   <div class="min-w-0">

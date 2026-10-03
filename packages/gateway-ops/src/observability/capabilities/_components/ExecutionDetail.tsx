@@ -47,6 +47,7 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
       <DetailPanel>
         <DetailPanel.Header
           title={t.detailTitle}
+          subtitle={t.detailHint}
           actions={
             <IconButtonLink href={props.closeHref} label={t.close}>
               <i class="ti ti-x" />
@@ -54,9 +55,12 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
           }
         />
         <DetailPanel.Body>
-          <p class="text-xs text-dimmed">{t.detailHint}</p>
           {props.executions.map((execution) => (
-            <DetailPanel.Section title={`${execution.appId} · ${execution.capability}`}>
+            <DetailPanel.Section
+              title={`${execution.appId} · ${execution.capability}`}
+              icon={execution.kind === "action" ? "ti ti-bolt" : "ti ti-search"}
+              tone="neutral"
+            >
               <div class="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={STATUS_TONE[execution.status]} label={statusLabel(execution.status, t)} variant="dot" />
                 <span class="text-xs text-secondary">

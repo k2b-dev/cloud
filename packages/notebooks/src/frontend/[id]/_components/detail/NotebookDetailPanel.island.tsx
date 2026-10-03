@@ -657,7 +657,7 @@ export default function NotebookDetailPanel(props: Props) {
                 <ul class="flex flex-col gap-1">
                   <For each={participants()}>
                     {(p) => (
-                      <li class="flex items-center gap-3 px-2 py-1.5 text-sm text-primary">
+                      <li class="flex items-center gap-3 py-1.5 text-sm text-primary">
                         <Avatar
                           name={p.displayName}
                           fallback={(p.displayName.trim() || "?").slice(0, 2).toUpperCase()}
@@ -699,7 +699,7 @@ export default function NotebookDetailPanel(props: Props) {
               >
                 <Show
                   when={(noteActivity.data()?.length ?? 0) > 0}
-                  fallback={<p class="px-2 py-1 text-xs text-dimmed">{noteActivity.loading() ? t().loadingActivity : t().noActivity}</p>}
+                  fallback={<p class="py-1 text-xs text-dimmed">{noteActivity.loading() ? t().loadingActivity : t().noActivity}</p>}
                 >
                   <div class="flex flex-col gap-1">
                     <For each={noteActivity.data()}>

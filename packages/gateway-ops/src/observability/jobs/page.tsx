@@ -10,6 +10,7 @@ import {
   DataTable,
   type DataTableColumn,
   IconButtonLink,
+  NoticeCard,
   Pagination,
   Placeholder,
   StatCell,
@@ -450,20 +451,12 @@ const parseActionFeedback = (url: URL, t: GatewayOpsMessages): JobsActionFeedbac
 
 const FeedbackBanner = (props: { feedback: JobsActionFeedback }) => {
   if (!props.feedback) return null;
-  return (
-    <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-      <i class="ti ti-alert-circle" /> {props.feedback.message}
-    </div>
-  );
+  return <NoticeCard tone="danger" title={props.feedback.message} />;
 };
 
 const ControlWarning = (props: { error: string | null }) => {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
-  return props.error ? (
-    <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-      <i class="ti ti-alert-triangle" /> {t.schedulerUnavailable({ error: props.error })}
-    </div>
-  ) : null;
+  return props.error ? <NoticeCard tone="warning" title={t.schedulerUnavailable({ error: props.error })} /> : null;
 };
 
 export default ssr<AuthContext>(async (c) => {

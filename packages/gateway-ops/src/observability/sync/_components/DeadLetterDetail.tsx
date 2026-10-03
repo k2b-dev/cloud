@@ -19,25 +19,27 @@ export default function DeadLetterDetail(props: { entry: SyncDeadLetterEntry; cl
           }
         />
         <DetailPanel.Body>
-          <DescriptionList
-            layout="rows"
-            size="sm"
-            items={[
-              { term: t.syncMessageId, description: <span class="font-mono break-all select-all">{props.entry.messageId}</span> },
-              { term: o.tenant, description: <span class="break-all select-all">{props.entry.tenantId}</span> },
-              { term: o.consumer, description: props.entry.consumer ?? "—" },
-              { term: o.event, description: <span class="break-all select-all">{props.entry.eventId ?? "—"}</span> },
-              { term: t.syncAttempts, description: props.entry.attempts },
-              { term: t.syncFailedAt, description: props.entry.failedAt },
-              { term: t.syncReason, description: props.entry.reason },
-            ]}
-          />
+          <DetailPanel.Summary title={t.overview}>
+            <DescriptionList
+              layout="rows"
+              size="sm"
+              items={[
+                { term: t.syncMessageId, description: <span class="font-mono break-all select-all">{props.entry.messageId}</span> },
+                { term: o.tenant, description: <span class="break-all select-all">{props.entry.tenantId}</span> },
+                { term: o.consumer, description: props.entry.consumer ?? "—" },
+                { term: o.event, description: <span class="break-all select-all">{props.entry.eventId ?? "—"}</span> },
+                { term: t.syncAttempts, description: props.entry.attempts },
+                { term: t.syncFailedAt, description: props.entry.failedAt },
+                { term: t.syncReason, description: props.entry.reason },
+              ]}
+            />
+          </DetailPanel.Summary>
           {props.entry.error ? (
-            <DetailPanel.Section title={t.error}>
+            <DetailPanel.Section title={t.error} icon="ti ti-alert-triangle" tone="danger">
               <pre class="whitespace-pre-wrap break-words text-xs select-all">{props.entry.error}</pre>
             </DetailPanel.Section>
           ) : null}
-          <DetailPanel.Section title={o.preview}>
+          <DetailPanel.Section title={o.preview} icon="ti ti-file-code" tone="neutral">
             <p class="text-xs text-dimmed">{o.previewBounded}</p>
             <pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs select-all">{props.entry.dataPreview}</pre>
           </DetailPanel.Section>

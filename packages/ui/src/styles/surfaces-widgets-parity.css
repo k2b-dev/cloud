@@ -268,6 +268,9 @@
   background: transparent;
   box-shadow: none;
 }
+/* A left-aligned placeholder in a detail panel section is one more row of that
+   section, so its text starts where the heading and the rows start. */
+.k2b-ui .k2b-detail-panel__section-body .k2b-placeholder[data-align="left"] { padding-inline: 0; }
 .k2b-ui .k2b-placeholder[data-align="center"] { align-items: center; text-align: center; }
 .k2b-ui .k2b-placeholder[data-align="left"] { align-items: flex-start; text-align: left; }
 /* Cloud's unlayered `.state-placeholder[data-variant="panel"]` wins over the

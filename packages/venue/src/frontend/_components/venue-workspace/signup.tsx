@@ -255,7 +255,7 @@ export function SignupDialog(props: {
                       {(day) => (
                         <section class="flex flex-col gap-2" data-signup-day={day.date}>
                           {/* The body scrolls with 1.25rem padding, so the heading sticks flush to its top edge. */}
-                          <h3 class="sticky -top-5 z-10 bg-[var(--k2b-surface)] py-1.5 text-xs font-semibold uppercase tracking-wide text-dimmed">
+                          <h3 class="sticky -top-5 z-10 bg-[var(--k2b-surface)] py-1.5 text-xs font-semibold text-secondary">
                             {formatDateKey(day.date, locale(), { weekday: "long", day: "numeric", month: "long" })}
                           </h3>
                           <For each={day.slots}>

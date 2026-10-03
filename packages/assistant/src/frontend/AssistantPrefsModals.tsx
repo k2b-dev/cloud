@@ -5,6 +5,7 @@ import {
   confirmDiscardIfDirty,
   Dropdown,
   IconButton,
+  NoticeCard,
   Placeholder,
   prompts,
   Select,
@@ -67,12 +68,11 @@ function ApprovalPreferences() {
   return (
     <div aria-busy={approvals.loading || Boolean(revokingId())}>
       <Show when={approvals.error}>
-        <div class="flex items-center justify-between gap-3 rounded-lg border border-red-200 p-3 text-sm dark:border-red-900">
-          <span class="text-red-700 dark:text-red-300">{approvals.error.message}</span>
+        <NoticeCard tone="danger" title={approvals.error.message}>
           <Button size="xs" variant="secondary" onClick={() => void refetch()}>
             {text("Retry")}
           </Button>
-        </div>
+        </NoticeCard>
       </Show>
       <Show when={approvals.loading}>
         <Placeholder state="loading" title={text("Loading remembered approvals")} />

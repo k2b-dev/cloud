@@ -109,14 +109,14 @@ function showDetail(entry: LogTableEntry, dateConfig: DateContext) {
           <span class="text-primary">{formatDateTime(entry.createdAt, dateConfig)}</span>
         </div>
         <div class="flex flex-col gap-1">
-          <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.message}</span>
+          <span class="text-xs text-dimmed">{t.message}</span>
           <p class="text-xs text-primary whitespace-pre-wrap break-all bg-zinc-100 dark:bg-zinc-800 rounded-md px-3 py-2">
             {entry.message}
           </p>
         </div>
         <Show when={entry.metadata}>
           <div class="flex flex-col gap-1">
-            <span class="text-[10px] uppercase tracking-wider text-dimmed">{t.metadata}</span>
+            <span class="text-xs text-dimmed">{t.metadata}</span>
             <MetadataDetail metadata={entry.metadata} />
           </div>
         </Show>

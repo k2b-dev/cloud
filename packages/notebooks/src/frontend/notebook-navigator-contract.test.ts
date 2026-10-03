@@ -32,7 +32,8 @@ describe("Notebooks navigator hydration contract", () => {
   test("gives presence identities a visible gap", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NotebookDetailPanel.island.tsx")).text();
 
-    expect(source).toContain('<li class="flex items-center gap-3 px-2 py-1.5 text-sm text-primary">');
+    // The gap separates avatar and name; the row itself starts at the section's content edge like the rows around it.
+    expect(source).toContain('<li class="flex items-center gap-3 py-1.5 text-sm text-primary">');
   });
 
   test("renders primary notebook destinations as an icon-only grid", async () => {
