@@ -16,11 +16,18 @@ import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
 import { type AccountMessages, accountMessages } from "./messages";
 
-const accountExpiryCopy = (expiresAt: string, t: AccountMessages): string => {
+// The page shell starts warning about an expiry 14 days ahead; the notice here only turns
+// urgent from the same point, so an account with a distant expiry reads as a fact.
+const EXPIRY_WARNING_DAYS = 14;
+
+const accountExpiryNotice = (expiresAt: string, t: AccountMessages) => {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return t.accountExpired;
-  if (days === 0) return t.accountExpiresToday;
-  return t.accountExpiresIn({ count: days });
+  if (days < 0) return { title: t.accountExpired, tone: "danger", icon: "ti ti-calendar-x" } as const;
+  return {
+    title: days === 0 ? t.accountExpiresToday : t.accountExpiresIn({ count: days }),
+    tone: days <= EXPIRY_WARNING_DAYS ? "warning" : "info",
+    icon: days <= EXPIRY_WARNING_DAYS ? "ti ti-calendar-exclamation" : "ti ti-calendar-event",
+  } as const;
 };
 
 const formatAddress = (address: {
@@ -55,6 +62,7 @@ export default ssr<AuthContext>(async (c) => {
   const action = c.req.query("action");
   // Mirrors when the profile actions offer Extend account, so the notice has no empty action row.
   const canExtend = user.provider !== "ipa" || freeIpaEnabled;
+  const expiryNotice = user.accountExpires ? accountExpiryNotice(user.accountExpires, t) : null;
   const address = formatAddress(user.ipa?.address ?? { street: null, postalCode: null, city: null, state: null });
 
   return () => (
@@ -76,8 +84,8 @@ export default ssr<AuthContext>(async (c) => {
                 </NoticeCard>
               )}
 
-              {user.accountExpires && (
-                <NoticeCard tone="warning" icon="ti ti-calendar-exclamation" title={accountExpiryCopy(user.accountExpires, t)}>
+              {expiryNotice && user.accountExpires && (
+                <NoticeCard tone={expiryNotice.tone} icon={expiryNotice.icon} title={expiryNotice.title}>
                   <p>{t.extendBefore({ date: dates.formatDate(user.accountExpires, { locale }) })}</p>
                   {canExtend && (
                     <div class="mt-2">

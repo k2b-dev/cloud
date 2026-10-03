@@ -317,12 +317,15 @@
   line-height: 1.45;
 }
 
+/* Actions never grow past the header, so more actions than a narrow row holds
+   wrap onto further lines instead of crossing the surface edge. Those lines
+   start at the heading's edge, like a single row that wrapped below it. */
 .k2b-ui .k2b-settings-section__actions {
   display: flex;
+  max-width: 100%;
   flex-shrink: 0;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
   gap: 0.5rem;
 }
 

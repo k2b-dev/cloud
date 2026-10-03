@@ -142,3 +142,12 @@
 .k2b-ui .account-page .k2b-settings-section + .k2b-settings-section {
   margin-top: 0;
 }
+
+/* Forced colours replace the fill that marks the current account tab, so the
+   tab keeps an outline that does not move its neighbours. */
+@media (forced-colors: active) {
+  .account-tabs [aria-current="page"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

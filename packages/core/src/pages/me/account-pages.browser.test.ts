@@ -45,7 +45,7 @@ const publicDir = join(root, "public");
 const origin = "https://cloud.example.test";
 
 /** Invented demo account. */
-const user: User = {
+const localUser: User = {
   id: "00000000-0000-4000-8000-000000000042",
   uid: "jbeispiel",
   roles: ["local", "user", "admin", "group-manager"],
@@ -66,8 +66,36 @@ const user: User = {
 };
 const now = "2026-09-30T10:00:00.000Z";
 
+/** The same person as a FreeIPA account with a long name, which fills the profile actions. */
+const ipaUser: User = {
+  ...localUser,
+  provider: "ipa",
+  roles: ["user"],
+  displayName: "Maximiliane Sonnenschein-Beispielhausen",
+  ipa: {
+    uidNumber: 10_042,
+    phone: "+49 30 1234567",
+    employeeType: null,
+    mobile: null,
+    address: { street: "Musterweg 1", postalCode: "10115", city: "Berlin", state: null },
+    passwordExpires: null,
+    lastLoginIpa: null,
+    syncedAt: now,
+    sshPublicKeys: [],
+    sshFingerprints: [],
+  },
+};
+
+/** Who is signed in and what the installation offers; each test starts from the local account. */
+let user: User = localUser;
+let freeIpaEnabled = false;
+let requestsEnabled = false;
+
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
+  user = localUser;
+  freeIpaEnabled = false;
+  requestsEnabled = false;
   spies.push(
     spyOn(cloudSsr, "Layout").mockImplementation(((props: { c: Parameters<typeof server.getLocale>[0]; children: JSX.Element }) =>
       createComponent(LocaleProvider, {
@@ -78,10 +106,11 @@ beforeEach(() => {
       })) as never),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     spyOn(services.coreSettings, "get").mockImplementation(
-      async (key) => (key === "app.name" ? "Cloud" : key === "app.url" ? origin : key === "freeipa.enable" ? false : undefined) as never,
+      async (key) =>
+        (key === "app.name" ? "Cloud" : key === "app.url" ? origin : key === "freeipa.enable" ? freeIpaEnabled : undefined) as never,
     ),
     spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
-    spyOn(services.accountsAppService.accountRequest, "isEnabled").mockResolvedValue(false),
+    spyOn(services.accountsAppService.accountRequest, "isEnabled").mockImplementation(async () => requestsEnabled),
     spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue([
       {
         id: "00000000-0000-4000-8000-000000000101",
@@ -102,7 +131,7 @@ beforeEach(() => {
     spyOn(services.webauthn, "listForUser").mockResolvedValue([
       {
         id: "00000000-0000-4000-8000-000000000201",
-        userId: user.id,
+        userId: localUser.id,
         name: "Work laptop",
         transports: ["internal"],
         deviceType: "multiDevice",
@@ -162,7 +191,7 @@ beforeEach(() => {
       nextCursor: null,
     }),
     spyOn(server.auth.session, "getToken").mockReturnValue("demo-session" as never),
-    spyOn(server.auth.session, "authenticateRequest").mockResolvedValue({ user, data: { sid: "demo-session" } } as never),
+    spyOn(server.auth.session, "authenticateRequest").mockImplementation(async () => ({ user, data: { sid: "demo-session" } }) as never),
     // The page shell's own reads.
     spyOn(railPreferences, "get").mockResolvedValue(defaultRailPreferences()),
     spyOn(services.railShortcuts, "forUser").mockResolvedValue([]),
@@ -211,6 +240,8 @@ const content = async (path: Path, locale: "en" | "de") => {
 type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
+// The WCAG reflow width.
+const narrowPhone: View = { width: 320, height: 640, touch: true };
 
 /** A tab with the server-rendered page on Core's canvas, before any island hydrates; the caller closes it. */
 const open = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
@@ -267,6 +298,20 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
           const style = getComputedStyle(section);
           return `${style.borderTopWidth} ${style.backgroundColor}`;
         }),
+        // How far each section's first content sits below its header, and whether its actions stay inside the panel.
+        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section) => {
+          const header = section.querySelector(".k2b-settings-section__header")!.getBoundingClientRect();
+          const first = Array.from(section.querySelectorAll<HTMLElement>(".k2b-settings-section__body *")).find(
+            (element) => element.checkVisibility() && element.getBoundingClientRect().height > 0,
+          );
+          return first ? [Math.round(first.getBoundingClientRect().top - header.bottom)] : [];
+        }),
+        actionsPastPanel: Math.max(
+          0,
+          ...Array.from(panel.querySelectorAll(".k2b-settings-section__actions")).map(
+            (actions) => actions.getBoundingClientRect().right - panel.getBoundingClientRect().right,
+          ),
+        ),
         overflow: document.documentElement.scrollWidth - window.innerWidth,
       };
     });
@@ -309,6 +354,83 @@ describe("account pages in a browser", () => {
         }
       }
   }, 120_000);
+
+  test("open every section's content at the same distance below its header, islands included", async () => {
+    requestsEnabled = true;
+    freeIpaEnabled = true;
+    for (const view of [desktop, phone])
+      for (const path of Object.keys(pages) as Path[]) {
+        const result = await measure(view, path, "en");
+        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 12) }).toEqual({
+          path,
+          width: view.width,
+          spacing: [],
+        });
+      }
+    // The FreeIPA account request is offered on /me/access in this setup.
+    expect((await measure(phone, "/me/access", "en")).sectionSpacing.length).toBe(3);
+  }, 120_000);
+
+  test("keep a FreeIPA account's profile actions inside the panel down to 320px, in German", async () => {
+    user = ipaUser;
+    freeIpaEnabled = true;
+    for (const view of [phone, narrowPhone])
+      for (const path of tabs) {
+        const result = await measure(view, path, "de");
+        expect({ path, width: view.width, past: result.actionsPastPanel, overflow: result.overflow }).toEqual({
+          path,
+          width: view.width,
+          past: 0,
+          overflow: 0,
+        });
+      }
+  }, 120_000);
+
+  test("reserve the browser notification button's height before the island hydrates", async () => {
+    const tab = await open(phone, "/me/notifications", "en");
+    try {
+      const heights = await tab.evaluate(() => {
+        const section = Array.from(document.querySelectorAll(".k2b-settings-section")).find((candidate) =>
+          candidate.querySelector("h2")?.textContent?.includes("Browser notifications"),
+        )!;
+        const row = section.querySelector<HTMLElement>(".k2b-settings-section__actions > span")!;
+        const before = section.getBoundingClientRect().height;
+        // What hydration adds: a small button beside the status.
+        row.insertAdjacentHTML(
+          "beforeend",
+          '<button type="button" class="k2b-button" data-size="sm" data-variant="primary"><i class="ti ti-bell-plus"></i>Enable</button>',
+        );
+        return { before, after: section.getBoundingClientRect().height };
+      });
+      expect(heights.after).toBe(heights.before);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("let a long name wrap instead of cutting it off on a phone", async () => {
+    user = ipaUser;
+    const tab = await open(phone, "/me", "en");
+    try {
+      const name = await tab.evaluate(() => {
+        const heading = document.querySelector("main h1")!;
+        return { clipped: heading.scrollWidth > heading.clientWidth, lines: Math.round(heading.getBoundingClientRect().height / 25) };
+      });
+      expect(name).toEqual({ clipped: false, lines: 2 });
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
+  test("warn about the account expiry only when it is close", async () => {
+    const tone = async (days: number) => {
+      user = { ...localUser, accountExpires: new Date(Date.now() + days * 86_400_000).toISOString() };
+      return /class="k2b-notice-card[^"]*"[^>]*data-tone="(\w+)"/.exec(await content("/me", "en"))?.[1];
+    };
+    expect(await tone(120)).toBe("info");
+    expect(await tone(10)).toBe("warning");
+    expect(await tone(-1)).toBe("danger");
+  }, 30_000);
 
   test("announce the section heading the tabs already show only to assistive technology", async () => {
     const result = await measure(desktop, "/me/access", "de");

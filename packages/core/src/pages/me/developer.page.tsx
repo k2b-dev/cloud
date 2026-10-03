@@ -30,7 +30,10 @@ export default ssr<AuthContext>(async (c) => {
       <AccountHub user={user} active="developer" loginLabel={categoryPolicy.login.label}>
         <AccountPage title={t.developer} description={t.developerDescription}>
           <SettingsSection title="Cloud MCP" subtitle={t.cloudMcpDescription}>
-            <McpSetup endpoint={mcpResource} />
+            {/* Islands render as display: contents, so the section's spacing needs a real box. */}
+            <div>
+              <McpSetup endpoint={mcpResource} />
+            </div>
             <div class="flex flex-col gap-2 text-xs text-dimmed">
               <p>{t.mcpOauthNotice}</p>
               <p>

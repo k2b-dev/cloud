@@ -53,7 +53,9 @@ export default function AccountHub(props: {
           />
         )}
         <div class="min-w-0 flex-1">
-          <h1 class="truncate text-xl font-semibold leading-tight text-primary">{props.user.displayName || props.user.uid}</h1>
+          <h1 class="line-clamp-2 break-words text-xl font-semibold leading-tight text-primary">
+            {props.user.displayName || props.user.uid}
+          </h1>
           <p class="mt-1 truncate text-xs text-dimmed">
             {props.user.mail ?? props.user.uid}
             {props.user.displayName && props.user.profile !== "guest" ? ` · ${props.user.uid}` : ""}
@@ -68,7 +70,7 @@ export default function AccountHub(props: {
         </div>
       </header>
 
-      <nav class="flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
+      <nav class="account-tabs flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
         {(
           [
             { id: "profile", href: "/me", label: t().profile, icon: "ti ti-user" },
@@ -153,7 +155,7 @@ export function AccountSubnav(props: { active: string; items: { id: string; href
   const t = () => accountMessages.resolve([locale()]).t;
   return (
     <nav
-      class="flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
+      class="account-tabs flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
       aria-label={t().sectionViews}
     >
       {props.items.map((item) => {

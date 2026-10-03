@@ -68,7 +68,9 @@ export default function BrowserNotificationSetup() {
       subtitle={t().browserNotificationsDescription}
       icon="ti ti-bell"
       actions={
-        <>
+        // The button only appears once the browser has been asked, so the row keeps its
+        // height from the start and nothing below moves when it does.
+        <span class="flex min-h-7 flex-wrap items-center gap-2">
           <span class={`tag ${status().class}`}>{status().label}</span>
           <Show when={state()?.supported && state()?.permission !== "denied"}>
             <Button
@@ -83,7 +85,7 @@ export default function BrowserNotificationSetup() {
               {pending() ? t().working : state()?.enabled ? t().disable : t().enable}
             </Button>
           </Show>
-        </>
+        </span>
       }
     >
       <Show when={state()?.reason} keyed>

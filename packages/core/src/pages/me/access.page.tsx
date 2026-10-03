@@ -61,15 +61,18 @@ export default ssr<AuthContext>(async (c) => {
                   </div>
                 </div>
               ) : (
-                <RequestFreeIpaAccount
-                  givenname={user.givenname}
-                  sn={user.sn}
-                  displayName={user.displayName}
-                  phone={null}
-                  agbUrl="/legal/terms"
-                  privacyUrl="/legal/privacy"
-                  appName={appName}
-                />
+                // Islands render as display: contents, so the section's spacing needs a real box.
+                <div>
+                  <RequestFreeIpaAccount
+                    givenname={user.givenname}
+                    sn={user.sn}
+                    displayName={user.displayName}
+                    phone={null}
+                    agbUrl="/legal/terms"
+                    privacyUrl="/legal/privacy"
+                    appName={appName}
+                  />
+                </div>
               )}
             </SettingsSection>
           )}

@@ -232,4 +232,42 @@ describe("@k2b/ui one frame per surface", () => {
       await page.close();
     }
   });
+
+  test("actions wider than a 320px phone wrap onto further rows inside the section", async () => {
+    const page = await browser.newPage({ viewport: { width: 320, height: 640 } });
+    try {
+      const section = renderToString(() =>
+        createComponent(SettingsSection, {
+          title: "Profile and contact",
+          subtitle: "Details that other people see.",
+          get actions() {
+            return [
+              createComponent(Button, { size: "sm", variant: "secondary", children: "Edit the public profile" }),
+              createComponent(Button, { size: "sm", variant: "secondary", children: "Contact, phone and SSH details" }),
+            ];
+          },
+          children: "Value",
+        }),
+      );
+      await page.setContent(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<body class="k2b-ui" style="margin:0;padding:1rem">${section}</body></html>`,
+      );
+      const result = await page.evaluate(() => {
+        const header = document.querySelector(".k2b-settings-section__header")!.getBoundingClientRect();
+        const actions = document.querySelector(".k2b-settings-section__actions")!.getBoundingClientRect();
+        const buttons = Array.from(document.querySelectorAll(".k2b-button")).map((button) => button.getBoundingClientRect());
+        return {
+          past: Math.max(0, actions.right - header.right),
+          wrapped: buttons[1]!.top > buttons[0]!.top,
+          // Wrapped rows start at the heading's edge.
+          start: Math.round(buttons[1]!.left - header.left),
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      expect(result).toEqual({ past: 0, wrapped: true, start: 0, overflow: 0 });
+    } finally {
+      await page.close();
+    }
+  });
 });
