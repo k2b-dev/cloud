@@ -2302,7 +2302,10 @@ describe("Grids App dependency changes", () => {
 
       // The live snapshot never widens on its own: only the changed Form block
       // fails closed, while the editor offers to publish the unchanged draft.
-      expect(await formBlock()).toEqual({ ok: false, message: "This form changed after the app was published." });
+      expect(await formBlock()).toEqual({
+        ok: false,
+        message: "This form changed after the app was published. Ask an app admin to publish the app again.",
+      });
       expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: true, draftValid: true });
 
       expect((await api.request(`/apps/${applied.data.shortId}/publish`, { method: "POST" })).status).toBe(200);

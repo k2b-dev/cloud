@@ -98,7 +98,7 @@ export const customAppRuntimeMessages = i18n.define({
       dataSourceUnavailable: "This data source is unavailable.",
       dataSourceTemporarilyUnavailable: "This data source is temporarily unavailable.",
       savedViewChanged: "This saved view changed after the app was published. Republish the app.",
-      formChanged: "This form changed after the app was published.",
+      formChanged: "This form changed after the app was published. Ask an app admin to publish the app again.",
       selectAndMove: ({ block }: { block: string }) => `Select and move ${block}`,
       fullWidthAbove: "in a full-width row above",
       fullWidthBelow: "in a full-width row below",
@@ -207,7 +207,8 @@ export const customAppRuntimeMessages = i18n.define({
       dataSourceUnavailable: "Diese Datenquelle ist nicht verfügbar.",
       dataSourceTemporarilyUnavailable: "Diese Datenquelle ist vorübergehend nicht verfügbar.",
       savedViewChanged: "Diese gespeicherte Ansicht wurde nach der Veröffentlichung der App geändert. Veröffentliche die App erneut.",
-      formChanged: "Dieses Formular wurde nach der Veröffentlichung der App geändert.",
+      formChanged:
+        "Dieses Formular wurde nach der Veröffentlichung der App geändert. Bitte einen App-Administrator, die App erneut zu veröffentlichen.",
       selectAndMove: ({ block }) => `${block} auswählen und verschieben`,
       fullWidthAbove: "in eine vollbreite Zeile darüber",
       fullWidthBelow: "in eine vollbreite Zeile darunter",
