@@ -631,8 +631,8 @@ export const recordMissingMessageSources = async (messageIds: string[], transpor
  * as failed. Returns the released messages.
  */
 export const releaseExpiredHydrationClaims = async (): Promise<{ id: string; mailbox_id: string }[]> => {
-  // Hydrating rows are few, but no index covers them: this scans the table, so callers run it
-  // about once per claim lifetime, not on every scheduler tick.
+  // `message_contents_hydration_claim_idx` covers the claims. Each running job holds at most one,
+  // so a stopped process leaves at most as many as it ran jobs.
   const released = await sql<{ id: string; mailbox_id: string; hydration_attempt: number }[]>`
     UPDATE mail.message_contents
     SET
