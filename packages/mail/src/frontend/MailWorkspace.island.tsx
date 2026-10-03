@@ -616,8 +616,9 @@ function MailWorkspaceView(props: {
         }
         if (message.type === MAIL_LIVE_WS_TYPE.ready) {
           // The server confirms the subscribed cursor when it can replay from it, as when a tab returns.
-          // Any other cursor (a first subscription or a head after skipped replay) needs a snapshot refresh.
-          if (message.payload.cursor !== controls.subscribedCursor()) {
+          // Any other cursor (a first subscription or a head after skipped replay) needs a snapshot refresh,
+          // and so does a page that shows paused updates: the refresh is what confirms it is current again.
+          if (message.payload.cursor !== controls.subscribedCursor() || liveSnapshotDegraded()) {
             liveHub.schedule({ cursor: message.payload.cursor, conversationId: null });
           }
           return;
