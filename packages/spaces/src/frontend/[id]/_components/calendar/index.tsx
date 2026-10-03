@@ -468,12 +468,13 @@ export default function Calendar(props: CalendarProps) {
       updateSubmitting = false;
     }
   };
-  const createEvent = mutations.create<SpaceItem, ItemFormData, { intent: ItemFormData }>({
+  type CreateEventIntent = { spaceId: string; data: ItemFormData };
+  const createEvent = mutations.create<SpaceItem, CreateEventIntent, { intent: CreateEventIntent }>({
     onBefore: (intent) => ({ intent }),
-    mutation: async (intent) => {
+    mutation: async ({ spaceId, data }) => {
       const res = await apiClient[":id"].items.$post({
-        param: { id: props.spaceId },
-        json: { ...normalizeCreatePayload(intent) },
+        param: { id: spaceId },
+        json: { ...normalizeCreatePayload(data) },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
       return res.json();
@@ -488,11 +489,12 @@ export default function Calendar(props: CalendarProps) {
   const createEventFromSlot = async (slot: CalendarEventTimeChange) => {
     if (createDialogPending() || createEvent.loading()) return;
     setCreateDialogPending(true);
+    const spaceId = props.spaceId;
     try {
-      const intent = await dialogCore.open<ItemFormData | null>(
+      const data = await dialogCore.open<ItemFormData | null>(
         (close) => (
           <ItemForm
-            spaceId={props.spaceId}
+            spaceId={spaceId}
             columns={props.columns}
             tags={props.tags}
             quickCreate
@@ -511,7 +513,7 @@ export default function Calendar(props: CalendarProps) {
         ),
         itemCreateDialogOptions,
       );
-      if (intent) void createEvent.mutate(intent);
+      if (data) void createEvent.mutate({ spaceId, data });
     } finally {
       setCreateDialogPending(false);
     }

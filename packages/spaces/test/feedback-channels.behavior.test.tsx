@@ -4,6 +4,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { SpaceItem } from "../src/contracts";
+import type { ItemFormData } from "../src/frontend/[id]/_components/shared/ItemForm";
 
 const now = "2026-10-03T10:00:00.000Z";
 const item: SpaceItem = {
@@ -39,6 +40,8 @@ const flush = async () => {
 
 let completionAnswers: Response[] = [];
 const completions: unknown[] = [];
+let createAnswers: Response[] = [];
+const creations: Array<{ spaceId: string; title: unknown }> = [];
 const commentAnswer = () => Response.json({ message: "Comments are closed for this item" }, { status: 409 });
 
 describe("Spaces feedback channels", () => {
@@ -53,6 +56,10 @@ describe("Spaces feedback channels", () => {
     apiClient: {
       [":id"]: {
         items: {
+          $post: async ({ param, json }: { param: { id: string }; json: { title?: unknown } }) => {
+            creations.push({ spaceId: param.id, title: json.title });
+            return createAnswers.shift() ?? Response.json({ ...item, spaceId: param.id, title: json.title });
+          },
           [":itemId"]: {
             completed: {
               $post: async ({ json }: { json: unknown }) => {
@@ -117,6 +124,55 @@ describe("Spaces feedback channels", () => {
     dialogs.mockRestore();
     successes.mockRestore();
     errors.mockRestore();
+  });
+
+  test("Retry of a failed create keeps the Space it was written for and returns to where the command came from", async () => {
+    const { dialogCore, toast } = await import("@k2b/ui");
+    const { createItemController } = await import("../src/frontend/[id]/_components/sidebar/CreateItemButton");
+    const draft: ItemFormData = { columnId: "Col001", title: "Order name labels" };
+    const form = spyOn(dialogCore, "open").mockResolvedValue(draft);
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const notices: Array<{ message: string; options?: ToastOptions }> = [];
+    const errors = spyOn(toast, "error").mockImplementation((message, options) => {
+      notices.push({ message, options });
+      return { dismiss: () => {}, update: () => {} };
+    });
+    const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {});
+    let spaceId = "SpaceA";
+    let controller: ReturnType<typeof createItemController> | undefined;
+    const dispose = render(() => {
+      controller = createItemController({
+        get spaceId() {
+          return spaceId;
+        },
+        columns: [],
+        tags: [],
+      });
+      return null;
+    }, dom.root);
+
+    creations.length = 0;
+    createAnswers = [Response.json({ message: "Spaces is unavailable" }, { status: 503 })];
+    await controller!.createItem({ returnTo: "/app/mail/inbox" });
+    expect(assign).not.toHaveBeenCalled();
+    const action = notices[0]?.options?.action;
+    if (!action || !("onClick" in action)) throw new Error("The error toast has no Retry callback");
+
+    // A later compose command selects another Space before the user retries.
+    spaceId = "SpaceB";
+    action.onClick();
+    await flush();
+    expect(creations).toEqual([
+      { spaceId: "SpaceA", title: "Order name labels" },
+      { spaceId: "SpaceA", title: "Order name labels" },
+    ]);
+    expect(assign).toHaveBeenCalledWith("/app/mail/inbox");
+
+    dispose();
+    form.mockRestore();
+    successes.mockRestore();
+    errors.mockRestore();
+    assign.mockRestore();
   });
 
   test("a rejected comment stays in the composer with the reason under it", async () => {

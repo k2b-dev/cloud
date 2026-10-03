@@ -27,27 +27,30 @@ export function createItemController(props: Props) {
   const defaultType = () => props.defaultType ?? "task";
   const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
   const [dialogPending, setDialogPending] = createSignal(false);
-  const mutation = mutations.create<SpaceItem, ItemFormData, { intent: ItemFormData }>({
+  // The Space and the return address belong to the intent: a compose command can select another Space before Retry.
+  type CreateIntent = { spaceId: string; data: ItemFormData; returnTo?: string };
+  const mutation = mutations.create<SpaceItem, CreateIntent, { intent: CreateIntent }>({
     onBefore: (intent) => ({ intent }),
-    mutation: async (intent) => {
+    mutation: async ({ spaceId, data }) => {
       const res = await apiClient[":id"].items.$post({
-        param: { id: props.spaceId },
+        param: { id: spaceId },
         json: {
-          ...intent,
-          location: intent.location ?? undefined,
-          url: intent.url ?? undefined,
-          priority: intent.priority ?? undefined,
-          recurrence: intent.recurrence ?? undefined,
-          estimatedDurationMinutes: intent.estimatedDurationMinutes ?? undefined,
+          ...data,
+          location: data.location ?? undefined,
+          url: data.url ?? undefined,
+          priority: data.priority ?? undefined,
+          recurrence: data.recurrence ?? undefined,
+          estimatedDurationMinutes: data.estimatedDurationMinutes ?? undefined,
         },
       });
       if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
       return res.json();
     },
-    onSuccess: (item) => {
+    onSuccess: (item, context) => {
       // The new entry can land outside the current view or filter, so it is confirmed.
       toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
       refreshWorkspace();
+      if (context?.intent.returnTo) window.location.assign(context.intent.returnTo);
     },
     // The form has closed, so Retry sends the captured entry again instead of losing it.
     onError: (err, context) => toastErrorWithRetry(err.message, t.retry, () => context && mutation.mutate(context.intent)),
@@ -57,11 +60,12 @@ export function createItemController(props: Props) {
   const createItem = async (options: { type?: ItemType; references?: SpaceItemResourceReferenceInput[]; returnTo?: string } = {}) => {
     if (dialogPending() || mutation.loading()) return;
     setDialogPending(true);
+    const spaceId = props.spaceId;
     try {
-      const intent = await dialogCore.open<ItemFormData | null>(
+      const data = await dialogCore.open<ItemFormData | null>(
         (close) => (
           <ItemForm
-            spaceId={props.spaceId}
+            spaceId={spaceId}
             columns={props.columns}
             tags={props.tags}
             quickCreate
@@ -73,10 +77,8 @@ export function createItemController(props: Props) {
         ),
         itemCreateDialogOptions,
       );
-      if (intent) {
-        await mutation.mutate(intent);
-        if (!mutation.error() && options.returnTo) window.location.assign(options.returnTo);
-      } else if (options.returnTo) window.location.assign(options.returnTo);
+      if (data) await mutation.mutate({ spaceId, data, returnTo: options.returnTo });
+      else if (options.returnTo) window.location.assign(options.returnTo);
     } finally {
       setDialogPending(false);
     }
