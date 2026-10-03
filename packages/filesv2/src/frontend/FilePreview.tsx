@@ -1,10 +1,10 @@
 import { query } from "@k2b/stdlib/solid";
 import { Button, FileView, PdfPreview, Placeholder } from "@k2b/ui";
-import { createSignal, Match, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createSignal, Match, onCleanup, Show, Switch } from "solid-js";
 import type { FileEntry } from "../contracts";
 import { hasPdfSignature, PDF_HEADER_WINDOW } from "../pdf-body";
 import { useBrowserMessages } from "./browser-messages";
-import { contentLease, inlinePdfHref, previewFile, previewKind, readPreview } from "./file-preview";
+import { contentLease, previewFile, previewKind, readPreview } from "./file-preview";
 import { useFilesMessages } from "./messages";
 
 /** Mounted for one selected revision; closing it aborts text/PDF reads. */
@@ -19,6 +19,10 @@ type PreviewProps = {
   onDownload: () => void;
   /** Called once the bytes of a `.pdf` show it is no PDF, so the host can withdraw its own viewer actions too. */
   onNotPdf?: () => void;
+  /** Lifts a Markdown file's leading heading into the host; null when there is none or the preview failed. */
+  onDocumentTitle?: (title: string | null) => void;
+  /** The loaded text of a text preview, for host actions such as copying it. */
+  onText?: (text: string) => void;
 };
 export default function FilePreview(props: PreviewProps) {
   return (
@@ -50,6 +54,9 @@ function RevisionPreview(props: PreviewProps) {
     }),
   });
   const url = () => (lease.data()?.key === source() && !lease.error() ? lease.data()?.lease.url : null);
+  createEffect(() => {
+    if (failed()) props.onDocumentTitle?.(null);
+  });
   // Only a `.pdf` whose bytes a viewer accepts gets the preview and the new tab; the tab would refuse anything else.
   const readPdf = async () => {
     const blob = await readPreview(props.baseId, props.entry, abort.signal, t().previewFailed);
@@ -74,23 +81,10 @@ function RevisionPreview(props: PreviewProps) {
           <Placeholder icon="ti ti-file-alert" title={t().notPdf} description={t().notPdfDescription} action={download} />
         </Match>
         <Match when={kind() === "pdf"}>
-          {/* Safari on iOS shows only the first page of an embedded PDF; the new tab opens the whole document at a
-              stable address, so it reloads and keeps its file name. */}
-          <PdfPreview
-            autoLoad
-            title={props.entry.name}
-            openButtonLabel={t().openInTab}
-            openHref={inlinePdfHref(props.baseId, props.entry.path)}
-            buttonLabel={t().retry}
-            onDownload={props.onDownload}
-            request={readPdf}
-          >
-            {(parts) => (
-              <div class="flex flex-col gap-2" classList={{ "h-[min(56rem,70dvh)]": props.previewLines === undefined }}>
-                {parts.actions}
-                {parts.content}
-              </div>
-            )}
+          {/* The host owns the viewer actions: the dialog header and the details panel offer Open in new tab and
+              Download, so the preview is only the document. */}
+          <PdfPreview autoLoad title={props.entry.name} buttonLabel={t().retry} request={readPdf}>
+            {(parts) => <div class="filesv2-preview__pdf">{parts.content}</div>}
           </PdfPreview>
         </Match>
         <Match when={failed() || (media() && lease.error())}>
@@ -110,6 +104,7 @@ function RevisionPreview(props: PreviewProps) {
         <Match when={media() && url()}>
           <FileView
             file={previewFile(props.entry)}
+            variant={props.variant}
             previewHref={url()}
             crossOrigin="anonymous"
             onPreviewError={() => setFailed(true)}
@@ -128,16 +123,17 @@ function RevisionPreview(props: PreviewProps) {
             onExpandPreview={props.onExpandPreview}
             headingScale={props.headingScale ?? (props.previewLines ? "compact" : "normal")}
             previewPreferencesKey="filesv2-preview"
-            load={async () => ({
-              encoding: "utf8",
-              content: await (
+            onDocumentTitle={props.onDocumentTitle}
+            load={async () => {
+              const content = await (
                 await readPreview(props.baseId, props.entry, abort.signal, t().previewFailed).catch((error) => {
                   if (!abort.signal.aborted) setFailed(true);
                   throw error;
                 })
-              ).text(),
-              mediaType: previewFile(props.entry).mediaType ?? "text/plain",
-            })}
+              ).text();
+              props.onText?.(content);
+              return { encoding: "utf8", content, mediaType: previewFile(props.entry).mediaType ?? "text/plain" };
+            }}
           />
         </Match>
       </Switch>

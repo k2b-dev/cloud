@@ -54,6 +54,7 @@ import { readDroppedEntries, uploadRelativePath } from "./dropped-files";
 import FileInspector from "./FileInspector";
 import FileList, { type FileRow, type RowAttributes, type VirtualRow } from "./FileList";
 import FilePreview from "./FilePreview";
+import { openFilePreview } from "./FilePreviewDialog";
 import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
@@ -958,18 +959,19 @@ export default function Browser(props: {
       props.onEdit?.(entry);
       return;
     }
-    void prompts.dialog(
-      () => (
-        <FilePreview
-          baseId={baseId()}
-          locationKey={props.directory.base.locationKey}
-          entry={entry}
-          onDownload={() => startDownload([entry])}
-        />
-      ),
-      { title: entry.name, size: "large" },
-    );
+    void preview(entry);
   };
+  /** The preview dialog; a Markdown file it shows also offers its editor, as a double-click would open it. */
+  const preview = (entry: FileEntry, onNotPdf?: () => void) =>
+    openFilePreview({
+      baseId: baseId(),
+      locationKey: props.directory.base.locationKey,
+      entry,
+      onDownload: () => startDownload([entry]),
+      onEdit: editable(entry) ? () => open(entry) : undefined,
+      readOnly: entry.actions?.write === false,
+      onNotPdf,
+    });
   // Entering or leaving select mode starts clean; outside it a click only highlights one entry for its details.
   const toggleSelecting = (on: boolean) => {
     selection.clear();
@@ -1357,23 +1359,7 @@ export default function Browser(props: {
                   </div>
                   <Show when={overflowing()}>
                     <div class="filesv2-folder-readme__expand">
-                      <Button
-                        size="sm"
-                        variant="text"
-                        onClick={() =>
-                          void prompts.dialog(
-                            () => (
-                              <FilePreview
-                                baseId={baseId()}
-                                locationKey={props.directory.base.locationKey}
-                                entry={readme()}
-                                onDownload={() => startDownload([readme()])}
-                              />
-                            ),
-                            { title: readme().name, size: "large" },
-                          )
-                        }
-                      >
+                      <Button size="sm" variant="text" onClick={() => void preview(readme())}>
                         {b().showAll}
                       </Button>
                     </div>
@@ -1552,6 +1538,7 @@ export default function Browser(props: {
               if (focused) selection.focus(focused);
             }}
             onOpen={open}
+            onPreview={preview}
             editable={editable}
             canEdit={selected().length === 1 ? selected()[0]?.actions?.write : undefined}
             onDownload={startDownload}

@@ -111,6 +111,140 @@
   max-height: 50vh;
   object-fit: contain;
 }
+.filesv2-preview__pdf {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The preview dialog is a reading frame anchored near the top: a document that finishes loading, or a longer one,
+   only grows downward, so the header never moves. Text and Markdown get a 40rem column (the 72ch reading measure),
+   tables and media the wide frame. Images, PDFs and video fill the frame's height. */
+.k2b-ui .k2b-dialog.filesv2-preview-dialog {
+  --filesv2-preview-top: max(0.75rem, env(safe-area-inset-top, 0px), 5vh);
+  --filesv2-preview-height: calc(100dvh - var(--filesv2-preview-top) - max(0.75rem, env(safe-area-inset-bottom, 0px)));
+  top: var(--filesv2-preview-top);
+  width: min(var(--k2b-dialog-available-width), 40rem);
+  max-height: var(--filesv2-preview-height);
+  transform: translateX(-50%);
+}
+.k2b-ui .k2b-dialog.filesv2-preview-dialog--wide {
+  width: min(var(--k2b-dialog-available-width), 64rem);
+}
+.k2b-ui .k2b-dialog.filesv2-preview-dialog--fill {
+  height: var(--filesv2-preview-height);
+}
+.k2b-ui .filesv2-preview-dialog .k2b-panel-dialog-viewport {
+  max-height: var(--filesv2-preview-height);
+}
+.k2b-ui .filesv2-preview-dialog--fill .k2b-panel-dialog-viewport {
+  height: 100%;
+}
+/* The document title keeps the size it had as the heading of the document, on at most two lines. */
+.k2b-ui .filesv2-preview-dialog .k2b-panel-dialog__heading h2 {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 1.5rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+/* Holds the title line while a Markdown file loads, so the title arrives without moving anything. */
+.filesv2-preview-dialog__title-pending {
+  display: inline-block;
+  width: 14rem;
+  max-width: 70%;
+  height: 1.25rem;
+  vertical-align: middle;
+  border-radius: 0.375rem;
+  background: var(--k2b-surface-muted);
+}
+/* One quiet line: the file name gives way first, then the date; the size always stays. */
+.filesv2-preview-facts {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.filesv2-preview-facts > * {
+  flex: none;
+}
+.filesv2-preview-facts > i {
+  font-size: 0.875rem;
+}
+.filesv2-preview-facts > .filesv2-preview-facts__name,
+.filesv2-preview-facts > .filesv2-preview-facts__date {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filesv2-preview-facts > .filesv2-preview-facts__name {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.filesv2-preview-facts__name {
+  color: var(--k2b-text-secondary);
+}
+/* The content takes focus on open, so arrow keys scroll it; it is not a control, so it draws no ring. */
+.filesv2-preview-dialog__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  outline: none;
+}
+.k2b-ui .filesv2-preview-dialog--fill .k2b-panel-dialog__body > .filesv2-preview-dialog__content,
+.k2b-ui .filesv2-preview-dialog--fill .filesv2-preview {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+/* A plain FileView keeps its natural height; here it fills the frame instead. */
+.k2b-ui .filesv2-preview-dialog--fill .k2b-content-file-view[data-variant] {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* One definite cell, so an image or video fits the frame's height as well as its width. */
+.k2b-ui .filesv2-preview-dialog--fill .k2b-content-file-view__media {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+.k2b-ui .filesv2-preview-dialog .filesv2-preview :is(img, video) {
+  max-height: 100%;
+}
+/* Phones: the preview takes the whole screen, clear of notches and the home indicator. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-dialog.filesv2-preview-dialog {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    background: var(--k2b-surface);
+    transform: none;
+  }
+  .k2b-ui .filesv2-preview-dialog .k2b-panel-dialog-viewport {
+    height: 100%;
+    max-height: none;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
+  }
+  /* Edit becomes an icon button that keeps its name for assistive technology. */
+  .filesv2-preview-dialog__edit-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 
 .filesv2-search {
   flex: 1 1 12rem;
