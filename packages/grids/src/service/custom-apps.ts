@@ -1654,17 +1654,19 @@ export type CustomAppAuthoringState = CustomApp & {
  * resource can change later without touching the app definition, so authoring
  * reads recompile against the current resources instead of trusting them.
  */
-export const currentAuthoringState = async (app: CustomApp, client: SqlClient = sql): Promise<CustomAppAuthoringState> => {
-  const draft = app.draftDefinition ? await compile(app.draftDefinition, client) : null;
+export const currentAuthoringState = async (app: CustomApp, locale?: string): Promise<CustomAppAuthoringState> => {
+  const draft = app.draftDefinition ? await compile(app.draftDefinition, sql, locale) : null;
   const live =
     app.publishedDefinition && app.publishedCapabilities
       ? app.hasUnpublishedChanges
-        ? await compile(app.publishedDefinition, client)
+        ? await compile(app.publishedDefinition, sql, locale)
         : draft
       : null;
   const draftCapabilities = draft?.ok ? draft.compiled.capabilities : null;
   return {
     ...app,
+    // Name what a used resource broke, so the author can fix the draft before publishing.
+    draftDiagnostics: draft && !draft.ok ? draft.diagnostics : app.draftDiagnostics,
     draftCapabilities,
     draftValid: draftCapabilities !== null,
     dependenciesChanged:
