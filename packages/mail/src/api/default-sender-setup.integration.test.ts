@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { migrate } from "../migrate";
@@ -91,6 +92,7 @@ suite("Mail default sender setup through the API", () => {
       method: init.method,
       headers: {
         authorization: `Bearer ${token}`,
+        "x-forwarded-for": uniqueCallerAddress(),
         "content-type": "application/json",
         ...(init.locale ? { "accept-language": init.locale } : {}),
       },
@@ -171,7 +173,7 @@ suite("Mail default sender setup through the API", () => {
   test("keeps mailbox and sender identity resolution for other routes", async () => {
     const unknownMailbox = await app.request("/mailboxes/Zzz999/sender-identities/default/setup", {
       method: "POST",
-      headers: { authorization: "Bearer owner", "content-type": "application/json" },
+      headers: { authorization: "Bearer owner", "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
       body: JSON.stringify({ bindingId, savesSentAutomatically: true }),
     });
     expect(unknownMailbox.status).toBe(404);

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
@@ -57,7 +58,7 @@ suite("Mail search by public folder and tag IDs", () => {
   const request = (path: string, init: { method?: string; body?: unknown } = {}) =>
     app.request(`/mailboxes/${mailboxShortId}${path}`, {
       method: init.method ?? "GET",
-      headers: { authorization: "Bearer owner", "content-type": "application/json" },
+      headers: { authorization: "Bearer owner", "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
   const workspaceRoute = async (href: string): Promise<WorkspaceRoute> => {
@@ -228,7 +229,7 @@ suite("Mail search by public folder and tag IDs", () => {
   test("the workspace route titles the list in the request locale", async () => {
     const titleFor = async (href: string, locale: string) => {
       const response = await app.request(`/mailboxes/${mailboxShortId}/workspace-route?${new URLSearchParams({ href })}`, {
-        headers: { authorization: "Bearer owner", "x-cloud-locale": locale },
+        headers: { authorization: "Bearer owner", "x-forwarded-for": uniqueCallerAddress(), "x-cloud-locale": locale },
       });
       expect(response.status).toBe(200);
       return ((await response.json()) as { listTitle: string }).listTitle;

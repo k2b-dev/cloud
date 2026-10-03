@@ -3,6 +3,7 @@ import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { generateSpecs } from "hono-openapi";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { focus, mailboxAccess, mailboxPreferences, publicResources } from "../service";
 import * as workspace from "../service/workspace";
@@ -79,7 +80,7 @@ suite("Mail focus API", () => {
     );
 
     const response = await app.request("/overview/conversations?view=mine&limit=25", {
-      headers: { authorization: "Bearer mail-focus-api-test" },
+      headers: { authorization: "Bearer mail-focus-api-test", "x-forwarded-for": uniqueCallerAddress() },
     });
 
     expect(response.status).toBe(200);
@@ -103,14 +104,14 @@ suite("Mail focus API", () => {
     });
 
     const response = await app.request("/overview/conversations?view=all&excludeMailboxIds=Mail01,Mail02", {
-      headers: { authorization: "Bearer mail-focus-api-test" },
+      headers: { authorization: "Bearer mail-focus-api-test", "x-forwarded-for": uniqueCallerAddress() },
     });
     expect(response.status).toBe(200);
     expect(resolve).toHaveBeenCalledWith("mailboxes", ["Mail01", "Mail02"]);
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ view: "all", excludedMailboxIds: [mailboxId] }));
 
     const malformed = await app.request("/overview/conversations?excludeMailboxIds=not-an-id", {
-      headers: { authorization: "Bearer mail-focus-api-test" },
+      headers: { authorization: "Bearer mail-focus-api-test", "x-forwarded-for": uniqueCallerAddress() },
     });
     expect(malformed.status).toBe(400);
     expect(list).toHaveBeenCalledTimes(1);
@@ -124,7 +125,11 @@ suite("Mail focus API", () => {
     const request = (body: unknown) =>
       app.request("/mailboxes/Mail01/preference", {
         method: "PATCH",
-        headers: { authorization: "Bearer mail-focus-api-test", "content-type": "application/json" },
+        headers: {
+          authorization: "Bearer mail-focus-api-test",
+          "x-forwarded-for": uniqueCallerAddress(),
+          "content-type": "application/json",
+        },
         body: JSON.stringify(body),
       });
 
@@ -156,7 +161,7 @@ suite("Mail focus API", () => {
     const loadDetail = spyOn(workspace, "loadMailboxConversationDetail").mockResolvedValue(null);
 
     const response = await app.request("/mailboxes/Mail01/workspace-detail/Convo1", {
-      headers: { authorization: "Bearer mail-focus-api-test" },
+      headers: { authorization: "Bearer mail-focus-api-test", "x-forwarded-for": uniqueCallerAddress() },
     });
 
     expect(response.status).toBe(404);

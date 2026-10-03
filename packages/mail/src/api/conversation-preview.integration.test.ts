@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens, serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailConversationPreview } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -59,7 +60,8 @@ suite("Mail conversation quick look", () => {
     return user;
   };
 
-  const call = (token: string, path: string) => app.request(path, { headers: { authorization: `Bearer ${token}` } });
+  const call = (token: string, path: string) =>
+    app.request(path, { headers: { authorization: `Bearer ${token}`, "x-forwarded-for": uniqueCallerAddress() } });
   const preview = (token: string, conversationShortId: string) =>
     call(token, `/mailboxes/${mailboxShortId}/conversations/${conversationShortId}/preview`);
 

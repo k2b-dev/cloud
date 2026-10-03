@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { oauthTokens, serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { MailboxListInputSchema } from "../capability-contracts";
@@ -68,7 +69,11 @@ suite("Mail REST access for service-account credentials", () => {
   const call = (token: string, path: string, init?: { method?: string; body?: unknown }) =>
     app.request(path, {
       method: init?.method ?? "GET",
-      headers: { authorization: `Bearer ${token}`, ...(init?.body === undefined ? {} : { "content-type": "application/json" }) },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "x-forwarded-for": uniqueCallerAddress(),
+        ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
+      },
       ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     });
 

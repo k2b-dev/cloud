@@ -254,9 +254,11 @@ fixture's cleanup runs first, while that instance is still live.
 Per-IP rate limits count in the shared test Valkey, across every test file,
 test process, and concurrent run. A fixed address or a small pool lets
 unrelated tests spend each other's budget, so a route that allows one request
-per minute answers 429 at random. `rateLimit()` counts an anonymous request
-without `x-forwarded-for` as the address `unknown`, which every such request
-shares.
+per minute answers 429 at random. `rateLimit()` counts a request by user only
+when it carries a Cloud session. Every other request, whether anonymous or
+authenticated with an API key, an OAuth access token, or a test's stand-in
+bearer token, counts by address. Without `x-forwarded-for`, that is the address
+`unknown`, which every such request shares.
 
 Give each caller its own address, for example from `uniqueCallerAddress()` in
 `scripts/fixtures/caller-address`, a fresh address in the IPv6 documentation
