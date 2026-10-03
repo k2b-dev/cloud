@@ -2,7 +2,7 @@ import { type Accessor, createEffect, createMemo, createSignal, onCleanup, type 
 import { apiClient } from "../../../api/client";
 import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQueryResult } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
-import { toastErrorWithRetry } from "../utils/feedback";
+import { createRetryToasts } from "../utils/feedback";
 import type { PublicWorkspaceRecordDetail as WorkspaceRecordDetail } from "../workspace/workspace-public-state-model";
 import { visibleIdsFromResult } from "./live-refresh";
 import { recordsViewMessages } from "./messages";
@@ -32,6 +32,7 @@ const emptyDetail = (recordId: string): WorkspaceRecordDetail => ({
 
 export const createRecordsSelectionController = (options: RecordsSelectionControllerOptions) => {
   const t = () => recordsViewMessages.resolve([options.locale?.() ?? "en"]).t;
+  const retryToast = createRetryToasts();
   const [fetchedRecord, setFetchedRecord] = createSignal<GridRecord | null>(null);
   const [detail, setDetail] = createSignal<WorkspaceRecordDetail | null>(options.initialDetail);
   const [failure, setFailure] = createSignal<Error | null>(null);
@@ -94,7 +95,7 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
       .catch((error: unknown) => {
         if (abort.signal.aborted) return;
         // Retry loads the details again only while the same record is still open.
-        toastErrorWithRetry(error instanceof Error ? error.message : t().loadRecordDetailsFailed, {
+        retryToast(error instanceof Error ? error.message : t().loadRecordDetailsFailed, {
           retryLabel: t().retry,
           retry: () => (options.selectedRecordId() === recordId ? refreshDetail(recordId) : undefined),
         });
@@ -181,7 +182,7 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
       const next = await loadDetail(recordId);
       if (options.selectedRecordId() === recordId) setDetail(next);
     } catch (error) {
-      toastErrorWithRetry(error instanceof Error ? error.message : t().refreshRecordDetailsFailed, {
+      retryToast(error instanceof Error ? error.message : t().refreshRecordDetailsFailed, {
         retryLabel: t().retry,
         retry: () => (options.selectedRecordId() === recordId ? refreshDetail(recordId) : undefined),
       });

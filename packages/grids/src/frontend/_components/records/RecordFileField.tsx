@@ -18,7 +18,7 @@ import {
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PublicField as Field, PublicGridFile as GridFile } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
-import { toastErrorWithRetry } from "../utils/feedback";
+import { createRetryToasts } from "../utils/feedback";
 import { recordMessages } from "./messages";
 import { uploadRecordFile } from "./record-transfer-client";
 
@@ -130,6 +130,7 @@ export default function RecordFileField(props: {
 }) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const retryToast = createRetryToasts();
   const [uploading, setUploading] = createSignal(false);
   const [files, setFiles] = createSignal<GridFile[]>(props.initialFiles);
 
@@ -142,10 +143,10 @@ export default function RecordFileField(props: {
   };
   // The file change was saved, only the list is stale, so Retry repeats the refresh, not the change.
   const refreshFiles = (): Promise<void> =>
-    refetch().catch(() => toastErrorWithRetry(t().filesRefreshFailed, { retryLabel: t().retry, retry: refreshFiles }));
+    refetch().catch(() => retryToast(t().filesRefreshFailed, { retryLabel: t().retry, retry: refreshFiles }));
   const refreshAfterCommittedChange = () =>
     refreshFilesAfterCommittedChange(props.onChanged, refetch, () =>
-      toastErrorWithRetry(t().filesRefreshFailed, { retryLabel: t().retry, retry: refreshFiles }),
+      retryToast(t().filesRefreshFailed, { retryLabel: t().retry, retry: refreshFiles }),
     );
 
   const accept = () => {

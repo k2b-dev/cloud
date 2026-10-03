@@ -25,7 +25,7 @@ import type {
   PublicRecordSnapshotSummary,
 } from "../documents/public-document-types";
 import { errorMessage } from "../utils/api-helpers";
-import { toastErrorWithRetry } from "../utils/feedback";
+import { createRetryToasts } from "../utils/feedback";
 import { recordMessages } from "./messages";
 import { formatRecordRelativeTime } from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
@@ -50,6 +50,7 @@ export default function RecordDocumentsSection(props: {
 }) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const retryToast = createRetryToasts();
   const dt = () => documentMessages.resolve([locale()]).t;
   const [documents, setDocuments] = createSignal<PublicDocument[]>(props.initialDocuments.items);
   const [documentCursor, setDocumentCursor] = createSignal(props.initialDocuments.cursor);
@@ -108,7 +109,7 @@ export default function RecordDocumentsSection(props: {
       setDocumentCursor(page.cursor);
       setHasMoreDocuments(page.hasMore);
     },
-    onError: (error) => toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => loadMoreDocumentsMut.mutate() }),
+    onError: (error) => retryToast(error.message, { retryLabel: t().retry, retry: () => loadMoreDocumentsMut.mutate() }),
   });
 
   const redownloadMut = mutations.create<void, PublicDocument>({

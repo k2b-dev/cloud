@@ -11,7 +11,7 @@ import { type CorrectionDraftIntent, correctionDraftIntent } from "../../../work
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import { isUserEditable } from "../fields/field-prompt-schema";
 import { errorMessage } from "../utils/api-helpers";
-import { toastErrorWithRetry } from "../utils/feedback";
+import { createRetryToasts } from "../utils/feedback";
 import type {
   PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
   PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
@@ -73,6 +73,7 @@ const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraf
 export default function RecordDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
+  const retryToast = createRetryToasts();
   let disposed = false;
   let correctionOperation: { key: string; id: string } | null = null;
   let correctionRecordId: string | null = null;
@@ -132,7 +133,7 @@ export default function RecordDetailPanel(props: Props) {
     void (async () => {
       await finalizationQuery.refresh();
       if (finalizationQuery.error()) throw finalizationQuery.error();
-    })().catch(() => toastErrorWithRetry(t().successRefreshFailed, { retryLabel: t().retry, retry: refreshAfterFinalizationMutation }));
+    })().catch(() => retryToast(t().successRefreshFailed, { retryLabel: t().retry, retry: refreshAfterFinalizationMutation }));
   };
 
   // ---- Mutations ---------------------------------------------------------
