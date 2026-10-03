@@ -181,6 +181,7 @@ describe("GridsSidebar Apps", () => {
         publishedDiagnostics: [],
         publishedCapabilities: null,
         createdAt: "2026-08-07T00:00:00.000Z",
+        dependenciesChanged: false,
       },
       initialSettingsOpen: true,
     };

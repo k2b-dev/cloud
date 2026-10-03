@@ -34,13 +34,14 @@ export type CliCustomApp = {
   draftValid: boolean;
   publishedValid: boolean;
   hasUnpublishedChanges: boolean;
+  dependenciesChanged: boolean;
 };
 
 const appState = (app: CliCustomApp): string => {
   if (!app.draftValid) return "needs-attention";
   if (!app.publishedAt) return "draft";
   if (!app.publishedValid) return "live-needs-attention";
-  return app.hasUnpublishedChanges ? "unpublished-changes" : "live";
+  return app.hasUnpublishedChanges || app.dependenciesChanged ? "unpublished-changes" : "live";
 };
 
 const listCustomApps = (ctx: Parameters<typeof readApi>[0], baseId: string): Promise<CliCustomApp[]> =>
@@ -151,6 +152,7 @@ export const customAppCommands = [
         ctx.print(`draft: ${app.draftValid ? "valid" : "needs attention"}`);
         ctx.print(`live: ${app.publishedAt ? (app.publishedValid ? app.publishedAt : "needs attention") : "not published"}`);
         ctx.print(`unpublished changes: ${app.hasUnpublishedChanges ? "yes" : "no"}`);
+        if (app.publishedAt) ctx.print(`used resources changed: ${app.dependenciesChanged ? "yes" : "no"}`);
         if (app.publishedAt) ctx.print(`url: /apps/${app.id}`);
         for (const diagnostic of app.draftDiagnostics) {
           ctx.print(`draft ${diagnostic.path.join(".") || "definition"}: ${diagnostic.message}`);

@@ -30,7 +30,7 @@ Diese Befehle verwenden dieselben veröffentlichten App-Rechte wie der Browser. 
 
 ## Entwurf und Veröffentlichung trennen {icon="versions"}
 
-Der Builder speichert vollständige Änderungen automatisch im Entwurf. Bearbeiten ändert nicht die aktive App. **Änderungen veröffentlichen** validiert und veröffentlicht den gespeicherten Entwurf. Behebe seine Diagnosen vor einem erneuten Versuch.
+Der Builder speichert vollständige Änderungen automatisch im Entwurf. Bearbeiten ändert nicht die aktive App. **Änderungen veröffentlichen** validiert und veröffentlicht den gespeicherten Entwurf. Behebe seine Diagnosen vor einem erneuten Versuch. Dieselbe Aktion erscheint mit **Verwendete Ressourcen wurden geändert**, wenn sich ein Formular, eine Ansicht, ein Feld, eine Vorlage oder ein Workflow der aktiven App geändert hat.
 
 **Aktive Version wiederherstellen** verwirft ausstehende Entwurfsänderungen. Unter **App-Einstellungen → Lebenszyklus** entfernt das Aufheben der Veröffentlichung den aktiven Snapshot, behält aber Entwurf und Freigaben. Das Löschen einer App entfernt ihre Route, nicht die Basisdaten. Beide Aktionen erfordern eine Bestätigung.
 

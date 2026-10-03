@@ -246,7 +246,9 @@ const projectCapabilities = async (capabilities: CustomApp["draftCapabilities"])
   return projected;
 };
 
-export const projectCustomApp = async (app: CustomApp) => {
+/** Authoring projection: capabilities reflect the resources the app uses now. */
+export const projectCustomApp = async (stored: CustomApp) => {
+  const app = await gridsService.customApp.currentAuthoringState(stored);
   const baseId = await requiredPublicId("base", app.baseId);
   const draftCapabilities = await projectCapabilities(app.draftCapabilities);
   const publishedCapabilities = await projectCapabilities(app.publishedCapabilities);
@@ -267,6 +269,7 @@ export const projectCustomApp = async (app: CustomApp) => {
     draftValid: app.draftValid && draftCapabilities !== null,
     publishedValid: app.publishedValid && publishedCapabilities !== null,
     hasUnpublishedChanges: app.hasUnpublishedChanges,
+    dependenciesChanged: app.dependenciesChanged,
   };
 };
 

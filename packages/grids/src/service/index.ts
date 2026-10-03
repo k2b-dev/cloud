@@ -224,6 +224,7 @@ export const gridsService = {
     unpublish: customApps.unpublish,
     remove: customApps.remove,
     get: customApps.get,
+    currentAuthoringState: customApps.currentAuthoringState,
     getByShortIdForBase: customApps.getByShortIdForBase,
     getPublishedByShortId: customApps.getPublishedByShortId,
     listByBase: customApps.listByBase,

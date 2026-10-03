@@ -423,6 +423,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
     );
   const [app, setApp] = createSignal(props.app);
   const draft = createCustomAppBuilderState(props.initialDefinition);
+  // The draft equals the live version, but a resource it uses changed since publication.
+  const onlyDependenciesChanged = () => app().dependenciesChanged && !app().hasUnpublishedChanges && !draft.dirty();
   const [diagnostics, setDiagnostics] = createSignal<CustomAppDiagnostic[]>(props.app.draftDiagnostics);
   const [saveState, setSaveState] = createSignal<"idle" | "saving" | "saved" | "error" | "invalid">(
     props.app.draftValid === false ? "invalid" : "idle",
@@ -2062,17 +2064,33 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           <Show
             when={
               props.editMode &&
-              (!app().publishedAt || app().hasUnpublishedChanges || draft.dirty() || saveState() === "error" || saveState() === "invalid")
+              (!app().publishedAt ||
+                app().hasUnpublishedChanges ||
+                app().dependenciesChanged ||
+                draft.dirty() ||
+                saveState() === "error" ||
+                saveState() === "invalid")
             }
           >
             <AppWorkspace.SidebarFooter class="p-2">
               <NoticeCard
                 tone={saveState() === "error" || saveState() === "invalid" ? "danger" : "warning"}
-                title={app().publishedAt ? text("Changes are in a draft") : text("This app is a draft")}
+                title={
+                  onlyDependenciesChanged()
+                    ? text("Used resources changed")
+                    : app().publishedAt
+                      ? text("Changes are in a draft")
+                      : text("This app is a draft")
+                }
                 detail={
                   saveState() === "saving"
                     ? text("Saving changes automatically…")
-                    : (saveError() ?? text("Changes are saved automatically. Publish the draft when it is ready for everyone."))
+                    : (saveError() ??
+                      (onlyDependenciesChanged()
+                        ? text(
+                            "A Form, View, field, template, or workflow used by this app changed. Publish again so the live app uses the current version; until then, affected parts may be unavailable.",
+                          )
+                        : text("Changes are saved automatically. Publish the draft when it is ready for everyone.")))
                 }
               >
                 <div class="mt-3 flex flex-wrap gap-2">
@@ -2086,7 +2104,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       {text("Review draft")}
                     </Button>
                   </Show>
-                  <Show when={app().publishedAt}>
+                  <Show when={app().publishedAt && !onlyDependenciesChanged()}>
                     <Button
                       size="xs"
                       variant="secondary"

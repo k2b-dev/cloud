@@ -16,6 +16,7 @@ import { grantAccess } from "../service/access";
 import { compileCustomAppQuery } from "../service/custom-app-query";
 import { executePublishedCustomAppQuery } from "../service/custom-app-runtime-query";
 import { apply, getPublishedByShortId, publish } from "../service/custom-apps";
+import { update as updateForm } from "../service/forms";
 import { parseJsonbRow } from "../service/jsonb";
 import { resolvePublicId } from "../service/public-resources";
 import type { CustomAppLauncherInvocation, ScannerLauncherInvocation } from "../service/workflow-launcher-invocations";
@@ -743,8 +744,15 @@ describe("Grids App Form runtime", () => {
             const response = await api.request(`/apps/${applied.data.shortId}`);
             expect(response.status).toBe(200);
             const projected = await response.json();
-            expect(projected[`${side}Capabilities`]).toBeNull();
-            expect(projected[`${side}Valid`]).toBe(false);
+            if (side === "draft") {
+              // Authoring reads recompile the draft, so a stale stored draft snapshot is replaced.
+              expect(projected.draftCapabilities).not.toBeNull();
+              expect(projected.draftValid).toBe(true);
+            } else {
+              expect(projected.publishedCapabilities).toBeNull();
+              expect(projected.publishedValid).toBe(false);
+              expect(projected.dependenciesChanged).toBe(true);
+            }
             expect(projected.draftDefinition).toEqual(publicApp.draftDefinition);
             expect(projected.publishedDefinition).toEqual(publicApp.publishedDefinition);
             expect(projected[`${side === "draft" ? "published" : "draft"}Valid`]).toBe(true);
@@ -2164,6 +2172,162 @@ describe("Grids App record block", () => {
       await sql`DELETE FROM grids.record_event_outbox WHERE base_id = ${baseId}::uuid`;
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
       if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+    }
+  });
+});
+
+describe("Grids App dependency changes", () => {
+  postgresTest("offers publishing again after a used Form changes and serves the current Form once published", async () => {
+    const baseId = testUuid();
+    const tableId = testUuid();
+    const titleFieldId = testUuid();
+    const notesFieldId = testUuid();
+    const formId = testUuid();
+    const viewId = testUuid();
+    const baseShortId = testShortId("B");
+    const tableShortId = testShortId("T");
+    const titleFieldShortId = testShortId("F");
+    const notesFieldShortId = testShortId("N");
+    const formShortId = testShortId("M");
+    const viewShortId = testShortId("V");
+    const author = userFor(testUuid());
+    const accessIds: string[] = [];
+    try {
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+        VALUES (${author.id}::uuid, ${author.uid}, 'local', 'user', ${author.displayName}, ${author.givenname}, ${author.sn})`;
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Changed form')`;
+      const baseGrant = await grantAccess({
+        resourceType: "base",
+        resourceId: baseId,
+        permission: "admin",
+        principal: { type: "user", userId: author.id },
+      });
+      if (!baseGrant.ok) throw new Error(baseGrant.error.message);
+      accessIds.push(baseGrant.data.accessId);
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name)
+        VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Requests')`;
+      await sql`INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position) VALUES
+        (${titleFieldId}::uuid, ${titleFieldShortId}, ${tableId}::uuid, 'Title', 'text', '{}'::jsonb, 0),
+        (${notesFieldId}::uuid, ${notesFieldShortId}, ${tableId}::uuid, 'Notes', 'text', '{}'::jsonb, 1)`;
+      await sql`INSERT INTO grids.forms (id, short_id, table_id, name, config, is_active, position)
+        VALUES (${formId}::uuid, ${formShortId}, ${tableId}::uuid, 'Request',
+          ${{ fields: [{ kind: "user_input", fieldId: titleFieldId }] }}::jsonb, TRUE, 0)`;
+      await sql`INSERT INTO grids.views (id, short_id, table_id, name, source, ui)
+        VALUES (${viewId}::uuid, ${viewShortId}, ${tableId}::uuid, 'Open requests',
+          ${`from table {${tableShortId}}\nselect {${titleFieldShortId}}`}, '{}'::jsonb)`;
+      const applied = await apply({
+        schemaVersion: 5,
+        kind: "grids.custom-app",
+        id: testShortId("A"),
+        baseId: baseShortId,
+        name: "Requests",
+        startPageId: "home",
+        pages: [
+          {
+            id: "home",
+            title: "Home",
+            navigation: { visible: true },
+            parameters: {},
+            rows: [
+              {
+                id: "main",
+                columns: [
+                  {
+                    id: "main",
+                    span: 12,
+                    blocks: [
+                      { id: "intro", type: "markdown", markdown: "Send a request" },
+                      { id: "request", type: "form", formId: formShortId, fixedValues: {} },
+                      {
+                        id: "open",
+                        type: "records",
+                        searchable: false,
+                        pageSize: 25,
+                        source: { kind: "view", viewId: viewShortId },
+                        display: { kind: "table", columnIds: [titleFieldShortId] },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+      if (!applied.ok) throw new Error(applied.error.message);
+      const appGrant = await grantAccess({
+        resourceType: "customApp",
+        resourceId: applied.data.id,
+        permission: "read",
+        principal: { type: "public" },
+      });
+      if (!appGrant.ok) throw new Error(appGrant.error.message);
+      accessIds.push(appGrant.data.accessId);
+      const api = new Hono<AuthContext>().route(
+        "/apps",
+        createCustomAppsApi({ loadOptionalActor: authenticateAs(author), requireAuthenticated: authenticateAs(author) }),
+      );
+      const editorState = async () => {
+        const response = await api.request(`/apps/${applied.data.shortId}`);
+        expect(response.status).toBe(200);
+        return (await response.json()) as { hasUnpublishedChanges: boolean; dependenciesChanged: boolean; draftValid: boolean };
+      };
+      const formBlock = async () => {
+        const response = await api.request(`/apps/runtime/${applied.data.shortId}/home`);
+        expect(response.status).toBe(200);
+        const blocks = ((await response.json()) as { blocks: Array<{ id: string; form?: unknown }> }).blocks;
+        return blocks.find((block) => block.id === "request")?.form as
+          | { ok: true; fields: Array<{ id: string }> }
+          | { ok: false; message: string }
+          | undefined;
+      };
+
+      expect((await api.request(`/apps/${applied.data.shortId}/publish`, { method: "POST" })).status).toBe(200);
+      expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: false, draftValid: true });
+      expect(await formBlock()).toMatchObject({ ok: true });
+
+      const changed = await updateForm(
+        formId,
+        {
+          config: {
+            fields: [
+              { kind: "user_input", fieldId: titleFieldId },
+              { kind: "user_input", fieldId: notesFieldId },
+            ],
+          },
+        },
+        author.id,
+      );
+      if (!changed.ok) throw new Error(changed.error.message);
+
+      // The live snapshot never widens on its own: only the changed Form block
+      // fails closed, while the editor offers to publish the unchanged draft.
+      expect(await formBlock()).toEqual({ ok: false, message: "This form changed after the app was published." });
+      expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: true, draftValid: true });
+
+      expect((await api.request(`/apps/${applied.data.shortId}/publish`, { method: "POST" })).status).toBe(200);
+      expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: false, draftValid: true });
+      const current = await formBlock();
+      expect(current).toMatchObject({ ok: true });
+      if (!current?.ok) throw new Error("Republished Form must render");
+      expect(current.fields.map((field) => field.id).sort()).toEqual([titleFieldShortId, notesFieldShortId].sort());
+
+      // Every used resource follows the same rule; a View is one more example.
+      await sql`UPDATE grids.views SET source = ${`from table {${tableShortId}}\nselect {${titleFieldShortId}}, {${notesFieldShortId}}`}
+        WHERE id = ${viewId}::uuid`;
+      expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: true, draftValid: true });
+      expect((await api.request(`/apps/${applied.data.shortId}/publish`, { method: "POST" })).status).toBe(200);
+      expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: false, draftValid: true });
+
+      // An incompatible change makes the unchanged draft invalid instead of
+      // offering a publication that the server would reject.
+      await sql`UPDATE grids.forms SET is_active = FALSE WHERE id = ${formId}::uuid`;
+      expect(await editorState()).toMatchObject({ hasUnpublishedChanges: false, dependenciesChanged: true, draftValid: false });
+    } finally {
+      await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${author.id}::uuid`;
     }
   });
 });

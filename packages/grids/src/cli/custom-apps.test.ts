@@ -60,6 +60,7 @@ const app: CliCustomApp = {
   draftValid: true,
   publishedValid: true,
   hasUnpublishedChanges: false,
+  dependenciesChanged: false,
 };
 const publicApp = app;
 
@@ -229,6 +230,21 @@ describe("Grids Apps CLI", () => {
     expect(lines).toContain("unpublished changes: yes");
     expect(lines).toContain(`url: /apps/${appId}`);
     expect(lines).toContain("draft pages.0: Page needs content");
+  });
+
+  test("reports a live App whose used resources changed as needing publication", async () => {
+    const outdated = { ...app, dependenciesChanged: true };
+    const { ctx, lines } = createContext([Response.json(resolvedBase), Response.json([outdated])], "text");
+
+    await command("apps get").run({
+      ctx,
+      args: { args: [baseId, app.name] },
+      flags: { base: undefined, app: undefined },
+    });
+
+    expect(lines).toContain("state: unpublished-changes");
+    expect(lines).toContain("unpublished changes: no");
+    expect(lines).toContain("used resources changed: yes");
   });
 
   test("adds only the selected App page context to GQL autocomplete", async () => {
