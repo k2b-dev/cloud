@@ -30,7 +30,7 @@ import {
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
-import { isTrashOrJunkFolder } from "./follow-up-scope";
+import { isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
@@ -703,6 +703,18 @@ const isTrashOrJunkPlacement = async (db: typeof sql, folderId: string): Promise
   return folder?.excluded === true;
 };
 
+/**
+ * Whether a message from the mailbox's own address starts its conversation waiting for an answer:
+ * a human reply, or a new message found in Sent. Mail from the own address delivered to the Inbox,
+ * such as a contact form that sends in the mailbox's name, still needs action.
+ */
+const startsWaiting = async (db: typeof sql, folderId: string, message: ConnectorEnvelope): Promise<boolean> => {
+  if (isAutomaticSubmission(message.protocolFacts?.autoSubmitted)) return false;
+  if (message.inReplyTo || message.references.length > 0) return true;
+  const [folder] = await db<{ sent: boolean }[]>`SELECT ${isSentFolder(sql`${folderId}::uuid`)} AS sent`;
+  return folder?.sent === true;
+};
+
 export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
   const { message, skipped, messageIdShortened } = storableEnvelope(params.message);
   if (skipped.length > 0 || messageIdShortened) {
@@ -948,6 +960,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     }));
   const participantLabels = counterpartyLabels(params.message, isOutbound);
   if (!conversationId) {
+    const initialWorkStatus = isOutbound && (await startsWaiting(params.db, params.folderId, params.message)) ? "waiting" : "needs_action";
     const conversationRows = await withShortIdDb(
       params.db,
       "conversation",
@@ -970,7 +983,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         ${isOutbound ? null : params.message.internalDate},
         ${isOutbound ? params.message.internalDate : null},
         ${params.message.internalDate},
-        ${isOutbound && !isAutomaticSubmission(params.message.protocolFacts?.autoSubmitted) ? "waiting" : "needs_action"}
+        ${initialWorkStatus}
       )
       RETURNING id
     `,

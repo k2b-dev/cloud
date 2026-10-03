@@ -32,6 +32,7 @@ suite("mail conversation work-state projection", () => {
   let mailboxId = "";
   let remoteResourceId = "";
   let folderId = "";
+  let sentFolderId = "";
   let senderIdentityId = "";
   let context: MailRequestContext;
 
@@ -80,8 +81,14 @@ suite("mail conversation work-state projection", () => {
       VALUES (${newShortId()}, ${resource!.id}::uuid, ${`work-state-${suffix}`}, 'Inbox', 'inbox', 'current')
       RETURNING id
     `;
+    const [sentFolder] = await sql<{ id: string }[]>`
+      INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${resource!.id}::uuid, ${`work-state-sent-${suffix}`}, 'Sent', 'sent', 'current')
+      RETURNING id
+    `;
     remoteResourceId = resource!.id;
     folderId = folder!.id;
+    sentFolderId = sentFolder!.id;
     const [identity] = await sql<{ id: string }[]>`
       INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Support', 'Support', 'support@example.test', true, 'verified')
@@ -286,23 +293,30 @@ suite("mail conversation work-state projection", () => {
     expect(afterInbound).toEqual({ work_status: "needs_action", snoozed_until: null });
   }, 30_000);
 
-  test("starts a conversation with a message sent from another client as waiting", async () => {
-    const message = envelope({
-      uid: 6,
-      messageId: `<work-state-announcement-${suffix}@example.test>`,
-      inReplyTo: null,
-      from: "support@example.test",
-      to: "customer@example.test",
-      date: new Date("2026-07-22T09:00:00.000Z"),
-    });
-    const messageId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message });
-    const [conversation] = await sql<{ work_status: string }[]>`
-      SELECT conversation.work_status
-      FROM mail.conversation_messages link
-      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
-      WHERE link.message_id = ${messageId}::uuid
-    `;
-    expect(conversation?.work_status).toBe("waiting");
+  test("starts a conversation with a new message found in Sent as waiting, but not one from the own address in the Inbox", async () => {
+    const startingWorkStatus = async (uid: number, key: string, ingestFolderId: string) => {
+      const message = envelope({
+        uid,
+        messageId: `<work-state-${key}-${suffix}@example.test>`,
+        inReplyTo: null,
+        from: "support@example.test",
+        to: "customer@example.test",
+        date: new Date("2026-07-22T09:00:00.000Z"),
+      });
+      message.subject = `Work-state ${key}`;
+      const messageId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: ingestFolderId, message });
+      const [conversation] = await sql<{ work_status: string }[]>`
+        SELECT conversation.work_status
+        FROM mail.conversation_messages link
+        JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+        WHERE link.message_id = ${messageId}::uuid
+      `;
+      return conversation?.work_status;
+    };
+    // A message written in another email client waits for an answer.
+    expect(await startingWorkStatus(6, "announcement", sentFolderId)).toBe("waiting");
+    // A contact form that sends in the mailbox's name delivers a request someone has to handle.
+    expect(await startingWorkStatus(9, "contact-form", folderId)).toBe("needs_action");
   }, 30_000);
 
   test("a timeline refresh waits for a hydration of the same conversation instead of overwriting it", async () => {

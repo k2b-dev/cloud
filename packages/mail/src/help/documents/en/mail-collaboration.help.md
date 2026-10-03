@@ -17,7 +17,7 @@ The conversation reader places meaningful collaboration and workflow changes qui
 - **Mark as done** is the only manual follow-up state. Select it when no current action remains; clear it to reopen the conversation. Mail then derives the next step from the latest verified message.
 - **Show later** temporarily removes the conversation from active work without changing its next step. Use it when the next review depends on time rather than another person. The conversation stays under **Later** until the selected time; new incoming mail makes it appear immediately.
 
-New incoming mail changes any conversation to **Needs action**. A confirmed human reply or reply-all changes it to **Waiting for reply**. Automatic replies, forwards, new messages, retries, failed sends, and ambiguous delivery outcomes do not invent a new next step. Treat **Done** as a team state, not as an email archive action. Marking a conversation done or reopening it also removes it from **Later**.
+New incoming mail changes any conversation to **Needs action**. A confirmed human reply or reply-all changes it to **Waiting for reply**, and a new message you write starts in it. Automatic replies, forwards, retries, failed sends, and ambiguous delivery outcomes do not invent a new next step. Treat **Done** as a team state, not as an email archive action. Marking a conversation done or reopening it also removes it from **Later**.
 
 ## Add internal comments {icon="point"}
 

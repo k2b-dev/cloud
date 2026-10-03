@@ -6,8 +6,8 @@ type SqlFragment = Bun.SQL.Query<unknown>;
 /** The views of open or postponed work; they leave out conversations that are only in Trash or Junk. */
 export const FOLLOW_UP_VIEWS: readonly ConversationView[] = ["needs_action", "mine", "unassigned", "waiting", "snoozed"];
 
-/** Whether a folder is the mailbox's Trash or Junk, by its configured role or else the provider's, as the folder list shows it. */
-export const isTrashOrJunkFolder = (folderId: SqlFragment): SqlFragment => sql`EXISTS (
+/** Whether a folder has one of these roles, by its configured role or else the provider's, as the folder list shows it. */
+const hasFolderRole = (folderId: SqlFragment, roles: readonly string[]): SqlFragment => sql`EXISTS (
   SELECT 1
   FROM mail.folders scope_folder
   JOIN mail.remote_resources scope_resource ON scope_resource.id = scope_folder.remote_resource_id
@@ -15,8 +15,14 @@ export const isTrashOrJunkFolder = (folderId: SqlFragment): SqlFragment => sql`E
     ON scope_role.mailbox_id = scope_resource.mailbox_id
    AND scope_role.folder_id = scope_folder.id
   WHERE scope_folder.id = ${folderId}
-    AND COALESCE(scope_role.role, scope_folder.role) IN ('trash', 'junk')
+    AND COALESCE(scope_role.role, scope_folder.role) IN (SELECT value FROM jsonb_array_elements_text(${roles}::jsonb))
 )`;
+
+/** Whether a folder is the mailbox's Trash or Junk. */
+export const isTrashOrJunkFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["trash", "junk"]);
+
+/** Whether a folder is the mailbox's Sent folder. */
+export const isSentFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["sent"]);
 
 /**
  * Whether a conversation belongs in the follow-up views and their counts: one of its messages is

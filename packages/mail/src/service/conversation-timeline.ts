@@ -46,14 +46,40 @@ export const isUnsentOutboundMessage = (messageId: SqlFragment): SqlFragment => 
 )`;
 
 /**
- * Recomputes a conversation's date, subject, and participant summary from its timeline messages.
- * A conversation without any, such as one that holds only a scheduled reply, keeps its values.
- * It first takes the row lock its UPDATE needs anyway, so the recomputation reads what a concurrent
- * hydration of the conversation committed instead of overwriting it with older values.
+ * Whether mail reached a sent message's conversation after someone chose Send, such as an answer
+ * that arrived while a reply waited for its send time. The reply was written without that mail, so
+ * sending it does not answer it. Both times are Mail's own clock: when the send was committed and
+ * when Mail first stored the received message.
  */
-export const refreshConversationTimeline = async (db: SqlClient, conversationId: string): Promise<void> => {
+export const isMailReceivedSinceSend = (messageId: SqlFragment): SqlFragment => sql`EXISTS (
+  SELECT 1
+  FROM mail.outbox_submissions send_outbox
+  JOIN mail.conversation_messages send_link ON send_link.message_id = send_outbox.message_id
+  JOIN mail.conversations send_conversation ON send_conversation.id = send_link.conversation_id
+  JOIN mail.conversation_messages later_link ON later_link.conversation_id = send_link.conversation_id
+  JOIN mail.message_contents later ON later.id = later_link.message_id
+  WHERE send_outbox.message_id = ${messageId}
+    AND later.created_at > send_outbox.created_at
+    AND NOT EXISTS (
+      SELECT 1
+      FROM mail.message_addresses later_sender
+      JOIN mail.sender_identities later_identity
+        ON later_identity.mailbox_id = send_conversation.mailbox_id
+       AND lower(later_identity.from_address) = later_sender.normalized_email
+      WHERE later_sender.message_id = later.id AND later_sender.role = 'from'
+    )
+)`;
+
+/**
+ * Recomputes a conversation's date, subject, and participant summary from its timeline messages
+ * and reports whether any of them changed. A conversation without any, such as one that holds only
+ * a scheduled reply, keeps its values. It first takes the row lock its UPDATE needs anyway, so the
+ * recomputation reads what a concurrent hydration of the conversation committed instead of
+ * overwriting it with older values.
+ */
+export const refreshConversationTimeline = async (db: SqlClient, conversationId: string): Promise<boolean> => {
   await db`SELECT id FROM mail.conversations WHERE id = ${conversationId}::uuid FOR NO KEY UPDATE`;
-  await db`
+  const changed = await db<{ id: string }[]>`
     WITH classified AS (
       SELECT
         message.id AS message_id,
@@ -109,5 +135,20 @@ export const refreshConversationTimeline = async (db: SqlClient, conversationId:
       latest_outbound_at = timeline.latest_outbound_at
     FROM timeline, latest, participants
     WHERE conversation.id = ${conversationId}::uuid
+      AND (
+        conversation.subject,
+        conversation.participant_summary,
+        conversation.latest_message_at,
+        conversation.latest_inbound_at,
+        conversation.latest_outbound_at
+      ) IS DISTINCT FROM (
+        latest.subject,
+        participants.summary,
+        timeline.latest_message_at,
+        timeline.latest_inbound_at,
+        timeline.latest_outbound_at
+      )
+    RETURNING conversation.id
   `;
+  return changed.length > 0;
 };
