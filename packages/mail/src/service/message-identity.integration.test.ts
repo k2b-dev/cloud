@@ -411,44 +411,24 @@ steps:
     expect(await storedEnvelope()).toEqual({ internal_date: date, size_bytes: 900 });
   });
 
-  test("two messages that share every header stay two messages while both are in one folder", async () => {
-    // A sender that reuses a Message-ID within one second, or a client that rewrites a message in
-    // place, leaves two messages in one folder that only their bodies tell apart. A move or copy
-    // never leaves a message twice in one folder.
-    const messageId = `<same-folder-${suffix}@example.test>`;
-    const rawMessage = (body: string) =>
-      Buffer.from(
-        [
-          `Message-ID: ${messageId}`,
-          "Date: Wed, 05 Aug 2026 09:00:00 +0000",
-          `From: Customer <${customer.address}>`,
-          `To: Support <${support}>`,
-          "Subject: Same headers",
-          "Content-Type: text/plain; charset=utf-8",
-          "",
-          body,
-        ].join("\r\n"),
-      );
-    const sources = [rawMessage("Body A"), rawMessage("Body B")];
+  test("a message moved out and back before the folder sync noticed stays one message", async () => {
+    // Archive and undo in another client: the message returns to the Inbox under a new UID while
+    // Mail still holds its old UID there, which a later sync retires.
+    const messageId = `<moved-back-${suffix}@example.test>`;
     const fields = {
       messageId,
-      subject: "Same headers",
+      subject: "Moved back",
       from: customer,
       to: [supportAddress],
       date: new Date("2026-08-05T09:00:00.000Z"),
-      sizeBytes: sources[0]!.byteLength,
     };
     const eventsBefore = await receivedEvents();
-    const firstId = await ingest("inbox", envelope({ folder: "inbox", ...fields }), true);
-    const secondId = await ingest("inbox", envelope({ folder: "inbox", ...fields }), true);
-    expect(secondId).not.toBe(firstId);
-    expect(await receivedEvents()).toBe(eventsBefore + 2);
-    for (const [index, id] of [firstId, secondId].entries()) {
-      expect(await hydrateMessageFromSource({ messageId: id, source: Readable.from([sources[index]!]) })).toMatchObject({
-        status: "hydrated",
-      });
-    }
-    expect(await projection(messageId)).toEqual({ contents: 2, links: 2, live_placements: 2 });
+    const before = envelope({ folder: "inbox", ...fields });
+    const originalId = await ingest("inbox", before, true);
+    expect(await ingest("inbox", envelope({ folder: "inbox", ...fields }), true)).toBe(originalId);
+    expect(await receivedEvents()).toBe(eventsBefore + 1);
+    await leaveFolder("inbox", before);
+    expect(await projection(messageId)).toEqual({ contents: 1, links: 1, live_placements: 1 });
   });
 
   test("unrelated mail with the same subject from different senders stays apart", async () => {

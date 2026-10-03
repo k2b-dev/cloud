@@ -552,7 +552,6 @@ const findCanonicalMessageContent = async (params: {
   db: typeof sql;
   mailboxId: string;
   remoteResourceId: string;
-  folderId: string;
   message: ConnectorEnvelope;
   normalizedSubject: string;
 }): Promise<string | null> => {
@@ -589,10 +588,10 @@ const findCanonicalMessageContent = async (params: {
   // bytes. Only one's own mail may differ in size: the copy in Sent and the one delivered back
   // through a Bcc, a list, or a team address carry different transport headers. Without a Date
   // header, the copy also keeps the INTERNALDATE, which a move or copy preserves; that also finds
-  // the copy of a message without a Message-ID, through the subject index. A move or copy never
-  // leaves a message twice in one folder, so a message that is still in this folder is another
-  // message with the same headers, such as one whose sender reused its Message-ID. Like the twin
-  // lookup in findConversation, it reads at most one envelope batch of candidates.
+  // the copy of a message without a Message-ID, through the subject index. The copy may also be
+  // in the same folder: a message moved out and back before the folder sync noticed it gets a new
+  // UID while its old one still looks live. Like the twin lookup in findConversation, it reads at
+  // most one envelope batch of candidates.
   const senders = senderSet(params.message);
   const [sameMessage] = await params.db<{ id: string }[]>`
     SELECT candidate.id
@@ -646,11 +645,6 @@ const findCanonicalMessageContent = async (params: {
         SELECT sender.normalized_email
         FROM mail.message_addresses sender
         WHERE sender.message_id = candidate.id AND sender.role = 'from'
-      )
-      AND NOT EXISTS (
-        SELECT 1
-        FROM mail.remote_message_refs live
-        WHERE live.message_id = candidate.id AND live.folder_id = ${params.folderId}::uuid AND live.stale_at IS NULL
       )
     LIMIT 1
   `;
@@ -736,7 +730,6 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       db: params.db,
       mailboxId: params.mailboxId,
       remoteResourceId: params.remoteResourceId,
-      folderId: params.folderId,
       message: params.message,
       normalizedSubject,
     }));
