@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
 import { oauthTokens } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { commands, drafts, mailboxAccess, publicResources } from "../service";
 import app from ".";
@@ -46,7 +47,7 @@ suite("Mail draft public boundary", () => {
     const listConversationDrafts = spyOn(drafts, "listConversationDrafts").mockResolvedValue(ok([]));
 
     const response = await app.request("/mailboxes/mbx123/conversations/cnv123/drafts?limit=20", {
-      headers: { authorization: "Bearer draft-boundary-test" },
+      headers: { authorization: "Bearer draft-boundary-test", "x-forwarded-for": uniqueCallerAddress() },
     });
 
     expect(response.status).toBe(200);
@@ -99,7 +100,11 @@ suite("Mail command public boundary", () => {
 
     const response = await app.request("/mailboxes/mbx123/commands", {
       method: "POST",
-      headers: { authorization: "Bearer command-boundary-test", "content-type": "application/json" },
+      headers: {
+        authorization: "Bearer command-boundary-test",
+        "x-forwarded-for": uniqueCallerAddress(),
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         kind: "change_message_state",
         messageId: "msg123",
