@@ -47,14 +47,12 @@ describe("markdown tables", () => {
     expect(styles).toContain(`.help-document .md-table :is(th, td) {
   min-width: 0;
   height: auto;
-  border: 0;
   padding: 0;
 }`);
     expect(styles).toContain("overflow-wrap: break-word");
     expect(styles).toContain("word-break: normal");
-    expect(styles).toContain(`.help-document .md-table thead {
-  background: var(--ui-surface-subtle);
-}`);
+    // The header has no fill; a stronger line under it marks the header.
+    expect(styles).not.toContain(".help-document .md-table thead {");
     expect(styles).toContain(".help-document .md-table tbody tr:not(.md-table-total-row):hover");
     expect(styles).toContain(".help-document .md-table tbody tr:not(.md-table-total-row) .md-table-cell :where(strong)");
     expect(styles).not.toContain(".help-document .md-table thead .md-table-cell {\n  background:");

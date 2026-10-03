@@ -464,7 +464,19 @@
   @apply bg-zinc-200/40 dark:bg-zinc-800;
 }
 
-.md-code-block pre,
+/* Rendered code blocks match MarkdownView: a fill without a frame. The
+   transparent border keeps the edge visible in forced colours. The rendered
+   wrapper shares the editor's line class, so it drops the line fill. */
+.md-code-block:has(> pre) {
+  background: transparent;
+}
+
+.md-code-block pre {
+  border: 1px solid transparent !important;
+  border-radius: var(--ui-radius-control) !important;
+  background: var(--ui-surface-muted) !important;
+}
+
 .md-mermaid-block,
 .md-katex-block {
   border: 1px solid rgb(228 228 231 / 0.72) !important;
@@ -479,7 +491,6 @@
   padding: 0.75rem;
 }
 
-.dark .md-code-block pre,
 .dark .md-mermaid-block,
 .dark .md-katex-block {
   border-color: rgb(63 63 70 / 0.72) !important;

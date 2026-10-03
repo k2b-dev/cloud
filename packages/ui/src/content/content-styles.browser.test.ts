@@ -37,14 +37,29 @@ const markdown = [
   "const answer = 42;",
   "\`\`\`",
   "",
+  "> Bring a jacket.",
+  "",
   "| Name | Count | Status | Price |",
   "| --- | --- | :-: | --: |",
   "| Apples | 3 | ok | 1.20 |",
+  "| Pears | 5 | ok | 2.40 |",
+  "| Plums | 8 | late | 0.90 |",
 ].join("\\n");
 
 const app = document.getElementById("app");
 app.append(file("full"), file("excerpt", 2));
 render(() => createComponent(MarkdownView, { markdown }), app.appendChild(document.createElement("article")));
+const plain = app.appendChild(document.createElement("section"));
+plain.id = "plain";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "README.md", size: 400 },
+      load: async () => ({ encoding: "utf8", content: "Lorem ipsum ".repeat(40), mediaType: "text/markdown" }),
+      variant: "plain",
+    }),
+  plain,
+);
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the content fixture for the browser.");
@@ -57,10 +72,13 @@ beforeAll(async () => {
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style></head>` +
-      `<body class="k2b-ui"><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span></body></html>`,
+      `<body class="k2b-ui"><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span><span id="text" style="color:var(--k2b-text)"></span>` +
+      `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
+      `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.locator("#excerpt .k2b-content-code-display").waitFor();
+  await page.locator("#plain .k2b-content-markdown").waitFor();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -94,21 +112,97 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(code).toBe(frame);
   });
 
-  test("MarkdownView colours links and inline code as actions, and fenced code like its block", async () => {
-    const colors = await page.evaluate(() => {
-      const color = (selector: string) => getComputedStyle(document.querySelector(selector)!).color;
+  test("MarkdownView underlines links and sets code as text on a fill without a frame", async () => {
+    const styles = await page.evaluate(() => {
+      const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+      const link = style("article a");
+      const inline = style("article p code");
+      const block = style("article pre");
       return {
-        link: color("article a"),
-        inline: color("article p code"),
-        fenced: color("article pre code"),
-        block: color("article pre"),
-        action: color("#action"),
+        link: [link.color, link.textDecorationLine],
+        inline: [inline.color, inline.backgroundColor],
+        fenced: [style("article pre code").color, style("article pre code").backgroundColor],
+        block: [block.color, block.backgroundColor, block.borderTopColor],
+        action: style("#action").color,
+        text: style("#text").color,
+        fill: style("#fill").backgroundColor,
       };
     });
-    expect(colors.link).toBe(colors.action);
-    expect(colors.inline).toBe(colors.action);
-    expect(colors.fenced).toBe(colors.block);
-    expect(colors.fenced).not.toBe(colors.action);
+    expect(styles.link).toEqual([styles.action, "underline"]);
+    expect(styles.inline).toEqual([styles.text, styles.fill]);
+    expect(styles.block).toEqual([styles.text, styles.fill, "rgba(0, 0, 0, 0)"]);
+    expect(styles.fenced).toEqual([styles.text, "rgba(0, 0, 0, 0)"]);
+  });
+
+  test("MarkdownView sets a quote off by a rule at its start edge, not a box", async () => {
+    const quote = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector("article blockquote")!);
+      return [style.backgroundColor, style.borderTopWidth, style.borderLeftWidth, style.borderLeftColor];
+    });
+    const strong = await page.evaluate(() => getComputedStyle(document.querySelector("#strong")!).borderLeftColor);
+    expect(quote).toEqual(["rgba(0, 0, 0, 0)", "0px", "3px", strong]);
+  });
+
+  test("MarkdownView tables are hairlines without a frame, fill or zebra, flush with the prose", async () => {
+    const table = await page.evaluate(() => {
+      const style = (element: Element) => getComputedStyle(element);
+      const wrapper = document.querySelector("article .k2b-content-markdown__table")!;
+      const rows = Array.from(document.querySelectorAll("article tbody tr"));
+      const cells = (row: Element) => Array.from(row.children);
+      const header = document.querySelector("article thead th")!;
+      const paragraph = document.querySelector("article p")!.getBoundingClientRect();
+      const lastHeader = document.querySelector("article thead th:last-child")!.getBoundingClientRect();
+      return {
+        frame: [style(wrapper).borderTopWidth, style(wrapper).borderLeftWidth],
+        head: [
+          style(document.querySelector("article thead")!).backgroundColor,
+          style(header).backgroundColor,
+          style(header).borderBottomColor,
+        ],
+        rowFills: rows.map((row) => style(row).backgroundColor),
+        rowLines: rows.map((row) => style(cells(row)[0]!).borderTopWidth),
+        lineColor: style(cells(rows[1]!)[0]!).borderTopColor,
+        start: header.getBoundingClientRect().left + Number.parseFloat(style(header).paddingLeft) - paragraph.left,
+        end:
+          paragraph.right -
+          (lastHeader.right - Number.parseFloat(style(document.querySelector("article thead th:last-child")!).paddingRight)),
+      };
+    });
+    const tokens = await page.evaluate(() => ({
+      border: getComputedStyle(document.querySelector("#border")!).borderLeftColor,
+      strong: getComputedStyle(document.querySelector("#strong")!).borderLeftColor,
+    }));
+    expect(table.frame).toEqual(["0px", "0px"]);
+    expect(await page.locator("article .k2b-content-markdown__table").getAttribute("tabindex")).toBe("0");
+    expect(table.head).toEqual(["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)", tokens.strong]);
+    expect(new Set(table.rowFills)).toEqual(new Set(["rgba(0, 0, 0, 0)"]));
+    expect(table.rowLines).toEqual(["0px", "1px", "1px"]);
+    expect(table.lineColor).toBe(tokens.border);
+    expect(table.start).toBe(0);
+    expect(table.end).toBe(0);
+  });
+
+  test("a plain FileView keeps Markdown at a reading measure", async () => {
+    const { width, host, ch } = await page.evaluate(() => {
+      const markdown = document.querySelector("#plain .k2b-content-markdown")!;
+      const probe = markdown.appendChild(document.createElement("span"));
+      probe.style.cssText = "position:absolute;width:72ch";
+      const ch = probe.getBoundingClientRect().width;
+      probe.remove();
+      return { width: markdown.getBoundingClientRect().width, host: document.querySelector("#plain")!.getBoundingClientRect().width, ch };
+    });
+    expect(host).toBeGreaterThan(ch);
+    expect(width).toBeCloseTo(ch, 0);
+  });
+
+  test("a Markdown code block keeps its edge in forced colours", async () => {
+    await page.emulateMedia({ forcedColors: "active" });
+    try {
+      const edge = await page.evaluate(() => getComputedStyle(document.querySelector("article pre")!).borderTopColor);
+      expect(edge).not.toBe("rgba(0, 0, 0, 0)");
+    } finally {
+      await page.emulateMedia({ forcedColors: "none" });
+    }
   });
 
   test("MarkdownView table headers align with their columns", async () => {

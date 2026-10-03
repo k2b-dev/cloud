@@ -644,7 +644,14 @@ const DocsDemo = () => (
 
 const MarkdownDemo = (props: { html: string }) => {
   const [value, setValue] = createSignal(
-    "# Hello @auth.name\n\n| Item | Amount |\n| --- | ---: |\n| Subtotal | 123.00 |\n| Tip | 12.30 |\n\n| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |",
+    [
+      "# Hello @auth.name",
+      "Read the [receipt guide](https://example.com/receipts) and run `bun test` before you share the bill.",
+      "| Item | Note | Amount |\n| --- | --- | ---: |\n| Subtotal | Two dinners and one dessert, shared by both guests | 123.00 |\n| Tip | | 12.30 |",
+      "| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |",
+      "> Prices include VAT.",
+      "```ts\nconst total = subtotal + tip;\n```",
+    ].join("\n\n"),
   );
   return (
     <DemoCard

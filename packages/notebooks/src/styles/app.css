@@ -153,13 +153,13 @@
 .notebook-book-content pre {
   overflow: auto;
   padding: 1rem;
-  background: var(--ui-surface-subtle);
-  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-muted);
+  border: 1px solid transparent;
   border-radius: var(--ui-radius-control);
   font-size: 0.85em;
 }
 .notebook-book-content :not(pre) > code {
-  background: var(--ui-surface-subtle);
+  background: var(--ui-surface-muted);
   padding: 0.1em 0.3em;
   border-radius: 0.2em;
   font-size: 0.9em;
@@ -167,7 +167,7 @@
 .notebook-book-content blockquote {
   color: var(--color-zinc-600);
   padding-left: 1rem;
-  border-left: 3px solid var(--ui-border);
+  border-left: 3px solid var(--ui-border-strong);
 }
 .notebook-book-content :is(img, svg) {
   max-width: 100%;
@@ -190,10 +190,16 @@
 .notebook-book-content .md-table-cell:not(.md-formula-ok):not(.md-formula-error):not(.md-table-progress) {
   display: block;
 }
+/* Row lines come from the shared `.md-table` rules, which every book table uses. */
 .notebook-book-content :is(th, td) {
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--ui-border);
   text-align: left;
+}
+.notebook-book-content :is(th, td):first-child {
+  padding-left: 0;
+}
+.notebook-book-content :is(th, td):last-child {
+  padding-right: 0;
 }
 .notebook-book-content :is(th, td):has(> .md-table-cell) {
   padding: 0;

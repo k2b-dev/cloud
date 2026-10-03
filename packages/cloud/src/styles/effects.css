@@ -602,15 +602,6 @@
   padding: 0;
 }
 
-.help-document :where(blockquote) {
-  margin: 1.25rem 0;
-  border: 0;
-  border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface-subtle);
-  color: var(--color-zinc-600);
-  padding: 0.875rem 1rem;
-}
-
 .help-document .md-table-wrap {
   overflow: hidden;
   margin-block: 0.875rem 1.5rem;
@@ -623,13 +614,11 @@
   border-spacing: 0;
 }
 
-/* `MarkdownView` contributes its generic cell border with element specificity.
-   Keep the Help frame as the only edge owner so those cell borders cannot show
-   through the wrapper's rounded clipping corners. */
+/* Help renders inside `MarkdownView`, which draws the table's row lines. The
+   inner `.md-table-cell` owns the padding. */
 .help-document .md-table :is(th, td) {
   min-width: 0;
   height: auto;
-  border: 0;
   padding: 0;
 }
 
@@ -651,10 +640,6 @@
   word-break: normal;
 }
 
-.help-document .md-table thead {
-  background: var(--ui-surface-subtle);
-}
-
 .help-document .md-table thead .md-table-cell {
   color: var(--color-zinc-700);
   font-size: 0.75rem;
@@ -672,7 +657,8 @@
   font-weight: 400;
 }
 
-.help-document .md-table-cell :where(code) {
+/* Element specificity, so it outranks MarkdownView's inline-code fill. */
+.help-document .md-table-cell code {
   border-radius: 0;
   background: transparent;
   color: inherit;
@@ -681,16 +667,8 @@
   padding: 0;
 }
 
-.dark .help-document .md-table thead {
-  background: var(--ui-surface-subtle);
-}
-
 .dark .help-document .md-table thead .md-table-cell {
   color: var(--color-zinc-200);
-}
-
-.dark .help-document :where(blockquote) {
-  color: var(--color-zinc-400);
 }
 
 .help-document :where(hr) {
