@@ -1188,24 +1188,24 @@ suite("mail manual conversation threading", () => {
     expect(new Date(verifiedProjection!.latest_message_at).toISOString()).toBe(olderDate.toISOString());
   }, 30_000);
 
-  test("keeps generic IMAP messages apart when they share only a Message-ID", async () => {
+  test("keeps generic IMAP messages apart that only a reused Message-ID connects", async () => {
     const messageId = `<generic-collision-${suffix}@example.com>`;
     const date = new Date("2026-07-13T12:00:00.000Z");
-    const envelope = (uid: string, from: string, sentAt: Date | null) => ({
+    const envelope = (uid: string, change: { from?: string; sentAt?: Date | null; subject?: string; sizeBytes?: number } = {}) => ({
       remoteRef: { folderStableKey: folderId, uidValidity: "3", uid, modseq: null },
       providerMessageId: null,
       providerThreadId: null,
       messageId,
       inReplyTo: null,
       references: [],
-      subject: "Generic IMAP collision guard",
-      sentAt,
+      subject: change.subject ?? "Generic IMAP collision guard",
+      sentAt: change.sentAt === undefined ? date : change.sentAt,
       internalDate: date,
-      sizeBytes: 256,
+      sizeBytes: change.sizeBytes ?? 256,
       flags: [],
       labels: [],
       addresses: {
-        from: [{ name: "Customer", address: from }],
+        from: [{ name: "Customer", address: change.from ?? "collision@example.com" }],
         replyTo: [],
         to: [{ name: "Support", address: "support@example.com" }],
         cc: [],
@@ -1214,17 +1214,29 @@ suite("mail manual conversation threading", () => {
       mimeStructure: {},
     });
     const ingest = (message: ReturnType<typeof envelope>) => ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message });
-    const firstId = await ingest(envelope("1", "collision@example.com", date));
-    const otherSenderId = await ingest(envelope("2", "impostor@example.com", date));
-    const otherDateId = await ingest(envelope("3", "collision@example.com", new Date("2026-07-13T12:05:00.000Z")));
-    const noDateId = await ingest({ ...envelope("4", "collision@example.com", null), sizeBytes: 300 });
-    expect(new Set([firstId, otherSenderId, otherDateId, noDateId]).size).toBe(4);
+    const firstId = await ingest(envelope("1"));
+    const otherSenderId = await ingest(envelope("2", { from: "impostor@example.com" }));
+    const otherDateId = await ingest(envelope("3", { sentAt: new Date("2026-07-13T12:05:00.000Z") }));
+    const otherSubjectId = await ingest(envelope("4", { subject: "Another notice" }));
+    // A different body changes the size; a move or copy keeps it.
+    const otherSizeId = await ingest(envelope("5", { sizeBytes: 300 }));
+    const noDateId = await ingest(envelope("6", { sentAt: null, sizeBytes: 300 }));
+    expect(new Set([firstId, otherSenderId, otherDateId, otherSubjectId, otherSizeId, noDateId]).size).toBe(6);
     const [projection] = await sql<{ contents: number }[]>`
       SELECT COUNT(*)::int AS contents
       FROM mail.message_contents
       WHERE mailbox_id = ${mailboxId}::uuid AND message_id = ${messageId}
     `;
-    expect(projection).toEqual({ contents: 4 });
+    expect(projection).toEqual({ contents: 6 });
+    const conversations = await sql<{ message_id: string; conversation_id: string }[]>`
+      SELECT message_id::text, conversation_id::text
+      FROM mail.conversation_messages
+      WHERE message_id IN (${firstId}::uuid, ${otherSenderId}::uuid)
+    `;
+    const conversationOf = new Map(conversations.map((row) => [row.message_id, row.conversation_id]));
+    // Neither the shared Message-ID nor the shared subject and mailbox address relate another sender's mail.
+    expect(conversationOf.get(otherSenderId)).toBeDefined();
+    expect(conversationOf.get(otherSenderId)).not.toBe(conversationOf.get(firstId));
   }, 30_000);
 
   test("merges copies that only their hydrated source identifies across a generic IMAP UIDVALIDITY reset", async () => {

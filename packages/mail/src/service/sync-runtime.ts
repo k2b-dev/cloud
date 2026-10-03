@@ -235,6 +235,11 @@ const allParticipantEmails = (message: ConnectorEnvelope): string[] => [
 /** The form `mail.message_addresses.normalized_email` stores. */
 const storedAddress = (address: string): string => normalizeEmailAddress(address) ?? address.trim().toLowerCase();
 
+/** The message's From addresses in their stored form, to compare with a stored message's. */
+const senderSet = (message: ConnectorEnvelope): string[] => [
+  ...new Set(message.addresses.from.map((address) => storedAddress(address.address))),
+];
+
 const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): string[] => {
   const addresses = outbound ? [...message.addresses.to, ...message.addresses.cc, ...message.addresses.bcc] : message.addresses.from;
   const labels = new Map<string, string>();
@@ -291,12 +296,36 @@ const findConversation = async (params: {
     if (native) return native.conversation_id;
   }
 
+  // A copy that its envelope could not prove to be the same message (see
+  // findCanonicalMessageContent), such as a second delivery with other transport headers, joins
+  // the conversation of its twin from the same sender; hydration merges the two once their
+  // sources match. A Message-ID alone proves nothing: another sender can reuse it.
+  if (params.message.messageId) {
+    const senders = senderSet(params.message);
+    const [twin] = await params.db<{ conversation_id: string }[]>`
+      SELECT cm.conversation_id
+      FROM mail.message_contents mc
+      JOIN mail.conversation_messages cm ON cm.message_id = mc.id
+      WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+        AND mc.id <> ${params.messageId}::uuid
+        AND mc.message_id IS NOT NULL
+        AND lower(mc.message_id) = lower(${params.message.messageId})
+        AND ARRAY(
+          SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = mc.id AND sender.role = 'from'
+        ) <@ ${toPgTextArray(senders)}::text[]
+        AND ${toPgTextArray(senders)}::text[] <@ ARRAY(
+          SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = mc.id AND sender.role = 'from'
+        )
+      ORDER BY mc.created_at, mc.id
+      LIMIT 1
+    `;
+    if (twin) return twin.conversation_id;
+  }
+
   // Stored Message-IDs are shortened to MESSAGE_ID_MAX_BYTES; a reply quotes the full value.
-  // The message's own Message-ID finds a copy that its envelope could not prove to be the same
-  // message (see findCanonicalMessageContent); hydration merges it there once the sources match.
   const replyIds = [
     ...new Set(
-      [params.message.inReplyTo, ...params.message.references, params.message.messageId]
+      [params.message.inReplyTo, ...params.message.references]
         .filter((value): value is string => Boolean(value))
         .map((value) => truncateUtf8(value, MESSAGE_ID_MAX_BYTES)),
     ),
@@ -328,31 +357,39 @@ const findConversation = async (params: {
 
   // Sync does not import in conversation order: the initial sync runs newest first and every
   // folder syncs on its own, so a reply can arrive before the message it answers. That message
-  // joins its replies here. Replies keep the subject, which bounds the lookup to an index.
+  // joins its replies here. Replies keep the subject and follow the message among the mail with
+  // that subject, so the lookup reads at most one envelope batch of the next such messages: a
+  // subject that repeats thousands of times, such as a daily report, cannot make every import
+  // of the initial sync read all of them.
   if (params.message.messageId && participants.length > 0) {
     const [answered] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
-      FROM mail.message_contents mc
-      JOIN mail.conversation_messages cm ON cm.message_id = mc.id
-      WHERE mc.mailbox_id = ${params.mailboxId}::uuid
-        AND mc.id <> ${params.messageId}::uuid
-        AND mc.normalized_subject <> ''
-        AND mc.normalized_subject = ${params.normalizedSubject}
-        AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '1 day'
-          AND ${params.message.internalDate}::timestamptz + interval '2 years'
-        AND (
-          lower(mc.in_reply_to) = lower(${params.message.messageId})
+      FROM (
+        SELECT mc.id, mc.internal_date, mc.in_reply_to, mc.reference_ids
+        FROM mail.message_contents mc
+        WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+          AND mc.id <> ${params.messageId}::uuid
+          AND mc.normalized_subject <> ''
+          AND mc.normalized_subject = ${params.normalizedSubject}
+          AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '1 day'
+            AND ${params.message.internalDate}::timestamptz + interval '2 years'
+        ORDER BY mc.internal_date, mc.id
+        LIMIT ${ENVELOPE_BATCH_SIZE}
+      ) candidate
+      JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
+      WHERE (
+          lower(candidate.in_reply_to) = lower(${params.message.messageId})
           OR EXISTS (
-            SELECT 1 FROM unnest(mc.reference_ids) AS reference(id) WHERE lower(reference.id) = lower(${params.message.messageId})
+            SELECT 1 FROM unnest(candidate.reference_ids) AS reference(id) WHERE lower(reference.id) = lower(${params.message.messageId})
           )
         )
         AND EXISTS (
           SELECT 1
           FROM mail.message_addresses ma
-          WHERE ma.message_id = mc.id
+          WHERE ma.message_id = candidate.id
             AND ma.normalized_email = ANY(${toPgTextArray(participants)}::text[])
         )
-      ORDER BY mc.internal_date, mc.id
+      ORDER BY candidate.internal_date, candidate.id
       LIMIT 1
     `;
     if (answered) return answered.conversation_id;
@@ -361,27 +398,33 @@ const findConversation = async (params: {
   // A subject alone links only a message that presents itself as a reply or forward but whose
   // referenced message is unknown, and only to mail with the same counterparty. Every inbound
   // message carries the mailbox's own address, so that address proves no relation: two
-  // unrelated senders that both write "Invoice" stay two conversations.
+  // unrelated senders that both write "Invoice" stay two conversations. Like the lookup above, it
+  // reads at most one envelope batch of the closest mail with the subject.
   const replyLike =
     Boolean(params.message.inReplyTo) || params.message.references.length > 0 || hasReplySubjectPrefix(params.message.subject);
   if (!replyLike || params.counterparties.length === 0) return null;
   const [fallback] = await params.db<{ conversation_id: string }[]>`
     SELECT cm.conversation_id
-    FROM mail.message_contents mc
-    JOIN mail.conversation_messages cm ON cm.message_id = mc.id
-    WHERE mc.mailbox_id = ${params.mailboxId}::uuid
-      AND mc.id <> ${params.messageId}::uuid
-      AND mc.normalized_subject <> ''
-      AND mc.normalized_subject = ${params.normalizedSubject}
-      AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '30 days'
-        AND ${params.message.internalDate}::timestamptz + interval '1 day'
-      AND EXISTS (
-        SELECT 1
-        FROM mail.message_addresses ma
-        WHERE ma.message_id = mc.id
-          AND ma.normalized_email = ANY(${toPgTextArray(params.counterparties)}::text[])
-      )
-    ORDER BY mc.internal_date DESC, mc.id DESC
+    FROM (
+      SELECT mc.id, mc.internal_date
+      FROM mail.message_contents mc
+      WHERE mc.mailbox_id = ${params.mailboxId}::uuid
+        AND mc.id <> ${params.messageId}::uuid
+        AND mc.normalized_subject <> ''
+        AND mc.normalized_subject = ${params.normalizedSubject}
+        AND mc.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '30 days'
+          AND ${params.message.internalDate}::timestamptz + interval '1 day'
+      ORDER BY mc.internal_date DESC, mc.id DESC
+      LIMIT ${ENVELOPE_BATCH_SIZE}
+    ) candidate
+    JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
+    WHERE EXISTS (
+      SELECT 1
+      FROM mail.message_addresses ma
+      WHERE ma.message_id = candidate.id
+        AND ma.normalized_email = ANY(${toPgTextArray(params.counterparties)}::text[])
+    )
+    ORDER BY candidate.internal_date DESC, candidate.id DESC
     LIMIT 1
   `;
   return fallback?.conversation_id ?? null;
@@ -433,20 +476,35 @@ const findCanonicalMessageContent = async (params: {
   if (!params.message.messageId) return null;
   // Most IMAP servers report no provider id, and a provider id differs between the copy in Sent
   // and the delivered copy of the same mail. A message keeps its identity across folders through
-  // its Message-ID, sender, and Date header instead: a move or copy in another client, a Bcc to
-  // oneself, or a list echo of one's own mail stays one message and is not received again.
-  // Without a Date header, only an exact copy with the same size and INTERNALDATE matches.
-  const senders = [...new Set(params.message.addresses.from.map((address) => storedAddress(address.address)))];
+  // its Message-ID, sender, subject, and Date header instead, so a move or copy in another client
+  // stays one message and is not received again. A sender can reuse a Message-ID for different
+  // mail, so the copy must also have the same size, as a move or copy keeps the bytes. Only one's
+  // own mail may differ in size: the copy in Sent and the one delivered back through a Bcc, a
+  // list, or a team address carry different transport headers. Without a Date header, only a
+  // copy with the same size and INTERNALDATE matches.
+  const senders = senderSet(params.message);
   const [sameMessage] = await params.db<{ id: string }[]>`
     SELECT mc.id
     FROM mail.message_contents mc
     WHERE mc.mailbox_id = ${params.mailboxId}::uuid
       AND mc.message_id IS NOT NULL
       AND lower(mc.message_id) = lower(${params.message.messageId})
+      AND mc.subject = ${params.message.subject}
       AND mc.sent_at IS NOT DISTINCT FROM ${params.message.sentAt}::timestamptz
       AND (
-        ${params.message.sentAt}::timestamptz IS NOT NULL
-        OR (mc.size_bytes = ${params.message.sizeBytes} AND mc.internal_date = ${params.message.internalDate}::timestamptz)
+        (
+          mc.size_bytes = ${params.message.sizeBytes}
+          AND (${params.message.sentAt}::timestamptz IS NOT NULL OR mc.internal_date = ${params.message.internalDate}::timestamptz)
+        )
+        OR (
+          ${params.message.sentAt}::timestamptz IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM mail.sender_identities identity
+            WHERE identity.mailbox_id = ${params.mailboxId}::uuid
+              AND lower(btrim(identity.from_address)) = ANY(${toPgTextArray(senders)}::text[])
+          )
+        )
       )
       AND ARRAY(
         SELECT sender.normalized_email
