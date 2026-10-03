@@ -43,6 +43,12 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(title).toContain("overflow-wrap: anywhere");
     expect(subtitle).toContain("margin-top: 0.375rem");
     expect(subtitle).toContain("font-size: 0.8125rem");
+
+    // Prompt dialogs share the flat header and wrap a long title like it.
+    const promptTitle = feedbackCss.match(/\.k2b-ui \.k2b-dialog__header h2 \{([^}]*)\}/)?.[1] ?? "";
+    expect(promptTitle).toContain("overflow-wrap: anywhere");
+    expect(promptTitle).not.toContain("nowrap");
+    expect(feedbackCss).not.toMatch(/\.k2b-ui \.k2b-dialog__header \{[^}]*background/);
   });
 
   test("renders quiet contextual guidance with semantic tones and native actions", () => {
