@@ -47,7 +47,9 @@ Prose stays flat on the surrounding surface. Links use the action colour and
 an underline. Inline code and fenced code blocks are text on a light fill
 without a frame; quotes are marked by a rule at their start edge. Inside a
 tinted group such as a dialog section, code fills follow
-`--k2b-field-surface`, so they stay visible.
+`--k2b-field-surface`, so they stay visible. Any other tinted host sets
+`--k2b-field-surface` to its base surface, as it does for field wells.
+Long words and URLs wrap instead of widening the page.
 
 ### Highlight known inline tokens
 
@@ -114,6 +116,6 @@ frame or fill, a stronger line under the header, and a fine line between rows,
 so a cell that wraps still belongs to one row. The first and last columns line
 up with the surrounding prose. Header cells align with their column: at the
 start by default, or with the column's GFM alignment (`:-:`, `--:`).
-Right-aligned columns keep numbers on one line, and body cells use tabular
-figures. Inline formatting is preserved. Wide tables scroll within a
-keyboard-focusable container.
+Body cells use tabular figures, so numbers line up. Inline formatting is
+preserved. Wide tables scroll within a keyboard-focusable container. Its focus
+ring sits just outside its edge, so it never covers the flush columns.

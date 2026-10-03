@@ -39,6 +39,8 @@ const markdown = [
   "",
   "> Bring a jacket.",
   "",
+  "> Token " + "x".repeat(400),
+  "",
   "| Name | Count | Status | Price |",
   "| --- | --- | :-: | --: |",
   "| Apples | 3 | ok | 1.20 |",
@@ -49,6 +51,12 @@ const markdown = [
 const app = document.getElementById("app");
 app.append(file("full"), file("excerpt", 2));
 render(() => createComponent(MarkdownView, { markdown }), app.appendChild(document.createElement("article")));
+// A clipping host, like a dialog body, moves rings of controls inside it.
+const inset = app.appendChild(document.createElement("div"));
+inset.id = "inset";
+inset.className = "k2b-focus-inset";
+inset.style.cssText = "overflow:auto;padding:16px";
+render(() => createComponent(MarkdownView, { markdown: "| Name | Price |\\n| --- | --: |\\n| Apples | 1.20 |" }), inset);
 const plain = app.appendChild(document.createElement("section"));
 plain.id = "plain";
 render(
@@ -72,7 +80,7 @@ beforeAll(async () => {
   page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.setContent(
     `<!doctype html><html><head><style>${css}</style></head>` +
-      `<body class="k2b-ui"><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span><span id="text" style="color:var(--k2b-text)"></span>` +
+      `<body class="k2b-ui"><button id="before">Before</button><main id="app" style="padding:24px"></main><span id="action" style="color:var(--k2b-action)"></span><span id="text" style="color:var(--k2b-text)"></span>` +
       `<span id="fill" style="background:var(--k2b-surface-muted)"></span>` +
       `<span id="border" style="border-left:1px solid var(--k2b-border)"></span><span id="strong" style="border-left:1px solid var(--k2b-border-strong)"></span></body></html>`,
   );
@@ -180,6 +188,52 @@ describe("@k2b/ui content previews apply their own styles", () => {
     expect(table.lineColor).toBe(tokens.border);
     expect(table.start).toBe(0);
     expect(table.end).toBe(0);
+  });
+
+  for (const host of ["article", "#inset"]) {
+    test(`a focused Markdown table in ${host === "article" ? "a plain host" : "a clipping host"} draws its ring outside its flush columns`, async () => {
+      const wrapper = page.locator(`${host} .k2b-content-markdown__table`);
+      await page.focus("#before");
+      for (let step = 0; step < 10 && !(await wrapper.evaluate((element) => element === document.activeElement)); step++) {
+        await page.keyboard.press("Tab");
+      }
+      const ring = await wrapper.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNodeContents(element.querySelector("th")!);
+        return {
+          visible: element.matches(":focus-visible"),
+          outline: [style.outlineStyle, style.outlineWidth],
+          offset: Number.parseFloat(style.outlineOffset),
+          // The columns stay flush with the wrapper, so an inside ring would cover their text.
+          flush: Math.round(text.getBoundingClientRect().left - box.left),
+        };
+      });
+      expect(ring).toEqual({ visible: true, outline: ["solid", "2px"], offset: 2, flush: 0 });
+    });
+  }
+
+  test("MarkdownView quotes sit on the prose edge and wrap long tokens", async () => {
+    const quote = await page.evaluate(() => {
+      const quotes = document.querySelectorAll("article blockquote");
+      const long = quotes[quotes.length - 1]!;
+      const article = document.querySelector("article")!;
+      return {
+        // `@k2b/ui` does not reset the page, so the browser's quote indent must not apply.
+        margin: [getComputedStyle(long).marginLeft, getComputedStyle(long).marginRight],
+        fits: long.scrollWidth <= long.clientWidth && article.scrollWidth <= article.clientWidth,
+      };
+    });
+    expect(quote).toEqual({ margin: ["0px", "0px"], fits: true });
+  });
+
+  test("MarkdownView right-aligned cells wrap like any other cell", async () => {
+    const wrapping = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('article :is(th, td)[align="right"]'), (cell) => getComputedStyle(cell).whiteSpace),
+    );
+    expect(wrapping.length).toBeGreaterThan(0);
+    expect(new Set(wrapping)).toEqual(new Set(["normal"]));
   });
 
   test("a plain FileView keeps Markdown at a reading measure", async () => {

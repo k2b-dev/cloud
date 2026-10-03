@@ -16,6 +16,13 @@
   margin-bottom: 0.5rem;
 }
 
+/* Inside MarkdownView a table takes the same block spacing as its own
+   tables, so two tables in a row do not read as one. Hosts such as Help keep
+   their own spacing. */
+:where(.k2b-ui .k2b-content-markdown) .md-table-wrap {
+  margin-block: 1em;
+}
+
 .md-table {
   width: 100%;
   border-collapse: collapse;

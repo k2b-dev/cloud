@@ -431,6 +431,12 @@
   color: var(--ui-app-accent-text);
 }
 
+/* The brackets, weight and icon already mark the widget as a link, so it
+   keeps no underline inside MarkdownView, the same as in Assistant chat. */
+.k2b-ui .k2b-content-markdown a.md-link-widget {
+  text-decoration: none;
+}
+
 .md-link-widget:focus-visible {
   border-radius: 0.125rem;
   outline: var(--k2b-focus-width) solid var(--ui-app-accent-border);
@@ -464,7 +470,8 @@
   @apply bg-zinc-200/40 dark:bg-zinc-800;
 }
 
-/* Rendered code blocks match MarkdownView: a fill without a frame. The
+/* Rendered code blocks match MarkdownView: a fill without a frame that
+   follows `--k2b-field-surface`, so it stays visible on a tinted group. The
    transparent border keeps the edge visible in forced colours. The rendered
    wrapper shares the editor's line class, so it drops the line fill. */
 .md-code-block:has(> pre) {
@@ -474,7 +481,7 @@
 .md-code-block pre {
   border: 1px solid transparent !important;
   border-radius: var(--ui-radius-control) !important;
-  background: var(--ui-surface-muted) !important;
+  background: var(--k2b-field-surface, var(--ui-surface-muted)) !important;
 }
 
 .md-mermaid-block,

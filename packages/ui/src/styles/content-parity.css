@@ -1678,6 +1678,10 @@
   font-size: 0.875rem;
   line-height: 1.7;
   white-space: normal;
+  /* A long URL or token wraps instead of pushing the page sideways. Unlike
+     `anywhere`, `break-word` leaves min-content widths alone, so wide
+     tables still scroll instead of breaking every word. */
+  overflow-wrap: break-word;
 }
 
 .k2b-ui .k2b-content-markdown :is(h1, h2, h3, h4, h5, h6) {
@@ -1836,8 +1840,10 @@
   font-size: inherit;
 }
 
-/* A quote is set off by a rule at its start edge, not by a box. */
+/* A quote is set off by a rule at its start edge, not by a box. The rule
+   sits on the prose edge, also without a page reset of the browser's indent. */
 .k2b-ui .k2b-content-markdown blockquote {
+  margin-inline: 0;
   padding-inline-start: calc(1rem - 3px);
   border-inline-start: 3px solid var(--k2b-border-strong);
   color: var(--k2b-text-secondary);
@@ -1857,7 +1863,9 @@
 
 /* Tables are hairlines on the reading surface: no frame or fill, a stronger
    line under the header, and the outer columns flush with the prose. Wide
-   tables scroll inside the focusable wrapper. */
+   tables scroll inside the focusable wrapper. Its text touches its edge, so
+   its own ring sits just outside, where it never covers text; rings of links
+   inside the table stay inside (see the clipping containers below). */
 .k2b-ui .k2b-content-markdown__table {
   max-width: 100%;
   overflow-x: auto;
@@ -1866,7 +1874,7 @@
 
 .k2b-ui .k2b-content-markdown__table:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
+  outline-offset: var(--k2b-focus-width);
 }
 
 .k2b-ui .k2b-content-markdown table {
@@ -1904,11 +1912,8 @@
 .k2b-ui .k2b-content-markdown tbody tr + tr > td { border-top: 1px solid var(--k2b-border); }
 
 /* Header cells line up with their column: start-aligned like body cells, or
-   the column's GFM alignment, which marked writes as `align` on every cell.
-   Right-aligned columns hold numbers, which do not wrap. */
+   the column's GFM alignment, which marked writes as `align` on every cell. */
 .k2b-ui .k2b-content-markdown th:not([align]) { text-align: start; }
-.k2b-ui .k2b-content-markdown th[align="right"],
-.k2b-ui .k2b-content-markdown td[align="right"] { white-space: nowrap; }
 
 /* Cloud composes `paper flex min-h-0 flex-col overflow-hidden`; Cloud pins
    `--ui-shadow-surface: none`, so the paper edge is the border alone. */
