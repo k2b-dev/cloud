@@ -2075,6 +2075,41 @@ test("sync folder separates a finished sync from a missing prerequisite before o
   expect(stopped.stdout.trim()).toBe(`Folder sync stopped: Mailbox transport is paused (${COMMAND_ID}).`);
 });
 
+test("only a sync with --wait asks Mail to keep the command until its folders synced", async () => {
+  const bodies: unknown[] = [];
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    const command = (state: string) => ({ ...mailCommand(state), kind: "sync_mailbox", target: {}, result: { queuedFolders: 2 } });
+    if (request.method === "POST" && (path.endsWith("/commands") || path.endsWith("/operator-actions"))) {
+      bodies.push(await request.json());
+      return api(command("queued"));
+    }
+    if (path === `/api/mail/mailboxes/${MAILBOX_ID}/commands/${COMMAND_ID}`) return api(command("confirmed"));
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const base = `http://127.0.0.1:${server.port}`;
+  const key = ["--mailbox", MAILBOX_ID, "--idempotency-key", "sync-key"];
+
+  const queued = await runCli(base, ["mail", "sync", ...key]);
+  expect(queued.exitCode, queued.stderr).toBe(0);
+  expect(queued.stdout.trim()).toBe(`Mailbox sync request queued (${COMMAND_ID}).`);
+  const waited = await runCli(base, ["mail", "sync", ...key, "--wait", "--timeout-seconds", "2"]);
+  expect(waited.exitCode, waited.stderr).toBe(0);
+  expect(waited.stdout.trim()).toBe(`Mailbox sync finished (${COMMAND_ID}).`);
+  expect((await runCli(base, ["mail", "sync", "folder", FOLDER_ID, ...key, "--wait", "--timeout-seconds", "2"])).exitCode).toBe(0);
+  expect((await runCli(base, ["mail", "operator", "run", "sync", ...key, "--wait", "--timeout-seconds", "2"])).exitCode).toBe(0);
+  expect((await runCli(base, ["mail", "operator", "run", "sync-folder", "--folder", FOLDER_ID, ...key])).exitCode).toBe(0);
+
+  expect(bodies).toEqual([
+    { kind: "sync_mailbox", idempotencyKey: "sync-key" },
+    { kind: "sync_mailbox", idempotencyKey: "sync-key", wait: true },
+    { kind: "sync_folder", folderId: FOLDER_ID, idempotencyKey: "sync-key", wait: true },
+    { kind: "sync_mailbox", idempotencyKey: "sync-key", wait: true },
+    { kind: "sync_folder", folderId: FOLDER_ID, idempotencyKey: "sync-key" },
+  ]);
+});
+
 test("operator run submits a durable typed action with the caller idempotency key", async () => {
   let body: unknown;
   const server = withMailbox(async (request) => {

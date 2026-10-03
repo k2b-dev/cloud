@@ -3019,54 +3019,84 @@ export const enqueueFolderSync = async (folderId: string): Promise<void> => {
 };
 
 /**
- * How far a sync requested at `since` has come, across the mailbox's synchronized folders or for
- * one of them. A batch that started after the request saw every message delivered before it, and,
- * with CONDSTORE, every flag change made before it. A folder has synced once Mail holds that
- * state: its cursor reached the batch's highest UID and modification sequence. Older mail may
- * still be importing. A folder that has not synced has failed once its job gave up after the
- * request.
+ * How far each sync request of a mailbox has come, across the mailbox's synchronized folders or
+ * for one of them, by request ID. A request counts from `since`. A batch that started after it saw
+ * every message delivered before it, and, with CONDSTORE, every flag change made before it. A
+ * folder has synced once Mail holds that state: its cursor reached the batch's highest UID and
+ * modification sequence. Older mail may still be importing. A folder that has not synced has
+ * failed once its job gave up after the request.
  */
 export const requestedSyncProgress = async (params: {
   mailboxId: string;
-  folderId: string | null;
-  since: Date;
-}): Promise<{ folders: number; synced: number; failed: number }> => {
-  // One pass over the mailbox's runs since the request, not one per folder.
-  const folders = await sql<{ id: string; synced: boolean }[]>`
-    WITH runs AS MATERIALIZED (
+  requests: Array<{ id: string; folderId: string | null; since: Date }>;
+}): Promise<Map<string, { folders: number; synced: number; failed: number }>> => {
+  if (params.requests.length === 0) return new Map();
+  // One pass over the mailbox's runs since the earliest request, however many requests wait.
+  const rows = await sql<{ id: string; folders: number; pending: string }[]>`
+    WITH requests AS (
+      SELECT id, "folderId" AS folder_id, since
+      FROM jsonb_to_recordset(${params.requests}::jsonb) AS request(id text, "folderId" text, since timestamptz)
+    ),
+    runs AS MATERIALIZED (
       SELECT
         run.stats ->> 'folderId' AS folder_id,
+        run.started_at,
         run.cursor_after ->> 'uidValidity' AS uid_validity,
         (run.stats ->> 'statusHighUid')::bigint AS high_uid,
         (run.stats ->> 'statusModseq')::numeric AS modseq
       FROM mail.remote_resources rr
       JOIN mail.sync_runs run ON run.remote_resource_id = rr.id
       WHERE rr.mailbox_id = ${params.mailboxId}::uuid
-        AND run.started_at >= ${params.since}::timestamptz
+        AND run.started_at >= (SELECT min(since) FROM requests)
         AND run.state = 'completed'
         AND run.stats ? 'statusHighUid'
+    ),
+    folders AS (
+      -- When the latest batch started whose provider state Mail holds.
+      SELECT
+        f.id::text AS id,
+        max(run.started_at) FILTER (
+          WHERE run.uid_validity = f.envelope_cursor ->> 'uidValidity'
+            AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= run.high_uid
+            AND (run.modseq IS NULL OR (f.envelope_cursor ->> 'highestModseq')::numeric >= run.modseq)
+        ) AS synced_since
+      FROM mail.folders f
+      JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
+      LEFT JOIN runs run ON run.folder_id = f.id::text
+      WHERE rr.mailbox_id = ${params.mailboxId}::uuid
+        AND f.selected_for_sync = true
+        AND f.discovery_state = 'active'
+        AND f.sync_status <> 'excluded'
+      GROUP BY f.id
     )
     SELECT
-      f.id::text AS id,
-      COALESCE(bool_or(
-        run.uid_validity = f.envelope_cursor ->> 'uidValidity'
-        AND (f.envelope_cursor ->> 'highestSeenUid')::bigint >= run.high_uid
-        AND (run.modseq IS NULL OR (f.envelope_cursor ->> 'highestModseq')::numeric >= run.modseq)
-      ), false) AS synced
-    FROM mail.folders f
-    JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
-    LEFT JOIN runs run ON run.folder_id = f.id::text
-    WHERE rr.mailbox_id = ${params.mailboxId}::uuid
-      AND (${params.folderId}::uuid IS NULL OR f.id = ${params.folderId}::uuid)
-      AND f.selected_for_sync = true
-      AND f.discovery_state = 'active'
-      AND f.sync_status <> 'excluded'
-    GROUP BY f.id
+      request.id,
+      count(folder.id)::int AS folders,
+      COALESCE(
+        string_agg(folder.id, ',') FILTER (WHERE folder.synced_since IS NULL OR folder.synced_since < request.since),
+        ''
+      ) AS pending
+    FROM requests request
+    LEFT JOIN folders folder ON request.folder_id IS NULL OR folder.id = request.folder_id
+    GROUP BY request.id
   `;
-  const pending = folders.filter((folder) => !folder.synced).map((folder) => folder.id);
-  const gaveUpAt = pending.length > 0 ? await redis.mget(...pending.map(syncGaveUpKey)) : [];
-  const failed = gaveUpAt.filter((at) => at != null && Number(at) >= params.since.getTime()).length;
-  return { folders: folders.length, synced: folders.length - pending.length, failed };
+  const progress = new Map(
+    rows.map((row) => [row.id, { folders: row.folders, pending: row.pending === "" ? [] : row.pending.split(",") }]),
+  );
+  const pendingFolders = [...new Set([...progress.values()].flatMap((request) => request.pending))];
+  const gaveUp = pendingFolders.length > 0 ? await redis.mget(...pendingFolders.map(syncGaveUpKey)) : [];
+  const gaveUpAt = new Map<string, number>();
+  pendingFolders.forEach((folderId, index) => {
+    const at = gaveUp[index];
+    if (at != null) gaveUpAt.set(folderId, Number(at));
+  });
+  return new Map(
+    params.requests.map((request) => {
+      const { folders, pending } = progress.get(request.id) ?? { folders: 0, pending: [] };
+      const failed = pending.filter((folderId) => (gaveUpAt.get(folderId) ?? -1) >= request.since.getTime()).length;
+      return [request.id, { folders, synced: folders - pending.length, failed }];
+    }),
+  );
 };
 
 export const enqueueFolderReconciliation = async (folderId: string, fromUid: number): Promise<void> => {

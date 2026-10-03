@@ -134,13 +134,8 @@ suite("mail sync recovery", () => {
     return state!;
   };
 
-  // Runs a manual `sync folder` request the way the durable maintenance worker does. A request that
-  // queued the folder's sync stays `executing` until that sync ran.
-  const requestFolderSync = async (
-    fixture: SyncFixture,
-    key: string,
-    state: "confirmed" | "executing" = "confirmed",
-  ): Promise<Record<string, unknown>> => {
+  // Runs a manual `sync folder` request the way the durable maintenance worker does.
+  const requestFolderSync = async (fixture: SyncFixture, key: string): Promise<Record<string, unknown>> => {
     const command = await createMailCommand({
       context: ownerContext,
       mailboxId: fixture.mailboxId,
@@ -148,7 +143,7 @@ suite("mail sync recovery", () => {
       enqueue: false,
     });
     if (!command.ok) throw new Error(command.error.message);
-    expect(await executeMaintenanceCommand(command.data.id)).toBe(state);
+    expect(await executeMaintenanceCommand(command.data.id)).toBe("confirmed");
     const [stored] = await sql<{ result: Record<string, unknown> | string }[]>`
       SELECT result FROM mail.commands WHERE id = ${command.data.id}::uuid
     `;
@@ -220,7 +215,7 @@ suite("mail sync recovery", () => {
 
     // The binding and its credential revision are still valid: push keeps listening and a manual sync queues real work.
     expect(await loadImapPushPlan(fixture.bindingId)).toMatchObject({ bindingId: fixture.bindingId, folderId: fixture.folderId });
-    expect(await requestFolderSync(fixture, "degraded-sync", "executing")).toEqual({ folderId: fixture.folderId, queued: true });
+    expect(await requestFolderSync(fixture, "degraded-sync")).toEqual({ folderId: fixture.folderId, queued: true });
 
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {

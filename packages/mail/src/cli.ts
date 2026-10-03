@@ -3188,9 +3188,11 @@ const specialistCommands = {
           if (!value) throw new Error(message);
           return value;
         };
+        // A waited sync waits until its folders hold the mail delivered before the request.
+        const syncWait = flags.wait ? { wait: true } : {};
         const input =
           args.action === "sync"
-            ? { ...base, kind: "sync_mailbox" }
+            ? { ...base, kind: "sync_mailbox", ...syncWait }
             : args.action === "rediscover"
               ? { ...base, kind: "discover_folders", bindingId: flags.binding }
               : args.action === "hydrate"
@@ -3204,6 +3206,7 @@ const specialistCommands = {
                           ...base,
                           kind: "sync_folder",
                           folderId: requireMailResourceId(requireValue(flags.folder, "Pass --folder for sync-folder."), "Folder id"),
+                          ...syncWait,
                         }
                       : args.action === "rebuild-folder"
                         ? {
@@ -3856,6 +3859,7 @@ const specialistCommands = {
             kind: "sync_mailbox",
             idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
             correlationId: flags.correlationId,
+            ...(flags.wait ? { wait: true } : {}),
           }),
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
@@ -3866,7 +3870,11 @@ const specialistCommands = {
     command("sync folder", {
       summary: "Queue durable synchronization for one folder",
       args: { folderId: arg.required({ description: "Canonical folder id" }) },
-      flags: { ...mutationFlags, wait: flag.boolean(), ...waitFlags },
+      flags: {
+        ...mutationFlags,
+        wait: flag.boolean({ description: "Wait until the folder holds the mail delivered before the request" }),
+        ...waitFlags,
+      },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const command = await readApi<MailCommand>(
@@ -3877,6 +3885,7 @@ const specialistCommands = {
             folderId: requireMailResourceId(args.folderId, "Folder id"),
             idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
             correlationId: flags.correlationId,
+            ...(flags.wait ? { wait: true } : {}),
           }),
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
