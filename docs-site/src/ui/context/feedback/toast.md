@@ -41,6 +41,11 @@ const reportFailedCompletion = (taskId: string) => {
     },
   });
   notices.add(notice);
+  // The rail keeps at most three toasts open, so older handles are closed already.
+  for (const older of notices) {
+    if (notices.size <= 3) break;
+    notices.delete(older);
+  }
 };
 ```
 

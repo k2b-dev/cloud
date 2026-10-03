@@ -191,12 +191,13 @@ describe("Spaces feedback channels", () => {
     const { createRetryToasts } = await import("../src/frontend/lib/feedback");
     try {
       const [retryToast, dispose] = createRoot((dispose) => [createRetryToasts(), dispose] as const);
-      retryToast("The list could not be refreshed", "Retry", () => {});
-      expect(notices).toEqual([{ dismissed: false }]);
+      for (let failure = 0; failure < 5; failure++) retryToast("The list could not be refreshed", "Retry", () => {});
+      expect(notices.filter((notice) => notice.dismissed)).toHaveLength(0);
       dispose();
-      expect(notices).toEqual([{ dismissed: true }]);
+      // The rail closed the two oldest itself; the component keeps and closes only the three that can still be open.
+      expect(notices.map((notice) => notice.dismissed)).toEqual([false, false, true, true, true]);
       retryToast("The list could not be refreshed", "Retry", () => {});
-      expect(notices).toHaveLength(1);
+      expect(notices).toHaveLength(5);
     } finally {
       errors.mockRestore();
     }

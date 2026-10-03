@@ -1,6 +1,9 @@
 import { type ToastHandle, toast } from "@k2b/ui";
 import { onCleanup } from "solid-js";
 
+/** The toast rail shows at most three toasts and closes older ones as new ones arrive. */
+const LIVE_TOASTS = 3;
+
 /**
  * Creates the error toasts with Retry for one component; call it while the component is set up. A toast closes when
  * its Retry starts, so a second failure shows a fresh one. Every toast closes with the component, and a failure that
@@ -27,5 +30,10 @@ export const createRetryToasts = (): ((message: string, retryLabel: string, retr
       },
     });
     notices.add(notice);
+    // Only the newest handles can still be open; keeping the rest would grow with every failure.
+    for (const older of notices) {
+      if (notices.size <= LIVE_TOASTS) break;
+      notices.delete(older);
+    }
   };
 };
