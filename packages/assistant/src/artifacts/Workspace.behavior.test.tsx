@@ -46,6 +46,8 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
     expect(requests).toEqual(["/api/ai/conversations/chat01/files/content?path=%2Freport.pdf"]);
     expect(dom.root.querySelector("object")).toBeNull();
     expect(dom.root.querySelector('[role="tabpanel"] iframe')?.getAttribute("src")).toBe("blob:assistant-pdf-1");
+    // The tab already names the file, so the preview sits in the tab without a second frame.
+    expect(dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view')?.getAttribute("data-variant")).toBe("plain");
     expect(created[0]?.type).toBe("application/pdf");
     expect(new Uint8Array(await created[0]!.arrayBuffer())).toEqual(pdf);
   } finally {
@@ -53,6 +55,48 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
     fetchMock.mockRestore();
     URL.createObjectURL = originalCreate;
     URL.revokeObjectURL = originalRevoke;
+    dom.cleanup();
+  }
+});
+
+test("a read-only source text tab keeps its copy action without the preview frame", async () => {
+  const dom = createDomTestHarness();
+  const { ArtifactWorkspace, createArtifactWorkspace } = await import("./Workspace");
+  const { sourceTab, workspaceSelectionHref } = await import("./workspace-state");
+  const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+  const id = "00000000-0000-4000-8000-000000000001";
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () =>
+        Response.json({
+          id,
+          title: "Example",
+          revision: 1,
+          permission: "read",
+          source: { entry: "main.js", files: [{ path: "style.css", content: "body {\n  margin: 0;\n}\n" }] },
+        }),
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  const controller = createArtifactWorkspace(workspaceSelectionHref("/app/assistant", sourceTab(id, "style.css")));
+  const dispose = render(
+    () => (
+      <AssistantLiveProvider value={live}>
+        <ArtifactWorkspace controller={controller} userId="user123" refreshKey="0" onEditTask={() => {}} />
+      </AssistantLiveProvider>
+    ),
+    dom.root,
+  );
+  try {
+    await tick();
+    const view = dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view');
+    expect(view?.getAttribute("data-variant")).toBe("plain");
+    expect(view?.textContent).toContain("margin: 0;");
+    expect(view?.querySelector("textarea")).toBeNull();
+    expect(view?.querySelector(".k2b-copy-button")).not.toBeNull();
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
     dom.cleanup();
   }
 });

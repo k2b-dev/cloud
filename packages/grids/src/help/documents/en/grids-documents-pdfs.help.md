@@ -454,7 +454,7 @@ Filter **All documents** by **Workflow**, **Template**, **Record table** and **F
 
 A Document from a workflow names its workflow; select the name to open the run that generated it. Details of a ZIP Document list its **Archive contents**: each packaged file, its size and the Document it came from. The archive is not linked to those Documents' records.
 
-Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text. **Share links** creates public links for the stored primary file; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
+Document details offer stored downloads, captured row count and timestamp. **Preview** shows CSV, JSON and XML up to 2 MiB; larger files remain downloadable. CSV stays original text; **Copy** copies CSV and XML. **Share links** creates public links for the stored primary file; **Technical details** shows IDs and hashes. Subdialogs return here. **More actions → Generate again** follows the template's issuance policy, never overwriting the original.
 
 Before generation you can add tags and, for an HTML template, override the filename. An E-Invoice renderer owns its artifact filenames. A completed Document's number, filename, tags, and artifacts are immutable.
 

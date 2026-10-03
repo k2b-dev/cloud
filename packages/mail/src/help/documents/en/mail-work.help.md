@@ -138,6 +138,8 @@ Mail never opens an unsubscribe link merely because you preview or read a messag
 
 Received attachments stay with the message that carried them. Select an attachment chip to open or download it in a new browser tab.
 
+**Preview** opens text, CSV, JSON, images, PDFs, audio and video in a dialog. When a text file is Markdown and starts with a heading, that heading becomes the title, with the file name and size below it. The dialog header holds **Download attachment** and, for text and CSV, **Copy**. On a phone, the preview fills the screen.
+
 Mailbox administrators can also create a public download link from an attachment. The URL is shown only at creation and can be protected with a password, expiry time, and download-session limit. Manage or revoke existing links under **Mailbox tools > Shared links**.
 
 ## Control remote images {icon="photo-shield"}

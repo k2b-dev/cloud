@@ -35,6 +35,14 @@ domTest("stored CSV and XML previews load authorized bytes and never activate ma
       expect(dom.document.body.textContent).toContain(source);
       expect(dom.document.querySelector("img")).toBeNull();
       expect(dom.document.querySelector("iframe")).toBeNull();
+      // One frame: the stored data sits on the dialog surface, and copying moves into the header.
+      const dialog = dom.document.querySelector(".k2b-dialog[open]")!;
+      expect(dialog.querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
+      expect(dialog.querySelector(".k2b-content-code-display__header")).toBeNull();
+      expect(dialog.querySelector<HTMLButtonElement>(".k2b-panel-dialog__actions .k2b-copy-button")?.disabled).toBeFalse();
+      const facts = dialog.querySelector(".k2b-panel-dialog__heading p")?.textContent;
+      expect(facts).toContain(`${source.length} B`);
+      expect(facts).not.toContain("Preview");
       dialogCore.close();
       await Bun.sleep(20);
     }

@@ -2,10 +2,13 @@ import { fileIcons } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
+  CopyButton,
   canPreviewFile,
   dialogCore,
   FileView,
   type FileViewContent,
+  type FileViewPreviewKind,
+  Format,
   formatFileViewSize,
   getFileViewPreviewKind,
   IconButton,
@@ -17,7 +20,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CreateAttachmentLinkInput, CreatedAttachmentLink } from "../../contracts";
 import { readApiError } from "./api-response";
@@ -49,16 +52,37 @@ const canPreviewAttachment = (attachment: Attachment): boolean => {
     : fileViewKind === mailKind;
 };
 
-function MailAttachmentPreviewDialog(props: { attachment: Attachment; downloadHref: string; previewHref: string; close: () => void }) {
+/** Documents and text read in a column; tables and media get the wide workspace frame. */
+const READING = new Set<FileViewPreviewKind>(["markdown", "text", "json", "audio"]);
+/** These take the body's height: media fits the frame, and a table scrolls inside it with its header row in view. */
+const STRETCH = new Set<FileViewPreviewKind>(["image", "pdf", "video", "delimited-text"]);
+
+/**
+ * The attachment preview follows the Files preview: the document's own title (or the file name), a quiet line with
+ * the file facts, the actions in the header, and the content on the dialog surface without a second frame.
+ */
+function MailAttachmentPreviewDialog(props: {
+  attachment: Attachment;
+  kind: FileViewPreviewKind | null;
+  downloadHref: string;
+  previewHref: string;
+  close: () => void;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
   const filename = () => props.attachment.filename ?? messages().attachment;
+  // Undefined until a Markdown attachment shows whether it starts with a heading; every other file is titled by its name.
+  const [documentTitle, setDocumentTitle] = createSignal<string | null | undefined>(props.kind === "markdown" ? undefined : null);
+  // Plain text, and a table's raw view, show no code box, so copying moves into the header.
+  const [text, setText] = createSignal<string | null>(null);
   const load = async (): Promise<FileViewContent> => {
     const response = await fetch(props.previewHref, { credentials: "same-origin" });
     if (!response.ok) throw new Error(await readApiError(response, messages().previewAttachmentFailed));
+    const content = await response.text();
+    setText(content);
     return {
       encoding: "utf8",
-      content: await response.text(),
+      content,
       mediaType: response.headers.get("content-type")?.split(";", 1)[0] || props.attachment.contentType,
     };
   };
@@ -66,43 +90,80 @@ function MailAttachmentPreviewDialog(props: { attachment: Attachment; downloadHr
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={filename()}
-        subtitle={`${props.attachment.contentType} · ${formatFileViewSize(props.attachment.sizeBytes)}`}
-        icon={`ti ${fileIcons.getFileIcon({
-          name: filename(),
-          type: "file",
-          mimeType: props.attachment.contentType,
-        })}`}
+        title={
+          <Show
+            when={documentTitle() !== undefined}
+            fallback={
+              <>
+                <span class="k2b-sr-only">{filename()}</span>
+                <span class="mail-attachment-dialog__title-pending" aria-hidden="true" />
+              </>
+            }
+          >
+            {documentTitle() ?? filename()}
+          </Show>
+        }
+        subtitle={
+          // Held invisibly until the title is known, then shown with it, so nothing visible moves when it arrives.
+          <span class="mail-attachment-dialog__facts" data-pending={documentTitle() === undefined ? "" : undefined}>
+            <i
+              class={`ti ${fileIcons.getFileIcon({ name: filename(), type: "file", mimeType: props.attachment.contentType })}`}
+              aria-hidden="true"
+            />
+            <Show when={documentTitle()}>
+              {filename()}
+              <span aria-hidden="true"> · </span>
+            </Show>
+            <Format.Bytes value={props.attachment.sizeBytes} />
+          </span>
+        }
         actions={
-          <Tooltip.Anchor content={messages().downloadAttachment}>
-            <IconButtonLink href={props.downloadHref} download={filename()} label={messages().downloadNamed({ name: filename() })}>
-              <i class="ti ti-download" aria-hidden="true" />
-              <span class="sr-only">{messages().downloadNamed({ name: filename() })}</span>
-            </IconButtonLink>
-          </Tooltip.Anchor>
+          <>
+            <Show when={props.kind === "text" || props.kind === "delimited-text"}>
+              <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
+            </Show>
+            <Tooltip.Anchor content={messages().downloadAttachment}>
+              <IconButtonLink href={props.downloadHref} download={filename()} label={messages().downloadNamed({ name: filename() })}>
+                <i class="ti ti-download" aria-hidden="true" />
+                <span class="sr-only">{messages().downloadNamed({ name: filename() })}</span>
+              </IconButtonLink>
+            </Tooltip.Anchor>
+          </>
         }
         close={props.close}
       />
       <PanelDialog.Body>
         <FileView
+          variant="plain"
+          headingScale="normal"
           file={attachmentFile(props.attachment)}
           load={load}
           previewHref={props.previewHref}
-          downloadHref={props.downloadHref}
-          class="min-h-[24rem]"
+          onDocumentTitle={setDocumentTitle}
         />
       </PanelDialog.Body>
     </PanelDialog>
   );
 }
 
-const openAttachmentPreview = (attachment: Attachment, downloadHref: string, previewHref: string) =>
-  dialogCore.open<void>(
+const openAttachmentPreview = (attachment: Attachment, downloadHref: string, previewHref: string) => {
+  const kind = getFileViewPreviewKind(attachmentFile(attachment));
+  const classes = [panelDialogWorkspaceOptions.panelClassName, "mail-attachment-dialog"];
+  if (kind && READING.has(kind)) classes.push("mail-attachment-dialog--reading");
+  if (kind && STRETCH.has(kind)) classes.push("mail-attachment-dialog--stretch");
+  return dialogCore.open<void>(
     (close) => (
-      <MailAttachmentPreviewDialog attachment={attachment} downloadHref={downloadHref} previewHref={previewHref} close={() => close()} />
+      <MailAttachmentPreviewDialog
+        attachment={attachment}
+        kind={kind}
+        downloadHref={downloadHref}
+        previewHref={previewHref}
+        close={() => close()}
+      />
     ),
-    panelDialogWorkspaceOptions,
+    { ...panelDialogWorkspaceOptions, panelClassName: classes.join(" ") },
   );
+};
 
 export default function MailMessageAttachments(props: {
   mailboxId: string;
