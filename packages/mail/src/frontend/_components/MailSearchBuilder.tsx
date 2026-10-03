@@ -525,12 +525,8 @@ function MailSearchRootEditor(props: {
         subtitle={messages().advancedConditionsDescription}
         icon="ti ti-brackets-contain"
       >
-        <details
-          class="group rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)]"
-          open={advancedOpen()}
-          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-        >
-          <summary class="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 text-sm font-medium">
+        <details class="group" open={advancedOpen()} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+          <summary class="flex min-h-10 cursor-pointer list-none items-center gap-2 text-sm font-medium">
             <i class="ti ti-brackets-contain text-dimmed" aria-hidden="true" />
             <span class="min-w-0 flex-1">
               {advancedGroupCount() === 0 ? messages().addNestedConditions : messages().advancedGroups({ count: advancedGroupCount() })}
@@ -538,7 +534,7 @@ function MailSearchRootEditor(props: {
             <span class="text-xs font-normal text-dimmed">{messages().optional}</span>
             <i class="ti ti-chevron-down text-dimmed transition-transform group-open:rotate-180" aria-hidden="true" />
           </summary>
-          <div class="flex flex-col gap-2 px-3 pb-3">
+          <div class="flex flex-col gap-2">
             <Show when={advancedGroupCount() > 0} fallback={<p class="text-sm text-dimmed">{messages().noAdvancedGroups}</p>}>
               <Index each={rootChildren()}>
                 {(child, index) => (

@@ -41,7 +41,8 @@ Open the shell with `dialogCore.open`.
 - `panelDialogFixedOptions` keeps a stable height while tabs or progressive sections change.
 - `panelDialogWorkspaceOptions` provides a large work area. Below 48rem it
   fills the screen edge to edge, without frame or radius, and pads its
-  content clear of notches and the home indicator.
+  content clear of notches and the home indicator. It takes the width of the
+  viewport without a reserved scrollbar gutter, so it stays centred.
 
 The corresponding `panelDialogPanelClass`,
 `panelDialogWidePanelClass`, `panelDialogFixedPanelClass`, and
@@ -62,18 +63,36 @@ There is no card, border, or divider. The section `icon` shows only in
 floating placement.
 Fields inside the group (text, textarea, number, select, multi-select,
 combobox, date, tags, color, and input-style buttons and checkbox cards) turn
-to the base surface so they stand out from the tint, disabled ones included;
-hover, focus, invalid, and autofill states stay as they are. Switches,
-checkboxes, segmented controls, notices, and code keep their own look.
+to the base surface so they stand out from the tint, disabled ones included.
+The other muted fills do the same: subtle buttons, segmented control tracks,
+filter chips, and neutral status chips. A hovered field stays on the base
+surface and shows its border; focus, invalid, and autofill states stay as they
+are. Switches, checkboxes, dropzones, notices, and code keep their own look.
 About 24 px separates a section from its neighbours. A section placed first in
 a grid row keeps its top aligned with the next column.
 Only the section's own subtitle is muted: fields, notices, and paragraphs in the
-section keep their own description, error, and text styles.
+section keep their own description, error, and text styles. Secondary text
+must keep 4.5:1 against the tint; `--k2b-text-muted` and Cloud's `text-dimmed`
+do in both themes.
+
+Content in a group should not paint a white card of its own: the group already
+groups it, and a white card hides the white fields inside. Drop the fill, as
+for list rows, or give blocks that need an edge, such as a scrolling `pre`, the
+base surface. A surface that does paint its own background starts over, and
+its fields return to the muted well: detail panels, disclosures, choice, date,
+and dropdown popovers, and Cloud's `paper`. Set `--k2b-field-surface:
+initial` on any other such surface.
+
+Prefer sections for every field in a body that has groups. Loose fields keep
+the muted well on the dialog surface, so loose fields above a group show two
+well colours side by side.
 
 A section that is alone in the body, directly or inside a form that is the
 body's only child, has nothing to be grouped against. It drops the tint and
-its fields sit on the dialog surface. Sections wrapped one by one, for example
-in grid columns, keep their groups.
+its fields sit on the dialog surface. `InlineGuidance` and `NoticeCard` beside
+it do not count, so an error that appears after a failed save does not turn
+the section into a group and move its fields. Sections wrapped one by one, for
+example in grid columns, keep their groups.
 
 A section inside another section's group adds a heading, not a second group.
 Its title and content line up with the fields around it, and its fields stay
@@ -82,8 +101,12 @@ white.
 Pass `hideable` to a section for optional settings. A closed section shows
 only its title row with an eye icon at the trailing edge. Opening it keeps the
 title at exactly the same place, swaps the eye for an eye-off button in the
-same slot, and shows the group below. Nothing above the group moves in either
-direction. This changes section visibility, not the dialog's `surface`.
+same slot, and shows the group below. The title gets the same width in both
+states and wraps the same way, so nothing above the group moves in either
+direction. Section `actions` show only while the section is open; on a
+hideable section they narrow the open title, which can then wrap differently,
+so leave them off hideable sections. This changes section visibility, not the
+dialog's `surface`.
 
 ```tsx
 <PanelDialog.Section hideable title="Connection" subtitle="API settings" icon="ti ti-plug">
@@ -121,9 +144,11 @@ and close control; `PanelDialog` uses the larger title for its larger editors.
 The header uses a 20 px semibold title and a 13 px secondary subtitle. Without
 a subtitle, it centers the title beside its icon and actions. Headers with a
 subtitle keep their two-line, top-aligned layout. Action touch targets keep
-their size. Header, tabs, body, and footer share a 24 px horizontal inset,
-16 px below 48rem. Keep filenames and other long identifiers in the subtitle
-or body; both heading lines wrap.
+their size. Header, tabs, body, and footer share a 24 px leading inset, 16 px
+below 48rem; body and footer use it at the trailing edge too. The header's
+trailing edge is tighter, 20 px and 12 px below 48rem, so the close control
+sits closer to the corner. Keep filenames and other long identifiers in the
+subtitle or body; both heading lines wrap.
 Use whitespace to separate content when additional section frames add no meaning.
 
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`

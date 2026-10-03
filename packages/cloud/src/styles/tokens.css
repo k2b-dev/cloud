@@ -7,6 +7,9 @@
   --ui-surface-subtle: rgb(248 248 248 / 0.96);
   --ui-surface-muted: rgb(243 244 243 / 0.96);
   --ui-surface-raised: rgb(255 255 255 / 0.99);
+  /* Dimmed text stays at WCAG AA on the muted surfaces it often sits on, such
+     as dialog section groups, not only on the plain surface. */
+  --ui-text-dimmed: color-mix(in srgb, var(--color-zinc-500) 80%, var(--color-zinc-600));
   --ui-border: rgb(218 220 219 / 0.68);
   --ui-border-strong: rgb(207 210 208 / 0.9);
   --ui-hover: rgb(239 240 239 / 0.9);
@@ -135,6 +138,7 @@
   --ui-surface-subtle: color-mix(in srgb, var(--ui-surface) 68%, var(--ui-surface-muted));
   --ui-surface-muted: #20242a;
   --ui-surface-raised: #181d24;
+  --ui-text-dimmed: color-mix(in srgb, var(--color-zinc-500) 40%, var(--color-zinc-400));
   --ui-border: #29313a;
   --ui-border-strong: #3a4552;
   --ui-hover: #252c35;
@@ -222,7 +226,7 @@
 }
 
 @utility text-dimmed {
-  @apply text-zinc-500 dark:text-zinc-500;
+  color: var(--ui-text-dimmed);
 }
 
 @utility text-label {

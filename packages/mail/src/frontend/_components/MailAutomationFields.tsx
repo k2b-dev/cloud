@@ -97,7 +97,7 @@ export function MailAutomationConditionsEditor(props: {
           const condition = () => props.conditions.items[index()]!;
           return (
             <div
-              class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2"
+              class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] p-2"
               role="group"
               aria-label={messages().conditionLabel({ index: index() + 1 })}
             >

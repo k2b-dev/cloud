@@ -18,6 +18,10 @@ const { default: PanelDialog } = await import("./PanelDialog");
 const { TextInput } = await import("../inputs/TextInput");
 const { Switch } = await import("../inputs/Switch");
 const { NumberInput } = await import("../inputs/NumberInput");
+const { Button } = await import("../actions/Button");
+const { SegmentedControl } = await import("../actions/SegmentedControl");
+const { StatusBadge } = await import("../surfaces/StatusBadge");
+const { InlineGuidance } = await import("../feedback/InlineGuidance");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const viewports = {
@@ -35,11 +39,24 @@ afterAll(async () => {
 
 const text = (label: string) => createComponent(TextInput, { label, value: "Autumn market" });
 const locked = (label: string) => createComponent(NumberInput, { label, value: 3, disabled: true, onValueChange: () => {} });
-const section = (title: string, children: () => JSX.Element, hideable?: { defaultOpen: boolean; subtitle?: false }) =>
+const fills = () => [
+  createComponent(Button, { variant: "subtle", children: "Add group" }),
+  createComponent(SegmentedControl, {
+    ariaLabel: "Reply to",
+    value: "all",
+    onValueChange: () => {},
+    options: [
+      { value: "all", label: "Everyone" },
+      { value: "contacts", label: "Contacts" },
+    ],
+  }),
+  createComponent(StatusBadge, { tone: "neutral", label: "Draft" }),
+];
+const section = (title: string, children: () => JSX.Element, hideable?: { defaultOpen: boolean; subtitle?: false | string }) =>
   hideable
     ? createComponent(PanelDialog.Section, {
         title,
-        subtitle: hideable.subtitle === false ? undefined : "Shown to every member.",
+        subtitle: hideable.subtitle === false ? undefined : (hideable.subtitle ?? "Shown to every member."),
         icon: "ti ti-adjustments",
         hideable: true,
         defaultOpen: hideable.defaultOpen,
@@ -55,6 +72,9 @@ const section = (title: string, children: () => JSX.Element, hideable?: { defaul
           return children();
         },
       });
+
+const longTitle = "Costs counted per request for every provider and model in this space";
+const longSubtitle = "Prompt and completion tokens are billed in euros, rounded up to the next full cent per request.";
 
 const dialog = (id: string, body: () => JSX.Element, surface: "contained" | "floating" = "contained") =>
   `<div id="${id}" style="display:flex;height:44rem;margin-bottom:1rem">${renderToString(() =>
@@ -111,6 +131,15 @@ const markup = () =>
       section("Costs", () => [text("Currency"), section("How costs are counted", () => text("Unit"), { defaultOpen: true })]),
       section("Advanced", () => text("Limit")),
     ]),
+    dialog("fills", () => [...fills(), section("Members", () => [text("Name"), ...fills()]), section("Access", () => text("Who"))]),
+    // Long copy wraps; at some widths a few pixels decide whether it takes
+    // another line, so the closed and open title rows must be equally wide.
+    dialog("sweep", () => [
+      section("Closed", () => text("Hidden"), { defaultOpen: false, subtitle: longSubtitle }),
+      section("Open", () => text("Shown"), { defaultOpen: true, subtitle: longSubtitle }),
+      section(longTitle, () => text("Hidden"), { defaultOpen: false, subtitle: false }),
+      section(longTitle, () => text("Shown"), { defaultOpen: true, subtitle: false }),
+    ]),
     dialog("tabs", () => [
       createComponent(PanelDialog.Tabs, {
         value: "overview",
@@ -124,11 +153,15 @@ const markup = () =>
     ]),
   ].join("");
 
-const open = async (viewport: { width: number; height: number }) => {
+const guidance = renderToString(() => createComponent(InlineGuidance, { tone: "danger", children: "The table could not be created." }));
+
+const open = async (viewport: { width: number; height: number }, theme: "light" | "dark" = "light") => {
   const page = await browser.newPage({ viewport });
+  // Transitions would leave a hovered well between two colours.
   await page.setContent(
-    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-      `<body class="k2b-ui" data-theme="light" style="margin:0"><i id="muted" style="background:var(--k2b-surface-muted)"></i>` +
+    `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
+      `<style>*, *::before, *::after { transition: none !important }</style></head>` +
+      `<body class="k2b-ui" data-theme="${theme}" style="margin:0"><i id="muted" style="background:var(--k2b-surface-muted)"></i>` +
       `<i id="surface" style="background:var(--k2b-surface)"></i>${markup()}</body></html>`,
   );
   // A form that is the body's only child holds one section, and a grid wraps
@@ -158,6 +191,12 @@ const open = async (viewport: { width: number; height: number }) => {
     aside.append(...rest);
     row.append(client!, aside);
     columns.append(row);
+    // A detail panel inside a group paints its own surface.
+    const members = document.querySelector("#fills .k2b-panel-dialog__section-body")!;
+    const panel = document.createElement("div");
+    panel.className = "k2b-detail-panel__group";
+    panel.append(members.querySelector(":scope > .k2b-field")!.cloneNode(true));
+    members.append(panel);
   });
   return page;
 };
@@ -318,5 +357,147 @@ describe("@k2b/ui PanelDialog sections are titled groups without frames", () => 
         await page.close();
       }
     });
+
+    test(`an error beside a lone section moves none of its fields on a ${name}`, async () => {
+      const page = await open(viewport);
+      try {
+        const shift = await page.evaluate((guidance) => {
+          const place = (id: string) => {
+            const body = document.querySelector(`#${id} .k2b-panel-dialog__section-body`)!;
+            const field = body.querySelector(".k2b-input-shell")!.getBoundingClientRect();
+            const title = body.parentElement!.querySelector("h3")!.getBoundingClientRect();
+            return { tint: getComputedStyle(body).backgroundColor, field: [field.left, field.width], title: title.left };
+          };
+          return ["lone", "lone-form"].map((id) => {
+            const before = place(id);
+            const section = document.querySelector(`#${id} .k2b-panel-dialog__section`)!;
+            section.insertAdjacentHTML("beforebegin", guidance);
+            return { before, after: place(id) };
+          });
+        }, guidance);
+        for (const { before, after } of shift) {
+          expect(before.tint).toBe(transparent);
+          expect(after).toEqual(before);
+        }
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`closed and open hideable titles wrap alike at every width on a ${name}`, async () => {
+      const page = await open(viewport);
+      try {
+        const mismatches = await page.evaluate(() => {
+          const frame = document.getElementById("sweep")!;
+          const sections = Array.from(frame.querySelectorAll(".k2b-panel-dialog__section"));
+          const row = (element: Element) => {
+            const visible = (selector: string) =>
+              Array.from(element.querySelectorAll(selector)).find((candidate) => (candidate as HTMLElement).offsetParent !== null);
+            const origin = element.getBoundingClientRect();
+            const title = visible("h3, .k2b-panel-dialog__section-title")!.getBoundingClientRect();
+            const subtitle = visible(".k2b-panel-dialog__section-subtitle")?.getBoundingClientRect();
+            const eye = visible(".ti-eye, .ti-eye-off")!.getBoundingClientRect();
+            return [
+              title.left - origin.left,
+              title.top - origin.top,
+              title.width,
+              title.height,
+              subtitle?.height ?? 0,
+              eye.left + eye.width / 2 - origin.left,
+              eye.top + eye.height / 2 - origin.top,
+            ].join();
+          };
+          const found: number[] = [];
+          for (let width = 280; width <= 760; width += 1) {
+            frame.style.width = `${width}px`;
+            if (row(sections[0]!) !== row(sections[1]!) || row(sections[2]!) !== row(sections[3]!)) found.push(width);
+          }
+          return found;
+        });
+        expect(mismatches).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+
+    for (const theme of ["light", "dark"] as const) {
+      test(`muted fills, hover and secondary text read on the group in ${theme} on a ${name}`, async () => {
+        const page = await open(viewport, theme);
+        try {
+          const result = await page.evaluate(() => {
+            const fill = (container: Element) => ({
+              subtle: getComputedStyle(container.querySelector(':scope > .k2b-button[data-variant="subtle"]')!).backgroundColor,
+              track: getComputedStyle(container.querySelector(":scope > .k2b-segmented-control")!).backgroundColor,
+              chip: getComputedStyle(container.querySelector(":scope > .k2b-status-badge")!).backgroundColor,
+            });
+            const scope = document.getElementById("fills")!;
+            const group = scope.querySelector(".k2b-panel-dialog__section-body")!;
+            return {
+              muted: getComputedStyle(document.getElementById("muted")!).backgroundColor,
+              surface: getComputedStyle(document.getElementById("surface")!).backgroundColor,
+              loose: fill(scope.querySelector(".k2b-panel-dialog__body")!),
+              grouped: fill(group),
+              panelWell: getComputedStyle(group.querySelector(".k2b-detail-panel__group .k2b-input-shell")!).backgroundColor,
+            };
+          });
+          expect(result.loose).toEqual({ subtle: result.muted, track: result.muted, chip: result.muted });
+          expect(result.grouped).toEqual({ subtle: result.surface, track: result.surface, chip: result.surface });
+          // A surface inside the group starts over with muted wells.
+          expect(result.panelWell).toBe(result.muted);
+
+          // A hovered well stays on the base surface and shows its border.
+          const well = page.locator("#fills .k2b-panel-dialog__section-body > .k2b-field .k2b-input-shell").first();
+          await well.hover();
+          const hovered = await well.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { background: style.backgroundColor, border: style.borderTopColor };
+          });
+          expect(hovered.background).toBe(result.surface);
+          expect(hovered.border).not.toBe(transparent);
+
+          // The section subtitle uses --k2b-text-muted; it keeps WCAG AA on the tint.
+          const contrast = await page.evaluate(() => {
+            const rgb = (color: string) => {
+              const canvas = document.createElement("canvas");
+              canvas.width = canvas.height = 1;
+              const context = canvas.getContext("2d")!;
+              context.fillStyle = color;
+              context.fillRect(0, 0, 1, 1);
+              return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+            };
+            const luminance = (color: string) => {
+              const [r, g, b] = rgb(color).map((value) => {
+                const channel = value / 255;
+                return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+              });
+              return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+            };
+            const group = document.querySelector("#fills .k2b-panel-dialog__section-body")!;
+            const subtitle = group.parentElement!.querySelector(".k2b-panel-dialog__section-subtitle")!;
+            const [light, dark] = [luminance(getComputedStyle(subtitle).color), luminance(getComputedStyle(group).backgroundColor)].sort(
+              (a, b) => b - a,
+            );
+            return (light! + 0.05) / (dark! + 0.05);
+          });
+          expect(contrast).toBeGreaterThanOrEqual(4.5);
+        } finally {
+          await page.close();
+        }
+      });
+    }
   }
+
+  test("a closed hideable summary keeps a boundary in forced colours", async () => {
+    const page = await open(viewports.desktop);
+    try {
+      await page.emulateMedia({ forcedColors: "active" });
+      const outline = await page.evaluate(() => {
+        const summary = document.querySelector("#grouped .k2b-panel-dialog__section-summary")!;
+        return getComputedStyle(summary).outlineStyle;
+      });
+      expect(outline).toBe("solid");
+    } finally {
+      await page.close();
+    }
+  });
 });

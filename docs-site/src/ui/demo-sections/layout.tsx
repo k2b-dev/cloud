@@ -26,6 +26,7 @@ import {
   PullToRefresh,
   removePanesItem,
   ScrollArea,
+  SegmentedControl,
   Select,
   SelectChip,
   SettingsCollection,
@@ -793,14 +794,16 @@ const PanelDemo = () => {
   const [tab, setTab] = createSignal("general");
   const [shared, setShared] = createSignal(true);
   const [baseUrl, setBaseUrl] = createSignal("");
+  const [auth, setAuth] = createSignal("token");
   const [reference, setReference] = createSignal("");
   return (
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="Each section is a title above one tinted group; fields inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
+      description="Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
       code={`const [shared, setShared] = createSignal(true);
 const [baseUrl, setBaseUrl] = createSignal("");
+const [auth, setAuth] = createSignal("token");
 const [reference, setReference] = createSignal("");
 
 <PanelDialog surface="contained">
@@ -813,6 +816,7 @@ const [reference, setReference] = createSignal("");
     </PanelDialog.Section>
     <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings">
       <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+      <SegmentedControl ariaLabel="Authentication" value={auth} onValueChange={setAuth} options={authOptions} />
     </PanelDialog.Section>
     <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings">
       <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
@@ -850,6 +854,15 @@ const [reference, setReference] = createSignal("");
             </PanelDialog.Section>
             <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings">
               <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+              <SegmentedControl
+                ariaLabel="Authentication"
+                value={auth}
+                onValueChange={setAuth}
+                options={[
+                  { value: "token", label: "API token" },
+                  { value: "oauth", label: "OAuth" },
+                ]}
+              />
             </PanelDialog.Section>
             <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings">
               <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />

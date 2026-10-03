@@ -147,7 +147,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (options: (typeof viewports)[keyof typeof viewports], variant: string) => {
+const open = async (options: Parameters<Browser["newPage"]>[0], variant: string) => {
   const page = await browser.newPage(options);
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
@@ -194,6 +194,25 @@ const layout = (page: Page, footer: string | undefined) =>
   );
 
 describe("@k2b/ui dialogs keep their header and actions in view while the body scrolls", () => {
+  // A narrow desktop window with classic scrollbars reserves a gutter, as
+  // Cloud does. The edge-to-edge workspace frame fills the space left over
+  // instead of sliding half a gutter off the leading edge.
+  test("a workspace panel dialog frame beside a reserved scrollbar gutter", async () => {
+    const page = await open({ viewport: { width: 390, height: 664 } }, "workspace panel dialog");
+    try {
+      const gutter = await page.evaluate(() => {
+        const style = document.createElement("style");
+        style.textContent = "html { scrollbar-gutter: stable; overflow-y: scroll } ::-webkit-scrollbar { width: 10px }";
+        document.head.append(style);
+        const box = document.querySelector<HTMLDialogElement>("dialog[open]")!.getBoundingClientRect();
+        return { left: box.left, right: box.right };
+      });
+      expect(gutter).toEqual({ left: 0, right: 380 });
+    } finally {
+      await page.close();
+    }
+  });
+
   for (const options of Object.values(viewports)) {
     for (const variant of variants) {
       test(`${variant} at ${options.viewport.width} px`, async () => {

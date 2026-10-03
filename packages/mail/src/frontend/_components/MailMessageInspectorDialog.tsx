@@ -351,7 +351,7 @@ function MailMessageInspectorDialog(props: {
                     <Show when={current().rawHeaders}>
                       <details class="mt-4">
                         <summary class="cursor-pointer text-xs font-medium text-secondary">{messages().rawHeaderBlock}</summary>
-                        <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 font-mono text-xs text-secondary">
+                        <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] p-3 font-mono text-xs text-secondary">
                           {current().rawHeaders}
                         </pre>
                       </details>
@@ -425,7 +425,7 @@ function MailMessageInspectorDialog(props: {
                               {messages().sourcePreviewLimited}
                             </NoticeCard>
                           </Show>
-                          <pre class="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 font-mono text-xs text-secondary">
+                          <pre class="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] p-3 font-mono text-xs text-secondary">
                             {preview().text}
                           </pre>
                         </PanelDialog.Section>
