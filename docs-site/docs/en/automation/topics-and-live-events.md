@@ -5,7 +5,7 @@ section: Automation
 order: 640
 description: Publish transient events to application processes and connected browsers.
 tags: [topics, events, realtime]
-updated: 2026-09-23
+updated: 2026-10-03
 ---
 
 # Topics and live events
@@ -178,3 +178,7 @@ notification history remains available.
 
 Use [Realtime UI](/en/docs/frontend/realtime-ui) for browser integration. Validate
 untrusted payloads at the application boundary.
+
+An update that follows a database change belongs in that change's transaction.
+Use [Live updates](/en/docs/automation/live-updates) instead of publishing to a
+topic after the commit, which loses the update when the publish fails.

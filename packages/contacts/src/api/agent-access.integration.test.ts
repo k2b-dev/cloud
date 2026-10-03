@@ -133,6 +133,7 @@ suite("Contacts REST access for standalone agents", () => {
       expect(await renamed.json()).toMatchObject({ id: granted.shortId, name: `Renamed ${suffix}` });
       expect((await managerWithAdminScope(`/books/${granted.shortId}/export.vcf`)).status).toBe(200);
     } finally {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'contacts' AND ordering_key IN (${granted.id}, ${other.id})`;
       await sql`DELETE FROM contacts.books WHERE id IN (${granted.id}::uuid, ${other.id}::uuid)`;
       for (const id of accountIds) {
         await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id = ${id}::uuid`;

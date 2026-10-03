@@ -1,4 +1,5 @@
 import { lazySync } from "@k2b/cloud";
+import { defineLive } from "@k2b/cloud/events";
 import { ratelimit } from "@k2b/cloud/server";
 import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@k2b/cloud/workflows";
 import { bindWorkflow, compileWorkflow } from "@k2b/cloud/workflows/language";
@@ -25,6 +26,7 @@ import {
 import { directOnlyProcessFixture, runWorkflowProcessFixture } from "@k2b/cloud/workflows/testing";
 import { expBackoff, isRetryableTransportError, retry } from "@k2b/sync/retry";
 import type { SQL } from "bun";
+import { z } from "zod";
 
 export const inventoryJobs = lazySync((sync) =>
   sync.job<{ itemId: string }>({
@@ -267,3 +269,30 @@ export const inventoryWorkflowScheduleEventKey = (registrationId: string, slot: 
   workflowScheduleSlotKey(registrationId, slot.toISOString());
 
 export const runDirectWorkflowProcessFixture = () => runWorkflowProcessFixture(directOnlyProcessFixture);
+
+export const inventoryLive = defineLive({
+  appId: "inventory",
+  event: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("item.changed"), itemId: z.string() }),
+    z.object({ type: z.literal("item.deleted"), itemId: z.string() }),
+  ]),
+});
+
+export const changeQuantity = async (sql: SQL, input: { itemId: string; publicItemId: string; warehouseId: string; quantity: number }) => {
+  await sql.begin(async (tx) => {
+    await tx`UPDATE inventory.items SET quantity = ${input.quantity} WHERE id = ${input.itemId}::uuid`;
+    await inventoryLive.publish(tx, { key: input.warehouseId, data: { type: "item.changed", itemId: input.publicItemId } });
+  });
+  inventoryLive.wake();
+};
+
+export const forwardInventoryUpdates = async (
+  after: string,
+  signal: AbortSignal,
+  mayRead: (key: string) => Promise<boolean>,
+  send: (message: { cursor: string; event: { type: string; itemId: string } | null }) => void,
+) => {
+  for await (const update of inventoryLive.subscribe({ after, signal })) {
+    if (await mayRead(update.key)) send({ cursor: update.cursor, event: update.data });
+  }
+};

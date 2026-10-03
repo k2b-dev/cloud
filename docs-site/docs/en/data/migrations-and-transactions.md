@@ -5,7 +5,7 @@ section: Data
 order: 420
 description: Evolve application schemas safely and keep related writes atomic.
 tags: [data, postgres, migrations, transactions]
-updated: 2026-08-12
+updated: 2026-10-03
 ---
 
 # Migrations and transactions
@@ -222,7 +222,9 @@ Publish live events and send notifications after the domain transaction
 commits.
 
 If the side effect must be recovered after a crash, store an outbox or durable
-job request in the same transaction. A worker can deliver it later.
+job request in the same transaction. A worker can deliver it later. For updates
+to the application's open tabs, [Live updates](/en/docs/automation/live-updates)
+provide that outbox.
 
 Continue with [Jobs and queues](/en/docs/automation/jobs-and-queues) and
 [Notifications](/en/docs/platform/notifications).

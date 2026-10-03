@@ -1,6 +1,7 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { withShortId } from "../lib/short-id";
+import { publishContactChange } from "./live";
 import { isUuid, type SqlExecutor, toPgUuidArray } from "./shared";
 import type { ContactTag, CreateContactTagInput, UpdateContactTagInput } from "./types";
 
@@ -97,14 +98,17 @@ export const create = async (config: { bookId: string; data: CreateContactTagInp
   if (!isUuid(config.bookId)) return fail(err.notFound("Book"));
 
   try {
-    const row = await withShortId("tag", async (shortId) => {
-      const [created] = await sql<DbTag[]>`
-        INSERT INTO contacts.tags (short_id, book_id, name, color)
-        VALUES (${shortId}, ${config.bookId}::uuid, ${config.data.name.trim()}, ${config.data.color})
-        RETURNING id, book_id, name, color, created_at, updated_at
-      `;
-      return created;
-    });
+    const row = await withShortId("tag", (shortId) =>
+      sql.begin(async (tx) => {
+        const [created] = await tx<DbTag[]>`
+          INSERT INTO contacts.tags (short_id, book_id, name, color)
+          VALUES (${shortId}, ${config.bookId}::uuid, ${config.data.name.trim()}, ${config.data.color})
+          RETURNING id, book_id, name, color, created_at, updated_at
+        `;
+        if (created) await publishContactChange(tx, { type: "tags.changed", bookId: config.bookId });
+        return created;
+      }),
+    );
     if (!row) return fail(err.internal("Failed to create tag"));
     return ok(mapTag(row));
   } catch (error) {
@@ -136,12 +140,16 @@ export const update = async (config: { bookId: string; id: string; data: UpdateC
   const nextColor = config.data.color === undefined ? existing.color : config.data.color;
 
   try {
-    const [row] = await sql<DbTag[]>`
-      UPDATE contacts.tags
-      SET name = ${nextName}, color = ${nextColor}, updated_at = now()
-      WHERE id = ${config.id}::uuid AND book_id = ${config.bookId}::uuid
-      RETURNING id, book_id, name, color, created_at, updated_at
-    `;
+    const row = await sql.begin(async (tx) => {
+      const [updated] = await tx<DbTag[]>`
+        UPDATE contacts.tags
+        SET name = ${nextName}, color = ${nextColor}, updated_at = now()
+        WHERE id = ${config.id}::uuid AND book_id = ${config.bookId}::uuid
+        RETURNING id, book_id, name, color, created_at, updated_at
+      `;
+      if (updated) await publishContactChange(tx, { type: "tags.changed", bookId: config.bookId });
+      return updated;
+    });
     if (!row) return fail(err.internal("Failed to update tag"));
     return ok(mapTag(row));
   } catch (error) {
@@ -157,11 +165,15 @@ export const update = async (config: { bookId: string; id: string; data: UpdateC
 
 export const remove = async (config: { bookId: string; id: string }): Promise<Result<void>> => {
   if (!isUuid(config.bookId) || !isUuid(config.id)) return fail(err.notFound("Tag"));
-  const [row] = await sql<{ id: string }[]>`
-    DELETE FROM contacts.tags
-    WHERE id = ${config.id}::uuid AND book_id = ${config.bookId}::uuid
-    RETURNING id
-  `;
+  const row = await sql.begin(async (tx) => {
+    const [deleted] = await tx<{ id: string }[]>`
+      DELETE FROM contacts.tags
+      WHERE id = ${config.id}::uuid AND book_id = ${config.bookId}::uuid
+      RETURNING id
+    `;
+    if (deleted) await publishContactChange(tx, { type: "tags.changed", bookId: config.bookId });
+    return deleted;
+  });
   if (!row) return fail(err.notFound("Tag"));
   return ok(undefined);
 };
@@ -274,6 +286,7 @@ export const changeAssignments = async (config: {
       WHERE assignment.contact_id = ${config.contactId}::uuid
       ORDER BY LOWER(t.name) ASC, t.id ASC
     `;
+    await publishContactChange(tx, { type: "contact.updated", bookId: config.bookId, contactId: config.contactId });
     return ok(rows.map(mapTag));
   });
 };

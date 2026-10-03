@@ -1,7 +1,6 @@
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { SHORT_ID_REGEX } from "../lib/short-id";
-import type { ContactLiveEvent, ContactServiceEvent } from "../live-events";
 import type {
   Contact,
   ContactBook,
@@ -256,23 +255,4 @@ export const projectContactReferences = async <T extends { contactId: string; bo
 export const projectDuplicates = async (items: ContactDuplicateMatch[]): Promise<ContactDuplicateMatch[]> => {
   const contacts = await projectContacts(items.flatMap((item) => [item.first, item.second]));
   return items.map((item, index) => ({ ...item, first: contacts[index * 2]!, second: contacts[index * 2 + 1]! }));
-};
-
-export const projectContactEventIds = async (event: ContactServiceEvent): Promise<ContactLiveEvent> => {
-  const bookIds = event.type === "contact.moved" ? [event.sourceBookId, event.targetBookId] : [event.bookId];
-  const contactIds = "contactId" in event ? [event.contactId] : [];
-  const [books, contacts] = await Promise.all([shortIds("books", bookIds), shortIds("contacts", contactIds)]);
-  if (event.type === "contact.moved") {
-    return {
-      ...event,
-      sourceBookId: required(books, event.sourceBookId),
-      targetBookId: required(books, event.targetBookId),
-      contactId: required(contacts, event.contactId),
-    };
-  }
-  return {
-    ...event,
-    bookId: required(books, event.bookId),
-    ...("contactId" in event ? { contactId: required(contacts, event.contactId) } : {}),
-  } as ContactLiveEvent;
 };

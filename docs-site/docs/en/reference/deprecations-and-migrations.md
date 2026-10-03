@@ -5,10 +5,27 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-09-29
+updated: 2026-10-03
 ---
 
 # Deprecations and migrations
+
+## Contacts writes live updates through the platform outbox
+
+Contacts writes its live updates in the transaction that makes the change,
+through the platform outbox that Core's migration creates. Update Core before
+Contacts: Contacts does not start until `events.outbox` exists. See
+[Live updates](/en/docs/automation/live-updates).
+
+The Contacts socket reads the topic `cloud:live:contacts`. Tabs that are open
+during the upgrade reload once. While replicas of both versions run, a change
+handled by an older replica reaches a new tab only after its next reload.
+Nothing writes the previous topic, `cloud:contacts:events:changes`, anymore;
+its events expire after 24 hours.
+
+A moved contact now arrives as a deletion in its source book and a creation in
+its target book, so a reader of one book does not learn the other. Another tab
+that shows the moved contact closes its details instead of following it.
 
 ## The legacy Files app is removed
 

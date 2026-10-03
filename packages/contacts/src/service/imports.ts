@@ -1,6 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { create as createContact } from "./contacts";
+import { publishContactChange } from "./live";
 import type { CreateContactInput } from "./types";
 import * as vcard from "./vcard";
 
@@ -89,10 +90,12 @@ export const commit = async (config: {
       continue;
     }
 
-    const result = await createContact({ bookId: config.bookId, data: parsed.data });
+    const result = await createContact({ bookId: config.bookId, data: parsed.data, announce: false });
     if (result.ok) created++;
     else failures.push(result.error.message);
   }
 
+  // The import is a series of independent creates, so its one update follows the last of them.
+  if (created > 0) await sql.begin((tx) => publishContactChange(tx, { type: "contacts.imported", bookId: config.bookId }));
   return { created, failures };
 };

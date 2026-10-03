@@ -74,6 +74,7 @@
     "./contracts": "./src/contracts/index.ts",
     "./contracts/notifications": "./src/contracts/notification-types.ts",
     "./contracts/*": "./src/contracts/*",
+    "./events": "./src/events/index.ts",
     "./workflows": "./src/workflows/index.ts",
     "./workflows/ai": "./src/workflows/ai/index.ts",
     "./workflows/editor": "./src/workflows/editor.ts",

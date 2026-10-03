@@ -38,6 +38,7 @@ suite("Contacts note mutation window", () => {
   });
 
   afterAll(async () => {
+    if (bookId) await sql`DELETE FROM events.outbox WHERE app_id = 'contacts' AND ordering_key = ${bookId}`;
     if (bookId) await sql`DELETE FROM contacts.books WHERE id = ${bookId}::uuid`;
     if (authorId && otherUserId) await sql`DELETE FROM auth.users WHERE id IN (${authorId}::uuid, ${otherUserId}::uuid)`;
   });
