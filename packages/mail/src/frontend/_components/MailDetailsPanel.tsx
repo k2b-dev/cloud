@@ -98,6 +98,7 @@ export default function MailDetailsPanel(props: {
   const [availableTags, setAvailableTags] = createSignal(props.initialLocalTags);
   const [tagState, setTagState] = createSignal(props.initialConversationLocalTags);
   const [comments, setComments] = createSignal(props.initialComments);
+  let disposed = false;
   const [commentsCursor, setCommentsCursor] = createSignal(props.initialCommentsCursor);
   const [loadingOlderComments, setLoadingOlderComments] = createSignal(false);
   const [reminderDueAt, setReminderDueAt] = createSignal(props.initialReminder?.state === "pending" ? props.initialReminder.dueAt : null);
@@ -460,7 +461,7 @@ export default function MailDetailsPanel(props: {
       },
       confirmText: t().saveComment,
     });
-    if (!values || mailboxId !== props.mailboxId || conversationId !== props.conversationId) return;
+    if (!values || disposed || mailboxId !== props.mailboxId || conversationId !== props.conversationId) return;
     await editComment.mutate({ mailboxId, conversationId, comment, body: String(values.body ?? "").trim() });
   };
 
@@ -544,6 +545,7 @@ export default function MailDetailsPanel(props: {
   );
 
   onCleanup(() => {
+    disposed = true;
     createTagMutation.abort();
     addComment.abort();
     removeComment.abort();

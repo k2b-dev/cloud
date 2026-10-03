@@ -1,4 +1,4 @@
-import { toast } from "@k2b/ui";
+import { type ToastHandle, toast } from "@k2b/ui";
 
 /**
  * Reports a failed single action as an error toast whose action repeats it. The toast closes when the retry starts,
@@ -7,7 +7,7 @@ import { toast } from "@k2b/ui";
 export const toastErrorWithRetry = (
   message: string,
   options: { title?: string; retryLabel: string; retry: () => void | Promise<void> },
-): void => {
+): ToastHandle => {
   const notice = toast.error(message, {
     title: options.title,
     action: {
@@ -18,4 +18,5 @@ export const toastErrorWithRetry = (
       },
     },
   });
+  return notice;
 };

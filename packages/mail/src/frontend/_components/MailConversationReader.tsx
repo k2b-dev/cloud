@@ -170,7 +170,7 @@ export default function MailConversationReader(props: {
       toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => context && summarySave.mutate(context.edit) }),
   });
   /** The summary was saved, only the view is stale, so Retry repeats the refresh, not the save. */
-  const reportSummaryRefreshFailure = (error: Error, refresh: () => Promise<void>): void =>
+  const reportSummaryRefreshFailure = (error: Error, refresh: () => Promise<void>): void => {
     toastErrorWithRetry(error.message, {
       title: t().summaryRefreshFailed,
       retryLabel: t().retry,
@@ -179,6 +179,7 @@ export default function MailConversationReader(props: {
         if (next) reportSummaryRefreshFailure(next, refresh);
       },
     });
+  };
   const summarySaving = summarySave.loading;
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;

@@ -98,12 +98,13 @@ export default function MailScheduledView(props: {
   });
   onCleanup(cancel.abort);
   /** The scheduled send was cancelled, only the list is stale, so Retry repeats the refresh, not the cancellation. */
-  const reportRefreshFailure = (error: Error): void =>
+  const reportRefreshFailure = (error: Error): void => {
     toastErrorWithRetry(error.message, {
       title: t().cancelledRefreshFailed,
       retryLabel: t().retry,
       retry: () => props.onRefresh().catch((next: unknown) => reportRefreshFailure(next instanceof Error ? next : new Error(String(next)))),
     });
+  };
 
   return (
     <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-busy={props.loading}>

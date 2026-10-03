@@ -4,7 +4,7 @@ import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, openSpotlightSearch, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -672,6 +672,7 @@ function MailWorkspaceView(props: {
 
   onCleanup(() => {
     disposed = true;
+    for (const notice of refreshNotices) notice.dismiss();
     if (preferenceTimer) clearTimeout(preferenceTimer);
     if (liveTransportTimer) clearTimeout(liveTransportTimer);
     workspaceTransition?.resolve("stale");
@@ -795,17 +796,23 @@ function MailWorkspaceView(props: {
     if (refreshError) toast.error(refreshError.message);
   };
 
-  /** The change was saved, only this view is stale: say so, and let Try again repeat the refresh, not the change. */
+  /**
+   * The change was saved, only this view is stale: say so, and let Try again repeat the refresh, not the change. The
+   * notice leaves with the workspace, because a refresh of a view that is gone could navigate back into it.
+   */
+  const refreshNotices = new Set<ToastHandle>();
   const reportRefreshFailure = (error: Error, title: string, refresh: () => Promise<void>): void => {
     if (disposed) return;
-    toastErrorWithRetry(error.message, {
+    const notice = toastErrorWithRetry(error.message, {
       title,
       retryLabel: t().tryAgain,
       retry: async () => {
+        refreshNotices.delete(notice);
         const next = await captureMailWorkspaceRefreshError(refresh);
         if (next) reportRefreshFailure(next, title, refresh);
       },
     });
+    refreshNotices.add(notice);
   };
 
   const applySavedConversationSummary = async (conversationId: string, summary: NonNullable<MailboxPageData["conversationSummary"]>) => {
