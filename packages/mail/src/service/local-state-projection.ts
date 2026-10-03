@@ -1,6 +1,7 @@
 import { toPgTextArray } from "@k2b/cloud/services";
 import type { sql } from "bun";
 import { z } from "zod";
+import { type MessageStateChange, messageStateChangeSchema } from "../contracts";
 
 /**
  * The read, flag, and keyword change a queued state command already shows on one provider message. `previous*` is
@@ -34,77 +35,88 @@ export const applyStateChange = (current: readonly string[], additions: readonly
   return sortValues(next);
 };
 
-const withValue = (values: readonly string[], value: string, present: boolean): string[] =>
-  present ? applyStateChange(values, [value], []) : applyStateChange(values, [], [value]);
+/** The flag and keyword change of a state command, in IMAP spelling. */
+export type ProviderStateChange = {
+  addFlags: readonly string[];
+  removeFlags: readonly string[];
+  addKeywords: readonly string[];
+  removeKeywords: readonly string[];
+};
 
-/** The values one command changed, in the spelling it used. */
-const changedValues = (previous: readonly string[], projected: readonly string[]): string[] => [
-  ...projected.filter((value) => !includesValue(previous, value)),
-  ...previous.filter((value) => !includesValue(projected, value)),
-];
+const IMAP_SYSTEM_FLAGS = {
+  seen: "\\Seen",
+  answered: "\\Answered",
+  flagged: "\\Flagged",
+  draft: "\\Draft",
+} as const;
 
-const DIMENSIONS = [
-  { current: "flags", previous: "previousFlags", projected: "projectedFlags" },
-  { current: "keywords", previous: "previousKeywords", projected: "projectedKeywords" },
-] as const;
+export const providerStateChange = (change: MessageStateChange): ProviderStateChange => ({
+  addFlags: change.addFlags.map((flag) => IMAP_SYSTEM_FLAGS[flag]),
+  removeFlags: change.removeFlags.map((flag) => IMAP_SYSTEM_FLAGS[flag]),
+  addKeywords: change.addKeywords,
+  removeKeywords: change.removeKeywords,
+});
 
-/** A later state command on the same provider message, in queue order. */
-export type LaterStateCommand = { id: string; settled: boolean; projection: LocalStateProjection };
+type ShownState = { flags: readonly string[]; keywords: readonly string[] };
+
+/** A later state command on the same provider message that is still due, in queue order. */
+export type LaterStateCommand = { id: string; change: ProviderStateChange; projection: LocalStateProjection };
 
 const sameValues = (left: readonly string[], right: readonly string[]) =>
   left.length === right.length && left.every((value) => includesValue(right, value));
+const sameState = (left: ShownState, right: ShownState) => sameValues(left.flags, right.flags) && sameValues(left.keywords, right.keywords);
+const previousState = (projection: LocalStateProjection): ShownState => ({
+  flags: projection.previousFlags,
+  keywords: projection.previousKeywords,
+});
+const projectedState = (projection: LocalStateProjection): ShownState => ({
+  flags: projection.projectedFlags,
+  keywords: projection.projectedKeywords,
+});
 
 /**
  * Undoes what one failed or cancelled state command showed, without touching what other queued commands show.
  *
- * Each value the failed command changed returns to what the message showed before that command, unless a later
- * command that is still due changes the same value: then the message keeps showing the later intent. The later
- * commands learn the earlier state in their snapshots, up to and including the one that changes the value, so each
- * of their own rollbacks restores the provider's state rather than the failed command's. Later commands that already
- * failed or were cancelled undid themselves and are passed over.
+ * The message returns to what it showed before the failed command, with the changes of the later commands that are
+ * still due applied on top again, in queue order. Each later command learns the state it now builds on, so its own
+ * rollback restores the provider's state rather than the failed command's.
  *
- * The message is left as it is when it no longer shows what the queued commands projected, because the sync wrote
- * the provider's state since.
+ * This holds only while the snapshots form one unbroken chain from the failed command to what the message shows
+ * now. When a link differs, the sync wrote the provider's state in between, and the message and the later snapshots
+ * are left as they are.
  */
 export const planLocalStateRollback = (params: {
   failed: LocalStateProjection;
-  current: { flags: readonly string[]; keywords: readonly string[] };
+  current: ShownState;
   later: readonly LaterStateCommand[];
 }): { flags: string[]; keywords: string[]; laterProjections: Map<string, LocalStateProjection> } => {
-  const due = params.later.filter((command) => !command.settled);
-  const shown = due.at(-1)?.projection ?? params.failed;
-  const unchanged = sameValues(params.current.flags, shown.projectedFlags) && sameValues(params.current.keywords, shown.projectedKeywords);
-  const next = { flags: [...params.current.flags], keywords: [...params.current.keywords] };
-  const projections = new Map(due.map((command) => [command.id, command.projection]));
-  for (const dimension of DIMENSIONS) {
-    const previous = params.failed[dimension.previous];
-    for (const value of changedValues(previous, params.failed[dimension.projected])) {
-      const before = includesValue(previous, value);
-      let governed = false;
-      for (const command of due) {
-        const projection = projections.get(command.id)!;
-        const changes = includesValue(projection[dimension.previous], value) !== includesValue(projection[dimension.projected], value);
-        projections.set(command.id, {
-          ...projection,
-          [dimension.previous]: withValue(projection[dimension.previous], value, before),
-          // A command that does not change the value showed it as it inherited it.
-          ...(changes ? {} : { [dimension.projected]: withValue(projection[dimension.projected], value, before) }),
-        });
-        if (changes) {
-          governed = true;
-          break;
-        }
-      }
-      if (!governed && unchanged) next[dimension.current] = withValue(next[dimension.current], value, before);
-    }
+  const unchanged = { flags: [...params.current.flags], keywords: [...params.current.keywords], laterProjections: new Map() };
+  let shown = projectedState(params.failed);
+  for (const command of params.later) {
+    if (!sameState(shown, previousState(command.projection))) return unchanged;
+    shown = projectedState(command.projection);
   }
-  const laterProjections = new Map(
-    due.flatMap((command) => {
-      const projection = projections.get(command.id)!;
-      return projection === command.projection ? [] : [[command.id, projection] as const];
-    }),
-  );
-  return { flags: sortValues(next.flags), keywords: sortValues(next.keywords), laterProjections };
+  if (!sameState(params.current, shown)) return unchanged;
+
+  let state: ShownState = previousState(params.failed);
+  const laterProjections = new Map<string, LocalStateProjection>();
+  for (const command of params.later) {
+    const projection: LocalStateProjection = {
+      ...command.projection,
+      previousFlags: [...state.flags],
+      previousKeywords: [...state.keywords],
+      projectedFlags: applyStateChange(state.flags, command.change.addFlags, command.change.removeFlags),
+      projectedKeywords: applyStateChange(state.keywords, command.change.addKeywords, command.change.removeKeywords),
+    };
+    if (
+      !sameState(previousState(projection), previousState(command.projection)) ||
+      !sameState(projectedState(projection), projectedState(command.projection))
+    ) {
+      laterProjections.set(command.id, projection);
+    }
+    state = projectedState(projection);
+  }
+  return { flags: sortValues([...state.flags]), keywords: sortValues([...state.keywords]), laterProjections };
 };
 
 /** Rolls back the local state a failed or cancelled command projected, inside the transaction that settles it. */
@@ -120,12 +132,13 @@ export const rollbackLocalStateProjection = async (
     FOR UPDATE
   `;
   if (!placement) return;
-  // The same queue order the runtime executes commands on one provider message in.
-  const later = await tx<{ id: string; state: string; projection: unknown }[]>`
-    SELECT later.id, later.state, later.transport_metadata -> 'localStateProjection' AS projection
+  // The later commands that are still due, in the queue order the runtime executes them on one provider message.
+  const rows = await tx<{ id: string; payload: unknown; projection: unknown }[]>`
+    SELECT later.id, later.payload, later.transport_metadata -> 'localStateProjection' AS projection
     FROM mail.commands failed
     JOIN mail.commands later
       ON later.mailbox_id = failed.mailbox_id
+     AND later.state IN ('queued', 'executing', 'ambiguous')
      AND later.kind = 'change_message_state'
      AND later.target ->> 'remoteMessageRefId' = ${remoteMessageRefId}
      AND (later.created_at, later.id) > (failed.created_at, failed.id)
@@ -133,16 +146,15 @@ export const rollbackLocalStateProjection = async (
     WHERE failed.id = ${command.id}::uuid
     ORDER BY later.created_at, later.id
   `;
-  const plan = planLocalStateRollback({
-    failed: command.projection,
-    current: placement,
-    later: later.flatMap((row) => {
-      const projection = localStateProjectionSchema.safeParse(row.projection);
-      return projection.success
-        ? [{ id: row.id, settled: row.state === "failed" || row.state === "cancelled", projection: projection.data }]
-        : [];
-    }),
-  });
+  const later: LaterStateCommand[] = [];
+  for (const row of rows) {
+    const change = messageStateChangeSchema.safeParse(row.payload);
+    const projection = localStateProjectionSchema.safeParse(row.projection);
+    // Without a readable later command the chain cannot be followed: leave the message as it is.
+    if (!change.success || !projection.success) return;
+    later.push({ id: row.id, change: providerStateChange(change.data), projection: projection.data });
+  }
+  const plan = planLocalStateRollback({ failed: command.projection, current: placement, later });
   if (!sameValues(plan.flags, placement.flags) || !sameValues(plan.keywords, placement.keywords)) {
     await tx`
       UPDATE mail.message_placements

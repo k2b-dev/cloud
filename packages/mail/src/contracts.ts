@@ -1170,16 +1170,15 @@ export type MessageStateChange = z.infer<typeof messageStateChangeSchema>;
 /** The most provider messages one conversation action may change. */
 export const MAX_CONVERSATION_ACTION_MESSAGES = 500;
 
-/**
- * Limits a conversation action to these messages of the conversation, such as the rows of a message list. Without
- * it, the action applies to every message of the conversation in the source folder.
- */
 const conversationTriageMessageIdsSchema = z
   .array(ResourceShortIdSchema)
   .min(1)
   .max(MAX_CONVERSATION_ACTION_MESSAGES)
   .refine((ids) => new Set(ids).size === ids.length, "Message ids must be unique")
-  .optional();
+  .optional()
+  .describe(
+    "Message IDs of the conversation to act on, such as the rows of a message list. Without it, the action applies to every message of the conversation in the source folder.",
+  );
 
 export const conversationTriageInputSchema = z.discriminatedUnion("kind", [
   z.object({

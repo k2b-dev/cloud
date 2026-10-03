@@ -336,39 +336,97 @@ suite("mail conversation actions", () => {
     expect(await commandRefs(archived.data.correlationId)).toEqual([firstCopy!.id, secondCopy].sort());
   });
 
-  // Mark read, then Flag, queued on an unread message; both fail before the mail server changed anything.
-  test("undoes two failed changes back to the state the mail server has", async () => {
-    const unreadId = await addMessage({ folderId: inboxId, subject: "Fails twice", minutesAgo: 10, uid: 30, flags: [] });
-    const [ref] = await sql<{ id: string }[]>`SELECT id FROM mail.remote_message_refs WHERE folder_id = ${inboxId}::uuid AND uid = 30`;
-    const unreadConversationId = await addConversation("Fails twice", [unreadId]);
-    const change = async (flag: "seen" | "flagged") => {
-      const result = await createConversationTriageCommands({
-        context,
-        mailboxId,
-        conversationId: unreadConversationId,
-        input: {
-          kind: "change_state",
-          sourceFolderId: inboxId,
-          change: { addFlags: [flag], removeFlags: [], addKeywords: [], removeKeywords: [] },
-          idempotencyKey: `fails-${flag}-${suffix}`,
-        },
-      });
-      if (!result.ok) throw new Error(result.error.message);
-      return result.data.commands[0]!.id;
-    };
-    const read = await change("seen");
-    const flag = await change("flagged");
-    expect(await placementFlags(ref!.id)).toEqual(["\\Flagged", "\\Seen"]);
+  // One unread message alone in its conversation, and the read and flag changes queued on it.
+  const unreadMessage = async (subject: string, uid: number) => {
+    const messageId = await addMessage({ folderId: inboxId, subject, minutesAgo: 10, uid, flags: [] });
+    const [ref] = await sql<{ id: string }[]>`SELECT id FROM mail.remote_message_refs WHERE folder_id = ${inboxId}::uuid AND uid = ${uid}`;
+    return { conversationId: await addConversation(subject, [messageId]), refId: ref!.id };
+  };
 
+  const queueChange = async (
+    target: { conversationId: string },
+    change: { addFlags?: ("seen" | "flagged")[]; removeFlags?: ("seen" | "flagged")[] },
+    idempotencyKey: string,
+  ) => {
+    const result = await createConversationTriageCommands({
+      context,
+      mailboxId,
+      conversationId: target.conversationId,
+      input: {
+        kind: "change_state",
+        sourceFolderId: inboxId,
+        change: { addFlags: change.addFlags ?? [], removeFlags: change.removeFlags ?? [], addKeywords: [], removeKeywords: [] },
+        idempotencyKey: `${idempotencyKey}-${suffix}`,
+      },
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    return result.data.commands[0]!.id;
+  };
+
+  // Queued commands fail before the mail server changed anything while the mailbox needs its sign-in again.
+  const whileSignInRequired = async (run: () => Promise<void>) => {
     const [mailbox] = await sql<{ health: string }[]>`SELECT health FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
     await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailboxId}::uuid`;
     try {
-      expect(await executeMutationCommand(read)).toBe("failed");
-      expect(await placementFlags(ref!.id)).toEqual(["\\Flagged"]);
-      expect(await executeMutationCommand(flag)).toBe("failed");
-      expect(await placementFlags(ref!.id)).toEqual([]);
+      await run();
     } finally {
       await sql`UPDATE mail.mailboxes SET health = ${mailbox!.health} WHERE id = ${mailboxId}::uuid`;
     }
+  };
+
+  test("undoes two failed changes back to the state the mail server has", async () => {
+    const message = await unreadMessage("Fails twice", 30);
+    const read = await queueChange(message, { addFlags: ["seen"] }, "fails-read");
+    const flag = await queueChange(message, { addFlags: ["flagged"] }, "fails-flag");
+    expect(await placementFlags(message.refId)).toEqual(["\\Flagged", "\\Seen"]);
+
+    await whileSignInRequired(async () => {
+      expect(await executeMutationCommand(read)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Flagged"]);
+      expect(await executeMutationCommand(flag)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual([]);
+    });
+  });
+
+  test("keeps showing a second Mark read while it is still due", async () => {
+    const message = await unreadMessage("Read twice", 31);
+    const first = await queueChange(message, { addFlags: ["seen"] }, "twice-first");
+    const again = await queueChange(message, { addFlags: ["seen"] }, "twice-again");
+
+    await whileSignInRequired(async () => {
+      expect(await executeMutationCommand(first)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Seen"]);
+      expect(await executeMutationCommand(again)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual([]);
+    });
+  });
+
+  // Another client reads and answers the message between two queued changes, and the sync writes that.
+  test("keeps what the sync wrote between two queued changes when both fail", async () => {
+    const message = await unreadMessage("Read elsewhere", 32);
+    const read = await queueChange(message, { addFlags: ["seen"] }, "elsewhere-read");
+    await sql`
+      UPDATE mail.message_placements SET flags = ARRAY['\\Answered', '\\Seen']::text[]
+      WHERE remote_message_ref_id = ${message.refId}::uuid
+    `;
+    const flag = await queueChange(message, { addFlags: ["flagged"] }, "elsewhere-flag");
+
+    await whileSignInRequired(async () => {
+      expect(await executeMutationCommand(read)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Answered", "\\Flagged", "\\Seen"]);
+      expect(await executeMutationCommand(flag)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Answered", "\\Seen"]);
+    });
+  });
+
+  test("a replayed change does not show its change again over a later one", async () => {
+    const message = await unreadMessage("Replayed read", 33);
+    const read = await queueChange(message, { addFlags: ["seen"] }, "replay-read");
+    await queueChange(message, { removeFlags: ["seen"] }, "replay-unread");
+    expect(await placementFlags(message.refId)).toEqual([]);
+
+    // The client sends Mark read again with the same key, for example after a lost response.
+    expect(await queueChange(message, { addFlags: ["seen"] }, "replay-read")).toBe(read);
+    expect(await placementFlags(message.refId)).toEqual([]);
   });
 });

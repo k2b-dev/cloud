@@ -7,7 +7,7 @@ import type { MailRequestContext } from "./auth";
 import { createActorCommands } from "./commands";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
-import { applyStateChange } from "./local-state-projection";
+import { applyStateChange, providerStateChange } from "./local-state-projection";
 
 type ConversationTarget = {
   remote_message_ref_id: string;
@@ -18,13 +18,6 @@ type ConversationProjectionTarget = ConversationTarget & {
   flags: string[];
   keywords: string[];
 };
-
-const IMAP_SYSTEM_FLAGS = {
-  seen: "\\Seen",
-  answered: "\\Answered",
-  flagged: "\\Flagged",
-  draft: "\\Draft",
-} as const;
 
 export const createConversationTriageCommands = async (params: {
   context: MailRequestContext;
@@ -111,26 +104,41 @@ export const createConversationTriageCommands = async (params: {
     afterCreate:
       input.kind === "change_state"
         ? async (tx, createdCommands) => {
-            const addedFlags = input.change.addFlags.map((flag) => IMAP_SYSTEM_FLAGS[flag]);
-            const removedFlags = input.change.removeFlags.map((flag) => IMAP_SYSTEM_FLAGS[flag]);
+            const change = providerStateChange(input.change);
+            // A replay returns an existing command that already projected its change. Projecting it again would
+            // overwrite what later commands show, and locking the placement after the replayed command row would
+            // take the locks in the opposite order of a rollback, which locks the placement before later commands.
+            const fresh = await tx<{ id: string }[]>`
+              SELECT id
+              FROM mail.commands
+              WHERE id = ANY(${toPgUuidArray(createdCommands.map((command) => command.id))}::uuid[])
+                AND state IN ('queued', 'executing', 'ambiguous')
+                AND NOT (transport_metadata ? 'localStateProjection')
+            `;
+            const freshIds = new Set(fresh.map((command) => command.id));
+            const freshTargets = createdCommands.flatMap((command, index) => {
+              const target = targets[index];
+              return freshIds.has(command.id) && target
+                ? [{ commandId: command.id, remoteMessageRefId: target.remote_message_ref_id }]
+                : [];
+            });
+            if (freshTargets.length === 0) return;
             const projectionTargets = await tx<ConversationProjectionTarget[]>`
               SELECT
                 placement.remote_message_ref_id,
                 placement.flags,
                 placement.keywords
               FROM mail.message_placements placement
-              WHERE placement.remote_message_ref_id = ANY(${toPgUuidArray(targets.map((target) => target.remote_message_ref_id))}::uuid[])
+              WHERE placement.remote_message_ref_id = ANY(${toPgUuidArray(freshTargets.map((target) => target.remoteMessageRefId))}::uuid[])
                 AND placement.deleted_at IS NULL
               FOR UPDATE
             `;
             const projectionTargetById = new Map(projectionTargets.map((target) => [target.remote_message_ref_id, target] as const));
-            for (const [index, command] of createdCommands.entries()) {
-              if (!["queued", "executing", "ambiguous"].includes(command.state)) continue;
-              const commandTarget = targets[index];
-              const target = commandTarget ? projectionTargetById.get(commandTarget.remote_message_ref_id) : null;
+            for (const freshTarget of freshTargets) {
+              const target = projectionTargetById.get(freshTarget.remoteMessageRefId);
               if (!target) throw new Error("Conversation command target projection changed");
-              const flags = applyStateChange(target.flags, addedFlags, removedFlags);
-              const keywords = applyStateChange(target.keywords, input.change.addKeywords, input.change.removeKeywords);
+              const flags = applyStateChange(target.flags, change.addFlags, change.removeFlags);
+              const keywords = applyStateChange(target.keywords, change.addKeywords, change.removeKeywords);
               await tx`
                 UPDATE mail.commands
                 SET transport_metadata = transport_metadata || ${{
@@ -142,8 +150,7 @@ export const createConversationTriageCommands = async (params: {
                     projectedKeywords: keywords,
                   },
                 }}::jsonb
-                WHERE id = ${command.id}::uuid
-                  AND NOT (transport_metadata ? 'localStateProjection')
+                WHERE id = ${freshTarget.commandId}::uuid
               `;
               await tx`
                 UPDATE mail.message_placements
