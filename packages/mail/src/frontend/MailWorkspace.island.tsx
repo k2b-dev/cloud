@@ -806,6 +806,8 @@ function MailWorkspaceView(props: {
       title,
       retryLabel: t().tryAgain,
       retry: async () => {
+        // A navigation in flight loads the workspace anew; reloading the route it leaves would cancel it.
+        if (workspaceTransition) return;
         const next = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
         if (next) reportRefreshFailure(next, title);
       },

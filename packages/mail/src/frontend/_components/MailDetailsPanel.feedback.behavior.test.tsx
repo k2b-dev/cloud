@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import type { ToastOptions } from "@k2b/ui";
-import { createComponent } from "solid-js";
+import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import type { ConversationComment } from "../../service/collaboration";
@@ -185,6 +185,20 @@ describe("Mail details feedback", () => {
       dialogs.mockRestore();
       form.mockRestore();
       successes.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  test("a failure that arrives after its component is gone shows no Retry toast", async () => {
+    const { toast } = await import("@k2b/ui");
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const { createRetryToasts } = await import("./mail-feedback");
+    try {
+      const [retryToast, dispose] = createRoot((dispose) => [createRetryToasts(), dispose] as const);
+      dispose();
+      retryToast("The invitation could not be refreshed", { retryLabel: "Retry", retry: () => {} });
+      expect(errors).not.toHaveBeenCalled();
+    } finally {
       errors.mockRestore();
     }
   });
