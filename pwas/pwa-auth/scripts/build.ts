@@ -61,7 +61,11 @@ export async function build({ development = false, outdir = dist } = {}) {
   await Bun.write(resolve(outdir, "assets", cssName), cssText);
   await cp(resolve(packageRoot, "public"), outdir, { recursive: true });
   await mkdir(resolve(outdir, "licenses"), { recursive: true });
-  await cp(resolve(dirname(Bun.resolveSync("qr-scanner", packageRoot)), "LICENSE"), resolve(outdir, "licenses/qr-scanner.txt"));
+  // The scanner engine ships inside @k2b/ui's QrScanner, which this app bundles.
+  await cp(
+    resolve(dirname(Bun.resolveSync("qr-scanner", resolve(packageRoot, "../../packages/ui"))), "LICENSE"),
+    resolve(outdir, "licenses/qr-scanner.txt"),
+  );
   await cp(
     resolve(dirname(Bun.resolveSync("hash-wasm/package.json", resolve(packageRoot, "../../packages/cloud"))), "LICENSE"),
     resolve(outdir, "licenses/hash-wasm.txt"),

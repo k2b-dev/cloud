@@ -86,6 +86,7 @@ const portableSections = [
         "ti ti-crop",
         "Direct-manipulation crop, resize, and rotation with free or fixed aspect ratios.",
       ),
+      page("qr-scanner", "QrScanner", "ti ti-qrcode", "Camera QR scanning with host validation and explicit camera errors."),
       page("file-dropzone", "FileDropzone", "ti ti-cloud-upload", "Accessible click and drag file selection with validation state."),
       page("markdown-editor", "MarkdownEditor", "ti ti-markdown", "Standalone controlled Markdown editing with native textarea behavior."),
       page(
@@ -152,6 +153,13 @@ const portableSections = [
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
       page("navigation", "Navigation", "ti ti-list", "Serializable navigation with native links and owner-local actions."),
       page("bottom-sheet", "BottomSheet", "ti ti-layout-bottombar", "Bottom-edge dialogs using the shared modal lifecycle."),
+      page(
+        "mobile-shell",
+        "MobileShell",
+        "ti ti-device-mobile",
+        "Full-screen phone app frame with a header, one scroll area, a footer, and app touch rules.",
+      ),
+      page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
       page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
     ],
@@ -192,6 +200,7 @@ const portableSections = [
         "A card beside a list row or item that a resting mouse opens without opening the item.",
       ),
       page("prompts", "Prompts", "ti ti-forms", "Alert, confirmation, search, form, and custom dialog flows."),
+      page("install-guide", "InstallGuide", "ti ti-download", "Platform-aware guidance to install the current page as an app."),
     ],
   },
   {
@@ -294,7 +303,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 118;
+export const portableUiComponentCount = 122;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -372,6 +381,7 @@ export const documentedOnlyUiCatalogExports = {
   canPreviewFile: "Documented FileView capability helper.",
   createCroppedImageCanvas: "Documented ImageCropper export helper.",
   createCroppedImageDataUrl: "Documented ImageCropper export helper.",
+  createInstallPrompt: "Documented browser-only InstallGuide state; the server-rendered catalog shows fixed states instead.",
   createPanesLayout: "Documented Panes initial-layout helper.",
   createTemplateEditorPanesLayout: "Documented TemplateEditor layout helper.",
   fitFloatingWindowRect: "Documented FloatingWindow geometry helper.",
@@ -379,6 +389,7 @@ export const documentedOnlyUiCatalogExports = {
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",
   installAppWorkspaceController: "Documented AppWorkspace resize-controller installer.",
+  installationPlatform: "Documented InstallGuide platform classifier.",
   isPointInsideToast: "Documented toast interaction helper.",
   normalizeAppWorkspaceLayoutState: "Documented AppWorkspace persisted-state helper.",
   isPanesItemVisible: "Documented Panes visibility helper.",
@@ -401,4 +412,5 @@ export const documentedOnlyUiCatalogExports = {
   sameSettingValue: "Documented Settings dirty-state helper.",
   serializeAppWorkspaceLayoutState: "Documented AppWorkspace persisted-state serializer.",
   shouldCollapseAppWorkspaceSidebar: "Documented AppWorkspace responsive-state helper.",
+  syncThemeColor: "Documented MobileShell status-bar helper that changes the live document.",
 } as const satisfies Record<string, string>;

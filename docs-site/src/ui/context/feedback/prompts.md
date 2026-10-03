@@ -323,6 +323,7 @@ type OpenDialogOptions = {
   signal?: AbortSignal; panelClassName?: string; contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore"; ariaLabel?: string;
+  history?: boolean;
 };
 
 type DialogRender<T> = (
@@ -361,6 +362,33 @@ restore the parent's mode when closed.
 position belong to each stack entry. The caller owns dragging, responsive
 limits, persistence, and modeless stacking styles. Do not call the native
 `show()`, `showModal()`, or `close()` methods to switch modes.
+
+### Close dialogs with Back
+
+Pass `history: true` when Back should close a dialog instead of leaving the
+page, as people expect in a phone app:
+
+```tsx
+const add = await dialogCore.open((close) => <PairingSheet close={close} />, {
+  ...bottomSheetOptions,
+  history: true,
+});
+```
+
+The dialog adds a same-URL history entry while it is open. Back, or the
+Android back gesture, closes it and every dialog opened after it; nested
+history dialogs close one Back at a time. Closing it any other way removes the
+entry again, and the returned promise settles only after that, so the caller
+can navigate or open the next dialog right away. Dialogs closed together leave
+the history in one step. After a reload, a leftover entry never reopens a
+dialog or its transient state.
+
+Use the option for dialogs a person opens on purpose. Leave it off for
+confirmations inside another dialog, which Back closes together with their
+parent. Back closes the dialog directly: the dismiss guard of
+`setDismissHandler` and `cancelBehavior: "ignore"` do not apply to it. Leave
+`history` off for dialogs with unsaved input and for dialogs a person must
+answer.
 
 ## Accessibility
 

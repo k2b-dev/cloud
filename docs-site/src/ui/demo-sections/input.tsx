@@ -34,6 +34,7 @@ import {
 } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { QrScannerDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
 
 const options = [
@@ -1161,6 +1162,7 @@ const BooleanDemo = () => {
 };
 
 const demos: DemoSection = {
+  "qr-scanner": () => <QrScannerDemo />,
   text: () => (
     <DemoGrid columns="one">
       <TextDemo />

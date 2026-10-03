@@ -1,4 +1,5 @@
 import { localStore } from "@k2b/stdlib/solid";
+import { syncThemeColor } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { authMessages } from "./i18n";
 
@@ -29,12 +30,7 @@ export function createPreferences() {
   });
   createEffect(() => {
     document.body.dataset.theme = theme() === "system" ? (dark() ? "dark" : "light") : theme();
-    const color = getComputedStyle(document.body).backgroundColor;
-    document.documentElement.style.backgroundColor = color;
-    for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
-      meta.removeAttribute("media");
-      meta.content = color;
-    }
+    syncThemeColor(document.body);
   });
   return {
     locale,

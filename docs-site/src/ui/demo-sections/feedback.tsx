@@ -14,6 +14,7 @@ import {
 } from "@k2b/ui";
 import { createSignal, For, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { InstallGuideDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
 
 const BlocksDemo = () => (
@@ -581,6 +582,7 @@ const demos: DemoSection = {
       <PromptsDemo />
     </DemoGrid>
   ),
+  "install-guide": () => <InstallGuideDemo />,
 };
 
 export default demos;

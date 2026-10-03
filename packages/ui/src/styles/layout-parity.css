@@ -1411,3 +1411,254 @@
   :where(:focus-visible) {
   outline-offset: var(--k2b-focus-offset);
 }
+
+/* ------------------------------------------------------------ mobile shell */
+
+/* While a phone shell is the page, the document never scrolls, so iOS has
+   nothing to rubber-band; only the shell's scroll area does. */
+html:has(.k2b-mobile-shell),
+html:has(.k2b-mobile-shell) body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* No pinch zoom on the whole page, portalled dialogs and menus included. iOS
+   ignores `user-scalable=no`; it honours touch-action. Zero specificity, so a
+   component's own touch-action, such as a drag handle's `none`, still wins. */
+:where(html:has(.k2b-mobile-shell) *) {
+  touch-action: pan-x pan-y;
+}
+
+/* App-sized controls on every pointer: 44 px targets, and 16 px field text,
+   so iOS never zooms into a focused field. */
+html:has(.k2b-mobile-shell) .k2b-button,
+html:has(.k2b-mobile-shell) .k2b-dropdown__trigger,
+html:has(.k2b-mobile-shell) .k2b-segmented-control button {
+  min-height: 44px;
+}
+
+html:has(.k2b-mobile-shell) input:not([type="checkbox"]):not([type="radio"]),
+html:has(.k2b-mobile-shell) textarea {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* Sized to the initial containing block rather than in vh units, so the shell
+   adds no document height. Not a fixed layer: Safari colours the status bar
+   from a fixed layer at the top edge, and keeps the colour it had for one that
+   covers the whole viewport, which after a dialog is the backdrop's dim. */
+.k2b-ui .k2b-mobile-shell {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.k2b-ui .k2b-mobile-shell > :not(.k2b-mobile-shell__main) {
+  flex: none;
+}
+
+.k2b-ui .k2b-mobile-shell__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(env(safe-area-inset-top) + 0.75rem) max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-right)) 0.75rem
+    max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-left));
+  background: var(--k2b-surface-canvas);
+}
+
+.k2b-ui .k2b-mobile-shell__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-mobile-shell__back {
+  flex: none;
+  min-width: 44px;
+  margin-inline-start: -0.625rem;
+  font-size: 1.5rem;
+}
+
+.k2b-ui .k2b-mobile-shell__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.k2b-ui .k2b-mobile-shell__main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Without a visible footer the content pads the bottom safe area itself. A
+   persistent toast adds its height, so the last row can scroll above it. */
+.k2b-ui .k2b-mobile-shell__body {
+  flex: 1;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable both-edges;
+  padding: 1rem max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-right))
+    calc(
+      1rem + max(0px, env(safe-area-inset-bottom) - var(--k2b-mobile-shell-footer-height, 0px)) +
+        var(--k2b-mobile-shell-toast-inset, 0px)
+    )
+    max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-left));
+}
+
+/* ----------------------------------------------------------------- tab bar */
+
+.k2b-ui .k2b-tab-bar {
+  border-top: 1px solid var(--k2b-border);
+  background: var(--k2b-surface-canvas);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.k2b-ui .k2b-tab-bar > ul {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-tab-bar a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0.25rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.k2b-ui .k2b-tab-bar a > i {
+  font-size: 1.375rem;
+}
+
+.k2b-ui .k2b-tab-bar a > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-tab-bar a[aria-current="page"] {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-tab-bar a:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+@media (hover: hover) {
+  .k2b-ui .k2b-tab-bar a:not([aria-current="page"]):hover {
+    color: var(--k2b-text);
+  }
+}
+
+/* ----------------------------------------------------------- install guide */
+
+.k2b-ui .k2b-install-guide {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.k2b-ui .k2b-install-guide p {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.k2b-ui .k2b-install-guide code {
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-install-guide__steps {
+  display: grid;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-install-guide__steps > li {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.k2b-ui .k2b-install-guide__steps h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-install-guide__step-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+  font-size: 1.25rem;
+}
+
+/* -------------------------------------------------------------- QR scanner */
+
+.k2b-ui .k2b-qr-scanner {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.k2b-ui .k2b-qr-scanner > p {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__note {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* The camera picture is dark in both themes. */
+.k2b-ui .k2b-qr-scanner__preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--k2b-radius-surface);
+  background: #09090b;
+}
+
+.k2b-ui .k2b-qr-scanner__preview video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+/* The engine draws the scan frame with an inline stroke; a rejected code turns it red. */
+.k2b-ui .k2b-qr-scanner__preview[data-invalid] svg {
+  stroke: var(--k2b-danger-500) !important;
+}

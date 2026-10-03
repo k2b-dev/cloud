@@ -15,6 +15,11 @@ export type OpenDialogOptions = {
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore";
   ariaLabel?: string;
+  /**
+   * Add a same-URL history entry while the dialog is open, so the browser's or the phone's Back closes the dialog
+   * instead of leaving the page. Closing the dialog removes the entry again; the returned promise settles after that.
+   */
+  history?: boolean;
 };
 
 export type DialogRender<T> = (
@@ -52,6 +57,8 @@ type DialogStackEntry = {
   dismissPending?: boolean;
   modal: boolean;
   position?: { x: number; y: number } | null;
+  /** The marker of this dialog's history entry, for dialogs opened with `history`. */
+  historyId?: number;
 };
 
 type DialogState = {
@@ -68,6 +75,12 @@ type DialogState = {
 const DEFAULT_PANEL_CLASS = "k2b-dialog";
 const DEFAULT_CONTENT_CLASS = "k2b-dialog__viewport";
 let nextDialogTitleId = 0;
+/** The history state key that marks a dialog's same-URL entry. */
+const HISTORY_MARKER = "k2bDialog";
+
+const historyRecord = (): Record<string, unknown> =>
+  typeof history.state === "object" && history.state !== null ? { ...history.state } : {};
+const historyMarker = (): unknown => historyRecord()[HISTORY_MARKER];
 
 const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogElement): HTMLElement | null => {
   const { initialFocus } = entry;
@@ -117,6 +130,64 @@ const focusUnclaimed = (dialog: HTMLDialogElement): boolean => {
 
 export const createDialogCore = (): DialogCore => {
   const state: DialogState = { stack: [] };
+  /** Markers of this core's entries in the browser history, oldest first. */
+  let historyIds: number[] = [];
+  let nextHistoryId = 0;
+  let historySyncScheduled = false;
+  let listeningToHistory = false;
+  /** Settles when the synthetic Back that removes closed dialogs' entries has arrived. */
+  let returning: Promise<void> | undefined;
+
+  /** Closed dialogs leave the history with one Back to the newest dialog that is still open, or to the page. */
+  const syncHistory = () => {
+    historySyncScheduled = false;
+    const openIds = new Set(state.stack.map((entry) => entry.historyId));
+    const current = historyIds.at(-1);
+    let steps = 0;
+    while (historyIds.length > 0 && !openIds.has(historyIds.at(-1))) {
+      historyIds.pop();
+      steps++;
+    }
+    // Someone else moved the history meanwhile; leave it alone.
+    if (steps === 0 || historyMarker() !== current) return;
+    const back = new Promise<void>((resolve) => window.addEventListener("popstate", () => resolve(), { once: true }));
+    returning = back;
+    void back.then(() => {
+      if (returning === back) returning = undefined;
+    });
+    history.go(-steps);
+  };
+
+  const releaseHistory = (entry: DialogStackEntry) => {
+    if (entry.historyId === undefined || historySyncScheduled) return;
+    historySyncScheduled = true;
+    queueMicrotask(syncHistory);
+  };
+
+  /** Back or Forward moved to another entry: close every dialog opened after the one it shows. */
+  const onPopState = () => {
+    const marker = historyMarker();
+    const index = typeof marker === "number" ? historyIds.indexOf(marker) : -1;
+    historyIds = historyIds.slice(0, index + 1);
+    const gone = (entry: DialogStackEntry) => entry.historyId !== undefined && !historyIds.includes(entry.historyId);
+    while (state.stack.some(gone)) popTop(undefined);
+  };
+
+  const pushHistory = (entry: DialogStackEntry) => {
+    if (!listeningToHistory) {
+      window.addEventListener("popstate", onPopState);
+      listeningToHistory = true;
+    }
+    const previous = historyRecord();
+    // A reload or Forward never brings back a dialog or its sensitive transient state.
+    if (historyIds.length === 0 && previous[HISTORY_MARKER] !== undefined) {
+      delete previous[HISTORY_MARKER];
+      history.replaceState(previous, "");
+    }
+    entry.historyId = ++nextHistoryId;
+    historyIds.push(entry.historyId);
+    history.pushState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
+  };
 
   const ensureDialogElement = () => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
@@ -242,6 +313,7 @@ export const createDialogCore = (): DialogCore => {
   const popTop = (result?: unknown) => {
     const top = state.stack.pop();
     if (!top) return;
+    releaseHistory(top);
     top.dispose?.();
     top.container.remove();
 
@@ -289,6 +361,7 @@ export const createDialogCore = (): DialogCore => {
     dialog?.remove();
     unlockPageScroll();
     for (const entry of entries.reverse()) {
+      releaseHistory(entry);
       entry.dispose?.();
       entry.container.remove();
       entry.resolve?.(undefined);
@@ -304,6 +377,11 @@ export const createDialogCore = (): DialogCore => {
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
     if (options.signal?.aborted) return Promise.resolve(undefined);
+    if (options.history) {
+      // Dialogs closed just now leave the history first, or this dialog's entry would be the one removed.
+      if (historySyncScheduled) syncHistory();
+      if (returning) return returning.then(() => open(view, options));
+    }
     const dialog = ensureDialogElement();
     const previousTop = state.stack[state.stack.length - 1];
     if (previousTop) previousTop.container.style.display = "none";
@@ -336,6 +414,7 @@ export const createDialogCore = (): DialogCore => {
         if (index === state.stack.length - 1) popTop(undefined);
         else {
           state.stack.splice(index, 1);
+          releaseHistory(entry);
           entry.dispose?.();
           entry.container.remove();
           entry.resolve?.(undefined);
@@ -343,13 +422,19 @@ export const createDialogCore = (): DialogCore => {
       };
       entry.resolve = (value) => {
         options.signal?.removeEventListener("abort", abort);
-        resolve(value as T | undefined);
+        if (entry.historyId === undefined) {
+          resolve(value as T | undefined);
+          return;
+        }
+        // After the history sync, so a caller that navigates or opens the next dialog finds the history settled.
+        queueMicrotask(() => void (returning ?? Promise.resolve()).then(() => resolve(value as T | undefined)));
       };
       const closeTyped: DialogClose<T> = (result) => {
         if (state.stack[state.stack.length - 1] !== entry) return;
         popTop(result);
       };
 
+      if (options.history) pushHistory(entry);
       state.stack.push(entry);
       try {
         entry.dispose = render(

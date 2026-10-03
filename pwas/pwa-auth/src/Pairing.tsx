@@ -1,9 +1,8 @@
 import { appApproval } from "@k2b/cloud/browser/app-approval";
-import { Button, PanelDialog, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, PanelDialog, QrScanner, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { type Authenticator, failure, type PairingPayload } from "./authenticator";
 import { authMessages } from "./i18n";
-import { QrCamera } from "./QrCamera";
 import { bindingId, type Enrollment, storage } from "./storage";
 
 export function Pairing(props: { auth: Authenticator; link?: string; close: () => void }) {
@@ -247,7 +246,8 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
                     </>
                   }
                 >
-                  <QrCamera
+                  <QrScanner
+                    instructions={t().cameraInstructions}
                     onResult={(link) => {
                       if (!parse(link)) {
                         toast.error(error(), { title: t().invalidQrTitle });

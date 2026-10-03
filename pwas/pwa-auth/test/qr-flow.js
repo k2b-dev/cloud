@@ -91,7 +91,7 @@ async function _run(page) {
         await p.getByRole("dialog").getByRole("alert").waitFor();
         if (mode === "invalid") {
           await p.getByText("QR code cannot be used", { exact: true }).waitFor();
-          await p.locator(".auth-camera-preview--invalid").waitFor();
+          await p.locator(".k2b-qr-scanner__preview[data-invalid]").waitFor();
           if (!(await p.evaluate(() => window.cameraTest.tracks.every((t) => t.readyState === "live"))))
             throw new Error("Invalid QR stopped camera");
           const toast = p.locator(".k2b-toast");
@@ -119,7 +119,7 @@ async function _run(page) {
         await p.waitForFunction(() => window.cameraTest.tracks.length > 0);
       } else if (mode === "stop" || mode === "pagehide") {
         await p.waitForFunction(() => window.cameraTest.tracks.length > 0);
-        const preview = p.getByRole("dialog").locator(".auth-camera-preview video");
+        const preview = p.getByRole("dialog").locator(".k2b-qr-scanner__preview video");
         await preview.waitFor({ state: "visible" });
         const size = await preview.boundingBox();
         if (!size || size.width < 100 || size.height < 100) throw new Error("Camera preview is hidden");
@@ -131,7 +131,7 @@ async function _run(page) {
           await p.emulateMedia({ reducedMotion: "no-preference" });
           await p.waitForFunction(() =>
             document
-              .querySelector(".auth-camera-preview")
+              .querySelector(".k2b-qr-scanner__preview")
               .getAnimations({ subtree: true })
               .some((a) => a.playState === "running"),
           );
