@@ -139,8 +139,9 @@ const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
           aria-label={local.label}
           value={message}
           onValueChange={(value) => {
+            // The error belongs to the submitted text; any edit, including clearing it, makes it stale.
+            if (value !== message()) setSubmitError(null);
             setMessage(value);
-            if (value.trim()) setSubmitError(null);
           }}
           placeholder={local.placeholder}
           lines={local.lines ?? 4}

@@ -9,7 +9,7 @@ describe("@k2b/ui Discussion behavior", () => {
     return;
   }
 
-  test("keeps failed drafts and clears accepted drafts", async () => {
+  test("keeps failed drafts, clears accepted drafts, and clears a rejection with any edit", async () => {
     const dom = createDomTestHarness();
     const { default: Discussion } = await import("../src/layout/Discussion");
     let accepted = false;
@@ -41,8 +41,32 @@ describe("@k2b/ui Discussion behavior", () => {
     await Promise.resolve();
     expect(submissions).toEqual(["Keep this draft", "Keep this draft"]);
     expect(textarea.value).toBe("");
-
     dispose();
+
+    // A rejection shows under the composer until the draft changes, also when the user clears it.
+    const disposeRejecting = render(
+      () => (
+        <Discussion.Composer
+          label="Add comment"
+          onSubmit={() => {
+            throw new Error("Comments are closed");
+          }}
+        />
+      ),
+      dom.root,
+    );
+    const rejectedDraft = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+    const alerts = () => Array.from(dom.root.querySelectorAll('[role="alert"]'), (alert) => alert.textContent).filter(Boolean);
+    rejectedDraft.value = "Can we move this?";
+    rejectedDraft.dispatchEvent(new Event("input", { bubbles: true }));
+    dom.root.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(alerts()).toEqual(["Comments are closed"]);
+    rejectedDraft.value = "";
+    rejectedDraft.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(alerts()).toEqual([]);
+
+    disposeRejecting();
     dom.cleanup();
   });
 
