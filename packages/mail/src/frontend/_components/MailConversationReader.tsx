@@ -52,9 +52,11 @@ import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
+import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import type { MailReadingFormat } from "./mail-user-preferences";
+import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
 type MailConversationComposerRequest = {
   intent: DraftIntent;
@@ -119,6 +121,7 @@ export default function MailConversationReader(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const retryToast = createRetryToasts();
   const intentLabel = (intent: DraftIntent): string =>
     intent === "reply"
       ? t().replyIntent
@@ -143,34 +146,41 @@ export default function MailConversationReader(props: {
   const [expandedMessages, setExpandedMessages] = createSignal(new Set(initialMessageId ? [initialMessageId] : []));
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
-  const summarySave = mutations.create<
-    { created: boolean; refreshError: Error | null },
-    { conversationId: string; expectedSummaryRevision: number; summary: string; created: boolean }
-  >({
-    mutation: async ({ conversationId, expectedSummaryRevision, summary, created }, { abortSignal }) => {
+  type SummaryEdit = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; summary: string };
+  const summarySave = mutations.create<{ refreshError: Error | null; refresh: () => Promise<void> }, SummaryEdit, { edit: SummaryEdit }>({
+    onBefore: (edit) => ({ edit }),
+    mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary }, { abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.$put(
         {
-          param: { mailboxId: props.mailboxId, conversationId },
+          param: { mailboxId, conversationId },
           json: { expectedSummaryRevision, summary },
         },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
       const updated = await response.json();
-      let refreshError: Error | null = null;
-      try {
-        await props.onSummarySaved(conversationId, updated);
-      } catch (error) {
-        refreshError = error instanceof Error ? error : new Error(String(error));
-      }
-      return { created, refreshError };
+      const refresh = () => props.onSummarySaved(conversationId, updated);
+      return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
     },
-    onSuccess: ({ created, refreshError }) => {
-      toast.success(created ? t().summaryCreated : t().summaryUpdated);
-      if (refreshError) void prompts.error(refreshError.message, { title: t().summaryRefreshFailed });
+    // The summary card shows the saved text, so only a failure needs a message.
+    onSuccess: ({ refreshError, refresh }) => {
+      if (refreshError) reportSummaryRefreshFailure(refreshError, refresh);
     },
-    onError: (error) => prompts.error(error.message),
+    // The form has closed, so Retry sends the captured text again instead of losing it.
+    onError: (error, context) =>
+      retryToast(error.message, { retryLabel: t().retry, retry: () => context && summarySave.mutate(context.edit) }),
   });
+  /** The summary was saved, only the view is stale, so Retry repeats the refresh, not the save. */
+  const reportSummaryRefreshFailure = (error: Error, refresh: () => Promise<void>): void => {
+    retryToast(error.message, {
+      title: t().summaryRefreshFailed,
+      retryLabel: t().retry,
+      retry: async () => {
+        const next = await captureMailWorkspaceRefreshError(refresh);
+        if (next) reportSummaryRefreshFailure(next, refresh);
+      },
+    });
+  };
   const summarySaving = summarySave.loading;
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
@@ -260,10 +270,10 @@ export default function MailConversationReader(props: {
     });
     if (!values || conversationId !== props.selectedConversationId) return;
     await summarySave.mutate({
+      mailboxId: props.mailboxId,
       conversationId,
       expectedSummaryRevision: current.summaryRevision,
       summary: String(values.summary ?? ""),
-      created: !current.summary,
     });
   };
 

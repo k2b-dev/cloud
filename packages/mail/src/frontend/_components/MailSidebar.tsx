@@ -165,7 +165,7 @@ export default function MailSidebar(props: {
       toast.success(messages().syncQueued);
       refreshCurrentPath();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
   onCleanup(() => sync.abort());
 

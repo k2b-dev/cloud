@@ -208,7 +208,7 @@ export default function MailMessageAttachments(props: {
         await prompts.alert(url, { title: messages().publicAttachmentLink });
       }
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
   onCleanup(() => {
     disposed = true;

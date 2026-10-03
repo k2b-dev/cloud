@@ -1,5 +1,5 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, prompts, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MessageRemoteContent, RemoteContentRule } from "../../service/remote-content";
@@ -159,9 +159,9 @@ export default function MailMessageBody(props: {
     try {
       await Promise.all(Array.from({ length: Math.min(REMOTE_IMAGE_WORKERS, pending.length) }, worker));
       if (loadedCount === 0 && !disposed && !controller.signal.aborted) {
-        void prompts.error(messages().remoteImagesFailed);
+        toast.error(messages().remoteImagesFailed);
       } else if (budgetExhausted && !disposed && !controller.signal.aborted) {
-        void prompts.error(messages().remoteImagesLimited);
+        toast(messages().remoteImagesLimited);
       }
     } finally {
       if (remoteController === controller) remoteController = null;
@@ -182,7 +182,7 @@ export default function MailMessageBody(props: {
       return response.json();
     },
     onSuccess: () => void loadRemoteImages(),
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const receiveMessage = (event: MessageEvent) => {

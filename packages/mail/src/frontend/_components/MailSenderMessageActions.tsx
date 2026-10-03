@@ -74,7 +74,7 @@ export default function MailSenderMessageActions(props: {
     onSuccess: (reported) => {
       if (reported) toast.success(t().reportSubmitted);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
   });
 
   const pending = () => reportPhishing.loading();
