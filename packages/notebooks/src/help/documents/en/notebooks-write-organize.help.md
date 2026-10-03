@@ -144,6 +144,7 @@ In the editor, the controls appear when you point at or focus the diagram. Every
 - **Note links:** The Markdown form is [Label](note://shortId), but the editor can insert links for you.
 - **Tags:** Use #garden style tags for cross-note grouping. Tag filters match parsed tags, not arbitrary words.
 - **Attachments:** Images render inline. Other files render as links. Both use attach://shortId references.
+- **Open an attachment:** Select an image to see it full screen. Select a PDF, Markdown, text, JSON, or CSV file to open its preview. The preview has **Download**. PDFs add **Open in new tab**, and text and JSON files add **Copy**. Other files, such as archives, audio, and video, are downloaded after you confirm. So are very large files and images that don't display in the note. This works in the editor, in Book view, in the details panel, and in the attachments view.
 :::
 
 **Hub note with links**

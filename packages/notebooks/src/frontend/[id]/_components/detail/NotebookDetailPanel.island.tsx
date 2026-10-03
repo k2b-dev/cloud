@@ -25,11 +25,12 @@ import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
+import { openAttachment } from "../../../lib/attachment-preview";
 import { buildNoteUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import type { Attachment } from "../editor/attachments-client";
-import { buildAttachmentContentUrl, confirmAndDownload, formatBytes } from "../editor/attachments-client";
+import { formatBytes } from "../editor/attachments-client";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import {
@@ -602,7 +603,7 @@ export default function NotebookDetailPanel(props: Props) {
                       {(att) => (
                         <DetailPanel.Action
                           type="button"
-                          onClick={() => void confirmAndDownload(att.filename, buildAttachmentContentUrl(props.notebookId, att.id))}
+                          onClick={() => openAttachment(props.notebookId, att)}
                           leading={
                             <i
                               class={`ti ${fileIcons.getFileIcon({ name: att.filename, type: "file", mimeType: att.mimeType })}`}
