@@ -88,9 +88,11 @@ editing for compatible text renderers.
 PDF, audio, and video render natively from that URL and `load` is not called.
 `downloadHref` only adds download actions; it is never a preview source,
 because browsers do not show an attachment response inline. Without
-`previewHref`, a PDF renders from the bytes `load` returns, in a
-[`PdfPreview`](/en/ui/content/media) frame whose "Open preview" action opens it
-in the browser's own viewer.
+`previewHref`, a PDF renders from the bytes `load` returns, through
+[`PdfPreview`](/en/ui/content/media): its "Open preview" action, which opens it
+in the browser's own viewer, sits above the document in the preview frame.
+There is no visible heading, because the host already names the file; the
+document frame keeps the file name as its accessible title.
 
 Pass `revision` to refetch a `FileView` whose path did not change. A
 `FileBrowserPanel` forwards its `refreshKey` to both the file list and the
@@ -178,7 +180,7 @@ type FileViewRenderer = {
 };
 
 type FileViewProps = {
-  variant?: "default" | "plain";
+  variant?: "default" | "plain"; onDocumentTitle?: (title: string | null) => void;
   previewLines?: number; onExpandPreview?: () => void; headingScale?: "compact" | "normal" | "large";
   file: FileViewFile; load: () => Promise<FileViewContent>; revision?: unknown;
   registerRefresh?: (refresh: () => Promise<void>) => void | (() => void);
@@ -317,7 +319,36 @@ Use `headingScale="normal"` for a full-document view. The default remains
 `compact`. These options also reach custom renderers through
 `FileViewRendererProps`.
 
-Use `variant="plain"` to embed a preview in an existing surface without a frame,
-background, or document padding. Markdown in a plain preview keeps a reading
-measure of 72 characters in wider hosts; its tables and code blocks scroll
-within that column. The default retains the preview frame.
+Use `variant="plain"` when the host already frames the preview, such as a
+dialog, a detail panel group, or a page section. The default keeps the preview
+frame for a preview that stands alone.
+
+A plain preview has no frame, background, or document padding, and it is not a
+scroll container: it keeps its natural height, so the host is the one element
+that scrolls. Only an excerpt scrolls wide content, such as a CSV table,
+sideways in place. Markdown keeps a reading measure of 72 characters in wider
+hosts; its tables and code blocks scroll within that column. Text and source
+files show their line numbers and soft-wrapped lines directly on the host
+surface, without a code box or its copy header, so the host offers copying
+where it needs it. A plain preview in a host that bounds its height can be
+stretched to fill it; images and video then fit that height.
+
+## Document title
+
+Pass `onDocumentTitle` when the host shows its own title, for example a preview
+dialog. When the Markdown preview starts with a level-one heading, `FileView`
+reports the heading's plain text and leaves that heading out of the preview,
+so the title is not shown twice. It reports `null` for Markdown without a
+leading heading, for every other file type, and when the file fails to load;
+the host then titles the preview with the file name. Nothing is reported while
+the file loads. A leading YAML front matter block is skipped first. The
+heading stays in the Markdown editor, and the reported title follows edits.
+
+```tsx
+const [title, setTitle] = createSignal<string | null | undefined>(undefined);
+
+<PanelDialog.Header title={title() ?? fileName} subtitle={fileName} close={close} />
+<PanelDialog.Body>
+  <FileView variant="plain" headingScale="normal" file={file} load={load} onDocumentTitle={setTitle} />
+</PanelDialog.Body>
+```

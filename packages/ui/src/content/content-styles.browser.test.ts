@@ -11,7 +11,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "content-styles.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { FileView, MarkdownView } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { FileView, MarkdownView, PdfPreview } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const code = Array.from({ length: 3 }, (_, index) => "const value" + index + " = " + index + ";").join("\\n");
 const file = (id, previewLines) => {
@@ -68,6 +68,32 @@ render(
     }),
   plain,
 );
+// A plain text preview in a host that bounds its height: the host scrolls, not the preview.
+const plainText = app.appendChild(document.createElement("section"));
+plainText.id = "plain-text";
+plainText.style.cssText = "display:flex;flex-direction:column;height:60px;overflow:auto;width:320px";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "notes.txt", size: 400 },
+      load: async () => ({ encoding: "utf8", content: code + "\\n" + "word ".repeat(80), mediaType: "text/plain" }),
+      variant: "plain",
+    }),
+  plainText,
+);
+const pdf = app.appendChild(document.createElement("section"));
+pdf.id = "pdf";
+render(
+  () =>
+    createComponent(FileView, {
+      file: { path: "reports/q3.pdf" },
+      load: async () => ({ encoding: "utf8", content: "%PDF-1.4\\n%%EOF", mediaType: "application/pdf" }),
+    }),
+  pdf,
+);
+const standalone = app.appendChild(document.createElement("section"));
+standalone.id = "standalone-pdf";
+render(() => createComponent(PdfPreview, { title: "Report", request: async () => new Blob(["%PDF-1.4"], { type: "application/pdf" }) }), standalone);
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the content fixture for the browser.");
@@ -87,6 +113,8 @@ beforeAll(async () => {
   await page.addScriptTag({ content: script });
   await page.locator("#excerpt .k2b-content-code-display").waitFor();
   await page.locator("#plain .k2b-content-markdown").waitFor();
+  await page.locator("#plain-text .k2b-content-code-display").waitFor();
+  await page.locator("#pdf iframe").waitFor();
 }, 30_000);
 afterAll(async () => {
   await browser?.close();
@@ -247,6 +275,47 @@ describe("@k2b/ui content previews apply their own styles", () => {
     });
     expect(host).toBeGreaterThan(ch);
     expect(width).toBeCloseTo(ch, 0);
+  });
+
+  test("a plain FileView shows text without a code box and leaves scrolling to its host", async () => {
+    const result = await page.evaluate(() => {
+      const host = document.querySelector<HTMLElement>("#plain-text")!;
+      const view = host.querySelector<HTMLElement>(".k2b-content-file-view")!;
+      const preview = host.querySelector<HTMLElement>(".k2b-content-file-view__preview")!;
+      const code = getComputedStyle(host.querySelector(".k2b-content-code-display")!);
+      return {
+        header: host.querySelector(".k2b-content-code-display__header") !== null,
+        fill: code.backgroundColor,
+        ring: code.boxShadow,
+        previewScrolls: preview.scrollHeight > preview.clientHeight + 1 || getComputedStyle(preview).overflowY !== "visible",
+        natural: view.getBoundingClientRect().height > host.clientHeight,
+        hostScrolls: host.scrollHeight > host.clientHeight,
+        wraps: host.scrollWidth <= host.clientWidth,
+      };
+    });
+    expect(result).toEqual({
+      header: false,
+      fill: "rgba(0, 0, 0, 0)",
+      ring: "none",
+      previewScrolls: false,
+      natural: true,
+      hostScrolls: true,
+      wraps: true,
+    });
+  });
+
+  test("a PDF from loaded bytes has no visible heading or toolbar line, and neither has a standalone PDF toolbar", async () => {
+    const result = await page.evaluate(() => {
+      const viewer = document.querySelector("#pdf .k2b-content-file-view__pdf-viewer")!;
+      return {
+        headings: document.querySelectorAll("#pdf h2").length,
+        frameTitle: document.querySelector("#pdf iframe")!.getAttribute("title"),
+        frame: getComputedStyle(viewer).borderTopWidth,
+        actionsLine: getComputedStyle(viewer.querySelector(".k2b-content-pdf-preview__actions")!).borderBottomWidth,
+        toolbarLine: getComputedStyle(document.querySelector("#standalone-pdf .k2b-content-pdf-preview__toolbar")!).borderBottomWidth,
+      };
+    });
+    expect(result).toEqual({ headings: 0, frameTitle: "q3.pdf", frame: "1px", actionsLine: "0px", toolbarLine: "0px" });
   });
 
   test("a Markdown code block keeps its edge in forced colours", async () => {

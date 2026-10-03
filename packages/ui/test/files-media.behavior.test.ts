@@ -246,6 +246,94 @@ describe("@k2b/ui files and media runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("lifts a leading Markdown heading into the host only when asked", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    const [path, setPath] = createSignal("/README.md");
+    const contents: Record<string, string> = {
+      "/README.md": "---\nowner: team\n---\n# Summer *party* 2026\n\nBring a chair.\n\n## Program\n",
+      "/notes.md": "Notes without a heading.\n",
+      "/broken.md": "",
+    };
+    const titles: Array<string | null> = [];
+    const dispose = render(
+      () =>
+        createComponent(FileView, {
+          get file() {
+            return { path: path(), mediaType: "text/markdown" };
+          },
+          variant: "plain",
+          load: async () => {
+            if (path() === "/broken.md") throw new Error("gone");
+            return { encoding: "utf8" as const, mediaType: "text/markdown", content: contents[path()]! };
+          },
+          onDocumentTitle: (title) => titles.push(title),
+        }),
+      dom.root,
+    );
+    await flush();
+
+    const markdown = () => dom.root.querySelector(".k2b-content-markdown");
+    expect(titles).toEqual(["Summer party 2026"]);
+    expect(markdown()?.querySelector("h1")).toBeNull();
+    expect(markdown()?.querySelector("h2")?.textContent).toBe("Program");
+    expect(markdown()?.textContent).toContain("Bring a chair.");
+
+    setPath("/notes.md");
+    await flush();
+    expect(titles.at(-1)).toBeNull();
+    expect(markdown()?.textContent).toContain("Notes without a heading.");
+
+    // A failed load reports no title and shows the error state instead of throwing.
+    setPath("/broken.md");
+    await flush();
+    expect(titles.at(-1)).toBeNull();
+    expect(dom.root.textContent).toContain("Failed to load file");
+    dispose();
+
+    // Without the callback the heading stays in the document.
+    const keep = render(
+      () =>
+        createComponent(FileView, {
+          file: { path: "/README.md", mediaType: "text/markdown" },
+          load: async () => ({ encoding: "utf8" as const, mediaType: "text/markdown", content: "# Kept\n\nBody" }),
+        }),
+      dom.root,
+    );
+    await flush();
+    expect(markdown()?.querySelector("h1")?.textContent).toBe("Kept");
+    keep();
+    dom.cleanup();
+  });
+
+  test("shows a plain text preview without its own code box or copy header", async () => {
+    const dom = createDomTestHarness();
+    const { default: FileView } = await import("../src/content/FileView");
+    const view = (variant?: "plain") =>
+      render(
+        () =>
+          createComponent(FileView, {
+            file: { path: "/packing.txt", mediaType: "text/plain" },
+            variant,
+            load: async () => ({ encoding: "utf8" as const, mediaType: "text/plain", content: "Tent\nChairs" }),
+          }),
+        dom.root,
+      );
+
+    let dispose = view("plain");
+    await flush();
+    expect(dom.root.querySelector(".k2b-content-file-view")?.getAttribute("data-variant")).toBe("plain");
+    expect(dom.root.querySelector(".k2b-content-code-display__header")).toBeNull();
+    expect(dom.root.querySelectorAll(".k2b-content-code-display__line")).toHaveLength(2);
+    dispose();
+
+    dispose = view();
+    await flush();
+    expect(dom.root.querySelector(".k2b-content-code-display__header")).not.toBeNull();
+    dispose();
+    dom.cleanup();
+  });
+
   for (const downloadHref of ["/api/files/content?path=%2Freports%2Fq3.pdf", undefined]) {
     test(`previews a PDF from its loaded bytes and remounts only for changed bytes (downloadHref ${downloadHref ? "set" : "absent"})`, async () => {
       const dom = createDomTestHarness();
@@ -282,6 +370,9 @@ describe("@k2b/ui files and media runtime behavior", () => {
         expect(loads).toBe(1);
         expect(dom.root.querySelector("object")).toBeNull();
         expect(dom.root.querySelector("iframe")?.getAttribute("src")).toBe("blob:pdf-1");
+        // The host names the file; the frame keeps it only as the document's accessible title.
+        expect(dom.root.querySelector("h2")).toBeNull();
+        expect(dom.root.querySelector("iframe")?.getAttribute("title")).toBe("q3.pdf");
         expect(created[0]?.type).toBe("application/pdf");
         expect(await created[0]?.text()).toBe("%PDF-1.7 v1");
         const frame = dom.root.querySelector("iframe");

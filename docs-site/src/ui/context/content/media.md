@@ -38,6 +38,8 @@ Each `LightboxImage` has a required `src` and optional `alt` and `downloadUrl`. 
 
 Until a document is shown, the viewer area shows a `Placeholder`: `emptyText` before the first request, `state="loading"` while a request runs, and `state="error"` with the message after a failure. The error state never adds a second retry: an on-demand preview retries with its render action in the toolbar. These states and the document share one box, so loading and errors do not move the page: the box fills the remaining height of a sized flex column and keeps an iframe's default height of 150 px where nothing sizes it. A long error scrolls inside that box from its top. Give the preview or its composed container a height when the document needs more room. While an on-demand preview renders again, the shown document stays until the new one arrives.
 
+Without a `children` render function, the preview is a standalone frame: an optional `title` heading and the actions in a toolbar above the document. Spacing, not a divider line, separates the toolbar from the document.
+
 The component provides separate actions to render inside the page or open the document in a new tab. `disabled` is a reactive guard for invalid form state or an unavailable renderer.
 
 By default, the open action shows a temporary local copy of the document in a new tab. That copy has no file name and does not survive a reload, and Safari on iOS may download it instead. When the caller can serve the document itself, pass `openHref`: a stable same-origin URL that returns the PDF with `Content-Disposition: inline`. The open action then becomes a plain link to that URL in a new tab without an opener, so the browser's viewer can reload the document and shows the file name from the last path segment. The caller owns the URL, its authorization, and its response headers.
@@ -52,7 +54,7 @@ Authentication, request input, server-side rendering, and error sanitization rem
 
 ### Compose a dialog or pane
 
-Pass a `children` render function to place `actions` and `content` in an existing container. The preview then omits its own border, heading, and toolbar; `class` only applies to its default shell. Render each part once. The same request state, disabled controls, and object URL cleanup apply in either layout.
+Pass a `children` render function to place `actions` and `content` in an existing container. The preview then omits its own border, heading, and toolbar; `class` only applies to its default shell. Render each part at most once. A host with its own open and download actions, such as an automatic preview of a stored file, can leave `actions` out. The same request state, disabled controls, and object URL cleanup apply in either layout.
 
 For a dialog, put `actions` in `PanelDialog.Header` and `content` in a flex column that fills the remaining body height. Keep explanatory text in `InlineGuidance` above the content. Do not put another preview card inside the dialog.
 
