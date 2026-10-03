@@ -124,6 +124,8 @@
    editor takes the whole tab and a long file scrolls inside the preview. Without a frame, the text keeps a page inset. */
 .artifact-workspace__tab:has(> .k2b-content-file-view) { padding-inline: 1rem; }
 .k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] { flex: 1 1 auto; min-height: 0; }
+/* Read-only source code has no scrolling preview around it; it keeps its full height and the tab scrolls it. */
+.k2b-ui .artifact-workspace__tab > .k2b-content-file-view[data-variant] > .k2b-content-code-display { flex: none; }
 .artifact-panel { display: flex; flex: 1; flex-direction: column; gap: .5rem; min-height: 0; min-width: 0; overflow: hidden; }
 .artifact-panel__preview { flex: 1; min-height: 0; overflow: auto; padding: .5rem; border-radius: var(--ui-radius-frame); background: var(--k2b-surface); }
 .artifact-panel__launch { display: grid; place-content: center; justify-items: center; gap: 1rem; min-height: 12rem; }
