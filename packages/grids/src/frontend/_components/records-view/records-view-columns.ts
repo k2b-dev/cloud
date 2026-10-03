@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { prompts } from "@k2b/ui";
+import { prompts, toast } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicField as Field, PublicView as View } from "../../../api/public-dto";
@@ -152,7 +152,7 @@ export const createRecordsViewColumnController = ({
         hiddenGroupedColumns: result.query.hiddenGroupedColumns,
       }));
     },
-    onError: (e) => prompts.error(e.message),
+    onError: (e) => toast.error(e.message),
   });
 
   /**
@@ -198,7 +198,7 @@ export const createRecordsViewColumnController = ({
     } catch {
       await reloadTableColumns();
     }
-    prompts.error(message);
+    toast.error(message);
     return undefined;
   };
 
@@ -443,14 +443,14 @@ export const createRecordsViewColumnController = ({
       for (const field of fields().filter((candidate) => candidate.hideInTable && fieldIds.includes(candidate.id))) {
         const res = await apiClient.fields[":fieldId"].$patch({ param: { fieldId: field.id }, json: { hideInTable: false } });
         if (!res.ok) {
-          prompts.error(await errorMessage(res, failure));
+          toast.error(await errorMessage(res, failure));
           return;
         }
         const updated = await res.json();
         setFields((current) => current.map((candidate) => (candidate.id === updated.id ? updated : candidate)));
       }
     } catch {
-      prompts.error(failure);
+      toast.error(failure);
     }
   };
 

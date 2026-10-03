@@ -1,8 +1,8 @@
-import { prompts } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup, type Setter } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQueryResult } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
+import { toastErrorWithRetry } from "../utils/feedback";
 import type { PublicWorkspaceRecordDetail as WorkspaceRecordDetail } from "../workspace/workspace-public-state-model";
 import { visibleIdsFromResult } from "./live-refresh";
 import { recordsViewMessages } from "./messages";
@@ -92,7 +92,12 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
         if (options.selectedRecordId() === recordId) setDetail(next);
       })
       .catch((error: unknown) => {
-        if (!abort.signal.aborted) prompts.error(error instanceof Error ? error.message : t().loadRecordDetailsFailed);
+        if (abort.signal.aborted) return;
+        // Retry loads the details again only while the same record is still open.
+        toastErrorWithRetry(error instanceof Error ? error.message : t().loadRecordDetailsFailed, {
+          retryLabel: t().retry,
+          retry: () => (options.selectedRecordId() === recordId ? refreshDetail(recordId) : undefined),
+        });
       });
   });
 
@@ -171,11 +176,15 @@ export const createRecordsSelectionController = (options: RecordsSelectionContro
     options.syncUrl({ replace: false });
   };
 
-  const refreshDetail = async (recordId: string) => {
+  const refreshDetail = async (recordId: string): Promise<void> => {
     try {
-      setDetail(await loadDetail(recordId));
+      const next = await loadDetail(recordId);
+      if (options.selectedRecordId() === recordId) setDetail(next);
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : t().refreshRecordDetailsFailed);
+      toastErrorWithRetry(error instanceof Error ? error.message : t().refreshRecordDetailsFailed, {
+        retryLabel: t().retry,
+        retry: () => (options.selectedRecordId() === recordId ? refreshDetail(recordId) : undefined),
+      });
     }
   };
 

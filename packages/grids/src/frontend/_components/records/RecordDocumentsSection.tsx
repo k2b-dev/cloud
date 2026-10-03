@@ -25,6 +25,7 @@ import type {
   PublicRecordSnapshotSummary,
 } from "../documents/public-document-types";
 import { errorMessage } from "../utils/api-helpers";
+import { toastErrorWithRetry } from "../utils/feedback";
 import { recordMessages } from "./messages";
 import { formatRecordRelativeTime } from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
@@ -95,7 +96,7 @@ export default function RecordDocumentsSection(props: {
       setHasMoreDocuments(value.documents.hasMore);
       setSnapshots(value.snapshots);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => refreshDocumentsMut.mutate() }),
   });
 
   const loadMoreDocumentsMut = mutations.create<{ items: PublicDocument[]; cursor: string | null; hasMore: boolean }, void>({
@@ -106,7 +107,7 @@ export default function RecordDocumentsSection(props: {
       setDocumentCursor(page.cursor);
       setHasMoreDocuments(page.hasMore);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => loadMoreDocumentsMut.mutate() }),
   });
 
   const redownloadMut = mutations.create<void, PublicDocument>({
@@ -115,7 +116,7 @@ export default function RecordDocumentsSection(props: {
       const res = await requestDocumentDownload(document.id);
       await downloadPdfResponse(res, document.filename);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
     onFinally: () => setActiveDownloadId(null),
   });
 
@@ -127,11 +128,9 @@ export default function RecordDocumentsSection(props: {
       if (!createRes.ok) throw new Error(await errorMessage(createRes, t().snapshotCreateFailed));
       return loadSnapshots();
     },
-    onSuccess: (items) => {
-      setSnapshots(items);
-      toast.success(t().snapshotCreatedToast);
-    },
-    onError: (error) => prompts.error(error.message),
+    // The new snapshot appears in the list, so it needs no confirmation.
+    onSuccess: (items) => setSnapshots(items),
+    onError: (error) => toast.error(error.message),
   });
 
   const inspectSnapshotMut = mutations.create<void, PublicRecordSnapshotSummary>({
@@ -206,7 +205,7 @@ export default function RecordDocumentsSection(props: {
         { title: t().recordSnapshot, icon: "ti ti-camera", size: "large" },
       );
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast.error(error.message),
     onFinally: () => setActiveSnapshotId(null),
   });
 
