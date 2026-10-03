@@ -93,10 +93,11 @@ if (message.type === "ready") {
 }
 ```
 
-Replay covers only the stream's own events. When the page shows values derived
-from other resources, refresh on every ready. When it shows values relative to
-the current day, such as overdue or due-today lists, also refresh when the day
-changed since the snapshot, because no event announces a new day.
+Replay covers only the stream's own events. Refresh on every ready when the
+values a page is about come from resources that publish elsewhere, for example
+lookups and rollups from other tables. When a page shows values relative to the
+current day, such as overdue or due-today lists, refresh when the day changed
+since the snapshot, because no event announces a new day.
 
 ## Advance only after coverage
 
