@@ -204,10 +204,13 @@ const measure = () => {
   const sectionBody = inSection.parentElement!;
   // WCAG relative luminance contrast of the comment action against the frame it sits on.
   const luminance = (color: string) => {
-    const [r, g, b] = color.match(/[\d.]+/g)!.slice(0, 3).map((value) => {
-      const channel = Number(value) / 255;
-      return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-    });
+    const [r, g, b] = color
+      .match(/[\d.]+/g)!
+      .slice(0, 3)
+      .map((value) => {
+        const channel = Number(value) / 255;
+        return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      });
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
   };
   const action = document.querySelector("#one .k2b-discussion__actions .k2b-button")!;
