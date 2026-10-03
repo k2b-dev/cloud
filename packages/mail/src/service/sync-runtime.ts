@@ -1124,7 +1124,7 @@ const fetchReconcileWindow = async (params: {
   }
   const imports = await fetchReconcileImports({
     // The Drafts folder imports its drafts; every other folder never fetches them. This batch
-    // imports the UIDs its envelope step fetched already.
+    // imports the UIDs its envelope step fetched already; see fetchReconcileStep.
     uids: (params.draftsFolder ? flags : flags.filter((entry) => !isProviderDraft(entry)))
       .map((entry) => entry.uid)
       .filter((uid) => !params.fetchedUids.has(uid)),
@@ -1157,7 +1157,11 @@ export const fetchReconcileStep = async (params: {
   uidValidity: string;
   /** The Drafts folder imports its drafts; every other folder never fetches them. */
   draftsFolder: boolean;
-  /** UIDs this batch's envelope step fetched: they have no local record until the batch commits. */
+  /**
+   * UIDs this batch imports from its envelope step: they have no local record until the batch
+   * commits. Outside Drafts that leaves out the drafts it skips: should another client send one
+   * meanwhile, the window finds it without its draft flag and imports it.
+   */
   fetchedUids: ReadonlySet<number>;
   signal: AbortSignal;
 }): Promise<ReconcileWindow | null> => {
@@ -1881,7 +1885,11 @@ export const syncFolderBatch = async (
           folderId,
           uidValidity: status.uidValidity,
           draftsFolder,
-          fetchedUids: new Set(envelopeBatch?.messages.map((message) => Number(message.remoteRef.uid)) ?? []),
+          fetchedUids: new Set(
+            (envelopeBatch?.messages ?? [])
+              .filter((message) => draftsFolder || !isProviderDraft(message))
+              .map((message) => Number(message.remoteRef.uid)),
+          ),
           signal,
         });
         if (reconcileWindow) await extendSyncLease(lock, "after UID reconciliation");

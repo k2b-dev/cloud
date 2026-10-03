@@ -82,6 +82,8 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused: boolea
   const calls = { windows: [] as [string, number, number][], envelopes: 0, draftCounts: 0 };
   /** Runs once after the next window listed the folder, like a change another client makes meanwhile. */
   let afterNextWindow: (() => void) | null = null;
+  /** Runs once after the next envelope fetch, like a change another client makes meanwhile. */
+  let afterNextEnvelopes: (() => void) | null = null;
   const spies = [
     spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (_config, path) => ({
       uidValidity: folder(path).uidValidity,
@@ -96,10 +98,14 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused: boolea
         .filter((uid) => (request.uids ? request.uids.includes(uid) : uid >= low && uid <= request.highUid))
         .sort((left, right) => right - left);
       const selected = uids.slice(0, request.limit);
-      return {
+      const batch = {
         messages: selected.map((uid) => envelope(request.folderPath, uid, request.folderStableKey)),
         nextHighUid: uids.length > request.limit ? uids[request.limit]! : null,
       };
+      const change = afterNextEnvelopes;
+      afterNextEnvelopes = null;
+      change?.();
+      return batch;
     }),
     spyOn(imapSmtpConnector, "fetchFlagChanges").mockResolvedValue([]),
     spyOn(imapSmtpConnector, "fetchUidWindow").mockImplementation(async (_config, path, _uidValidity, low, high) => {
@@ -140,6 +146,9 @@ const createProvider = (params: { condstore: boolean; draftSearchRefused: boolea
     },
     afterNextWindow: (change: () => void) => {
       afterNextWindow = change;
+    },
+    afterNextEnvelopes: (change: () => void) => {
+      afterNextEnvelopes = change;
     },
     setFlags: (path: string, uid: number, flags: string[]) => {
       folder(path).entries.get(uid)!.flags = new Set(flags);
@@ -542,6 +551,18 @@ suite("mail sync of changes made in other clients", () => {
     await mailbox.sync("archive");
     expect(mailbox.remote.calls.envelopes).toBe(1);
     expect(await mailbox.placements(id("single-new"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
+  });
+
+  test("without CONDSTORE, a new draft that another client sends while the sync runs arrives in the same sync", async () => {
+    const mailbox = await connect("cleared-draft", false);
+    mailbox.remote.put("archive", id("cleared-kept"));
+    await mailbox.sync("archive");
+
+    // The sync fetches the new message as a draft and skips it; its window then lists it as mail.
+    const draft = mailbox.remote.put("archive", id("cleared-draft"), ["\\Draft"]);
+    mailbox.remote.afterNextEnvelopes(() => mailbox.remote.setFlags("archive", draft, []));
+    await mailbox.sync("archive");
+    expect(await mailbox.placements(id("cleared-draft"))).toEqual([{ role: "archive", deleted: false, flags: [] }]);
   });
 
   test("a draft that leaves a folder Mail skips drafts in costs a draft count, not a search", async () => {
