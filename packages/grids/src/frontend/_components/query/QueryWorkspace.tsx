@@ -166,19 +166,15 @@ function QueryPreview(props: {
               <ScrollArea class="flex min-h-0 flex-1 flex-col gap-2 p-3 text-sm">
                 <For each={diagnostics()}>
                   {(diagnostic) => (
-                    <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800 dark:border-red-900 dark:bg-red-950/45 dark:text-red-300">
-                      <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide">
-                        <Show when={diagnostic.line} fallback={<span>{t.query}</span>}>
-                          {(line) => (
-                            <span class="rounded bg-white/70 px-1.5 py-0.5 dark:bg-black/20">
-                              {t.line({ line: line() })}
-                              <Show when={diagnostic.column}>{(column) => ` · ${t.column({ column: column() })}`}</Show>
-                            </span>
-                          )}
-                        </Show>
-                      </div>
-                      <p class="leading-relaxed">{diagnostic.message}</p>
-                    </div>
+                    <NoticeCard
+                      tone="danger"
+                      title={
+                        diagnostic.line
+                          ? `${t.line({ line: diagnostic.line })}${diagnostic.column ? ` · ${t.column({ column: diagnostic.column })}` : ""}`
+                          : t.query
+                      }
+                      detail={diagnostic.message}
+                    />
                   )}
                 </For>
               </ScrollArea>

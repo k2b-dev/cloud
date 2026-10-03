@@ -118,7 +118,7 @@ function DiagnosticsPanel(props: { diagnostics: WorkflowDiagnostic[]; validating
               <li>
                 <Show when={diagnostic.location}>
                   {(location) => (
-                    <span class="font-mono text-[11px] uppercase">
+                    <span class="font-mono text-[11px]">
                       {t().diagnosticLocation({ line: location().line, column: location().column })}{" "}
                     </span>
                   )}

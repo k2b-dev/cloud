@@ -382,11 +382,11 @@ function DataTypesTab() {
                 </div>
                 <dl class="mt-3 space-y-3 text-sm leading-relaxed">
                   <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t.useWhen}</dt>
+                    <dt class="text-xs font-semibold text-secondary">{t.useWhen}</dt>
                     <dd class="mt-1 text-primary">{row.use}</dd>
                   </div>
                   <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-dimmed">{t.watchFor}</dt>
+                    <dt class="text-xs font-semibold text-secondary">{t.watchFor}</dt>
                     <dd class="mt-1 text-primary">{row.watch}</dd>
                   </div>
                 </dl>

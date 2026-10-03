@@ -618,6 +618,15 @@ export default function MailDetailsPanel(props: {
             )}
           </Show>
 
+          <CheckboxCard
+            label={t().markDone}
+            description={t().markDoneDescription}
+            icon="ti ti-circle-check"
+            value={() => state().workStatus === "done"}
+            onValueChange={(done) => updateCollaboration({ completion: done ? "done" : "open" })}
+            disabled={!props.canWrite}
+          />
+
           <Show when={props.canWrite && props.conversationDrafts[0]}>
             {(draft) => (
               <DetailPanel.Group label={t().draft}>
@@ -656,15 +665,6 @@ export default function MailDetailsPanel(props: {
               }
             >
               <div class="flex flex-col gap-2.5">
-                <CheckboxCard
-                  variant="input"
-                  label={t().markDone}
-                  description={t().markDoneDescription}
-                  icon="ti ti-circle-check"
-                  value={() => state().workStatus === "done"}
-                  onValueChange={(done) => updateCollaboration({ completion: done ? "done" : "open" })}
-                  disabled={!props.canWrite}
-                />
                 <MultiSelectInput
                   label={t().tags}
                   value={() => tagState().tags.map((tag) => tag.id)}
@@ -737,7 +737,7 @@ export default function MailDetailsPanel(props: {
 
           <DetailPanel.Group label={t().conversationContext}>
             <Show when={props.presence.length > 0}>
-              <DetailPanel.Section title={t().activeCollaborators} icon="ti ti-users" tone="success" meta={props.presence.length}>
+              <section aria-label={t().activeCollaborators} class="bg-[var(--ui-surface)] p-3">
                 <div class="flex flex-col gap-2">
                   <For each={props.presence}>
                     {(participant) => (
@@ -753,7 +753,7 @@ export default function MailDetailsPanel(props: {
                     )}
                   </For>
                 </div>
-              </DetailPanel.Section>
+              </section>
             </Show>
 
             <MailConversationContext
