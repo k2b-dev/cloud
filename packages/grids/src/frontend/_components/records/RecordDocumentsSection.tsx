@@ -96,7 +96,8 @@ export default function RecordDocumentsSection(props: {
       setHasMoreDocuments(value.documents.hasMore);
       setSnapshots(value.snapshots);
     },
-    onError: (error) => toastErrorWithRetry(error.message, { retryLabel: t().retry, retry: () => refreshDocumentsMut.mutate() }),
+    // Runs while the generate dialog is still open, so the failure belongs in a dialog too.
+    onError: (error) => prompts.error(error.message),
   });
 
   const loadMoreDocumentsMut = mutations.create<{ items: PublicDocument[]; cursor: string | null; hasMore: boolean }, void>({
@@ -116,7 +117,8 @@ export default function RecordDocumentsSection(props: {
       const res = await requestDocumentDownload(document.id);
       await downloadPdfResponse(res, document.filename);
     },
-    onError: (error) => toast.error(error.message),
+    // Runs from the open document details dialog, so the failure belongs in a dialog too.
+    onError: (error) => prompts.error(error.message),
     onFinally: () => setActiveDownloadId(null),
   });
 
