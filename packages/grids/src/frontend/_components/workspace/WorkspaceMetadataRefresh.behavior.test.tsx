@@ -240,3 +240,47 @@ domTest("a failed check is retried, and a lasting failure informs in a toast wit
     dom.cleanup();
   }
 });
+
+domTest("after live updates end, a successful check keeps the toast", async () => {
+  const dom = createDomTestHarness();
+  const { default: WorkspaceMetadataRefresh } = await import("./WorkspaceMetadataRefresh.island");
+  const initial = { revision: "one", resources: { "table:TABLE1": "one" } };
+  let requests = 0;
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () => {
+        requests++;
+        return Response.json({ ...initial, canWrite: true, canAdmin: true });
+      },
+      { preconnect: fetch.preconnect },
+    ),
+  );
+  const reloadAction = () =>
+    Array.from(dom.document.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Reload" && !dom.root.contains(button),
+    );
+  const dispose = render(
+    () =>
+      createComponent(WorkspaceMetadataRefresh, {
+        baseId: "BASE01",
+        initialCursor: null,
+        revision: initial,
+        activeKeys: ["table:TABLE1"],
+        canWrite: true,
+        canAdmin: true,
+      }),
+    dom.root,
+  );
+  try {
+    // The server closed the socket for good, for example after an invalid message.
+    callbacks.onFatal?.({ code: "invalid_message", message: "Invalid" });
+    await until(() => requests === 1);
+    await Bun.sleep(300);
+    expect(reloadAction()).toBeDefined();
+    expect(dom.root.querySelector('[role="status"]')).toBeNull();
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});

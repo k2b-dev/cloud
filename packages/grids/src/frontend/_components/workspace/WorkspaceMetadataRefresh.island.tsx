@@ -28,7 +28,9 @@ export default function WorkspaceMetadataRefresh(props: {
   onMount(() => {
     let disposed = false;
     let revoked = false;
-    // Live failures inform in a toast, so the workspace never moves; a later successful check dismisses it.
+    // After a terminal close no events arrive, so a later successful check cannot mean live updates are back.
+    let liveEnded = false;
+    // Live failures inform in a toast, so the workspace never moves; a later successful check dismisses it while the socket lives.
     let failure: ToastHandle | null = null;
     const showFailure = () => {
       if (disposed || revoked || failure) return;
@@ -75,7 +77,7 @@ export default function WorkspaceMetadataRefresh(props: {
         }),
       apply: (state) => {
         if (revoked) return;
-        clearFailure();
+        if (!liveEnded) clearFailure();
         if (state.revoked) return revoke();
         setChanged(state.changed);
       },
@@ -91,6 +93,7 @@ export default function WorkspaceMetadataRefresh(props: {
       onError: (error) => controller.check(error.code === "resync_required" ? null : undefined),
       onRevoked: revoke,
       onFatal: () => {
+        liveEnded = true;
         showFailure();
         controller.check();
       },
