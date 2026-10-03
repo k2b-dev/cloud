@@ -26,7 +26,6 @@ import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
-import { readMailWorkspacePreferences, writeMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import { mailOverviewMessages } from "./mail-overview-messages";
 import { assertCursorProgress } from "./pagination";
 
@@ -142,29 +141,43 @@ function MailOverviewView(props: {
   const restoreMailboxFocus = (hadFocus: boolean, target: HTMLElement | null) => {
     if (hadFocus && (!document.activeElement || document.activeElement === document.body)) target?.focus();
   };
+  // Pins and hidden mailboxes belong to the person and apply on every device. The row moves at
+  // once; saves run in order, and a failed one puts the row back where it was.
+  let preferenceSaves = Promise.resolve();
+  const saveMailboxPreference = (mailboxId: string, change: { pinned?: boolean; hidden?: boolean }, undo: () => void) => {
+    preferenceSaves = preferenceSaves.then(async () => {
+      try {
+        const response = await apiClient.mailboxes[":mailboxId"].preference.$patch({ param: { mailboxId }, json: change });
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveMailboxPreference));
+      } catch (error) {
+        undo();
+        toast.error(error instanceof Error ? error.message : messages().failedSaveMailboxPreference);
+      }
+    });
+  };
+  const withMailbox = (ids: string[], mailboxId: string, add: boolean, index = 0) => {
+    const others = ids.filter((id) => id !== mailboxId);
+    const at = Math.max(index, 0);
+    return add ? [...others.slice(0, at), mailboxId, ...others.slice(at)] : others;
+  };
   const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
-    // This document may come from history or run beside another tab: apply the
-    // shown pin or unpin to the stored list so newer pins survive.
     const pin = !mailboxIsPinned(mailbox.id);
     const hadFocus = mailboxHasFocus(mailbox.id);
-    const stored = readMailWorkspacePreferences(document.cookie);
-    const others = stored.pinnedMailboxIds.filter((id) => id !== mailbox.id);
-    const next = pin ? [mailbox.id, ...others] : others;
-    setPinnedMailboxIds(writeMailWorkspacePreferences({ ...stored, pinnedMailboxIds: next }).pinnedMailboxIds);
+    const index = pinnedMailboxIds().indexOf(mailbox.id);
+    setPinnedMailboxIds((ids) => withMailbox(ids, mailbox.id, pin));
+    saveMailboxPreference(mailbox.id, { pinned: pin }, () => setPinnedMailboxIds((ids) => withMailbox(ids, mailbox.id, !pin, index)));
     setMailboxAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
     restoreMailboxFocus(hadFocus, mailboxLink(mailbox.id));
   };
   const toggleMailboxHidden = (mailbox: MailboxOverviewItem) => {
-    // Like pins, apply the shown change to the stored list so another tab's changes survive.
     const hide = !mailboxIsHidden(mailbox.id);
     const hadFocus = mailboxHasFocus(mailbox.id);
     const visible = visibleMailboxItems();
-    const index = visible.findIndex((item) => item.id === mailbox.id);
-    const neighborId = (visible[index + 1] ?? visible[index - 1])?.id;
-    const stored = readMailWorkspacePreferences(document.cookie);
-    const others = stored.hiddenMailboxIds.filter((id) => id !== mailbox.id);
-    const next = hide ? [mailbox.id, ...others] : others;
-    setHiddenMailboxIds(writeMailWorkspacePreferences({ ...stored, hiddenMailboxIds: next }).hiddenMailboxIds);
+    const position = visible.findIndex((item) => item.id === mailbox.id);
+    const neighborId = (visible[position + 1] ?? visible[position - 1])?.id;
+    const index = hiddenMailboxIds().indexOf(mailbox.id);
+    setHiddenMailboxIds((ids) => withMailbox(ids, mailbox.id, hide));
+    saveMailboxPreference(mailbox.id, { hidden: hide }, () => setHiddenMailboxIds((ids) => withMailbox(ids, mailbox.id, !hide, index)));
     setMailboxAnnouncement(hide ? messages().mailboxHidden({ name: mailbox.name }) : messages().mailboxShown({ name: mailbox.name }));
     if (hide && selection()?.mailboxId === mailbox.id) {
       setSelection(null);

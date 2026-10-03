@@ -53,6 +53,19 @@ suite("mail baseline schema", () => {
     await migrate();
   });
 
+  test("adds tables created after the baseline to a database installed before them", async () => {
+    await migrate();
+    await sql`DROP TABLE mail.user_mailbox_preferences`;
+    await migrate();
+    const [shape] = await sql<{ table_exists: boolean; versions: number }[]>`
+      SELECT
+        to_regclass('mail.user_mailbox_preferences') IS NOT NULL AS table_exists,
+        (SELECT count(*)::int FROM mail.schema_migrations) AS versions
+    `;
+    // No version is recorded, so an older Mail image still starts on the upgraded database.
+    expect(shape).toEqual({ table_exists: true, versions: 1 });
+  });
+
   test("seeds the singleton rows a fresh installation needs", async () => {
     await migrate();
     const [security] = await sql<{ singleton: boolean; trusted: string[] }[]>`

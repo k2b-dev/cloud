@@ -124,6 +124,7 @@ import {
   type MailRequestContext,
   mailboxAccess,
   mailboxes,
+  mailboxPreferences,
   messageInspector,
   messages,
   notificationTargets,
@@ -221,6 +222,13 @@ const mailFocusQuerySchema = cursorQuerySchema.extend({
     .pipe(z.array(ResourceShortIdSchema).max(200))
     .describe("Comma-separated mailbox IDs whose conversations leave the list and view counts, such as mailboxes hidden in the overview"),
 });
+const mailboxPreferenceSchema = z
+  .object({
+    pinned: z.boolean().optional().describe("Pin the mailbox to the top of your overview, or unpin it"),
+    hidden: z.boolean().optional().describe("Hide the mailbox from your overview and Focus, or show it again"),
+  })
+  .refine((value) => value.pinned !== undefined || value.hidden !== undefined, "Set pinned, hidden, or both");
+const mailboxPreferenceResultSchema = z.object({ pinned: z.boolean(), hidden: z.boolean() });
 const collaboratorQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -1243,6 +1251,26 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .delete("/mailboxes/:mailboxId", v("param", mailboxParamSchema), async (c) =>
     respondMailboxes(c, mailboxes.deleteMailbox(requestContext(c), internalMailboxId(c))),
+  )
+  .patch(
+    "/mailboxes/:mailboxId/preference",
+    describeRoute({
+      tags: ["Mail:Mailboxes"],
+      summary: "Pin or hide a mailbox in your overview",
+      description:
+        "Changes only your own overview, on every device. A hidden mailbox leaves the mailbox list and Focus; " +
+        "it stays connected and opens directly. A field you leave out keeps its current value.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxPreferenceResultSchema, "Your preference for this mailbox"),
+        400: jsonResponse(ErrorResponseSchema, "Neither pinned nor hidden is set"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("json", mailboxPreferenceSchema),
+    async (c) => respondPublic(c, mailboxPreferences.setMailboxPreference(requestContext(c), internalMailboxId(c), c.req.valid("json"))),
   )
   .get("/mailboxes/:mailboxId/access", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxAccess.listMailboxAccess(requestContext(c), internalMailboxId(c))),
