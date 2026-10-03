@@ -20,6 +20,7 @@ import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOpe
 import {
   enqueueFolderSync,
   enqueueMailboxHydration,
+  FOLDER_SYNC_REQUEST_MS,
   runSyncFolderJob,
   startHydrationRuntime,
   stopHydrationRuntime,
@@ -120,6 +121,34 @@ const runFolderSyncJob = async (folderId: string, options: { input?: SyncFolderJ
   throw new Error("The folder sync job did not finish");
 };
 
+type MaintenanceJobInput = { commandId: string; continuationAttempt?: number; awaitingSync?: boolean };
+
+/** Runs one turn of a `mail:execute-maintenance-command` job; returns the continuation it asked for. */
+const maintenanceTurn = async (input: MaintenanceJobInput): Promise<{ delayMs: number; input: MaintenanceJobInput } | null> => {
+  let next: { delayMs: number; input: MaintenanceJobInput } | null = null;
+  await runMaintenanceJob({
+    input,
+    attempt: 1,
+    heartbeat: async () => undefined,
+    resubmit: (resubmit) => {
+      next = { delayMs: resubmit?.delayMs ?? 0, input: resubmit?.input ?? input };
+    },
+  });
+  return next;
+};
+
+/** Runs a maintenance job the way its worker does, turn after turn, until it ends. */
+const runMaintenanceUntilDone = async (input: MaintenanceJobInput): Promise<void> => {
+  let current: MaintenanceJobInput = input;
+  for (let turn = 0; turn < 200; turn += 1) {
+    const next = await maintenanceTurn(current);
+    if (!next) return;
+    await Bun.sleep(next.delayMs);
+    current = next.input;
+  }
+  throw new Error("The maintenance job did not finish");
+};
+
 suite("mail provider lease fairness", () => {
   const suffix = crypto.randomUUID().slice(0, 8);
   const accounts = new Map<string, Account>();
@@ -138,6 +167,10 @@ suite("mail provider lease fairness", () => {
   const vanishingMoves = new Set<string>();
   // Messages whose move the server carries out before the connection drops, by Message-ID.
   const droppedMoves = new Set<string>();
+  // Runs once right after the next folder STATUS; the batch goes on with that STATUS.
+  let afterStatus: ((account: string, path: string) => Promise<void>) | null = null;
+  // Accounts whose server times out on STATUS.
+  const failingStatus = new Set<string>();
   let hydrationStarted = false;
   const ensureHydrationRuntime = async (): Promise<void> => {
     if (hydrationStarted) return;
@@ -455,13 +488,17 @@ suite("mail provider lease fairness", () => {
     spies.push(
       spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (config, path) => {
         await Bun.sleep(ROUND_TRIP_MS);
+        if (failingStatus.has(config.username)) throw new Error("Connection timed out");
         const folder = folderOf(config.username, path);
-        return {
+        const status = {
           uidValidity: folder.uidValidity,
           uidNext: folder.nextUid,
           highestModseq: highestModseq(config.username, folder),
           messages: folder.entries.size,
         };
+        const hook = afterStatus;
+        if (hook) await hook(config.username, path);
+        return status;
       }),
       spyOn(imapSmtpConnector, "fetchEnvelopeBatch").mockImplementation(async (config, request) => {
         // Archive holds a large backlog of old mail, and each batch of it takes a while.
@@ -882,6 +919,140 @@ suite("mail provider lease fairness", () => {
     expect(remaining).toBeGreaterThan(50);
     await waitFor(async () => (await pending(moves)) < remaining, "the moves to continue");
   }, 120_000);
+
+  /** A sync command as `cld mail sync` or Sync now in Mail settings creates it, run by the test. */
+  const requestSync = async (mailbox: Mailbox, key: string, path?: string): Promise<string> => {
+    const command = await createMailCommand({
+      context,
+      mailboxId: mailbox.mailboxId,
+      input: path
+        ? { kind: "sync_folder", folderId: mailbox.folderId(path), idempotencyKey: `${key}-${suffix}` }
+        : { kind: "sync_mailbox", idempotencyKey: `${key}-${suffix}` },
+      enqueue: false,
+    });
+    if (!command.ok) throw new Error(JSON.stringify(command.error));
+    return command.data.id;
+  };
+
+  const commandOutcome = async (commandId: string): Promise<{ state: string; code: string | null; result: unknown }> => {
+    const [row] = await sql<{ state: string; code: string | null; result: unknown }[]>`
+      SELECT state, last_error_code AS code, result FROM mail.commands WHERE id = ${commandId}::uuid
+    `;
+    return { state: row!.state, code: row!.code, result: typeof row!.result === "string" ? JSON.parse(row!.result) : row!.result };
+  };
+
+  test("a waited mailbox sync finishes once every folder brought in its new mail, while a backfill and body downloads go on", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("waited");
+    // 200 bodies to download, and ten envelope batches of old mail in Archive.
+    await deliverAndSync(mailbox, 200, "waited-bodies");
+    for (let index = 0; index < 2_000; index += 1) {
+      store(mailbox.account, ARCHIVE, {
+        messageId: `<waited-archived-${index}-${suffix}@example.test>`,
+        subject: `Archived ${index}`,
+        internalDate: new Date(Date.UTC(2025, 0, 1) + index * 60_000),
+      });
+    }
+    await enqueueMailboxHydration(mailbox.mailboxId);
+    await waitFor(async () => downloads.filter((label) => label === "waited").length >= 2, "hydration to start");
+    let backfillDone = false;
+    const backfill = runFolderSyncJob(mailbox.folderId(ARCHIVE)).then(() => {
+      backfillDone = true;
+    });
+    await waitFor(async () => {
+      const [count] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.message_contents WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+      `;
+      return (count?.count ?? 0) >= 400;
+    }, "the Archive backfill to start");
+
+    const [newMail] = deliver(mailbox, 1, "waited-new");
+    const sentMessageId = `<waited-sent-${suffix}@example.test>`;
+    store(mailbox.account, SENT, { messageId: sentMessageId, subject: "Sent elsewhere", internalDate: new Date() });
+    const commandId = await requestSync(mailbox, "waited-sync");
+
+    // Queueing the folder syncs does not finish the command: it waits for them.
+    const waiting = await maintenanceTurn({ commandId });
+    expect(waiting?.input).toEqual({ commandId, awaitingSync: true });
+    expect(await commandOutcome(commandId)).toMatchObject({ state: "executing", result: { queuedFolders: 3 } });
+
+    // The worker runs the queued INBOX and Sent jobs; Archive's request joined its running backfill.
+    await Promise.all([
+      runMaintenanceUntilDone(waiting!.input),
+      runFolderSyncJob(mailbox.folderId(INBOX)),
+      runFolderSyncJob(mailbox.folderId(SENT)),
+    ]);
+    expect(await commandOutcome(commandId)).toEqual({ state: "confirmed", code: null, result: { queuedFolders: 3 } });
+    expect(await imported(mailbox, newMail!)).toBe(true);
+    expect(await imported(mailbox, sentMessageId)).toBe(true);
+    // The sync took its turns ahead of the backlog: most old mail and most bodies are still to come.
+    expect(backfillDone).toBe(false);
+    const [backlog] = await sql<{ archived: number; unhydrated: number }[]>`
+      SELECT
+        count(*) FILTER (WHERE message_id LIKE ${`<waited-archived-%`})::int AS archived,
+        count(*) FILTER (WHERE hydration_status <> 'complete')::int AS unhydrated
+      FROM mail.message_contents
+      WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+    `;
+    expect(backlog?.archived).toBeLessThan(1_200);
+    expect(backlog?.unhydrated).toBeGreaterThan(100);
+    await backfill;
+  }, 120_000);
+
+  test("a sync requested while a folder's last batch runs gets a batch of its own", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("late-request");
+    const lateMail: string[] = [];
+    // The mail arrives and its sync is requested after the running batch checked the folder.
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== INBOX) return;
+      afterStatus = null;
+      lateMail.push(...deliver(mailbox, 1, "late-request"));
+      await enqueueFolderSync(mailbox.folderId(INBOX));
+    };
+    try {
+      await runFolderSyncJob(mailbox.folderId(INBOX));
+    } finally {
+      afterStatus = null;
+    }
+    expect(lateMail).toHaveLength(1);
+    expect(await imported(mailbox, lateMail[0]!)).toBe(true);
+  }, 60_000);
+
+  test("a waited sync fails when a folder's sync gives up, and when its request runs out", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("failing");
+    const failing = await requestSync(mailbox, "failing-sync", INBOX);
+    const waiting = await maintenanceTurn({ commandId: failing });
+    expect(waiting?.input).toEqual({ commandId: failing, awaitingSync: true });
+
+    failingStatus.add(mailbox.account);
+    try {
+      await expect(
+        runSyncFolderJob({ input: { folderId: mailbox.folderId(INBOX) }, heartbeat: async () => undefined, resubmit: () => {} }),
+      ).rejects.toThrow("Connection timed out");
+    } finally {
+      failingStatus.delete(mailbox.account);
+    }
+    // Retries still pending: the command keeps waiting.
+    expect(await maintenanceTurn(waiting!.input)).toEqual(waiting);
+    // The job's last attempt failed too, which leaves the folder degraded.
+    await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${mailbox.folderId(INBOX)}::uuid`;
+    expect(await maintenanceTurn(waiting!.input)).toBeNull();
+    expect(await commandOutcome(failing)).toMatchObject({ state: "failed", code: "SYNC_FAILED" });
+
+    // A request whose folder sync never ran ends once the request runs out.
+    const expiring = await requestSync(mailbox, "expiring-sync", SENT);
+    const pendingTurn = await maintenanceTurn({ commandId: expiring });
+    expect(await maintenanceTurn(pendingTurn!.input)).toEqual(pendingTurn);
+    await sql`
+      UPDATE mail.commands
+      SET started_at = now() - (${FOLDER_SYNC_REQUEST_MS + 1_000}::int * interval '1 millisecond')
+      WHERE id = ${expiring}::uuid
+    `;
+    expect(await maintenanceTurn(pendingTurn!.input)).toBeNull();
+    expect(await commandOutcome(expiring)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
+  }, 60_000);
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {
     const resource = crypto.randomUUID();

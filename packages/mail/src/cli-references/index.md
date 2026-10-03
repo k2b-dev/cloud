@@ -337,7 +337,7 @@ cld capabilities query mail conversation.focus \
   --json
 ```
 
-Queue a durable sync command, then wait for a unique expected message:
+Sync the mailbox and wait until every folder checked for new mail, then wait for a unique expected message:
 
 ```bash
 cld --json mail sync --wait
