@@ -432,7 +432,7 @@ const EditForm = (params: {
                   const icon = shortcut.kind === "link" ? shortcut.icon : (shortcut.icon ?? app?.icon ?? "ti ti-apps");
                   const meta = shortcut.kind === "link" ? shortcut.href : (app?.description ?? shortcut.appId);
                   return (
-                    <li class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2">
+                    <li class="flex items-center gap-3 py-1">
                       <span class="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] text-lg text-secondary">
                         <i class={icon} />
                       </span>
@@ -469,7 +469,7 @@ const EditForm = (params: {
                     return parts.length > 0 ? t().recommendation({ values: parts.join(" · ") }) : null;
                   };
                   return (
-                    <li class="dashboard-widget-setting rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)]">
+                    <li class="dashboard-widget-setting">
                       <div class="dashboard-widget-setting__identity min-w-0">
                         <Checkbox
                           class="min-w-0 flex-1"
@@ -554,7 +554,7 @@ const EditForm = (params: {
             <ul class="grid gap-2 sm:grid-cols-2">
               <For each={props.inaccessible}>
                 {(widget) => (
-                  <li class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 opacity-60">
+                  <li class="flex items-center gap-3 py-1 opacity-60">
                     <i class="ti ti-lock text-xs text-dimmed" />
                     <i class={`${widget.icon} text-sm text-dimmed`} />
                     <span class="min-w-0 truncate text-sm text-secondary">{widget.title}</span>

@@ -11,7 +11,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "dialog-scroll.fixture.ts");
 const fixture = `
 import { createComponent } from "solid-js/web";
-import { BottomSheet, bottomSheetOptions, dialogCore, PanelDialog, panelDialogFixedOptions, panelDialogOptions, panelDialogWideOptions, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { BottomSheet, bottomSheetOptions, dialogCore, PanelDialog, panelDialogFixedOptions, panelDialogOptions, panelDialogWideOptions, panelDialogWorkspaceOptions, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 /** Content several viewports tall that ends in a marker the test scrolls to. */
 const long = () => {
@@ -97,6 +97,7 @@ window.openVariant = {
   "panel dialog": panel(panelDialogOptions),
   "wide panel dialog": panel(panelDialogWideOptions),
   "fixed panel dialog": panel(panelDialogFixedOptions),
+  "workspace panel dialog": panel(panelDialogWorkspaceOptions),
   "bottom sheet": () =>
     void dialogCore.open(
       (close, { requestDismiss }) =>
@@ -133,6 +134,7 @@ const footers: Record<string, string> = {
   "panel dialog": ".k2b-panel-dialog__footer",
   "wide panel dialog": ".k2b-panel-dialog__footer",
   "fixed panel dialog": ".k2b-panel-dialog__footer",
+  "workspace panel dialog": ".k2b-panel-dialog__footer",
   "bottom sheet": ".k2b-panel-dialog__footer",
 };
 const variants = [...Object.keys(footers), "custom dialog", "full custom dialog"];
@@ -145,7 +147,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (options: (typeof viewports)[keyof typeof viewports], variant: string) => {
+const open = async (options: Parameters<Browser["newPage"]>[0], variant: string) => {
   const page = await browser.newPage(options);
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
@@ -192,6 +194,25 @@ const layout = (page: Page, footer: string | undefined) =>
   );
 
 describe("@k2b/ui dialogs keep their header and actions in view while the body scrolls", () => {
+  // A narrow desktop window with classic scrollbars reserves a gutter, as
+  // Cloud does. The edge-to-edge workspace frame fills the space left over
+  // instead of sliding half a gutter off the leading edge.
+  test("a workspace panel dialog frame beside a reserved scrollbar gutter", async () => {
+    const page = await open({ viewport: { width: 390, height: 664 } }, "workspace panel dialog");
+    try {
+      const gutter = await page.evaluate(() => {
+        const style = document.createElement("style");
+        style.textContent = "html { scrollbar-gutter: stable; overflow-y: scroll } ::-webkit-scrollbar { width: 10px }";
+        document.head.append(style);
+        const box = document.querySelector<HTMLDialogElement>("dialog[open]")!.getBoundingClientRect();
+        return { left: box.left, right: box.right };
+      });
+      expect(gutter).toEqual({ left: 0, right: 380 });
+    } finally {
+      await page.close();
+    }
+  });
+
   for (const options of Object.values(viewports)) {
     for (const variant of variants) {
       test(`${variant} at ${options.viewport.width} px`, async () => {
@@ -204,6 +225,28 @@ describe("@k2b/ui dialogs keep their header and actions in view while the body s
         }
       });
     }
+
+    // A workspace is a work area: a floating card on a desktop, the whole
+    // screen on a phone instead of a narrow card with a wide margin.
+    test(`a workspace panel dialog frame at ${options.viewport.width} px`, async () => {
+      const page = await open(options, "workspace panel dialog");
+      try {
+        const frame = await page.evaluate(() => {
+          const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
+          const box = dialog.getBoundingClientRect();
+          const style = getComputedStyle(dialog);
+          return {
+            edgeToEdge: box.left === 0 && box.top === 0 && box.width === innerWidth && box.height === innerHeight,
+            radius: style.borderTopLeftRadius,
+            border: style.borderTopStyle,
+          };
+        });
+        if (options.viewport.width < 768) expect(frame).toEqual({ edgeToEdge: true, radius: "0px", border: "none" });
+        else expect(frame).toEqual({ edgeToEdge: false, radius: "14px", border: "solid" });
+      } finally {
+        await page.close();
+      }
+    });
 
     // Content without a header, body, or footer structure cannot shrink, so
     // the frame itself stays the scroll container that reaches its end.

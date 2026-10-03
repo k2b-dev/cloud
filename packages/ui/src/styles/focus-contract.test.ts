@@ -182,7 +182,7 @@ describe("@k2b/ui focus and color contract", () => {
         .join("\n");
       expect(body, selector).toMatch(/min-height:\s*2\.25rem/);
       expect(body, selector).toMatch(/border:\s*1px solid transparent/);
-      expect(body, selector).toMatch(/background:\s*var\(--k2b-surface-muted\)/);
+      expect(body, selector).toMatch(/background:\s*var\(--k2b-field-surface, var\(--k2b-surface-muted\)\)/);
     }
     expect(css).not.toContain(".k2b-select-shell");
     expect(css).toMatch(

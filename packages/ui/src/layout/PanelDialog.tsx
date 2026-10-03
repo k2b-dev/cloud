@@ -240,6 +240,7 @@ const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => {
             ref={collapse}
             variant="ghost"
             size="sm"
+            class="k2b-icon-button"
             disabled={props.disabled}
             aria-labelledby={id}
             aria-expanded={true}

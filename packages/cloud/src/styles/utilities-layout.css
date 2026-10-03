@@ -22,6 +22,10 @@
   background: var(--ui-surface);
   /* Shared surface depth stays consistent with the Layout header. */
   box-shadow: var(--ui-shadow-surface);
+  /* A paper card inside a dialog section group paints its own surface, so its
+     fields return to the muted well instead of the group's white one. */
+  --k2b-field-surface: initial;
+  --k2b-field-hover: initial;
 }
 
 @utility dialog-panel {

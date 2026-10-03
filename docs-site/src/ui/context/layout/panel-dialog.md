@@ -2,8 +2,8 @@
 
 `PanelDialog` is the layout shell for a complex editor. It keeps the header and footer fixed while the body scrolls.
 
-`PanelDialog.Body` adds top/bottom overflow fades only where more content remains.
-The header and footer stay unmasked. Set `scrollFade={false}` on the body for
+`PanelDialog.Body` adds 24 px top/bottom overflow fades only where more content
+remains. The header and footer stay unmasked. Set `scrollFade={false}` on the body for
 an unmasked surface; do not add a second scroll wrapper. Fades update when
 sections expand, content changes, or the dialog resizes, and are disabled in
 forced-color mode.
@@ -39,7 +39,10 @@ Open the shell with `dialogCore.open`.
 - `panelDialogOptions` fits one contained editor to its content.
 - `panelDialogWideOptions` gives a multi-column editor more horizontal room.
 - `panelDialogFixedOptions` keeps a stable height while tabs or progressive sections change.
-- `panelDialogWorkspaceOptions` provides a large work area.
+- `panelDialogWorkspaceOptions` provides a large work area. Below 48rem it
+  fills the screen edge to edge, without frame or radius, and pads its
+  content clear of notches and the home indicator. It takes the width of the
+  viewport without a reserved scrollbar gutter, so it stays centred.
 
 The corresponding `panelDialogPanelClass`,
 `panelDialogWidePanelClass`, `panelDialogFixedPanelClass`, and
@@ -48,16 +51,62 @@ those option objects. Prefer the complete option objects with `dialogCore`. Use
 a class export only when another compatible host asks for the panel class
 separately.
 
-`surface="contained"` is the default modal treatment. `surface="floating"` makes the header, footer, and each section separate paper surfaces for settings-style pages.
+`surface="contained"` is the default modal treatment. `surface="floating"` is
+for a standalone placement on a page: the shell draws its own border, the
+header, body, and footer share a grey surface, and each section is a white card
+with its icon.
 
 Use `PanelDialog.Section` for meaningful field groups. Keep the primary save action in `PanelDialog.Footer`.
+In a contained dialog a section is its 14 px title and optional 12 px
+subtitle above one softly tinted, borderless group that holds its content.
+There is no card, border, or divider. The section `icon` shows only in
+floating placement.
+Fields inside the group (text, textarea, number, select, multi-select,
+combobox, date, tags, color, and input-style buttons and checkbox cards) turn
+to the base surface so they stand out from the tint, disabled ones included.
+The other muted fills do the same: subtle buttons, segmented control tracks,
+filter chips, and neutral status chips. A hovered field stays on the base
+surface and shows its border; focus, invalid, and autofill states stay as they
+are. Switches, checkboxes, dropzones, notices, and code keep their own look.
+About 24 px separates a section from its neighbours. A section placed first in
+a grid row keeps its top aligned with the next column.
 Only the section's own subtitle is muted: fields, notices, and paragraphs in the
-section keep their own description, error, and text styles.
+section keep their own description, error, and text styles. Secondary text
+must keep 4.5:1 against the tint; `--k2b-text-muted` and Cloud's `text-dimmed`
+do in both themes.
 
-Pass `hideable` to a section for optional settings. Closed sections show a flat
-summary row with an eye icon at the trailing edge. Open sections use the normal
-section border, background, heading, and content inset, with an eye-off button
-at the upper right. This changes section visibility, not the dialog's `surface`.
+Content in a group should not paint a white card of its own: the group already
+groups it, and a white card hides the white fields inside. Drop the fill, as
+for list rows, or give blocks that need an edge, such as a scrolling `pre`, the
+base surface. A surface that does paint its own background starts over, and
+its fields return to the muted well: detail panels, disclosures, choice, date,
+and dropdown popovers, and Cloud's `paper`. Set `--k2b-field-surface:
+initial` on any other such surface.
+
+Prefer sections for every field in a body that has groups. Loose fields keep
+the muted well on the dialog surface, so loose fields above a group show two
+well colours side by side.
+
+A section that is alone in the body, directly or inside a form that is the
+body's only child, has nothing to be grouped against. It drops the tint and
+its fields sit on the dialog surface. `InlineGuidance` and `NoticeCard` beside
+it do not count, so an error that appears after a failed save does not turn
+the section into a group and move its fields. Sections wrapped one by one, for
+example in grid columns, keep their groups.
+
+A section inside another section's group adds a heading, not a second group.
+Its title and content line up with the fields around it, and its fields stay
+white.
+
+Pass `hideable` to a section for optional settings. A closed section shows
+only its title row with an eye icon at the trailing edge. Opening it keeps the
+title at exactly the same place, swaps the eye for an eye-off button in the
+same slot, and shows the group below. The title gets the same width in both
+states and wraps the same way, so nothing above the group moves in either
+direction. Section `actions` show only while the section is open; on a
+hideable section they narrow the open title, which can then wrap differently,
+so leave them off hideable sections. This changes section visibility, not the
+dialog's `surface`.
 
 ```tsx
 <PanelDialog.Section hideable title="Connection" subtitle="API settings" icon="ti ti-plug">
@@ -70,7 +119,7 @@ them with `open` and `onOpenChange`. The callback requests a change; the owner
 can refuse it or open a section after a validation error. `disabled` blocks the
 toggle, not the fields. Children stay mounted so unsaved edits survive closing.
 Keyboard focus moves to the visible toggle when the focused control is hidden.
-Ordinary sections keep their existing appearance and behavior.
+Ordinary sections keep their behavior.
 
 
 Footer children can move onto separate rows when space is limited. Put a hint
@@ -81,15 +130,25 @@ their own.
 
 Use `PanelDialog.Tabs` only for local views within the editor. Its `value` may
 be direct or an accessor; the application updates it through `onValueChange`.
+Between header and body the tabs share the dialog's horizontal inset; inside
+the body or a section they start at the content edge.
 
 ## Close ownership
 
-The muted header uses a 20 px semibold title and a 13 px secondary subtitle.
-Without a subtitle, the header uses a compact vertical inset and centers the
-title beside its icon and actions. Headers with a subtitle keep their two-line,
-top-aligned layout. Action touch targets keep their size.
-Header, body, and footer share a 24 px horizontal inset. Keep filenames and
-other long identifiers in the subtitle or body; both heading lines wrap.
+Header and footer sit flat on the dialog surface: no grey band and no divider
+line. Both stay outside the scrolling body, so they remain visible while only
+the body scrolls; the body's fade is the only cue that content continues. This
+is the same flat header as `prompts` dialogs, with the same quiet icon color
+and close control; `PanelDialog` uses the larger title for its larger editors.
+
+The header uses a 20 px semibold title and a 13 px secondary subtitle. Without
+a subtitle, it centers the title beside its icon and actions. Headers with a
+subtitle keep their two-line, top-aligned layout. Action touch targets keep
+their size. Header, tabs, body, and footer share a 24 px leading inset, 16 px
+below 48rem; body and footer use it at the trailing edge too. The header's
+trailing edge is tighter, 20 px and 12 px below 48rem, so the close control
+sits closer to the corner. Keep filenames and other long identifiers in the
+subtitle or body; both heading lines wrap.
 Use whitespace to separate content when additional section frames add no meaning.
 
 Pass the dialog's `close` callback to `PanelDialog.Header`. `closeDisabled`
@@ -151,7 +210,10 @@ Types map to the correspondingly named compound members. `PanelDialog` supplies 
 
 ## Accessibility
 
-Give the header and every section a clear title and icon. Header actions need their own accessible names.
+Give the header and every section a clear title. Each section is a `section`
+labelled by its title. A hideable section toggles through a button with
+`aria-expanded` and `aria-controls`; focus order stays the same open and
+closed. Header actions need their own accessible names.
 
 Tabs use tab triggers inside a labelled tab list. Pass `ariaLabel` when the default `Dialog tabs` does not describe the choices. Disabled options remain visible but cannot be selected.
 
@@ -182,10 +244,7 @@ await dialogCore.open<void>(
         close={requestClose}
       />
       <PanelDialog.Body scrollPreserveKey="item-editor">
-        <PanelDialog.Section
-          title="Basics"
-          icon="ti ti-id"
-        >
+        <PanelDialog.Section title="Basics">
           <TextInput
             label="Title"
             value={title()}

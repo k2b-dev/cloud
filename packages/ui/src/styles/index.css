@@ -1419,7 +1419,7 @@
 
 .k2b-ui .k2b-button[data-variant="subtle"] {
   color: var(--k2b-text-secondary);
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
 }
 
 .k2b-ui .k2b-button[data-variant="subtle"]:not(:disabled):hover {
@@ -1431,7 +1431,7 @@
   min-height: 2.25rem;
   border-color: transparent;
   color: var(--k2b-text-secondary);
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
 }
 
 .k2b-ui .k2b-icon-button[data-variant="input"] {
@@ -1441,7 +1441,7 @@
 .k2b-ui .k2b-button[data-variant="input"]:not(:disabled):hover {
   border-color: var(--k2b-border);
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-field-hover, var(--k2b-hover));
 }
 
 .k2b-ui .k2b-button[data-variant="input"]:focus-visible {
@@ -1641,7 +1641,7 @@
   padding: 0.125rem;
   border: 1px solid transparent;
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
 }
 
 .k2b-ui .k2b-segmented-control__option {
@@ -1811,6 +1811,12 @@
   color: var(--k2b-danger-text);
 }
 
+/* Field wells are a muted recess. A tinted container sets
+   `--k2b-field-surface` to the base surface so its wells still stand out, and
+   `--k2b-field-hover` so a hovered well does not melt into the tint. Subtle
+   buttons, segmented tracks, and filter and neutral chips follow the same
+   surface. A surface that paints its own background resets both (see below).
+   Focus, invalid, and autofill states keep their own colours. */
 .k2b-ui .k2b-input-shell,
 .k2b-ui .k2b-choice-trigger,
 .k2b-ui .k2b-multi-select-trigger,
@@ -1823,7 +1829,7 @@
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
   box-shadow: none;
   transition:
     background-color 150ms ease,
@@ -1844,7 +1850,7 @@
 .k2b-ui .k2b-date-trigger:hover,
 .k2b-ui .k2b-color-input__value:hover {
   border-color: var(--k2b-border);
-  background: var(--k2b-hover);
+  background: var(--k2b-field-hover, var(--k2b-hover));
 }
 
 .k2b-ui .k2b-input-shell:focus-within,
@@ -3065,6 +3071,34 @@
   max-height: var(--k2b-dialog-available-height);
 }
 
+/* A workspace is a work area, not a floating card: on narrow screens it takes
+   the whole screen, like a `full` dialog, and keeps its chrome clear of
+   notches and the home indicator. */
+@media (max-width: 47.999rem) {
+  /* `100%` of the fixed containing block, not `100dvw`: a reserved scrollbar
+     gutter is not part of it, and the centring translate would push a
+     viewport-wide frame half a gutter off screen. */
+  .k2b-ui .k2b-panel-dialog-frame.is-workspace {
+    width: 100%;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    background: var(--k2b-surface);
+  }
+
+  .k2b-ui .k2b-panel-dialog-viewport.is-workspace {
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
+  }
+
+  .k2b-ui .k2b-panel-dialog-viewport.is-workspace > .k2b-panel-dialog[data-surface="floating"] {
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 /* The content wrapper carries the cap explicitly — `max-height: inherit` is
    unreliable across the browsers' <dialog> UA styles. */
 .k2b-ui .k2b-panel-dialog-viewport {
@@ -3091,30 +3125,47 @@
   height: 100%;
   color: var(--k2b-text);
   background: var(--k2b-surface);
+  --k2b-panel-dialog-inset: 1.5rem;
 }
 
-/* Standalone (non-dialog) placement draws its own frame. */
+/* Phones keep more width for the fields. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog {
+    --k2b-panel-dialog-inset: 1rem;
+  }
+}
+
+/* Standalone (non-dialog) placement draws its own frame. Its grey body keeps
+   white section cards, so header and footer share that grey. */
 .k2b-ui .k2b-panel-dialog[data-surface="floating"] {
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-dialog);
+  background: var(--k2b-surface-muted);
 }
 
+/* Header and footer sit flat on the dialog surface, outside the scrolling
+   body. No band and no line: the body's scroll fade is the only cue that
+   content continues under them. */
 .k2b-ui .k2b-panel-dialog__header,
 .k2b-ui .k2b-panel-dialog__footer {
   @apply flex shrink-0 items-center;
   gap: 1rem;
-  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-panel-dialog__header {
   min-height: 3.25rem;
-  padding: 1.25rem 1.5rem;
+  padding: 1.25rem 1.25rem 1rem var(--k2b-panel-dialog-inset, 1.5rem);
   align-items: flex-start;
 }
 
 .k2b-ui .k2b-panel-dialog__header[data-has-subtitle="false"] {
-  padding-block: 0.75rem;
   align-items: center;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog__header {
+    padding: 1rem 0.75rem 0.75rem var(--k2b-panel-dialog-inset, 1.5rem);
+  }
 }
 
 .k2b-ui .k2b-panel-dialog__header > i {
@@ -3149,13 +3200,6 @@
   overflow-wrap: anywhere;
 }
 
-/* A class, not `p`: section bodies hold fields, and a bare `p` here would
-   outrank their description and error styles. */
-.k2b-ui .k2b-panel-dialog__section > header .k2b-panel-dialog__section-subtitle {
-  margin: 0.125rem 0 0;
-  color: var(--k2b-text-muted);
-}
-
 .k2b-ui .k2b-panel-dialog__actions {
   @apply flex items-center justify-end;
   gap: 0.5rem;
@@ -3166,7 +3210,13 @@
   @apply justify-between;
   flex-wrap: wrap;
   gap: 0.5rem;
-  padding: 1rem 1.5rem;
+  padding: 0.75rem var(--k2b-panel-dialog-inset, 1.5rem) 1.25rem;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog__footer {
+    padding-bottom: 1rem;
+  }
 }
 
 .k2b-ui .k2b-panel-dialog__footer > * {
@@ -3183,7 +3233,7 @@
 .k2b-ui .k2b-panel-dialog__body {
   @apply flex min-h-0 flex-1 flex-col overflow-y-auto;
   gap: 0.5rem;
-  padding: 1.25rem 1.5rem;
+  padding: 0.25rem var(--k2b-panel-dialog-inset, 1.5rem) 1.5rem;
 }
 
 /* A dialog body owns overflow. Its sections keep their natural height instead
@@ -3198,44 +3248,151 @@
   background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-panel-dialog__section {
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-surface);
+/* A section is a title above one softly tinted group of fields: no border, no
+   card, no icon. The title sits outside the group, so it never reads as a
+   field label. Only floating placement keeps cards and icons (below).
+
+   About 24 px separate a section from its neighbours: the body's 8 px gap plus
+   16 px of the section's own margin. A section ends with that margin and adds
+   it at its start only after loose content, so a section placed first in a
+   grid row keeps its top aligned with the next column. */
+.k2b-ui .k2b-panel-dialog__section:not([data-surface="floating"], :last-child) {
+  margin-bottom: 1rem;
 }
 
-.k2b-ui .k2b-panel-dialog__section + .k2b-panel-dialog__section {
-  margin-top: 0.75rem;
+.k2b-ui :not(.k2b-panel-dialog__section) + .k2b-panel-dialog__section:not([data-surface="floating"]) {
+  margin-top: 1rem;
 }
 
 .k2b-ui .k2b-panel-dialog__section > header {
-  @apply flex items-start;
-  gap: 0.625rem;
-  padding: 0.75rem;
+  @apply flex items-center;
+  gap: 0.5rem;
+  padding: 0 0 0.5rem 1rem;
 }
 
 .k2b-ui .k2b-panel-dialog__section > header > div:not(.k2b-panel-dialog__actions) {
   @apply min-w-0 flex-1;
 }
 
-.k2b-ui .k2b-panel-dialog__section h3 {
-  font-size: 0.8125rem;
-  font-weight: 650;
+.k2b-ui .k2b-panel-dialog__section h3,
+.k2b-ui .k2b-panel-dialog__section-title {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
 }
 
-.k2b-ui .k2b-panel-dialog__section-icon {
-  color: var(--k2b-action);
+/* A class, not `p`: section bodies hold fields, and a bare `p` here would
+   outrank their description and error styles. */
+.k2b-ui .k2b-panel-dialog__section .k2b-panel-dialog__section-subtitle {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.125rem;
 }
 
+.k2b-ui
+  .k2b-panel-dialog__section:not([data-surface="floating"])
+  :is(.k2b-panel-dialog__section-icon, .k2b-panel-dialog__section-summary > .k2b-button__label > i:first-child:not(:last-child)) {
+  display: none;
+}
+
+/* Field wells read against the tint, so inside a group they take the dialog
+   surface instead of the tint (see `--k2b-field-surface`). */
 .k2b-ui .k2b-panel-dialog__section-body {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0 0.75rem 0.75rem;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+  --k2b-field-surface: var(--k2b-surface);
+  --k2b-field-hover: var(--k2b-surface);
 }
 
-/* Hideable sections keep the normal dialog section when expanded. */
-.k2b-ui .k2b-panel-dialog__section[data-hideable="true"][data-open="false"] {
+/* A surface that paints its own background inside a group starts over: its
+   fields and fills return to the muted recess. */
+.k2b-ui
+  :is(
+    .k2b-detail-panel__summary,
+    .k2b-detail-panel__group,
+    .k2b-disclosure,
+    .k2b-choice-popover,
+    .k2b-date-popover,
+    .k2b-dropdown__menu
+  ) {
+  --k2b-field-surface: initial;
+  --k2b-field-hover: initial;
+}
+
+/* A section alone in the body has nothing to be grouped against: title and
+   fields sit directly on the dialog surface. A form or wrapper that is the
+   body's only child counts as the body. Inline guidance and notices beside
+   the section do not count, so an error that appears after a failed save does
+   not turn the section into a group and move its fields. */
+.k2b-ui
+  :is(.k2b-panel-dialog__body, .k2b-panel-dialog__body > :only-child)
+  > .k2b-panel-dialog__section:not(
+    [data-surface="floating"],
+    :has(~ :not(.k2b-inline-guidance, .k2b-notice-card)),
+    :not(.k2b-inline-guidance, .k2b-notice-card) ~ *
+  )
+  > .k2b-panel-dialog__section-body {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  --k2b-field-surface: initial;
+  --k2b-field-hover: initial;
+}
+
+/* A section inside another section's group adds a heading, not a second
+   group: its title and content line up with the fields around it and keep the
+   group's spacing and white wells. */
+.k2b-ui .k2b-panel-dialog__section-body .k2b-panel-dialog__section:not([data-surface="floating"]) {
+  margin: 0;
+}
+
+.k2b-ui
+  .k2b-panel-dialog__section-body
+  .k2b-panel-dialog__section:not([data-surface="floating"])
+  > .k2b-panel-dialog__section-body {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Floating placement: white section cards on the grey body. */
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] {
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] + .k2b-panel-dialog__section {
+  margin-top: 0.75rem;
+}
+
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] > header {
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.75rem;
+}
+
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] .k2b-panel-dialog__section-icon {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] > .k2b-panel-dialog__section-body {
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+  border-radius: 0;
+  background: transparent;
+  --k2b-field-surface: initial;
+  --k2b-field-hover: initial;
+}
+
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"][data-open="false"] {
   border-color: transparent;
   background: transparent;
 }
@@ -3245,18 +3402,75 @@
   display: none;
 }
 
+/* The closed summary row and the open header put the title at the same
+   place and swap the eye button in the same trailing slot, so opening or
+   closing a section moves nothing above its content. */
+.k2b-ui .k2b-panel-dialog__section[data-hideable="true"] > header {
+  padding: 0.25rem 0.25rem 0.5rem 1rem;
+}
+
 .k2b-ui .k2b-panel-dialog__section-summary {
+  display: flex;
   width: 100%;
   height: auto;
-  padding: 0.75rem;
+  min-height: 0;
+  padding: 0.25rem 0.25rem 0.25rem 1rem;
+  border-width: 0;
   text-align: start;
   white-space: normal;
 }
 
+/* Without a border the summary would lose the boundary forced colours give
+   every other button; an inset outline restores it without moving the title. */
+@media (forced-colors: active) {
+  .k2b-ui .k2b-panel-dialog__section-summary {
+    outline: 1px solid ButtonBorder;
+    outline-offset: -1px;
+  }
+}
+
+.k2b-ui
+  :is(.k2b-panel-dialog__body, .k2b-panel-dialog__body > :only-child)
+  > .k2b-panel-dialog__section:not(
+    [data-surface="floating"],
+    :has(~ :not(.k2b-inline-guidance, .k2b-notice-card)),
+    :not(.k2b-inline-guidance, .k2b-notice-card) ~ *
+  )
+  > header,
+.k2b-ui
+  :is(.k2b-panel-dialog__body, .k2b-panel-dialog__body > :only-child)
+  > .k2b-panel-dialog__section:not(
+    [data-surface="floating"],
+    :has(~ :not(.k2b-inline-guidance, .k2b-notice-card)),
+    :not(.k2b-inline-guidance, .k2b-notice-card) ~ *
+  )
+  .k2b-panel-dialog__section-summary,
+.k2b-ui .k2b-panel-dialog__section-body .k2b-panel-dialog__section:not([data-surface="floating"]) > header,
+.k2b-ui
+  .k2b-panel-dialog__section-body
+  .k2b-panel-dialog__section:not([data-surface="floating"])
+  .k2b-panel-dialog__section-summary {
+  padding-left: 0;
+}
+
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"][data-hideable="true"] > header,
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] .k2b-panel-dialog__section-summary {
+  padding: 0.75rem;
+}
+
+/* A floating card's open header is top-aligned beside its icon. */
+.k2b-ui .k2b-panel-dialog__section[data-surface="floating"] .k2b-panel-dialog__section-summary > .k2b-button__label {
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+/* The same gap as the open header, so the title has the same width open and
+   closed and wraps the same way. */
 .k2b-ui .k2b-panel-dialog__section-summary > .k2b-button__label {
   flex: 1;
   min-width: 0;
-  gap: 0.625rem;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .k2b-ui .k2b-panel-dialog__section-copy {
@@ -3264,21 +3478,24 @@
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  color: var(--k2b-text-muted);
 }
 
-.k2b-ui .k2b-panel-dialog__section-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.k2b-ui .k2b-panel-dialog__section-subtitle {
-  font-size: 0.6875rem;
-  font-weight: 400;
+.k2b-ui .k2b-panel-dialog__section-summary .k2b-panel-dialog__section-title {
+  color: var(--k2b-text-secondary);
 }
 
 .k2b-ui .k2b-panel-dialog__section-summary > .k2b-button__label > i {
   flex: 0 0 auto;
+}
+
+/* The eye slot is as large as the open section's eye-off button, so a title
+   without a subtitle is centred on the same line in both states. */
+.k2b-ui .k2b-panel-dialog__section-summary > .k2b-button__label > i:last-child {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  color: var(--k2b-text-muted);
 }
 
 .k2b-ui .k2b-panel-dialog__tabs {
@@ -3288,8 +3505,13 @@
 .k2b-ui .k2b-panel-dialog__tabs .k2b-tabs__list {
   @apply flex shrink-0 items-center overflow-x-auto;
   gap: 0.25rem;
-  padding: 0.375rem 1rem 0.625rem;
+  padding: 0.375rem var(--k2b-panel-dialog-inset, 1.5rem) 0.625rem;
   box-shadow: none;
+}
+
+/* Tabs inside the body or a section already sit in its inset. */
+.k2b-ui .k2b-panel-dialog__body .k2b-panel-dialog__tabs .k2b-tabs__list {
+  padding-inline: 0;
 }
 
 .k2b-ui .k2b-panel-dialog__tabs .k2b-tabs__list button {
@@ -3419,7 +3641,7 @@
 /* Disabled fields read as a muted well instead of stacking opacity on top of
    the already dimmed `.k2b-input:disabled` text. */
 .k2b-ui .k2b-number-input[data-disabled="true"] {
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
   cursor: not-allowed;
 }
 
@@ -4360,7 +4582,7 @@
   border: 1px solid transparent;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.25rem;
@@ -5142,7 +5364,7 @@
 
 .k2b-ui .k2b-checkbox-card[data-variant="input"] {
   border-color: transparent;
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
 }
 
 .k2b-ui .k2b-checkbox-card[data-state="checked"] {
@@ -8751,6 +8973,7 @@
 .k2b-ui [data-scroll-fade="top"], .k2b-ui [data-scroll-fade="both"] { --scroll-fade-top: var(--scroll-fade-size, 1rem); }
 .k2b-ui [data-scroll-fade="bottom"], .k2b-ui [data-scroll-fade="both"] { --scroll-fade-bottom: var(--scroll-fade-size, 1rem); }
 .k2b-ui .k2b-app-workspace__sidebar-body, .k2b-ui .k2b-chat-timeline__viewport { --scroll-fade-size: 2rem; }
+.k2b-ui .k2b-panel-dialog__body { --scroll-fade-size: 1.5rem; }
 @media (forced-colors: active) {
   .k2b-ui [data-scroll-fade], .k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }
 }
@@ -8904,7 +9127,7 @@
   min-height: 44px;
   padding: 0;
   border: 0;
-  background: var(--k2b-surface-muted);
+  background: transparent;
   cursor: grab;
   touch-action: none;
 }

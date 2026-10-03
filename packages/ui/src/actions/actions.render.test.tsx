@@ -164,7 +164,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('data-variant="subtle"');
     expect(button).toContain('type="button"');
     expect(rule('.k2b-ui .k2b-button[data-size="xs"]')).toContain("min-height: 1.5rem");
-    expect(rule('.k2b-ui .k2b-button[data-variant="subtle"]')).toContain("background: var(--k2b-surface-muted)");
+    expect(rule('.k2b-ui .k2b-button[data-variant="subtle"]')).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
     const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
     expect(warningRule).toContain("color: #422006");
     expect(warningRule).toContain("background: var(--k2b-warning-500)");
@@ -191,7 +191,7 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('data-variant="input"');
     const inputRule = rule('.k2b-ui .k2b-button[data-variant="input"]');
     expect(inputRule).toContain("min-height: 2.25rem");
-    expect(inputRule).toContain("background: var(--k2b-surface-muted)");
+    expect(inputRule).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
     expect(rule('.k2b-ui .k2b-icon-button[data-variant="input"]')).toContain("width: 2.25rem");
   });
 
@@ -821,7 +821,7 @@ describe("@k2b/ui action geometry parity", () => {
     expect(chip).toContain("border-radius: var(--k2b-radius-control)");
     expect(chip).not.toContain("999px");
     expect(chip).toContain("padding: 0.375rem 0.75rem");
-    expect(chip).toContain("background: var(--k2b-surface-muted)");
+    expect(chip).toContain("background: var(--k2b-field-surface, var(--k2b-surface-muted))");
     expect(iconOnly).toContain("width: 2.25rem");
     expect(actionsCss).toContain(".k2b-ui .k2b-filter-chip:hover");
   });

@@ -26,6 +26,7 @@ import {
   PullToRefresh,
   removePanesItem,
   ScrollArea,
+  SegmentedControl,
   Select,
   SelectChip,
   SettingsCollection,
@@ -37,6 +38,7 @@ import {
   SettingsSaveBar,
   SettingsSection,
   StatusBadge,
+  Switch,
   Tag,
   TextInput,
   Toolbar,
@@ -790,33 +792,42 @@ const SettingsSaveBarDemo = () => (
 
 const PanelDemo = () => {
   const [tab, setTab] = createSignal("general");
+  const [shared, setShared] = createSignal(true);
   const [baseUrl, setBaseUrl] = createSignal("");
+  const [auth, setAuth] = createSignal("token");
   const [reference, setReference] = createSignal("");
   return (
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="Scroll the bounded body: overflow fades leave the header and footer visible. Toggle the optional sections; edited values stay intact and fade edges follow content height."
-      code={`const [baseUrl, setBaseUrl] = createSignal("");
+      description="Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
+      code={`const [shared, setShared] = createSignal(true);
+const [baseUrl, setBaseUrl] = createSignal("");
+const [auth, setAuth] = createSignal("token");
 const [reference, setReference] = createSignal("");
 
 <PanelDialog surface="contained">
   <PanelDialog.Header title="Edit project" subtitle="General settings" icon="ti ti-settings" />
   <PanelDialog.Tabs value={tab()} onValueChange={setTab} options={tabOptions} />
   <PanelDialog.Body>
-    <PanelDialog.Section title="Profile" subtitle="Visible to collaborators" icon="ti ti-user">
+    <PanelDialog.Section title="Profile" subtitle="Visible to collaborators">
       <TextInput label="Name" value="Launch plan" />
+      <Switch label="Shared with the team" description="Team members can open the project." value={shared()} onValueChange={setShared} />
     </PanelDialog.Section>
-    <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings" icon="ti ti-plug">
+    <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings">
       <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+      <SegmentedControl ariaLabel="Authentication" value={auth} onValueChange={setAuth} options={authOptions} />
     </PanelDialog.Section>
-    <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings" icon="ti ti-adjustments">
+    <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings">
       <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
     </PanelDialog.Section>
   </PanelDialog.Body>
   <PanelDialog.Footer>
-    <Button variant="secondary">Cancel</Button>
-    <Button>Save</Button>
+    <span />
+    <div class="flex items-center gap-2">
+      <Button variant="secondary">Cancel</Button>
+      <Button>Save</Button>
+    </div>
   </PanelDialog.Footer>
 </PanelDialog>`}
     >
@@ -832,17 +843,33 @@ const [reference, setReference] = createSignal("");
             ]}
           />
           <PanelDialog.Body>
-            <PanelDialog.Section title="Profile" subtitle="Visible to collaborators" icon="ti ti-user">
+            <PanelDialog.Section title="Profile" subtitle="Visible to collaborators">
               <TextInput label="Name" value="Launch plan" />
+              <Switch
+                label="Shared with the team"
+                description="Team members can open the project."
+                value={shared()}
+                onValueChange={setShared}
+              />
             </PanelDialog.Section>
-            <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings" icon="ti ti-plug">
+            <PanelDialog.Section hideable defaultOpen title="Connection" subtitle="API settings">
               <TextInput label="Base URL" value={baseUrl()} onValueChange={setBaseUrl} placeholder="https://api.example.com/v1" />
+              <SegmentedControl
+                ariaLabel="Authentication"
+                value={auth}
+                onValueChange={setAuth}
+                options={[
+                  { value: "token", label: "API token" },
+                  { value: "oauth", label: "OAuth" },
+                ]}
+              />
             </PanelDialog.Section>
-            <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings" icon="ti ti-adjustments">
+            <PanelDialog.Section hideable title="Advanced" subtitle="Optional settings">
               <TextInput label="Internal reference" value={reference()} onValueChange={setReference} />
             </PanelDialog.Section>
           </PanelDialog.Body>
           <PanelDialog.Footer>
+            <span />
             <div class="ui-demo-row">
               <Button variant="secondary">Cancel</Button>
               <Button>Save</Button>
