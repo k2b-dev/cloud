@@ -14,6 +14,7 @@ describe("Mail workspace preferences", () => {
       listMode: "conversations",
       lastMailboxId: null,
       pinnedMailboxIds: [],
+      hiddenMailboxIds: [],
     });
   });
 
@@ -31,6 +32,7 @@ describe("Mail workspace preferences", () => {
       listMode: "conversations",
       lastMailboxId: null,
       pinnedMailboxIds: [],
+      hiddenMailboxIds: [],
     });
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
       listCollapsed: false,
@@ -39,6 +41,7 @@ describe("Mail workspace preferences", () => {
       listMode: "conversations",
       lastMailboxId: null,
       pinnedMailboxIds: [],
+      hiddenMailboxIds: [],
     });
   });
 
@@ -62,6 +65,11 @@ describe("Mail workspace preferences", () => {
       JSON.stringify({ pinnedMailboxIds: ["Box002", "invalid", "Box001", "Box002", "00000000-0000-4000-8000-000000000002"] }),
     );
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).pinnedMailboxIds).toEqual(["Box002", "Box001"]);
+  });
+
+  test("keeps unique public IDs of hidden mailboxes", () => {
+    const value = encodeURIComponent(JSON.stringify({ hiddenMailboxIds: ["Box003", "Box003", "not a mailbox", 7] }));
+    expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).hiddenMailboxIds).toEqual(["Box003"]);
   });
 
   test("an older document changes only the preference it writes", () => {

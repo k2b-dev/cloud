@@ -19,6 +19,7 @@ const renderOverview = (
   initialPinnedMailboxIds: string[] = [],
   mailboxCount = { unread: 1, needsAction: 1 },
   locale = "en",
+  initialHiddenMailboxIds: string[] = [],
 ) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -46,6 +47,7 @@ const renderOverview = (
           initialSelection: null,
           initialDetail: null,
           initialPinnedMailboxIds,
+          initialHiddenMailboxIds,
           initialFocusError,
           currentUserEmail: "user@example.com",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
@@ -77,6 +79,8 @@ const renderOverview = (
   );
 
 const mailboxRow = (html: string) => html.match(/<div[^>]*mail-overview-mailbox[\s\S]*?<\/a>/)?.[0] ?? "";
+/** The row with its trailing actions, which follow the row link. */
+const mailboxRowWithActions = (html: string) => html.match(/<div[^>]*mail-overview-mailbox[\s\S]*?<\/section>/)?.[0] ?? "";
 
 describe("Mail overview", () => {
   test("renders the server-provided cross-mailbox focus queue and accessible view controls", () => {
@@ -132,6 +136,33 @@ describe("Mail overview", () => {
     expect(html).toContain("ti-flag");
     expect(html).toContain("ti-flag-off");
     expect(html).toContain('data-variant="text"');
+  });
+
+  test("renders a hidden mailbox only inside the collapsed Hidden section", () => {
+    const html = renderOverview(null, ["Mail01"], { unread: 1, needsAction: 1 }, "en", ["Mail01"]);
+    expect(html).toMatch(/<h2>(<!--!\$-->)?Mailboxes<span class="k2b-app-workspace__sidebar-section-count">0<\/span><\/h2>/);
+    expect(html).toMatch(/aria-expanded="false"[^>]*>(<!--!\$-->)?Hidden<span class="k2b-app-workspace__sidebar-section-count">1<\/span>/);
+    expect(html).toMatch(
+      /<div id="sidebar-section-\d+" hidden class="k2b-app-workspace__sidebar-section-content"><div[^>]*mail-overview-mailbox/,
+    );
+    const row = mailboxRowWithActions(html);
+    expect(row).toContain('data-hidden="true"');
+    expect(row).not.toContain("data-pinned");
+    expect(row).toContain("ti-eye-off");
+    expect(row).toContain('aria-label="Show Support"');
+    expect(row).not.toContain("Pin Support");
+    // A row the server sent before the mailbox was hidden stays out of Focus.
+    expect(html).not.toContain("Release update");
+  });
+
+  test("offers hiding next to pinning", () => {
+    const html = renderOverview();
+    const row = mailboxRowWithActions(html);
+    expect(row).toContain('aria-label="Pin Support"');
+    expect(row).toContain('aria-label="Hide Support"');
+    // Nothing hidden: no Hidden section.
+    expect(html).not.toContain(">Hidden<");
+    expect(mailboxRowWithActions(renderOverview(null, [], undefined, "de"))).toContain('aria-label="Support ausblenden"');
   });
 
   test("shows needs action as the only number and unread as a dot", () => {

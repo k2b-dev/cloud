@@ -1,3 +1,4 @@
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
@@ -152,6 +153,11 @@ export const listFocusConversations = async (params: {
   view?: MailFocusView;
   cursor?: string;
   limit?: number;
+  /**
+   * Mailboxes the person hid from their overview. Their conversations leave the list and the
+   * view counts; `mailboxCounts` still covers them so a revealed hidden mailbox keeps its counts.
+   */
+  excludedMailboxIds?: string[];
 }): Promise<
   Result<{ items: MailFocusItem[]; counts: MailFocusCounts; mailboxCounts: MailFocusMailboxCounts[]; nextCursor: string | null }>
 > => {
@@ -168,6 +174,7 @@ export const listFocusConversations = async (params: {
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
   const readable = await readableMailboxes(params.context);
   const unassigned = isUnassignedConversation(await listLapsedAssignees({ mailboxIds: readable.map((row) => row.mailbox_id) }));
+  const shown = sql`NOT (c.mailbox_id = ANY(${toPgUuidArray(params.excludedMailboxIds)}::uuid[]))`;
 
   const [rows, countRows, mailboxCountRows] = await Promise.all([
     sql<DbFocusItem[]>`
@@ -220,6 +227,7 @@ export const listFocusConversations = async (params: {
         LIMIT 1
       ) latest ON true
       WHERE c.follow_up
+        AND ${shown}
         AND (
           (${view} = 'mine' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})
           OR (${view} = 'unassigned' AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
@@ -241,7 +249,7 @@ export const listFocusConversations = async (params: {
         COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
         COUNT(*) FILTER (WHERE c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
-      WHERE c.follow_up
+      WHERE c.follow_up AND ${shown}
     `,
     mailboxCountQuery(params.context),
   ]);

@@ -32,6 +32,7 @@ import { assertCursorProgress } from "./pagination";
 
 type MailboxWithPermission = Mailbox & { permission: "read" | "write" | "admin"; receivingAddress: string | null };
 type MailFocusSelection = { mailboxId: string; conversationId: string };
+type FocusSource = { view: MailFocusView; excludedMailboxIds: string[] };
 type MailboxOverviewItem = {
   id: string;
   href: string;
@@ -70,6 +71,7 @@ function MailOverviewView(props: {
   initialSelection: MailFocusSelection | null;
   initialDetail: MailConversationDetailData | null;
   initialPinnedMailboxIds: string[];
+  initialHiddenMailboxIds: string[];
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
   dateConfig: DateContext;
@@ -79,14 +81,23 @@ function MailOverviewView(props: {
   const formatCount = (count: number) => count.toLocaleString(locale());
   const [view, setView] = createSignal<MailFocusView>(props.initialView);
   const [pinnedMailboxIds, setPinnedMailboxIds] = createSignal(props.initialPinnedMailboxIds);
-  const [pinAnnouncement, setPinAnnouncement] = createSignal("");
+  const [hiddenMailboxIds, setHiddenMailboxIds] = createSignal(props.initialHiddenMailboxIds);
+  const [mailboxAnnouncement, setMailboxAnnouncement] = createSignal("");
   const [initialFocusError, setInitialFocusError] = createSignal(props.initialFocusError);
-  const focusResults = queries.createInfinite<MailFocusView, MailFocusPage, string>({
-    source: view,
-    initial: { source: props.initialView, pages: [props.initialFocus] },
+  const mailboxIsHidden = (mailboxId: string) => hiddenMailboxIds().includes(mailboxId);
+  // Focus leaves out the hidden mailboxes; hidden IDs of mailboxes no longer listed change nothing.
+  const excludedMailboxIds = createMemo(() =>
+    props.mailboxes.filter((mailbox) => mailboxIsHidden(mailbox.id)).map((mailbox) => mailbox.id),
+  );
+  const focusSource = (): FocusSource => ({ view: view(), excludedMailboxIds: excludedMailboxIds() });
+  const focusResults = queries.createInfinite<FocusSource, MailFocusPage, string>({
+    source: focusSource,
+    isSameSource: (left, right) => left.view === right.view && left.excludedMailboxIds.join() === right.excludedMailboxIds.join(),
+    initial: { source: focusSource(), pages: [props.initialFocus] },
     loadPage: async (source, { cursor, abortSignal }) => {
+      const excludeMailboxIds = source.excludedMailboxIds.join(",") || undefined;
       const response = await apiClient.overview.conversations.$get(
-        { query: { view: source, limit: "50", cursor } },
+        { query: { view: source.view, limit: "50", cursor, excludeMailboxIds } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadFocus));
@@ -97,7 +108,13 @@ function MailOverviewView(props: {
     },
     getNextCursor: (page) => page.nextCursor,
   });
-  const focusItems = createMemo(() => focusResults.pages().flatMap((page) => page.items));
+  // Rows of a mailbox hidden a moment ago leave before the refreshed page arrives.
+  const focusItems = createMemo(() =>
+    focusResults
+      .pages()
+      .flatMap((page) => page.items)
+      .filter((item) => !excludedMailboxIds().includes(item.mailboxId)),
+  );
   const counts = () => focusResults.pages()[0]?.counts ?? props.initialFocus.counts;
   const mailboxCounts = () => focusResults.pages()[0]?.mailboxCounts ?? props.initialFocus.mailboxCounts;
   const mailboxCountsById = createMemo(() => new Map(mailboxCounts().map((item) => [item.mailboxId, item])));
@@ -124,6 +141,8 @@ function MailOverviewView(props: {
       return leftIndex - rightIndex;
     });
   });
+  const visibleMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => !mailboxIsHidden(mailbox.id)));
+  const hiddenMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => mailboxIsHidden(mailbox.id)));
   const mailboxIsPinned = (mailboxId: string) => pinnedMailboxIds().includes(mailboxId);
   const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
     // This document may come from history or run beside another tab: apply the
@@ -134,7 +153,21 @@ function MailOverviewView(props: {
     const next = pin ? [mailbox.id, ...others] : others;
     writeMailWorkspacePreferences({ ...stored, pinnedMailboxIds: next });
     setPinnedMailboxIds(next);
-    setPinAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
+    setMailboxAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
+  };
+  const toggleMailboxHidden = (mailbox: MailboxOverviewItem) => {
+    // Like pins, apply the shown change to the stored list so another tab's changes survive.
+    const hide = !mailboxIsHidden(mailbox.id);
+    const stored = readMailWorkspacePreferences(document.cookie);
+    const others = stored.hiddenMailboxIds.filter((id) => id !== mailbox.id);
+    const next = hide ? [mailbox.id, ...others] : others;
+    writeMailWorkspacePreferences({ ...stored, hiddenMailboxIds: next });
+    setHiddenMailboxIds(next);
+    setMailboxAnnouncement(hide ? messages().mailboxHidden({ name: mailbox.name }) : messages().mailboxShown({ name: mailbox.name }));
+    if (hide && selection()?.mailboxId === mailbox.id) {
+      setSelection(null);
+      updateSelectionUrl(null);
+    }
   };
   const canWriteMailbox = (mailboxId: string) => {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;
@@ -321,6 +354,77 @@ function MailOverviewView(props: {
     restoreMailbox.abort();
   });
 
+  const mailboxRow = (mailbox: MailboxOverviewItem) => {
+    const pinned = () => mailboxIsPinned(mailbox.id);
+    const hidden = () => mailboxIsHidden(mailbox.id);
+    // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
+    const countLabels = () => [
+      ...(mailbox.needsAction > 0 ? [messages().needsActionCount({ count: mailbox.needsAction })] : []),
+      ...(mailbox.unread > 0 ? [messages().unreadCount({ count: mailbox.unread })] : []),
+    ];
+    return (
+      <AppWorkspace.SidebarItem
+        variant="object"
+        href={mailbox.href}
+        title={[mailbox.name, mailbox.subtitle, ...countLabels()].join(" · ")}
+        description={mailbox.subtitle}
+        class="mail-overview-mailbox"
+        data={{ pinned: pinned() && !hidden() ? "true" : undefined, hidden: hidden() ? "true" : undefined }}
+        actions={
+          <AppWorkspace.SidebarItemActions visibility="hover">
+            <Show
+              when={!hidden()}
+              fallback={
+                <IconButton
+                  label={messages().showMailbox({ name: mailbox.name })}
+                  size="xs"
+                  variant="text"
+                  onClick={() => toggleMailboxHidden(mailbox)}
+                >
+                  <i class="ti ti-eye" aria-hidden="true" />
+                </IconButton>
+              }
+            >
+              <IconButton
+                label={pinned() ? messages().unpinMailbox({ name: mailbox.name }) : messages().pinMailbox({ name: mailbox.name })}
+                size="xs"
+                variant="text"
+                aria-pressed={pinned()}
+                onClick={() => toggleMailboxPin(mailbox)}
+              >
+                <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                label={messages().hideMailbox({ name: mailbox.name })}
+                size="xs"
+                variant="text"
+                onClick={() => toggleMailboxHidden(mailbox)}
+              >
+                <i class="ti ti-eye-off" aria-hidden="true" />
+              </IconButton>
+            </Show>
+          </AppWorkspace.SidebarItemActions>
+        }
+      >
+        <AppWorkspace.SidebarItemIcon>
+          <i class={hidden() ? "ti ti-eye-off" : pinned() ? "ti ti-flag" : "ti ti-mail"} />
+          <Show when={mailbox.unread > 0}>
+            <span class="mail-overview-unread-dot" />
+          </Show>
+        </AppWorkspace.SidebarItemIcon>
+        <AppWorkspace.SidebarItemLabel>{mailbox.name}</AppWorkspace.SidebarItemLabel>
+        <AppWorkspace.SidebarItemMeta>
+          <span class="mail-overview-needs-action" aria-hidden="true">
+            {mailbox.needsAction > 0 ? formatCount(mailbox.needsAction) : ""}
+          </span>
+          <Show when={countLabels().length > 0}>
+            <span class="sr-only">{countLabels().join(", ")}</span>
+          </Show>
+        </AppWorkspace.SidebarItemMeta>
+      </AppWorkspace.SidebarItem>
+    );
+  };
+
   const focusPanel = () => (
     <>
       <Show when={focusError()}>
@@ -436,61 +540,21 @@ function MailOverviewView(props: {
       <AppWorkspace.Sidebar label={messages().mailboxes} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey={false}>
-            <AppWorkspace.SidebarSection title={messages().mailboxes} count={props.mailboxes.length}>
-              <For each={orderedMailboxOverviewItems()}>
-                {(mailbox) => {
-                  const pinned = () => mailboxIsPinned(mailbox.id);
-                  // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
-                  const countLabels = () => [
-                    ...(mailbox.needsAction > 0 ? [messages().needsActionCount({ count: mailbox.needsAction })] : []),
-                    ...(mailbox.unread > 0 ? [messages().unreadCount({ count: mailbox.unread })] : []),
-                  ];
-                  return (
-                    <AppWorkspace.SidebarItem
-                      variant="object"
-                      href={mailbox.href}
-                      title={[mailbox.name, mailbox.subtitle, ...countLabels()].join(" · ")}
-                      description={mailbox.subtitle}
-                      class="mail-overview-mailbox"
-                      data={{ pinned: pinned() ? "true" : undefined }}
-                      actions={
-                        <AppWorkspace.SidebarItemActions visibility="hover">
-                          <IconButton
-                            label={
-                              pinned() ? messages().unpinMailbox({ name: mailbox.name }) : messages().pinMailbox({ name: mailbox.name })
-                            }
-                            size="xs"
-                            variant="text"
-                            aria-pressed={pinned()}
-                            onClick={() => toggleMailboxPin(mailbox)}
-                          >
-                            <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-                          </IconButton>
-                        </AppWorkspace.SidebarItemActions>
-                      }
-                    >
-                      <AppWorkspace.SidebarItemIcon>
-                        <i class={pinned() ? "ti ti-flag" : "ti ti-mail"} />
-                        <Show when={mailbox.unread > 0}>
-                          <span class="mail-overview-unread-dot" />
-                        </Show>
-                      </AppWorkspace.SidebarItemIcon>
-                      <AppWorkspace.SidebarItemLabel>{mailbox.name}</AppWorkspace.SidebarItemLabel>
-                      <AppWorkspace.SidebarItemMeta>
-                        <span class="mail-overview-needs-action" aria-hidden="true">
-                          {mailbox.needsAction > 0 ? formatCount(mailbox.needsAction) : ""}
-                        </span>
-                        <Show when={countLabels().length > 0}>
-                          <span class="sr-only">{countLabels().join(", ")}</span>
-                        </Show>
-                      </AppWorkspace.SidebarItemMeta>
-                    </AppWorkspace.SidebarItem>
-                  );
-                }}
-              </For>
+            <AppWorkspace.SidebarSection title={messages().mailboxes} count={visibleMailboxItems().length}>
+              <For each={visibleMailboxItems()}>{mailboxRow}</For>
             </AppWorkspace.SidebarSection>
+            <Show when={hiddenMailboxItems().length > 0}>
+              <AppWorkspace.SidebarSection
+                title={messages().hiddenMailboxes}
+                count={hiddenMailboxItems().length}
+                collapsible
+                defaultOpen={false}
+              >
+                <For each={hiddenMailboxItems()}>{mailboxRow}</For>
+              </AppWorkspace.SidebarSection>
+            </Show>
             <span class="sr-only" aria-live="polite">
-              {pinAnnouncement()}
+              {mailboxAnnouncement()}
             </span>
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter>
