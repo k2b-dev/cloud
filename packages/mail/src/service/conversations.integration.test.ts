@@ -1231,12 +1231,17 @@ suite("mail manual conversation threading", () => {
     const conversations = await sql<{ message_id: string; conversation_id: string }[]>`
       SELECT message_id::text, conversation_id::text
       FROM mail.conversation_messages
-      WHERE message_id IN (${firstId}::uuid, ${otherSenderId}::uuid)
+      WHERE message_id IN (${firstId}::uuid, ${otherSenderId}::uuid, ${otherSubjectId}::uuid, ${otherSizeId}::uuid)
     `;
     const conversationOf = new Map(conversations.map((row) => [row.message_id, row.conversation_id]));
-    // Neither the shared Message-ID nor the shared subject and mailbox address relate another sender's mail.
-    expect(conversationOf.get(otherSenderId)).toBeDefined();
+    expect(conversationOf.size).toBe(4);
+    // Neither the shared Message-ID nor the shared subject and mailbox address relate another sender's mail,
+    // and a reused Message-ID does not relate the same sender's mail about something else.
     expect(conversationOf.get(otherSenderId)).not.toBe(conversationOf.get(firstId));
+    expect(conversationOf.get(otherSubjectId)).not.toBe(conversationOf.get(firstId));
+    // A copy that only its size sets apart, such as a second delivery, stays next to its twin until
+    // hydration compares the sources.
+    expect(conversationOf.get(otherSizeId)).toBe(conversationOf.get(firstId));
   }, 30_000);
 
   test("merges copies that only their hydrated source identifies across a generic IMAP UIDVALIDITY reset", async () => {

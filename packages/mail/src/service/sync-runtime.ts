@@ -296,17 +296,18 @@ const findConversation = async (params: {
     if (native) return native.conversation_id;
   }
 
-  // A copy that its envelope could not prove to be the same message (see
+  // A copy whose envelope matches but whose size cannot prove it the same message (see
   // findCanonicalMessageContent), such as a second delivery with other transport headers, joins
-  // the conversation of its twin from the same sender; hydration merges the two once their
-  // sources match. A Message-ID alone proves nothing: another sender can reuse it, even for all
-  // of its mail, so the lookup reads at most one envelope batch of messages with the Message-ID.
+  // the conversation of its twin; hydration merges the two once their sources match. A Message-ID
+  // alone proves nothing: a sender can reuse it, even for all of its mail, so the twin also has
+  // the sender, subject, and Date header, and the lookup reads at most one envelope batch of
+  // messages with the Message-ID.
   if (params.message.messageId) {
     const senders = senderSet(params.message);
     const [twin] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
       FROM (
-        SELECT mc.id
+        SELECT mc.id, mc.subject, mc.sent_at
         FROM mail.message_contents mc
         WHERE mc.mailbox_id = ${params.mailboxId}::uuid
           AND mc.id <> ${params.messageId}::uuid
@@ -315,7 +316,9 @@ const findConversation = async (params: {
         LIMIT ${ENVELOPE_BATCH_SIZE}
       ) candidate
       JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
-      WHERE ARRAY(
+      WHERE candidate.subject = ${params.message.subject}
+        AND candidate.sent_at IS NOT DISTINCT FROM ${params.message.sentAt}::timestamptz
+        AND ARRAY(
           SELECT sender.normalized_email FROM mail.message_addresses sender WHERE sender.message_id = candidate.id AND sender.role = 'from'
         ) <@ ${toPgTextArray(senders)}::text[]
         AND ${toPgTextArray(senders)}::text[] <@ ARRAY(
