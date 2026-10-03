@@ -1,10 +1,14 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { LiveWebSocketOptions } from "@k2b/cloud/browser/live";
+import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import { subscribeToSpacesDataInvalidation } from "../src/frontend/[id]/_components/workspace/workspace-events";
 import type { SpaceLiveServerMessage } from "../src/live-events";
+
+/** The day SSR computed deadline views for; the same day, so only the cursor decides a refresh. */
+const today = dates.formatDateKey(new Date());
 
 describe("Spaces live owner disposal", () => {
   if (isServer) {
@@ -33,7 +37,10 @@ describe("Spaces live owner disposal", () => {
     const invalidate = mock(() => pending);
     const stop = subscribeToSpacesDataInvalidation(["detail"], invalidate);
     const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
-    const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "Space1", initialCursor: null }), dom.root);
+    const dispose = render(
+      () => createComponent(SpaceLiveEvents, { spaceId: "Space1", initialCursor: null, snapshotDay: today }),
+      dom.root,
+    );
     try {
       callbacks.onMessage(
         { type: "spaces.live.ready", payload: { spaceId: "Space1", cursor: "1-0" } },

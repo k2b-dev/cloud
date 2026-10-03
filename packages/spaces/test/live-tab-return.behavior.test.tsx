@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
+import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
@@ -87,12 +88,14 @@ describe("Spaces live updates when a tab returns", () => {
     dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
   };
 
-  const mount = async (initialCursor: string | null) => {
+  const dateConfig = { timeZone: "Europe/Berlin" };
+
+  /** Mounts the island as SSR renders it; the snapshot day defaults to the current day. */
+  const mount = async (initialCursor: string | null, snapshotDay = dates.formatDateKey(new Date(), dateConfig)) => {
     const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
     const host = dom.document.createElement("div");
     dom.root.append(host);
-    const dateConfig = { timeZone: "Europe/Berlin" };
-    cleanups.push(render(() => createComponent(SpaceLiveEvents, { spaceId: SPACE_ID, initialCursor, dateConfig }), host));
+    cleanups.push(render(() => createComponent(SpaceLiveEvents, { spaceId: SPACE_ID, initialCursor, snapshotDay, dateConfig }), host));
     return host;
   };
 
@@ -153,6 +156,17 @@ describe("Spaces live updates when a tab returns", () => {
     await settle();
     expect(refetched).toEqual(["view"]);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  test("a page rendered before midnight and hydrated after it refreshes on its first ready", async () => {
+    const refetched: string[] = [];
+    cleanups.push(subscribeToSpacesDataInvalidation(["view"], async () => void refetched.push("view")));
+    setSystemTime(new Date("2026-10-03T22:00:05Z"));
+    await mount("s6t.spaces.4", "2026-10-03");
+    latestSocket().open();
+    latestSocket().ready("s6t.spaces.4");
+    await settle();
+    expect(refetched).toEqual(["view"]);
   });
 
   test("a board rebuilt by the refresh does not turn its disposed column queries into a reload", async () => {
@@ -218,6 +232,8 @@ describe("Spaces live updates when a tab returns", () => {
     }
     expect(FakeWebSocket.instances).toHaveLength(4);
     expect(reload).not.toHaveBeenCalled();
+    // Neither a banner in the island nor a toast elsewhere in the document.
     expect(host.textContent).toBe("");
+    expect(dom.document.body.textContent).not.toContain("Live updates are unavailable");
   });
 });

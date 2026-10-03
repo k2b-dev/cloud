@@ -15,6 +15,8 @@ import { createSpacesLiveCursorQueue, invalidateSpacesData } from "./workspace-e
 type Props = {
   spaceId: string;
   initialCursor: string | null;
+  /** The day the SSR snapshot's deadline views were computed for. */
+  snapshotDay: string;
   dateConfig?: DateContext;
 };
 
@@ -25,7 +27,7 @@ export default function SpaceLiveEvents(props: Props) {
     let unavailable: ToastHandle | null = null;
     // Deadline views (overdue, today, this week) depend on the current day, and no event announces a new day.
     const today = () => dates.formatDateKey(new Date(), props.dateConfig);
-    let snapshotDay = today();
+    let snapshotDay = props.snapshotDay;
     // A condition that persists across loads must not reload the page forever.
     const reload = () => {
       if (lifecycle.signal.aborted || unavailable || reloadOnce(`spaces:live:${props.spaceId}`)) return;

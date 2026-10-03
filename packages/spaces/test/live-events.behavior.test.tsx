@@ -1,8 +1,12 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
+import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import { subscribeToSpacesDataInvalidation } from "../src/frontend/[id]/_components/workspace/workspace-events";
+
+/** The day SSR computed deadline views for; the same day, so only the cursor decides a refresh. */
+const today = dates.formatDateKey(new Date());
 
 type Controls = { markApplied: (cursor: string | null) => void; subscribedCursor: () => string | null; terminate: () => void };
 type LiveOptions = {
@@ -48,7 +52,10 @@ describe("Spaces live events", () => {
       subscribeToSpacesDataInvalidation(["wormholes"], async () => void covered.push("wormholes")),
     ];
     const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
-    const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
+    const dispose = render(
+      () => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0", snapshotDay: today }),
+      dom.root,
+    );
     expect(transport.connected).toBe(1);
     expect(options.subscribe("1-0")).toEqual({ type: "spaces.live.subscribe", payload: { spaceId: "space-1", fromCursor: "1-0" } });
 
@@ -83,7 +90,10 @@ describe("Spaces live events", () => {
     const detailItems: Array<string | null> = [];
     const stop = subscribeToSpacesDataInvalidation(["detail"], async (invalidation) => void detailItems.push(invalidation.itemId));
     const { default: SpaceLiveEvents } = await import("../src/frontend/[id]/_components/workspace/SpaceLiveEvents.island");
-    const dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
+    const dispose = render(
+      () => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0", snapshotDay: today }),
+      dom.root,
+    );
 
     options.onMessage(
       {
@@ -111,7 +121,10 @@ describe("Spaces live events", () => {
       let dispose = () => {};
       for (let load = 0; load < 3; load += 1) {
         dispose();
-        dispose = render(() => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0" }), dom.root);
+        dispose = render(
+          () => createComponent(SpaceLiveEvents, { spaceId: "space-1", initialCursor: "1-0", snapshotDay: today }),
+          dom.root,
+        );
         options.onFatal({ code: "internal_error", message: "Live updates failed." });
         await flush();
       }

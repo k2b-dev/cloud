@@ -116,6 +116,8 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     query: z.string(),
     icalBaseUrl: z.string(),
     eventCursor: z.string().nullable(),
+    /** The day, in the person's time zone, that deadline views in this snapshot were computed for. */
+    snapshotDay: z.string(),
     itemsResult: ItemListResultSchema,
     kanbanBuckets: z.array(KanbanBucketInitialSchema),
     calendarView: CalendarViewSchema,
