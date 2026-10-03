@@ -300,14 +300,14 @@ const findConversation = async (params: {
   // findCanonicalMessageContent), such as a second delivery with other transport headers, joins
   // the conversation of its twin; hydration merges the two once their sources match. A Message-ID
   // alone proves nothing: a sender can reuse it, even for all of its mail, so the twin also has
-  // the sender, subject, Date header, and reply headers, and the lookup reads at most one envelope
-  // batch of messages with the Message-ID.
+  // the sender, subject, Date header, and reply headers, without a Date header an INTERNALDATE
+  // within a day, and the lookup reads at most one envelope batch of messages with the Message-ID.
   if (params.message.messageId) {
     const senders = senderSet(params.message);
     const [twin] = await params.db<{ conversation_id: string }[]>`
       SELECT cm.conversation_id
       FROM (
-        SELECT mc.id, mc.subject, mc.sent_at, mc.in_reply_to, mc.reference_ids
+        SELECT mc.id, mc.subject, mc.sent_at, mc.internal_date, mc.in_reply_to, mc.reference_ids
         FROM mail.message_contents mc
         WHERE mc.mailbox_id = ${params.mailboxId}::uuid
           AND mc.id <> ${params.messageId}::uuid
@@ -318,6 +318,11 @@ const findConversation = async (params: {
       JOIN mail.conversation_messages cm ON cm.message_id = candidate.id
       WHERE candidate.subject = ${params.message.subject}
         AND candidate.sent_at IS NOT DISTINCT FROM ${params.message.sentAt}::timestamptz
+        AND (
+          ${params.message.sentAt}::timestamptz IS NOT NULL
+          OR candidate.internal_date BETWEEN ${params.message.internalDate}::timestamptz - interval '1 day'
+            AND ${params.message.internalDate}::timestamptz + interval '1 day'
+        )
         AND candidate.in_reply_to IS NOT DISTINCT FROM ${params.message.inReplyTo}
         AND candidate.reference_ids IS NOT DISTINCT FROM ${toPgTextArray(params.message.references)}::text[]
         AND ARRAY(

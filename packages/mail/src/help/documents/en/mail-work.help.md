@@ -178,7 +178,7 @@ Local tags are mailbox labels used by people, search, and automations. Select a 
 
 Mail groups a message with the conversation that its reply headers point to. This also works when a reply synchronized before the message it answers, and replies to a message that the mailbox does not hold stay together. A message without reply headers joins an earlier conversation only when its subject starts with a prefix such as `Re:`, `AW:`, or `Fwd:` and it was exchanged with the same outside person within 30 days. Otherwise it starts its own conversation, so two senders who both write "Invoice" stay apart.
 
-A message stays one message wherever it is stored. If another email client moves or copies it to another folder, or your own mail arrives back in the Inbox through a list, a team address, or a Bcc to yourself, the conversation shows it once. Mail recognizes such a copy by its Message-ID, sender, subject, and date, and a copy of someone else's mail also by its unchanged size.
+A message stays one message wherever it is stored. If another email client moves or copies it to another folder, or your own mail arrives back in the Inbox through a list, a team address, or a Bcc to yourself, the conversation shows it once. Mail recognizes such a copy by its headers, such as Message-ID, sender, subject, and date, and a copy of someone else's mail also by its unchanged size.
 
 Use **Merge with another conversation** when two Cloud conversations belong together. On an individual message, use **Start new conversation from this message** when a reply introduces a new topic, or **Move message to another conversation** when it belongs in an existing thread. These actions require write access and change Cloud's conversation grouping without changing the message content.
 
