@@ -1092,9 +1092,10 @@ const stableTargetKey = (target: Record<string, unknown>): string => sha256Json(
 const prepareMaintenanceCommand = (
   input: MaintenanceCommandInput,
 ): { target: Record<string, unknown>; payload: Record<string, unknown> } => {
-  if (input.kind === "sync_folder" || input.kind === "rebuild_folder") {
-    return { target: { folderId: input.folderId }, payload: {} };
-  }
+  // Only a sync that asks to wait keeps its command executing until its folders synced.
+  if (input.kind === "sync_mailbox") return { target: {}, payload: input.wait ? { wait: true } : {} };
+  if (input.kind === "sync_folder") return { target: { folderId: input.folderId }, payload: input.wait ? { wait: true } : {} };
+  if (input.kind === "rebuild_folder") return { target: { folderId: input.folderId }, payload: {} };
   if (input.kind === "verify_binding") return { target: { bindingId: input.bindingId }, payload: { allowCredentialRevision: true } };
   if (input.kind === "discover_folders") return { target: { bindingId: input.bindingId ?? null }, payload: {} };
   if (input.kind === "reconcile_effect" || input.kind === "retry_command" || input.kind === "cancel_command") {

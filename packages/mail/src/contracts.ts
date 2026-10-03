@@ -1262,11 +1262,19 @@ export const actorCommandInputSchema = z.discriminatedUnion("kind", [
 ]);
 export type ActorCommandInput = z.infer<typeof actorCommandInputSchema>;
 
+const syncWaitSchema = z
+  .boolean()
+  .optional()
+  .describe(
+    "Keep the command executing until each queued folder holds the mail the provider had at the request, at most 10 minutes. Without it the command is confirmed once the folder syncs are queued.",
+  );
+
 export const maintenanceCommandInputSchema = z.discriminatedUnion("kind", [
-  actorCommandBaseSchema.extend({ kind: z.literal("sync_mailbox") }),
+  actorCommandBaseSchema.extend({ kind: z.literal("sync_mailbox"), wait: syncWaitSchema }),
   actorCommandBaseSchema.extend({
     kind: z.literal("sync_folder"),
     folderId: ResourceShortIdSchema,
+    wait: syncWaitSchema,
   }),
   actorCommandBaseSchema.extend({
     kind: z.literal("discover_folders"),

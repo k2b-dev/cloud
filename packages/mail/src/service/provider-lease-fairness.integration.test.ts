@@ -13,14 +13,15 @@ import { enqueueMailCommand, runMailboxCommandsJob, startCommandWorkers, stopCom
 import { createActorCommand, createMailCommand } from "./commands";
 import { type ConnectorEnvelope, imapSmtpConnector, type RemoteMessageState } from "./connectors";
 import { createDraft } from "./drafts";
-import { createMailbox } from "./mailboxes";
-import { runMaintenanceJob } from "./maintenance-runtime";
+import { createMailbox, updateMailbox } from "./mailboxes";
+import { runMaintenanceJob, startMaintenanceRuntime, stopMaintenanceRuntime, submitDueMaintenanceCommands } from "./maintenance-runtime";
 import { createProviderConnection } from "./provider-connections";
 import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
 import {
   enqueueFolderSync,
   enqueueMailboxHydration,
   FOLDER_SYNC_REQUEST_MS,
+  onSyncFolderJobError,
   runSyncFolderJob,
   startHydrationRuntime,
   stopHydrationRuntime,
@@ -146,7 +147,7 @@ const syncFolderTurn = async (
   throw new Error("The folder sync job never got the provider lease");
 };
 
-type MaintenanceJobInput = { commandId: string; continuationAttempt?: number; awaitingSync?: boolean };
+type MaintenanceJobInput = { commandId: string; continuationAttempt?: number } | { mailboxId: string };
 
 /** Runs one turn of a `mail:execute-maintenance-command` job; returns the continuation it asked for. */
 const maintenanceTurn = async (input: MaintenanceJobInput): Promise<{ delayMs: number; input: MaintenanceJobInput } | null> => {
@@ -945,19 +946,35 @@ suite("mail provider lease fairness", () => {
     await waitFor(async () => (await pending(moves)) < remaining, "the moves to continue");
   }, 120_000);
 
-  /** A sync command as `cld mail sync` or Sync now in Mail settings creates it, run by the test. */
-  const requestSync = async (mailbox: Mailbox, key: string, path?: string): Promise<string> => {
+  /**
+   * A sync command as `cld mail sync --wait` creates it, or without `wait` as `cld mail sync` and
+   * Sync now in Mail settings do, run by the test.
+   */
+  const requestSync = async (mailbox: Mailbox, key: string, options: { path?: string; wait?: boolean } = {}): Promise<string> => {
+    const wait = options.wait ?? true;
     const command = await createMailCommand({
       context,
       mailboxId: mailbox.mailboxId,
-      input: path
-        ? { kind: "sync_folder", folderId: mailbox.folderId(path), idempotencyKey: `${key}-${suffix}` }
-        : { kind: "sync_mailbox", idempotencyKey: `${key}-${suffix}` },
+      input: options.path
+        ? { kind: "sync_folder", folderId: mailbox.folderId(options.path), wait, idempotencyKey: `${key}-${suffix}` }
+        : { kind: "sync_mailbox", wait, idempotencyKey: `${key}-${suffix}` },
       enqueue: false,
     });
     if (!command.ok) throw new Error(JSON.stringify(command.error));
     return command.data.id;
   };
+
+  /** A waited sync after its first turn queued the folder syncs and handed the wait to its mailbox's checker. */
+  const startWaitedSync = async (mailbox: Mailbox, key: string, path?: string): Promise<string> => {
+    const commandId = await requestSync(mailbox, key, { path });
+    expect(await maintenanceTurn({ commandId })).toBeNull();
+    expect((await commandOutcome(commandId)).state).toBe("executing");
+    return commandId;
+  };
+
+  /** One turn of the mailbox's sync checker; returns its continuation while a sync still waits. */
+  const checkTurn = (mailbox: Mailbox) => maintenanceTurn({ mailboxId: mailbox.mailboxId });
+  const stillWaiting = (mailbox: Mailbox) => ({ delayMs: 1_000, input: { mailboxId: mailbox.mailboxId } });
 
   const commandOutcome = async (commandId: string): Promise<{ state: string; code: string | null; result: unknown }> => {
     const [row] = await sql<{ state: string; code: string | null; result: unknown }[]>`
@@ -994,16 +1011,14 @@ suite("mail provider lease fairness", () => {
     const [newMail] = deliver(mailbox, 1, "waited-new");
     const sentMessageId = `<waited-sent-${suffix}@example.test>`;
     store(mailbox.account, SENT, { messageId: sentMessageId, subject: "Sent elsewhere", internalDate: new Date() });
-    const commandId = await requestSync(mailbox, "waited-sync");
-
     // Queueing the folder syncs does not finish the command: it waits for them.
-    const waiting = await maintenanceTurn({ commandId });
-    expect(waiting?.input).toEqual({ commandId, awaitingSync: true });
+    const commandId = await startWaitedSync(mailbox, "waited-sync");
     expect(await commandOutcome(commandId)).toMatchObject({ state: "executing", result: { queuedFolders: 3 } });
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
 
     // The worker runs the queued INBOX and Sent jobs; Archive's request joined its running backfill.
     await Promise.all([
-      runMaintenanceUntilDone(waiting!.input),
+      runMaintenanceUntilDone({ mailboxId: mailbox.mailboxId }),
       runFolderSyncJob(mailbox.folderId(INBOX)),
       runFolderSyncJob(mailbox.folderId(SENT)),
     ]);
@@ -1052,18 +1067,17 @@ suite("mail provider lease fairness", () => {
     deliver(mailbox, 300, "sweeping");
     expect((await syncFolderBatch(inbox, async () => undefined)).syncPending).toBe(true);
     const [lateMail] = deliver(mailbox, 1, "sweeping-late");
-    const commandId = await requestSync(mailbox, "sweeping-sync", INBOX);
-    const waiting = await maintenanceTurn({ commandId });
+    const commandId = await startWaitedSync(mailbox, "sweeping-sync", INBOX);
 
     // The next batch ends that import at the UID it started with, below the late mail, and goes on.
     const continuation = await syncFolderTurn(inbox);
     expect(continuation).toEqual({ delayMs: 0, input: { folderId: inbox, backfill: false } });
     expect(await imported(mailbox, lateMail!)).toBe(false);
-    expect(await maintenanceTurn(waiting!.input)).toEqual(waiting);
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
 
     await runFolderSyncJob(inbox, { input: continuation!.input });
     expect(await imported(mailbox, lateMail!)).toBe(true);
-    expect(await maintenanceTurn(waiting!.input)).toBeNull();
+    expect(await checkTurn(mailbox)).toBeNull();
     expect(await commandOutcome(commandId)).toMatchObject({ state: "confirmed", code: null });
   }, 60_000);
 
@@ -1078,17 +1092,16 @@ suite("mail provider lease fairness", () => {
     deliver(mailbox, 1, "modseq-checked");
     expect(await syncFolderTurn(inbox)).toEqual({ delayMs: 0, input: { folderId: inbox, backfill: false } });
     const [lateMail] = deliver(mailbox, 1, "modseq-late");
-    const commandId = await requestSync(mailbox, "modseq-sync", INBOX);
-    const waiting = await maintenanceTurn({ commandId });
+    const commandId = await startWaitedSync(mailbox, "modseq-sync", INBOX);
 
     // The next batch brings in the late mail and ends the flag check that started before it.
     expect(await syncFolderTurn(inbox)).toBeNull();
     expect(await imported(mailbox, lateMail!)).toBe(true);
-    expect(await maintenanceTurn(waiting!.input)).toEqual(waiting);
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
 
     // The next scheduled sync checks the flags again and finishes the request.
     await runFolderSyncJob(inbox);
-    expect(await maintenanceTurn(waiting!.input)).toBeNull();
+    expect(await checkTurn(mailbox)).toBeNull();
     expect(await commandOutcome(commandId)).toMatchObject({ state: "confirmed", code: null });
   }, 60_000);
 
@@ -1098,22 +1111,19 @@ suite("mail provider lease fairness", () => {
     const inbox = mailbox.folderId(INBOX);
 
     // A request whose folder sync never ran ends once the request runs out.
-    const expiring = await requestSync(mailbox, "expiring-sync", SENT);
-    const pendingTurn = await maintenanceTurn({ commandId: expiring });
-    expect(await maintenanceTurn(pendingTurn!.input)).toEqual(pendingTurn);
+    const expiring = await startWaitedSync(mailbox, "expiring-sync", SENT);
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
     await sql`
       UPDATE mail.commands
       SET started_at = now() - (${FOLDER_SYNC_REQUEST_MS + 1_000}::int * interval '1 millisecond')
       WHERE id = ${expiring}::uuid
     `;
-    expect(await maintenanceTurn(pendingTurn!.input)).toBeNull();
+    expect(await checkTurn(mailbox)).toBeNull();
     expect(await commandOutcome(expiring)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
 
     // An earlier sync of INBOX gave up.
     await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${inbox}::uuid`;
-    const failing = await requestSync(mailbox, "failing-sync");
-    const waiting = await maintenanceTurn({ commandId: failing });
-    expect(waiting?.input).toEqual({ commandId: failing, awaitingSync: true });
+    const failing = await startWaitedSync(mailbox, "failing-sync");
 
     // A failed attempt with retries left keeps the command waiting, also in a degraded folder.
     failingStatus.add(mailbox.account);
@@ -1122,7 +1132,7 @@ suite("mail provider lease fairness", () => {
     } finally {
       failingStatus.delete(mailbox.account);
     }
-    expect(await maintenanceTurn(waiting!.input)).toEqual(waiting);
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
 
     // Mail that Postgres cannot store fails the same way on every attempt, so the job gives up. That
     // ends the wait while Archive and Sent have not synced yet.
@@ -1132,7 +1142,7 @@ suite("mail provider lease fairness", () => {
       internalDate: new Date(),
     });
     expect(await syncFolderTurn(inbox)).toEqual({ delayMs: 15 * 60_000, input: { folderId: inbox } });
-    expect(await maintenanceTurn(waiting!.input)).toBeNull();
+    expect(await checkTurn(mailbox)).toBeNull();
     expect(await commandOutcome(failing)).toMatchObject({ state: "failed", code: "SYNC_FAILED" });
 
     // A retry waits for a sync of its own instead of ending on the runs of the failed attempt.
@@ -1144,13 +1154,167 @@ suite("mail provider lease fairness", () => {
     });
     if (!retry.ok) throw new Error(JSON.stringify(retry.error));
     expect(await maintenanceTurn({ commandId: retry.data.id })).toBeNull();
-    const retried = await maintenanceTurn({ commandId: failing });
-    expect(retried?.input).toEqual({ commandId: failing, awaitingSync: true });
-    expect(await maintenanceTurn(retried!.input)).toEqual(retried);
+    expect(await maintenanceTurn({ commandId: failing })).toBeNull();
+    expect(await commandOutcome(failing)).toMatchObject({ state: "executing", result: { queuedFolders: 3 } });
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
     folderOf(mailbox.account, INBOX).entries.delete(unstorable);
     await Promise.all([runFolderSyncJob(inbox), runFolderSyncJob(mailbox.folderId(ARCHIVE)), runFolderSyncJob(mailbox.folderId(SENT))]);
-    expect(await maintenanceTurn(retried!.input)).toBeNull();
+    expect(await checkTurn(mailbox)).toBeNull();
     expect(await commandOutcome(failing)).toEqual({ state: "confirmed", code: null, result: { queuedFolders: 3 } });
+  }, 60_000);
+
+  test("a waited sync fails once a folder's job gives up after the request, also on a batch that started before it or never reached the provider", async () => {
+    await ensureHydrationRuntime();
+    const mailbox = await connect("gave-up");
+    const inbox = mailbox.folderId(INBOX);
+    const archive = mailbox.folderId(ARCHIVE);
+
+    // The request comes while a batch runs that then stops on mail Postgres cannot store.
+    store(mailbox.account, INBOX, {
+      messageId: `<gave-up-unstorable-${suffix}@example.test>`,
+      subject: "Re\u0000port",
+      internalDate: new Date(),
+    });
+    const late: { commandId?: string } = {};
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== INBOX) return;
+      afterStatus = null;
+      late.commandId = await startWaitedSync(mailbox, "gave-up-late", INBOX);
+    };
+    try {
+      expect(await syncFolderTurn(inbox)).toEqual({ delayMs: 15 * 60_000, input: { folderId: inbox } });
+    } finally {
+      afterStatus = null;
+    }
+    expect(await checkTurn(mailbox)).toBeNull();
+    expect(await commandOutcome(late.commandId!)).toMatchObject({ state: "failed", code: "SYNC_FAILED" });
+
+    // No binding may read Archive any more, so its job fails before it records a run and gives up
+    // after its last attempt. That ends a waited mailbox sync while INBOX and Sent have not synced.
+    await sql`UPDATE mail.binding_folder_refs SET effective_rights = '{}' WHERE folder_id = ${archive}::uuid`;
+    const commandId = await startWaitedSync(mailbox, "gave-up-unreadable");
+    const failure = await runSyncFolderJob({
+      input: { folderId: archive },
+      heartbeat: async () => undefined,
+      resubmit: () => undefined,
+    }).then(
+      () => null,
+      (error: Error) => error,
+    );
+    expect(failure).toMatchObject({ code: "NO_SYNC_BINDING" });
+    expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 4 }, error: failure! })).toEqual({
+      action: "retry",
+    });
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
+    expect(await onSyncFolderJobError({ context: { input: { folderId: archive }, attempt: 5 }, error: failure! })).toMatchObject({
+      action: "dead_letter",
+    });
+    expect(await checkTurn(mailbox)).toBeNull();
+    expect(await commandOutcome(commandId)).toMatchObject({ state: "failed", code: "SYNC_FAILED", result: { queuedFolders: 3 } });
+  }, 60_000);
+
+  test("a waited sync whose mailbox is paused meanwhile ends with the reason, like a request that finds it paused", async () => {
+    const mailbox = await connect("paused");
+    const commandId = await startWaitedSync(mailbox, "paused-sync");
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
+
+    const paused = await updateMailbox({ context, mailboxId: mailbox.mailboxId, syncEnabled: false });
+    if (!paused.ok) throw new Error(JSON.stringify(paused.error));
+    expect(await checkTurn(mailbox)).toBeNull();
+    expect(await commandOutcome(commandId)).toEqual({
+      state: "confirmed",
+      code: null,
+      result: { queuedFolders: 3, reason: "Mailbox transport is paused" },
+    });
+  }, 60_000);
+
+  test("a sync that does not ask to wait is confirmed once its folder syncs are queued", async () => {
+    const mailbox = await connect("unwaited");
+    const mailboxSync = await requestSync(mailbox, "unwaited-sync", { wait: false });
+    expect(await maintenanceTurn({ commandId: mailboxSync })).toBeNull();
+    expect(await commandOutcome(mailboxSync)).toEqual({ state: "confirmed", code: null, result: { queuedFolders: 3 } });
+    const folderSync = await requestSync(mailbox, "unwaited-folder-sync", { path: INBOX, wait: false });
+    expect(await maintenanceTurn({ commandId: folderSync })).toBeNull();
+    expect(await commandOutcome(folderSync)).toEqual({
+      state: "confirmed",
+      code: null,
+      result: { folderId: mailbox.folderId(INBOX), queued: true },
+    });
+    // Nothing waits, so the mailbox's checker has nothing to do.
+    expect(await checkTurn(mailbox)).toBeNull();
+  }, 60_000);
+
+  test("waited syncs of one mailbox share its checker, and each waits for a batch after its own request", async () => {
+    const mailbox = await connect("shared-check");
+    const inbox = mailbox.folderId(INBOX);
+    const first = await startWaitedSync(mailbox, "shared-first", INBOX);
+    await runFolderSyncJob(inbox);
+    // Mail arrives and a second sync is requested after that batch started, so it does not count.
+    const [lateMail] = deliver(mailbox, 1, "shared-late");
+    const second = await startWaitedSync(mailbox, "shared-second", INBOX);
+
+    // One turn of the checker ends the first request and keeps waiting for the second.
+    expect(await checkTurn(mailbox)).toEqual(stillWaiting(mailbox));
+    expect(await commandOutcome(first)).toMatchObject({ state: "confirmed", code: null });
+    expect(await commandOutcome(second)).toMatchObject({ state: "executing" });
+
+    await runFolderSyncJob(inbox);
+    expect(await imported(mailbox, lateMail!)).toBe(true);
+    expect(await checkTurn(mailbox)).toBeNull();
+    expect(await commandOutcome(second)).toEqual({
+      state: "confirmed",
+      code: null,
+      result: { folderId: inbox, queued: true },
+    });
+  }, 60_000);
+
+  test("the mailbox's checker job ends its waiting syncs on its own", async () => {
+    const mailbox = await connect("checker-job");
+    await startMaintenanceRuntime();
+    try {
+      const mailboxSync = await startWaitedSync(mailbox, "checker-job-mailbox");
+      const folderSync = await startWaitedSync(mailbox, "checker-job-folder", INBOX);
+      await Promise.all([INBOX, ARCHIVE, SENT].map((path) => runFolderSyncJob(mailbox.folderId(path))));
+      await waitFor(
+        async () => (await commandOutcome(mailboxSync)).state !== "executing" && (await commandOutcome(folderSync)).state !== "executing",
+        "the checker to end both syncs",
+        15_000,
+      );
+      expect(await commandOutcome(mailboxSync)).toMatchObject({ state: "confirmed", code: null });
+      expect(await commandOutcome(folderSync)).toMatchObject({ state: "confirmed", code: null });
+    } finally {
+      await stopMaintenanceRuntime();
+    }
+  }, 60_000);
+
+  test("the commands-due schedule starts a missing checker and leaves a waiting sync to it instead of running it anew", async () => {
+    const mailbox = await connect("away");
+    // No maintenance worker runs, so the two requests wait without a checker.
+    const synced = await startWaitedSync(mailbox, "away-synced", INBOX);
+    const expired = await startWaitedSync(mailbox, "away-expired", SENT);
+    await runFolderSyncJob(mailbox.folderId(INBOX));
+    // The workers were away for longer than a request counts.
+    await sql`
+      UPDATE mail.commands
+      SET
+        started_at = now() - (${FOLDER_SYNC_REQUEST_MS + 60_000}::int * interval '1 millisecond'),
+        worker_heartbeat_at = now() - (${FOLDER_SYNC_REQUEST_MS + 60_000}::int * interval '1 millisecond')
+      WHERE id = ${expired}::uuid
+    `;
+    await startMaintenanceRuntime();
+    try {
+      await submitDueMaintenanceCommands();
+      await waitFor(
+        async () => (await commandOutcome(synced)).state !== "executing" && (await commandOutcome(expired)).state !== "executing",
+        "the checker to end both syncs",
+        15_000,
+      );
+      expect(await commandOutcome(synced)).toMatchObject({ state: "confirmed", code: null });
+      // Run anew, the request would have waited again for a sync of Sent.
+      expect(await commandOutcome(expired)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
+    } finally {
+      await stopMaintenanceRuntime();
+    }
   }, 60_000);
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {
@@ -1197,7 +1361,7 @@ suite("mail provider lease fairness", () => {
     });
     if (!command.ok) throw new Error(JSON.stringify(command.error));
     const input = { commandId: command.data.id, continuationAttempt: 3 };
-    type Resubmitted = { delayMs: number; input?: { commandId: string; continuationAttempt?: number } };
+    type Resubmitted = { delayMs: number; input?: MaintenanceJobInput };
     const runJob = async (): Promise<Resubmitted | null> => {
       let resubmitted: Resubmitted | null = null;
       await runMaintenanceJob({

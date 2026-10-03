@@ -2047,11 +2047,17 @@ test("status reads the aggregate operational health endpoint", async () => {
   expect(text.stdout).toContain("Sync: never completed, 0 running, 0 failed");
 });
 
-test("sync folder separates a finished sync from a missing prerequisite", async () => {
+test("sync folder separates a finished sync from a missing prerequisite before or during the wait", async () => {
   let result: Record<string, unknown> = { folderId: FOLDER_ID, queued: true };
   const server = withMailbox((request) => {
     const path = new URL(request.url).pathname;
-    const command = (state: string) => ({ ...mailCommand(state), kind: "sync_folder", target: { folderId: FOLDER_ID }, result });
+    const command = (state: string) => ({
+      ...mailCommand(state),
+      kind: "sync_folder",
+      target: { folderId: FOLDER_ID },
+      payload: { wait: true },
+      result,
+    });
     if (request.method === "POST" && path === `/api/mail/mailboxes/${MAILBOX_ID}/commands`) return api(command("queued"));
     if (path === `/api/mail/mailboxes/${MAILBOX_ID}/commands/${COMMAND_ID}`) return api(command("confirmed"));
     return api({ message: "unexpected" }, { status: 500 });
@@ -2067,6 +2073,71 @@ test("sync folder separates a finished sync from a missing prerequisite", async 
   const blocked = await runCli(`http://127.0.0.1:${server.port}`, args);
   expect(blocked.exitCode, blocked.stderr).toBe(0);
   expect(blocked.stdout.trim()).toBe(`Folder sync not queued: Mailbox transport is paused (${COMMAND_ID}).`);
+
+  // The mailbox was paused while the request waited for its folder.
+  result = { folderId: FOLDER_ID, queued: true, reason: "Mailbox transport is paused" };
+  const stopped = await runCli(`http://127.0.0.1:${server.port}`, args);
+  expect(stopped.exitCode, stopped.stderr).toBe(0);
+  expect(stopped.stdout.trim()).toBe(`Folder sync stopped: Mailbox transport is paused (${COMMAND_ID}).`);
+});
+
+test("only a sync with --wait asks Mail to keep the command until its folders synced", async () => {
+  const bodies: Array<Record<string, unknown>> = [];
+  let payload: Record<string, unknown> = {};
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    const command = (state: string) => ({ ...mailCommand(state), kind: "sync_mailbox", target: {}, payload, result: { queuedFolders: 2 } });
+    if (request.method === "POST" && (path.endsWith("/commands") || path.endsWith("/operator-actions"))) {
+      const body = (await request.json()) as Record<string, unknown>;
+      bodies.push(body);
+      payload = body.wait === true ? { wait: true } : {};
+      return api(command("queued"));
+    }
+    if (path === `/api/mail/mailboxes/${MAILBOX_ID}/commands/${COMMAND_ID}`) return api(command("confirmed"));
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+  const base = `http://127.0.0.1:${server.port}`;
+  const key = ["--mailbox", MAILBOX_ID, "--idempotency-key", "sync-key"];
+
+  const queued = await runCli(base, ["mail", "sync", ...key]);
+  expect(queued.exitCode, queued.stderr).toBe(0);
+  expect(queued.stdout.trim()).toBe(`Mailbox sync request queued (${COMMAND_ID}).`);
+  const waited = await runCli(base, ["mail", "sync", ...key, "--wait", "--timeout-seconds", "2"]);
+  expect(waited.exitCode, waited.stderr).toBe(0);
+  expect(waited.stdout.trim()).toBe(`Mailbox sync finished (${COMMAND_ID}).`);
+  expect((await runCli(base, ["mail", "sync", "folder", FOLDER_ID, ...key, "--wait", "--timeout-seconds", "2"])).exitCode).toBe(0);
+  expect((await runCli(base, ["mail", "operator", "run", "sync", ...key, "--wait", "--timeout-seconds", "2"])).exitCode).toBe(0);
+  expect((await runCli(base, ["mail", "operator", "run", "sync-folder", "--folder", FOLDER_ID, ...key])).exitCode).toBe(0);
+
+  expect(bodies).toEqual([
+    { kind: "sync_mailbox", idempotencyKey: "sync-key" },
+    { kind: "sync_mailbox", idempotencyKey: "sync-key", wait: true },
+    { kind: "sync_folder", folderId: FOLDER_ID, idempotencyKey: "sync-key", wait: true },
+    { kind: "sync_mailbox", idempotencyKey: "sync-key", wait: true },
+    { kind: "sync_folder", folderId: FOLDER_ID, idempotencyKey: "sync-key" },
+  ]);
+});
+
+test("a confirmed sync that did not wait reads as queued, not finished", async () => {
+  const server = withMailbox((request) =>
+    request.method === "POST" && new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/commands`
+      ? // A replayed idempotency key returns the request's confirmed command.
+        api({ ...mailCommand("confirmed"), kind: "sync_mailbox", target: {}, payload: {}, result: { queuedFolders: 2 } })
+      : api({ message: "unexpected" }, { status: 500 }),
+  );
+  servers.push(server);
+
+  const replayed = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "sync",
+    "--mailbox",
+    MAILBOX_ID,
+    "--idempotency-key",
+    "sync-key",
+  ]);
+  expect(replayed.exitCode, replayed.stderr).toBe(0);
+  expect(replayed.stdout.trim()).toBe(`Mailbox sync queued (${COMMAND_ID}).`);
 });
 
 test("operator run submits a durable typed action with the caller idempotency key", async () => {
