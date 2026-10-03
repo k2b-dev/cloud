@@ -8,7 +8,7 @@ import type {
 } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
-import { isSentFolder } from "./follow-up-scope";
+import { isInboxFolder, isSentFolder } from "./follow-up-scope";
 import { SEARCH_CHUNK_CHARACTERS, SEARCH_CHUNK_OVERLAP_CHARACTERS } from "./search-chunks";
 
 type SqlClient = typeof sql;
@@ -296,17 +296,32 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
          AND lower(identity.from_address) = sender.normalized_email
         WHERE sender.message_id = message.id AND sender.role = 'from'
       ) AS outbound,
-      -- Like a newly received message: a human reply, or a new message found in Sent, waits for an answer.
+      -- Like a newly received message: a human reply, or a new message found in Sent and not in the
+      -- Inbox, by folder or Gmail label, waits for an answer.
       (
         COALESCE(NULLIF(lower(btrim(message.protocol_facts->>'autoSubmitted')), ''), 'no') = 'no'
         AND (
           message.in_reply_to IS NOT NULL
           OR cardinality(message.reference_ids) > 0
-          OR EXISTS (
-            SELECT 1 FROM mail.message_placements placement
-            WHERE placement.message_id = message.id
-              AND placement.deleted_at IS NULL
-              AND ${isSentFolder(sql`placement.folder_id`)}
+          OR (
+            EXISTS (
+              SELECT 1 FROM mail.message_placements placement
+              WHERE placement.message_id = message.id
+                AND placement.deleted_at IS NULL
+                AND (
+                  ${isSentFolder(sql`placement.folder_id`)}
+                  OR EXISTS (SELECT 1 FROM unnest(placement.keywords) keyword WHERE lower(keyword) = '\\sent')
+                )
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM mail.message_placements placement
+              WHERE placement.message_id = message.id
+                AND placement.deleted_at IS NULL
+                AND (
+                  ${isInboxFolder(sql`placement.folder_id`)}
+                  OR EXISTS (SELECT 1 FROM unnest(placement.keywords) keyword WHERE lower(keyword) = '\\inbox')
+                )
+            )
           )
         )
       ) AS starts_waiting,

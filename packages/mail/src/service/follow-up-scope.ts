@@ -24,6 +24,9 @@ export const isTrashOrJunkFolder = (folderId: SqlFragment): SqlFragment => hasFo
 /** Whether a folder is the mailbox's Sent folder. */
 export const isSentFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["sent"]);
 
+/** Whether a folder is the mailbox's Inbox. */
+export const isInboxFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["inbox"]);
+
 /**
  * Whether a conversation belongs in the follow-up views and their counts: one of its messages is
  * filed outside Trash and Junk, or is an outgoing message the provider holds no copy of yet. Spam

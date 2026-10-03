@@ -30,7 +30,7 @@ import {
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
-import { isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
+import { isInboxFolder, isSentFolder, isTrashOrJunkFolder } from "./follow-up-scope";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
@@ -705,14 +705,20 @@ const isTrashOrJunkPlacement = async (db: typeof sql, folderId: string): Promise
 
 /**
  * Whether a message from the mailbox's own address starts its conversation waiting for an answer:
- * a human reply, or a new message found in Sent. Mail from the own address delivered to the Inbox,
- * such as a contact form that sends in the mailbox's name, still needs action.
+ * a human reply, or a new message found in Sent and not in the Inbox. Mail from the own address
+ * delivered to the Inbox, such as a contact form that sends in the mailbox's name, still needs
+ * action. Gmail lists a message in All Mail too and labels it with the folders it is in, so its
+ * labels give the same answer whichever folder syncs first.
  */
 const startsWaiting = async (db: typeof sql, folderId: string, message: ConnectorEnvelope): Promise<boolean> => {
   if (isAutomaticSubmission(message.protocolFacts?.autoSubmitted)) return false;
   if (message.inReplyTo || message.references.length > 0) return true;
-  const [folder] = await db<{ sent: boolean }[]>`SELECT ${isSentFolder(sql`${folderId}::uuid`)} AS sent`;
-  return folder?.sent === true;
+  const labels = new Set(message.labels.map((label) => label.toLowerCase()));
+  if (labels.has("\\inbox")) return false;
+  const [folder] = await db<{ sent: boolean; inbox: boolean }[]>`
+    SELECT ${isSentFolder(sql`${folderId}::uuid`)} AS sent, ${isInboxFolder(sql`${folderId}::uuid`)} AS inbox
+  `;
+  return !folder?.inbox && (folder?.sent === true || labels.has("\\sent"));
 };
 
 export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {

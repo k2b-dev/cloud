@@ -242,6 +242,11 @@ const createProvider = (kind: ProviderKind) => {
     appends,
     folder,
     deliver: (source: string) => store(Buffer.from(source), INBOX, []),
+    // A message another client sent; a message to the own address is delivered to the Inbox too.
+    storeSent: async (source: string, alsoInInbox: boolean) => {
+      const { message } = await store(Buffer.from(source), sentPath, ["\\Seen"]);
+      if (alsoInInbox) place(message, INBOX, []);
+    },
     envelope: async (path: string, uid: number, folderStableKey: string) => {
       const message = folder(path).entries.get(uid);
       if (!message) throw new Error(`No message ${uid} in ${path}`);
@@ -1174,6 +1179,78 @@ suite("mail sent message projection", () => {
     }
   });
 
+  test("an answer that arrives after Send but loads only after the reply went out still needs action", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "late-load");
+      await sql`UPDATE mail.conversations SET work_status = 'done' WHERE id = ${inbound.conversation_id}::uuid`;
+      const draft = await replyDraft(mailbox, inbound);
+      await waitForDraftExport(draft.id, ["active"]);
+      const command = await createActorCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "send",
+          draftId: draft.id,
+          expectedDraftRevision: draft.revision,
+          senderIdentityId: mailbox.identityId,
+          undoSeconds: 0,
+          scheduledAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString(),
+          idempotencyKey: `late-load-reply-${suffix}`,
+        },
+        enqueue: false,
+      });
+      if (!command.ok) throw new Error(JSON.stringify(command.error));
+      const workStatus = async () => {
+        const [state] = await sql<{ work_status: string }[]>`
+          SELECT work_status FROM mail.conversations WHERE id = ${inbound.conversation_id}::uuid
+        `;
+        return state?.work_status;
+      };
+
+      // The answer arrives while the reply waits for its send time, but its body loads only after
+      // the reply went out, so the reply is the newer message by date.
+      const answerId = `<answer-late-load-${suffix}@example.test>`;
+      await provider.deliver(
+        [
+          `Message-ID: ${answerId}`,
+          `In-Reply-To: ${inbound.messageId}`,
+          `References: ${inbound.messageId}`,
+          `Date: ${new Date().toUTCString()}`,
+          `From: Customer <${CUSTOMER}>`,
+          `To: Owner <${OWNER}>`,
+          "Subject: Re: Document request",
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "One more question.",
+        ].join("\r\n"),
+      );
+      await mailbox.syncAll();
+      const [outbox] = await sql<{ id: string }[]>`
+        UPDATE mail.outbox_submissions
+        SET scheduled_at = now() - interval '1 second', undo_until = NULL
+        WHERE command_id = ${command.data.id}::uuid
+        RETURNING id
+      `;
+      expect(await executeOutboxSubmission(outbox!.id)).toBe("sent");
+      await waitForHydration(mailbox);
+      const [answer] = await sql<{ hydration_status: string }[]>`
+        SELECT hydration_status FROM mail.message_contents
+        WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id = ${answerId}
+      `;
+      expect(answer?.hydration_status).toBe("complete");
+      expect(await workStatus()).toBe("needs_action");
+
+      // The provider's copy of the reply does not answer it either.
+      await mailbox.syncAll();
+      await waitForHydration(mailbox);
+      expect(await workStatus()).toBe("needs_action");
+    } finally {
+      provider.restore();
+    }
+  });
+
   test("merging or rebuilding threads keeps a reply scheduled for later out of the conversation's date", async () => {
     const provider = createProvider("imap");
     try {
@@ -1345,6 +1422,73 @@ suite("mail sent message projection", () => {
         WHERE link.message_id = ${outbox.message_id}::uuid
       `;
       expect(conversation?.work_status).toBe("waiting");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a new message from another Gmail client waits for an answer whichever folder syncs first", async () => {
+    const provider = createProvider("gmail");
+    try {
+      const mailbox = await connect(provider);
+      const ownMessage = async (key: string, to: string, alsoInInbox: boolean) => {
+        const messageId = `<own-${key}-${suffix}@example.test>`;
+        await provider.storeSent(
+          [
+            `Message-ID: ${messageId}`,
+            `Date: ${new Date().toUTCString()}`,
+            `From: Owner <${OWNER}>`,
+            `To: ${to}`,
+            `Subject: Own message ${key}`,
+            "Content-Type: text/plain; charset=utf-8",
+            "",
+            "Hello.",
+          ].join("\r\n"),
+          alsoInInbox,
+        );
+        return messageId;
+      };
+      const workStatus = async (messageId: string) => {
+        const [conversation] = await sql<{ work_status: string }[]>`
+          SELECT conversation.work_status
+          FROM mail.message_contents message
+          JOIN mail.conversation_messages link ON link.message_id = message.id
+          JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+          WHERE message.mailbox_id = ${mailbox.mailboxId}::uuid AND message.message_id = ${messageId}
+        `;
+        return conversation?.work_status;
+      };
+
+      // All Mail lists the message with its Sent label before the Sent folder syncs.
+      const announcement = await ownMessage("announcement", CUSTOMER, false);
+      await whenProviderFree(() => syncFolderBatch(mailbox.folderId(ALL), async () => undefined));
+      expect(await workStatus(announcement)).toBe("waiting");
+
+      // A contact form that sends through the mailbox's own account to itself is in Sent and the Inbox.
+      const contactForm = await ownMessage("contact-form", OWNER, true);
+      await whenProviderFree(() => syncFolderBatch(mailbox.folderId(SENT), async () => undefined));
+      expect(await workStatus(contactForm)).toBe("needs_action");
+
+      // An operator's thread rebuild gives both messages the same start.
+      for (const messageId of [announcement, contactForm]) {
+        await sql`
+          DELETE FROM mail.conversation_messages link
+          USING mail.message_contents message
+          WHERE link.message_id = message.id
+            AND message.mailbox_id = ${mailbox.mailboxId}::uuid
+            AND message.message_id = ${messageId}
+        `;
+      }
+      const rebuild = await createMailCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: { kind: "rebuild_threads", idempotencyKey: `own-message-rebuild-${suffix}` },
+        enqueue: false,
+      });
+      if (!rebuild.ok) throw new Error(JSON.stringify(rebuild.error));
+      expect(await executeMaintenanceCommand(rebuild.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      expect(await workStatus(announcement)).toBe("waiting");
+      expect(await workStatus(contactForm)).toBe("needs_action");
     } finally {
       provider.restore();
     }

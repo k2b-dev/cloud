@@ -508,6 +508,13 @@ const applyVerifiedConversationTransition = async (params: {
         WHERE newer_link.conversation_id = conversation.id
           AND ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
           AND (newer_message.internal_date, newer_message.id) > (message.internal_date, message.id)
+          -- A reply someone chose to send before Mail stored this message was written without it.
+          AND NOT EXISTS (
+            SELECT 1
+            FROM mail.outbox_submissions newer_send
+            WHERE newer_send.message_id = newer_message.id
+              AND newer_send.created_at < message.created_at
+          )
       ) AS is_latest_verified,
       ${isMailReceivedSinceSend(sql`message.id`)} AS received_since_send,
       (
