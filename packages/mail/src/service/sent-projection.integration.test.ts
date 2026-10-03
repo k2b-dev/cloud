@@ -18,6 +18,7 @@ import { startDraftProjectionRuntime, stopDraftProjectionRuntime, submitDueDraft
 import { createDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { listConversations } from "./messages";
 import { createProviderConnection } from "./provider-connections";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 
@@ -1063,6 +1064,191 @@ suite("mail sent message projection", () => {
         SELECT state FROM mail.drafts WHERE id = ${draft.id}::uuid
       `;
       expect(kept?.state).toBe("draft");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a reply scheduled for later lets an answer that arrives first reopen the conversation", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "scheduled");
+      const draft = await replyDraft(mailbox, inbound);
+      await waitForDraftExport(draft.id, ["active"]);
+      const scheduledAt = new Date(Date.now() + 2 * 60 * 60_000);
+      const command = await createActorCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "send",
+          draftId: draft.id,
+          expectedDraftRevision: draft.revision,
+          senderIdentityId: mailbox.identityId,
+          undoSeconds: 0,
+          scheduledAt: scheduledAt.toISOString(),
+          idempotencyKey: `scheduled-reply-${suffix}`,
+        },
+        enqueue: false,
+      });
+      if (!command.ok) throw new Error(JSON.stringify(command.error));
+      const conversationState = async () => {
+        const [state] = await sql<
+          { work_status: string; snoozed_until: Date | null; latest_message_at: Date; participant_summary: string }[]
+        >`
+          SELECT work_status, snoozed_until, latest_message_at, participant_summary
+          FROM mail.conversations
+          WHERE id = ${inbound.conversation_id}::uuid
+        `;
+        if (!state) throw new Error("The conversation disappeared");
+        return state;
+      };
+      // The scheduled reply has not reached anyone, so it does not date the conversation yet.
+      expect((await conversationState()).latest_message_at.getTime()).toBeLessThan(Date.now());
+      await sql`
+        UPDATE mail.conversations
+        SET work_status = 'waiting', snoozed_until = now() + interval '5 days'
+        WHERE id = ${inbound.conversation_id}::uuid
+      `;
+
+      const answerId = `<answer-scheduled-${suffix}@example.test>`;
+      await provider.deliver(
+        [
+          `Message-ID: ${answerId}`,
+          `In-Reply-To: ${inbound.messageId}`,
+          `References: ${inbound.messageId}`,
+          `Date: ${new Date().toUTCString()}`,
+          `From: Customer <${CUSTOMER}>`,
+          `To: Owner <${OWNER}>`,
+          "Subject: Re: Document request",
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "Never mind, I found it.",
+        ].join("\r\n"),
+      );
+      await mailbox.syncAll();
+      await waitForHydration(mailbox);
+      const [answer] = await sql<{ conversation_id: string; internal_date: Date }[]>`
+        SELECT link.conversation_id, message.internal_date
+        FROM mail.message_contents message
+        JOIN mail.conversation_messages link ON link.message_id = message.id
+        WHERE message.mailbox_id = ${mailbox.mailboxId}::uuid AND message.message_id = ${answerId}
+      `;
+      expect(answer?.conversation_id).toBe(inbound.conversation_id);
+      const reopened = await conversationState();
+      expect(reopened.work_status).toBe("needs_action");
+      expect(reopened.snoozed_until).toBeNull();
+      expect(reopened.latest_message_at.getTime()).toBe(answer!.internal_date.getTime());
+      expect(reopened.participant_summary).toBe("Customer");
+      // The list previews the answer, not the reply that has not been sent yet.
+      const needsAction = await listConversations({ context, mailboxId: mailbox.mailboxId, view: "needs_action" });
+      if (!needsAction.ok) throw new Error(JSON.stringify(needsAction.error));
+      const row = needsAction.data.items.find((item) => item.id === inbound.conversation_id);
+      expect(row?.preview).toStartWith("Never mind, I found it.");
+
+      // Once sent, the reply is the newest message and the conversation waits for an answer again.
+      const [outbox] = await sql<{ id: string; message_id: string }[]>`
+        UPDATE mail.outbox_submissions
+        SET scheduled_at = now() - interval '1 second', undo_until = NULL
+        WHERE command_id = ${command.data.id}::uuid
+        RETURNING id, message_id
+      `;
+      expect(await executeOutboxSubmission(outbox!.id)).toBe("sent");
+      const [reply] = await sql<{ internal_date: Date }[]>`
+        SELECT internal_date FROM mail.message_contents WHERE id = ${outbox!.message_id}::uuid
+      `;
+      const sent = await conversationState();
+      expect(sent.work_status).toBe("waiting");
+      expect(sent.latest_message_at.getTime()).toBe(reply!.internal_date.getTime());
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a reply waiting for another send attempt leaves the conversation's date until it is sent", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const inbound = await receive(provider, mailbox, "retried");
+      const draft = await replyDraft(mailbox, inbound);
+      await waitForDraftExport(draft.id, ["active"]);
+      const command = await createActorCommand({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          kind: "send",
+          draftId: draft.id,
+          expectedDraftRevision: draft.revision,
+          senderIdentityId: mailbox.identityId,
+          undoSeconds: 10,
+          idempotencyKey: `retried-reply-${suffix}`,
+        },
+        enqueue: false,
+      });
+      if (!command.ok) throw new Error(JSON.stringify(command.error));
+      const dates = async () => {
+        const [row] = await sql<{ latest_message_at: Date; inbound_at: Date; reply_at: Date }[]>`
+          SELECT conversation.latest_message_at, inbound.internal_date AS inbound_at, reply.internal_date AS reply_at
+          FROM mail.conversations conversation
+          JOIN mail.message_contents inbound ON inbound.id = ${inbound.id}::uuid
+          JOIN mail.outbox_submissions outbox ON outbox.command_id = ${command.data.id}::uuid
+          JOIN mail.message_contents reply ON reply.id = outbox.message_id
+          WHERE conversation.id = ${inbound.conversation_id}::uuid
+        `;
+        if (!row) throw new Error("The conversation disappeared");
+        return { latest: row.latest_message_at.getTime(), inbound: row.inbound_at.getTime(), reply: row.reply_at.getTime() };
+      };
+      // Right after Send, the reply dates the conversation.
+      const sending = await dates();
+      expect(sending.latest).toBe(sending.reply);
+
+      const [outbox] = await sql<{ id: string }[]>`
+        UPDATE mail.outbox_submissions
+        SET scheduled_at = now() - interval '1 second', undo_until = now() - interval '1 second'
+        WHERE command_id = ${command.data.id}::uuid
+        RETURNING id
+      `;
+      provider.failNextSubmission("ESOCKET", false);
+      expect(await executeOutboxSubmission(outbox!.id)).toBe("scheduled");
+      const retrying = await dates();
+      expect(retrying.latest).toBe(retrying.inbound);
+
+      expect(await sendRetryNow(outbox!.id)).toBe("sent");
+      const sent = await dates();
+      expect(sent.latest).toBe(sent.reply);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a new message starts a conversation that waits for an answer", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await createDraft({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          senderIdentityId: mailbox.identityId,
+          to: [{ name: "Customer", address: CUSTOMER }],
+          cc: [],
+          bcc: [],
+          subject: "Announcement",
+          body: "We are moving to a new office.",
+          format: "plain",
+          intent: "new",
+        },
+      });
+      if (!draft.ok) throw new Error(JSON.stringify(draft.error));
+      await waitForDraftExport(draft.data.id, ["active"]);
+      const outbox = await send(mailbox, draft.data.id, draft.data.revision, "new-message");
+      const [conversation] = await sql<{ work_status: string }[]>`
+        SELECT conversation.work_status
+        FROM mail.conversation_messages link
+        JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+        WHERE link.message_id = ${outbox.message_id}::uuid
+      `;
+      expect(conversation?.work_status).toBe("waiting");
     } finally {
       provider.restore();
     }

@@ -79,7 +79,7 @@ cld --json mail ls Support --view mine
 cld --json mail ls "Support:Projekte / 2025" --status needs_action --limit 20
 ```
 
-Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, or `recently_active`; `--status` takes `needs_action`, `waiting`, or `done`. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
+Without a folder, `ls` lists the mailbox's conversations across folders. `--view` takes `needs_action`, `mine`, `unassigned`, `waiting`, `done`, `snoozed`, or `recently_active`; `--status` takes `needs_action`, `waiting`, or `done`. The follow-up views leave out conversations that are only in Trash or Junk, and `unassigned` includes conversations whose assignee can no longer write in the mailbox. The JSON result is `{ "items": [...], "nextCursor": ... }`; pass `--cursor` for the next page.
 
 Show one conversation with its summary, status, assignee, tags, and latest messages, then print one message:
 
@@ -529,7 +529,7 @@ cld --json mail conversation activity <conversation-id>
 
 Assign many conversations at once with [`assign`](#triage-conversations). It exits with status 1 when any conversation was not found in the mailbox.
 
-People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply waits for someone else. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
+People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply and a new message the mailbox sends wait for someone else. A reply scheduled for later counts once it is sent. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
 
 Resolve permission-scoped Contacts from server-derived conversation participants:
 

@@ -30,6 +30,7 @@ import {
 import { deleteAbandonedDraftAttachmentUploads } from "./draft-uploads";
 import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
+import { isTrashOrJunkFolder } from "./follow-up-scope";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { mailScheduler } from "./mail-scheduler";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
@@ -693,6 +694,15 @@ const storableEnvelope = (
   return { message: { ...message, messageId, addresses }, skipped, messageIdShortened };
 };
 
+/**
+ * Mail the provider delivers straight to Trash or Junk, such as spam its filter caught, is not
+ * received mail for automations: an automatic reply would answer the spammer.
+ */
+const isTrashOrJunkPlacement = async (db: typeof sql, folderId: string): Promise<boolean> => {
+  const [folder] = await db<{ excluded: boolean }[]>`SELECT ${isTrashOrJunkFolder(sql`${folderId}::uuid`)} AS excluded`;
+  return folder?.excluded === true;
+};
+
 export const ingestEnvelope = async (params: IngestEnvelopeParams): Promise<string> => {
   const { message, skipped, messageIdShortened } = storableEnvelope(params.message);
   if (skipped.length > 0 || messageIdShortened) {
@@ -960,13 +970,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         ${isOutbound ? null : params.message.internalDate},
         ${isOutbound ? params.message.internalDate : null},
         ${params.message.internalDate},
-        ${
-          isOutbound &&
-          (params.message.inReplyTo || params.message.references.length > 0) &&
-          !isAutomaticSubmission(params.message.protocolFacts?.autoSubmitted)
-            ? "waiting"
-            : "needs_action"
-        }
+        ${isOutbound && !isAutomaticSubmission(params.message.protocolFacts?.autoSubmitted) ? "waiting" : "needs_action"}
       )
       RETURNING id
     `,
@@ -998,7 +1002,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     RETURNING message_id
   `;
   if (!linked) return messageContentId;
-  if (params.captureWorkflowTriggers && !isOutbound) {
+  if (params.captureWorkflowTriggers && !isOutbound && !(await isTrashOrJunkPlacement(params.db, params.folderId))) {
     const deliveryKey = `message:${remoteRef.id}`;
     const snapshot = await getWorkflowSnapshot({
       mailboxId: params.mailboxId,

@@ -23,7 +23,7 @@ Die Werkzeuge können zusammenarbeiten, aber keines aktiviert automatisch ein an
 
 Postfachadministratoren erstellen unter **Automatisierungen > Eingehende E-Mails** einen geführten Ablauf oder beginnen direkt im Organisationsmenü einer Nachricht. Wähle **Alle eingehenden E-Mails**, wenn keine Bedingung erforderlich ist. Andernfalls kannst du bis zu acht Bedingungen für Absender, Domain, Betreff, Nachrichtentext oder vorhandene Anhänge verbinden und festlegen, ob alle oder eine Bedingung zutreffen müssen.
 
-Eine Automatisierung für eingehende E-Mails läuft einmal pro empfangener Nachricht. Verschiebt jemand die Nachricht in einem anderen E-Mail-Programm in einen anderen Ordner, etwa zurück in den Posteingang, nachdem die Automatisierung sie verschoben hatte, läuft die Automatisierung nicht erneut.
+Eine Automatisierung für eingehende E-Mails läuft einmal pro empfangener Nachricht. E-Mails, die der Anbieter direkt in den Papierkorb oder nach Junk zustellt, etwa Spam, den sein Filter erkannt hat, starten weder Automatisierungen für eingehende E-Mails noch automatische Antworten. Verschiebt jemand die Nachricht in einem anderen E-Mail-Programm in einen anderen Ordner, etwa zurück in den Posteingang, nachdem die Automatisierung sie verschoben hatte, läuft die Automatisierung nicht erneut.
 
 Füge Schritte in der Reihenfolge ihrer Ausführung hinzu. Ein Ablauf kann beliebig kombinieren:
 

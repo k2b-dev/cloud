@@ -3,9 +3,12 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { listFocusConversations, listMailboxCounts } from "./focus";
 import { createMailbox } from "./mailboxes";
+import { getConversationViewCounts, listConversations } from "./messages";
+import { searchMessages } from "./search";
 
 const suite = suiteFor("database", "nats");
 
@@ -206,5 +209,95 @@ suite("cross-mailbox focus", () => {
     const outsiderPage = await listFocusConversations({ context: outsiderContext, view: "mine" });
     expect(outsiderPage.ok).toBe(true);
     if (outsiderPage.ok) expect(outsiderPage.data.items.map((item) => item.subject)).toEqual(["Hidden mail"]);
+  });
+
+  test("leaves Trash and Junk out of follow-up and treats assignees without access as unassigned", async () => {
+    const lead = await createUser("lead");
+    const former = await createUser("former");
+    const expired = await createUser("expired");
+    const leadContext = contextFor(lead);
+    const team = await createFixtureMailbox(leadContext, `Team ${suffix}`);
+    const [inbox] = await sql<
+      { remote_resource_id: string }[]
+    >`SELECT remote_resource_id FROM mail.folders WHERE id = ${team.folderId}::uuid`;
+    const folder = async (name: string, role: string) => {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+        VALUES (${newShortId()}, ${inbox!.remote_resource_id}::uuid, ${`focus-${suffix}-${name}`}, ${name}, ${role}, 'current')
+        RETURNING id
+      `;
+      return row!.id;
+    };
+    const junkFolderId = await folder("Junk", "junk");
+    const trashFolderId = await folder("Deleted", "other");
+    // The mailbox uses its own Trash folder instead of the provider's.
+    await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id) VALUES (${team.id}::uuid, 'trash', ${trashFolderId}::uuid)`;
+    for (const user of [former, expired]) {
+      const access = await grantMailboxAccess({
+        context: leadContext,
+        mailboxId: team.id,
+        principal: { type: "user", userId: user.id },
+        permission: "write",
+      });
+      if (!access.ok) throw new Error(access.error.message);
+      if (user === former) {
+        const revoked = await revokeMailboxAccess({ context: leadContext, mailboxId: team.id, accessId: access.data.id });
+        if (!revoked.ok) throw new Error(revoked.error.message);
+      }
+    }
+    await sql`UPDATE auth.users SET account_expires = now() - interval '1 day' WHERE id = ${expired.id}::uuid`;
+
+    const now = Date.now();
+    const open = { mailboxId: team.id, status: "needs_action" as const, assigneeUserId: null };
+    await createConversation({ ...open, folderId: team.folderId, subject: "Open question", date: new Date(now - 1_000) });
+    await createConversation({
+      ...open,
+      folderId: team.folderId,
+      subject: "Left by a former colleague",
+      date: new Date(now - 2_000),
+      assigneeUserId: former.id,
+    });
+    await createConversation({
+      ...open,
+      folderId: team.folderId,
+      subject: "Left by an expired account",
+      date: new Date(now - 3_000),
+      assigneeUserId: expired.id,
+    });
+    const spamId = await createConversation({ ...open, folderId: junkFolderId, subject: "Win a prize", date: new Date(now) });
+    await createConversation({ ...open, folderId: trashFolderId, subject: "Deleted request", date: new Date(now - 500) });
+    const openSubjects = ["Open question", "Left by a former colleague", "Left by an expired account"];
+
+    const focus = await listFocusConversations({ context: leadContext, view: "unassigned" });
+    expect(focus.ok).toBe(true);
+    if (!focus.ok) return;
+    expect(focus.data.items.map((item) => item.subject)).toEqual(openSubjects);
+    expect(focus.data.counts).toEqual({ mine: 0, unassigned: 3, waiting: 0, all: 3 });
+    expect(focus.data.mailboxCounts).toEqual([{ mailboxId: team.id, unread: 3, needsAction: 3 }]);
+
+    for (const view of ["needs_action", "unassigned"] as const) {
+      const list = await listConversations({ context: leadContext, mailboxId: team.id, view });
+      expect(list.ok && list.data.items.map((item) => item.subject)).toEqual(openSubjects);
+    }
+    const counts = await getConversationViewCounts({ context: leadContext, mailboxId: team.id });
+    expect(counts.ok && counts.data).toMatchObject({ needs_action: 3, unassigned: 3, recently_active: 5 });
+    // The message list and search find the same unassigned conversations.
+    const unassignedMessages = await searchMessages({
+      context: leadContext,
+      mailboxId: team.id,
+      groupByConversation: false,
+      excludedFolderIds: [junkFolderId, trashFolderId],
+      request: { expression: { type: "assignee", userId: null }, sort: "newest", limit: 10 },
+    });
+    expect(unassignedMessages.ok && unassignedMessages.data.items.map((item) => item.subject)).toEqual(openSubjects);
+
+    // Moving the spam back out of Junk shows it again with its work state.
+    await sql`
+      UPDATE mail.message_placements
+      SET folder_id = ${team.folderId}::uuid
+      WHERE message_id = (SELECT message_id FROM mail.conversation_messages WHERE conversation_id = ${spamId}::uuid)
+    `;
+    const rescued = await listConversations({ context: leadContext, mailboxId: team.id, view: "needs_action" });
+    expect(rescued.ok && rescued.data.items.map((item) => item.subject)).toEqual(["Win a prize", ...openSubjects]);
   });
 });

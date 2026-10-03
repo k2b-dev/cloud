@@ -8,7 +8,7 @@ order: 20
 
 ## Die passende Unterhaltung finden {icon="search"}
 
-Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Die Suche umfasst synchronisierte Nachrichtenfelder und aus Anhängen erkannten Text. Über die Schaltfläche für den Suchbereich kannst du die Suche auf eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichtentext** und **Anhangsnamen** eingrenzen.
+Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Die Suche umfasst synchronisierte Nachrichtenfelder und aus Anhängen erkannten Text. Über die Schaltfläche für den Suchbereich kannst du die Suche auf eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichtentext** und **Anhangsnamen** eingrenzen. Gibst du mehrere Wörter ein, passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
 
 Wähle **Suchfilter**, wenn du weitere Bedingungen wie Datum, Empfänger, Anhänge, Ordner, Tags oder Zusammenarbeitsstatus benötigst.
 
@@ -38,7 +38,7 @@ Wenn erkannter Anhangstext übereinstimmt, nennt das Ergebnis den Anhang, zeigt 
 
 ## Nachverfolgung, Zuordnung und Ordner gezielt verwenden {icon="layout-list"}
 
-Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschehen soll. **Zuordnung** zeigt, wer zuständig ist:
+Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes geschehen soll. **Zuordnung** zeigt, wer zuständig ist. Außer **Erledigt** lassen diese Ansichten Unterhaltungen aus, die nur im Papierkorb oder in Junk liegen, etwa Spam, den dein Anbieter dort abgelegt hat, oder gelöschte E-Mails. Verschiebst du eine Unterhaltung zurück, erscheint sie wieder mit ihrem nächsten Schritt:
 
 | Abschnitt | Ansicht | Inhalt |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ge
 | Nachverfolgung | Später | Unterhaltungen, die bis zum gewählten Zeitpunkt ausgeblendet sind. Der Zeitpunkt blendet sie wieder ein, ohne ihren nächsten Schritt zu ändern. Neue eingehende E-Mails blenden sie sofort wieder ein. |
 | Nachverfolgung | Erledigt | Als erledigt markierte Unterhaltungen |
 | Zuordnung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
-| Zuordnung | Nicht zugewiesen | Unterhaltungen ohne zuständige Person |
+| Zuordnung | Nicht zugewiesen | Unterhaltungen ohne zuständige Person oder deren zuständige Person in diesem Postfach nicht mehr schreiben darf |
 | Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb und Junk |
 | Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
 | Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
@@ -56,7 +56,7 @@ Anbieterordner bilden eine andere Ebene. Wenn du eine Unterhaltung in Archiv, Pa
 
 Verwende **Wartet auf Antwort**, wenn der nächste Schritt deines Teams von einer anderen Person abhängt. Mail setzt diesen Status, nachdem der Versand einer menschlichen Antwort oder Antwort an alle bestätigt wurde. Das gilt auch für Antworten, die aus einem anderen E-Mail-Programm synchronisiert werden. Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder einer Uhrzeit abhängt. Bei **Wann soll die Unterhaltung wieder erscheinen?** wählst du den Zeitpunkt. Bis dahin liegt sie unter **Später** und bleibt aus aktiven Ansichten ausgeblendet, sofern nicht vorher eine neue E-Mail eingeht.
 
-Neue eingehende E-Mails setzen eine Unterhaltung immer auf **Handlungsbedarf** und entfernen sie aus **Später**. Eine menschliche Antwort oder Antwort an alle setzt sie erst auf **Wartet auf Antwort**, wenn die Zustellung bestätigt wurde. Neue Nachrichten, Weiterleitungen, automatische Antworten, Wiederholungen und unklare Zustellungsergebnisse leiten keinen neuen nächsten Schritt ab. Unter **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Wenn du Erledigt entfernst, öffnet Mail sie wieder und leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
+Neue eingehende E-Mails setzen eine Unterhaltung immer auf **Handlungsbedarf** und entfernen sie aus **Später**. Eine menschliche Antwort oder Antwort an alle setzt sie erst auf **Wartet auf Antwort**, wenn die Zustellung bestätigt wurde. Eine neue Nachricht, die du in Cloud oder einem anderen E-Mail-Programm schreibst, beginnt eine Unterhaltung in **Wartet auf Antwort**. Weiterleitungen, automatische Antworten, Wiederholungen und unklare Zustellungsergebnisse leiten keinen neuen nächsten Schritt ab. Eine für später geplante Antwort zählt erst, wenn sie gesendet ist: Kommt vorher eine neue E-Mail an, wechselt die Unterhaltung zu **Handlungsbedarf** und bleibt nach der neuesten tatsächlichen Nachricht einsortiert. Die geplante Antwort wird trotzdem zum geplanten Zeitpunkt gesendet, außer du brichst sie unter **Geplant** ab. Unter **Unterhaltungsdetails** entscheidest du nur, ob die Unterhaltung **Erledigt** ist. Wenn du Erledigt entfernst, öffnet Mail sie wieder und leitet den nächsten Schritt aus der letzten bestätigten Nachricht ab.
 
 Mit **In Ordner verschieben** in den Unterhaltungsaktionen oder Mail-Befehlen wählst du das Ziel per Tastatur, Zeigegerät oder Berührung. Auf dem Desktop kannst du eine Unterhaltungszeile außerdem auf einen auswählbaren Ordner in der linken Navigation ziehen. Mail merkt die Verschiebung vor; die Synchronisierung bestätigt das Ergebnis beim Anbieter.
 
@@ -166,7 +166,7 @@ Informationen zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustellungsopt
 
 ## Wiederverwendbare Ansichten und lokale Tags erstellen {icon="layout-list"}
 
-Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt.
+Öffne **Einstellungen > Organisation**, um aus Ordner- und Zusammenarbeitsfiltern eine gespeicherte Ansicht zu erstellen. Eine Ansicht kann nach Ordner, zuständiger Person, nächstem Schritt, lokalem Tag und danach filtern, ob die Unterhaltung unter **Später** liegt. Wie **Nicht zugewiesen** findet ein Filter für Unterhaltungen ohne zuständige Person auch solche, deren zuständige Person in diesem Postfach nicht mehr schreiben darf.
 
 - **Nur für mich** erstellt eine private Ansicht.
 - **Alle mit Postfachzugriff** erstellt eine Postfachansicht und erfordert Schreibzugriff.

@@ -3,6 +3,9 @@ import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
 import { isCurrentActorActive, mailboxAccessPrincipalCondition } from "./access";
 import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
+import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
+import { isFollowUpConversation, isTrashOrJunkFolder } from "./follow-up-scope";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -88,20 +91,26 @@ const boundMailboxId = (context: MailRequestContext): string | null => {
   return context.actor.serviceAccount.resourceId;
 };
 
+const readableMailboxes = (context: MailRequestContext) => sql<{ mailbox_id: string }[]>`
+  SELECT ma.mailbox_id
+  FROM mail.mailbox_access ma
+  JOIN auth.access a ON a.id = ma.access_id
+  JOIN mail.mailboxes mailbox ON mailbox.id = ma.mailbox_id AND mailbox.deleted_at IS NULL
+  WHERE ${mailboxAccessPrincipalCondition(context.accessSubject)}
+    AND (${boundMailboxId(context)}::uuid IS NULL OR ma.mailbox_id = ${boundMailboxId(context)}::uuid)
+  GROUP BY ma.mailbox_id
+  HAVING max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) >= 1
+`;
+
+/**
+ * Every focus list and count covers open conversations only, so each readable conversation
+ * carries whether it belongs in the follow-up views; Done ones skip that check.
+ */
 const readableConversations = (context: MailRequestContext) => sql`
-  SELECT c.*
+  SELECT c.*, CASE WHEN c.work_status <> 'done' THEN ${isFollowUpConversation(sql`c.id`)} ELSE false END AS follow_up
   FROM mail.conversations c
-  JOIN mail.mailboxes mailbox ON mailbox.id = c.mailbox_id AND mailbox.deleted_at IS NULL
-  JOIN (
-    SELECT ma.mailbox_id
-    FROM mail.mailbox_access ma
-    JOIN auth.access a ON a.id = ma.access_id
-    WHERE ${mailboxAccessPrincipalCondition(context.accessSubject)}
-    GROUP BY ma.mailbox_id
-    HAVING max(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END) >= 1
-  ) readable ON readable.mailbox_id = c.mailbox_id
-  WHERE (${boundMailboxId(context)}::uuid IS NULL OR c.mailbox_id = ${boundMailboxId(context)}::uuid)
-    AND EXISTS (
+  JOIN (${readableMailboxes(context)}) readable ON readable.mailbox_id = c.mailbox_id
+  WHERE EXISTS (
       SELECT 1
       FROM mail.conversation_messages visible_cm
       LEFT JOIN mail.message_placements visible_mp
@@ -115,6 +124,7 @@ const readableConversations = (context: MailRequestContext) => sql`
 
 const visibleNow = sql`(c.snoozed_until IS NULL OR c.snoozed_until <= now())`;
 
+/** A mailbox counts unread mail outside Trash and Junk, like All mail, and the conversations that need action. */
 const mailboxCountQuery = (context: MailRequestContext) => sql<DbMailboxCounts[]>`
   WITH readable_conversations AS (${readableConversations(context)})
   SELECT c.mailbox_id,
@@ -123,8 +133,9 @@ const mailboxCountQuery = (context: MailRequestContext) => sql<DbMailboxCounts[]
       JOIN mail.message_placements mp ON mp.message_id = cm.message_id
       WHERE cm.conversation_id = c.id AND mp.deleted_at IS NULL
         AND NOT ('\\Seen' = ANY(mp.flags))
+        AND NOT ${isTrashOrJunkFolder(sql`mp.folder_id`)}
     ))::int AS unread,
-    COUNT(*) FILTER (WHERE c.work_status = 'needs_action' AND ${visibleNow})::int AS needs_action
+    COUNT(*) FILTER (WHERE c.work_status = 'needs_action' AND ${visibleNow} AND c.follow_up)::int AS needs_action
   FROM readable_conversations c GROUP BY c.mailbox_id
 `;
 
@@ -155,6 +166,8 @@ export const listFocusConversations = async (params: {
   const cursor = decodeCursor(params.cursor, view, userId);
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
+  const readable = await readableMailboxes(params.context);
+  const unassigned = isUnassignedConversation(await listLapsedAssignees({ mailboxIds: readable.map((row) => row.mailbox_id) }));
 
   const [rows, countRows, mailboxCountRows] = await Promise.all([
     sql<DbFocusItem[]>`
@@ -202,15 +215,17 @@ export const listFocusConversations = async (params: {
         FROM mail.conversation_messages cm
         JOIN mail.message_contents content ON content.id = cm.message_id
         WHERE cm.conversation_id = c.id
+          AND NOT ${isUnsentOutboundMessage(sql`content.id`)}
         ORDER BY content.internal_date DESC, content.id DESC
         LIMIT 1
       ) latest ON true
-      WHERE (
-        (${view} = 'mine' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})
-        OR (${view} = 'unassigned' AND c.assignee_user_id IS NULL AND c.work_status = 'needs_action' AND ${visibleNow})
-        OR (${view} = 'waiting' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})
-        OR (${view} = 'all' AND c.work_status <> 'done' AND ${visibleNow})
-      )
+      WHERE c.follow_up
+        AND (
+          (${view} = 'mine' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})
+          OR (${view} = 'unassigned' AND ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})
+          OR (${view} = 'waiting' AND c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})
+          OR (${view} = 'all' AND c.work_status <> 'done' AND ${visibleNow})
+        )
         AND (
           ${cursor.data?.id ?? null}::uuid IS NULL
           OR (c.latest_message_at, c.id) < (${cursor.data?.date ?? null}::timestamptz, ${cursor.data?.id ?? null}::uuid)
@@ -222,10 +237,11 @@ export const listFocusConversations = async (params: {
       WITH readable_conversations AS (${readableConversations(params.context)})
       SELECT
         COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'needs_action' AND ${visibleNow})::int AS mine,
-        COUNT(*) FILTER (WHERE c.assignee_user_id IS NULL AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
+        COUNT(*) FILTER (WHERE ${unassigned} AND c.work_status = 'needs_action' AND ${visibleNow})::int AS unassigned,
         COUNT(*) FILTER (WHERE c.assignee_user_id = ${userId}::uuid AND c.work_status = 'waiting' AND ${visibleNow})::int AS waiting,
         COUNT(*) FILTER (WHERE c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
+      WHERE c.follow_up
     `,
     mailboxCountQuery(params.context),
   ]);

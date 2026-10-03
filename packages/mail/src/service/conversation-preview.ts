@@ -5,6 +5,7 @@ import { convert, type HtmlToTextOptions } from "html-to-text";
 import { attachmentMimeOrder } from "./attachment-order";
 import type { MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
 
 /**
  * Text budgets of the quick look card. The card is 22rem x 20rem: the excerpt
@@ -236,6 +237,7 @@ export const getConversationPreview = async (params: {
       FROM mail.conversation_messages cm
       JOIN mail.message_contents mc ON mc.id = cm.message_id
       WHERE cm.conversation_id = c.id
+        AND NOT ${isUnsentOutboundMessage(sql`mc.id`)}
       ORDER BY mc.internal_date DESC, mc.id DESC
       LIMIT 1
     ) latest ON true

@@ -16,6 +16,9 @@ const activeUsers = async (db: SqlClient, userIds: string[]): Promise<Array<{ id
   `;
 };
 
+/** The most users one access lookup returns (`listUsersWithAccess`). */
+const ACCESS_LOOKUP_LIMIT = 500;
+
 export const listCurrentMailboxUsers = async (params: {
   mailboxId: string;
   db?: SqlClient;
@@ -28,13 +31,13 @@ export const listCurrentMailboxUsers = async (params: {
   const rows = await db<{ access_id: string }[]>`
     SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${params.mailboxId}::uuid
   `;
-  const requestedLimit = Math.min(Math.max(params.limit ?? params.userIds?.length ?? 20, 1), 500);
+  const requestedLimit = Math.min(Math.max(params.limit ?? params.userIds?.length ?? 20, 1), ACCESS_LOOKUP_LIMIT);
   const users = await listUsersWithAccess({
     accessIds: rows.map((row) => row.access_id),
     userIds: params.userIds,
     minimumPermission: params.minimumPermission,
     search: params.search,
-    limit: 500,
+    limit: ACCESS_LOOKUP_LIMIT,
     db,
   });
   const activeUserIds = new Set(
@@ -79,3 +82,46 @@ export const hasCurrentMailboxUserPermission = async (params: {
   const users = await currentMailboxUserIds({ ...params, userIds: [params.userId] });
   return users.has(params.userId);
 };
+
+export type LapsedAssignee = { mailbox_id: string; user_id: string };
+
+/**
+ * Assignees of conversations in these mailboxes who no longer have write access there, for example
+ * because their access was revoked or their account expired. Views, counts, and search treat their
+ * conversations as unassigned so the team still finds them; the conversation keeps its assignee.
+ */
+export const listLapsedAssignees = async (params: { mailboxIds: readonly string[]; db?: SqlClient }): Promise<LapsedAssignee[]> => {
+  const db = params.db ?? sql;
+  if (params.mailboxIds.length === 0) return [];
+  const assigned = await db<LapsedAssignee[]>`
+    SELECT DISTINCT mailbox_id, assignee_user_id AS user_id
+    FROM mail.conversations
+    WHERE mailbox_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${[...new Set(params.mailboxIds)]}::jsonb))
+      AND assignee_user_id IS NOT NULL
+  `;
+  const byMailbox = Map.groupBy(assigned, (row) => row.mailbox_id);
+  const lapsed: LapsedAssignee[] = [];
+  for (const [mailboxId, rows] of byMailbox) {
+    // One access lookup answers for at most ACCESS_LOOKUP_LIMIT users.
+    for (let start = 0; start < rows.length; start += ACCESS_LOOKUP_LIMIT) {
+      const batch = rows.slice(start, start + ACCESS_LOOKUP_LIMIT);
+      const current = await currentMailboxUserIds({
+        mailboxId,
+        userIds: batch.map((row) => row.user_id),
+        minimumPermission: "write",
+        db,
+      });
+      lapsed.push(...batch.filter((row) => !current.has(row.user_id)));
+    }
+  }
+  return lapsed;
+};
+
+/** Whether a conversation, `c` unless named otherwise, has no assignee who can still work on it. */
+export const isUnassignedConversation = (lapsed: readonly LapsedAssignee[], c: Bun.SQL.Query<unknown> = sql`c`) => sql`(
+  ${c}.assignee_user_id IS NULL
+  OR (${c}.mailbox_id, ${c}.assignee_user_id) IN (
+    SELECT lapsed.mailbox_id, lapsed.user_id
+    FROM jsonb_to_recordset(${lapsed}::jsonb) AS lapsed(mailbox_id uuid, user_id uuid)
+  )
+)`;

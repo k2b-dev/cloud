@@ -7,6 +7,7 @@ import type { MailSearchExpression, SearchRequest } from "../contracts";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
+import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
 import { resolveMailExecution } from "./execution";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
@@ -342,6 +343,13 @@ const compileTextTerm = (term: Extract<MailSearchExpression, { type: "text" }>, 
   if (term.field === "tag") return tagMatch(query, term.match, conversationId);
   if (term.field === "keyword") return keywordMatch(query, term.match);
 
+  // Several words may sit in different fields, such as a sender's name and a subject word.
+  const words = term.match === "words" ? wordTokens(query) : [];
+  if (words.length > 1) {
+    const parts = words.map((word) => compileTextTerm({ ...term, query: word }, conversationId));
+    return parts.slice(1).reduce((combined, part) => sql`(${combined} AND ${part})`, parts[0]!);
+  }
+
   const body =
     term.match === "words" || term.match === "phrase"
       ? combineOr([bodyChunkMatch(query, term.match), attachmentWordOrPhraseMatch(query, term.match)])
@@ -366,21 +374,26 @@ const compileTextTerm = (term: Extract<MailSearchExpression, { type: "text" }>, 
   ]);
 };
 
+/**
+ * Compiles a search expression. `lapsedAssignees` holds the mailbox's assignees without write
+ * access; an unassigned condition matches their conversations too, like the Unassigned view.
+ */
 export const compileSearchExpression = (
   expression: MailSearchExpression,
   currentUserId: string | null = null,
   conversationId: SqlFragment = sql`cm.conversation_id`,
+  lapsedAssignees: readonly LapsedAssignee[] = [],
 ): SqlFragment => {
   if (expression.type === "and") {
-    const parts = expression.expressions.map((child) => compileSearchExpression(child, currentUserId, conversationId));
+    const parts = expression.expressions.map((child) => compileSearchExpression(child, currentUserId, conversationId, lapsedAssignees));
     return parts.slice(1).reduce((combined, part) => sql`(${combined} AND ${part})`, parts[0]!);
   }
   if (expression.type === "or") {
-    const parts = expression.expressions.map((child) => compileSearchExpression(child, currentUserId, conversationId));
+    const parts = expression.expressions.map((child) => compileSearchExpression(child, currentUserId, conversationId, lapsedAssignees));
     return parts.slice(1).reduce((combined, part) => sql`(${combined} OR ${part})`, parts[0]!);
   }
   if (expression.type === "not") {
-    return sql`NOT (${compileSearchExpression(expression.expression, currentUserId, conversationId)})`;
+    return sql`NOT (${compileSearchExpression(expression.expression, currentUserId, conversationId, lapsedAssignees)})`;
   }
   if (expression.type === "all") return sql`true`;
   if (expression.type === "folder_id") {
@@ -443,7 +456,10 @@ export const compileSearchExpression = (
           SELECT 1 FROM mail.conversations state
           WHERE state.id = ${conversationId} AND state.assignee_user_id = ${expression.userId}::uuid
         )`
-      : sql`EXISTS (SELECT 1 FROM mail.conversations state WHERE state.id = ${conversationId} AND state.assignee_user_id IS NULL)`;
+      : sql`EXISTS (
+          SELECT 1 FROM mail.conversations state
+          WHERE state.id = ${conversationId} AND ${isUnassignedConversation(lapsedAssignees, sql`state`)}
+        )`;
   }
   return expression.value
     ? sql`EXISTS (
@@ -507,6 +523,14 @@ const findIndexedSeed = (expression: MailSearchExpression): IndexedSeed | null =
 
 const compileAnyWordsSeed = (seed: AnyWordsSeed, mailboxId: string): SqlFragment => {
   const query = seed.query.trim();
+  // Each word may match a different field, so the seed holds the messages every word matches somewhere.
+  const words = wordTokens(query);
+  if (words.length > 1) {
+    const parts = words.map(
+      (word) => sql`SELECT seed_word.message_id FROM (${compileAnyWordsSeed({ ...seed, query: word }, mailboxId)}) seed_word`,
+    );
+    return parts.slice(1).reduce((combined, part) => sql`${combined} INTERSECT ${part}`, parts[0]!);
+  }
   const bodyTokenQueries = wordTokens(query).map(
     (token) => sql`
       SELECT seed_chunk.message_id
@@ -774,8 +798,9 @@ const runSearch = async (params: {
   currentUserId: string | null;
   groupByConversation: boolean;
   excludedFolderIds: readonly string[];
+  lapsedAssignees: readonly LapsedAssignee[];
 }): Promise<DbSearchHit[]> => {
-  const predicate = compileSearchExpression(params.expression, params.currentUserId);
+  const predicate = compileSearchExpression(params.expression, params.currentUserId, sql`cm.conversation_id`, params.lapsedAssignees);
   const indexedSeed = findIndexedSeed(params.expression);
   const indexedSeedCoversExpression = indexedSeed === params.expression;
   const conversationOnly = params.groupByConversation && !indexedSeed && isConversationOnlyExpression(params.expression);
@@ -794,7 +819,7 @@ const runSearch = async (params: {
           SELECT seed_conversation.id
           FROM mail.conversations seed_conversation
           WHERE seed_conversation.mailbox_id = ${params.mailboxId}::uuid
-            AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`)})
+            AND (${compileSearchExpression(params.expression, params.currentUserId, sql`seed_conversation.id`, params.lapsedAssignees)})
             AND (
               ${cursor?.id ?? null}::uuid IS NULL
               OR (
@@ -1314,6 +1339,7 @@ const executeSearchWithFallback = async (params: {
   currentUserId: string | null;
   groupByConversation: boolean;
   excludedFolderIds: readonly string[];
+  lapsedAssignees: readonly LapsedAssignee[];
 }): Promise<Result<{ rows: DbSearchHit[]; backend: SearchCursor["backend"] }>> => {
   try {
     const rows = await executeSearch(params);
@@ -1328,6 +1354,12 @@ const executeSearchWithFallback = async (params: {
   } catch (error) {
     return searchFailure(error);
   }
+};
+
+const searchesUnassigned = (expression: MailSearchExpression): boolean => {
+  if (expression.type === "and" || expression.type === "or") return expression.expressions.some(searchesUnassigned);
+  if (expression.type === "not") return searchesUnassigned(expression.expression);
+  return expression.type === "assignee" && expression.userId === null;
 };
 
 export const searchMessages = async (params: {
@@ -1355,6 +1387,7 @@ export const searchMessages = async (params: {
     if (cursor.data.backend === "native") backend = "native";
     else return fail(err.badInput("Search ranking changed; restart this search from the first page"));
   }
+  const lapsedAssignees = searchesUnassigned(expression) ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const execution = await executeSearchWithFallback({
     mailboxId: params.mailboxId,
     expression,
@@ -1365,6 +1398,7 @@ export const searchMessages = async (params: {
     currentUserId,
     groupByConversation,
     excludedFolderIds,
+    lapsedAssignees,
   });
   if (!execution.ok) return execution;
   const rows = execution.data.rows;

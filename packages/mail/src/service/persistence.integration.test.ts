@@ -2233,10 +2233,32 @@ suite("mail PostgreSQL foundation", () => {
         limit: 10,
       },
     });
+    // Each word may match a different part of one message: here the body and an attachment.
     expect(crossBodyAttachmentWords.ok).toBe(true);
     if (crossBodyAttachmentWords.ok) {
-      expect(crossBodyAttachmentWords.data.items.map((item) => item.conversationId)).not.toContain(attachmentConversation!.id);
+      expect(crossBodyAttachmentWords.data.items.map((item) => item.conversationId)).toContain(attachmentConversation!.id);
     }
+    const senderAndSubjectWords = await searchMessages({
+      context,
+      mailboxId: mailbox.data.id,
+      groupByConversation: false,
+      request: {
+        expression: { type: "text", field: "any", query: "alice searchable", match: "words" },
+        sort: "relevance",
+        limit: 10,
+      },
+    });
+    expect(senderAndSubjectWords.ok && senderAndSubjectWords.data.items.map((item) => item.id)).toContain(message!.id);
+    const missingWord = await searchMessages({
+      context,
+      mailboxId: mailbox.data.id,
+      request: {
+        expression: { type: "text", field: "any", query: "alice nowhere", match: "words" },
+        sort: "relevance",
+        limit: 10,
+      },
+    });
+    expect(missingWord.ok && missingWord.data.items.map((item) => item.conversationId)).not.toContain(attachmentConversation!.id);
 
     const secondAttachmentBytes = Buffer.from("quasar attachment fixture");
     const secondAttachmentBlob = await storeReadableBlob(Readable.from([secondAttachmentBytes]), secondAttachmentBytes.length);
@@ -2284,9 +2306,13 @@ suite("mail PostgreSQL foundation", () => {
         limit: 10,
       },
     });
+    // The words sit in two attachments of the same message. No single attachment holds both, so the
+    // result names none of them.
     expect(crossAttachmentWords.ok).toBe(true);
     if (crossAttachmentWords.ok) {
-      expect(crossAttachmentWords.data.items.map((item) => item.conversationId)).not.toContain(attachmentConversation!.id);
+      const hit = crossAttachmentWords.data.items.find((item) => item.conversationId === attachmentConversation!.id);
+      expect(hit).toBeDefined();
+      expect(hit?.attachmentMatch).toBeNull();
     }
     const [secondaryFolder] = await sql<{ id: string; short_id: string }[]>`
       INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)

@@ -10,6 +10,7 @@ import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
+import { isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
 import { type MailCollaborationEvent, publishMailCollaborationEvent } from "./events";
@@ -504,15 +505,7 @@ const applyVerifiedConversationTransition = async (params: {
         FROM mail.conversation_messages newer_link
         JOIN mail.message_contents newer_message ON newer_message.id = newer_link.message_id
         WHERE newer_link.conversation_id = conversation.id
-          AND (
-            newer_message.hydration_status = 'complete'
-            OR EXISTS (
-              SELECT 1
-              FROM mail.outbox_submissions newer_outbox
-              WHERE newer_outbox.message_id = newer_message.id
-                AND newer_outbox.state <> 'cancelled'
-            )
-          )
+          AND ${isTimelineMessage({ id: sql`newer_message.id`, hydrationStatus: sql`newer_message.hydration_status` })}
           AND (newer_message.internal_date, newer_message.id) > (message.internal_date, message.id)
       ) AS is_latest_verified,
       (
@@ -544,73 +537,14 @@ const applyVerifiedConversationTransition = async (params: {
     projection.work_status !== nextWorkStatus ||
     (projection.snoozed_until ? new Date(projection.snoozed_until).toISOString() : null) !==
       (nextSnoozedUntil ? new Date(nextSnoozedUntil).toISOString() : null);
+  await refreshConversationTimeline(params.db, projection.conversation_id);
   await params.db`
-    WITH classified AS (
-      SELECT
-        message.id AS message_id,
-        message.subject,
-        message.internal_date,
-        EXISTS (
-          SELECT 1
-          FROM mail.message_addresses sender
-          JOIN mail.sender_identities identity
-            ON identity.mailbox_id = conversation.mailbox_id
-           AND lower(identity.from_address) = sender.normalized_email
-          WHERE sender.message_id = message.id AND sender.role = 'from'
-        ) AS outbound
-      FROM mail.conversations conversation
-      JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
-      JOIN mail.message_contents message ON message.id = link.message_id
-      WHERE conversation.id = ${projection.conversation_id}::uuid
-        AND (
-          message.hydration_status = 'complete'
-          OR EXISTS (
-            SELECT 1
-            FROM mail.outbox_submissions outbox
-            WHERE outbox.message_id = message.id
-              AND outbox.state <> 'cancelled'
-          )
-        )
-    ),
-    timeline AS (
-      SELECT
-        MAX(internal_date) AS latest_message_at,
-        MAX(internal_date) FILTER (WHERE NOT outbound) AS latest_inbound_at,
-        MAX(internal_date) FILTER (WHERE outbound) AS latest_outbound_at
-      FROM classified
-    ),
-    latest AS (
-      SELECT message_id, subject, outbound
-      FROM classified
-      ORDER BY internal_date DESC, message_id DESC
-      LIMIT 1
-    ),
-    participant_labels AS (
-      SELECT DISTINCT ON (address.normalized_email)
-        address.normalized_email,
-        COALESCE(NULLIF(address.display_name, ''), address.email) AS label
-      FROM mail.message_addresses address
-      JOIN latest ON latest.message_id = address.message_id
-      WHERE (latest.outbound AND address.role IN ('to', 'cc', 'bcc'))
-         OR (NOT latest.outbound AND address.role = 'from')
-      ORDER BY address.normalized_email, address.position
-    ),
-    participants AS (
-      SELECT COALESCE(string_agg(label, ', ' ORDER BY label), '') AS summary
-      FROM participant_labels
-    )
-    UPDATE mail.conversations conversation
+    UPDATE mail.conversations
     SET
-      subject = latest.subject,
-      participant_summary = participants.summary,
-      latest_message_at = timeline.latest_message_at,
-      latest_inbound_at = timeline.latest_inbound_at,
-      latest_outbound_at = timeline.latest_outbound_at,
       work_status = ${nextWorkStatus},
       snoozed_until = ${nextSnoozedUntil},
-      revision = conversation.revision + CASE WHEN ${projection.message_count > 1 || changed} THEN 1 ELSE 0 END
-    FROM timeline, latest, participants
-    WHERE conversation.id = ${projection.conversation_id}::uuid
+      revision = revision + CASE WHEN ${projection.message_count > 1 || changed} THEN 1 ELSE 0 END
+    WHERE id = ${projection.conversation_id}::uuid
   `;
   if (!changed || !projection.is_latest_verified) return null;
 

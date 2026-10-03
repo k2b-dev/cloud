@@ -11,6 +11,7 @@ import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
+import { refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
 import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
@@ -2454,6 +2455,20 @@ const applyConfirmedSendWorkState = async (params: {
   return { conversationId: draft.conversation_id, activityId: String(activity.id) };
 };
 
+/**
+ * A send joins its conversation's timeline once it is sent, and leaves it while it waits for
+ * another attempt or after it failed.
+ */
+const refreshOutboxConversationTimeline = async (db: SqlClient, outboxId: string): Promise<void> => {
+  const [link] = await db<{ conversation_id: string }[]>`
+    SELECT link.conversation_id
+    FROM mail.outbox_submissions outbox
+    JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
+    WHERE outbox.id = ${outboxId}::uuid
+  `;
+  if (link) await refreshConversationTimeline(db, link.conversation_id);
+};
+
 const finishOutbox = async (params: {
   outbox: DbOutboxExecution;
   command: DbCommandExecution;
@@ -2529,6 +2544,7 @@ const finishOutbox = async (params: {
       FROM mail.commands c
       WHERE c.id = ${params.outbox.command_id}::uuid
     `;
+    await refreshOutboxConversationTimeline(tx, params.outbox.id);
     if (params.commandState !== "confirmed" && params.commandState !== "reconciled") {
       return { updated: true, transition: null };
     }
@@ -2599,6 +2615,7 @@ const scheduleOutboxRetry = async (params: {
       WHERE id = ${params.command.id}::uuid
     `;
     await tx`UPDATE mail.drafts SET state = 'scheduled' WHERE id = ${params.outbox.draft_id}::uuid`;
+    await refreshOutboxConversationTimeline(tx, params.outbox.id);
     return true;
   });
   if (updated) {

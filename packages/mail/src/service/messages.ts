@@ -6,8 +6,11 @@ import type { ConversationView, ConversationWorkStatus } from "../contracts";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
+import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
+import { FOLLOW_UP_VIEWS, isFollowUpConversation } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
@@ -247,6 +250,7 @@ export const listConversations = async (params: {
   };
   const cursor = decodeConversationCursor(params.cursor, cursorScope);
   if (!cursor.ok) return cursor;
+  const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
   const rows = await sql<DbConversation[]>`
     SELECT
       c.id,
@@ -340,6 +344,7 @@ export const listConversations = async (params: {
       FROM mail.conversation_messages cm
       JOIN mail.message_contents mc ON mc.id = cm.message_id
       WHERE cm.conversation_id = c.id
+        AND NOT ${isUnsentOutboundMessage(sql`mc.id`)}
       ORDER BY mc.internal_date DESC, mc.id DESC
       LIMIT 1
     ) latest ON true
@@ -376,7 +381,7 @@ export const listConversations = async (params: {
         )
         OR (
           ${view} = 'unassigned'
-          AND c.assignee_user_id IS NULL
+          AND ${isUnassignedConversation(lapsedAssignees)}
           AND c.work_status <> 'done'
           AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
         )
@@ -398,6 +403,7 @@ export const listConversations = async (params: {
         )
         OR ${view} = 'recently_active'
       )
+      AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
       AND (
         ${folderId}::uuid IS NULL
         OR EXISTS (
@@ -488,6 +494,7 @@ export const getConversationViewCounts = async (params: {
   const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
   if (!access.ok) return access;
   const currentUserId = userBackedActor(params.context)?.id ?? null;
+  const lapsedAssignees = await listLapsedAssignees({ mailboxIds: [params.mailboxId] });
   const [row] = await sql<
     {
       needs_action: number;
@@ -502,23 +509,25 @@ export const getConversationViewCounts = async (params: {
   >`
     SELECT
       COUNT(*) FILTER (
-        WHERE c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
+        WHERE scope.follow_up AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
       )::int AS needs_action,
       COUNT(*) FILTER (
-        WHERE c.assignee_user_id = ${currentUserId}::uuid
+        WHERE scope.follow_up
+          AND c.assignee_user_id = ${currentUserId}::uuid
           AND c.work_status <> 'done'
           AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
       )::int AS mine,
       COUNT(*) FILTER (
-        WHERE c.assignee_user_id IS NULL
+        WHERE scope.follow_up
+          AND ${isUnassignedConversation(lapsedAssignees)}
           AND c.work_status <> 'done'
           AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
       )::int AS unassigned,
       COUNT(*) FILTER (
-        WHERE c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
+        WHERE scope.follow_up AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
       )::int AS waiting,
       COUNT(*) FILTER (WHERE c.work_status = 'done')::int AS done,
-      COUNT(*) FILTER (WHERE c.snoozed_until > now())::int AS snoozed,
+      COUNT(*) FILTER (WHERE scope.follow_up AND c.snoozed_until > now())::int AS snoozed,
       COUNT(*) FILTER (
         WHERE EXISTS (
           SELECT 1
@@ -533,6 +542,13 @@ export const getConversationViewCounts = async (params: {
       )::int AS send_problems,
       COUNT(*)::int AS recently_active
     FROM mail.conversations c
+    -- Only open or postponed conversations can be in a follow-up view; Done ones skip the check.
+    CROSS JOIN LATERAL (
+      SELECT CASE
+        WHEN c.work_status <> 'done' OR c.snoozed_until > now() THEN ${isFollowUpConversation(sql`c.id`)}
+        ELSE false
+      END AS follow_up
+    ) scope
     WHERE c.mailbox_id = ${params.mailboxId}::uuid
       AND EXISTS (
         SELECT 1

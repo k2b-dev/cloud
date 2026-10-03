@@ -279,7 +279,7 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       subject: string;
       internal_date: Date | string;
       outbound: boolean;
-      human_reply: boolean;
+      human_message: boolean;
       participants: string;
     }[]
   >`
@@ -294,10 +294,7 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
          AND lower(identity.from_address) = sender.normalized_email
         WHERE sender.message_id = message.id AND sender.role = 'from'
       ) AS outbound,
-      (
-        (message.in_reply_to IS NOT NULL OR cardinality(message.reference_ids) > 0)
-        AND COALESCE(NULLIF(lower(btrim(message.protocol_facts->>'autoSubmitted')), ''), 'no') = 'no'
-      ) AS human_reply,
+      COALESCE(NULLIF(lower(btrim(message.protocol_facts->>'autoSubmitted')), ''), 'no') = 'no' AS human_message,
       COALESCE((
         SELECT string_agg(COALESCE(NULLIF(address.display_name, ''), address.email), ', ' ORDER BY address.position)
         FROM mail.message_addresses address WHERE address.message_id = message.id
@@ -318,7 +315,7 @@ const rebuildThreadProjection = async (db: SqlClient, mailboxId: string): Promis
       ) VALUES (
         ${shortId}, ${mailboxId}::uuid, ${orphan.subject}, ${orphan.participants},
         ${orphan.outbound ? null : orphan.internal_date}, ${orphan.outbound ? orphan.internal_date : null},
-        ${orphan.internal_date}, ${orphan.outbound && orphan.human_reply ? "waiting" : "needs_action"}
+        ${orphan.internal_date}, ${orphan.outbound && orphan.human_message ? "waiting" : "needs_action"}
       )
       RETURNING id
     `,
