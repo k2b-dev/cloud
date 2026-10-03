@@ -20,9 +20,16 @@ const plainText = (tokens: readonly Token[]): string =>
     })
     .join("");
 
+/** Links and images would lose their target or picture in a plain-text title. */
+const hasLinkOrImage = (tokens: readonly Token[]): boolean =>
+  tokens.some(
+    (token) => token.type === "link" || token.type === "image" || ("tokens" in token && !!token.tokens && hasLinkOrImage(token.tokens)),
+  );
+
 /**
  * The document title of Markdown that starts with a level-one heading: its plain text, and the Markdown after it.
- * Null when the first block is anything else or the heading has no text.
+ * Null when the first block is anything else, the heading has no text or holds a link or image, or nothing follows
+ * it; the heading then stays in the document.
  */
 export function leadingMarkdownTitle(markdown: string): { title: string; body: string } | null {
   const source = markdown.replace(/\r\n?/g, "\n");
@@ -33,10 +40,12 @@ export function leadingMarkdownTitle(markdown: string): { title: string; body: s
       continue;
     }
     if (token.type !== "heading" || token.depth !== 1 || !source.startsWith(token.raw, offset)) return null;
+    const body = source.slice(offset + token.raw.length);
+    if (hasLinkOrImage(token.tokens ?? []) || !body.trim()) return null;
     const title = decodeEntities(plainText(token.tokens ?? []))
       .replace(/\s+/g, " ")
       .trim();
-    return title ? { title, body: source.slice(offset + token.raw.length) } : null;
+    return title ? { title, body } : null;
   }
   return null;
 }

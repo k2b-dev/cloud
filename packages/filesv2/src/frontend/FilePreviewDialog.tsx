@@ -35,6 +35,8 @@ export type FilePreviewDialogOptions = {
 const WIDE = new Set(["delimited-text", "image", "pdf", "video"]);
 /** These fill the frame's full height instead of growing with their content. */
 const FILL = new Set(["image", "pdf", "video"]);
+/** These take the body's height; a table then scrolls inside it, so its header row and settings stay in view. */
+const STRETCH = new Set(["delimited-text", ...FILL]);
 
 /**
  * The one preview dialog of Files, for every file type: the document's own title, a quiet line with name, size and
@@ -45,6 +47,7 @@ export function openFilePreview(options: FilePreviewDialogOptions) {
   const classes = [panelDialogPanelClass, "filesv2-preview-dialog"];
   if (WIDE.has(kind)) classes.push("filesv2-preview-dialog--wide");
   if (FILL.has(kind)) classes.push("filesv2-preview-dialog--fill");
+  if (STRETCH.has(kind)) classes.push("filesv2-preview-dialog--stretch");
   return dialogCore.open<void>((close) => <FilePreviewDialog {...options} close={() => close()} />, {
     ...panelDialogOptions,
     panelClassName: classes.join(" "),
@@ -104,20 +107,23 @@ function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void
           </Show>
         }
         subtitle={
-          <span class="filesv2-preview-facts">
+          // Held invisibly until the title is known, then shown with it, so nothing visible moves when it arrives.
+          <span class="filesv2-preview-facts" data-pending={documentTitle() === undefined ? "" : undefined}>
             <i class={fileIcon(props.entry)} aria-hidden="true" />
-            <Show when={documentTitle() !== null}>
+            <Show when={documentTitle()}>
               <span class="filesv2-preview-facts__name" title={props.entry.name}>
                 {props.entry.name}
               </span>
               {separator()}
             </Show>
-            <span>
+            <span class="filesv2-preview-facts__size">
               <Format.Bytes value={props.entry.size} />
             </span>
             {separator()}
+            {/* Phones show the day only, so the date stays readable next to the name and size. */}
             <span class="filesv2-preview-facts__date">
-              <Format.DateTime value={props.entry.modified} />
+              <Format.DateTime class="filesv2-preview-facts__date-time" value={props.entry.modified} />
+              <Format.Date class="filesv2-preview-facts__date-day" value={props.entry.modified} />
             </span>
           </span>
         }
@@ -157,8 +163,7 @@ function FilePreviewDialog(props: FilePreviewDialogOptions & { close: () => void
         }
         close={props.close}
       />
-      {/* A sticky table header would sit under the top fade, so tables scroll without it. */}
-      <PanelDialog.Body scrollFade={kind !== "delimited-text"}>
+      <PanelDialog.Body>
         <div class="filesv2-preview-dialog__content" tabindex="-1">
           <FilePreview
             baseId={props.baseId}

@@ -2222,21 +2222,36 @@
   gap: 0.5rem;
 }
 
-/* A plain preview has no frame and no scroll container of its own: it keeps
-   its natural height and the host scrolls, so there is one scroller. Only an
-   excerpt keeps wide content, such as a CSV table, scrolling sideways in
-   place. */
+/* A plain preview has no frame: it keeps its natural height and the host
+   scrolls, so there is one scroller. Wide content, such as a CSV table,
+   scrolls sideways in place. A host that bounds the preview's height and
+   stretches it gets the preview's own scrolling back, with the table header
+   and the action overlay in view. */
 .k2b-ui .k2b-content-file-view[data-variant="plain"] {
   flex: none;
 }
 .k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__preview {
-  overflow: visible;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
-.k2b-ui .k2b-content-file-view[data-variant="plain"][data-excerpt="true"] .k2b-content-file-view__preview {
-  overflow-x: auto;
+/* The expander lines up with the content instead of the old frame's inset. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__truncated {
+  padding-inline: 0;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-file-view__truncated > .k2b-button {
+  margin-inline-start: -0.625rem;
+}
+/* JSON data sits on the host surface like every other plain preview, without
+   its own card, and its raw view scrolls with the host. */
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-structured-data__surface {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.k2b-ui .k2b-content-file-view[data-variant="plain"] .k2b-content-structured-data__surface pre {
+  max-height: none;
 }
 /* Text is the file itself: line numbers and soft-wrapped lines on the host
    surface, without the code box. */

@@ -89,6 +89,21 @@ const files: Record<string, [string, string | Buffer]> = {
   ],
   "Report.pdf": ["application/pdf", "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"],
   "Archive.zip": ["application/zip", "PK"],
+  "Long.md": ["text/markdown", "# Everything the organising team needs for the summer party in July\n\nBody text here.\n"],
+  "Quarterly planning notes for the summer party organising committee 2026 final version.md": [
+    "text/markdown",
+    "# Planning\n\nBody text here.\n",
+  ],
+  "Only.md": ["text/markdown", "# Only a title\n"],
+  "Table.csv": [
+    "text/csv",
+    [
+      Array.from({ length: 20 }, (_, column) => `Column ${column + 1}`).join(","),
+      ...Array.from({ length: 60 }, (_, row) => Array.from({ length: 20 }, (_, column) => `Stand ${row + 1}.${column + 1}`).join(",")),
+    ].join("\n"),
+  ],
+  "Small.csv": ["text/csv", "Stand,Team\nGrill,Team A\nDrinks,Team B\n"],
+  "data.json": ["application/json", JSON.stringify({ stand: "Grill", team: "Team A", starts: "14:00", helpers: 4 })],
 };
 
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
@@ -158,16 +173,18 @@ describe("file preview dialog in a browser", () => {
     );
     try {
       await show(tab, "README.md", { editable: true });
-      // While the file loads, the facts line is final and the title line is held.
+      // While the file loads, the title line is held and the facts wait invisibly for it.
       const pendingHeader = await box(tab, ".k2b-panel-dialog__header");
       const pendingTitle = await box(tab, ".k2b-panel-dialog__heading h2");
       expect(await tab.getAttribute(".filesv2-preview-dialog", "aria-labelledby")).toBeTruthy();
       expect(await tab.$eval(".k2b-panel-dialog__heading h2", (title) => title.textContent)).toBe("README.md");
+      expect(await tab.$eval(".filesv2-preview-facts", (facts) => getComputedStyle(facts).visibility)).toBe("hidden");
       release();
       await tab.waitForSelector(".k2b-content-markdown");
       await settle(tab);
 
       expect(await tab.$eval(".k2b-panel-dialog__heading h2", (title) => title.textContent)).toBe("Summer party 2026");
+      expect(await tab.$eval(".filesv2-preview-facts", (facts) => getComputedStyle(facts).visibility)).toBe("visible");
       expect(await box(tab, ".k2b-panel-dialog__header")).toEqual(pendingHeader);
       expect(await box(tab, ".k2b-panel-dialog__heading h2")).toEqual(pendingTitle);
       expect(await tab.$eval(".filesv2-preview-facts", (facts) => facts.textContent)).toMatch(/^README\.md·1\.53 KiB·Sep 28, 2026/);
@@ -205,6 +222,156 @@ describe("file preview dialog in a browser", () => {
       expect(await tab.$eval(".k2b-panel-dialog__heading h2", (title) => title.textContent)).toBe("Notes.md");
       expect(await tab.$$eval(".filesv2-preview-facts__name", (names) => names.length)).toBe(0);
       expect(await actionNames(tab)).toEqual(["Open read-only", "Download", "close dialog"]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  for (const [label, options] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const)
+    test(`a title that wraps arrives without moving anything visible, and reads in full (${label})`, async () => {
+      let release = () => {};
+      const tab = await open(
+        options,
+        "light",
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      try {
+        await show(tab, "Long.md", { editable: true });
+        const visible = () =>
+          tab.$$eval(".k2b-panel-dialog__header :is(h2, button, a, .filesv2-preview-facts)", (elements) =>
+            elements
+              .filter((element) => getComputedStyle(element).visibility === "visible")
+              .map((element) => {
+                const rect = element.getBoundingClientRect();
+                return [element.className, Math.round(rect.left), Math.round(rect.top)];
+              }),
+          );
+        const pending = await visible();
+        expect(pending.some(([name]) => String(name).includes("filesv2-preview-facts"))).toBe(false);
+        release();
+        await tab.waitForSelector(".k2b-content-markdown");
+        await settle(tab);
+        // Everything that was visible before the title arrived stays where it was.
+        const loaded = await visible();
+        for (const element of pending) expect(loaded).toContainEqual(element);
+        const title = await tab.$eval(".k2b-panel-dialog__heading h2", (heading) => ({
+          text: heading.textContent,
+          clipped: heading.scrollHeight > heading.clientHeight + 1,
+          lines: Math.round(heading.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(heading).lineHeight)),
+        }));
+        expect(title.text).toBe("Everything the organising team needs for the summer party in July");
+        expect(title.clipped).toBe(false);
+        expect(title.lines).toBeGreaterThan(1);
+        // The facts line sits below the whole title.
+        const heading = await box(tab, ".k2b-panel-dialog__heading h2");
+        expect((await box(tab, ".filesv2-preview-facts")).top).toBeGreaterThanOrEqual(heading.top + heading.height);
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+  for (const [label, options] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const)
+    test(`a long file name gives way in the facts line, so the size and date stay (${label})`, async () => {
+      const tab = await open(options);
+      try {
+        await show(tab, "Quarterly planning notes for the summer party organising committee 2026 final version.md");
+        await tab.waitForSelector(".k2b-content-markdown");
+        await settle(tab);
+        const facts = await box(tab, ".filesv2-preview-facts");
+        const size = await box(tab, ".filesv2-preview-facts__size");
+        const date = await box(tab, ".filesv2-preview-facts__date");
+        expect(size.left + size.width).toBeLessThanOrEqual(facts.left + facts.width);
+        expect(date.left + date.width).toBeLessThanOrEqual(facts.left + facts.width);
+        expect(await tab.$eval(".filesv2-preview-facts__date", (element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+        expect(
+          await tab.$eval(".filesv2-preview-facts__name", (name) => [
+            name.scrollWidth > name.clientWidth,
+            getComputedStyle(name).textOverflow,
+          ]),
+        ).toEqual([true, "ellipsis"]);
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+  test("a Markdown file that is only its heading keeps the heading in the document", async () => {
+    const tab = await open(desktop);
+    try {
+      await show(tab, "Only.md");
+      await tab.waitForSelector(".k2b-content-markdown h1");
+      await settle(tab);
+      expect(await tab.$eval(".k2b-panel-dialog__heading h2", (title) => title.textContent)).toBe("Only.md");
+      expect(await tab.$eval(".k2b-content-markdown h1", (heading) => heading.textContent)).toBe("Only a title");
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  for (const [label, options] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const)
+    test(`a table scrolls inside the frame with its header row and settings in view (${label})`, async () => {
+      const tab = await open(options);
+      try {
+        await show(tab, "Table.csv");
+        await tab.waitForSelector(".k2b-content-file-view__table tbody tr");
+        await settle(tab);
+        const settings = await box(tab, '[aria-label="CSV preview settings"]');
+        const scrolled = await tab.evaluate(() => {
+          const body = document.querySelector<HTMLElement>(".k2b-panel-dialog__body")!;
+          const preview = document.querySelector<HTMLElement>(".k2b-content-file-view__preview")!;
+          preview.scrollTop = 600;
+          preview.scrollLeft = 2000;
+          // The header row sticks to the top edge of the scrolling area, so no scrolled row shows above it.
+          const header = document.querySelector(".k2b-content-file-view__table thead")!.getBoundingClientRect();
+          return {
+            scrolled: preview.scrollTop > 0 && preview.scrollLeft > 0,
+            bodyScrolls: body.scrollHeight > body.clientHeight || body.scrollWidth > body.clientWidth,
+            header: Math.round(header.top - preview.getBoundingClientRect().top),
+          };
+        });
+        expect(scrolled).toEqual({ scrolled: true, bodyScrolls: false, header: 0 });
+        expect(await box(tab, '[aria-label="CSV preview settings"]')).toEqual(settings);
+      } finally {
+        await tab.context().close();
+      }
+    });
+
+  test("a short table keeps the frame as small as its rows", async () => {
+    const tab = await open(desktop);
+    try {
+      await show(tab, "Small.csv");
+      await tab.waitForSelector(".k2b-content-file-view__table tbody tr");
+      await settle(tab);
+      const frame = await box(tab, ".filesv2-preview-dialog");
+      const table = await box(tab, ".k2b-content-file-view__table");
+      expect(frame.top + frame.height).toBeLessThan(900 / 2);
+      expect(frame.top + frame.height).toBeGreaterThan(table.top + table.height);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("JSON sits on the dialog surface without its own card", async () => {
+    const tab = await open(desktop);
+    try {
+      await show(tab, "data.json");
+      await tab.waitForSelector(".k2b-content-structured-data__surface");
+      await settle(tab);
+      const surface = await tab.$eval(".k2b-content-structured-data__surface", (element) => {
+        const style = getComputedStyle(element);
+        return [style.borderTopWidth, style.backgroundColor];
+      });
+      expect(surface).toEqual(["0px", "rgba(0, 0, 0, 0)"]);
     } finally {
       await tab.context().close();
     }
@@ -328,6 +495,10 @@ describe("file preview dialog in a browser", () => {
         expect(await tab.$eval(".filesv2-preview-dialog__edit", (button) => (button as HTMLElement).innerText.trim())).toBe("Edit");
         const text = await box(tab, ".k2b-content-markdown p");
         expect(text.width).toBeGreaterThanOrEqual(350);
+        // Too narrow for one facts line: the name keeps its own line, the size and day follow below it.
+        expect(await tab.$eval(".filesv2-preview-facts__name", (name) => name.scrollWidth <= name.clientWidth)).toBe(true);
+        const name = await box(tab, ".filesv2-preview-facts__name");
+        expect((await box(tab, ".filesv2-preview-facts__size")).top).toBeGreaterThan(name.top);
       } finally {
         await tab.context().close();
       }

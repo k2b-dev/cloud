@@ -323,15 +323,21 @@ Use `variant="plain"` when the host already frames the preview, such as a
 dialog, a detail panel group, or a page section. The default keeps the preview
 frame for a preview that stands alone.
 
-A plain preview has no frame, background, or document padding, and it is not a
-scroll container: it keeps its natural height, so the host is the one element
-that scrolls. Only an excerpt scrolls wide content, such as a CSV table,
-sideways in place. Markdown keeps a reading measure of 72 characters in wider
-hosts; its tables and code blocks scroll within that column. Text and source
-files show their line numbers and soft-wrapped lines directly on the host
-surface, without a code box or its copy header, so the host offers copying
-where it needs it. A plain preview in a host that bounds its height can be
-stretched to fill it; images and video then fit that height.
+A plain preview has no frame, background, or document padding. It keeps its
+natural height, so the host is the one element that scrolls; a host that used
+to rely on a plain preview scrolling inside a bounded box now scrolls it
+itself. Wide content, such as a CSV table, scrolls sideways in place. Markdown
+keeps a reading measure of 72 characters in wider hosts; its tables and code
+blocks scroll within that column. Text and source files show their line numbers
+and soft-wrapped lines directly on the host surface, without a code box or its
+copy header, so the host offers copying where it needs it. JSON shows its keys
+and values on the host surface without their own card. An excerpt's "more
+lines" action lines up with the content.
+
+A host that bounds its height can stretch a plain preview to fill it, for
+example with `flex: 1 1 auto; min-height: 0`. Images and video then fit that
+height, and a table scrolls inside the preview, so its header row and the
+preview actions stay in view.
 
 ## Document title
 
@@ -343,6 +349,17 @@ leading heading, for every other file type, and when the file fails to load;
 the host then titles the preview with the file name. Nothing is reported while
 the file loads. A leading YAML front matter block is skipped first. The
 heading stays in the Markdown editor, and the reported title follows edits.
+
+The heading stays in the document, and `null` is reported, when it contains a
+link or an image, which a plain-text title would lose, and when nothing follows
+it, so the preview is never empty. The title reaches the host from an effect,
+so only in the browser; a server render shows the document without its leading
+heading until it hydrates.
+
+Pass the file name as a constant subtitle, as below, so the header does not
+gain a line when the title arrives. A title that may wrap onto more lines than
+the file name needs its own plan, for example showing the lines below it only
+together with the title.
 
 ```tsx
 const [title, setTitle] = createSignal<string | null | undefined>(undefined);

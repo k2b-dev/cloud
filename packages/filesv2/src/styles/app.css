@@ -141,16 +141,18 @@
 .k2b-ui .filesv2-preview-dialog--fill .k2b-panel-dialog-viewport {
   height: 100%;
 }
-/* The document title keeps the size it had as the heading of the document, on at most two lines. */
+/* The document title keeps the size it had as the heading of the document and wraps, so it reads in full; four
+   lines bound a runaway heading. */
 .k2b-ui .filesv2-preview-dialog .k2b-panel-dialog__heading h2 {
   display: -webkit-box;
   overflow: hidden;
   font-size: 1.5rem;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
 }
-/* Holds the title line while a Markdown file loads, so the title arrives without moving anything. */
+/* Holds the title line while a Markdown file loads. The facts below it stay invisible until the title is known and
+   then appear with it, so a title that wraps moves nothing visible. */
 .filesv2-preview-dialog__title-pending {
   display: inline-block;
   width: 14rem;
@@ -160,7 +162,7 @@
   border-radius: 0.375rem;
   background: var(--k2b-surface-muted);
 }
-/* One quiet line: the file name gives way first, then the date; the size always stays. */
+/* One quiet line: the file name gives way, so the size and date stay. */
 .filesv2-preview-facts {
   display: flex;
   align-items: center;
@@ -169,25 +171,24 @@
   overflow: hidden;
   white-space: nowrap;
 }
+.filesv2-preview-facts[data-pending] {
+  visibility: hidden;
+}
 .filesv2-preview-facts > * {
   flex: none;
 }
 .filesv2-preview-facts > i {
   font-size: 0.875rem;
 }
-.filesv2-preview-facts > .filesv2-preview-facts__name,
-.filesv2-preview-facts > .filesv2-preview-facts__date {
+.filesv2-preview-facts > .filesv2-preview-facts__name {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
+  color: var(--k2b-text-secondary);
   text-overflow: ellipsis;
 }
-.filesv2-preview-facts > .filesv2-preview-facts__name {
-  flex-shrink: 0;
-  max-width: 100%;
-}
-.filesv2-preview-facts__name {
-  color: var(--k2b-text-secondary);
+.filesv2-preview-facts__date-day {
+  display: none;
 }
 /* The content takes focus on open, so arrow keys scroll it; it is not a control, so it draws no ring. */
 .filesv2-preview-dialog__content {
@@ -196,15 +197,17 @@
   min-width: 0;
   outline: none;
 }
-.k2b-ui .filesv2-preview-dialog--fill .k2b-panel-dialog__body > .filesv2-preview-dialog__content,
-.k2b-ui .filesv2-preview-dialog--fill .filesv2-preview {
+/* A stretched preview takes the body's height, so a filled frame shows media at its height and a long table scrolls
+   in itself once the frame reaches its maximum height. */
+.k2b-ui .filesv2-preview-dialog--stretch .k2b-panel-dialog__body > .filesv2-preview-dialog__content,
+.k2b-ui .filesv2-preview-dialog--stretch .filesv2-preview {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
 }
 /* A plain FileView keeps its natural height; here it fills the frame instead. */
-.k2b-ui .filesv2-preview-dialog--fill .k2b-content-file-view[data-variant] {
+.k2b-ui .filesv2-preview-dialog--stretch .k2b-content-file-view[data-variant] {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -234,6 +237,26 @@
     max-height: none;
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
       env(safe-area-inset-left, 0px);
+  }
+  .k2b-ui .filesv2-preview-dialog .k2b-panel-dialog__heading h2 {
+    font-size: 1.25rem;
+  }
+  /* Too narrow for one line: the file name takes the first line, size and day the second. */
+  .filesv2-preview-facts {
+    flex-wrap: wrap;
+    row-gap: 0.125rem;
+  }
+  .filesv2-preview-facts > .filesv2-preview-facts__name {
+    flex: 1 0 calc(100% - 1.25rem);
+  }
+  .filesv2-preview-facts__name + .filesv2-preview-facts__separator {
+    display: none;
+  }
+  .filesv2-preview-facts__date-time {
+    display: none;
+  }
+  .filesv2-preview-facts__date-day {
+    display: inline;
   }
   /* Edit becomes an icon button that keeps its name for assistive technology. */
   .filesv2-preview-dialog__edit-label {

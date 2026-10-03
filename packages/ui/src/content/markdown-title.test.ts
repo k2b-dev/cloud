@@ -28,4 +28,15 @@ describe("leadingMarkdownTitle", () => {
     expect(leadingMarkdownTitle("#\n\nText")).toBeNull();
     expect(leadingMarkdownTitle("")).toBeNull();
   });
+
+  test("keeps a heading with a link or an image in the document", () => {
+    expect(leadingMarkdownTitle("# [Linked title](https://example.test) & more\n\nText")).toBeNull();
+    expect(leadingMarkdownTitle("# Team *[site](https://example.test)*\n\nText")).toBeNull();
+    expect(leadingMarkdownTitle("# ![Logo](logo.png) Summer party\n\nText")).toBeNull();
+  });
+
+  test("keeps a heading that is the whole document, so the preview is never empty", () => {
+    expect(leadingMarkdownTitle("# Only a title\n")).toBeNull();
+    expect(leadingMarkdownTitle("# Only a title\n\n   \n")).toBeNull();
+  });
 });

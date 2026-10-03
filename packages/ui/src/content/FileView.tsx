@@ -49,13 +49,14 @@ export type FileViewContent = { encoding: "utf8" | "base64"; content: string; me
 
 export type FileViewProps = {
   /**
-   * Plain previews inherit the surrounding surface without a frame or inset padding. They do not scroll on their
-   * own, so the host owns scrolling and the actions around them.
+   * Plain previews inherit the surrounding surface without a frame or inset padding. They keep their natural height,
+   * so the host scrolls them and owns the actions around them; a host that stretches one gets its scrolling back.
    */
   variant?: "default" | "plain";
   /**
-   * Lifts a leading Markdown level-one heading into the host, for example a dialog title. Reports its plain text, or
-   * null when the shown file has none or fails to load, and leaves that heading out of the preview.
+   * Lifts a leading Markdown level-one heading into the host, for example a dialog title. Reports its plain text and
+   * leaves that heading out of the preview, or reports null when the shown file has none, the heading holds a link or
+   * image or is the whole document, or the file fails to load.
    */
   onDocumentTitle?: (title: string | null) => void;
   /** Read-only excerpt limit; omitted renders the complete preview. */
@@ -803,20 +804,6 @@ export default function FileView(props: FileViewProps) {
     props.onDirtyChange?.(dirty());
   });
 
-  // Undefined while loading; the host keeps its own placeholder until the shown file decides.
-  const documentTitle = createMemo<string | null | undefined>(() => {
-    if (!props.onDocumentTitle) return undefined;
-    if (content.error) return null;
-    const loaded = resolvedContent();
-    if (!loaded) return undefined;
-    if (renderer()?.component !== MarkdownRenderer) return null;
-    return leadingMarkdownTitle(stripFrontmatter(editor()?.draft() ?? loaded.content))?.title ?? null;
-  });
-  createEffect(() => {
-    const title = documentTitle();
-    if (title !== undefined) props.onDocumentTitle?.(title);
-  });
-
   const save = async () => {
     if (!props.save || saveMutation.loading()) return;
     await saveMutation.mutate({ path: props.file.path, content: draft() });
@@ -832,6 +819,20 @@ export default function FileView(props: FileViewProps) {
           save,
         }
       : null;
+
+  // Undefined while loading; the host keeps its own placeholder until the shown file decides.
+  const documentTitle = createMemo<string | null | undefined>(() => {
+    if (!props.onDocumentTitle) return undefined;
+    if (content.error) return null;
+    const loaded = resolvedContent();
+    if (!loaded) return undefined;
+    if (renderer()?.component !== MarkdownRenderer) return null;
+    return leadingMarkdownTitle(stripFrontmatter(editor()?.draft() ?? loaded.content))?.title ?? null;
+  });
+  createEffect(() => {
+    const title = documentTitle();
+    if (title !== undefined) props.onDocumentTitle?.(title);
+  });
 
   return (
     <div

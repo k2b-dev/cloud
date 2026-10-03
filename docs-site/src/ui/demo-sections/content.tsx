@@ -473,7 +473,7 @@ const openDocumentPreview = (path: string, file: DemoFile) => {
     const [title, setTitle] = createSignal<string | null | undefined>(undefined);
     return (
       <PanelDialog>
-        <PanelDialog.Header title={title() ?? name} subtitle={title() ? name : undefined} close={() => close()} />
+        <PanelDialog.Header title={title() ?? name} subtitle={name} close={() => close()} />
         <PanelDialog.Body>
           <FileView
             variant="plain"
@@ -568,7 +568,7 @@ const FilesDemo = () => {
 <FileBrowserPanel source={source} initialPath="/README.md" />
 
 // A dialog that shows the document's own heading as its title.
-<PanelDialog.Header title={title() ?? name} subtitle={title() ? name : undefined} close={close} />
+<PanelDialog.Header title={title() ?? name} subtitle={name} close={close} />
 <PanelDialog.Body>
   <FileView variant="plain" file={file} load={load} onDocumentTitle={setTitle} />
 </PanelDialog.Body>`}
