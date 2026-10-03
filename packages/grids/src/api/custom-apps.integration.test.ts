@@ -2324,17 +2324,33 @@ describe("Grids App dependency changes", () => {
       await sql`UPDATE grids.forms SET is_active = FALSE WHERE id = ${formId}::uuid`;
       const broken = await api.request(`/apps/${applied.data.shortId}`, { headers: { "Accept-Language": "de" } });
       expect(broken.status).toBe(200);
-      expect(await broken.json()).toMatchObject({
+      const brokenApp = (await broken.json()) as { draftDefinition: unknown };
+      const inactiveForm = [
+        {
+          path: ["pages", "home", "blocks", "request", "formId"],
+          message: "Das Formular fehlt, ist inaktiv oder gehört zu einer anderen Base.",
+        },
+      ];
+      expect(brokenApp).toMatchObject({
         hasUnpublishedChanges: false,
         dependenciesChanged: true,
         draftValid: false,
-        draftDiagnostics: [
-          {
-            path: ["pages", "home", "blocks", "request", "formId"],
-            message: "Das Formular fehlt, ist inaktiv oder gehört zu einer anderen Base.",
-          },
-        ],
+        draftDiagnostics: inactiveForm,
       });
+      // Saving and restoring report the same validation as reading.
+      const saved = await api.request(`/apps/${applied.data.shortId}/draft`, {
+        method: "PUT",
+        headers: { "Accept-Language": "de", "Content-Type": "application/json" },
+        body: JSON.stringify({ definition: brokenApp.draftDefinition }),
+      });
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ valid: false, diagnostics: inactiveForm, app: { draftValid: false } });
+      const restored = await api.request(`/apps/${applied.data.shortId}/restore`, {
+        method: "POST",
+        headers: { "Accept-Language": "de" },
+      });
+      expect(restored.status).toBe(200);
+      expect(await restored.json()).toMatchObject({ draftValid: false, draftDiagnostics: inactiveForm });
     } finally {
       await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;

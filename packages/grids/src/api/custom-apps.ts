@@ -285,10 +285,11 @@ export const projectCustomAppSummaries = async (apps: readonly CustomAppSummary[
   }));
 };
 
-const projectDraftSave = async ({ workspaceRevision: _revision, ...saved }: CustomAppDraftSave, locale?: string) => ({
-  ...saved,
-  app: await projectCustomApp(saved.app, locale),
-});
+const projectDraftSave = async ({ app }: CustomAppDraftSave, locale?: string) => {
+  const projected = await projectCustomApp(app, locale);
+  // Report the projection's validation, so a resource changed since the save cannot contradict it.
+  return { app: projected, valid: projected.draftValid, diagnostics: projected.draftValid ? [] : projected.draftDiagnostics };
+};
 
 const projectRecordParams = async (params: Readonly<Record<string, string>>): Promise<Record<string, string>> => {
   const recordIds = await projectPublicIds("record", Object.values(params));

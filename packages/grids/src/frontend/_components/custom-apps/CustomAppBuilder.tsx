@@ -1827,9 +1827,10 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
       saveQueued = false;
       setApp(restored);
       draft.replace(restored.draftDefinition);
-      setDiagnostics([]);
-      setSaveError(null);
-      setSaveState("saved");
+      // The live version can no longer compile when a resource it uses changed incompatibly.
+      setDiagnostics(restored.draftDiagnostics);
+      setSaveError(restored.draftValid ? null : text("The saved draft must be fixed before it can be published."));
+      setSaveState(restored.draftValid ? "saved" : "invalid");
       selectPage(restored.draftDefinition.startPageId);
       prompts.success(text("Draft restored to the live version."));
     },

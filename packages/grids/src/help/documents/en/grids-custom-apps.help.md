@@ -30,7 +30,7 @@ These commands use the same published App permissions as the browser. They canno
 
 ## Keep draft and publication separate {icon="versions"}
 
-The builder automatically saves complete edits to the draft. Editing does not change the live App. **Publish changes** validates and publishes the saved draft; fix its diagnostics before retrying. The same action appears with **Used resources changed** when a Form, View, field, template, or workflow used by the live App changed.
+The builder automatically saves complete edits to the draft. Editing does not change the live App. **Publish changes** validates and publishes the saved draft; fix its diagnostics before retrying. The same action appears with **Used resources changed** when a change to a Form, View, field, template, or workflow used by the live App needs a new publication.
 
 **Restore live version** discards pending draft changes. Under **App settings → Lifecycle**, unpublishing removes the live snapshot but keeps the draft and grants; deleting an App removes its route without deleting Base data. Both actions require confirmation.
 
