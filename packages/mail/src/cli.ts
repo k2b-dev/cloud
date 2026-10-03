@@ -936,7 +936,7 @@ const waitForCommand = async (
   return result;
 };
 
-// A sync request is confirmed once each folder it queued checked for new mail.
+// A sync request is confirmed once each folder it queued holds the mail delivered before it.
 const printSyncRequest = (ctx: CloudCliContext, label: string, command: MailCommand): void => {
   const reason = typeof command.result.reason === "string" ? command.result.reason : null;
   if (command.state !== "confirmed") ctx.print(`${label} request ${command.state} (${command.id}).`);
@@ -3841,7 +3841,7 @@ const specialistCommands = {
       flags: {
         ...mutationFlags,
         wait: flag.boolean({
-          description: "Wait until every folder checked for new mail",
+          description: "Wait until every folder holds the mail delivered before the request",
         }),
         ...waitFlags,
       },

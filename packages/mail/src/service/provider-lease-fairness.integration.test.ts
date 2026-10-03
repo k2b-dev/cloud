@@ -1092,13 +1092,26 @@ suite("mail provider lease fairness", () => {
     expect(await commandOutcome(commandId)).toMatchObject({ state: "confirmed", code: null });
   }, 60_000);
 
-  test("a waited sync fails once a folder's sync gives up, waits again when retried, and ends when its request runs out", async () => {
+  test("a waited sync ends when its request runs out, fails once a folder's sync gives up, and waits again when retried", async () => {
     await ensureHydrationRuntime();
     const mailbox = await connect("failing");
     const inbox = mailbox.folderId(INBOX);
+
+    // A request whose folder sync never ran ends once the request runs out.
+    const expiring = await requestSync(mailbox, "expiring-sync", SENT);
+    const pendingTurn = await maintenanceTurn({ commandId: expiring });
+    expect(await maintenanceTurn(pendingTurn!.input)).toEqual(pendingTurn);
+    await sql`
+      UPDATE mail.commands
+      SET started_at = now() - (${FOLDER_SYNC_REQUEST_MS + 1_000}::int * interval '1 millisecond')
+      WHERE id = ${expiring}::uuid
+    `;
+    expect(await maintenanceTurn(pendingTurn!.input)).toBeNull();
+    expect(await commandOutcome(expiring)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
+
     // An earlier sync of INBOX gave up.
     await sql`UPDATE mail.folders SET sync_status = 'degraded' WHERE id = ${inbox}::uuid`;
-    const failing = await requestSync(mailbox, "failing-sync", INBOX);
+    const failing = await requestSync(mailbox, "failing-sync");
     const waiting = await maintenanceTurn({ commandId: failing });
     expect(waiting?.input).toEqual({ commandId: failing, awaitingSync: true });
 
@@ -1111,7 +1124,8 @@ suite("mail provider lease fairness", () => {
     }
     expect(await maintenanceTurn(waiting!.input)).toEqual(waiting);
 
-    // Mail that Postgres cannot store fails the same way on every attempt, so the job gives up.
+    // Mail that Postgres cannot store fails the same way on every attempt, so the job gives up. That
+    // ends the wait while Archive and Sent have not synced yet.
     const unstorable = store(mailbox.account, INBOX, {
       messageId: `<failing-unstorable-${suffix}@example.test>`,
       subject: "Re\u0000port",
@@ -1134,21 +1148,9 @@ suite("mail provider lease fairness", () => {
     expect(retried?.input).toEqual({ commandId: failing, awaitingSync: true });
     expect(await maintenanceTurn(retried!.input)).toEqual(retried);
     folderOf(mailbox.account, INBOX).entries.delete(unstorable);
-    await runFolderSyncJob(inbox);
+    await Promise.all([runFolderSyncJob(inbox), runFolderSyncJob(mailbox.folderId(ARCHIVE)), runFolderSyncJob(mailbox.folderId(SENT))]);
     expect(await maintenanceTurn(retried!.input)).toBeNull();
-    expect(await commandOutcome(failing)).toMatchObject({ state: "confirmed", code: null });
-
-    // A request whose folder sync never ran ends once the request runs out.
-    const expiring = await requestSync(mailbox, "expiring-sync", SENT);
-    const pendingTurn = await maintenanceTurn({ commandId: expiring });
-    expect(await maintenanceTurn(pendingTurn!.input)).toEqual(pendingTurn);
-    await sql`
-      UPDATE mail.commands
-      SET started_at = now() - (${FOLDER_SYNC_REQUEST_MS + 1_000}::int * interval '1 millisecond')
-      WHERE id = ${expiring}::uuid
-    `;
-    expect(await maintenanceTurn(pendingTurn!.input)).toBeNull();
-    expect(await commandOutcome(expiring)).toMatchObject({ state: "failed", code: "SYNC_TIMEOUT" });
+    expect(await commandOutcome(failing)).toEqual({ state: "confirmed", code: null, result: { queuedFolders: 3 } });
   }, 60_000);
 
   test("a waiter that comes back late does not keep a free provider lease from the others and keeps its place", async () => {

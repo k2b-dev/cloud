@@ -344,8 +344,9 @@ const checkRequestedSync = async (commandId: string): Promise<MaintenanceRun | n
     await finishMaintenanceCommand({ command, state: "confirmed", result });
     return { state: "confirmed", busyRetryAfterMs: null };
   }
+  // A folder whose sync gave up ends the wait at once; the other folders go on syncing.
   const error =
-    progress.synced + progress.failed === progress.folders
+    progress.failed > 0
       ? syncCommandFailure("SYNC_FAILED", `Synchronization failed in ${progress.failed} of ${progress.folders} requested folders`)
       : command.expired
         ? syncCommandFailure(
