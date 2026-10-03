@@ -1,4 +1,4 @@
-import { Button, CodeDisplay, type FileViewRenderer, type FileViewRendererProps, useLocale } from "@k2b/ui";
+import { Button, CodeDisplay, type FileViewRenderer, type FileViewRendererProps, getFileViewPreviewKind, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import { artifactMessages } from "./messages";
 import { SourceEditor } from "./SourceEditor";
@@ -49,5 +49,19 @@ export const artifactSourceRenderers: readonly FileViewRenderer[] = [
     editable: true,
     match: (file, content) => content.encoding === "utf8" && /\.(?:js|ts)$/.test(file.path),
     component: SourceRenderer,
+  },
+];
+
+/**
+ * A plain preview shows text without the code box that carries its copy action. Read-only source text keeps that
+ * action here, because a workspace tab has no header to hold it. Editable files use the editor instead.
+ */
+export const readOnlySourceRenderers: readonly FileViewRenderer[] = [
+  ...artifactSourceRenderers,
+  {
+    id: "assistant-source-text",
+    match: (file, content) =>
+      content.encoding === "utf8" && getFileViewPreviewKind({ path: file.path, mediaType: content.mediaType }) === "text",
+    component: (props) => <CodeDisplay code={props.content.content} language="text" />,
   },
 ];

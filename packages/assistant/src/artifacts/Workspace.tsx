@@ -9,7 +9,7 @@ import { useAssistantLive } from "../frontend/assistant-live";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
-import { artifactSourceRenderers } from "./SourceRenderer";
+import { artifactSourceRenderers, readOnlySourceRenderers } from "./SourceRenderer";
 import {
   appTab,
   closeWorkspaceTab,
@@ -117,7 +117,7 @@ function SourceFile(props: { tab: Extract<WorkspaceTab, { kind: "source" }>; dir
             variant="plain"
             file={{ path: props.tab.path }}
             revision={refresh()}
-            renderers={artifactSourceRenderers}
+            renderers={data().permission === "admin" ? artifactSourceRenderers : readOnlySourceRenderers}
             load={async () => {
               const file = data().source.files.find((file) => file.path === props.tab.path);
               if (!file) throw new Error(t().sourceMissing);
