@@ -17,9 +17,11 @@ export type QrScannerProps = {
   class?: string;
 };
 
-/** Safari and Chrome expose the camera permission; elsewhere the failure counts as unavailable. */
-const cameraDenied = async (error: unknown): Promise<boolean> => {
-  if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) return true;
+/**
+ * qr-scanner turns every getUserMedia failure into the string "Camera not found.", so only the Permissions API can
+ * tell a refusal apart. Safari and Chrome expose the camera permission; elsewhere a refusal counts as unavailable.
+ */
+const cameraDenied = async (): Promise<boolean> => {
   try {
     return (await navigator.permissions.query({ name: "camera" as PermissionName })).state === "denied";
   } catch {
@@ -44,6 +46,8 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
   let video!: HTMLVideoElement;
   let scanner: QrScannerEngine | undefined;
   let closed = false;
+  /** The host has unmounted the scanner; it no longer hears about failures that finish later. */
+  let unmounted = false;
   let cleanupMotion: (() => void) | undefined;
   const destroy = () => {
     closed = true;
@@ -55,10 +59,11 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     scanner?.destroy();
     scanner = undefined;
   };
-  const fail = async (error: unknown) => {
+  const fail = async () => {
     if (closed) return;
     destroy();
-    props.onError((await cameraDenied(error)) ? "denied" : "unavailable");
+    const denied = await cameraDenied();
+    if (!unmounted) props.onError(denied ? "denied" : "unavailable");
   };
   onMount(() => {
     const hidden = () => {
@@ -68,6 +73,7 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
     document.addEventListener("visibilitychange", hidden);
     window.addEventListener("pagehide", leaving);
     onCleanup(() => {
+      unmounted = true;
       destroy();
       document.removeEventListener("visibilitychange", hidden);
       window.removeEventListener("pagehide", leaving);
@@ -97,7 +103,7 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
             // Empty frames are expected. Never log decoded content or frame data.
             onDecodeError: (error) => {
               if (closed || error === Engine.NO_QR_CODE_FOUND) return;
-              void fail(error);
+              void fail();
             },
           },
         );
@@ -113,8 +119,8 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
         cleanupMotion = () => motion.removeEventListener("change", applyMotion);
         await scanner.start();
         if (!closed) setStarting(false);
-      } catch (error) {
-        await fail(error);
+      } catch {
+        await fail();
       }
     })();
   });

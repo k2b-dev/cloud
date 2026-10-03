@@ -26,7 +26,13 @@ function InstallDialog(props: { installation: Installation; close: () => void })
             appName={t().appName}
             install={props.installation}
             url={`${location.origin}/`}
-            note={props.installation.platform === "apple-mobile" ? t().pushInstallNote : undefined}
+            note={
+              props.installation.platform === "apple-mobile"
+                ? t().pushInstallNote
+                : props.installation.platform === "in-app"
+                  ? t().installFromMenu
+                  : undefined
+            }
           />
         </div>
       </PanelDialog.Body>

@@ -1423,8 +1423,9 @@ html:has(.k2b-mobile-shell) body {
 }
 
 /* No pinch zoom on the whole page, portalled dialogs and menus included. iOS
-   ignores `user-scalable=no`; it honours touch-action. */
-html:has(.k2b-mobile-shell) * {
+   ignores `user-scalable=no`; it honours touch-action. Zero specificity, so a
+   component's own touch-action, such as a drag handle's `none`, still wins. */
+:where(html:has(.k2b-mobile-shell) *) {
   touch-action: pan-x pan-y;
 }
 

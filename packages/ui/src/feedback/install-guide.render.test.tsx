@@ -68,6 +68,7 @@ describe("InstallGuide", () => {
     expect(html).toContain("Copy app link");
     expect(html).toContain("Paste the link into Safari or Chrome to install Northwind.");
     expect(steps(html)).toEqual([]);
+    expect(render(prompt("in-app"), "en", "Then choose Install app in the menu.")).toContain("Then choose Install app in the menu.");
   });
 
   test("the browser's own dialog, its request, and its failure replace the steps", () => {

@@ -61,8 +61,17 @@ afterAll(async () => {
   await browser?.close();
 });
 
+type ToastHandle = {
+  dismiss: () => void;
+  update: (text: string, options?: { progress?: number | null; duration?: number }) => void;
+};
 type Ui = {
-  toast: ((text: string, options?: { duration?: number }) => { dismiss: () => void }) & { dismissAll: () => void };
+  toast: ((text: string, options?: { duration?: number; progress?: number | "indeterminate" | null }) => ToastHandle) & {
+    dismissAll: () => void;
+    custom: (content: HTMLElement) => { dismiss: () => void };
+  };
+  /** A toast a test keeps between two `page.evaluate` calls. */
+  kept?: ToastHandle;
   dialogCore: { open: (view: () => Node) => Promise<unknown>; close: () => void };
 };
 declare const ui: Ui;
@@ -150,12 +159,22 @@ describe("MobileShell in a phone browser", () => {
         });
       });
       await page.locator("dialog").waitFor();
-      const touch = await page.evaluate(() => ({
-        row: getComputedStyle(document.querySelector(".row")!).touchAction,
-        dialog: getComputedStyle(document.querySelector("dialog button")!).touchAction,
-        input: getComputedStyle(document.querySelector("input")!).fontSize,
-      }));
-      expect(touch).toEqual({ row: "pan-x pan-y", dialog: "pan-x pan-y", input: "16px" });
+      const touch = await page.evaluate(() => {
+        // An application's own single-class rule claims a gesture, as a drag handle does.
+        const style = document.createElement("style");
+        style.textContent = ".grip { touch-action: none; }";
+        document.head.append(style);
+        const grip = document.createElement("span");
+        grip.className = "grip";
+        document.querySelector(".k2b-mobile-shell__body")!.append(grip);
+        return {
+          row: getComputedStyle(document.querySelector(".row")!).touchAction,
+          dialog: getComputedStyle(document.querySelector("dialog button")!).touchAction,
+          grip: getComputedStyle(grip).touchAction,
+          input: getComputedStyle(document.querySelector("input")!).fontSize,
+        };
+      });
+      expect(touch).toEqual({ row: "pan-x pan-y", dialog: "pan-x pan-y", grip: "none", input: "16px" });
     } finally {
       await page.context().close();
     }
@@ -188,6 +207,41 @@ describe("MobileShell in a phone browser", () => {
       await page.evaluate(() => ui.toast.dismissAll());
       await page.waitForTimeout(400);
       expect((await geometry(page)).inset).toBe("0px");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("running progress and a custom slot keep the last row reachable too", async () => {
+    const page = await open();
+    try {
+      await page.evaluate(() => {
+        ui.kept = ui.toast("Uploading", { progress: "indeterminate" });
+      });
+      await page.waitForTimeout(400);
+      const running = await geometry(page);
+      const covered = Math.min(...running.cards.map((card) => card.top));
+      expect(Number.parseFloat(running.inset)).toBeCloseTo(running.bodyBottom - covered, 0);
+      expect(await lastRowBottom(page)).toBeLessThanOrEqual(covered + 1);
+
+      // Ending the progress gives the toast its timer back, so it no longer pads the content.
+      await page.evaluate(() => ui.kept?.update("Uploaded", { progress: null, duration: 60_000 }));
+      await page.waitForTimeout(400);
+      expect((await geometry(page)).inset).toBe("0px");
+      await page.evaluate(() => ui.toast.dismissAll());
+      await page.waitForTimeout(400);
+
+      await page.evaluate(() => {
+        const panel = document.createElement("div");
+        panel.style.height = "120px";
+        panel.textContent = "3 files";
+        ui.toast.custom(panel);
+      });
+      await page.waitForTimeout(400);
+      const custom = await geometry(page);
+      const panelTop = Math.min(...custom.cards.map((card) => card.top));
+      expect(Number.parseFloat(custom.inset)).toBeCloseTo(custom.bodyBottom - panelTop, 0);
+      expect(await lastRowBottom(page)).toBeLessThanOrEqual(panelTop + 1);
     } finally {
       await page.context().close();
     }

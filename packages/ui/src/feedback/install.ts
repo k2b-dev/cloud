@@ -36,8 +36,8 @@ export type InstallPrompt = {
 };
 
 /**
- * Tracks whether the page runs installed and captures the browser's installation prompt. Browser-only; call it inside
- * a component or root, which removes the listeners when it is disposed.
+ * Tracks whether the page runs installed and captures the browser's installation prompt. Browser-only; call it once,
+ * when the page loads, under an owner that lives as long as the page: Chrome offers its prompt only once, early.
  */
 export function createInstallPrompt(): InstallPrompt {
   const displayMode = matchMedia("(display-mode: standalone)");

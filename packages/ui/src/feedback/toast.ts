@@ -444,8 +444,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const resetDismissTimer = () => {
     clearDismissTimer();
     remainingDuration = effectiveDuration();
-    // A toast that stays until it is closed; a phone shell keeps the end of its content clear of it.
-    if (remainingDuration === 0) toastElement.dataset.persistent = "true";
+    // A toast that stays until it is closed or its progress ends; a phone shell keeps the end of its content clear of it.
+    if (remainingDuration === 0 || currentProgress !== null) toastElement.dataset.persistent = "true";
     else delete toastElement.dataset.persistent;
     resumeDismissTimer();
   };
@@ -597,6 +597,8 @@ const showCustom = (content: HTMLElement): ToastSlot => {
   slotElement.className = "k2b-toast";
   slotElement.dataset.k2bToast = "";
   slotElement.dataset.custom = "true";
+  // It stays until the application removes it, like a toast without a timer.
+  slotElement.dataset.persistent = "true";
   slotElement.append(content);
   const item = railItem(slotElement);
   const dismiss = () => {

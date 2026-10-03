@@ -9,13 +9,18 @@ inside a social app, it offers the link to open in Safari or Chrome.
 ## Import
 
 ```tsx
-import { createInstallPrompt, InstallGuide, installationPlatform } from "@k2b/ui";
+import { createInstallPrompt, InstallGuide, type InstallPrompt, installationPlatform } from "@k2b/ui";
 ```
 
 ## Use InstallGuide
 
-Create the installation state with `createInstallPrompt()` in the browser,
-inside a component, and pass it to the guide with the app's name and address:
+Create the installation state once with `createInstallPrompt()`, as early as
+possible: at the root of the island or browser app, when the page loads.
+Chrome offers its installation dialog through one `beforeinstallprompt` event
+shortly after the page loads, and state created later, for example when a
+settings section or a dialog opens, never sees it; the guide then shows manual
+steps instead of the Install button. Pass the state down to the guide, also
+into a dialog that opens later, with the app's name and address:
 
 ```tsx
 const install = createInstallPrompt();
@@ -27,8 +32,10 @@ const install = createInstallPrompt();
 
 - `appName` is the name people see on their Home Screen.
 - `url` is the address an in-app browser copies.
-- `note` adds an application note under the steps, for example what else the
-  installed app enables.
+- `note` adds an application note under the steps, or under the link in an
+  in-app browser, for example what else the installed app enables or where
+  the app offers installation again. Pass the note that fits
+  `install.platform`.
 
 The host owns the surface around the guide: its heading, a dialog or page, and
 dismissal. Hide the guide or close its dialog when `install.installed()`
@@ -61,15 +68,18 @@ so it can be copied by hand.
 
 ## Runtime
 
-`createInstallPrompt()` and `installationPlatform()` need the browser:
-`navigator`, `matchMedia`, and window events. Render the guide in a hydrated
-island or a dialog. It removes its listeners when its owner is disposed.
+`createInstallPrompt()` needs the browser: `navigator`, `matchMedia`, and
+window events. It removes its listeners when its owner is disposed, so create
+it under an owner that lives as long as the page. `installationPlatform()` is a
+pure function of its arguments and also runs on the server. Render the guide
+in a hydrated island or a dialog.
 
 ## Example
 
 ```tsx
-function InstallSection() {
-  const install = createInstallPrompt();
+// Created at the island root when the page loads, and passed to the section.
+function InstallSection(props: { install: InstallPrompt }) {
+  const install = props.install;
   return (
     <Show when={!install.installed()}>
       <section>

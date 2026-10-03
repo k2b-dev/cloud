@@ -139,7 +139,7 @@ export function MobileShellDemo() {
         { kind: "component", name: "MobileShell", from: "@k2b/ui" },
         { kind: "component", name: "TabBar", from: "@k2b/ui" },
       ]}
-      description="The parts of a phone app frame in a 390 px frame: a header with Back, one scrolling body, and the tab bar. MobileShell itself is the page layout, so this catalog page does not mount it."
+      description="The parts of a phone app frame in a 390 px frame: a header with Back, one scrolling body, and the tab bar. MobileShell itself is the page layout, so this catalog page does not mount it. The header renders the page's h1, as it does in an app."
       code={`<MobileShell
   header={<MobileShell.Header title="Tasks" back={{ href: "/pwa/", label: "Start" }} />}
   footer={<TabBar label="App" items={tabs} />}

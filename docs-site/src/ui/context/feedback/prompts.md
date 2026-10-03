@@ -385,7 +385,10 @@ dialog or its transient state.
 
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their
-parent.
+parent. Back closes the dialog directly: the dismiss guard of
+`setDismissHandler` and `cancelBehavior: "ignore"` do not apply to it. Leave
+`history` off for dialogs with unsaved input and for dialogs a person must
+answer.
 
 ## Accessibility
 

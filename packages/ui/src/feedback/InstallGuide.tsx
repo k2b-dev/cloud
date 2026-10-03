@@ -10,7 +10,10 @@ export type InstallGuideProps = {
   install: InstallPrompt;
   /** The address an embedded browser copies, to open it in Safari or Chrome. */
   url: string;
-  /** An application note under the installation steps, for example what else the installed app enables. */
+  /**
+   * An application note under the installation steps or the embedded browser's link, for example what else the
+   * installed app enables.
+   */
   note?: string;
   class?: string;
 };
@@ -93,6 +96,9 @@ export function InstallGuide(props: InstallGuideProps): JSX.Element {
                   {copy.wasCopied() ? messages().installLinkCopied : messages().installCopyLink}
                 </Button>
                 <p>{messages().installPasteLink({ appName: props.appName })}</p>
+                <Show when={props.note}>
+                  <p>{props.note}</p>
+                </Show>
                 <Show when={copy.error()}>
                   <p role="alert">{messages().installCopyFailed}</p>
                   <code>{props.url}</code>

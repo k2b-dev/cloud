@@ -153,6 +153,7 @@ export const authMessages = i18n.define({
       pushDeniedBrowser2: "Open the site settings and set Notifications to Allow.",
       pushDeniedBrowser3: "Reload Cloud Login.",
       pushInstallNote: "Notifications about sign-in requests also need the Home Screen app (iOS 16.4 or later).",
+      installFromMenu: "Then open “Install app” in the Cloud Login menu.",
 
       appName: "Cloud Login",
       language: "Language",
@@ -342,6 +343,7 @@ export const authMessages = i18n.define({
       pushDeniedBrowser2: "Öffne die Website-Einstellungen und setze Benachrichtigungen auf Zulassen.",
       pushDeniedBrowser3: "Lade Cloud Login neu.",
       pushInstallNote: "Benachrichtigungen zu Anmeldeanfragen brauchen ebenfalls die App auf dem Home-Bildschirm (ab iOS 16.4).",
+      installFromMenu: "Öffne danach im Menü von Cloud Login „App installieren“.",
 
       appName: "Cloud Login",
       language: "Sprache",

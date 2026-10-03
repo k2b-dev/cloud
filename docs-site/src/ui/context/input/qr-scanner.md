@@ -29,7 +29,7 @@ camera. Always offer another way in, such as pasting a link:
     onStop={() => setScanning(false)}
     onError={(reason) => {
       setScanning(false);
-      showPasteField(reason === "denied" ? "Camera access is off." : "No camera is available.");
+      showPasteField(reason === "denied" ? "Camera access is off." : "The camera could not start.");
     }}
   />
 </Show>
@@ -41,8 +41,11 @@ camera. Always offer another way in, such as pasting a link:
 - `onStop()` asks the host to unmount the scanner when the page is hidden or
   left.
 - `onError(reason)` reports that the camera could not start or failed:
-  `"denied"` when the camera permission is denied, `"unavailable"` otherwise.
-  The scanner has already stopped.
+  `"denied"` when the browser reports the camera permission as denied through
+  the Permissions API (Safari and Chrome do), `"unavailable"` otherwise. A
+  browser that does not report it, or still reports "prompt" after a refusal,
+  gives `"unavailable"`, so word the fallback to fit both reasons. The scanner
+  has already stopped, and it reports nothing after it unmounts.
 - `instructions` replaces the generic hint shown while the camera runs.
 
 Each mount owns one camera session. Unmounting stops the camera at once, even

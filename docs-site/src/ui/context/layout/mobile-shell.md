@@ -55,7 +55,9 @@ dialogs and menus included. They never apply to pages without a shell.
   its own overscroll.
 - Every element has `touch-action: pan-x pan-y`. iOS ignores
   `user-scalable=no`; this turns pinch zoom and double-tap zoom off. The app
-  must therefore never rely on zoom: keep regular text sizes.
+  must therefore never rely on zoom: keep regular text sizes. The rule has no
+  specificity, so a component that needs a gesture, such as a drag handle or a
+  signature pad, claims it with its own `touch-action` rule.
 - Buttons, menu triggers, and segmented controls are at least 44 px high on
   every pointer.
 - Text fields have 16 px text and are at least 44 px high, so iOS never zooms
@@ -68,9 +70,10 @@ bottom. While a modal dialog is open, the dialog owns the bottom edge, and
 toasts use their usual place. The shell publishes the footer height as
 `--k2b-mobile-shell-footer-height` on `body`.
 
-While a toast that stays until it is closed is visible (`duration: 0`, for
-example "You're offline"), the content gets extra bottom padding of the height
-the toasts cover, so the last row can still scroll above them.
+While a toast without a timer is visible (`duration: 0` such as "You're
+offline", a toast with running progress, or a `toast.custom` slot), the
+content gets extra bottom padding of the height the toasts cover, so the last
+row can still scroll above them.
 
 ### Status bar
 
@@ -101,9 +104,11 @@ system text size: do not set fixed pixel heights on text rows.
 
 ## Runtime
 
-The shell renders on the server in its final structure, so nothing moves when
-it hydrates. In the browser, it measures the footer and watches the toast rail
-to keep the footer height and the toast padding current. It removes the footer
+The shell renders on the server in its final structure, so the header, the
+content, and the footer stay in place when it hydrates. Only the end padding
+of the content and the place of the toast rail settle after mount: in the
+browser, the shell measures the footer and watches the toast rail to keep the
+footer height and the toast padding current. It removes the footer
 height when it unmounts.
 
 `syncThemeColor()` is browser-only.

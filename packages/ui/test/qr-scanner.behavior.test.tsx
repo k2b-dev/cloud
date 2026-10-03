@@ -43,12 +43,12 @@ afterEach(() => {
 
 const settle = () => Bun.sleep(10);
 
-async function mount(options: { accept?: (text: string) => boolean; permission?: PermissionState } = {}) {
+async function mount(options: { accept?: (text: string) => boolean; permission?: PermissionState | Promise<PermissionState> } = {}) {
   dom = createDomTestHarness();
   Object.defineProperty(globalThis, "matchMedia", { configurable: true, value: dom.window.matchMedia.bind(dom.window) });
   Object.defineProperty(navigator, "permissions", {
     configurable: true,
-    value: { query: async () => ({ state: options.permission ?? "prompt" }) },
+    value: { query: async () => ({ state: await (options.permission ?? "prompt") }) },
   });
   const { QrScanner } = await import("../src/inputs/QrScanner");
   const calls = { results: [] as string[], stops: 0, errors: [] as string[] };
@@ -128,6 +128,20 @@ describe("QrScanner", () => {
     };
     const calls = await mount();
     expect(calls.errors).toEqual(["unavailable"]);
+  });
+
+  test("does not report a failure that settles after the host unmounted the scanner", async () => {
+    FakeEngine.start = async () => {
+      throw "Camera not found.";
+    };
+    let answer!: (state: PermissionState) => void;
+    const calls = await mount({ permission: new Promise<PermissionState>((resolve) => (answer = resolve)) });
+    expect(FakeEngine.last?.destroyed).toBe(true);
+    dispose?.();
+    dispose = undefined;
+    answer("denied");
+    await settle();
+    expect(calls.errors).toEqual([]);
   });
 
   test("ignores empty frames but fails on an engine error", async () => {

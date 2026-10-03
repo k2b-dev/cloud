@@ -26,8 +26,9 @@ const FOOTER_HEIGHT = "--k2b-mobile-shell-footer-height";
 const TOAST_INSET = "--k2b-mobile-shell-toast-inset";
 
 /**
- * The visible part of the toast rail when it holds a toast that stays until it is closed, so the last row of the
- * scroll area can still scroll above it. A rail that sits elsewhere, such as above a dialog, covers nothing.
+ * The visible part of the toast rail when it holds a toast without a timer (`duration: 0`, running progress, or a
+ * custom slot), so the last row of the scroll area can still scroll above it. A rail that sits elsewhere, such as
+ * above a dialog, covers nothing.
  */
 const persistentToastInset = (body: HTMLElement): number => {
   if (document.querySelector("dialog:modal")) return 0;
