@@ -32,6 +32,6 @@ Diese Befehle verwenden dieselben veröffentlichten App-Rechte wie der Browser. 
 
 Der Builder speichert vollständige Änderungen automatisch im Entwurf. Bearbeiten ändert nicht die aktive App. **Änderungen veröffentlichen** validiert und veröffentlicht den gespeicherten Entwurf. Behebe seine Diagnosen vor einem erneuten Versuch. Der Builder bietet **Änderungen veröffentlichen** auch an, wenn eine Änderung an einem Formular, einer Ansicht, einem Feld, einer Vorlage oder einem Workflow der aktiven App eine erneute Veröffentlichung erfordert. Hat der Entwurf keine weiteren Änderungen, lautet der Hinweis **Verwendete Ressourcen wurden geändert**.
 
-**Aktive Version wiederherstellen** verwirft ausstehende Entwurfsänderungen. Unter **App-Einstellungen → Lebenszyklus** entfernt das Aufheben der Veröffentlichung den aktiven Snapshot, behält aber Entwurf und Freigaben. Das Löschen einer App entfernt ihre Route, nicht die Basisdaten. Beide Aktionen erfordern eine Bestätigung.
+**Veröffentlichte Version wiederherstellen** verwirft ausstehende Entwurfsänderungen. Unter **App-Einstellungen → Lebenszyklus** entfernt das Aufheben der Veröffentlichung den aktiven Snapshot, behält aber Entwurf und Freigaben. Das Löschen einer App entfernt ihre Route, nicht die Basisdaten. Beide Aktionen erfordern eine Bestätigung.
 
 Es werden nur die aktive Seite und ihr optionaler Datensatz geladen. Verborgene Detailseiten werden nicht vorgeladen.

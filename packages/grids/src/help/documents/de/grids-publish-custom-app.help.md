@@ -64,7 +64,7 @@ Die Vorabprüfung gibt bei ungültigen Definitionen Diagnosen für den jeweilige
 
 ## Einen Snapshot veröffentlichen {icon="copy-check"}
 
-Der Builder speichert Änderungen automatisch in einem Entwurf. Wenn dieser Entwurf von der aktiven Version abweicht, bietet der Hinweis unter Seiten **Änderungen veröffentlichen** und **Aktive Version wiederherstellen** an. Die Veröffentlichung wartet zunächst auf die letzte automatische Speicherung und speichert dann die validierte Definition mit ihrer abgeleiteten Capability-Menge als neuen veröffentlichten Snapshot. Die Wiederherstellung kopiert den aktuellen veröffentlichten Snapshot zurück in den Entwurf. Die stabile Route `/apps/<id>` liefert ausschließlich den veröffentlichten Snapshot.
+Der Builder speichert Änderungen automatisch in einem Entwurf. Wenn dieser Entwurf von der aktiven Version abweicht, bietet der Hinweis unter Seiten **Änderungen veröffentlichen** und **Veröffentlichte Version wiederherstellen** an. Die Veröffentlichung wartet zunächst auf die letzte automatische Speicherung und speichert dann die validierte Definition mit ihrer abgeleiteten Capability-Menge als neuen veröffentlichten Snapshot. Die Wiederherstellung kopiert den aktuellen veröffentlichten Snapshot zurück in den Entwurf. Die stabile Route `/apps/<id>` liefert ausschließlich den veröffentlichten Snapshot.
 
 Veröffentlichte Apps verwenden die referenzierten Grids-Ressourcen weiterhin über ihre unveränderlichen Capabilities. Änderungen an App-Freigaben gelten sofort. Wenn eine referenzierte Ressource später deaktiviert, gelöscht oder inkompatibel geändert wird, schließt die betroffene Seite, der Block oder die Aktion im Fehlerfall. Der Rest der Seite bleibt nutzbar.
 
