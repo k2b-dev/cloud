@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
@@ -52,7 +52,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
     onSuccess: (data) => {
       void navigateToNotebookNote(buildNoteUrl(notebookId, data.id), { selectInitialTitle: data.id });
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
   const moveNoteMut = mutations.create({
@@ -65,7 +65,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
       return res.json();
     },
     onSuccess: () => refreshCurrentPath(),
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
   const copyNoteMut = mutations.create<
@@ -86,7 +86,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
     onSuccess: (data) => {
       void navigateToNotebookNote(buildNoteUrl(data.notebookId, data.id));
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
   const deleteNoteMut = mutations.create({
@@ -99,7 +99,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
     onSuccess: () => {
       navigateTo(`/app/notebooks/${notebookId}`);
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast.error(err.message),
   });
 
   const lockNoteMut = mutations.create<unknown, string>({

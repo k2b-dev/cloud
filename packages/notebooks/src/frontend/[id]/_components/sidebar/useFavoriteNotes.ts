@@ -1,4 +1,4 @@
-import { prompts, useLocale } from "@k2b/ui";
+import { toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -39,7 +39,7 @@ export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNo
         else copy.add(note.id);
         return copy;
       });
-      void prompts.error(t().favoriteUpdateFailed);
+      toast.error(t().favoriteUpdateFailed);
     } finally {
       pendingNoteIds.delete(note.id);
     }

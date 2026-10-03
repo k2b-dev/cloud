@@ -59,7 +59,7 @@ export const createContactDetailActions = (config: {
       navigateTo(`/app/contacts/${moved.bookId}?contact=${moved.id}&contactBook=${moved.bookId}`);
     },
     onError: (error) => {
-      void prompts.error(error.message);
+      toast.error(error.message);
     },
   });
 
@@ -74,12 +74,12 @@ export const createContactDetailActions = (config: {
       );
       if (!res.ok) throw new Error(await readErrorMessage(res, t().removeMemberFailed));
     },
+    // The member leaves the list, so the removal needs no confirmation.
     onSuccess: () => {
-      toast.success(t().memberRemoved);
       void config.invalidateDetail().catch(() => toast.error(t().memberRemovedReloadFailed));
     },
     onError: (error) => {
-      void prompts.error(error.message);
+      toast.error(error.message);
     },
   });
 
