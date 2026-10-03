@@ -1,5 +1,16 @@
-import { CodeDisplay, canPreviewFile, dialogCore, FileView, PanelDialog, panelDialogWorkspaceOptions, useLocale } from "@k2b/ui";
-import { onCleanup } from "solid-js";
+import { fileIcons } from "@k2b/stdlib";
+import {
+  CodeDisplay,
+  CopyButton,
+  canPreviewFile,
+  dialogCore,
+  FileView,
+  Format,
+  PanelDialog,
+  panelDialogWorkspaceOptions,
+  useLocale,
+} from "@k2b/ui";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { errorMessage } from "../utils/api-helpers";
 import { documentMessages } from "./messages";
@@ -11,32 +22,66 @@ const fileFor = (artifact: Artifact) => ({ path: artifact.filename, mediaType: a
 export const canPreviewDocumentArtifact = (artifact: Artifact) =>
   ["text/csv", "application/json", "application/xml"].includes(artifact.mimeType) && canPreviewFile(fileFor(artifact));
 
-export const openDocumentArtifactPreview = (documentId: string, artifact: Artifact) => {
+export const openDocumentArtifactPreview = (document: Pick<PublicDocument, "id" | "createdAt">, artifact: Artifact) => {
   if (!canPreviewDocumentArtifact(artifact)) return;
   return dialogCore.open<void>(
-    (close) => <DocumentArtifactPreviewDialog documentId={documentId} artifact={artifact} close={close} />,
+    (close) => <DocumentArtifactPreviewDialog document={document} artifact={artifact} close={close} />,
     panelDialogWorkspaceOptions,
   );
 };
 
-function DocumentArtifactPreviewDialog(props: { documentId: string; artifact: Artifact; close: () => void }) {
+/**
+ * Follows the Files preview: the file name as the title, a quiet line with the file facts, copying in the header, and
+ * the stored data on the dialog surface without a second frame. The workspace frame keeps long export lines wide and
+ * takes the whole phone screen.
+ */
+function DocumentArtifactPreviewDialog(props: {
+  document: Pick<PublicDocument, "id" | "createdAt">;
+  artifact: Artifact;
+  close: () => void;
+}) {
   const locale = useLocale();
   const t = () => documentMessages.resolve([locale()]).t;
   const abort = new AbortController();
   onCleanup(() => abort.abort());
+  // CSV and XML are text; JSON offers copying in its own raw view.
+  const copyable = props.artifact.mimeType !== "application/json";
+  const [text, setText] = createSignal<string | null>(null);
   return (
     <PanelDialog>
-      <PanelDialog.Header title={props.artifact.filename} subtitle={t().preview} close={props.close} />
+      <PanelDialog.Header
+        title={props.artifact.filename}
+        subtitle={
+          <>
+            <i
+              class={`ti ${fileIcons.getFileIcon({ name: props.artifact.filename, type: "file", mimeType: props.artifact.mimeType })}`}
+              aria-hidden="true"
+            />{" "}
+            <Format.Bytes value={props.artifact.sizeBytes} />
+            <span aria-hidden="true"> · </span>
+            <Format.DateTime value={props.document.createdAt} />
+          </>
+        }
+        actions={
+          <Show when={copyable}>
+            <CopyButton size="sm" variant="ghost" text={text() ?? ""} disabled={text() === null} />
+          </Show>
+        }
+        close={props.close}
+      />
       <PanelDialog.Body>
         <FileView
+          variant="plain"
           file={fileFor(props.artifact)}
           load={async () => {
             const response = await apiClient.documents[":documentId"].artifacts[":artifactKey"].$get(
-              { param: { documentId: props.documentId, artifactKey: props.artifact.key } },
+              { param: { documentId: props.document.id, artifactKey: props.artifact.key } },
               { init: { signal: abort.signal } },
             );
             if (!response.ok) throw new Error(await errorMessage(response, t().couldNotLoadPreviewData));
-            return { encoding: "utf8", content: await response.text(), mediaType: props.artifact.mimeType };
+            const content = await response.text();
+            setText(content);
+            return { encoding: "utf8", content, mediaType: props.artifact.mimeType };
           }}
           renderers={[
             {
@@ -44,7 +89,7 @@ function DocumentArtifactPreviewDialog(props: { documentId: string; artifact: Ar
               // Export CSV can use semicolons or a DATEV header. Do not guess a
               // comma-delimited table and show misleading financial columns.
               match: (_, content) => content.mediaType === "text/csv",
-              component: (preview) => <CodeDisplay code={preview.content.content} language="text" />,
+              component: (preview) => <CodeDisplay code={preview.content.content} language="text" copy={false} />,
             },
           ]}
         />

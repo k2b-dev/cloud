@@ -46,6 +46,8 @@ test("a PDF file tab previews the conversation file bytes instead of the attachm
     expect(requests).toEqual(["/api/ai/conversations/chat01/files/content?path=%2Freport.pdf"]);
     expect(dom.root.querySelector("object")).toBeNull();
     expect(dom.root.querySelector('[role="tabpanel"] iframe')?.getAttribute("src")).toBe("blob:assistant-pdf-1");
+    // The tab already names the file, so the preview sits in the tab without a second frame.
+    expect(dom.root.querySelector('[role="tabpanel"] > .k2b-content-file-view')?.getAttribute("data-variant")).toBe("plain");
     expect(created[0]?.type).toBe("application/pdf");
     expect(new Uint8Array(await created[0]!.arrayBuffer())).toEqual(pdf);
   } finally {

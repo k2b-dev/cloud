@@ -114,6 +114,7 @@ function SourceFile(props: { tab: Extract<WorkspaceTab, { kind: "source" }>; dir
       <Show when={bundle()}>
         {(data) => (
           <FileView
+            variant="plain"
             file={{ path: props.tab.path }}
             revision={refresh()}
             renderers={artifactSourceRenderers}
@@ -161,6 +162,7 @@ function ChatFile(props: { tab: Extract<WorkspaceTab, { kind: "file" }>; refresh
   });
   return (
     <FileView
+      variant="plain"
       file={{ path: props.tab.path }}
       load={() => source.read(props.tab.path)}
       revision={revision()}

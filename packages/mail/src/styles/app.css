@@ -565,6 +565,52 @@
   }
 }
 
+/* The attachment preview uses the workspace frame, which takes the whole screen on phones. On wider screens,
+   documents and text read in a 40rem column, the reading measure of the Files preview. That frame is anchored where
+   the workspace frame starts and grows only downward with its content, so loading never moves the header. Unlayered,
+   like the shared frame rules. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-dialog.k2b-panel-dialog-frame.mail-attachment-dialog--reading {
+    --mail-attachment-dialog-height: min(80dvh, var(--k2b-dialog-available-height));
+    top: calc((100dvh - var(--mail-attachment-dialog-height)) / 2);
+    width: min(var(--k2b-dialog-available-width), 40rem);
+    /* The dialog's own sizing; `auto` would stretch a fixed frame down to the viewport's edge. */
+    height: fit-content;
+    max-height: var(--mail-attachment-dialog-height);
+    transform: translateX(-50%);
+  }
+  /* A column, so the panel shrinks to the capped height and only its body scrolls. */
+  .k2b-ui .mail-attachment-dialog--reading .k2b-panel-dialog-viewport.is-workspace {
+    flex-direction: column;
+    height: auto;
+    max-height: var(--mail-attachment-dialog-height);
+  }
+}
+/* Media and tables take the body's height, so an image fits the frame and a table scrolls in itself. */
+.k2b-ui .mail-attachment-dialog--stretch .k2b-panel-dialog__body > .k2b-content-file-view {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.k2b-ui .mail-attachment-dialog--stretch .k2b-content-file-view__media {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+/* Holds the title line while a Markdown attachment loads; the facts appear together with the title. */
+.mail-attachment-dialog__title-pending {
+  display: inline-block;
+  width: 14rem;
+  max-width: 70%;
+  height: 1.25rem;
+  vertical-align: middle;
+  border-radius: 0.375rem;
+  background: var(--k2b-surface-muted);
+}
+.mail-attachment-dialog__facts[data-pending] {
+  visibility: hidden;
+}
+.mail-attachment-dialog__facts > i {
+  margin-inline-end: 0.375rem;
+}
+
 /* Match the unlayered shared button styles so mailbox content stays left-aligned. */
 /* Unlayered on purpose: the shared @k2b/ui rules are unlayered too, and a
    layered app rule can never override `w-full` on the segmented control. */
