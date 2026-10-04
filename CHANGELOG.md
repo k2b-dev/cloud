@@ -3,6 +3,41 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.29.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.28.0...cloud-v0.29.0) (2026-10-04)
+
+
+### Features
+
+* **cloud:** keep live updates quiet when a background tab returns ([#570](https://github.com/k2b-dev/cloud/issues/570)) ([#583](https://github.com/k2b-dev/cloud/issues/583)) ([b075650](https://github.com/k2b-dev/cloud/commit/b0756506e8b42d13e0d50b6138ddf8d2d772d56c))
+* **core:** flatten the account pages ([#572](https://github.com/k2b-dev/cloud/issues/572)) ([deaf537](https://github.com/k2b-dev/cloud/commit/deaf537c25414d89785ef24407b839d880c49252))
+* **events:** write live updates in the domain transaction through one platform outbox ([#599](https://github.com/k2b-dev/cloud/issues/599)) ([864f459](https://github.com/k2b-dev/cloud/commit/864f459465f7c39a0af21b053fa7a6504af987c2))
+* **grids:** confirm only what the screen does not show, and offer Retry when an action fails ([#580](https://github.com/k2b-dev/cloud/issues/580)) ([1d5a42a](https://github.com/k2b-dev/cloud/commit/1d5a42a06e334e0895c1a828bcb9cda85903709a))
+* keep rejected notes in their composer in Contacts and Notebooks, and report failed clicks in a toast ([#582](https://github.com/k2b-dev/cloud/issues/582)) ([bf252b1](https://github.com/k2b-dev/cloud/commit/bf252b1f5b27c21c4f47c62567b426c24f55eb7a))
+* **mail:** apply message actions only to the chosen messages and undo failed changes correctly ([#594](https://github.com/k2b-dev/cloud/issues/594)) ([b8727a9](https://github.com/k2b-dev/cloud/commit/b8727a9f1593df6eb2c5f8aa4db49109bf3286a7))
+* **mail:** confirm only what the screen does not show, and offer Retry when an action fails ([#578](https://github.com/k2b-dev/cloud/issues/578)) ([c455391](https://github.com/k2b-dev/cloud/commit/c45539126e0e663cfdb4260379a98293ed98ae6d))
+* **mail:** keep pinned and hidden mailboxes per person or agent on every device ([#579](https://github.com/k2b-dev/cloud/issues/579)) ([16b8e7d](https://github.com/k2b-dev/cloud/commit/16b8e7d8cef0c99e1358e53ffbe058b9804400c1))
+* **mail:** make sync --wait wait until its folders have synced ([#571](https://github.com/k2b-dev/cloud/issues/571)) ([2a106ee](https://github.com/k2b-dev/cloud/commit/2a106ee3394a01b178e341559d33a886701e9339))
+* **notebooks:** let admins reserve locking notes along with deleting them ([#575](https://github.com/k2b-dev/cloud/issues/575)) ([5a4e929](https://github.com/k2b-dev/cloud/commit/5a4e9299d41326154e9270f78eaaea9086799333))
+* **notebooks:** preview attached files instead of only downloading them ([#574](https://github.com/k2b-dev/cloud/issues/574)) ([8c443eb](https://github.com/k2b-dev/cloud/commit/8c443eb73cde98ff26c98035d0ab15d7fc9f80c1))
+* **spaces:** confirm only what the screen does not show, and offer Retry when an action fails ([#577](https://github.com/k2b-dev/cloud/issues/577)) ([4643b0a](https://github.com/k2b-dev/cloud/commit/4643b0a85882fb2b453827b58942573fe80f66ae))
+* **ui:** share phone app building blocks with Cloud Login ([#591](https://github.com/k2b-dev/cloud/issues/591)) ([394af22](https://github.com/k2b-dev/cloud/commit/394af22d4053b7418481ee25beda9288b88d038b))
+
+
+### Bug Fixes
+
+* announce quiet confirmations in Spaces, confirm hidden completions with Undo, and keep create and edit dialogs open until saved ([#585](https://github.com/k2b-dev/cloud/issues/585)) ([0a40a67](https://github.com/k2b-dev/cloud/commit/0a40a675282a976597c0a6f5d406cecb3e5d45aa))
+* give every detail panel section the same flat frame, comments included ([#592](https://github.com/k2b-dev/cloud/issues/592)) ([42e81a6](https://github.com/k2b-dev/cloud/commit/42e81a6a6d9ff36d01fda71b73ac23b5a423795c))
+* **grids:** offer to publish a Custom App again after a Form or other used resource changed ([#593](https://github.com/k2b-dev/cloud/issues/593)) ([8840635](https://github.com/k2b-dev/cloud/commit/88406358c73d9c97c136e3fdf8a3531d6beb9ade)), closes [#539](https://github.com/k2b-dev/cloud/issues/539)
+* **grids:** tell App readers who can bring back a changed Form ([#596](https://github.com/k2b-dev/cloud/issues/596)) ([daf6d7a](https://github.com/k2b-dev/cloud/commit/daf6d7a4b5986a8da6bfa792e1473e6c573643be))
+* **mail:** finish every send reliably and run commands queued with personal API keys ([#573](https://github.com/k2b-dev/cloud/issues/573)) ([9232582](https://github.com/k2b-dev/cloud/commit/92325823486d9190c981f78457e5b9b655457001))
+* **mail:** keep folders and message bodies syncing through restarts and provider outages ([#587](https://github.com/k2b-dev/cloud/issues/587)) ([4c1bd2a](https://github.com/k2b-dev/cloud/commit/4c1bd2a56ddb83dda93bad0071d8021306a488d6))
+* **mail:** keep mailboxes syncing when a provider refuses connections at its limit ([#590](https://github.com/k2b-dev/cloud/issues/590)) ([3a2c0dc](https://github.com/k2b-dev/cloud/commit/3a2c0dcfd76e529a366b50a67cf07a9b2401e5de))
+* **mail:** list recently deleted mailboxes again ([#588](https://github.com/k2b-dev/cloud/issues/588)) ([64e890b](https://github.com/k2b-dev/cloud/commit/64e890b6a488db58e440c1fa32128a934af1b8ae))
+* **mail:** return full search pages and correct unread and Send problems in message mode ([#598](https://github.com/k2b-dev/cloud/issues/598)) ([e2efea7](https://github.com/k2b-dev/cloud/commit/e2efea7651c258ddd2b6b140433c73a356e2eeb7))
+* match the Files preview in Mail, Grids and Assistant previews ([#568](https://github.com/k2b-dev/cloud/issues/568)) ([47c34ef](https://github.com/k2b-dev/cloud/commit/47c34efc975255a6e0d2bd025ae7769c11894e0d))
+* **pwa-auth:** keep icons the same width while the inlined icon font decodes ([#586](https://github.com/k2b-dev/cloud/issues/586)) ([04414a7](https://github.com/k2b-dev/cloud/commit/04414a7c6233e0dfa0d7909f54a4cc0a262058b5))
+* **ui:** keep icons the same width while the icon font loads ([#581](https://github.com/k2b-dev/cloud/issues/581)) ([cb58bbc](https://github.com/k2b-dev/cloud/commit/cb58bbc157f8f838c442d4c06036701358ff27f5))
+
 ## [0.28.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.27.0...cloud-v0.28.0) (2026-10-03)
 
 
