@@ -1454,9 +1454,9 @@ suite("mail sent message projection", () => {
       expect(waiting.notices).toEqual([
         { key: `send-login:waiting:${outbox.id}`, target: `/app/mail/${waiting.mailbox_short_id}?scheduled=1` },
       ]);
-      // Scheduled shows no retry time: the message goes out once the mailbox is signed in again.
+      // Scheduled shows the wait and no retry time: the message goes out once the mailbox is signed in again.
       const scheduled = await getScheduledSend({ context, mailboxId: mailbox.mailboxId, scheduledSendId: outbox.id });
-      expect(scheduled.ok && scheduled.data.nextAttemptAt).toBeNull();
+      expect(scheduled.ok && scheduled.data).toMatchObject({ nextAttemptAt: null, lastErrorCode: "MAILBOX_AUTH_REQUIRED" });
       expect(provider.submissions()).toBe(0);
 
       await sql`UPDATE mail.mailboxes SET health = 'active' WHERE id = ${mailbox.mailboxId}::uuid`;
@@ -1500,6 +1500,75 @@ suite("mail sent message projection", () => {
         { key: `send-login:returned:${outbox.id}`, target: `/app/mail/${returned.mailbox_short_id}?view=send_problems` },
       ]);
       expect(provider.submissions()).toBe(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose mailbox is signed in again only after six days still goes back to the drafts", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Reconnected too late");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "auth-reconnected-late");
+      await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailbox.mailboxId}::uuid`;
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      // Nothing looked at the send for six days, such as while Mail's workers were stopped, and the
+      // account was reconnected before the next look.
+      await sql.begin(async (tx) => {
+        await tx`ALTER TABLE mail.outbox_submissions DISABLE TRIGGER outbox_requested_at_guard`;
+        await tx`UPDATE mail.outbox_submissions SET requested_at = now() - interval '6 days 1 minute' WHERE id = ${outbox.id}::uuid`;
+        await tx`ALTER TABLE mail.outbox_submissions ENABLE TRIGGER outbox_requested_at_guard`;
+      });
+      await sql`UPDATE mail.mailboxes SET health = 'active' WHERE id = ${mailbox.mailboxId}::uuid`;
+      expect(await sendRetryNow(outbox.id)).toBe("failed");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "failed",
+        last_error_code: "MAILBOX_AUTH_REQUIRED",
+        command_state: "failed",
+        draft_state: "draft",
+      });
+      expect((await loginWait(outbox.id)).notices.map((notice) => notice.key)).toEqual([
+        `send-login:waiting:${outbox.id}`,
+        `send-login:returned:${outbox.id}`,
+      ]);
+      expect(provider.submissions()).toBe(0);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send built before its wait for a new login is built again and dated when it goes out", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Built before the wait");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "auth-built-before");
+      // The first attempt builds the message, then cannot search the Sent folder.
+      provider.failNextSearches(1, "CONNECT_TIMEOUT");
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      expect(await delivery(outbox.id)).toMatchObject({ last_error_code: "OUTBOX_PREDISPATCH_RETRY" });
+      const [built] = await sql<{ mime_blob_id: string | null }[]>`
+        SELECT mime_blob_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid
+      `;
+      expect(built?.mime_blob_id).not.toBeNull();
+      // As if that attempt ran three days ago.
+      await sql`UPDATE mail.outbox_submissions SET mime_date = mime_date - interval '3 days' WHERE id = ${outbox.id}::uuid`;
+
+      await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailbox.mailboxId}::uuid`;
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      expect(await loginWait(outbox.id)).toMatchObject({ mime_blob_id: null });
+
+      await sql`UPDATE mail.mailboxes SET health = 'active' WHERE id = ${mailbox.mailboxId}::uuid`;
+      const reconnectedAt = Date.now() - 1_000;
+      expect(await sendRetryNow(outbox.id)).toBe("sent");
+      const [sent] = await sql<{ mime_date: Date }[]>`SELECT mime_date FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid`;
+      expect(sent!.mime_date.getTime()).toBeGreaterThanOrEqual(reconnectedAt);
+      const [copy] = provider.messagesWithId("Sent", outbox.stable_message_id);
+      if (!copy) throw new Error("The Sent copy is missing");
+      expect((await simpleParser(copy.source)).date?.getTime()).toBeGreaterThanOrEqual(Math.floor(reconnectedAt / 1_000) * 1_000);
+      const projection = await sentProjection(mailbox, outbox.stable_message_id);
+      expect(projection.messages[0]!.sent_at!.getTime()).toBeGreaterThanOrEqual(reconnectedAt);
     } finally {
       provider.restore();
     }

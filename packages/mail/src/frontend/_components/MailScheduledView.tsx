@@ -153,15 +153,25 @@ export default function MailScheduledView(props: {
                         <span title={dates.formatDateTime(item.createdAt, props.dateConfig)}>
                           {t().created({ value: dates.formatDateTimeRelative(item.createdAt, props.dateConfig) })}
                         </span>
-                        <Show when={item.lastError}>
-                          {(error) => (
-                            <span class="text-red-600" title={error()}>
-                              <i class="ti ti-alert-circle mr-1" aria-hidden="true" />
-                              {item.nextAttemptAt
-                                ? t().retryAt({ value: dates.formatDateTime(item.nextAttemptAt, props.dateConfig) })
-                                : t().retryPending}
+                        <Show
+                          when={item.lastErrorCode !== "MAILBOX_AUTH_REQUIRED"}
+                          fallback={
+                            <span class="text-amber-600 dark:text-amber-400" title={t().waitingForSignInExplanation}>
+                              <i class="ti ti-lock mr-1" aria-hidden="true" />
+                              {t().waitingForSignIn}
                             </span>
-                          )}
+                          }
+                        >
+                          <Show when={item.lastError}>
+                            {(error) => (
+                              <span class="text-red-600" title={error()}>
+                                <i class="ti ti-alert-circle mr-1" aria-hidden="true" />
+                                {item.nextAttemptAt
+                                  ? t().retryAt({ value: dates.formatDateTime(item.nextAttemptAt, props.dateConfig) })
+                                  : t().retryPending}
+                              </span>
+                            )}
+                          </Show>
                         </Show>
                       </div>
                     </div>

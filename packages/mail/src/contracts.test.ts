@@ -151,6 +151,7 @@ describe("scheduled send contracts", () => {
       nextAttemptAt: null,
       state: "scheduled",
       attempt: 0,
+      lastErrorCode: null,
       lastError: null,
       scheduledBy: { kind: "user", displayName: "Ada" },
       createdAt: "2026-07-17T09:00:00.000Z",

@@ -7,7 +7,9 @@ const log = logger("mail:send-login-notifications");
 /**
  * Tells the person who sent a message that it waits for its mailbox's next login, or that it went
  * back to the drafts because the login did not come in time. Each notice goes out once per send.
- * Called after the send's state committed; a lost notice never changes the send.
+ * Called after the send's state committed and best effort, like Mail's assignment notices: a
+ * failed send or a stop right after the commit loses the notice, never the message, which still
+ * shows its state in Mail.
  */
 export const notifySendWaitingForLogin = async (params: { outboxId: string; notice: "waiting" | "returned" }): Promise<void> => {
   try {

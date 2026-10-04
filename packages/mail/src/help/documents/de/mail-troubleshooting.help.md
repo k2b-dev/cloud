@@ -92,7 +92,7 @@ Kehre anschließend zu **Automatisierungen > Automatische Antworten** zurück. B
 Öffne **Geplant** und prüfe den Eintrag:
 
 - Eine Wiederholungskennzeichnung bedeutet, dass die Zustellung fehlgeschlagen ist und Mail den Eintrag für einen weiteren Versuch aufbewahrt.
-- **Wartet auf Anmeldung** an der Nachricht bedeutet, dass das Konto des Postfachs wieder verbunden werden muss. Danach geht die Nachricht hinaus; geschieht das nicht innerhalb von sechs Tagen, liegt sie wieder in den Entwürfen.
+- **Wartet auf Anmeldung** bedeutet, dass das Konto des Postfachs wieder verbunden werden muss. Danach geht die Nachricht hinaus; geschieht das nicht innerhalb von sechs Tagen, liegt sie wieder in den Entwürfen.
 - Bei einem pausierten Postfach wird der Versandversuch nicht ausgeführt.
 - Mit **Abbrechen** kannst du den Eintrag vor Beginn der Zustellung in einen gemeinsamen Entwurf zurückführen oder verwerfen.
 

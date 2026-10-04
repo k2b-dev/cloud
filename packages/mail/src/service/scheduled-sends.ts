@@ -101,6 +101,7 @@ const mapRows = (rows: ScheduledRow[]): ScheduledSend[] =>
           : toIso(row.scheduled_at),
       state: row.state,
       attempt: Number(row.attempt),
+      lastErrorCode: row.last_error_code,
       lastError: row.last_error_message,
       scheduledBy: { kind: row.actor_kind, displayName: row.actor_display_name },
       createdAt: toIso(row.created_at),

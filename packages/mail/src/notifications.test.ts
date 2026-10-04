@@ -48,7 +48,7 @@ describe("Mail public notifications", () => {
     expect(NOTIFICATIONS.sendWaitingForLogin.data.safeParse({ ...waiting, mailboxId: crypto.randomUUID() }).success).toBeFalse();
     expect(await NOTIFICATIONS.sendWaitingForLogin.render(waiting, { locale: "en" })).toEqual({
       title: "A message is waiting to be sent",
-      body: "Support needs you to sign in again. Mail sends “Offer” as soon as the account is reconnected.",
+      body: "Support needs to be signed in again. Mail sends “Offer” as soon as the account is reconnected.",
       targetHref: "/app/mail/Box001?scheduled=1",
     });
     expect(await NOTIFICATIONS.sendWaitingForLogin.render({ ...waiting, scheduled: false }, { locale: "en" })).toMatchObject({

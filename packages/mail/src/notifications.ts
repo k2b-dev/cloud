@@ -41,7 +41,7 @@ const notificationMessages = i18n.define({
       assignedBody: ({ mailbox, by }: { mailbox: string; by: string | null }) => (by ? `${by} in ${mailbox}` : mailbox),
       sendWaitingTitle: "A message is waiting to be sent",
       sendWaitingBody: ({ mailbox, subject }: { mailbox: string; subject: string }) =>
-        `${mailbox} needs you to sign in again. Mail sends “${subject}” as soon as the account is reconnected.`,
+        `${mailbox} needs to be signed in again. Mail sends “${subject}” as soon as the account is reconnected.`,
       sendReturnedTitle: "A message couldn’t be sent",
       sendReturnedBody: ({ mailbox, subject }: { mailbox: string; subject: string }) =>
         `${mailbox} wasn’t reconnected in time, so “${subject}” is back in your drafts.`,

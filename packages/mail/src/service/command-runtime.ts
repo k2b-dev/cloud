@@ -2405,7 +2405,8 @@ type OutboxMime = {
 
 /**
  * Builds the message once, when it is first sent, so a message scheduled for later carries the
- * time it went out. Later attempts and the Sent copy reuse the stored bytes and their date.
+ * time it went out. Later attempts and the Sent copy reuse the stored bytes and their date, except
+ * after a wait for the mailbox's login, which drops them.
  */
 const ensureMimeBlob = async (outbox: DbOutboxExecution): Promise<OutboxMime> => {
   const snapshot = outboundDraftSnapshotSchema.parse(parseJsonRecord(outbox.draft_snapshot));
@@ -2656,13 +2657,16 @@ const scheduleOutboxRetry = async (params: {
   fallbackMessage: string;
   /** Settle only an attempt whose worker stopped before SMTP. */
   staleUnsent?: boolean;
-  /** Waits for the mailbox's next login instead of a transient failure; the attempt does not count. */
+  /**
+   * Waits for the mailbox's next login instead of a transient failure; the attempt does not count.
+   * Nothing reached SMTP, and the wait can last days, so the message is built again when it goes
+   * out and carries that time. Its Message-ID stays.
+   */
   waitForLogin?: boolean;
 }): Promise<boolean> => {
-  const delaySeconds = params.waitForLogin
-    ? MAILBOX_LOGIN_RECHECK_SECONDS
-    : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
-  const refund = params.waitForLogin ? 1 : 0;
+  const waitForLogin = params.waitForLogin === true;
+  const delaySeconds = waitForLogin ? MAILBOX_LOGIN_RECHECK_SECONDS : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
+  const refund = waitForLogin ? 1 : 0;
   const updated = await sql.begin(async (tx) => {
     if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return false;
     await tx`
@@ -2670,6 +2674,7 @@ const scheduleOutboxRetry = async (params: {
       SET
         state = 'scheduled',
         attempt = attempt - ${refund},
+        mime_blob_id = CASE WHEN ${waitForLogin} THEN NULL ELSE mime_blob_id END,
         scheduled_at = now() + (${delaySeconds}::text || ' seconds')::interval,
         undo_until = NULL,
         last_error_code = ${params.code},
@@ -2880,6 +2885,31 @@ const mailboxLoginWait = async (outboxId: string): Promise<"waiting" | "expired"
   return row ? (row.expired ? "expired" : "waiting") : null;
 };
 
+/** Whether the send was due longer ago than any send waits for its mailbox's login. */
+const loginWaitExpired = async (outboxId: string): Promise<boolean> => {
+  const [row] = await sql<{ expired: boolean }[]>`
+    SELECT requested_at <= now() - make_interval(secs => ${MAILBOX_LOGIN_WAIT_SECONDS}) AS expired
+    FROM mail.outbox_submissions
+    WHERE id = ${outboxId}::uuid
+  `;
+  return row?.expired === true;
+};
+
+/** The login did not come in time: the send goes back to the drafts, and its author learns that. */
+const returnSendAfterLoginWait = async (outbox: DbOutboxExecution, command: DbCommandExecution): Promise<void> => {
+  const returned = await finishOutbox({
+    outbox,
+    command,
+    outboxState: "failed",
+    commandState: "failed",
+    draftState: "draft",
+    error: Object.assign(new Error("The mailbox was not signed in again in time; the message went back to the drafts"), {
+      code: OUTBOX_MAILBOX_AUTH_REQUIRED,
+    }),
+  });
+  if (returned) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "returned" });
+};
+
 /**
  * A waiting send whose mailbox still needs its login only moves its next look, without a claim:
  * claiming would show the message as sending every minute.
@@ -2926,17 +2956,7 @@ const settlePreDispatchFailure = async (outbox: DbOutboxExecution, command: DbCo
     });
     if (waiting) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "waiting" });
   } else if (loginWait === "expired") {
-    const returned = await finishOutbox({
-      outbox,
-      command,
-      outboxState: "failed",
-      commandState: "failed",
-      draftState: "draft",
-      error: Object.assign(new Error("The mailbox was not signed in again in time; the message went back to the drafts"), {
-        code: OUTBOX_MAILBOX_AUTH_REQUIRED,
-      }),
-    });
-    if (returned) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "returned" });
+    await returnSendAfterLoginWait(outbox, command);
   } else if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
     await scheduleOutboxRetry({
       outbox,
@@ -3209,6 +3229,8 @@ const executeFreshOutbox = async (
   command: DbCommandExecution,
   assertLeaseActive: LeaseAssertion,
   signal: AbortSignal,
+  /** The send waited for its mailbox's login until this claim. */
+  waitedForLogin: boolean,
 ): Promise<void> => {
   if (!(await commandStillAuthorized(command, "write"))) {
     await finishOutbox({
@@ -3219,6 +3241,11 @@ const executeFreshOutbox = async (
       draftState: "draft",
       error: Object.assign(new Error("Mailbox write access was revoked before sending"), { code: "ACCESS_REVOKED" }),
     });
+    return;
+  }
+  // The wait stays bounded when the login came only after its end, such as while Mail's workers were stopped.
+  if (waitedForLogin && (await loginWaitExpired(outbox.id))) {
+    await returnSendAfterLoginWait(outbox, command);
     return;
   }
   const prepared = await prepareFreshOutboxOrFinish(outbox, command, assertLeaseActive, signal);
@@ -3422,7 +3449,10 @@ const runClaimedOutbox = async (
     if (claim.previousOutboxState === "unknown") await reconcileUnknownOutbox(loaded.outbox, loaded.command, assertLeaseActive, signal);
     else if (claim.previousOutboxState === "sent_sync_pending") {
       await reconcileSentCopy(loaded.outbox, loaded.command, assertLeaseActive, signal);
-    } else await executeFreshOutbox(loaded.outbox, loaded.command, assertLeaseActive, signal);
+    } else {
+      const waitedForLogin = claim.previousOutboxErrorCode === OUTBOX_MAILBOX_AUTH_REQUIRED;
+      await executeFreshOutbox(loaded.outbox, loaded.command, assertLeaseActive, signal, waitedForLogin);
+    }
   } catch (error) {
     if (claim.previousOutboxState === "sent_sync_pending") {
       log.warn("Sent copy reconciliation failed", { outboxId, code: normalizeCode(error, "SENT_RECONCILIATION_FAILED") });

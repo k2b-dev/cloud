@@ -3065,6 +3065,7 @@ export const scheduledSendSchema = z
     nextAttemptAt: z.string().datetime().nullable(),
     state: z.enum(["scheduled", "undo_window"]),
     attempt: z.number().int().nonnegative(),
+    lastErrorCode: z.string().nullable(),
     lastError: z.string().nullable(),
     scheduledBy: z.object({
       kind: z.enum(["user", "service_account", "workflow", "system"]),
