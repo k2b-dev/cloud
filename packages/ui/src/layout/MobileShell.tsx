@@ -79,15 +79,24 @@ const observeLinkTaps = (root: HTMLElement): (() => void) => {
     pending = link.href;
     link.setAttribute(PENDING, "");
   };
+  // iOS sends no click for a tap on content without an action, so the end of a tap anywhere else ends the wait as
+  // well. A touch that scrolls ends without a pointerup and keeps it.
+  const release = (event: PointerEvent) => {
+    if (pending === undefined) return;
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+    if (link?.href !== pending) clear();
+  };
   // A page restored from the back/forward cache shows the state it was left in.
   const show = (event: PageTransitionEvent) => {
     if (event.persisted) clear();
   };
   document.addEventListener("touchstart", touch, { passive: true });
+  window.addEventListener("pointerup", release);
   window.addEventListener("click", click);
   window.addEventListener("pageshow", show);
   return () => {
     document.removeEventListener("touchstart", touch);
+    window.removeEventListener("pointerup", release);
     window.removeEventListener("click", click);
     window.removeEventListener("pageshow", show);
     clear();

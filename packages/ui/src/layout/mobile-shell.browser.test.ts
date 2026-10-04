@@ -272,10 +272,14 @@ describe("Tab bar taps in a phone browser", () => {
       hasTouch: true,
     });
     const page = await context.newPage();
-    // While a load is pending, Playwright's evaluations wait for it, so the page reports the tabs after each click.
-    const report = `addEventListener("click", () => setTimeout(() => console.log(JSON.stringify(Object.fromEntries(
+    // While a load is pending, Playwright's evaluations wait for it, so the page reports the tabs after each tap: after
+    // the click of a link, and for other content at the end of the tap itself, before any click, because iOS sends
+    // none there.
+    const report = `const tabs = () => console.log(JSON.stringify(Object.fromEntries(
       [...document.querySelectorAll(".k2b-tab-bar a")].map((link) => [link.dataset.tab, { color: getComputedStyle(link).color, pending: link.hasAttribute("data-k2b-pending") }]),
-    )))));`;
+    )));
+    addEventListener("click", (event) => event.target.closest("a") && setTimeout(tabs));
+    addEventListener("pointerup", (event) => event.target.closest("a") || tabs());`;
     const start = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script><script>${report}</script></body></html>`;
     type Tabs = Record<string, { color: string; pending: boolean }>;
     const reports: Tabs[] = [];
@@ -320,7 +324,8 @@ describe("Tab bar taps in a phone browser", () => {
       await tap(2);
       await tap(3);
       expect(reports[2]!.tasks!.pending).toBe(true);
-      // Any other tap ends the wait, so a link that answered with a download cannot stay stuck.
+      // Any other tap ends the wait, also on content without an action, so a link that answered with a download or a
+      // load that stalled cannot stay stuck.
       await page.touchscreen.tap(title.x + title.width / 2, title.y + title.height / 2);
       while (reports.length < 4) await Bun.sleep(10);
       expect(reports[3]!.tasks!.pending).toBe(false);
