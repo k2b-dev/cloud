@@ -263,6 +263,13 @@ at most 256 KiB.
 - **No dead state.** A failed publish retries with a backoff of up to five
   minutes and does not block other keys. Updates that wait longer than 60
   seconds are logged once a minute as `Live updates wait to be published`.
+- **Batches.** A replica publishes up to 100 pending updates at a time:
+  different keys in parallel, the updates of one key in order. Updates wait
+  behind the ones committed before them, so a burst on one key, such as a
+  bulk change of 10,000 items, delays later updates by the few seconds it
+  takes to publish. Replicas take turns to claim a batch and publish their
+  batches at the same time; a backlog, such as after a NATS outage, does not
+  slow down a claim.
 - **Nothing kept after delivery.** Published updates are deleted from the
   outbox, which holds only pending updates.
 
