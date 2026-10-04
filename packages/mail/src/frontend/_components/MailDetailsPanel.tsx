@@ -3,6 +3,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Avatar,
+  announce,
   Button,
   ButtonLink,
   CheckboxCard,
@@ -356,9 +357,11 @@ export default function MailDetailsPanel(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().addCommentFailed));
       return response.json();
     },
-    // The new note appears in the list; a failure stays under the composer, which keeps the draft.
+    // The new note appears in the list, and a screen reader is told because focus stays in the composer. A failure
+    // stays under the composer, which keeps the draft.
     onSuccess: (comment) => {
       setComments((current) => [...current, comment]);
+      announce(t().commentAdded);
     },
   });
 
@@ -409,9 +412,11 @@ export default function MailDetailsPanel(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().deleteCommentFailed));
       return comment.id;
     },
+    // The note leaves the list together with the control that had focus, so a screen reader is told.
     onSuccess: (commentId) => {
       if (!commentId) return;
       setComments((current) => current.filter((comment) => comment.id !== commentId));
+      announce(t().commentDeleted);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -437,8 +442,11 @@ export default function MailDetailsPanel(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().updateCommentFailed));
       return response.json();
     },
-    // The note shows its new text, so the change needs no confirmation.
-    onSuccess: (updated) => setComments((current) => current.map((item) => (item.id === updated.id ? updated : item))),
+    // The note shows its new text; focus is back on its edit button, which does not say so.
+    onSuccess: (updated) => {
+      setComments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      announce(t().commentUpdated);
+    },
     // The form has closed, so Retry saves the captured text again instead of losing it.
     onError: (error, context) =>
       retryToast(error.message, { retryLabel: t().retry, retry: () => context && editComment.mutate(context.edit) }),

@@ -24,6 +24,11 @@ const flush = async () => {
 const until = async (done: () => boolean) => {
   for (let attempt = 0; attempt < 40 && !done(); attempt++) await flush();
 };
+/** The lines the shared polite status region of `@k2b/ui` reads, once its announcement delay has passed. */
+const announcements = async (document: Document) => {
+  await Bun.sleep(150);
+  return [...document.querySelectorAll('[data-k2b-live] [role="status"] > div')].map((line) => line.textContent);
+};
 
 let answer: (method: string) => Response = () => Response.json({ message: "unexpected" }, { status: 500 });
 
@@ -104,6 +109,50 @@ describe("Record comment feedback", () => {
       dialogs.mockRestore();
       successes.mockRestore();
       errors.mockRestore();
+    }
+  });
+  test("a comment posted, edited or deleted is announced to screen readers, with no toast", async () => {
+    const { prompts, toast } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    answer = (method) => {
+      if (method === "POST") return Response.json({ ...comment, id: "Comm02", body: "Reminder goes out on Friday." });
+      if (method === "PATCH") return Response.json({ ...comment, body: "Invoice sent on Monday.", updatedAt: "2026-10-03T11:00:00.000Z" });
+      return new Response(null, { status: 204 });
+    };
+    dom.document.querySelector("[data-k2b-live]")?.remove();
+    const dispose = await renderComments();
+    try {
+      button("Add comment")!.click();
+      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
+      const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
+      composer.value = "Reminder goes out on Friday.";
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+      composer.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await until(() => !dom.root.querySelector(".k2b-discussion__composer"));
+      expect(await announcements(dom.document)).toEqual(["Comment posted"]);
+
+      button("Edit comment")!.click();
+      await until(() => Boolean(dom.root.querySelector('textarea[aria-label="Edit comment"]')));
+      const editor = dom.root.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit comment"]')!;
+      editor.value = "Invoice sent on Monday.";
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      editor.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await until(() => !dom.root.querySelector('textarea[aria-label="Edit comment"]'));
+      expect(await announcements(dom.document)).toEqual(["Comment posted", "Comment updated"]);
+
+      const remove = [...dom.root.querySelectorAll<HTMLButtonElement>('button[aria-label="Delete comment"]')];
+      remove[remove.length - 1]!.click();
+      await until(() => dom.root.querySelectorAll('button[aria-label="Delete comment"]').length < remove.length);
+      expect(await announcements(dom.document)).toEqual(["Comment posted", "Comment updated", "Comment deleted"]);
+
+      // Nothing visible is added: the list itself shows each change.
+      expect(successes).not.toHaveBeenCalled();
+      expect(dom.root.textContent).not.toContain("Comment posted");
+    } finally {
+      dispose();
+      confirm.mockRestore();
+      successes.mockRestore();
     }
   });
 });

@@ -24,6 +24,11 @@ const flush = async () => {
   await Promise.resolve();
   await Bun.sleep(10);
 };
+/** The lines the shared polite status region of `@k2b/ui` reads, once its announcement delay has passed. */
+const announcements = async (document: Document) => {
+  await Bun.sleep(150);
+  return [...document.querySelectorAll('[data-k2b-live] [role="status"] > div')].map((line) => line.textContent);
+};
 
 type Request = { method: string; path: string; body: unknown };
 const requests: Request[] = [];
@@ -186,6 +191,47 @@ describe("Mail details feedback", () => {
       form.mockRestore();
       successes.mockRestore();
       errors.mockRestore();
+    }
+  });
+
+  test("a note added, edited or deleted is announced to screen readers, with no toast", async () => {
+    const { prompts, toast } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ body: "Call the customer back on Monday." });
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const added: ConversationComment = { ...note, id: "Comm02", body: "Ask for the tracking number." };
+    answer = (request) => {
+      if (request.method === "POST") return Response.json(added);
+      if (request.method === "PATCH") return Response.json({ ...note, body: "Call the customer back on Monday.", revision: 2 });
+      return Response.json({ items: [] });
+    };
+    dom.document.querySelector("[data-k2b-live]")?.remove();
+    const dispose = await renderPanel();
+    try {
+      const composer = dom.root.querySelector<HTMLTextAreaElement>('textarea[aria-label="Add internal comment"]')!;
+      composer.value = "Ask for the tracking number.";
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+      composer.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      for (let attempt = 0; attempt < 30 && !dom.root.textContent?.includes("tracking number"); attempt++) await flush();
+      expect(await announcements(dom.document)).toEqual(["Comment added"]);
+
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit comment"]')!.click();
+      for (let attempt = 0; attempt < 30 && !dom.root.textContent?.includes("on Monday"); attempt++) await flush();
+      expect(await announcements(dom.document)).toEqual(["Comment added", "Comment updated"]);
+
+      const remove = [...dom.root.querySelectorAll<HTMLButtonElement>('button[aria-label="Delete comment"]')];
+      remove[remove.length - 1]!.click();
+      for (let attempt = 0; attempt < 30 && dom.root.textContent?.includes("tracking number"); attempt++) await flush();
+      expect(await announcements(dom.document)).toEqual(["Comment added", "Comment updated", "Comment deleted"]);
+
+      // Nothing visible is added: the list itself shows each change.
+      expect(successes).not.toHaveBeenCalled();
+      expect(dom.root.textContent).not.toContain("Comment added");
+    } finally {
+      dispose();
+      form.mockRestore();
+      confirm.mockRestore();
+      successes.mockRestore();
     }
   });
 

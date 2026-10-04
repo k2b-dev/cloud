@@ -4,6 +4,7 @@ import { documentNavigate, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
+  announce,
   Button,
   CheckboxCard,
   Dropdown,
@@ -162,9 +163,10 @@ export default function MailConversationReader(props: {
       const refresh = () => props.onSummarySaved(conversationId, updated);
       return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
     },
-    // The summary card shows the saved text, so only a failure needs a message.
+    // The summary card shows the saved text; focus is back on the button that opened the form, which does not say so.
     onSuccess: ({ refreshError, refresh }) => {
       if (refreshError) reportSummaryRefreshFailure(refreshError, refresh);
+      else announce(t().summarySaved);
     },
     // The form has closed, so Retry sends the captured text again instead of losing it.
     onError: (error, context) =>

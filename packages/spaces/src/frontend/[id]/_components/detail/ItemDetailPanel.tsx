@@ -2,6 +2,7 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
+  announce,
   Button,
   ButtonLink,
   DateTimePicker,
@@ -38,7 +39,7 @@ import type {
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
-import { announceStatus, createRetryToasts } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import ClaimButton from "../shared/claim/ClaimButton";
@@ -425,7 +426,7 @@ export default function ItemDetailPanel(props: Props) {
     // The button shows the new state, but it was busy while saving and a shortcut never focused it, so a screen
     // reader is told.
     onSuccess: (completed) => {
-      announceStatus(completed ? t.itemCompleted : t.itemReopened);
+      announce(completed ? t.itemCompleted : t.itemReopened);
       reconcileAfterWrite();
     },
     onError: (err, context) => retryToast(err.message, t.retry, () => context && completeMutation.mutate(context.intent)),

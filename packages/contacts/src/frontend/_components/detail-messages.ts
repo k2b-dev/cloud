@@ -115,6 +115,7 @@ export const detailMessages = i18n.define({
       moveContactFailed: "Failed to move contact",
       contactMoved: "Contact moved",
       removeMemberFailed: "Failed to remove member",
+      memberRemoved: "Member removed",
       memberRemovedReloadFailed: "The member was removed, but the contact could not be reloaded.",
       memberAddedReloadFailed: "The member was added, but the contact could not be reloaded.",
       loadOrgTreeFailed: "Failed to load org tree",
@@ -147,6 +148,9 @@ export const detailMessages = i18n.define({
       updateNoteFailed: "Failed to update note",
       deleteNoteFailed: "Failed to delete note",
       commentSavedReloadFailed: "The comment was saved, but the comments list could not be reloaded.",
+      commentAdded: "Comment added",
+      commentUpdated: "Comment updated",
+      commentDeleted: "Comment deleted",
 
       // Duplicates review
       reviewDuplicates: "Review duplicates",
@@ -301,6 +305,7 @@ export const detailMessages = i18n.define({
       moveContactFailed: "Kontakt konnte nicht verschoben werden",
       contactMoved: "Kontakt verschoben",
       removeMemberFailed: "Mitglied konnte nicht entfernt werden",
+      memberRemoved: "Mitglied entfernt",
       memberRemovedReloadFailed: "Das Mitglied wurde entfernt, aber der Kontakt konnte nicht neu geladen werden.",
       memberAddedReloadFailed: "Das Mitglied wurde hinzugefügt, aber der Kontakt konnte nicht neu geladen werden.",
       loadOrgTreeFailed: "Hierarchie konnte nicht geladen werden",
@@ -333,6 +338,9 @@ export const detailMessages = i18n.define({
       updateNoteFailed: "Kommentar konnte nicht aktualisiert werden",
       deleteNoteFailed: "Kommentar konnte nicht gelöscht werden",
       commentSavedReloadFailed: "Der Kommentar wurde gespeichert, aber die Kommentarliste konnte nicht neu geladen werden.",
+      commentAdded: "Kommentar hinzugefügt",
+      commentUpdated: "Kommentar aktualisiert",
+      commentDeleted: "Kommentar gelöscht",
 
       // Duplicates review
       reviewDuplicates: "Duplikate prüfen",

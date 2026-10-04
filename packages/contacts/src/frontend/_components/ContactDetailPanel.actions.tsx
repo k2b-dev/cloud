@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { dialogCore, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
+import { announce, dialogCore, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, onCleanup, type Setter } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef, ContactTree, ContactTreeNode } from "../../service";
@@ -74,9 +74,12 @@ export const createContactDetailActions = (config: {
       );
       if (!res.ok) throw new Error(await readErrorMessage(res, t().removeMemberFailed));
     },
-    // The member leaves the list, so the removal needs no confirmation.
+    // The member leaves the list together with the control that had focus, so a screen reader is told once it is gone.
     onSuccess: () => {
-      void config.invalidateDetail().catch(() => toast.error(t().memberRemovedReloadFailed));
+      void config.invalidateDetail().then(
+        () => announce(t().memberRemoved),
+        () => toast.error(t().memberRemovedReloadFailed),
+      );
     },
     onError: (error) => {
       toast.error(error.message);

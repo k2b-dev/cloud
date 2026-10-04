@@ -150,9 +150,11 @@ describe("Spaces keyboard shortcuts", () => {
 
     key(dom.document.activeElement!, "m");
     await flush();
-    // The card shows the new avatar; a screen reader hears it through the polite Spaces status region.
+    // The card shows the new avatar; a screen reader hears it through the shared polite status region.
     await new Promise((resolve) => setTimeout(resolve, 150));
-    expect([...dom.document.querySelectorAll("[data-spaces-status] > div")].map((line) => line.textContent)).toEqual(["Assigned to you"]);
+    expect([...dom.document.querySelectorAll('[data-k2b-live] [role="status"] > div')].map((line) => line.textContent)).toEqual([
+      "Assigned to you",
+    ]);
     key(dom.document.activeElement!, "d");
     await flush();
     expect(calls).toEqual(["assign:Item03", "complete:Item03"]);
