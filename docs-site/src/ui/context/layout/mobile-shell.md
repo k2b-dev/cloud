@@ -116,7 +116,7 @@ shows the pressed state of links and buttons. A link that loads a page of the
 same site is marked with `data-k2b-pending` until the next page replaces this
 one; the [TabBar](/en/ui/layout/tab-bar) shows its item as selected. A second
 tap on that link is ignored, because it would cancel the load and start it
-over. Links with a modifier key, a `target`, a `download` attribute, another
+over; any other tap ends the wait. Links with a modifier key, a `target`, a `download` attribute, another
 origin, or only a `#fragment` are left alone.
 
 A page that renders the shell on the server and hydrates only islands inside

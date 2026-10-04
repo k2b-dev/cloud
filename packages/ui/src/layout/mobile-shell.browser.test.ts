@@ -304,6 +304,7 @@ describe("Tab bar taps in a phone browser", () => {
         ),
       );
       const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
+      const title = (await page.locator(".k2b-mobile-shell__title").boundingBox())!;
       const tap = async (count: number) => {
         await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
         while (reports.length < count) await Bun.sleep(10);
@@ -318,6 +319,11 @@ describe("Tab bar taps in a phone browser", () => {
 
       await tap(2);
       await tap(3);
+      expect(reports[2]!.tasks!.pending).toBe(true);
+      // Any other tap ends the wait, so a link that answered with a download cannot stay stuck.
+      await page.touchscreen.tap(title.x + title.width / 2, title.y + title.height / 2);
+      while (reports.length < 4) await Bun.sleep(10);
+      expect(reports[3]!.tasks!.pending).toBe(false);
       release();
       await page.waitForURL("https://app.test/tasks");
       expect(tasksRequests).toBe(1);

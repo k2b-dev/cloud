@@ -69,12 +69,13 @@ const observeLinkTaps = (root: HTMLElement): (() => void) => {
   // On the window, so it runs after every handler of the click, including delegated ones that prevent it.
   const click = (event: MouseEvent) => {
     const link = pageLink(root, event);
-    if (!link) return;
-    if (link.href === pending) {
+    if (link && link.href === pending) {
       event.preventDefault();
       return;
     }
+    // Any other tap ends the wait, also for a link that answered with a download instead of a page.
     clear();
+    if (!link) return;
     pending = link.href;
     link.setAttribute(PENDING, "");
   };
