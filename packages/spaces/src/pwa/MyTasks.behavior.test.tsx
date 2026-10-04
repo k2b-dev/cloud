@@ -196,6 +196,149 @@ else {
     }
   });
 
+  test("checking a task off again after an early Undo keeps it done, with a single request", async () => {
+    let finish: (response: Response) => void = () => {};
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      if (call.method === "GET" && call.path === WORK) return Response.json(snapshot("mine", [flyer]));
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 1, "completion request");
+      toastAction(page.dom, "Undo")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+      checkButton(page.dom, "Order the tents")!.click();
+      // The second tap takes the row away at once, under a fresh Done.
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(toastAction(page.dom, "Undo")).toBeDefined();
+
+      finish(Response.json({}));
+      await waitFor(() => fetch.calls.length === 2 && !page.dom.root.querySelector("[aria-busy]"), "list read again");
+      await Bun.sleep(20);
+      // The person's last choice was done: no reopen follows the completion.
+      expect(fetch.calls.map((call) => `${call.method} ${call.path} ${JSON.stringify(call.body ?? null)}`)).toEqual([
+        `POST ${COMPLETED} {"completed":true}`,
+        `GET ${WORK} null`,
+      ]);
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a completion the server saved stays done when the list cannot be read", async () => {
+    const fetch = mockFetch((call) =>
+      call.method === "POST"
+        ? Response.json({})
+        : call.path === WORK
+          ? Response.json({ message: "Unavailable" }, { status: 503 })
+          : undefined,
+    );
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => toasts(page.dom).some((text) => text.includes("The list could not be updated.")), "refresh notice");
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(toastAction(page.dom, "Undo")).toBeDefined();
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("an Undo the server could not save leaves the task done and offers Retry", async () => {
+    let finish: (response: Response) => void = () => {};
+    let online = false;
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        if ((call.body as { completed: boolean }).completed) {
+          return new Promise<Response>((resolve) => {
+            finish = resolve;
+          });
+        }
+        return online ? Response.json({}) : "offline";
+      }
+      if (call.method === "GET" && call.path === WORK) return online ? Response.json(snapshot("mine", [tents, flyer])) : "offline";
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 1, "completion request");
+      toastAction(page.dom, "Undo")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+
+      // The completion is saved, the reopen is not: the task is done on the server, and the row says so.
+      finish(Response.json({}));
+      await waitFor(() => toastAction(page.dom, "Retry") !== undefined, "reopen Retry");
+      expect(toasts(page.dom)).toHaveLength(1);
+      expect(toasts(page.dom)[0]).toContain("“Order the tents” could not be reopened.");
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(fetch.calls.map((call) => `${call.method} ${call.path} ${JSON.stringify(call.body ?? null)}`)).toEqual([
+        `POST ${COMPLETED} {"completed":true}`,
+        `POST ${COMPLETED} {"completed":false}`,
+      ]);
+
+      online = true;
+      toastAction(page.dom, "Retry")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+      await waitFor(() => fetch.calls.length === 4 && !page.dom.root.querySelector("[aria-busy]"), "reopened task");
+      expect(fetch.calls.slice(2)).toMatchObject([
+        { method: "POST", path: COMPLETED, body: { completed: false } },
+        { method: "GET", path: WORK },
+      ]);
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("Undo after switching the view brings the task back only in the view it left", async () => {
+    const band = task("Item09", "Book the band");
+    let finish: (response: Response) => void = () => {};
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        if ((call.body as { completed: boolean }).completed) return Response.json({});
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      if (call.method === "GET" && call.path === WORK) {
+        return call.search === "?view=upcoming" ? Response.json(snapshot("upcoming", [band])) : Response.json(snapshot("mine", [flyer]));
+      }
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 2 && !page.dom.root.querySelector("[aria-busy]"), "re-read list");
+      [...page.dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((radio) => radio.textContent?.startsWith("Upcoming"))!
+        .click();
+      await waitFor(() => titles(page.dom).includes("Book the band"), "upcoming work");
+
+      toastAction(page.dom, "Undo")!.click();
+      await waitFor(() => fetch.calls.length === 4, "reopen request");
+      expect(fetch.calls[3]).toMatchObject({ method: "POST", path: COMPLETED, body: { completed: false } });
+      expect(titles(page.dom)).toEqual(["Book the band"]);
+      finish(Response.json({}));
+      await waitFor(() => fetch.calls.length === 5 && !page.dom.root.querySelector("[aria-busy]"), "upcoming read again");
+      expect(fetch.calls[4]).toMatchObject({ method: "GET", path: WORK, search: "?view=upcoming" });
+      expect(titles(page.dom)).toEqual(["Book the band"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("names the blockers on a 409 in the server's words, without Retry, and keeps the task", async () => {
     // The Spaces API words its refusals in the request's language; the app shows them as they are.
     for (const [locale, message] of [

@@ -228,8 +228,10 @@ connection returns.
 Parts have no offline mode of their own. Write actions need the network: keep
 the action available, report a failure in a toast with **Retry**, and never
 leave an unsaved change looking saved. A quick, reversible action, such as
-checking off a task, may show its result at once with **Undo**. When the server
-refuses it or cannot be reached, put the previous state back and say why.
+checking off a task, may show its result at once with **Undo**. Send the changes
+to one item one after another, so the person's last choice is the one that
+stays. When the server refuses a change or cannot be reached, show the state
+the server kept and say why.
 Controls that the server renders before their island runs stay disabled until
 then, because a tap on them would do nothing.
 

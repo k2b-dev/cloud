@@ -60,10 +60,11 @@ The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 - Each row shows the title, the Space with its color, and the deadline or, for
   an event, its time or **All day**. An overdue deadline is red.
 - Tap the circle in front of a task to mark it done. The task leaves the list
-  at once, and **Undo** in the confirmation brings it back and reopens it. This
-  is the same change as on the web, with the same activity entry, and it needs
-  write access to the Space. The circles are dimmed for the moment until the
-  page is ready.
+  at once, and **Undo** in the confirmation brings it back and reopens it. When
+  you change your mind several times in a row, your last tap is the one that
+  stays. This is the same change as on the web, with the same activity entry,
+  and it needs write access to the Space. The circles are dimmed for the moment
+  until the page is ready.
 - Events have no circle. Complete them in Spaces on the web.
 - A task you claimed yourself with **I'm on it** is completed with your claim,
   as on the web. A task someone else claimed stays open; the app names who is
@@ -73,7 +74,7 @@ The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
   meantime disappears from the list. These notices offer no **Retry**, because
   trying again would not change the answer.
 - If a change cannot be saved, for example while the phone is offline, the
-  task comes back and a notice offers **Retry**.
+  task goes back to how it is saved, and a notice offers **Retry**.
 - The selected list is part of the address, so a reload keeps it.
 - Each list shows a bounded number of items, the same as the start page on the
   web: up to 100 for **For me**, 5 for **Today**, and 30 for **Upcoming**. When

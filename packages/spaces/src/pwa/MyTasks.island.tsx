@@ -1,7 +1,7 @@
 import { navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
-import { Button, IconButton, Placeholder, SegmentedControl, toast, useLocale } from "@k2b/ui";
+import { Button, IconButton, Placeholder, SegmentedControl, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
@@ -14,6 +14,15 @@ import { myTasksMessages } from "./messages";
 
 type WorkItem = OverviewWork["items"][number];
 type Props = { userId: string; initialView: OverviewView; initialWork: OverviewWork; dateConfig: DateContext };
+/** Where a checked-off row stood, so Undo puts it back there and only there. */
+type Place = { view: OverviewView; index: number };
+/**
+ * A task changed on this page. `done` is what its row shows: the person's latest choice while it is being saved, then
+ * what the server kept. `saved` is the server's state as far as this page knows. `settled` counts the list reads that
+ * had started when the last request ended; a read that starts later shows the server's state instead.
+ */
+type Change = { item: WorkItem; place?: Place; done: boolean; saved: boolean; settled?: number };
+type Outcome = "saved" | "refused" | "failed";
 
 const VIEWS = ["mine", "today", "upcoming"] as const;
 const viewHref = (view: OverviewView) => (view === "mine" ? "/pwa/spaces" : `/pwa/spaces?view=${view}`);
@@ -28,7 +37,7 @@ const isAllDay = (start: Date, end: Date | null, dateConfig: DateContext) =>
 /**
  * "My tasks" in the mobile app: the overview's views as a segmented control, and one flat row per task or event.
  * A task is checked off with its own button: the row leaves at once, and the list is read again once the server
- * saved it, so it always ends with the server's view. A refusal or a failure brings the row back.
+ * saved it, so it always ends with the server's view. A refusal or a failure shows the state the server kept.
  */
 export default function MyTasks(props: Props) {
   const locale = useLocale();
@@ -36,17 +45,19 @@ export default function MyTasks(props: Props) {
   const t = myTasksMessages.resolve([locale()]).t;
   const retryToast = createRetryToasts();
   const [view, setView] = createSignal<OverviewView>(props.initialView);
-  /** Rows checked off here whose list has not been read again yet. */
-  const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
-  const leave = (item: WorkItem, gone: boolean) =>
-    setLeaving((current) => {
-      const next = new Set(current);
-      if (gone) next.add(item.shortId);
-      else next.delete(item.shortId);
-      return next;
+  const [changes, setChanges] = createSignal<ReadonlyMap<string, Change>>(new Map());
+  const patch = (id: string, next: Partial<Change>) =>
+    setChanges((current) => {
+      const change = current.get(id);
+      return change ? new Map(current).set(id, { ...change, ...next }) : current;
     });
-  /** Rows brought back by Undo until the list is read again, each at its former place. */
-  const [returning, setReturning] = createSignal<ReadonlyMap<string, { item: WorkItem; index: number }>>(new Map());
+  /** Tasks with requests under way; each task sends one at a time, so an earlier choice never lands after a later one. */
+  const syncing = new Set<string>();
+  /** The open "Done" notice of each task, closed when its completion does not happen. */
+  const notices = new Map<string, ToastHandle>();
+  /** List reads started so far, and the number of the read that returned each list. */
+  let reads = 0;
+  const readNumber = new WeakMap<OverviewWork, number>();
   // The server renders the check buttons before this island runs; until then a tap would do nothing.
   const [ready, setReady] = createSignal(false);
   onMount(() => setReady(true));
@@ -55,18 +66,30 @@ export default function MyTasks(props: Props) {
     source: view,
     initial: { source: props.initialView, data: props.initialWork },
     load: async (view, { abortSignal }) => {
+      const read = ++reads;
       const response = await apiClient.overview.work.$get({ query: { view } }, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error(o.workLoadFailed);
-      return response.json();
+      const data = await response.json();
+      readNumber.set(data, read);
+      return data;
     },
   });
   const active = () => (work.data()?.view === view() ? work.data() : undefined);
+  /** The change a row still shows: no list has been read since its last request ended. */
+  const shown = (change: Change | undefined) => {
+    const data = work.data();
+    const read = data ? (readNumber.get(data) ?? 0) : 0;
+    return change && (change.settled === undefined || change.settled >= read) ? change : undefined;
+  };
   const items = () => {
     const data = active();
     if (!data) return [];
-    const list = data.items.filter((item) => !leaving().has(item.shortId));
-    for (const { item, index } of returning().values()) {
-      if (!list.some((row) => row.shortId === item.shortId)) list.splice(Math.min(index, list.length), 0, item);
+    const current = [...changes().values()].filter((change) => shown(change));
+    const list = data.items.filter((item) => !current.some((change) => change.done && change.item.shortId === item.shortId));
+    for (const { item, place, done } of current) {
+      if (!done && place?.view === data.view && !list.some((row) => row.shortId === item.shortId)) {
+        list.splice(Math.min(place.index, list.length), 0, item);
+      }
     }
     return list;
   };
@@ -79,11 +102,14 @@ export default function MyTasks(props: Props) {
     navigate(viewHref(next), { replace: true, scroll: "manual", viewTransition: false });
   };
 
-  const refresh = async (): Promise<void> => {
+  /** Reads the list again; true when it did. */
+  const refresh = async (): Promise<boolean> => {
     try {
       await work.invalidate();
+      return true;
     } catch (error) {
-      if (!(error instanceof Error && error.name === "AbortError")) retryToast(t.refreshFailed, o.retry, refresh);
+      if (!(error instanceof Error && error.name === "AbortError")) retryToast(t.refreshFailed, o.retry, () => void refresh());
+      return false;
     }
   };
 
@@ -95,28 +121,20 @@ export default function MyTasks(props: Props) {
     return response?.ok ? ((await response.json()).claim ?? null) : null;
   };
 
-  /** A refusal that a retry cannot change: say why, and show the server's current list. */
-  const refused = async (message: string): Promise<false> => {
+  /** A refusal that a retry cannot change: say why. */
+  const refused = (message: string): Outcome => {
     toast.error(message);
-    await refresh();
-    return false;
+    return "refused";
   };
 
-  /** Sets the item's completion; true when the server saved it. Each refusal is reported here. */
-  const save = async (item: WorkItem, completed: boolean, claimId?: string): Promise<boolean> => {
-    const failed = () =>
-      completed
-        ? retryToast(t.completeFailed({ title: item.title }), o.retry, () => complete(item))
-        : retryToast(t.reopenFailed({ title: item.title }), o.retry, () => reopen(item));
+  /** Sets the item's completion. Each refusal is reported here; a failure is left to the caller. */
+  const save = async (item: WorkItem, completed: boolean, claimId?: string): Promise<Outcome> => {
     const response = await apiClient[":id"].items[":itemId"].completed
       .$post({ param: { id: item.spaceShortId, itemId: item.shortId }, json: { completed, claimId } })
       // Offline or unreachable: the same Retry as a failed answer.
       .catch(() => null);
-    if (!response) {
-      failed();
-      return false;
-    }
-    if (response.ok) return true;
+    if (!response) return "failed";
+    if (response.ok) return "saved";
     if (response.status === 409 && completed && !claimId) {
       // A claimed task: the person's own claim completes it, as on the web; someone else's is named.
       const claim = await currentClaim(item);
@@ -127,56 +145,81 @@ export default function MyTasks(props: Props) {
     if (response.status === 404) return refused(t.gone({ title: item.title }));
     // Unfinished blockers; the server already words the reason in the person's language.
     if (response.status === 409) return refused(await readResponseError(response, spacesMessages(locale()).completeBlockersFirst));
-    failed();
-    return false;
+    return "failed";
+  };
+
+  /** Brings the task's server state to the person's latest choice, one request at a time, then reads the list again. */
+  const sync = async (id: string): Promise<void> => {
+    for (;;) {
+      const change = changes().get(id);
+      if (!change) return;
+      if (change.done === change.saved) {
+        patch(id, { settled: reads });
+        await refresh();
+      } else {
+        const target = change.done;
+        const outcome = await save(change.item, target);
+        if (outcome === "saved") {
+          patch(id, { saved: target });
+          continue;
+        }
+        if (target) notices.get(id)?.dismiss();
+        const latest = changes().get(id) ?? change;
+        if (outcome === "failed") {
+          // The server kept its state, so the row shows it; Retry offers the choice again while it is still the latest.
+          patch(id, { done: latest.saved, settled: reads });
+          if (latest.done === target) {
+            if (target) retryToast(t.completeFailed({ title: change.item.title }), o.retry, () => complete(change.item));
+            else retryToast(t.reopenFailed({ title: change.item.title }), o.retry, () => undo(change.item, change.place));
+          }
+          return;
+        }
+        // Refused: the row stays as the person left it until the list shows what the server kept.
+        patch(id, { settled: reads });
+        if (!(await refresh()) && changes().get(id)?.settled !== undefined) patch(id, { done: latest.saved });
+      }
+      // A choice made while the list was read starts the next round.
+      if (changes().get(id)?.settled !== undefined) return;
+    }
+  };
+
+  /** Shows the choice at once and saves it; false when the row already shows it. */
+  const choose = (item: WorkItem, done: boolean, place: Place | undefined): boolean => {
+    const id = item.shortId;
+    const change = shown(changes().get(id));
+    if (change?.done === done) return false;
+    // A listed task is open on the server, and Undo follows a completion it saved.
+    setChanges((current) =>
+      new Map(current).set(id, change ? { ...change, done, settled: undefined } : { item, place, done, saved: !done }),
+    );
+    if (!syncing.has(id)) {
+      syncing.add(id);
+      void sync(id).finally(() => syncing.delete(id));
+    }
+    return true;
   };
 
   /** The row leaves at once with Undo; it comes back when the server refuses or cannot be reached. */
-  const complete = async (item: WorkItem): Promise<void> => {
-    if (leaving().has(item.shortId)) return;
-    const index = items().indexOf(item);
-    leave(item, true);
-    const saving = save(item, true);
-    let undone = false;
+  const complete = (item: WorkItem) => {
+    const index = items().findIndex((row) => row.shortId === item.shortId);
+    const place = index >= 0 ? { view: view(), index } : undefined;
+    if (!choose(item, true, place)) return;
     const notice = toast.success(t.done, {
       action: {
         label: t.undo,
         onClick: () => {
-          undone = true;
           notice.dismiss();
-          void undo(item, index, saving);
+          undo(item, place);
         },
       },
     });
-    if (!(await saving)) {
-      notice.dismiss();
-      leave(item, false);
-      return;
-    }
-    // Undo reads the list itself once the task is open again.
-    if (undone) return;
-    await refresh();
-    leave(item, false);
+    notices.set(item.shortId, notice);
   };
 
-  /** The row comes back at once; a completion the server already saved is reopened there too. */
-  const undo = async (item: WorkItem, index: number, saving: Promise<boolean>): Promise<void> => {
-    setReturning((current) => new Map(current).set(item.shortId, { item, index }));
-    leave(item, false);
-    try {
-      if (await saving) await reopen(item);
-    } finally {
-      setReturning((current) => {
-        const next = new Map(current);
-        next.delete(item.shortId);
-        return next;
-      });
-    }
-  };
-
-  const reopen = async (item: WorkItem): Promise<void> => {
-    await save(item, false);
-    await refresh();
+  /** The row comes back at once, in the view it left; a completion the server saved is reopened there too. */
+  const undo = (item: WorkItem, place: Place | undefined) => {
+    notices.get(item.shortId)?.dismiss();
+    choose(item, false, place);
   };
 
   const schedule = (item: WorkItem): { text: string; datetime: string; icon: string; overdue: boolean } | null => {
@@ -271,7 +314,7 @@ export default function MyTasks(props: Props) {
                       label={t.complete({ title: item.title })}
                       tooltip={false}
                       disabled={!ready()}
-                      onClick={() => void complete(item)}
+                      onClick={() => complete(item)}
                     >
                       <i class="ti ti-circle" aria-hidden="true" />
                     </IconButton>
