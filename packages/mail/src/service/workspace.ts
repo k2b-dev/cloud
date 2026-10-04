@@ -5,6 +5,7 @@ import {
   type ConversationDraftSummary,
   type ConversationView,
   conversationViewSchema,
+  type DraftFolderPage,
   type Mailbox,
   type MailSearchExpression,
   type ScheduledSendPage,
@@ -139,6 +140,10 @@ export type MailboxPageData = {
   scheduledCount: number;
   scheduledPage: ScheduledSendPage | null;
   scheduledError: string | null;
+  /** The Drafts folder is open: it lists the mailbox's drafts instead of conversations. */
+  draftsMode: boolean;
+  draftsPage: DraftFolderPage | null;
+  draftsError: string | null;
   activeView: ConversationView | null;
   savedViewId: string | null;
   savedViews: SavedConversationView[];
@@ -636,12 +641,19 @@ export const loadMailboxPageData = async (params: {
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
   const defaultAllMail = !scheduledMode && !searchExpression && !folderId && !activeView && !activeSavedView;
+  const activeFolder = folders.find((folder) => folder.id === folderId);
+  const draftsMode =
+    !scheduledMode &&
+    !searchExpression &&
+    !resolvedSearch.error &&
+    !!activeFolder &&
+    messages.isEffectiveDraftsFolder(activeFolder, folders);
   const excludedFolderIds =
     defaultAllMail || (!searchExpression && activeView && FOLLOW_UP_VIEWS.includes(activeView))
       ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
       : [];
-  const [list, scheduledPageResult] = await Promise.all([
-    scheduledMode
+  const [list, scheduledPageResult, draftsPageResult] = await Promise.all([
+    scheduledMode || draftsMode
       ? Promise.resolve({ items: [], nextCursor: null, error: null })
       : resolvedSearch.error
         ? Promise.resolve({
@@ -669,23 +681,26 @@ export const loadMailboxPageData = async (params: {
           limit: 50,
         })
       : Promise.resolve(null),
+    draftsMode
+      ? drafts.listDraftFolder({ context: params.context, mailboxId: params.mailboxId, cursor: listCursor ?? undefined, limit: 50 })
+      : Promise.resolve(null),
   ]);
   const selectedListItem = list.items.find((item) =>
     item.selectionKind === "message" ? item.id === selectedMessageId : item.conversationId === selectedConversationId,
   );
   const preferredFolderId = selectedListItem?.sourceFolderId ?? folderId;
-  const selection = scheduledMode
-    ? EMPTY_SELECTION_DETAIL
-    : await loadSelectionDetail({
-        context: params.context,
-        mailboxId: params.mailboxId,
-        conversationId: selectedConversationId,
-        messageId: selectedMessageId,
-        preferredFolderId,
-        locale: params.locale,
-      });
+  const selection =
+    scheduledMode || draftsMode
+      ? EMPTY_SELECTION_DETAIL
+      : await loadSelectionDetail({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: selectedConversationId,
+          messageId: selectedMessageId,
+          preferredFolderId,
+          locale: params.locale,
+        });
 
-  const activeFolder = folders.find((folder) => folder.id === folderId);
   const selectedSubject = selection.detailMessages.at(-1)?.subject || selectedListItem?.subject || "";
 
   return ok({
@@ -699,6 +714,9 @@ export const loadMailboxPageData = async (params: {
     scheduledPage: scheduledPageResult?.ok ? scheduledPageResult.data : null,
     scheduledError:
       scheduledPageResult && !scheduledPageResult.ok ? localizeMailError(scheduledPageResult.error, params.locale).message : null,
+    draftsMode,
+    draftsPage: draftsPageResult?.ok ? draftsPageResult.data : null,
+    draftsError: draftsPageResult && !draftsPageResult.ok ? localizeMailError(draftsPageResult.error, params.locale).message : null,
     localTags: localTagResult.ok ? localTagResult.data : [],
     activeView,
     savedViewId,

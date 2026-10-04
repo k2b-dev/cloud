@@ -3,6 +3,7 @@ import type { PanesLayout } from "@k2b/ui";
 import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraft, MailDraftSeed, SenderIdentity } from "../../contracts";
 import MailComposer from "./MailComposer";
+import type { UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { MailContactDirectoryProvider } from "./mail-contact-directory-context";
 
 export default function MailComposerPage(props: {
@@ -11,6 +12,7 @@ export default function MailComposerPage(props: {
   identities: SenderIdentity[];
   initialDraft?: MailDraft;
   initialSeed?: MailDraftSeed;
+  unfinishedUploads?: UnfinishedDraftUpload[];
   initialPanes: PanesLayout;
   returnHref: string;
   popout?: boolean;
@@ -29,6 +31,7 @@ export default function MailComposerPage(props: {
             identities={props.identities}
             initialDraft={props.initialDraft}
             initialSeed={props.initialSeed}
+            unfinishedUploads={props.unfinishedUploads}
             initialPanes={props.initialPanes}
             popout={props.popout}
             returnHref={props.returnHref}

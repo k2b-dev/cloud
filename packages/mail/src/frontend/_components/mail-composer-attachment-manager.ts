@@ -3,17 +3,24 @@ import { prompts, toast } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { CreateAttachmentLinkInput, CreatedAttachmentLink, DraftAttachment, MailDraft } from "../../contracts";
+import type { CreateAttachmentLinkInput, CreatedAttachmentLink, DraftAttachment, DraftAttachmentUpload, MailDraft } from "../../contracts";
 import { readApiError } from "./api-response";
 import { promptAttachmentLinkOptions } from "./attachment-link-ui";
 import type { MailComposerUpload } from "./MailComposerAttachments";
 import { mailComposerMessages } from "./mail-composer-messages";
 import type { createMailComposerTransition } from "./mail-composer-transition";
 
+export type UnfinishedDraftUpload = Pick<DraftAttachmentUpload, "id" | "filename" | "byteLength" | "receivedBytes">;
+
 export const createMailComposerAttachmentManager = (options: {
   mailboxId: string;
   draft: Accessor<MailDraft | null>;
   initialAttachments: Accessor<DraftAttachment[]>;
+  /**
+   * Uploads the draft still has open on the server. They block Send, but the editing session that streamed
+   * them is gone, so the composer shows them for cancelling.
+   */
+  unfinishedUploads: UnfinishedDraftUpload[];
   setDraft: Setter<MailDraft | null>;
   editable: Accessor<boolean>;
   persist: () => Promise<MailDraft | null>;
@@ -25,7 +32,18 @@ export const createMailComposerAttachmentManager = (options: {
   locale: Accessor<string>;
 }) => {
   const t = () => mailComposerMessages.resolve([options.locale()]).t;
-  const [uploads, setUploads] = createSignal<MailComposerUpload[]>([]);
+  const [uploads, setUploads] = createSignal<MailComposerUpload[]>(
+    options.unfinishedUploads.map((upload) => ({
+      file: null,
+      filename: upload.filename,
+      progress: upload.byteLength === 0 ? 100 : Math.floor((upload.receivedBytes / upload.byteLength) * 100),
+      error: t().uploadNotFinished,
+      uploadId: upload.id,
+      draftId: options.draft()?.id ?? null,
+    })),
+  );
+  const isEntry = (upload: MailComposerUpload) => (entry: MailComposerUpload) =>
+    upload.file ? entry.file === upload.file : entry.uploadId === upload.uploadId;
   const uploadControllers = new Map<File, AbortController>();
   const materializedAttachmentId = (requestedId: string, currentDraft: MailDraft): string => {
     const initial = options.initialAttachments().find((attachment) => attachment.id === requestedId);
@@ -46,7 +64,7 @@ export const createMailComposerAttachmentManager = (options: {
     uploadControllers.set(file, controller);
     setUploads((current) => [
       ...current.filter((entry) => entry.file !== file),
-      { file, progress: 0, error: null, uploadId: null, draftId: null },
+      { file, filename: file.name, progress: 0, error: null, uploadId: null, draftId: null },
     ]);
     try {
       const saved = await options.persist();
@@ -97,23 +115,32 @@ export const createMailComposerAttachmentManager = (options: {
   };
 
   const cancelUpload = async (upload: MailComposerUpload) => {
-    uploadControllers.get(upload.file)?.abort();
-    uploadControllers.delete(upload.file);
+    if (upload.file) {
+      uploadControllers.get(upload.file)?.abort();
+      uploadControllers.delete(upload.file);
+    }
     if (upload.uploadId && upload.draftId) {
       const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["attachment-uploads"][":uploadId"].$delete({
         param: { mailboxId: options.mailboxId, draftId: upload.draftId, uploadId: upload.uploadId },
       });
-      if (!response.ok) throw new Error(await readApiError(response, t().cancelUploadFailed({ filename: upload.file.name })));
+      // An upload this page found unfinished may have been completed or cancelled by the session that streamed
+      // it since the page loaded; then it no longer blocks sending and the entry only needs to go.
+      const endedElsewhere = upload.file === null && (response.status === 404 || response.status === 409);
+      if (!response.ok && !endedElsewhere) {
+        throw new Error(await readApiError(response, t().cancelUploadFailed({ filename: upload.filename })));
+      }
     }
-    setUploads((current) => current.filter((entry) => entry.file !== upload.file));
+    setUploads((current) => current.filter((entry) => !isEntry(upload)(entry)));
   };
 
   const retryUpload = async (upload: MailComposerUpload) => {
+    const file = upload.file;
+    if (!file) return;
     try {
       await cancelUpload(upload);
-      await uploadFile(upload.file);
+      await uploadFile(file);
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : t().retryUploadFailed({ filename: upload.file.name }));
+      await prompts.error(error instanceof Error ? error.message : t().retryUploadFailed({ filename: upload.filename }));
     }
   };
 

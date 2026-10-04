@@ -13,6 +13,7 @@ import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
 import { requireDraftLeaseAvailable } from "./draft-leases";
+import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { draftAttachmentCapacity, getDraft, sanitizeContentType, sanitizeFilename } from "./drafts";
 
 export const DRAFT_UPLOAD_CHUNK_BYTES = 1024 * 1024;
@@ -158,6 +159,31 @@ export const listDraftAttachmentUploads = async (params: {
       AND draft.origin = 'user'
       AND upload.state IN ('uploading', 'uploaded', 'attached')
     ORDER BY upload.created_at, upload.id
+  `;
+  return ok(mapUploads(rows));
+};
+
+/**
+ * Uploads the draft still has open: they block sending until they finish or are cancelled. A draft holds
+ * at most MAX_DRAFT_ATTACHMENTS attachments, so no more of them can ever be finished.
+ */
+export const listUnfinishedDraftAttachmentUploads = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  draftId: string;
+}): Promise<Result<DraftAttachmentUpload[]>> => {
+  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  if (!allowed.ok) return allowed;
+  const rows = await sql<DbUpload[]>`
+    SELECT ${uploadColumns}
+    FROM mail.draft_attachment_uploads upload
+    JOIN mail.drafts draft ON draft.id = upload.draft_id
+    WHERE upload.draft_id = ${params.draftId}::uuid
+      AND draft.mailbox_id = ${params.mailboxId}::uuid
+      AND draft.origin = 'user'
+      AND upload.state IN ('uploading', 'uploaded')
+    ORDER BY upload.created_at, upload.id
+    LIMIT ${MAX_DRAFT_ATTACHMENTS}
   `;
   return ok(mapUploads(rows));
 };

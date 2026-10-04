@@ -560,6 +560,14 @@ export const aggregateResourcePaths = (data: unknown) => {
   many(["identities"], "senderIdentities");
   many(["savedViews"], "savedViews");
   many(["scheduledPage", "items"], "deliveries");
+  many(["draftsPage", "items"], "drafts");
+  const draftItems = at(["draftsPage", "items"]);
+  if (Array.isArray(draftItems)) {
+    draftItems.forEach((_item, index) => {
+      if (typeof at(["draftsPage", "items", String(index), "conversationId"]) === "string")
+        paths.push({ path: ["draftsPage", "items", String(index), "conversationId"], table: "conversations" });
+    });
+  }
   many(["detailMessages"], "messages");
   many(["conversationDrafts"], "drafts");
   many(["localTags"], "tags");

@@ -2,7 +2,15 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
 import { requestContactDirectory } from "../../../../contact-directory-settings";
-import { calendarInvitations, drafts, type MailRequestContext, mailboxAccess, mailboxes, senderIdentities } from "../../../../service";
+import {
+  calendarInvitations,
+  drafts,
+  draftUploads,
+  type MailRequestContext,
+  mailboxAccess,
+  mailboxes,
+  senderIdentities,
+} from "../../../../service";
 import MailComposerPage from "../../../_components/MailComposerPage.island";
 import { mailDraftReturnHref } from "../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader, reconcileMailComposerPanes } from "../../../_components/mail-composer-panes";
@@ -26,11 +34,12 @@ export default ssr<AuthContext>(async (c) => {
     context.actor.kind === "user"
       ? { kind: "user" as const, id: context.actor.user.id }
       : { kind: "service_account" as const, id: context.actor.serviceAccount.id };
-  const [mailbox, permission, identities, draft, calendarIntegrationAvailable] = await Promise.all([
+  const [mailbox, permission, identities, draft, uploads, calendarIntegrationAvailable] = await Promise.all([
     mailboxes.getMailbox(context, mailboxId),
     mailboxAccess.getMailboxPermission(context, mailboxId),
     senderIdentities.listSenderIdentities(context, mailboxId),
     drafts.getDraft(context, mailboxId, draftId),
+    draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
     calendarInvitations.composerIntegrationAvailable(),
   ]);
   if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
@@ -61,6 +70,12 @@ export default ssr<AuthContext>(async (c) => {
         currentActor={currentActor}
         identities={publicData.identities}
         initialDraft={publicData.draft}
+        unfinishedUploads={(uploads.ok ? uploads.data : []).map(({ id, filename, byteLength, receivedBytes }) => ({
+          id,
+          filename,
+          byteLength,
+          receivedBytes,
+        }))}
         initialPanes={initialPanes}
         returnHref={returnHref}
         popout={popout}

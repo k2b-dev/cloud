@@ -73,6 +73,17 @@ export type MailFolderView = {
   unread: number;
 };
 
+type FolderRoles = Pick<MailFolderView, "providerRole" | "configuredRole">;
+
+/**
+ * Whether sync treats this folder as the Drafts folder (see `isEffectiveDraftsFolder` in sync-runtime): the
+ * folder an administrator mapped as Drafts, otherwise the provider's Drafts folder. Sync hands that folder
+ * to the draft projection instead of message placements, so Mail lists the mailbox's drafts there.
+ */
+export const isEffectiveDraftsFolder = (folder: FolderRoles, folders: FolderRoles[]): boolean =>
+  folder.configuredRole === "drafts" ||
+  (folder.providerRole === "drafts" && !folders.some((candidate) => candidate.configuredRole === "drafts"));
+
 export const listFolders = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailFolderView[]>> => {
   const access = await resolveMailExecution({ mailboxId, operation: "actorRead", context });
   if (!access.ok) return access;
@@ -147,23 +158,36 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
       f.name,
       f.id
   `;
+  // Sync hands the Drafts folder to the draft projection, not to placements: it holds the mailbox's drafts.
+  const roles = rows.map((row) => ({ providerRole: row.provider_role, configuredRole: row.configured_role }));
+  const draftsFolders = roles.map((folder) => isEffectiveDraftsFolder(folder, roles));
+  const [draftCount] = draftsFolders.includes(true)
+    ? await sql<{ total: number }[]>`
+        SELECT COUNT(*)::int AS total
+        FROM mail.drafts
+        WHERE mailbox_id = ${mailboxId}::uuid AND origin = 'user' AND state = 'draft'
+      `
+    : [];
   return ok(
-    rows.map((row) => ({
-      id: row.id,
-      parentId: row.parent_id,
-      name: row.name,
-      role: row.role,
-      providerRole: row.provider_role,
-      configuredRole: row.configured_role,
-      selectable: row.selectable,
-      showInSidebar: row.show_in_sidebar,
-      namespaceKinds: row.namespace_kinds,
-      discoveryState: row.discovery_state,
-      missingSince: row.missing_since ? toIso(row.missing_since) : null,
-      syncStatus: row.sync_status,
-      total: row.total,
-      unread: row.unread,
-    })),
+    rows.map((row, index) => {
+      const draftsFolder = draftsFolders[index];
+      return {
+        id: row.id,
+        parentId: row.parent_id,
+        name: row.name,
+        role: row.role,
+        providerRole: row.provider_role,
+        configuredRole: row.configured_role,
+        selectable: row.selectable,
+        showInSidebar: row.show_in_sidebar,
+        namespaceKinds: row.namespace_kinds,
+        discoveryState: row.discovery_state,
+        missingSince: row.missing_since ? toIso(row.missing_since) : null,
+        syncStatus: row.sync_status,
+        total: draftsFolder ? (draftCount?.total ?? 0) : row.total,
+        unread: draftsFolder ? 0 : row.unread,
+      };
+    }),
   );
 };
 

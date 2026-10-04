@@ -50,7 +50,7 @@ import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import { launchMailDraftAssistant } from "./mail-assistant-launch";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
-import { createMailComposerAttachmentManager } from "./mail-composer-attachment-manager";
+import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
@@ -79,6 +79,7 @@ export default function MailComposer(props: {
   identities: SenderIdentity[];
   initialDraft?: MailDraft;
   initialSeed?: MailDraftSeed;
+  unfinishedUploads?: UnfinishedDraftUpload[];
   initialPanes: PanesLayout;
   popout?: boolean;
   returnHref: string;
@@ -312,6 +313,7 @@ export default function MailComposer(props: {
     mailboxId: props.mailboxId,
     draft,
     initialAttachments: () => props.initialSeed?.attachments ?? [],
+    unfinishedUploads: props.unfinishedUploads ?? [],
     setDraft,
     editable,
     persist,
@@ -323,6 +325,8 @@ export default function MailComposer(props: {
     locale,
   });
   const uploads = attachments.uploads;
+  /** Uploads this page is streaming; one an earlier session left unfinished only blocks sending. */
+  const uploadsInProgress = () => uploads().some((upload) => upload.file !== null);
   const attachmentDropzone = dropzone.create({
     onDrop: (files) => {
       if (!editable() || files.length === 0) return;
@@ -869,7 +873,7 @@ export default function MailComposer(props: {
 
   const discard = mutations.create<boolean, void>({
     mutation: async (_input, { abortSignal }) => {
-      if (uploads().length > 0) throw new Error(t().cancelUploadsBeforeDiscard);
+      if (uploadsInProgress()) throw new Error(t().cancelUploadsBeforeDiscard);
       if (!draft()) {
         clearInitialSeed();
         return true;
@@ -922,7 +926,7 @@ export default function MailComposer(props: {
   const draftHref = (draftId: string, popout = false) => mailDraftHref(props.mailboxId, draftId, props.returnHref, { popout });
 
   const leaveComposer = async (): Promise<void> => {
-    if (uploads().length > 0) {
+    if (uploadsInProgress()) {
       await prompts.error(t().finishUploadsBeforeClose);
       return;
     }
@@ -956,7 +960,7 @@ export default function MailComposer(props: {
   };
 
   const handoffTo = async (href: (draftId: string) => string, popup: Window): Promise<void> => {
-    if (uploads().length > 0) {
+    if (uploadsInProgress()) {
       popup.close();
       await prompts.error(t().finishUploadsBeforeMove);
       return;

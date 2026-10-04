@@ -18,6 +18,7 @@ import {
   draftProviderFingerprint,
   draftProviderMessageId,
 } from "./draft-provider-mime";
+import { enqueueMailInvalidation, notifyMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
@@ -1008,6 +1009,12 @@ const storeProviderRecovery = async (params: {
   }
 };
 
+const sameRemoteIdentity = (
+  left: Pick<DbProjection, "folder_id" | "uid_validity" | "uid">,
+  right: Pick<DbProjection, "folder_id" | "uid_validity" | "uid">,
+): boolean =>
+  left.folder_id === right.folder_id && String(left.uid_validity) === String(right.uid_validity) && String(left.uid) === String(right.uid);
+
 export const resolveRemoteDraftBaseRevision = (params: {
   snapshotRevision: string | number | null;
   headerRevision: number | null;
@@ -1020,6 +1027,13 @@ const applyImportedDraft = async (params: {
   snapshot: DbProjection;
   parsed: ParsedRemoteDraft;
   fingerprint: string;
+  /** The Cloud draft this copy belongs to: its Cloud headers name it, or sync linked it by Message-ID. */
+  draftId: string | null;
+  /**
+   * Another program saved this copy next to Cloud's current copy instead of replacing it, so it did not
+   * edit what Cloud wrote last.
+   */
+  cloudCopyKept: boolean;
   senderIdentityId: string;
   fence: MailboxTransportFence;
   bindingId: string;
@@ -1058,10 +1072,10 @@ const applyImportedDraft = async (params: {
         code: "DRAFT_IMPORT_IDENTITY_CHANGED",
       });
     }
-    let draftId = params.parsed.cloudDraftId;
-    const [existing] = draftId
-      ? await tx<{ id: string; revision: string | number; state: string }[]>`
-          SELECT id, revision, state
+    let draftId = params.draftId;
+    const [found] = draftId
+      ? await tx<{ id: string; revision: string | number; state: string; conversation_id: string | null }[]>`
+          SELECT id, revision, state, conversation_id
           FROM mail.drafts
           WHERE id = ${draftId}::uuid
             AND mailbox_id = ${params.snapshot.mailbox_id}::uuid
@@ -1069,6 +1083,9 @@ const applyImportedDraft = async (params: {
           FOR UPDATE
         `
       : [];
+    // A copy without Cloud headers that another program saves after the draft was sent or discarded starts a
+    // new draft; only Cloud's own copies stay bound to a closed draft.
+    const existing = found && (params.parsed.cloudDraftId || found.state === "draft") ? found : undefined;
     if (existing) {
       const currentRevision = Number(existing.revision);
       const baseRevision = resolveRemoteDraftBaseRevision({
@@ -1077,7 +1094,7 @@ const applyImportedDraft = async (params: {
       });
       // A provider draft carries no segment markers, so template text returning from another client can no
       // longer be rendered. Keep the Cloud draft and surface the external edit as a recovery copy instead.
-      const concurrentEdit = existing.state !== "draft" || currentRevision !== baseRevision;
+      const concurrentEdit = existing.state !== "draft" || currentRevision !== baseRevision || params.cloudCopyKept;
       const externalTemplateEdit = !concurrentEdit && hasUnrenderedTemplateSyntax(params.parsed.body);
       if (concurrentEdit || externalTemplateEdit) {
         await storeProviderRecovery({
@@ -1088,11 +1105,13 @@ const applyImportedDraft = async (params: {
           senderIdentityId: params.senderIdentityId,
           fingerprint: params.fingerprint,
         });
+        // The conflict keeps the revision the external edit started from: a later copy linked to this row
+        // must not pass as an edit of the current Cloud revision.
         await tx`
           UPDATE mail.draft_provider_snapshots
           SET
             draft_id = ${existing.id}::uuid,
-            cloud_revision = ${currentRevision},
+            cloud_revision = ${baseRevision},
             content_fingerprint = ${params.fingerprint},
             content_snapshot = ${params.parsed}::jsonb,
             state = 'conflict',
@@ -1105,9 +1124,12 @@ const applyImportedDraft = async (params: {
             completed_at = now()
           WHERE id = ${params.snapshot.id}::uuid
         `;
+        // Open views show the new recovery copy.
+        await enqueueMailInvalidation(tx, { mailboxId: params.snapshot.mailbox_id, conversationId: existing.conversation_id });
         return { draftId: existing.id, revision: currentRevision, state: "conflict" as const };
       }
-      await tx`DELETE FROM mail.draft_attachments WHERE draft_id = ${existing.id}::uuid`;
+      // Remove like every other draft edit: an upload row still points at an attachment it attached.
+      await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${existing.id}::uuid AND removed_at IS NULL`;
       await tx`
         UPDATE mail.drafts
         SET
@@ -1170,8 +1192,12 @@ const applyImportedDraft = async (params: {
       `,
       );
     }
-    for (let position = 0; position < params.parsed.attachments.length; position += 1) {
-      const attachment = params.parsed.attachments[position]!;
+    const [nextPosition] = await tx<{ position: number }[]>`
+      SELECT COALESCE(MAX(position), -1)::int + 1 AS position FROM mail.draft_attachments WHERE draft_id = ${draftId}::uuid
+    `;
+    const firstPosition = nextPosition?.position ?? 0;
+    for (let index = 0; index < params.parsed.attachments.length; index += 1) {
+      const attachment = params.parsed.attachments[index]!;
       await withShortIdDb(
         tx,
         "draftAttachment",
@@ -1186,15 +1212,17 @@ const applyImportedDraft = async (params: {
           ${attachment.contentType},
           ${attachment.byteLength},
           ${attachment.contentHash},
-          ${position}
+          ${firstPosition + index}
         )
       `,
       );
     }
-    const [updated] = await tx<{ revision: string | number }[]>`
-      SELECT revision FROM mail.drafts WHERE id = ${draftId}::uuid
+    const [updated] = await tx<{ revision: string | number; conversation_id: string | null }[]>`
+      SELECT revision, conversation_id FROM mail.drafts WHERE id = ${draftId}::uuid
     `;
     if (!updated) throw new Error("Imported draft disappeared before projection commit");
+    // The Drafts folder and the conversation's draft indicator show the imported draft live.
+    await enqueueMailInvalidation(tx, { mailboxId: params.snapshot.mailbox_id, conversationId: updated.conversation_id });
     await tx`
       UPDATE mail.draft_provider_snapshots
       SET
@@ -1378,48 +1406,121 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           });
         }
         const fingerprint = parsedFingerprint({ parsed, senderIdentityId: identity.id });
-        if (parsed.cloudFingerprint && parsed.cloudFingerprint === fingerprint && parsed.cloudDraftId && parsed.cloudRevision) {
-          const [known] = await sql<{ current_revision: string | number }[]>`
-        SELECT draft.revision AS current_revision
-        FROM mail.drafts draft
-        JOIN mail.draft_provider_snapshots projected
-          ON projected.draft_id = draft.id
-         AND projected.cloud_revision = ${parsed.cloudRevision}
-         AND projected.content_fingerprint = ${parsed.cloudFingerprint}
-        WHERE draft.id = ${parsed.cloudDraftId}::uuid
-          AND draft.mailbox_id = ${snapshot.mailbox_id}::uuid
-        LIMIT 1
-      `;
-          if (known && Number(known.current_revision) >= parsed.cloudRevision) {
-            await assertLeaseActive();
-            await sql`
-          UPDATE mail.draft_provider_snapshots
-          SET
-            draft_id = ${parsed.cloudDraftId}::uuid,
-            cloud_revision = ${parsed.cloudRevision},
-            content_fingerprint = ${fingerprint},
-            content_snapshot = ${parsed}::jsonb,
-            state = 'retired',
-            completed_at = now(),
-            last_seen_at = now(),
-            last_error_code = NULL,
-            last_error_message = NULL
-          WHERE id = ${snapshot.id}::uuid
-        `;
+        // A draft another program saved carries no Cloud headers. The Drafts-folder sync then links the
+        // observation to the Cloud draft that already maps to the same Message-ID.
+        const linkedDraftId = parsed.cloudDraftId ?? snapshot.draft_id;
+        const linkedRevision = parsed.cloudDraftId
+          ? parsed.cloudRevision
+          : snapshot.cloud_revision == null
+            ? null
+            : Number(snapshot.cloud_revision);
+        const [linked] = linkedDraftId
+          ? await sql<{ id: string; state: string; unchanged: boolean }[]>`
+              SELECT
+                draft.id,
+                draft.state,
+                EXISTS (
+                  SELECT 1
+                  FROM mail.draft_provider_snapshots projected
+                  WHERE projected.draft_id = draft.id
+                    AND projected.id <> ${snapshot.id}::uuid
+                    AND projected.content_fingerprint = ${fingerprint}
+                    AND (
+                      projected.cloud_revision = draft.revision
+                      OR (projected.cloud_revision = ${linkedRevision}::bigint AND draft.revision >= ${linkedRevision}::bigint)
+                    )
+                ) AS unchanged
+              FROM mail.drafts draft
+              WHERE draft.id = ${linkedDraftId}::uuid
+                AND draft.mailbox_id = ${snapshot.mailbox_id}::uuid
+                AND draft.origin = 'user'
+            `
+          : [];
+        const cloudCopyRemains = async (draftId: string): Promise<{ copy: DbProjection | null; remains: boolean }> => {
+          const [copy] = await sql<DbProjection[]>`
+            SELECT *
+            FROM mail.draft_provider_snapshots
+            WHERE draft_id = ${draftId}::uuid AND direction = 'export' AND state = 'active'
+          `;
+          if (!copy?.uid || !copy.uid_validity) return { copy: copy ?? null, remains: false };
+          if (sameRemoteIdentity(copy, snapshot)) return { copy, remains: false };
+          // A copy in another folder or UID namespace cannot have been replaced by this one.
+          if (copy.folder_id !== snapshot.folder_id || String(copy.uid_validity) !== String(snapshot.uid_validity)) {
+            return { copy, remains: true };
+          }
+          await assertLeaseActive();
+          const state = await imapSmtpConnector.getMessageState(execution.runtime, {
+            folderPath: execution.folder.path,
+            uidValidity: String(copy.uid_validity),
+            uid: Number(copy.uid),
+          });
+          return {
+            copy,
+            remains: state.exists && normalizeMessageId(state.messageId ?? "") === normalizeMessageId(copy.stable_message_id),
+          };
+        };
+        if (linked?.unchanged) {
+          const { copy, remains } = await cloudCopyRemains(linked.id);
+          await assertLeaseActive();
+          if (copy && sameRemoteIdentity(copy, snapshot)) {
+            // Seeing Cloud's own copy again, as every full reconciliation without MODSEQ does, adds nothing.
+            await sql`DELETE FROM mail.draft_provider_snapshots WHERE id = ${snapshot.id}::uuid`;
             return;
           }
+          if (copy && !remains && copy.content_fingerprint === fingerprint) {
+            // Another program replaced Cloud's current copy with an identical one: follow it, so sending or
+            // discarding the draft still removes the copy that other programs show.
+            await sql.begin(async (tx) => {
+              await tx`
+                UPDATE mail.draft_provider_snapshots
+                SET
+                  remote_resource_id = ${snapshot.remote_resource_id}::uuid,
+                  binding_id = ${snapshot.binding_id}::uuid,
+                  folder_id = ${snapshot.folder_id}::uuid,
+                  uid_validity = ${snapshot.uid_validity}::numeric,
+                  uid = ${snapshot.uid}::numeric,
+                  modseq = ${snapshot.modseq}::numeric,
+                  last_seen_at = now()
+                WHERE id = ${copy.id}::uuid AND state = 'active'
+              `;
+              await tx`DELETE FROM mail.draft_provider_snapshots WHERE id = ${snapshot.id}::uuid`;
+            });
+            return;
+          }
+          await sql`
+            UPDATE mail.draft_provider_snapshots
+            SET
+              draft_id = ${linked.id}::uuid,
+              cloud_revision = ${linkedRevision},
+              content_fingerprint = ${fingerprint},
+              content_snapshot = ${parsed}::jsonb,
+              state = 'retired',
+              completed_at = now(),
+              last_seen_at = now(),
+              last_error_code = NULL,
+              last_error_message = NULL
+            WHERE id = ${snapshot.id}::uuid
+          `;
+          return;
         }
+        // Without Cloud headers the link holds only while the draft is still being written; a later save
+        // from another program then starts a new draft.
+        const draftId = parsed.cloudDraftId ?? (linked?.state === "draft" ? linked.id : null);
+        const cloudCopyKept = !parsed.cloudDraftId && draftId ? (await cloudCopyRemains(draftId)).remains : false;
         await assertLeaseActive();
         await applyImportedDraft({
           snapshot,
           parsed,
           fingerprint,
+          draftId,
+          cloudCopyKept,
           senderIdentityId: identity.id,
           fence,
           bindingId: execution.execution.bindingId!,
           connectionId: execution.execution.connectionId!,
           secretRevision: execution.execution.secretRevision!,
         });
+        await notifyMailInvalidations();
       },
     });
   } finally {
