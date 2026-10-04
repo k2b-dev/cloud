@@ -22,6 +22,7 @@ import registeredHelpPage from "./help/registered.page";
 import { resolveHomePath } from "./home";
 import { makeLegalPage } from "./legal/page-handler";
 import accessPage from "./me/access.page";
+import appPage from "./me/app.page";
 import developerPage from "./me/developer.page";
 import notificationHistoryPage from "./me/notification-history.page";
 import notificationsPage from "./me/notifications.page";
@@ -78,6 +79,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       ...notificationHistoryPage,
     )
     .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
+    .get("/me/app", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appPage)
     // Admin pages (admin only)
     .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
     .get("/admin/rail", auth.requireRole("admin", ssr.access), ...railAdminPage)

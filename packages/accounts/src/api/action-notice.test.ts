@@ -38,7 +38,7 @@ afterAll(() => {
 const login = (roles: User["roles"]) =>
   authenticate.mockResolvedValue({
     user: { ...user, roles },
-    data: { userId: user.id, sid: "test-session", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+    data: { userId: user.id, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
   });
 const post = (body: unknown) =>
   notices.request("/", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });

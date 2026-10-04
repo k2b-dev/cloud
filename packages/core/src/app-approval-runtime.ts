@@ -1,5 +1,5 @@
 import { lazySync } from "@k2b/cloud";
-import { appApproval } from "@k2b/cloud/services";
+import { appApproval, pwaDevices } from "@k2b/cloud/services";
 import type { Worker } from "@k2b/sync";
 import type { CoreNotificationSender } from "./notifications";
 
@@ -16,6 +16,14 @@ export const appApprovalRuntime = {
       misfire: "latest",
       meta: { appId: "core", family: "app-approval", label: "App device enrollment notices and expiry cleanup" },
       process: async ({ signal }) => appApproval.maintain(sender.sendDeviceEnrollment, signal),
+    });
+    await scheduler().create({
+      id: "pwa-maintenance",
+      cron: "* * * * *",
+      timezone: "UTC",
+      misfire: "latest",
+      meta: { appId: "core", family: "app-approval", label: "Mobile app pairing expiry and phones of expired accounts" },
+      process: async ({ signal }) => pwaDevices.maintain(signal),
     });
     worker = await scheduler().process({ concurrency: 1 });
   },

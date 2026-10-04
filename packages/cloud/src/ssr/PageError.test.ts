@@ -60,7 +60,7 @@ const signIn = (account: User = user) => {
   tokenSpy.mockReturnValue("test-session");
   sessionSpy.mockResolvedValue({
     user: account,
-    data: { userId: account.id, sid: "test", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+    data: { userId: account.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
   });
 };
 

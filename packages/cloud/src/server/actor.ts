@@ -24,6 +24,13 @@ export const userFromActor = (actor: RequestActor | undefined): ActingUser | nul
   return actor.kind === "user" ? actor.user : actor.delegatedUser;
 };
 
+/**
+ * True when the actor works through the mobile app's session (directly, through an invocation or
+ * in an Assistant turn started there). Such an actor must not create authority that outlives the
+ * phone: sign-in methods, API keys or background mandates.
+ */
+export const isAppSessionActor = (actor: RequestActor | undefined): boolean => actor?.kind === "user" && actor.sessionKind === "app";
+
 /** Same, read off the request context. */
 export const getUserBackedActor = <T extends AuthContext>(c: Context<T>): ActingUser | null =>
   userFromActor(c.get("actor") as RequestActor | undefined);

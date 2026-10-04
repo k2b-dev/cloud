@@ -128,7 +128,7 @@ describe("served plugin routes", () => {
     const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile, effective_admin: false });
     return spyOn(session, "authenticateRequest").mockResolvedValue({
       user,
-      data: { userId: user.id, sid: "test", authEpoch: 0, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: new Date(Date.now() + 60_000).toISOString() },
     });
   };
   const withAccess = (access: string) => spyOn(settings, "get").mockResolvedValue(access as never);

@@ -3,6 +3,8 @@ import type { CloudTheme } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
 
 type ProfilePreferencesProps = {
+  /** Set while the installation offers the mobile app. */
+  appHref?: string;
   avatarSrc?: string;
   initialTheme: CloudTheme;
   name: string;
@@ -10,7 +12,7 @@ type ProfilePreferencesProps = {
 };
 
 export default function ProfilePreferences(props: ProfilePreferencesProps) {
-  const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme);
+  const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref);
 
   const avatar = () => <Avatar name={props.name} src={props.avatarSrc} size="xs" />;
 
@@ -32,6 +34,12 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
           <i class="ti ti-user-circle" aria-hidden="true" />
           <span>{preferences.messages().profileSettings}</span>
         </a>
+        {props.appHref && (
+          <a href={props.appHref} class="menu-item">
+            <i class="ti ti-device-mobile" aria-hidden="true" />
+            <span>{preferences.messages().app}</span>
+          </a>
+        )}
         <button type="button" class="menu-item" onClick={signOut} disabled={signingOut()}>
           <i class="ti ti-logout" aria-hidden="true" />
           <span>{preferences.messages().signOut}</span>

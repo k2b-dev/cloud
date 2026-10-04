@@ -1230,11 +1230,11 @@ export const drainNotebookConnections = async (): Promise<void> => {
 
 const app = new Hono().get(
   "/",
-  upgradeWebSocket((c) => {
+  upgradeWebSocket(async (c) => {
     // Read the session from the forwarded cookie. Never accept it from a
     // client message: that would require handing the httpOnly token to the
     // browser, which puts the full credential into the page HTML.
-    const sessionToken = auth.session.getToken(c);
+    const sessionToken = await auth.session.resolveToken(c);
     const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();

@@ -12,6 +12,8 @@ import ProfilePreferences from "./ProfilePreferences.island";
 
 type LayoutHeaderProps = {
   accent?: string;
+  /** Set while the installation offers the mobile app. */
+  appHref?: string;
   appLabel?: string;
   authenticated: boolean;
   breadcrumbs: LayoutBreadcrumb[];
@@ -64,7 +66,11 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
           />
           {(props.authenticated || props.appLabel) && (
             <AppLaunchpad
-              profile={props.authenticated ? { name: props.profileName, theme: props.theme } : undefined}
+              profile={
+                props.authenticated
+                  ? { name: props.profileName, theme: props.theme, ...(props.appHref ? { appHref: props.appHref } : {}) }
+                  : undefined
+              }
               apps={props.launchpadApps}
               legalLinks={props.legalLinks}
               variant="header"
@@ -74,7 +80,13 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         </div>
         {props.authenticated ? (
           <div class="hidden lg:block">
-            <ProfilePreferences avatarSrc={props.profileAvatarSrc} initialTheme={props.theme} name={props.profileName} placement="header" />
+            <ProfilePreferences
+              appHref={props.appHref}
+              avatarSrc={props.profileAvatarSrc}
+              initialTheme={props.theme}
+              name={props.profileName}
+              placement="header"
+            />
           </div>
         ) : (
           <>
