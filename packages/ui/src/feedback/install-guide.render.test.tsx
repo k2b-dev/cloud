@@ -39,36 +39,57 @@ const render = (install: InstallPrompt, locale = "en", note?: string) =>
 
 const steps = (html: string) => [...html.matchAll(/<h3>([^<]+)<\/h3>/g)].map((match) => match[1]);
 
+const notice = (html: string) =>
+  html.match(/<article[^>]*data-tone="(\w+)"[^>]*>.*?<p class="k2b-notice-card__title">([^<]+)<\/p>/)?.slice(1);
+
 describe("InstallGuide", () => {
-  test("iPhone and iPad get the Safari Share steps and the app's note", () => {
+  test("Safari on iPhone and iPad gets the Share steps, a fallback for other apps, and the app's note", () => {
     const html = render(prompt("apple-mobile"), "en", "Notifications need the Home Screen app.");
     expect(html).toContain('data-platform="apple-mobile"');
-    expect(html).toContain("open this page in Safari");
     expect(steps(html)).toEqual(["Open Share", "Add to Home Screen", "Confirm Add"]);
+    expect(notice(html)).toBeUndefined();
+    expect(html).toContain("This page may be open inside another app. Open it in Safari.");
     expect(html).toContain("Notifications need the Home Screen app.");
     expect(html).not.toContain("No installation option?");
+  });
+
+  test("another browser on iPhone recommends Safari above its own Share steps", () => {
+    const html = render(prompt("apple-browser"));
+    expect(notice(html)).toEqual(["info", "Safari works best"]);
+    expect(steps(html)).toEqual(["Open Share", "Add to Home Screen", "Confirm Add"]);
+    expect(html).toContain("In Chrome, tap Share in the address bar.");
+    expect(html).not.toContain("Copy link");
   });
 
   test("Safari on a Mac adds to the Dock", () => {
     expect(steps(render(prompt("apple-desktop")))).toEqual(["Open the Safari menu", "Add to Dock"]);
   });
 
-  test("Android and other browsers use the browser menu and admit when installation is unavailable", () => {
+  test("Android and other browsers use the browser menu; only unknown browsers hear that installation may be missing", () => {
     const android = render(prompt("android"));
     expect(steps(android)).toEqual(["Open the browser menu", "Install app"]);
     expect(android).toContain("“Add to Home screen”");
-    expect(android).toContain("No installation option?");
+    expect(notice(android)).toBeUndefined();
+    expect(android).not.toContain("No installation option?");
+    const other = render(prompt("android-browser"));
+    expect(notice(other)).toEqual(["info", "Chrome works best"]);
+    expect(steps(other)).toEqual(["Open the browser menu", "Install app"]);
     const generic = render(prompt("generic"));
     expect(generic).toContain("an installation icon in the address bar");
+    expect(generic).toContain("No installation option?");
   });
 
-  test("an embedded browser copies the link for Safari or Chrome instead of listing steps", () => {
-    const html = render(prompt("in-app"));
-    expect(html).toContain("Open it in Safari or Chrome to install Northwind.");
-    expect(html).toContain("Copy app link");
-    expect(html).toContain("Paste the link into Safari or Chrome to install Northwind.");
-    expect(steps(html)).toEqual([]);
-    expect(render(prompt("in-app"), "en", "Then choose Install app in the menu.")).toContain("Then choose Install app in the menu.");
+  test("an app's own browser view warns and copies the link for Safari or Chrome instead of listing steps", () => {
+    const apple = render(prompt("apple-in-app"), "en", "Then choose Install app in the menu.");
+    expect(notice(apple)).toEqual(["warning", "Open this page in Safari"]);
+    expect(apple).toContain("which can’t install Northwind");
+    expect(apple).toMatch(/<button[^>]*>.*Copy link/);
+    expect(steps(apple)).toEqual([]);
+    expect(apple).toContain("Then choose Install app in the menu.");
+    const other = render(prompt("in-app"));
+    expect(notice(other)).toEqual(["warning", "Open this page in your browser"]);
+    expect(other).toContain("paste it into Chrome");
+    expect(steps(other)).toEqual([]);
   });
 
   test("the browser's own dialog, its request, and its failure replace the steps", () => {
@@ -83,6 +104,10 @@ describe("InstallGuide", () => {
   test("speaks German from the inherited locale", () => {
     const html = render(prompt("apple-mobile"), "de");
     expect(steps(html)).toEqual(["Teilen öffnen", "Zum Home-Bildschirm", "Hinzufügen bestätigen"]);
-    expect(render(prompt("in-app"), "de")).toContain("um Northwind zu installieren");
+    const embedded = render(prompt("apple-in-app"), "de");
+    expect(notice(embedded)).toEqual(["warning", "Öffne diese Seite in Safari"]);
+    expect(embedded).toContain("die Northwind nicht installieren kann");
+    expect(embedded).toContain("Link kopieren");
+    expect(notice(render(prompt("apple-browser"), "de"))).toEqual(["info", "Am besten mit Safari"]);
   });
 });

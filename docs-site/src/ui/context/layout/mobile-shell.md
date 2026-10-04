@@ -62,6 +62,11 @@ dialogs and menus included. They never apply to pages without a shell.
   every pointer.
 - Text fields have 16 px text and are at least 44 px high, so iOS never zooms
   into a focused field.
+- One type scale: the header title at 1.125rem, text at 1rem with headings and
+  names in a heavier weight, secondary text at 0.875rem, and the tab labels.
+  Settings section headings, notices, placeholders, and navigation
+  descriptions follow it, so a phone page mixes no desktop sizes. Applications
+  add no sizes of their own.
 
 ### Toasts
 
@@ -111,6 +116,10 @@ browser, the shell measures the footer and watches the toast rail to keep the
 footer height and the toast padding current. It removes the footer
 height when it unmounts.
 
+The header and the footer have no rules. In the browser, the scroll area fades
+its content at an edge where more content continues, which is the only cue at
+the footer's edge.
+
 The shell also answers taps on its links at once. It listens to touches, so iOS
 shows the pressed state of links and buttons. A link that loads a page of the
 same site is marked with `data-k2b-pending` until the next page replaces this
@@ -124,8 +133,8 @@ left alone.
 
 A page that renders the shell on the server and hydrates only islands inside
 it calls `observeMobileShell(root)` once in the browser instead, with the
-shell's root element. It keeps the same measurements and link taps working and
-returns the cleanup:
+shell's root element. It keeps the same measurements, the scroll fade, and link
+taps working and returns the cleanup:
 
 ```ts
 import { observeMobileShell } from "@k2b/ui";

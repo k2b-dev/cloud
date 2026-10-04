@@ -43,7 +43,15 @@ const load = async () => {
 const modules = isServer ? undefined : await load();
 
 type Mounted = { dom: DomTestHarness; replaced: string[]; dispose: () => void };
-const mount = (options: { standalone: boolean; url?: string; state?: "new" | "ended" | "expired" }): Mounted => {
+const SAFARI =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+const mount = (options: {
+  standalone: boolean;
+  url?: string;
+  state?: "new" | "ended" | "expired";
+  userAgent?: string;
+  platform?: "apple-mobile" | "apple-in-app";
+}): Mounted => {
   const { ui, Welcome } = modules!;
   const dom = createDomTestHarness();
   delegateEvents(["click", "input"]);
@@ -55,11 +63,7 @@ const mount = (options: { standalone: boolean; url?: string; state?: "new" | "en
   });
   Object.assign(dom.window, { matchMedia: query });
   Object.defineProperty(globalThis, "matchMedia", { configurable: true, value: query });
-  Object.defineProperty(dom.window.navigator, "userAgent", {
-    configurable: true,
-    value:
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
-  });
+  Object.defineProperty(dom.window.navigator, "userAgent", { configurable: true, value: options.userAgent ?? SAFARI });
   const replaced: string[] = [];
   Object.assign(dom.window.location, { replace: (url: string) => void replaced.push(url) });
   // Polling every five seconds would make the test slow; keep the order, not the delay.
@@ -74,7 +78,7 @@ const mount = (options: { standalone: boolean; url?: string; state?: "new" | "en
             state: options.state ?? "new",
             cloud: "Example Cloud",
             icon: "/branding/pwa-icon-192.png?v=1",
-            platform: "apple-mobile",
+            platform: options.platform ?? "apple-mobile",
             url: "http://localhost/pwa/",
           });
         },
@@ -139,6 +143,35 @@ else {
       expect(copied).toEqual([LINK]);
       await Bun.sleep(30);
       expect(fetch.calls).toEqual([]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("inside another app, the warning's one copy action takes the pairing link to Safari", async () => {
+    const copied: string[] = [];
+    const fetch = mockFetch(() => undefined);
+    // A QR scanner's own browser view: an iPhone user agent without Safari's token.
+    const page = mount({
+      standalone: false,
+      url: `/pwa/?pwa=new#pair=${SECRET}`,
+      userAgent: SAFARI.replace(" Version/18.0", "").replace(" Safari/604.1", ""),
+      platform: "apple-in-app",
+    });
+    Object.defineProperty(page.dom.window.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (value: string) => void copied.push(value) },
+    });
+    try {
+      await waitFor(() => text(page.dom).includes("Open this page in Safari"), "warning");
+      expect(text(page.dom)).not.toContain("Install the app first.");
+      expect(
+        [...page.dom.document.querySelectorAll("button")].filter((element) => element.textContent?.includes("Copy link")),
+      ).toHaveLength(1);
+      button(page.dom, "Copy link")!.click();
+      await waitFor(() => copied.length === 1, "copy");
+      expect(copied).toEqual([LINK]);
     } finally {
       page.dispose();
       fetch.restore();
