@@ -46,6 +46,9 @@ const stringArray = (value: unknown): string[] => {
   return [];
 };
 
+/** The user as the mobile app's session sees it: never an installation administrator. */
+export const withoutAdminRole = (user: User): User => ({ ...user, roles: user.roles.filter((role) => role !== "admin") });
+
 export const buildProjectedUser = (row: DbRow): User => {
   const { provider, profile } = resolveProviderProfile(row);
   const mail = (row.mail as string | null | undefined) ?? null;

@@ -124,7 +124,8 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
     return respond(c, ok({ timezone: await getChatTaskTimezone() }));
   })
-  .post("/tasks", v("json", CreateSchema), async (c) => {
+  // A scheduled task holds a background mandate that outlives the phone: the mobile app may only pause or delete one.
+  .post("/tasks", auth.rejectAppSession, v("json", CreateSchema), async (c) => {
     const owner = userId(c);
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
     const input = c.req.valid("json");
@@ -193,7 +194,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
       }),
     );
   })
-  .patch("/tasks/:taskId", v("json", UpdateSchema), async (c) => {
+  .patch("/tasks/:taskId", auth.rejectAppSession, v("json", UpdateSchema), async (c) => {
     const owner = userId(c);
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
     const parsed = ChatTaskIdSchema.safeParse(c.req.param("taskId"));
@@ -240,7 +241,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
     reconcileSoon();
     return respond(c, ok(toAiChatTaskView(task)));
   })
-  .post("/tasks/:taskId/resume", async (c) => {
+  .post("/tasks/:taskId/resume", auth.rejectAppSession, async (c) => {
     const owner = userId(c);
     if (!owner) return respond(c, fail(err.forbidden("Scheduled tasks require a user-backed actor")));
     const parsed = ChatTaskIdSchema.safeParse(c.req.param("taskId"));

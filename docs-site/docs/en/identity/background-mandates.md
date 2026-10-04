@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Background authority mandates
@@ -65,6 +65,16 @@ const mandate = await mandates.create(
 );
 ```
 
+A mandate keeps acting after the person's phone is removed, so the
+[mobile app's session](/en/docs/identity/authentication#app-sessions-preview)
+never creates, widens, or resumes one. Before you create a mandate, change its
+policy, or resume it with an interactive authority, reject such requests:
+`auth.rejectAppSession` on the route, or `isAppSessionActor(actor)` in a service
+or capability. Answer `403` with
+`{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }`.
+Pausing and revoking stay allowed. `POST /api/me/mandates`, scheduled Assistant
+tasks, and Mail incoming automations with Spaces steps follow this rule.
+
 Built-in applications that share Postgres create the mandate and owning
 workload in one transaction. A separately deployed application that cannot
 share that transaction creates a pending mandate, persists the workload, and
@@ -82,10 +92,9 @@ confirmation window. Paused pending mandates count too; expired ones do not.
 At HTTP 409, confirm or revoke outstanding registrations before creating more.
 
 Use `POST /api/me/mandates` from the signed-in browser session for that remote
-sequence. It needs a web session; the mobile app's session cannot create a
-mandate, because the mandate would keep acting after the phone is removed.
-Core always derives the user subject from that session; the request contains
-only the bounded owner app, workload coordinates, policy, and optional expiry. Persist the returned ID and revision first, then call
+sequence. Core always derives the user subject from that session; the request
+contains only the bounded owner app, workload coordinates, policy, and optional
+expiry. Persist the returned ID and revision first, then call
 `POST /api/_internal/identity/v1/mandates/<mandateId>/confirm` with the same
 revision and the app workload credential. Ordinary `mandates.create(...)`
 remains the atomic same-transaction path and is confirmed immediately.

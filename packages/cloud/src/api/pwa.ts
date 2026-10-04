@@ -90,6 +90,8 @@ const IdParamSchema = z.object({ id: z.string().uuid() });
 const webActor = async (c: Context) => {
   if (c.req.header("Authorization")) throw new PwaError("FORBIDDEN", 403);
   const token = auth.session.getWebToken(c);
+  // Only the mobile app's session: pairing phones needs the web, a new sign-in would not help.
+  if (!token && auth.session.getAppToken(c)) throw new PwaError("FORBIDDEN", 403);
   const session = token ? await auth.session.authenticateRequest(c, token) : null;
   if (!session) throw new PwaError("REAUTHENTICATE", 403);
   if (session.data.kind !== "web") throw new PwaError("FORBIDDEN", 403);

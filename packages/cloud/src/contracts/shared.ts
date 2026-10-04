@@ -414,7 +414,13 @@ export type InvocationProvenance = {
   workloadId?: string;
 };
 
-export type UserRequestActor = { kind: "user"; user: User; delegation?: InvocationProvenance };
+export type UserRequestActor = {
+  kind: "user";
+  user: User;
+  delegation?: InvocationProvenance;
+  /** `"app"` when the person acts through the mobile app's session; see the server's `UserRequestActor`. */
+  sessionKind?: "app";
+};
 
 export type ServiceAccountRequestActor = {
   kind: "service_account";

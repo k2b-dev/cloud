@@ -5,7 +5,7 @@ section: Identity and access
 order: 310
 description: Resolve Cloud credentials into the actor and access subject used by an application.
 tags: [identity, authentication, sessions, middleware]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Request identity
@@ -75,9 +75,12 @@ the mobile app's session (`pwa_session`). Cloud picks one per request:
 | Navigation elsewhere (`Sec-Fetch-Mode: navigate`: documents, iframes, form posts) | Bearer as before, otherwise `session_token` only |
 | Any other request (fetch, images, WebSockets, requests without fetch metadata) | Bearer as before, otherwise `session_token` when it is valid, otherwise `pwa_session` |
 
-Without a `pwa_session` cookie every request behaves as described above. A
-WebSocket or stream handler reads the credential through
-`auth.session.getToken(c)` or the auth middleware, never from a cookie by name.
+Without a `pwa_session` cookie every request behaves as described above. The
+auth middleware applies the fallback of the last row. A WebSocket or stream
+handler that authenticates the token itself reads it with
+`await auth.session.resolveToken(c)`, which applies the same fallback.
+`auth.session.getToken(c)` only picks the cookie and does not check it. Never
+read a session cookie by name.
 
 ## Use actor and access subject
 
@@ -95,6 +98,7 @@ type RequestActor =
   | {
       kind: "user";
       user: User;
+      sessionKind?: "app"; // the mobile app's session, see below
     }
   | {
       kind: "service_account";
@@ -216,18 +220,39 @@ credentials:
   valid for 24 hours. It is an ordinary Cloud session, validated by every
   application like a web session. Core renews it with the device key.
 
-An app session resolves to the same `actor`, `accessSubject` and
+An app session resolves to the same `accessSubject` and
 `credentialKind: "session"` as a web session. `c.get("sessionKind")` is
-`"app"`, and `auth.isAppSession(c)` returns `true`. The kind comes from the
-session record, not from the cookie name.
+`"app"`, the user actor carries `sessionKind: "app"`, and
+`auth.isAppSession(c)` returns `true`. The kind comes from the session record,
+not from the cookie name. Invocations made for an app session keep the marker,
+also from Assistant turns started in the app. The marker travels in the
+invocation token, and an application built on an older `@k2b/cloud` rejects
+such tokens, so update applications before people use the mobile app.
 
-The mobile app cannot create authority that outlives the phone:
+App sessions never carry the installation `admin` role, also not in calls to
+other applications. A service that reloads the user to confirm the role must
+treat the request actor's roles as the upper bound and never add `admin` back.
 
-- app sessions never carry the installation `admin` role, also not in calls to
-  other applications;
-- passkeys, API keys, password changes, account deletion, background mandates,
-  OAuth grants, Cloud Login devices and browser push endpoints answer `403`
-  with `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }`.
+The mobile app cannot create sign-in methods, API keys, or background
+authority, because they would keep working after the phone is removed:
+
+- Core's account API answers `403` with
+  `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }` for
+  passkeys, personal API keys, password changes, account deletion, SSH public
+  keys, background mandates, and browser push endpoints;
+- resource API keys of Spaces, Notebooks, Contacts, Pulse, and Venue, scheduled
+  Assistant tasks (create, change, resume), and Mail incoming automations with
+  Spaces steps answer the same `403`;
+- OAuth treats an app session as no session: `/oauth/authorize` leads to
+  sign-in, and the consent and device pages ask the person to use the web;
+- Cloud Login pairing management and pairing another phone answer
+  `FORBIDDEN` in their own error format.
+
+Ordinary work stays available, including profile changes, sharing, and
+read-only calendar feed links. In your application, guard every route that
+creates such authority with `auth.rejectAppSession`, which answers the `403`
+above. In services and capabilities, check `isAppSessionActor(actor)` from
+`@k2b/cloud/server`.
 
 A phone's sessions end when the person removes it in `/me/app` or signs out of
 the app, when an administrator removes it, when `revokeAllForUser` runs, when

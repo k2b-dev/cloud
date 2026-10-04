@@ -104,6 +104,25 @@ describe("credential resolution with the mobile app", () => {
     expect(await read(await upgrade("/pwa/spaces/ws", { session_token: "web-valid" }))).toBeNull();
   });
 
+  test("handlers that authenticate the token themselves get the same validity fallback", async () => {
+    const resolveProbe = new Hono().all("*", async (c) => c.json({ token: await session.resolveToken(c) }));
+    const resolve = async (cookies: Record<string, string>, extra: Record<string, string> = {}) =>
+      (
+        (await (
+          await resolveProbe.request("/api/spaces/ws", { headers: { cookie: cookie(cookies), "sec-fetch-mode": "websocket", ...extra } })
+        ).json()) as { token: string | null }
+      ).token;
+    // Android: a stale web cookie next to a valid app session in the shared jar.
+    expect(await resolve({ session_token: "revoked", pwa_session: "app-valid" })).toBe("app-valid");
+    expect(await resolve({ session_token: "web-valid", pwa_session: "app-valid" })).toBe("web-valid");
+    expect(await resolve({ session_token: "revoked" })).toBe("revoked");
+    expect(await resolve({ session_token: "revoked", pwa_session: "app-valid" }, { authorization: "Bearer explicit" })).toBe("explicit");
+    // Without an app session nothing is authenticated up front: today's cost.
+    spy.mockClear();
+    await resolve({ session_token: "web-valid" });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   test("requests without fetch metadata count as fetches", async () => {
     const response = await actorProbe.request("/api/x", { headers: { cookie: "pwa_session=app-valid" } });
     expect(await response.json()).toEqual({ sid: "app-valid", kind: "app" });
@@ -113,5 +132,27 @@ describe("credential resolution with the mobile app", () => {
     const probe = new Hono<AuthContext>().use(auth.requireRole("authenticated")).get("*", (c) => c.json(auth.isAppSession(c)));
     expect(await (await probe.request("/api/x", { headers: { cookie: "pwa_session=app-valid" } })).json()).toBe(true);
     expect(await (await probe.request("/api/x", { headers: { cookie: "pwa_session=web-in-app-cookie" } })).json()).toBe(false);
+  });
+
+  test("auth.rejectAppSession answers the standard 403 for the app and lets the web through", async () => {
+    const guarded = new Hono<AuthContext>()
+      .use(auth.requireRole("authenticated"))
+      .post("*", auth.rejectAppSession, (c) => c.json({ ok: true }));
+    const app = await guarded.request("/api/x", { method: "POST", headers: { cookie: "pwa_session=app-valid" } });
+    expect(app.status).toBe(403);
+    expect(await app.json()).toEqual({ code: "FORBIDDEN", message: "Use Cloud on the web for this." });
+    const web = await guarded.request("/api/x", { method: "POST", headers: { cookie: "session_token=web-valid" } });
+    expect(web.status).toBe(200);
+  });
+
+  test("the request actor of an app session carries the app marker", async () => {
+    const probe = new Hono<AuthContext>().use(auth.requireRole("authenticated")).get("*", (c) => c.json(c.get("actor")));
+    expect(await (await probe.request("/api/x", { headers: { cookie: "pwa_session=app-valid" } })).json()).toMatchObject({
+      kind: "user",
+      sessionKind: "app",
+    });
+    expect(await (await probe.request("/api/x", { headers: { cookie: "session_token=web-valid" } })).json()).not.toHaveProperty(
+      "sessionKind",
+    );
   });
 });

@@ -8,6 +8,7 @@ import type { AccessSubject } from "../server/services/access";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
+import { withoutAdminRole } from "../services/session/user";
 import { LOCALE_HEADER } from "../shared/locale";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
 import { aiToolAudit } from "./tool-audit";
@@ -30,6 +31,10 @@ export const resolveAiCapabilityActor = async (input: {
   const user = await (input.getUser ?? accounts.users.get)({ id: conversation.createdByUserId });
   if (!user || isAccountExpired(user.accountExpires)) throw new Error("Cloud capability actor is no longer active.");
   if (!(await isAccountCategoryAllowed(user))) throw new Error("Cloud capability actor category is disabled.");
+  // A turn started in the mobile app keeps its limits: no administrator role, and invocations say so.
+  if (input.persistedActor.sessionKind === "app") {
+    return { actor: { kind: "user", user: withoutAdminRole(user), sessionKind: "app" }, accessSubject: { type: "user", userId: user.id } };
+  }
   return { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } };
 };
 

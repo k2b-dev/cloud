@@ -21,7 +21,7 @@ type Status = z.infer<typeof PwaPairingStatusSchema>;
 type Panel =
   | { kind: "closed" }
   | { kind: "starting" }
-  | { kind: "waiting"; id: string; link: string | null; claimUntil: string | null; status: Status | null }
+  | { kind: "waiting"; id: string; expiresAt: string; link: string | null; claimUntil: string | null; status: Status | null }
   | { kind: "done" | "expired" | "cancelled" | "reauthenticate" }
   | { kind: "error"; code: string };
 
@@ -29,7 +29,7 @@ const icon = (platform: PwaDeviceView["platform"]) =>
   platform === "ios" ? "ti ti-brand-apple" : platform === "android" ? "ti ti-brand-android" : "ti ti-device-mobile";
 
 /** The pairing panel and the list of paired phones on `/me/app`. SSR renders the list; pairing needs the browser. */
-export default function AppDevices(props: { userId: string; initial: PwaDeviceView[]; dateConfig: DateContext; autoStart?: boolean }) {
+export default function AppDevices(props: { userId: string; initial: PwaDeviceView[]; dateConfig: DateContext }) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
   const [devices, setDevices] = createSignal(props.initial);
@@ -42,6 +42,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
   const [showQr, setShowQr] = createSignal(false);
   const storageKey = `cloud.pwa-pairing:${props.userId}`;
   let stop = () => {};
+  let stopCompletion = () => {};
   let disposed = false;
 
   const remember = (value: z.infer<typeof ResumeSchema> | null) => {
@@ -56,7 +57,6 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     setCode("");
     setWrongCode(undefined);
     setPanel({ kind });
-    if (kind === "done") void reload();
   };
   const fail = (cause: unknown) => {
     if (cause instanceof ApprovalError && cause.code === "REAUTHENTICATE") return finish("reauthenticate");
@@ -74,6 +74,39 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     } catch {}
   };
 
+  /**
+   * After the code is confirmed the phone still has to complete: only then does its device exist.
+   * Keep reading the pairing until then, so the list shows the new phone without a reload.
+   */
+  const awaitCompletion = (id: string, expiresAt: string) => {
+    finish("done");
+    stopCompletion();
+    stopCompletion = pollApproval(
+      async (signal) => {
+        if (Date.parse(expiresAt) <= Date.now()) {
+          void reload();
+          return false;
+        }
+        const status = await parsed(
+          await pwaApi.pairings[":id"].$get({ param: { id } }, approvalRequestOptions(signal)),
+          PwaPairingStatusSchema,
+        );
+        if (signal.aborted || disposed) return false;
+        if (status.state === "confirmed") return true;
+        void reload();
+        return false;
+      },
+      (cause) => {
+        if (cause instanceof ApprovalError && cause.status < 500 && cause.status !== 429) {
+          void reload();
+          return false;
+        }
+        return true;
+      },
+      PWA_LIMITS.pollSeconds,
+    );
+  };
+
   /** `resumed`: read at once after a reload instead of one poll interval later. */
   const watch = (id: string, expiresAt: string, resumed = false) => {
     stop();
@@ -88,8 +121,13 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
           PwaPairingStatusSchema,
         );
         if (signal.aborted || disposed) return false;
-        if (status.state === "completed" || status.state === "confirmed") {
+        if (status.state === "completed") {
           finish("done");
+          void reload();
+          return false;
+        }
+        if (status.state === "confirmed") {
+          awaitCompletion(id, expiresAt);
           return false;
         }
         if (status.state === "cancelled") {
@@ -123,6 +161,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       setPanel({
         kind: "waiting",
         id: result.id,
+        expiresAt: result.expiresAt,
         link: pairingLink(window.location.origin, result.secret),
         claimUntil: result.claimUntil,
         status: null,
@@ -143,7 +182,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       await checked(
         await pwaApi.pairings[":id"].confirm.$post({ param: { id: current.id }, json: { code: code() } }, approvalRequestOptions()),
       );
-      if (!disposed) finish("done");
+      if (!disposed) awaitCompletion(current.id, current.expiresAt);
     } catch (cause) {
       if (disposed) return;
       if (cause instanceof ApprovalError && cause.code === "WRONG_CODE") {
@@ -226,7 +265,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     try {
       const saved = ResumeSchema.safeParse(JSON.parse(window.sessionStorage.getItem(storageKey) || "null"));
       if (saved.success && Date.parse(saved.data.expiresAt) > Date.now()) {
-        setPanel({ kind: "waiting", id: saved.data.id, link: null, claimUntil: null, status: null });
+        setPanel({ kind: "waiting", id: saved.data.id, expiresAt: saved.data.expiresAt, link: null, claimUntil: null, status: null });
         watch(saved.data.id, saved.data.expiresAt, true);
         return;
       }
@@ -234,11 +273,12 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     } catch {
       remember(null);
     }
-    if (requested || props.autoStart) void start();
+    if (requested) void start();
   });
   onCleanup(() => {
     disposed = true;
     stop();
+    stopCompletion();
   });
 
   const remaining = (until: string) => {

@@ -331,8 +331,29 @@ suite("mobile app pairing and app sessions", () => {
     expect((await probe(phone)).status).toBe(401);
     expect((await probe(lost)).status).toBe(200);
     expect((await pwaDevices.list({ userId: owner.id })).map((item) => item.id)).toEqual([deviceId]);
+    const [recovered] = await sql`SELECT 1 FROM audit.events WHERE action = 'auth.pwa.device.recover' AND target_id = ${deviceId}`;
+    expect(recovered).toBeDefined();
 
-    const again = await pair(owner, lost);
+    // Two overlapping retries: the phone may keep the first answer although the second one rotated
+    // the key again. That key still renews once the rotation grace has passed.
+    const first = new Jar({ pwa_pairing: pairingCookie });
+    expect((await complete(first)).status).toBe(200);
+    expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
+    await sql`UPDATE auth.pwa_devices SET rotated_at = now() - interval '2 minutes' WHERE id = ${deviceId}::uuid`;
+    expect(await json(await renew(first))).toEqual({ renewed: true });
+    expect((await probe(first)).status).toBe(200);
+
+    // A retry re-checks the account like the first completion.
+    await settings.set("user.category.login.enabled", false);
+    try {
+      const blocked = await complete(new Jar({ pwa_pairing: pairingCookie }));
+      expect(blocked.status).toBe(403);
+      expect(await json(blocked)).toMatchObject({ code: "ACCOUNT_BLOCKED" });
+    } finally {
+      await settings.remove("user.category.login.enabled");
+    }
+
+    const again = await pair(owner, first);
     expect(again.deviceId).not.toBe(deviceId);
     expect((await pwaDevices.list({ userId: owner.id })).map((item) => item.id)).toEqual([again.deviceId]);
     const [replaced] = await sql<
@@ -489,6 +510,25 @@ suite("mobile app pairing and app sessions", () => {
     }
   });
 
+  test("a rate-limited launch still lands on a page of the app", async () => {
+    await settings.set("security.rate_limit_per_second", 1);
+    try {
+      const address = uniqueCallerAddress();
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          call(new Jar(), "GET", `${PWA_AUTH_PATH}/session/launch?to=%2Fpwa%2F`, {
+            origin: null,
+            headers: { "x-forwarded-for": address },
+          }),
+        ),
+      );
+      expect(responses.map((response) => response.status)).toEqual([302, 302, 302, 302, 302]);
+      expect(responses.map((response) => response.headers.get("location"))).toContain("/pwa/?pwa=unavailable");
+    } finally {
+      await settings.set("security.rate_limit_per_second", 10000);
+    }
+  });
+
   test("renewal names another web account in a shared cookie jar", async () => {
     const owner = await person();
     const other = await person({ name: "Grace Example" });
@@ -581,8 +621,12 @@ suite("mobile app pairing and app sessions", () => {
       subscription: { endpoint: "https://push.example.test/x", keys: { p256dh: "a", auth: "b" } },
     });
     await webOnly("POST", `${APP_APPROVAL_PATH}/manage/pairings/start`, {});
-    // Reading stays possible.
+    await webOnly("PATCH", "/api/me", { ipa: { sshPublicKeys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly phone"] } });
+    // Pairing phones needs the web; a new sign-in in the app would not help.
+    await webOnly("GET", `${PWA_API_PATH}/devices`);
+    // Reading and ordinary profile changes stay possible.
     expect((await call(phone, "GET", "/api/me/api-keys", { origin: null })).status).toBe(200);
+    expect((await call(phone, "PATCH", "/api/me", { body: { displayName: "Ada on the phone" } })).status).toBe(200);
 
     // Recent sign-in never counts for app families.
     await expect(
@@ -595,11 +639,10 @@ suite("mobile app pairing and app sessions", () => {
 
     // Invocations made for an app session carry its kind; the callee drops the administrator role.
     const authority = invocationAuthorityFromRequest({
-      actor: { kind: "user", user: appSession!.user },
+      actor: { kind: "user", user: appSession!.user, sessionKind: "app" },
       accessSubject: { type: "user", userId: admin.id },
       credentialKind: "session",
       scopes: [],
-      sessionKind: "app",
     });
     expect(authority.session_kind).toBe("app");
     const now = Math.floor(Date.now() / 1000);
@@ -618,6 +661,8 @@ suite("mobile app pairing and app sessions", () => {
       exp: now + 60,
     } as Parameters<typeof resolveInvocationAuthority>[0]);
     expect(resolved?.actor.kind === "user" && resolved.actor.user.roles).not.toContain("admin");
+    // The callee knows the actor works through the app, so its own web-only rules apply too.
+    expect(resolved?.actor).toMatchObject({ kind: "user", sessionKind: "app" });
   });
 
   test("web sign-out revokes only the web family", async () => {

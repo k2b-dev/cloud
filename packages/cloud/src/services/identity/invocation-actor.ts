@@ -4,7 +4,7 @@ import type { AccessSubject } from "../../server/services/access";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
 import type { ServiceAccount } from "../service-accounts";
-import { buildProjectedUser, loadCurrentUser, userProjectionJoin, userProjectionSql } from "../session/user";
+import { buildProjectedUser, loadCurrentUser, userProjectionJoin, userProjectionSql, withoutAdminRole } from "../session/user";
 import type { CloudInvocationClaims } from "./invocation-token";
 import { getIdentityRuntimeConfig } from "./runtime-config";
 
@@ -70,9 +70,10 @@ export const resolveInvocationAuthority = async (
     if (!current || isAccountExpired(current.accountExpires)) return null;
     if (!(await isAccountCategoryAllowed(current, query))) return null;
     // The mobile app's session never acts as an installation administrator, also not through another app.
-    const user = claims.session_kind === "app" ? { ...current, roles: current.roles.filter((role) => role !== "admin") } : current;
+    const app = claims.session_kind === "app";
+    const user = app ? withoutAdminRole(current) : current;
     return {
-      actor: { kind: "user", user, delegation },
+      actor: { kind: "user", user, delegation, ...(app ? { sessionKind: "app" as const } : {}) },
       accessSubject: { type: "user", userId: user.id },
       credentialKind: "invocation",
       scopes: [...claims.scopes],

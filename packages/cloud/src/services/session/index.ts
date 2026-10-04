@@ -319,6 +319,30 @@ export const session = {
     return session.getAppToken(c);
   },
 
+  /**
+   * The app session to try when `token` (from `getToken`) did not authenticate: only for the web
+   * cookie of a fetch outside `/pwa/` without an `Authorization` header. A copied, expired or revoked
+   * web cookie must not hide a valid app session of the mobile app.
+   */
+  appSessionFallback: (c: Context, token: string | null): string | null => {
+    const appToken = session.getAppToken(c);
+    if (!appToken || !token || token === appToken || isAppPagePath(c.req.path)) return null;
+    if (token !== session.getWebToken(c) || c.req.header("Authorization") || isNavigationRequest(c)) return null;
+    return appToken;
+  },
+
+  /**
+   * `getToken` with the validity fallback of the auth middleware, for handlers that authenticate
+   * the token themselves (WebSockets, streams). Costs one extra check only while the request also
+   * carries an app session.
+   */
+  resolveToken: async (c: Context): Promise<string | null> => {
+    const token = session.getToken(c);
+    const fallback = session.appSessionFallback(c, token);
+    if (!token || !fallback) return token;
+    return (await session.authenticateRequest(c, token)) ? token : fallback;
+  },
+
   getWebToken: (c: Context): string | null => getCookie(c, "session_token") ?? null,
 
   getAppToken: (c: Context): string | null => getCookie(c, PWA_COOKIES.session) ?? null,

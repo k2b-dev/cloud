@@ -1,4 +1,5 @@
 import { lazySync } from "@k2b/cloud";
+import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, mandates, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
@@ -128,9 +129,14 @@ const mandateAuthority = (context: MailRequestContext) => {
   const user = context.actor.user;
   return { kind: "interactive" as const, userId: user.id };
 };
+/** A mandate keeps acting after the phone is removed, so the mobile app never creates, widens or resumes one. */
+const appSessionMandateError = (context: MailRequestContext) =>
+  isAppSessionActor(context.actor) ? fail(err.forbidden("Use Cloud on the web for this.")) : null;
 const mandateWorkloadAuthority = { kind: "workload" as const, ownerAppId: "mail" };
 
 const createAutomationMandate = async (context: MailRequestContext, automationId: string, steps: MailAutomationStep[], db: SqlClient) => {
+  const appSession = appSessionMandateError(context);
+  if (appSession) return appSession;
   const authority = mandateAuthority(context);
   const policy = incomingAutomationMandatePolicy(steps);
   if (!authority || !policy) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
@@ -148,6 +154,8 @@ const createAutomationMandate = async (context: MailRequestContext, automationId
 };
 
 const updateAutomationMandate = async (context: MailRequestContext, mandateId: string, steps: MailAutomationStep[], db: SqlClient) => {
+  const appSession = appSessionMandateError(context);
+  if (appSession) return appSession;
   const authority = mandateAuthority(context);
   const policy = incomingAutomationMandatePolicy(steps);
   if (!authority || !policy) return fail(err.forbidden("Spaces automation mandates require an interactive user"));
@@ -176,6 +184,8 @@ const syncAutomationMandateEnabled = async (
   const current = await mandates.get(mandateId, { db });
   if (!current) return fail(err.forbidden("This automation has no Spaces authorization"));
   if (enabled) {
+    const appSession = appSessionMandateError(context);
+    if (appSession && current.state !== "active") return appSession;
     const authority = mandateAuthority(context);
     if (!authority || current.subject.type !== "user" || current.subject.id !== authority.userId) {
       return fail(err.forbidden("Enabling this automation requires reauthorization by the user who authorized its Spaces access"));

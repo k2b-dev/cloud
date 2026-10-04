@@ -38,7 +38,7 @@ import {
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
-import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
+import { accessRevision, isAppSessionActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit } from "@k2b/cloud/services";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -164,6 +164,10 @@ const ChatTaskDetailDataSchema = z
 const ChatTaskListItemDataSchema = ChatTaskDataSchema.extend({
   ref: z.object({ type: z.literal("core.ai.task"), id: ChatTaskIdSchema }).strict(),
 }).strict();
+
+/** A scheduled task holds a background mandate that outlives the phone: the mobile app may not create, change or resume one. */
+const appSessionTaskError = (context: Pick<CapabilityExecutionContext, "actor">) =>
+  isAppSessionActor(context.actor) ? fail(err.forbidden("Use Cloud on the web for this.")) : null;
 
 const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
   id: task.shortId,
@@ -1317,6 +1321,8 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "required",
       async review(input, context) {
+        const appSession = appSessionTaskError(context);
+        if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const chat = await ownedChat(input.chatId, context.user.id);
         if (!chat) return fail(err.notFound("Chat"));
@@ -1338,6 +1344,8 @@ export const aiCapabilities = defineCapabilities({
         }
       },
       async run(input, context) {
+        const appSession = appSessionTaskError(context);
+        if (appSession) return appSession;
         if (!context.user || !context.idempotencyKey) return fail(err.forbidden("Scheduled tasks require an idempotent user action"));
         const idempotencyFingerprint = chatTaskCreateFingerprint(input);
         try {
@@ -1397,6 +1405,8 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
+        const appSession = appSessionTaskError(context);
+        if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
         if (!task) return fail(err.notFound("Task"));
@@ -1421,6 +1431,8 @@ export const aiCapabilities = defineCapabilities({
         }
       },
       async run(input, context) {
+        const appSession = appSessionTaskError(context);
+        if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         let normalized: Partial<Awaited<ReturnType<typeof normalizeChatTaskSchedule>>> = {};
         try {
@@ -1498,6 +1510,8 @@ export const aiCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       async review(input, context) {
+        const appSession = appSessionTaskError(context);
+        if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
         if (!task) return fail(err.notFound("Task"));
@@ -1512,6 +1526,8 @@ export const aiCapabilities = defineCapabilities({
         });
       },
       async run(input, context) {
+        const appSession = appSessionTaskError(context);
+        if (appSession) return appSession;
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const current = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
         if (!current) return fail(err.notFound("Task"));

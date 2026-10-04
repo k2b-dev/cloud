@@ -17,7 +17,7 @@ export const invocationAuthorityFromRequest = (authority: RequestAuthority): Inv
       access_subject_type: "user",
       access_subject_id: authority.actor.user.id,
       credential_kind: authority.credentialKind,
-      ...(authority.credentialKind === "session" && authority.sessionKind === "app" ? { session_kind: "app" as const } : {}),
+      ...(authority.credentialKind === "session" && authority.actor.sessionKind === "app" ? { session_kind: "app" as const } : {}),
       scopes: [...new Set(authority.scopes)].sort(),
     };
   }

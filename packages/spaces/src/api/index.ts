@@ -2893,6 +2893,8 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/:id/api-keys",
+    // A resource API key outlives the phone: the mobile app cannot create one.
+    auth.rejectAppSession,
     describeRoute({
       tags: ["Spaces"],
       summary: "Create space API key",

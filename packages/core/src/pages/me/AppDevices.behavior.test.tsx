@@ -151,17 +151,22 @@ else {
     }
   });
 
-  test("a resumed pairing asks for the phone's code, counts wrong codes and reloads the list when paired", async () => {
+  test("a resumed pairing asks for the phone's code, counts wrong codes and lists the phone once it completed", async () => {
     const dom = createDomTestHarness();
     dom.window.sessionStorage.setItem(
       "cloud.pwa-pairing:7bd9706e-6c70-4dd5-946f-0caac02bfc2a",
       JSON.stringify({ id: PAIRING, expiresAt: new Date(Date.now() + 600_000).toISOString() }),
     );
+    // Polls every few seconds in the browser; here at once.
+    const wait = globalThis.setTimeout;
+    const timers = spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void) => wait(run, 5)) as typeof setTimeout);
+    let state: "claimed" | "confirmed" | "completed" = "claimed";
     let confirmations = 0;
+    const paired = { ...devices[0], id: "6b1d2e3f-4a5b-4c6d-8e7f-8091a2b3c4d5", name: "New iPhone", current: false };
     const fetch = mockFetch((method, path, body) => {
       if (method === "GET" && path === `/api/auth/pwa/v1/pairings/${PAIRING}`)
         return Response.json({
-          state: "claimed",
+          state,
           claimUntil: new Date(Date.now() + 300_000).toISOString(),
           expiresAt: new Date(Date.now() + 600_000).toISOString(),
           device: { name: "iPhone", platform: "ios" },
@@ -170,13 +175,15 @@ else {
       if (method === "POST" && path === `/api/auth/pwa/v1/pairings/${PAIRING}/confirm`) {
         confirmations += 1;
         expect(body).toEqual({ code: confirmations === 1 ? "111111" : "482913" });
-        return confirmations === 1
-          ? Response.json({ code: "WRONG_CODE", message: "The code does not match.", attemptsLeft: 2 }, { status: 409 })
-          : new Response(null, { status: 204 });
+        if (confirmations === 1)
+          return Response.json({ code: "WRONG_CODE", message: "The code does not match.", attemptsLeft: 2 }, { status: 409 });
+        state = "confirmed";
+        return new Response(null, { status: 204 });
       }
-      if (method === "GET" && path === "/api/auth/pwa/v1/devices") return Response.json({ items: [devices[1]] });
+      // The device exists only after the phone completed.
+      if (method === "GET" && path === "/api/auth/pwa/v1/devices") return Response.json({ items: state === "completed" ? [paired] : [] });
     });
-    const dispose = mount(dom);
+    const dispose = mount(dom, { initial: [] });
     const type = (code: string) => {
       const inputs = [...dom.root.querySelectorAll<HTMLInputElement>("form input")];
       inputs.forEach((input, index) => {
@@ -192,11 +199,18 @@ else {
       type("482913");
       button(dom, "Pair")!.click();
       await waitFor(() => dom.root.textContent?.includes("Paired. The app finishes on its own.") ?? false, "paired");
-      await waitFor(() => !dom.root.textContent?.includes("This phone"), "list reload");
       expect(dom.window.sessionStorage.length).toBe(0);
+      // Still confirmed: the list waits for the phone instead of reloading too early.
+      await waitFor(() => fetch.calls.filter((call) => call.path === `/api/auth/pwa/v1/pairings/${PAIRING}`).length >= 4, "polls");
+      expect(fetch.calls.some((call) => call.path === "/api/auth/pwa/v1/devices")).toBeFalse();
+      expect(dom.root.textContent).toContain("No phones paired yet.");
+      state = "completed";
+      await waitFor(() => dom.root.textContent?.includes("New iPhone") ?? false, "list reload");
+      expect(dom.root.textContent).not.toContain("No phones paired yet.");
     } finally {
       dispose();
       fetch.restore();
+      timers.mockRestore();
       dom.cleanup();
     }
   });

@@ -37,6 +37,7 @@ import {
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
+import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import {
   accountLifecycle,
   accountsAppService as accountsService,
@@ -60,7 +61,7 @@ const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
 });
 
 /** The answer for actions the mobile app's session may not take. */
-const webOnly = (c: Context) => c.json({ code: "FORBIDDEN", message: "Use Cloud on the web for this." }, 403);
+const webOnly = (c: Context) => c.json(APP_SESSION_FORBIDDEN, 403);
 
 /**
  * Guards the endpoints that manage how the account is authenticated: passkeys,
@@ -90,8 +91,6 @@ const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => 
   if (auth.isAppSession(c)) return webOnly(c);
   return next();
 });
-
-const rejectAppSession = createMiddleware<AuthContext>(async (c, next) => (auth.isAppSession(c) ? webOnly(c) : next()));
 
 const ExtendAccountResponseSchema = z.object({
   message: z.string(),
@@ -240,7 +239,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/notifications/browser/endpoints",
-    rejectAppSession,
+    auth.rejectAppSession,
     describeRoute({
       tags: ["Me"],
       summary: "Register browser notification endpoint",
@@ -411,17 +410,21 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(MessageResponseSchema, "Profile updated"),
         400: jsonResponse(ErrorResponseSchema, "Failed to update profile"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "SSH keys cannot be changed in the mobile app"),
       },
     }),
     v("json", UpdateProfileSchema),
-    async (c) =>
-      respond(c, async () => {
+    async (c) => {
+      // SSH keys sign in to the directory's hosts and would outlive removing the phone.
+      if (c.req.valid("json").ipa?.sshPublicKeys !== undefined && auth.isAppSession(c)) return webOnly(c);
+      return respond(c, async () => {
         const user = c.get("user");
         const data = c.req.valid("json");
         const result = await accountsService.user.update({ actor: toAccountsActor(user), id: user.id, data });
         if (!result.ok) return result;
         return ok({ message: "Profile updated." });
-      }),
+      });
+    },
   )
 
   .put(

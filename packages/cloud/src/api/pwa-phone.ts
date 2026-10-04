@@ -40,16 +40,18 @@ const webSession = async (c: Context) => {
  * The `pwa_launch` marker lets the page stop instead of bouncing again.
  */
 export const launchTarget = (to: string | undefined): string => {
-  const safe =
-    to &&
-    to.length <= 2048 &&
-    to.startsWith(PWA_SCOPE) &&
-    to !== PWA_AUTH_PATH &&
-    !to.startsWith(`${PWA_AUTH_PATH}/`) &&
-    !to.includes("//") &&
-    !to.includes("\\");
-  const url = new URL(safe ? to : PWA_SCOPE, "http://launch.invalid");
-  if (url.origin !== "http://launch.invalid" || !url.pathname.startsWith(PWA_SCOPE)) return `${PWA_SCOPE}?pwa_launch=1`;
+  const fallback = `${PWA_SCOPE}?pwa_launch=1`;
+  if (!to || to.length > 2048 || !to.startsWith(PWA_SCOPE) || to.includes("//") || to.includes("\\")) return fallback;
+  const url = new URL(to, "http://launch.invalid");
+  // Judge the path the browser will request: dot segments and escapes are resolved by then.
+  let path: string;
+  try {
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    return fallback;
+  }
+  const inside = (value: string) => value.startsWith(PWA_SCOPE) && value !== PWA_AUTH_PATH && !value.startsWith(`${PWA_AUTH_PATH}/`);
+  if (url.origin !== "http://launch.invalid" || !inside(url.pathname) || !inside(path) || path.includes("//")) return fallback;
   url.searchParams.set("pwa_launch", "1");
   return url.pathname + url.search;
 };
@@ -64,13 +66,21 @@ const stateUrl = (state: PwaLaunchState) => `${PWA_SCOPE}?pwa=${state}`;
 export const createPwaPhoneRoutes = (options: PwaRouteOptions = {}) => {
   const service = options.service ?? pwaDevices;
   const shellAvailable = options.shellAvailable ?? defaultShellAvailable;
+  const limit = rateLimit({ keyBy: "ip" });
   const requireShell = (c: Context) => {
     if (!shellAvailable(c)) throw new PwaError("UNAVAILABLE", 503);
   };
   return new Hono<AuthContext>()
     .onError(handlePwaError)
     .use("*", ...pwaTransport())
-    .use("*", rateLimit({ keyBy: "ip" }))
+    .use("*", async (c, next) => {
+      const limited = await limit(c, next);
+      // A navigation always gets a page, never JSON: a limited launch shows the unavailable state, which retries.
+      if (limited instanceof Response && c.req.method === "GET" && c.req.path.endsWith("/session/launch")) {
+        return c.redirect(stateUrl("unavailable"), 302);
+      }
+      return limited;
+    })
     .post("/pairings/claim", v("json", PwaClaimSchema, pwaInvalidRequest), async (c) => {
       requireShell(c);
       const input = c.req.valid("json");

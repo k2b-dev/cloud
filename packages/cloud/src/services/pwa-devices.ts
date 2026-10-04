@@ -207,19 +207,15 @@ export const createPwaDeviceService = () => {
 
   /**
    * A new device key. `rotate` keeps the old key as the previous one until the phone presents the
-   * new one; `recover` keeps the previous key as it is; `replace` accepts only the new key.
+   * new one; `recover` keeps the previous key as it is.
    */
-  const newKey = async (tx: SQL, deviceId: string, mode: "rotate" | "recover" | "replace") => {
+  const newKey = async (tx: SQL, deviceId: string, mode: "rotate" | "recover") => {
     const secret = pairingSecret.create();
     const hash = pairingSecret.hash(secret);
     if (mode === "rotate")
       await tx`UPDATE auth.pwa_devices SET previous_secret_hash = secret_hash, secret_hash = ${hash},
         rotated_at = now(), last_used_at = now() WHERE id = ${deviceId}::uuid`;
-    else if (mode === "recover")
-      await tx`UPDATE auth.pwa_devices SET secret_hash = ${hash}, rotated_at = now(), last_used_at = now() WHERE id = ${deviceId}::uuid`;
-    else
-      await tx`UPDATE auth.pwa_devices SET previous_secret_hash = NULL, secret_hash = ${hash},
-        rotated_at = now(), last_used_at = now() WHERE id = ${deviceId}::uuid`;
+    else await tx`UPDATE auth.pwa_devices SET secret_hash = ${hash}, rotated_at = now(), last_used_at = now() WHERE id = ${deviceId}::uuid`;
     return `${deviceId}.${secret}`;
   };
 
@@ -437,21 +433,25 @@ export const createPwaDeviceService = () => {
         const user = await lockUser(tx, snapshot.user_id);
         const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot.id}::uuid FOR UPDATE`;
         if (!user || !p || passed(p.expires_at) || user.auth_epoch !== p.auth_epoch) return fail("EXPIRED", 410);
+        const eligible = async () =>
+          !accountExpired(user) && (await isAccountCategoryAllowed(user, tx)) && (await legalAccepted(tx, user.id));
         if (p.state === "completed" && p.device_id) {
           // A lost response: answer again without creating a second device.
           const [device] = await tx<DeviceRow[]>`SELECT * FROM auth.pwa_devices WHERE id = ${p.device_id}::uuid FOR UPDATE`;
           if (!device || !isActive(device, user)) return fail("EXPIRED", 410);
           if (input.appSession?.data.deviceId === device.id) return { kind: "already" };
+          if (!(await eligible())) return fail("ACCOUNT_BLOCKED", 403);
           await tx`UPDATE auth.session_families SET revoked_at = now(), revocation_reason = 'app_device_rotated'
             WHERE pwa_device_id = ${device.id}::uuid AND revoked_at IS NULL`;
-          const deviceKey = await newKey(tx, device.id, "replace");
+          // Rotate, so whichever of two overlapping answers the phone keeps, its key still renews (§7.8).
+          const deviceKey = await newKey(tx, device.id, "rotate");
           await issue(user.id, appSession(device.id));
+          await record(tx, "device.recover", { type: "pwa_device", id: device.id }, user.id);
           return { kind: "issued", deviceKey };
         }
         if (p.state !== "confirmed" || !p.platform || !p.device_name) return fail("EXPIRED", 410);
         if (!(await initiatorValid(tx, p))) return fail("EXPIRED", 410);
-        if (accountExpired(user) || !(await isAccountCategoryAllowed(user, tx)) || !(await legalAccepted(tx, user.id)))
-          return fail("ACCOUNT_BLOCKED", 403);
+        if (!(await eligible())) return fail("ACCOUNT_BLOCKED", 403);
         if (presented && presented.device.user_id !== user.id) return fail("ALREADY_PAIRED", 409);
         if (presented) {
           // Pairing again in the same app replaces its phone instead of adding a second one.

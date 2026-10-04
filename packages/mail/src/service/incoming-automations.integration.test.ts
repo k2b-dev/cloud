@@ -670,6 +670,54 @@ suite("incoming automations", () => {
     ]);
   });
 
+  test("the mobile app's session never creates, widens or resumes an automation's mandate", async () => {
+    const appContext: MailRequestContext = {
+      ...ownerContext,
+      actor: ownerContext.actor.kind === "user" ? { ...ownerContext.actor, sessionKind: "app" } : ownerContext.actor,
+    };
+    const webOnly = { code: "FORBIDDEN", message: "Use Cloud on the web for this." };
+    const steps = [{ id: crypto.randomUUID(), kind: "link_space_item" as const, itemId: "Item01" }];
+    const input = { name: "Phone authority", enabled: false, scope: { mode: "all" as const }, steps };
+    const fromPhone = await createIncomingAutomation({ context: appContext, mailboxId, input });
+    expect(fromPhone.ok ? null : fromPhone.error).toMatchObject(webOnly);
+
+    const created = await createIncomingAutomation({ context: ownerContext, mailboxId, input });
+    if (!created.ok) throw new Error(created.error.message);
+    const [binding] = await sql<
+      { mandate_id: string }[]
+    >`SELECT mandate_id FROM mail.incoming_automations WHERE id = ${created.data.id}::uuid`;
+    const mandate = await mandates.get(binding!.mandate_id);
+    const update = (patch: Partial<Parameters<typeof updateIncomingAutomation>[0]["input"]>, revision = created.data.revision) =>
+      updateIncomingAutomation({
+        context: appContext,
+        mailboxId,
+        automationId: created.data.id,
+        input: { expectedRevision: revision, ...input, ...patch },
+      });
+
+    // Renaming leaves the mandate alone, so the phone may do it.
+    const renamed = await update({ name: "Renamed on the phone" });
+    if (!renamed.ok) throw new Error(renamed.error.message);
+    const widened = await update({ steps: [{ ...steps[0]!, itemId: "Item02" }] }, renamed.data.revision);
+    expect(widened.ok ? null : widened.error).toMatchObject(webOnly);
+    const resumed = await setIncomingAutomationEnabled({
+      context: appContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: renamed.data.revision, enabled: true },
+    });
+    expect(resumed.ok ? null : resumed.error).toMatchObject(webOnly);
+    expect(await mandates.get(mandate!.id)).toMatchObject({ state: "paused", revision: mandate!.revision });
+
+    const deleted = await deleteIncomingAutomation({
+      context: appContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: { expectedRevision: renamed.data.revision },
+    });
+    expect(deleted.ok).toBe(true);
+  });
+
   test("stops mandate-bearing steps when the authorizing user loses mailbox access", async () => {
     const uid = `incoming-automation-mandate-loss-${suffix}`;
     const [row] = await sql<{ id: string }[]>`

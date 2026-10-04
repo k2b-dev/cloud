@@ -7,8 +7,9 @@ import { isReservedWorkloadApiCredential } from "../../services/identity/workloa
 import { oauthTokens } from "../../services/oauth-tokens";
 import { serviceAccountCredentials } from "../../services/service-account-credentials";
 import type { ServiceAccount } from "../../services/service-accounts";
-import { type AuthenticatedSession, isAppPagePath, isNavigationRequest, type SessionKind, session } from "../../services/session";
+import { type AuthenticatedSession, isAppPagePath, type SessionKind, session } from "../../services/session";
 import { createLoginRedirectUrl } from "../../shared/redirect";
+import { isAppSessionActor } from "../actor";
 import type { AccessSubject } from "../services/access";
 
 // ==========================
@@ -31,6 +32,12 @@ export type UserRequestActor = {
   kind: "user";
   user: User;
   delegation?: InvocationProvenance;
+  /**
+   * `"app"` when the person acts through the mobile app's session: directly, through an
+   * invocation, or in an Assistant turn started there. Such an actor never carries the
+   * `admin` role and must not create authority that outlives the phone.
+   */
+  sessionKind?: "app";
 };
 
 export type ServiceAccountRequestActor =
@@ -62,8 +69,6 @@ export type RequestAuthority = {
   accessSubject: AccessSubject;
   credentialKind: RequestCredentialKind;
   scopes: string[];
-  /** Set for session credentials; `"app"` for the mobile app. */
-  sessionKind?: SessionKind;
 };
 
 /** Hono context with authenticated user variables. */
@@ -127,37 +132,27 @@ const loadAuthenticatedActorUncached = async (
   c: Context<AuthContext>,
   options: Pick<RoleOptions, "oauthAudience"> = {},
 ): Promise<AuthenticatedActorResult> => {
-  const appPage = isAppPagePath(c.req.path);
   let token = session.getToken(c);
   let authenticatedSession: AuthenticatedSession | null = token ? await session.authenticateRequest(c, token) : null;
-  // A copied, expired or revoked web cookie must not hide a valid app session of the mobile app.
-  const appToken = session.getAppToken(c);
-  if (
-    !authenticatedSession &&
-    !appPage &&
-    appToken &&
-    token &&
-    token === session.getWebToken(c) &&
-    !c.req.header("Authorization") &&
-    !isNavigationRequest(c)
-  ) {
-    token = appToken;
-    authenticatedSession = await session.authenticateRequest(c, appToken);
+  const fallback = authenticatedSession ? null : session.appSessionFallback(c, token);
+  if (fallback) {
+    token = fallback;
+    authenticatedSession = await session.authenticateRequest(c, fallback);
   }
   // Below /pwa/ only an app session counts: no web session, bearer or API key reaches app pages.
-  if (appPage && authenticatedSession?.data.kind !== "app") return { token: null, user: null, actor: null };
-  const user = authenticatedSession?.user ?? null;
+  if (isAppPagePath(c.req.path) && authenticatedSession?.data.kind !== "app") return { token: null, user: null, actor: null };
 
-  if (authenticatedSession && user && token) {
-    c.set("actor", { kind: "user", user });
+  if (authenticatedSession && token) {
+    const { user } = authenticatedSession;
+    const actor: UserRequestActor = { kind: "user", user, ...(authenticatedSession.data.kind === "app" ? { sessionKind: "app" } : {}) };
+    c.set("actor", actor);
     c.set("accessSubject", { type: "user", userId: user.id });
     c.set("user", user);
     c.set("sessionToken", token);
     c.set("credentialKind", "session");
     c.set("sessionKind", authenticatedSession.data.kind);
+    return { token, user, actor };
   }
-
-  if (user) return { token, user, actor: { kind: "user", user } };
 
   const bearer = session.getBearerToken(c);
   if (bearer && serviceAccountCredentials.isApiToken(bearer)) {
@@ -356,18 +351,28 @@ const getAuthority = (c: Context<AuthContext>): RequestAuthority => {
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");
   if (!actor || !accessSubject || !credentialKind) throw new Error("Request authority has not been resolved");
-  const sessionKind = c.get("sessionKind");
   return {
     actor,
     accessSubject,
     credentialKind,
     scopes: [...(c.get("credentialScopes") ?? [])],
-    ...(credentialKind === "session" && sessionKind ? { sessionKind } : {}),
   };
 };
 
-/** True for an app session of the mobile app. Such sessions cannot create authority that outlives the phone. */
-const isAppSession = (c: Context<AuthContext>): boolean => c.get("sessionKind") === "app";
+/**
+ * True when the request acts through the mobile app's session, directly or through an
+ * invocation made for one. Such requests cannot create authority that outlives the phone.
+ */
+const isAppSession = (c: Context<AuthContext>): boolean => isAppSessionActor(c.get("actor"));
+
+/** The standard answer for actions the mobile app may not take. */
+export const APP_SESSION_FORBIDDEN = { code: "FORBIDDEN", message: "Use Cloud on the web for this." } as const;
+
+/**
+ * Rejects the mobile app's session with `403` {@link APP_SESSION_FORBIDDEN}. Use it on every route
+ * that creates authority outliving the phone: sign-in methods, API keys, background mandates.
+ */
+const rejectAppSession = createMiddleware<AuthContext>(async (c, next) => (isAppSession(c) ? c.json(APP_SESSION_FORBIDDEN, 403) : next()));
 
 /** Preset: Redirect to a fixed URL on rejection */
 const redirect = (url: string): RoleOptions => ({
@@ -407,6 +412,7 @@ export const auth = {
   requireRole,
   requireUser,
   isAppSession,
+  rejectAppSession,
   requireOAuthScope,
   getAuthority,
   requireAccount,
