@@ -32,7 +32,7 @@ A moved contact now arrives as a deletion in its source book and a creation in
 its target book, so a reader of one book does not learn the other. Another tab
 that shows the moved contact closes its details instead of following it.
 
-## `subscribe()` of live updates is interim
+## Reading live updates with subscribe() is interim
 
 `defineLive()` from `@k2b/cloud/events` returns `subscribe()` so that an
 application's own socket can read its live updates. It is interim: a later
