@@ -100,12 +100,13 @@ describe("Mail subscription dialog live updates", () => {
 
   test("refreshes the list on changes, and a returning tab resumes from its cursor without loading again", async () => {
     const { openMailSubscriptionDialog } = await import("./MailSubscriptionDialog");
-    void openMailSubscriptionDialog({ mailboxId: MAILBOX_ID, canWrite: false });
+    void openMailSubscriptionDialog({ mailboxId: MAILBOX_ID, canWrite: false, liveCursor: "s6t.mail.4" });
     await settle();
     expect(listRequests).toBe(1);
 
+    // The page's cursor was read before the list loaded, so a change made while it loaded still arrives.
     socket().open();
-    expect(socket().sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID } }]);
+    expect(socket().sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID }, after: "s6t.mail.4" }]);
     socket().message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
     await settle();
     expect(listRequests).toBe(1);

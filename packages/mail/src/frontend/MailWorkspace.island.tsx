@@ -586,7 +586,12 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("subscriptions");
     try {
-      await openMailSubscriptionDialog({ mailboxId: data.mailbox.id, canWrite: canWrite(), initialListKey });
+      await openMailSubscriptionDialog({
+        mailboxId: data.mailbox.id,
+        canWrite: canWrite(),
+        initialListKey,
+        liveCursor: data.initialLiveCursor,
+      });
     } finally {
       if (!disposed) setManagementOpening(null);
       if (!initialListKey || disposed) return;

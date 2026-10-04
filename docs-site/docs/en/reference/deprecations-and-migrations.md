@@ -32,7 +32,9 @@ replicas of the previous version that still run during a rolling update write
 their changes to the platform outbox as well, and the new replicas publish them.
 A tab connected to a previous replica receives no updates until that replica
 stops; for one release, `/api/mail/ws` then closes its socket with
-`login_required`, and the tab reloads once. Previous replicas log
+`login_required`. A mailbox view reloads once. A compose page opened on its own
+before the update receives no live updates until it is reloaded; its draft
+lease still protects the draft. Previous replicas log
 `Outbox reconcile failed` until they stop, because their table is gone.
 
 Nothing writes the previous topic, `mail:invalidations`, anymore. Its events

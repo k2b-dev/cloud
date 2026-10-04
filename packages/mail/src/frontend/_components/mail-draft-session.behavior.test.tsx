@@ -239,4 +239,55 @@ describe("Mail draft session", () => {
     await Bun.sleep(20);
     expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 2, heartbeats: 2 });
   });
+
+  test("a composer that lost its connection becomes editable again once Mail answers, without a live update", async () => {
+    let reachable = true;
+    respondWith((method, url) => {
+      if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "POST") return Response.json({ ...lease, token: crypto.randomUUID() });
+      if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "PUT") {
+        if (!reachable) throw new TypeError("Failed to fetch");
+        return Response.json({ ...lease, token: crypto.randomUUID() });
+      }
+      return Response.json({ code: "NOT_FOUND", message: `Unexpected ${method} ${url}` }, { status: 404 });
+    });
+    // Lease timers run a thousand times faster: the 10-second heartbeat takes 10 milliseconds.
+    const originalSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((run: () => void, delay = 0) => originalSetTimeout(run, delay / 1_000)) as typeof setTimeout;
+    try {
+      const { createMailDraftSession } = await import("./mail-draft-session");
+      const [current, setCurrent] = createSignal(content("Offer text", "first@example.test"));
+      const session = createRoot((disposeRoot) => {
+        dispose = disposeRoot;
+        return createMailDraftSession({
+          mailboxId: MAILBOX_ID,
+          initialDraft: draft(3, content("Offer text", "first@example.test")),
+          hasVerifiedIdentity: () => true,
+          content: current,
+          applyDraftContent: setCurrent,
+          isDisposed: () => false,
+          onRecovered: () => undefined,
+          onMaterialized: () => undefined,
+          locale: () => "en",
+        });
+      });
+      const until = async (condition: () => boolean) => {
+        for (let waited = 0; !condition() && waited < 2_000; waited += 5) await Bun.sleep(5);
+        expect(condition()).toBe(true);
+      };
+      await until(() => session.status() === "saved");
+
+      reachable = false;
+      await until(() => session.status() === "readonly");
+      expect(session.statusMessage()).toBe("Connection lost. Retry to resume editing.");
+
+      reachable = true;
+      await until(() => session.status() === "saved");
+      expect(session.statusMessage()).toBe("");
+      expect(session.lease()).not.toBeNull();
+      // No live socket ever opened: the lease recovered on its own.
+      expect(FakeWebSocket.instances.flatMap((socket) => socket.sent)).toEqual([]);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+  });
 });

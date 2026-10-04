@@ -278,15 +278,15 @@ describe("Mail workspace live updates", () => {
     const subscriptions = socket().sent.filter((frame) => frame.t === "sub");
     expect(subscriptions).toHaveLength(2);
     expect(subscriptions.every((frame) => frame.channel === "mailbox")).toBe(true);
-    const view = subscriptions.find((frame) => frame.after === "s6t.mail.4")!.id!;
-    const dialog = subscriptions.find((frame) => frame.after === undefined)!.id!;
-    for (const id of [view, dialog]) socket().message({ t: "ready", id, cursor: "s6t.mail.4" });
+    // The dialog resumes from the page's cursor too, which was read before its list loaded.
+    expect(subscriptions.every((frame) => frame.after === "s6t.mail.4")).toBe(true);
+    const ids = subscriptions.map((frame) => frame.id!);
+    for (const id of ids) socket().message({ t: "ready", id, cursor: "s6t.mail.4" });
     await settle();
     expect(listRequests).toBe(1);
 
     // The dialog refreshes its list at once; the view behind it waits.
-    event(view, "s6t.mail.5", "Conv01");
-    event(dialog, "s6t.mail.5", "Conv01");
+    for (const id of ids) event(id, "s6t.mail.5", "Conv01");
     await settle();
     expect({ listRequests, workspaceRequests }).toEqual({ listRequests: 2, workspaceRequests: 0 });
 
@@ -294,7 +294,9 @@ describe("Mail workspace live updates", () => {
     dialogCore.close();
     await settle();
     expect(workspaceRequests).toBe(1);
-    expect(socket().sent.at(-1)).toEqual({ t: "unsub", id: dialog });
+    const closed = socket().sent.at(-1);
+    expect(closed?.t).toBe("unsub");
+    expect(ids).toContain(closed?.id ?? "");
   });
 
   test("an ended session reloads the page once, and a page that just reloaded shows that updates are paused", async () => {

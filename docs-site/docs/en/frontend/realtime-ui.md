@@ -57,7 +57,8 @@ onMount(() => {
 - `revoked` ends the subscription: the resource is gone or no longer readable.
 - `unavailable` reports that live updates stopped: the session ended, the
   socket was refused, or `apply` or `resync` failed four times (after 1, 3,
-  and 9 seconds).
+  and 9 seconds). A subscription that its owner closed reports nothing, even
+  when an `apply` or a retry was still pending.
 
 The client owns the socket, visibility, reconnect backoff, connection
 deadlines, recovery when the tab or network returns, cursors, retries, and

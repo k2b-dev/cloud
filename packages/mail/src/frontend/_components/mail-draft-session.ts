@@ -29,6 +29,9 @@ export const createSerializedDraftMutationQueue = () => {
   };
 };
 
+/** How often an open composer renews its lease, and how often it tries again after Mail stopped answering. */
+const LEASE_HEARTBEAT_MS = 10_000;
+
 const journalKey = (mailboxId: string, draftId: string): string => `cloud:mail:draft:${mailboxId}:${draftId}`;
 
 /** Reports the exclusive-lease rejection the API raises when another session owns the draft. */
@@ -238,12 +241,7 @@ export const createMailDraftSession = (options: {
         if (heartbeatController === controller) heartbeatController = null;
       }
       if (options.isDisposed() || generation !== heartbeatGeneration) return;
-      if (heartbeat.kind === "unavailable") {
-        setLeaseConflict(null);
-        setStatus("readonly");
-        setStatusMessage(t().connectionLost);
-        return;
-      }
+      if (heartbeat.kind === "unavailable") return waitForConnection();
       if (heartbeat.kind === "rejected") {
         setLease(null);
         await refreshDraftLifecycle().catch(() => undefined);
@@ -254,7 +252,18 @@ export const createMailDraftSession = (options: {
       setLease(heartbeat.lease);
       setLeaseConflict(null);
       startHeartbeat();
-    }, 10_000);
+    }, LEASE_HEARTBEAT_MS);
+  };
+
+  /**
+   * Mail did not answer the lease renewal. The composer stays read-only and resumes its lease again at the
+   * heartbeat interval, so it becomes editable once Mail answers, without a reload or a live update.
+   */
+  const waitForConnection = () => {
+    setLeaseConflict(null);
+    setStatus("readonly");
+    setStatusMessage(t().connectionLost);
+    heartbeatTimer = setTimeout(() => void resumeCurrentLease({ quiet: true }), LEASE_HEARTBEAT_MS);
   };
 
   const acquireLease = async (currentDraft: MailDraft, takeover = false): Promise<AcquiredDraftLease | null> => {
@@ -439,14 +448,15 @@ export const createMailDraftSession = (options: {
     });
   };
 
-  const resumeCurrentLease = async () => {
+  /** `quiet` keeps a read-only composer as it is while the attempt runs. */
+  const resumeCurrentLease = async ({ quiet = false }: { quiet?: boolean } = {}) => {
     const currentDraft = draft();
     const currentLease = lease();
     if (options.isDisposed() || !currentDraft) return;
     if (!currentLease) return void (await ensureDraft());
     stopHeartbeat();
     const generation = heartbeatGeneration;
-    setStatus("preparing");
+    if (!quiet) setStatus("preparing");
     const controller = new AbortController();
     heartbeatController = controller;
     let heartbeat: DraftLeaseHeartbeatResult;
@@ -470,12 +480,7 @@ export const createMailDraftSession = (options: {
       startHeartbeat();
       return;
     }
-    if (heartbeat.kind === "unavailable") {
-      setLeaseConflict(null);
-      setStatus("readonly");
-      setStatusMessage(t().connectionLost);
-      return;
-    }
+    if (heartbeat.kind === "unavailable") return waitForConnection();
     setLease(null);
     await ensureDraft();
   };
@@ -530,13 +535,13 @@ export const createMailDraftSession = (options: {
       return;
     }
     // A send, a discard, or another person's lease on this draft arrives as a change of its conversation or
-    // mailbox. The lease heartbeat keeps the draft safe without live updates, so a subscription that ends leaves
-    // the composer as it is.
+    // mailbox. The lease heartbeat keeps the draft safe without live updates and resumes the lease after an
+    // outage, so a subscription that ends leaves the composer as it is.
     const reconcile = () =>
       reconcileDraftSessionAfterLiveInvalidation({
         refreshLifecycle: refreshDraftLifecycle,
         hasLifecycleTransition: () => Boolean(lifecycleTransition()),
-        resumeLease: resumeCurrentLease,
+        resumeLease: () => resumeCurrentLease(),
       });
     const live = liveConnection("/api/mail/live").subscribe(
       "mailbox",

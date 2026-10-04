@@ -67,20 +67,26 @@ const mailingListDialogOptions = {
   contentClassName: panelDialogFixedOptions.contentClassName,
 };
 
-function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; initialListKey: string | null; close: () => void }) {
+function MailSubscriptionDialog(props: {
+  mailboxId: string;
+  canWrite: boolean;
+  initialListKey: string | null;
+  liveCursor: string | null;
+  close: () => void;
+}) {
   const locale = useLocale();
   const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [pendingAction, setPendingAction] = createSignal<string | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
   let disposed = false;
 
-  // Subscribes before the list starts loading. Without a cursor, it starts where the server stands when the
-  // subscription arrives, which on the page's open Mail socket is usually before the list is read.
+  // The page's cursor was read before the list loads, so a change made while it loads still arrives. The
+  // changes since the page loaded arrive with it and refresh the list once more.
   const live = liveConnection("/api/mail/live").subscribe(
     "mailbox",
     { mailbox: props.mailboxId },
     {
-      cursor: null,
+      cursor: props.liveCursor,
       parse: (data) => MailLiveEventSchema.parse(data),
       apply: () => subscriptions.invalidate(),
       resync: () => subscriptions.invalidate(),
@@ -397,13 +403,20 @@ function MailSubscriptionDialog(props: { mailboxId: string; canWrite: boolean; i
   );
 }
 
-export const openMailSubscriptionDialog = (params: { mailboxId: string; canWrite: boolean; initialListKey?: string | null }) =>
+export const openMailSubscriptionDialog = (params: {
+  mailboxId: string;
+  canWrite: boolean;
+  initialListKey?: string | null;
+  /** The live cursor the page read before it loaded; `null` starts at the current position. */
+  liveCursor: string | null;
+}) =>
   dialogCore.open<void>(
     (close) => (
       <MailSubscriptionDialog
         mailboxId={params.mailboxId}
         canWrite={params.canWrite}
         initialListKey={params.initialListKey ?? null}
+        liveCursor={params.liveCursor}
         close={() => close()}
       />
     ),
