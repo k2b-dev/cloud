@@ -178,6 +178,8 @@ Cancel an abandoned upload only with explicit confirmation:
 cld mail draft attachment upload cancel <draft-id> <upload-id> --yes
 ```
 
+Sending refuses a draft while one of its uploads is unfinished. The web composer also lists such an upload as not finished and lets the person cancel it there.
+
 Download or remove a completed draft attachment:
 
 ```bash

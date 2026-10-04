@@ -74,7 +74,7 @@ Administratoren verwalten Vorlagen und Standards unter **Einstellungen > Schreib
 
 ## Dateien anhängen {icon="paperclip"}
 
-Wähle **Dateien anhängen** und eine oder mehrere Dateien aus oder ziehe Dateien vom Desktop auf den Editor. Der Editor wird hervorgehoben, solange er die Dateien ablegen kann. Uploadfortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Einen unvollständigen Upload kannst du wiederholen oder abbrechen. Anhänge lassen sich vor dem Senden entfernen.
+Wähle **Dateien anhängen** und eine oder mehrere Dateien aus oder ziehe Dateien vom Desktop auf den Editor. Der Editor wird hervorgehoben, solange er die Dateien ablegen kann. Uploadfortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Einen unvollständigen Upload kannst du wiederholen oder abbrechen. Anhänge lassen sich vor dem Senden entfernen. Wurde die Seite während eines Uploads neu geladen oder geschlossen, zeigt der Entwurf die Datei beim nächsten Öffnen als **Upload nicht abgeschlossen**; brich den Upload ab und hänge die Datei erneut an.
 
 Jeder ausgehende Anhang ist auf 100 MiB begrenzt; ein Entwurf enthält höchstens 200 Anhänge mit insgesamt 100 MiB. Eine Nachricht kann nicht gesendet werden, solange ein Anhang unvollständig oder fehlerhaft hochgeladen ist.
 

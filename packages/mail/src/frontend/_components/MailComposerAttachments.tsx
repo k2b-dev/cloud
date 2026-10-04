@@ -5,7 +5,9 @@ import { For, Show } from "solid-js";
 import type { MailDraft } from "../../contracts";
 import { mailComposerMessages } from "./mail-composer-messages";
 export type MailComposerUpload = {
-  file: File;
+  /** `null` for an upload an earlier editing session started: its file is gone, so it can only be cancelled. */
+  file: File | null;
+  filename: string;
   progress: number;
   error: string | null;
   uploadId: string | null;
@@ -59,12 +61,12 @@ export default function MailComposerAttachments(props: {
           {(upload) => (
             <span class="chip max-w-full" role="listitem">
               <i class={`ti ${upload.error ? "ti-alert-circle text-red-500" : "ti-loader-2 animate-spin"}`} aria-hidden="true" />
-              <span class="max-w-48 truncate">{upload.file.name}</span>
+              <span class="max-w-48 truncate">{upload.filename}</span>
               <span class="text-xs text-dimmed">{upload.error ?? `${upload.progress}%`}</span>
-              <Show when={upload.error}>
+              <Show when={upload.error && upload.file}>
                 <IconButton
                   type="button"
-                  label={t().retryFile({ filename: upload.file.name })}
+                  label={t().retryFile({ filename: upload.filename })}
                   disabled={!props.editable()}
                   onClick={() => props.onRetryUpload(upload)}
                 >
@@ -73,7 +75,7 @@ export default function MailComposerAttachments(props: {
               </Show>
               <IconButton
                 type="button"
-                label={t().cancelFile({ filename: upload.file.name })}
+                label={t().cancelFile({ filename: upload.filename })}
                 disabled={!props.editable()}
                 onClick={() => props.onCancelUpload(upload)}
               >

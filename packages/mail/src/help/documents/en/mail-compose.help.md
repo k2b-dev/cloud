@@ -74,7 +74,7 @@ Administrators manage templates and defaults under **Settings > Writing**. Choos
 
 ## Attach files {icon="paperclip"}
 
-Select **Attach files** and choose one or more files, or drag files onto the composer from your desktop. The composer highlights while it can accept the drop. Upload progress and failures appear next to the draft attachments. You can retry or cancel an incomplete upload and remove an attached file before sending.
+Select **Attach files** and choose one or more files, or drag files onto the composer from your desktop. The composer highlights while it can accept the drop. Upload progress and failures appear next to the draft attachments. You can retry or cancel an incomplete upload and remove an attached file before sending. If the page reloaded or closed during an upload, the draft shows that file as **Upload not finished** when you open it again; cancel it and attach the file again.
 
 Each outgoing attachment is limited to 100 MiB, and one draft holds at most 200 attachments with 100 MiB in total. A message cannot be sent while an attachment upload is incomplete or failed.
 
