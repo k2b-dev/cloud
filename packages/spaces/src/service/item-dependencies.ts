@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import { MAX_ITEM_DEPENDENCIES, type MutationResult, type SpaceTaskDependency, type SpaceTaskDependent } from "@/contracts";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 
 type DependencyRow = {
   blocker_id: string;
@@ -163,26 +163,32 @@ export const add = async (params: {
       FROM inserted
       JOIN spaces.items blocker ON blocker.id = inserted.blocker_item_id
     `;
-    return created ? { ok: true, data: created } : { ok: false, error: "Task dependency already exists", status: 409 };
+    if (!created) return { ok: false, error: "Task dependency already exists", status: 409 };
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+    return { ok: true, data: created };
   });
 
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+  spacesLive.wake();
   return { ok: true, data: mapDependency(result.data) };
 };
 
 export const remove = async (params: { itemId: string; blockerItemId: string; spaceId: string }): Promise<MutationResult<void>> => {
-  const result = await sql`
-    DELETE FROM spaces.item_dependencies dependency
-    USING spaces.items item, spaces.items blocker
-    WHERE dependency.item_id = item.id
-      AND dependency.blocker_item_id = blocker.id
-      AND item.id = ${params.itemId}::uuid
-      AND blocker.id = ${params.blockerItemId}::uuid
-      AND item.space_id = ${params.spaceId}::uuid
-      AND blocker.space_id = ${params.spaceId}::uuid
-  `;
-  if (result.count === 0) return { ok: false, error: "Task dependency not found", status: 404 };
-  await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+  const deleted = await sql.begin(async (tx) => {
+    const result = await tx`
+      DELETE FROM spaces.item_dependencies dependency
+      USING spaces.items item, spaces.items blocker
+      WHERE dependency.item_id = item.id
+        AND dependency.blocker_item_id = blocker.id
+        AND item.id = ${params.itemId}::uuid
+        AND blocker.id = ${params.blockerItemId}::uuid
+        AND item.space_id = ${params.spaceId}::uuid
+        AND blocker.space_id = ${params.spaceId}::uuid
+    `;
+    if (result.count > 0) await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+    return result.count > 0;
+  });
+  if (!deleted) return { ok: false, error: "Task dependency not found", status: 404 };
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };

@@ -5,7 +5,6 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 import { create as createComment, list, remove as removeComment, update as updateComment } from "./comments";
-import { latestSpaceEventCursor, liveSpaceEvents } from "./events";
 import { create, splitRecurring, update } from "./items";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
@@ -37,20 +36,14 @@ suite("Spaces comment pagination", () => {
         VALUES (${newShortId()}, ${space!.id}::uuid, ${column!.id}::uuid, 'Review policy', 1024)
         RETURNING id
       `;
-      const eventAbort = new AbortController();
-      const cursor = (await latestSpaceEventCursor(space!.id)) ?? "0-0";
-      const nextEvent = liveSpaceEvents({ spaceId: space!.id, after: cursor, signal: eventAbort.signal })[Symbol.asyncIterator]().next();
       const created = await createComment({ itemId: item!.id, author: { kind: "user", id: user!.id }, content: "Initial context" });
       expect(created).toMatchObject({ ok: true, data: { canEdit: true, canDelete: true } });
       if (!created.ok) return;
-      const live = await Promise.race([
-        nextEvent,
-        Bun.sleep(2_000).then(() => {
-          throw new Error("Timed out waiting for comment live event");
-        }),
-      ]);
-      eventAbort.abort();
-      expect(live.value?.data.public).toMatchObject({ type: "item.updated", itemId: expect.any(String) });
+      // Nothing publishes in this process, so the update waits in the outbox, written with the comment.
+      const pending = await sql<{ payload: { d: unknown } }[]>`
+        SELECT payload FROM events.outbox WHERE app_id = 'spaces' AND ordering_key = ${space!.id} ORDER BY seq
+      `;
+      expect(pending.map((row) => row.payload.d)).toEqual([{ type: "item.updated", itemId: expect.any(String) }]);
 
       const otherView = await list({ itemId: item!.id, viewerUserId: otherUser!.id });
       expect(otherView.items[0]).toMatchObject({ canEdit: false, canDelete: false });
@@ -77,6 +70,7 @@ suite("Spaces comment pagination", () => {
       expect(removable.ok).toBe(true);
       if (removable.ok) expect(await removeComment({ id: removable.data.id, userId: user!.id })).toEqual({ ok: true, data: undefined });
     } finally {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'spaces' AND ordering_key = ${space!.id}`;
       await sql`DELETE FROM spaces.spaces WHERE id = ${space!.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${user!.id}::uuid, ${otherUser!.id}::uuid)`;
     }

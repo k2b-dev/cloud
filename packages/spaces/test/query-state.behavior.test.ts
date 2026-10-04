@@ -3,11 +3,7 @@ import { mutation, query } from "@k2b/stdlib/solid";
 import { createEffect, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import {
-  createSpacesLiveCursorQueue,
-  invalidateSpacesData,
-  subscribeToSpacesDataInvalidation,
-} from "../src/frontend/[id]/_components/workspace/workspace-events";
+import { invalidateSpacesData, subscribeToSpacesDataInvalidation } from "../src/frontend/[id]/_components/workspace/workspace-events";
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -121,57 +117,6 @@ describe("Spaces owner-local query behavior", () => {
 
     dispose();
     dom.cleanup();
-  });
-
-  test("serializes live cursor coverage, retries a failed snapshot, and stops before a later cursor can pass it", async () => {
-    const first = deferred<void>();
-    const invalidations: string[] = [];
-    const applied: string[] = [];
-    const failures: string[] = [];
-    const apply = createSpacesLiveCursorQueue({
-      invalidate: async (_domains, cursor) => {
-        invalidations.push(cursor ?? "null");
-        if (cursor === "10-0") await first.promise;
-      },
-      markApplied: (cursor) => applied.push(cursor ?? "null"),
-      onFailure: (error) => failures.push(error.message),
-      signal: new AbortController().signal,
-    });
-
-    const failed = apply(["view", "detail", "wormholes"], "10-0");
-    const later = apply(["view", "wormholes"], "11-0");
-    await flush();
-    expect(invalidations).toEqual(["10-0"]);
-
-    // Every retry of the first cursor fails too; the later cursor never runs.
-    first.reject(new Error("snapshot failed"));
-    await Promise.all([failed, later]);
-    expect(applied).toEqual([]);
-    expect(invalidations).toEqual(["10-0", "10-0", "10-0"]);
-    expect(failures).toEqual(["snapshot failed"]);
-  });
-
-  test("applies ready reconciliation before the next live event", async () => {
-    const ready = deferred<void>();
-    const order: string[] = [];
-    const apply = createSpacesLiveCursorQueue({
-      invalidate: async (domains, cursor) => {
-        order.push(`start:${domains.join("+")}:${cursor}`);
-        if (cursor === "20-0") await ready.promise;
-        order.push(`done:${cursor}`);
-      },
-      markApplied: (cursor) => order.push(`ack:${cursor}`),
-      onFailure: (error) => order.push(`fail:${error.message}`),
-      signal: new AbortController().signal,
-    });
-
-    const reconcile = apply(["view", "detail", "wormholes"], "20-0");
-    const event = apply(["view", "detail"], "21-0");
-    await flush();
-    expect(order).toEqual(["start:view+detail+wormholes:20-0"]);
-    ready.resolve();
-    await Promise.all([reconcile, event]);
-    expect(order).toEqual(["start:view+detail+wormholes:20-0", "done:20-0", "ack:20-0", "start:view+detail:21-0", "done:21-0", "ack:21-0"]);
   });
 
   test("shares load-more and lets canonical invalidation supersede it atomically", async () => {

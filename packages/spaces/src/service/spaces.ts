@@ -15,7 +15,7 @@ import {
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { listVirtual as listVirtualColumns } from "./columns";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 import { spacesMessages } from "./messages";
 import { rank } from "./rank";
 
@@ -484,6 +484,7 @@ export const update = async (params: { id: string; data: UpdateSpace; actor?: Sp
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "space.updated", spaceId: id });
     return updated;
   });
 
@@ -491,7 +492,7 @@ export const update = async (params: { id: string; data: UpdateSpace; actor?: Sp
     return { ok: false, error: "Failed to update space", status: 500 };
   }
 
-  await publishSpaceEvent({ type: "space.updated", spaceId: id });
+  spacesLive.wake();
   return { ok: true, data: mapToSpace(row) };
 };
 
@@ -499,24 +500,21 @@ export const update = async (params: { id: string; data: UpdateSpace; actor?: Sp
  * Delete a space
  */
 export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
-  const rows = await sql<{ short_id: string }[]>`
-    DELETE FROM spaces.spaces
-    WHERE id = ${params.id}
-    RETURNING short_id
-  `;
-
-  const deleted = rows[0];
+  const deleted = await sql.begin(async (tx) => {
+    const result = await tx`DELETE FROM spaces.spaces WHERE id = ${params.id}`;
+    if (result.count > 0) await publishSpaceChange(tx, { type: "space.deleted", spaceId: params.id });
+    return result.count > 0;
+  });
   if (!deleted) {
     return { ok: false, error: "Space not found", status: 404 };
   }
+  spacesLive.wake();
 
   await serviceAccounts.deleteForResource({
     appId: SPACES_APP_ID,
     resourceType: SPACE_RESOURCE_TYPE,
     resourceId: params.id,
   });
-
-  await publishSpaceEvent({ type: "space.deleted", spaceId: params.id }, { spaceId: deleted.short_id });
 
   return { ok: true, data: undefined };
 };

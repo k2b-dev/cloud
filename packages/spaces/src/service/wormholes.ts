@@ -14,8 +14,8 @@ import type {
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
 import * as columns from "./columns";
-import { publishSpaceEvent } from "./events";
 import { get as getItem } from "./items";
+import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
 import * as spaces from "./spaces";
 
@@ -184,6 +184,7 @@ export const create = async (params: {
       )
       RETURNING id
     `;
+      if (created) await publishSpaceChange(tx, { type: "wormhole.created", spaceId: params.sourceSpaceId });
       return created?.id ?? null;
     }),
   );
@@ -192,7 +193,7 @@ export const create = async (params: {
   if (!createdId) return { ok: false, error: "Could not create wormhole", status: 404 };
   const created = await getRow({ sourceSpaceId: params.sourceSpaceId, id: createdId });
   if (!created) return { ok: false, error: "Could not load created wormhole", status: 500 };
-  await publishSpaceEvent({ type: "wormhole.created", spaceId: params.sourceSpaceId, wormholeId: created.id });
+  spacesLive.wake();
   return { ok: true, data: mapWormhole(created) };
 };
 
@@ -244,6 +245,7 @@ export const update = async (params: {
       WHERE id = ${params.id}::uuid AND source_space_id = ${params.sourceSpaceId}::uuid
       RETURNING id
     `;
+    if (updated) await publishSpaceChange(tx, { type: "wormhole.updated", spaceId: params.sourceSpaceId });
     return updated?.id ?? null;
   });
 
@@ -251,7 +253,7 @@ export const update = async (params: {
   if (!updatedId) return { ok: false, error: "Wormhole not found", status: 404 };
   const updated = await getRow({ sourceSpaceId: params.sourceSpaceId, id: updatedId });
   if (!updated) return { ok: false, error: "Could not load updated wormhole", status: 500 };
-  await publishSpaceEvent({ type: "wormhole.updated", spaceId: params.sourceSpaceId, wormholeId: updated.id });
+  spacesLive.wake();
   return { ok: true, data: mapWormhole(updated) };
 };
 
@@ -281,28 +283,26 @@ export const reorder = async (params: {
         WHERE id = ${params.wormholeIds[index]}::uuid
       `;
     }
+    await publishSpaceChange(tx, { type: "wormhole.updated", spaceId: params.sourceSpaceId });
     return true;
   });
   if (!reordered) return { ok: false, error: "Wormhole order must include every configured wormhole", status: 400 };
-  await Promise.all(
-    params.wormholeIds.map((wormholeId) => publishSpaceEvent({ type: "wormhole.updated", spaceId: params.sourceSpaceId, wormholeId })),
-  );
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };
 
 export const remove = async (params: { sourceSpaceId: string; id: string; actor: WormholeActor }): Promise<MutationResult<void>> => {
   if (!(await canAccess(params.sourceSpaceId, params.actor, "admin"))) return denied();
-  const rows = await sql<{ short_id: string }[]>`
-    DELETE FROM spaces.wormholes
-    WHERE id = ${params.id}::uuid AND source_space_id = ${params.sourceSpaceId}::uuid
-    RETURNING short_id
-  `;
-  const deleted = rows[0];
+  const deleted = await sql.begin(async (tx) => {
+    const result = await tx`
+      DELETE FROM spaces.wormholes
+      WHERE id = ${params.id}::uuid AND source_space_id = ${params.sourceSpaceId}::uuid
+    `;
+    if (result.count > 0) await publishSpaceChange(tx, { type: "wormhole.deleted", spaceId: params.sourceSpaceId });
+    return result.count > 0;
+  });
   if (!deleted) return { ok: false, error: "Wormhole not found", status: 404 };
-  await publishSpaceEvent(
-    { type: "wormhole.deleted", spaceId: params.sourceSpaceId, wormholeId: params.id },
-    { wormholeId: deleted.short_id },
-  );
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };
 
@@ -451,6 +451,9 @@ export const transfer = async (params: {
       RETURNING id
     `;
     if (!updated) return null;
+    // Each Space's readers learn only that the item left or arrived.
+    await publishSpaceChange(tx, { type: "item.transferred", spaceId: params.sourceSpaceId, itemId: updated.id });
+    await publishSpaceChange(tx, { type: "item.transferred", spaceId: locked.target_space_id, itemId: updated.id });
     return {
       id: updated.id,
       removed_tag_count: tagCount?.count ?? 0,
@@ -469,10 +472,7 @@ export const transfer = async (params: {
   const item = await getItem({ id: transferred.id });
   if (!item) return { ok: false, error: "Could not load transferred item", status: 500 };
 
-  await Promise.all([
-    publishSpaceEvent({ type: "item.transferred", spaceId: params.sourceSpaceId, itemId: item.id }),
-    publishSpaceEvent({ type: "item.transferred", spaceId: wormhole.target_space_id, itemId: item.id }),
-  ]);
+  spacesLive.wake();
   return {
     ok: true,
     data: {

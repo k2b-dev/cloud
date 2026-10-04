@@ -11,7 +11,7 @@ import {
   type User,
 } from "@/contracts";
 import { spacesService } from "@/service";
-import { latestSpaceEventCursor } from "@/service/events";
+import { spacesLive } from "@/service/live";
 import { spacesPublicResources } from "@/service/public-resources";
 import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
@@ -587,7 +587,7 @@ const buildWorkspaceTitle = (space: SpaceDetail, locale?: string): Array<{ title
 
 const loadEventCursor = async (spaceId: string): Promise<string | null> => {
   try {
-    return await latestSpaceEventCursor(spaceId);
+    return await spacesLive.cursor();
   } catch (error) {
     log.warn("Could not capture workspace event cursor", {
       spaceId,

@@ -3,7 +3,7 @@ import { sql } from "bun";
 import type { MutationResult, SpaceComment } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import * as activity from "./activity";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 import { resolveRecurringOccurrence } from "./recurrence";
 
 // ==========================
@@ -182,7 +182,7 @@ export const create = async (params: {
   const serviceAccountId = author.kind === "service_account" ? author.id : null;
 
   const inserted = await withShortId("comment", (shortId) =>
-    sql.begin(async (tx): Promise<MutationResult<{ row: DbComment; spaceId: string }>> => {
+    sql.begin(async (tx): Promise<MutationResult<{ row: DbComment }>> => {
       let item: { space_id: string; title: string } | undefined;
       if (recurrenceId) {
         if (!(await isValidOccurrenceScope(tx, itemId, recurrenceId, params.dateConfig))) {
@@ -210,12 +210,13 @@ export const create = async (params: {
         },
         tx,
       );
-      return { ok: true, data: { row, spaceId: item.space_id } };
+      await publishSpaceChange(tx, { type: "item.updated", spaceId: item.space_id, itemId });
+      return { ok: true, data: { row } };
     }),
   );
   if (!inserted.ok) return inserted;
 
-  await publishSpaceEvent({ type: "item.updated", spaceId: inserted.data.spaceId, itemId });
+  spacesLive.wake();
   const created = await get({ id: inserted.data.row.id, viewerUserId: userId });
   return created ? { ok: true, data: created } : { ok: false, error: "Failed to create comment", status: 500 };
 };
@@ -225,7 +226,7 @@ export const create = async (params: {
  */
 export const update = async (params: { id: string; content: string; userId: string }): Promise<MutationResult<SpaceComment>> => {
   const { id, content, userId } = params;
-  const result = await sql.begin(async (tx): Promise<MutationResult<{ row: DbComment; existing: SpaceComment; spaceId: string }>> => {
+  const result = await sql.begin(async (tx): Promise<MutationResult<{ row: DbComment; existing: SpaceComment }>> => {
     const existing = await get({ id, viewerUserId: userId }, tx, true);
     if (!existing) return { ok: false, error: "Comment not found", status: 404 };
     if (existing.userId !== userId) return { ok: false, error: "Cannot edit another user's comment", status: 403 };
@@ -251,10 +252,11 @@ export const update = async (params: { id: string; content: string; userId: stri
       },
       tx,
     );
-    return { ok: true, data: { row, existing, spaceId: item.space_id } };
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: item.space_id, itemId: existing.itemId });
+    return { ok: true, data: { row, existing } };
   });
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.updated", spaceId: result.data.spaceId, itemId: result.data.existing.itemId });
+  spacesLive.wake();
 
   return {
     ok: true,
@@ -271,7 +273,7 @@ export const update = async (params: { id: string; content: string; userId: stri
  */
 export const remove = async (params: { id: string; userId: string }): Promise<MutationResult<void>> => {
   const { id, userId } = params;
-  const result = await sql.begin(async (tx): Promise<MutationResult<{ itemId: string; spaceId: string }>> => {
+  const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
     const existing = await get({ id, viewerUserId: userId }, tx, true);
     if (!existing) return { ok: false, error: "Comment not found", status: 404 };
     if (existing.userId !== userId) return { ok: false, error: "Cannot delete another user's comment", status: 403 };
@@ -296,10 +298,11 @@ export const remove = async (params: { id: string; userId: string }): Promise<Mu
       },
       tx,
     );
-    return { ok: true, data: { itemId: existing.itemId, spaceId: item.space_id } };
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: item.space_id, itemId: existing.itemId });
+    return { ok: true, data: undefined };
   });
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.updated", spaceId: result.data.spaceId, itemId: result.data.itemId });
+  spacesLive.wake();
 
   return { ok: true, data: undefined };
 };

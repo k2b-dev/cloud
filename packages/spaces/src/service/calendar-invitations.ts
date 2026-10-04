@@ -21,9 +21,9 @@ import {
 import { withShortId } from "../lib/short-id";
 import { buildSpaceCalendarUid, buildSpaceItemHref } from "../routes";
 import { getSpacePermission } from "./access";
-import { publishSpaceEvent } from "./events";
 import { ItemResourceReferenceLimitError, insertMany as insertItemResourceReferences } from "./item-resource-references";
 import * as items from "./items";
+import { publishSpaceChange, spacesLive } from "./live";
 import {
   createInvitationDraft as createMailInvitationDraft,
   listInvitationMailboxes,
@@ -458,6 +458,7 @@ const importParsedCalendarInvitation = async (params: {
         const decision = decideCalendarImport({ existing, invitation });
         if (existing && decision === "unchanged") {
           await insertItemResourceReferences(tx, existing.itemId, [params.input.conversation]);
+          await publishSpaceChange(tx, { type: "item.updated", spaceId: existing.spaceId, itemId: existing.itemId });
           return ok({ itemId: existing.itemId, spaceId: existing.spaceId, href: existing.href, outcome: "unchanged" });
         }
         const cancelled = invitation.method === "cancel" || invitation.status === "cancelled";
@@ -498,6 +499,11 @@ const importParsedCalendarInvitation = async (params: {
         WHERE item_id = ${existing.itemId}::uuid
       `;
           await insertItemResourceReferences(tx, existing.itemId, [params.input.conversation]);
+          await publishSpaceChange(tx, {
+            type: cancelled ? "item.completed" : "item.updated",
+            spaceId: existing.spaceId,
+            itemId: existing.itemId,
+          });
           return ok({
             itemId: existing.itemId,
             spaceId: existing.spaceId,
@@ -516,6 +522,7 @@ const importParsedCalendarInvitation = async (params: {
         const publicRef = await publicEventRef(persisted.data.id, tx);
         if (!publicRef) return fail(err.internal("Created calendar event has no public ID"));
         await insertItemResourceReferences(tx, persisted.data.id, [params.input.conversation]);
+        await publishSpaceChange(tx, { type: "item.created", spaceId: params.input.spaceId, itemId: persisted.data.id });
         return ok({
           itemId: persisted.data.id,
           spaceId: params.input.spaceId,
@@ -530,15 +537,7 @@ const importParsedCalendarInvitation = async (params: {
     }
     throw error;
   }
-  if (!result.ok) return result;
-  if (result.data.outcome === "created") {
-    await publishSpaceEvent({ type: "item.created", spaceId: result.data.spaceId, itemId: result.data.itemId });
-  } else {
-    await publishSpaceEvent({ type: "item.updated", spaceId: result.data.spaceId, itemId: result.data.itemId });
-    if (result.data.outcome === "cancelled") {
-      await publishSpaceEvent({ type: "item.completed", spaceId: result.data.spaceId, itemId: result.data.itemId });
-    }
-  }
+  if (result.ok) spacesLive.wake();
   return result;
 };
 

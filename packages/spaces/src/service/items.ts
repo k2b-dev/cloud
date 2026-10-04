@@ -29,8 +29,8 @@ import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
-import { publishSpaceEvent } from "./events";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
+import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
 import {
   CalendarReadLimitError,
@@ -1493,6 +1493,7 @@ export const create = async (params: {
         },
         tx,
       );
+      await publishSpaceChange(tx, { type: "item.created", spaceId, itemId: created.id });
 
       return { id: created.id };
     }),
@@ -1509,7 +1510,7 @@ export const create = async (params: {
     return { ok: false, error: "Failed to load created item", status: 500 };
   }
 
-  await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
+  spacesLive.wake();
   return { ok: true, data: item };
 };
 
@@ -1695,6 +1696,7 @@ export const update = async (params: {
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: current.spaceId, itemId: id });
     return { ok: true, data: updated };
   });
   if (!result.ok) return result;
@@ -1704,7 +1706,7 @@ export const update = async (params: {
     return { ok: false, error: "Failed to load updated item", status: 500 };
   }
 
-  await publishSpaceEvent({ type: "item.updated", spaceId: item.spaceId, itemId: item.id });
+  spacesLive.wake();
   return { ok: true, data: item };
 };
 
@@ -1719,7 +1721,7 @@ export const splitRecurring = async (params: {
   dateConfig?: DateContext;
 }): Promise<MutationResult<SpaceItem>> => {
   const result = await withShortId("item", (shortId) =>
-    sql.begin(async (tx): Promise<MutationResult<{ id: string; spaceId: string; created: boolean }>> => {
+    sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
       const [source] = await tx<DbItem[]>`
       SELECT
         id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
@@ -1786,7 +1788,8 @@ export const splitRecurring = async (params: {
         WHERE item_id = ${source.id}
           AND recurrence_id IS NOT NULL
       `;
-        return { ok: true, data: { id: source.id, spaceId: source.space_id, created: false } };
+        await publishSpaceChange(tx, { type: "item.updated", spaceId: source.space_id, itemId: source.id });
+        return { ok: true, data: { id: source.id } };
       }
 
       await tx`
@@ -1869,8 +1872,10 @@ export const splitRecurring = async (params: {
       WHERE item_id = ${source.id}
         AND recurrence_id >= ${recurrenceId}::timestamptz
     `;
+      await publishSpaceChange(tx, { type: "item.updated", spaceId: source.space_id, itemId: source.id });
+      await publishSpaceChange(tx, { type: "item.created", spaceId: source.space_id, itemId: created.id });
 
-      return { ok: true, data: { id: created.id, spaceId: source.space_id, created: true } };
+      return { ok: true, data: { id: created.id } };
     }),
   );
   if (!result.ok) return result;
@@ -1878,10 +1883,7 @@ export const splitRecurring = async (params: {
   const item = await get({ id: result.data.id });
   if (!item) return { ok: false, error: "Failed to load split series", status: 500 };
 
-  await publishSpaceEvent({ type: "item.updated", spaceId: result.data.spaceId, itemId: params.id });
-  if (result.data.created) {
-    await publishSpaceEvent({ type: "item.created", spaceId: result.data.spaceId, itemId: item.id });
-  }
+  spacesLive.wake();
   return { ok: true, data: item };
 };
 
@@ -1889,9 +1891,9 @@ export const splitRecurring = async (params: {
  * Delete an item
  */
 export const remove = async (params: { id: string; actor?: SpaceActivityIdentity }): Promise<MutationResult<void>> => {
-  const result = await sql.begin(async (tx): Promise<MutationResult<{ shortId: string; spaceId: string }>> => {
-    const [existing] = await tx<{ short_id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null }[]>`
-      SELECT short_id, space_id, title, starts_at, ends_at FROM spaces.items WHERE id = ${params.id} FOR UPDATE
+  const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
+    const [existing] = await tx<{ space_id: string; title: string; starts_at: Date | null; ends_at: Date | null }[]>`
+      SELECT space_id, title, starts_at, ends_at FROM spaces.items WHERE id = ${params.id} FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
     await activity.record(
@@ -1903,11 +1905,12 @@ export const remove = async (params: { id: string; actor?: SpaceActivityIdentity
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.deleted", spaceId: existing.space_id, itemId: params.id });
     await tx`DELETE FROM spaces.items WHERE id = ${params.id}`;
-    return { ok: true, data: { shortId: existing.short_id, spaceId: existing.space_id } };
+    return { ok: true, data: undefined };
   });
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.deleted", spaceId: result.data.spaceId, itemId: params.id }, { itemId: result.data.shortId });
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };
 
@@ -2092,6 +2095,7 @@ export const move = async (params: {
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.moved", spaceId: existing.space_id, itemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;
@@ -2101,7 +2105,7 @@ export const move = async (params: {
     return { ok: false, error: "Failed to load moved item", status: 500 };
   }
 
-  await publishSpaceEvent({ type: "item.moved", spaceId: item.spaceId, itemId: item.id });
+  spacesLive.wake();
   return { ok: true, data: item };
 };
 
@@ -2207,6 +2211,7 @@ export const setCompleted = async (params: {
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.completed", spaceId: current.space_id, itemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;
@@ -2216,7 +2221,7 @@ export const setCompleted = async (params: {
     return { ok: false, error: "Failed to load item", status: 500 };
   }
 
-  await publishSpaceEvent({ type: "item.completed", spaceId: item.spaceId, itemId: item.id });
+  spacesLive.wake();
   return { ok: true, data: item };
 };
 
@@ -2255,11 +2260,12 @@ export const setAssignees = async (params: {
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: current.space_id, itemId: id });
     return { ok: true, data: undefined };
   });
   if (!result.ok) return result;
 
-  await publishSpaceEvent({ type: "item.updated", spaceId: existing.spaceId, itemId: existing.id });
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };
 
@@ -2293,11 +2299,12 @@ export const setTags = async (params: { id: string; tagIds: string[]; actor?: Sp
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: current.space_id, itemId: id });
     return { ok: true, data: undefined };
   });
   if (!result.ok) return result;
 
-  await publishSpaceEvent({ type: "item.updated", spaceId: existing.spaceId, itemId: existing.id });
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };
 

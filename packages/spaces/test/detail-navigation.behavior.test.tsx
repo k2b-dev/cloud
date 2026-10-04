@@ -323,7 +323,7 @@ describe("Spaces detail navigation", () => {
     dom.cleanup();
   });
 
-  test("a closed detail panel lets ready coverage and subsequent live events complete", async () => {
+  test("a closed detail panel lets a resync and subsequent live events complete", async () => {
     const dom = createDomTestHarness();
     ItemDetailRoute ??= (await import("../src/frontend/[id]/_components/detail/ItemDetailRoute.island")).default;
     dom.window.history.replaceState(null, "", BASE);
@@ -347,30 +347,17 @@ describe("Spaces detail navigation", () => {
         }),
       dom.root,
     );
-    const { createSpacesLiveCursorQueue, invalidateSpacesData, subscribeToSpacesDataInvalidation } = await import(
+    const { invalidateSpacesData, subscribeToSpacesDataInvalidation } = await import(
       "../src/frontend/[id]/_components/workspace/workspace-events"
     );
-    const applied: Array<string | null> = [];
-    const failures: Error[] = [];
     const viewReads: Array<string | null> = [];
     const stop = subscribeToSpacesDataInvalidation(["view"], async ({ cursor }) => {
       viewReads.push(cursor);
     });
-    const queue = createSpacesLiveCursorQueue({
-      invalidate: invalidateSpacesData,
-      markApplied: (cursor) => {
-        applied.push(cursor);
-      },
-      onFailure: (error) => {
-        failures.push(error);
-      },
-      signal: new AbortController().signal,
-    });
-    await queue(["view", "detail", "wormholes"], "ready");
-    await queue(["view", "detail"], "next", SERIES_ID);
-    expect(applied).toEqual(["ready", "next"]);
-    expect(viewReads).toEqual(["ready", "next"]);
-    expect(failures).toEqual([]);
+    // Both refreshes complete: the closed panel covers nothing and fails nothing.
+    await invalidateSpacesData(["view", "detail", "wormholes"], "resync");
+    await invalidateSpacesData(["view", "detail"], "next", SERIES_ID);
+    expect(viewReads).toEqual(["resync", "next"]);
     expect(reads).toBe(0);
     stop();
     dispose();
@@ -403,22 +390,9 @@ describe("Spaces detail navigation", () => {
         }),
       dom.root,
     );
-    const { createSpacesLiveCursorQueue, invalidateSpacesData } = await import(
-      "../src/frontend/[id]/_components/workspace/workspace-events"
-    );
-    const applied: Array<string | null> = [];
-    const failures: Error[] = [];
-    const queue = createSpacesLiveCursorQueue({
-      invalidate: invalidateSpacesData,
-      markApplied: (cursor) => {
-        applied.push(cursor);
-      },
-      onFailure: (error) => {
-        failures.push(error);
-      },
-      signal: new AbortController().signal,
-    });
-    const ready = queue(["view", "detail", "wormholes"], "ready");
+    const { invalidateSpacesData } = await import("../src/frontend/[id]/_components/workspace/workspace-events");
+    const covered: string[] = [];
+    const resync = invalidateSpacesData(["view", "detail", "wormholes"], "resync").then(() => covered.push("resync"));
     await flush();
     expect(requests).toHaveLength(1);
     dom.window.dispatchEvent(
@@ -426,12 +400,11 @@ describe("Spaces detail navigation", () => {
     );
     await flush();
     expect(requests[0]?.signal?.aborted).toBe(true);
-    expect(applied).toEqual([]);
+    expect(covered).toEqual([]);
     dom.window.dispatchEvent(new dom.window.CustomEvent("spaces-detail-navigation", { detail: { href: BASE, history: "push" } }));
-    await ready;
-    await queue(["view", "detail"], "next", SERIES_ID);
-    expect(applied).toEqual(["ready", "next"]);
-    expect(failures).toEqual([]);
+    await resync;
+    await invalidateSpacesData(["view", "detail"], "next", SERIES_ID).then(() => covered.push("next"));
+    expect(covered).toEqual(["resync", "next"]);
     expect(requests.every((request) => request.signal?.aborted)).toBe(true);
     for (const request of requests) request.resolve(Response.json(detail(OVERRIDE_ID)));
     await flush();
