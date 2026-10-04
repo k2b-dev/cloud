@@ -750,13 +750,20 @@ Grids-owned shared data. Follow the [operator reset procedure](/en/docs/referenc
 before switching an existing installation. Start Core before Grids.
 
 Record events are committed in PostgreSQL before background publication.
-Workflow dispatch failures retry up to 20 times and remain in PostgreSQL for
-inspection and replay for 30 days, as long as the record state they replay is
-kept. A transaction left open on the PostgreSQL server, for example an idle
-session in a transaction, delays the Record change feed until it ends; nothing
-is lost. Delayed retries return to the queue behind other work, so a broken
-workflow does not block its partition throughout the retry period. Transport
-failures have a separate Sync dead-letter queue.
+Workflow dispatch failures retry up to 20 times. A stopped event remains in
+PostgreSQL for inspection and replay until 30 days after its change; Grids
+keeps the record state it replays at least that long. Delayed retries return
+to the queue behind other work, so a broken workflow does not block its
+partition throughout the retry period. Transport failures have a separate Sync
+dead-letter queue.
+
+The Record change feed returns a change only after every earlier write
+transaction on the PostgreSQL server has ended, in any database. A session left
+idle in a transaction therefore pauses the feed until it ends; nothing is lost.
+Find it as the oldest `backend_xid` in `pg_stat_activity`, and bound such
+sessions with `idle_in_transaction_session_timeout`. After a logical dump and
+restore of the database, saved feed cursors answer `409` once and integrations
+perform a full Record scan.
 
 Platform admins can open **Grids** in the administration area and select a
 Base's failed record events to inspect the error and retry count. After fixing

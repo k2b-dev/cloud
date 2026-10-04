@@ -1097,10 +1097,10 @@ const defineSchema = async (sql: SQL): Promise<void> => {
     $upgrade$
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base ON grids.record_event_outbox USING btree (base_id, txid, id)
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base ON grids.record_event_outbox USING btree (base_id, txid, created_at, id)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table ON grids.record_event_outbox USING btree (base_id, table_id, txid, id)
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table ON grids.record_event_outbox USING btree (base_id, table_id, txid, created_at, id)
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_pending ON grids.record_event_outbox USING btree (next_attempt_at, created_at) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]))

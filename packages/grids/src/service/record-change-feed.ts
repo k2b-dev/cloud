@@ -16,7 +16,7 @@ const CURSOR_SIGNATURE_DOMAIN = "grids:record-change-feed-cursor:v1\0";
 /**
  * Version 1 resumed after a transaction start time and skipped transactions
  * that started earlier but committed later. Version 2 resumes after the
- * writing transaction ID; `at` only bounds the retention window.
+ * writing transaction ID, then the exact (microsecond) event time and ID.
  */
 const CursorSchema = z.discriminatedUnion("v", [
   z.object({ v: z.literal(1), f: z.string().length(43), at: z.string().datetime({ offset: true }), id: z.string().uuid() }).strict(),
@@ -54,6 +54,7 @@ export type RecordChangeFeedPage = {
 type ChangeRow = {
   event_id: string;
   txid: string;
+  position_at: string;
   base_short_id: string;
   table_short_id: string;
   record_short_id: string;
@@ -130,14 +131,30 @@ export const listRecordChanges = async (params: {
   if (params.cursor && !boundary) return fail(err.badInput(messages.invalidChangeFeedCursor));
 
   const cutoff = new Date((params.now ?? new Date()).getTime() - RECORD_CHANGE_FEED_RETENTION_DAYS * 24 * 60 * 60 * 1_000);
-  if (boundary === "expired" || (boundary && new Date(boundary.occurredAt).getTime() < cutoff.getTime())) {
-    // `err.conflict` phrases a duplicate ("… already exists"); this is a rescan instruction.
-    return fail({ code: "CONFLICT", message: messages.expiredChangeFeedCursor, status: 409 });
-  }
+  // `err.conflict` phrases a duplicate ("… already exists"); this is a rescan instruction.
+  const expired = fail({ code: "CONFLICT", message: messages.expiredChangeFeedCursor, status: 409 });
+  if (boundary === "expired" || (boundary && new Date(boundary.occurredAt).getTime() < cutoff.getTime())) return expired;
 
+  // Every transaction below this horizon has ended, so no change can still
+  // appear behind a returned cursor; a newer committed change waits while an
+  // older write transaction is open. The horizon never moves back within one
+  // PostgreSQL cluster and every returned transaction ID was below it, so a
+  // cursor at or past it counts transactions of another cluster, for example
+  // after a logical restore, and would silently pass every new change.
+  const [horizon] = await sql<Array<{ xmin: string }>>`SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS xmin`;
+  if (!horizon) throw new Error("PostgreSQL returned no transaction horizon");
+  if (boundary && BigInt(boundary.txid) >= BigInt(horizon.xmin)) return expired;
+
+  // Only a fresh scan filters by the cutoff. A transaction after the cursor
+  // may have started before the cursor's event, and filtering it would skip
+  // it; it got its ID later, so it stays retained until the cursor expires.
+  // Events of one transaction, normally sharing one time, come oldest first:
+  // the cursor time then never passes an unread event of its transaction,
+  // such as one of the events that existed before the upgrade.
   const rows = await sql<ChangeRow[]>`
     SELECT outbox.id::text AS event_id,
            outbox.txid::text AS txid,
+           to_char(outbox.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS position_at,
            base.short_id AS base_short_id,
            table_ref.short_id AS table_short_id,
            record.short_id AS record_short_id,
@@ -151,15 +168,15 @@ export const listRecordChanges = async (params: {
     JOIN grids.tables table_ref ON table_ref.id = outbox.table_id
     JOIN grids.records record ON record.id = outbox.record_id
     WHERE outbox.base_id = ${params.scope.baseId}::uuid
-      AND outbox.created_at >= ${cutoff.toISOString()}::timestamptz
       AND snapshot.event_type <> 'comment.created'
       ${params.scope.tableId ? sql`AND outbox.table_id = ${params.scope.tableId}::uuid` : sql``}
-      -- Every transaction below the snapshot's xmin has ended, so no change
-      -- can still appear behind the returned cursor. A newer committed change
-      -- waits while an older write transaction is open.
-      AND outbox.txid < pg_snapshot_xmin(pg_current_snapshot())
-      ${boundary ? sql`AND (outbox.txid, outbox.id) > (${boundary.txid}::xid8, ${boundary.eventId}::uuid)` : sql``}
-    ORDER BY outbox.txid, outbox.id
+      AND outbox.txid < ${horizon.xmin}::xid8
+      ${
+        boundary
+          ? sql`AND (outbox.txid, outbox.created_at, outbox.id) > (${boundary.txid}::xid8, ${boundary.occurredAt}::timestamptz, ${boundary.eventId}::uuid)`
+          : sql`AND outbox.created_at >= ${cutoff.toISOString()}::timestamptz`
+      }
+    ORDER BY outbox.txid, outbox.created_at, outbox.id
     LIMIT ${limit + 1}
   `;
 
@@ -178,7 +195,7 @@ export const listRecordChanges = async (params: {
   );
   const last = pageRows.at(-1);
   const cursor = last
-    ? encodeRecordChangeFeedCursor(params.scope, { txid: last.txid, eventId: last.event_id, occurredAt: iso(last.occurred_at) }, key)
+    ? encodeRecordChangeFeedCursor(params.scope, { txid: last.txid, eventId: last.event_id, occurredAt: last.position_at }, key)
     : (params.cursor ?? null);
   return ok({ items, cursor, hasMore, retentionDays: RECORD_CHANGE_FEED_RETENTION_DAYS });
 };

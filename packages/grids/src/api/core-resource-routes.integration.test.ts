@@ -5,7 +5,7 @@ import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services"
 import { sql } from "bun";
 import { Hono } from "hono";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
+import { awaitRecordChangeFeedHorizon, postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { dropFieldUniqueIndex, ensureFieldUniqueIndex } from "../service/field-indexes";
 import { encodeRecordChangeFeedCursor } from "../service/record-change-feed";
@@ -741,6 +741,7 @@ describe("classic resource route contracts", () => {
             WHERE id = ${event.id}::uuid
           `;
         }
+        await awaitRecordChangeFeedHorizon();
 
         const first = await app.request(`${feedPath}?limit=1`, bearer(fixture.tokens.read));
         expect(first.status).toBe(200);

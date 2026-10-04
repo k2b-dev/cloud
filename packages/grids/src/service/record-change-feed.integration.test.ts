@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
+import { awaitRecordChangeFeedHorizon, postgresTest, testShortId, testUuid as uuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import type { SqlClient } from "./audit";
-import { listRecordChanges, type RecordChangeFeedItem } from "./record-change-feed";
+import { encodeRecordChangeFeedCursor, listRecordChanges, type RecordChangeFeedItem } from "./record-change-feed";
 import { captureRecordEventSnapshot, enqueueRecordEvent } from "./record-event-outbox";
 
 const key = "record-change-feed-integration-key";
@@ -66,21 +66,19 @@ const drain = async (fixture: Fixture, cursor: string | null): Promise<{ items: 
   }
 };
 
-/**
- * The feed withholds changes until every older transaction in the cluster has
- * ended. Waits for that horizon, so an unrelated open transaction elsewhere on
- * the test server cannot make an assertion race it.
- */
-const awaitFeedHorizon = async (): Promise<void> => {
-  const [current] = await sql<Array<{ txid: string }>>`SELECT pg_current_xact_id()::text AS txid`;
-  for (;;) {
-    const [horizon] = await sql<Array<{ passed: boolean }>>`
-      SELECT ${current!.txid}::xid8 < pg_snapshot_xmin(pg_current_snapshot()) AS passed
-    `;
-    if (horizon?.passed) return;
-    await Bun.sleep(10);
-  }
-};
+const day = 24 * 60 * 60 * 1_000;
+const expired = {
+  ok: false,
+  error: { code: "CONFLICT", status: 409, message: "The Record change-feed cursor has expired. Perform a full Record rescan." },
+} as const;
+
+/** Event times of the fixture's Base in feed order. */
+const eventTimes = async (fixture: Fixture): Promise<Array<{ id: string; createdAt: Date }>> =>
+  await sql<Array<{ id: string; createdAt: Date }>>`
+    SELECT id::text, created_at AS "createdAt" FROM grids.record_event_outbox
+    WHERE base_id = ${fixture.baseId}::uuid
+    ORDER BY txid, created_at, id
+  `;
 
 beforeAll(async () => {
   if (testInfra.database) await migrate();
@@ -115,10 +113,99 @@ describe("record change feed integration", () => {
       // The short edit committed, but the older import was still open.
       expect(short.page).toEqual({ items: [], cursor: null });
 
-      await awaitFeedHorizon();
+      await awaitRecordChangeFeedHorizon();
       const second = await drain(fixture, short.page.cursor);
       expect(second.items.map((item) => item.recordId)).toEqual([longRecordId, short.recordId]);
       expect(await drain(fixture, second.cursor)).toEqual({ items: [], cursor: second.cursor });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("resumes a transaction that started before the cursor's change until the cursor expires", async () => {
+    const fixture = await insertFixture();
+    try {
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      let releaseLate!: () => void;
+      const lateReleased = new Promise<void>((resolve) => {
+        releaseLate = resolve;
+      });
+      // The late transaction starts first but writes, and so gets its ID, after an edit.
+      const late = sql.begin(async (tx) => {
+        markStarted();
+        await lateReleased;
+        return createRecord(tx, fixture);
+      });
+      await started;
+      await Bun.sleep(50);
+      const editRecordId = await sql.begin((tx) => createRecord(tx, fixture)).finally(releaseLate);
+      const lateRecordId = await late;
+      await awaitRecordChangeFeedHorizon();
+
+      const scope = { baseId: fixture.baseId };
+      const first = await listRecordChanges({ scope, limit: 1, cursorSigningKey: key });
+      if (!first.ok) throw new Error(first.error.message);
+      expect(first.data.items.map((item) => item.recordId)).toEqual([editRecordId]);
+      const [edit, older] = await eventTimes(fixture);
+      expect(older!.createdAt.getTime()).toBeLessThan(edit!.createdAt.getTime());
+      // The cutoff falls between both start times: the cursor is still valid,
+      // the late change itself is older than the cutoff.
+      const now = new Date((older!.createdAt.getTime() + edit!.createdAt.getTime()) / 2 + 30 * day);
+      const resumed = await listRecordChanges({ scope, cursor: first.data.cursor, now, cursorSigningKey: key });
+      if (!resumed.ok) throw new Error(resumed.error.message);
+      expect(resumed.data.items.map((item) => item.recordId)).toEqual([lateRecordId]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("pages the events of one transaction oldest first, so the cursor expires before an unread one", async () => {
+    const fixture = await insertFixture();
+    try {
+      // One transaction ID with different times, like the events that existed before the upgrade.
+      await sql.begin(async (tx) => {
+        await createRecord(tx, fixture);
+        await createRecord(tx, fixture);
+      });
+      const [lowerId, higherId] = (await eventTimes(fixture)).map((event) => event.id).toSorted();
+      const now = Date.now();
+      const olderAt = new Date(now - 30 * day + 60 * 60 * 1_000);
+      await sql`UPDATE grids.record_event_outbox SET created_at = ${new Date(now - 60 * 60 * 1_000)} WHERE id = ${lowerId!}::uuid`;
+      await sql`UPDATE grids.record_event_outbox SET created_at = ${olderAt} WHERE id = ${higherId!}::uuid`;
+      await awaitRecordChangeFeedHorizon();
+
+      const scope = { baseId: fixture.baseId };
+      const first = await listRecordChanges({ scope, limit: 1, cursorSigningKey: key });
+      if (!first.ok) throw new Error(first.error.message);
+      expect(first.data.items.map((item) => item.occurredAt)).toEqual([olderAt.toISOString()]);
+      // Two hours later the unread event may already be reaped with its
+      // delivery, so the cursor must ask for a rescan instead of passing it.
+      expect(
+        await listRecordChanges({ scope, cursor: first.data.cursor, now: new Date(now + 2 * 60 * 60 * 1_000), cursorSigningKey: key }),
+      ).toEqual(expired);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("asks for a rescan when a cursor counts transactions this server has not reached, as after a logical restore", async () => {
+    const fixture = await insertFixture();
+    try {
+      const [current] = await sql<Array<{ txid: string }>>`SELECT pg_current_xact_id()::text AS txid`;
+      const scope = { baseId: fixture.baseId };
+      // The server the cursor came from had counted further than this one.
+      const cursor = encodeRecordChangeFeedCursor(
+        scope,
+        { txid: String(BigInt(current!.txid) + 1_000_000n), eventId: uuid(), occurredAt: new Date().toISOString() },
+        key,
+      );
+      await sql.begin((tx) => createRecord(tx, fixture));
+      await awaitRecordChangeFeedHorizon();
+
+      expect(await listRecordChanges({ scope, cursor, cursorSigningKey: key })).toEqual(expired);
     } finally {
       await cleanupFixture(fixture);
     }

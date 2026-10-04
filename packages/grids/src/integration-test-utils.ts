@@ -27,6 +27,23 @@ export const testShortId = () => {
   return `${TEST_SHORT_ID_MARK}${shortIdCounter.toString(36).padStart(5, "0")}`;
 };
 
+/**
+ * The Record change feed withholds a change until every older transaction on
+ * the PostgreSQL server has ended. Call this between a test's writes and its
+ * feed reads, so an unrelated open transaction elsewhere on the shared test
+ * server cannot race the assertions.
+ */
+export const awaitRecordChangeFeedHorizon = async (): Promise<void> => {
+  const [current] = await sql<Array<{ txid: string }>>`SELECT pg_current_xact_id()::text AS txid`;
+  for (;;) {
+    const [horizon] = await sql<Array<{ passed: boolean }>>`
+      SELECT ${current!.txid}::xid8 < pg_snapshot_xmin(pg_current_snapshot()) AS passed
+    `;
+    if (horizon?.passed) return;
+    await Bun.sleep(10);
+  }
+};
+
 export const insertTestDocumentArtifact = async (params: {
   documentId: string;
   baseId: string;

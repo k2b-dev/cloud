@@ -255,24 +255,50 @@ describe("record event outbox integration", () => {
     }
   });
 
-  postgresTest("expires workflow delivery failures with the snapshot they would replay", async () => {
+  postgresTest("expires stopped workflow delivery failures with the snapshot they would replay", async () => {
     const fixture = createFixture();
     try {
       await insertFixture(fixture);
-      await sql`
-        INSERT INTO grids.record_event_delivery_failures (base_id, consumer_group, event_id, payload, error, attempts, status, dead_at, first_seen_at)
-        VALUES
-          (${fixture.baseId}::uuid, 'workflow-kernel-queue-v1', 'expired', '{}', 'snapshot gone', 20, 'dead', now(), now() - interval '31 days'),
-          (${fixture.baseId}::uuid, 'workflow-kernel-queue-v1', 'stuck', '{}', 'still retrying', 3, 'retrying', NULL, now() - interval '31 days'),
-          (${fixture.baseId}::uuid, 'workflow-kernel-queue-v1', 'recent', '{}', 'replayable', 20, 'dead', now(), now() - interval '29 days')
-      `;
+      const day = 24 * 60 * 60 * 1_000;
+      // The workflow consumer stores the parsed event it failed to dispatch.
+      const event = (daysAgo: number): string =>
+        JSON.stringify({
+          v: 1,
+          type: "record.updated",
+          baseId: fixture.baseId,
+          tableId: fixture.tableId,
+          recordId: uuid(),
+          version: 2,
+          changedFieldIds: [],
+          actorId: null,
+          occurredAt: new Date(Date.now() - daysAgo * day).toISOString(),
+        } satisfies GridsRecordEvent);
+      const failures: Array<[eventId: string, payload: string, status: "dead" | "retrying", firstSeenDaysAgo: number]> = [
+        ["expired", event(31), "dead", 31],
+        // A replay of an old event fails again: the new row is recent, its snapshot is not.
+        ["replayed", event(31), "dead", 1],
+        ["replaying", event(31), "retrying", 0],
+        ["orphaned", event(31), "retrying", 31],
+        ["recent", event(29), "dead", 29],
+        ["unreadable-expired", "not an event", "dead", 31],
+        ["unreadable-recent", "not an event", "dead", 1],
+      ];
+      for (const [eventId, payload, status, firstSeenDaysAgo] of failures) {
+        await sql`
+          INSERT INTO grids.record_event_delivery_failures (base_id, consumer_group, event_id, payload, error, attempts, status, dead_at, first_seen_at)
+          VALUES (
+            ${fixture.baseId}::uuid, 'workflow-kernel-queue-v1', ${eventId}, ${payload}, 'workflow failed', ${status === "dead" ? 20 : 3},
+            ${status}, ${status === "dead" ? sql`now()` : null}, now() - (${firstSeenDaysAgo} * interval '1 day')
+          )
+        `;
+      }
 
       await reapTerminalRecordEventOutbox(30, 90);
 
       const kept = await sql<Array<{ event_id: string }>>`
         SELECT event_id FROM grids.record_event_delivery_failures WHERE base_id = ${fixture.baseId}::uuid ORDER BY event_id
       `;
-      expect(kept.map((row) => row.event_id)).toEqual(["recent"]);
+      expect(kept.map((row) => row.event_id)).toEqual(["recent", "replaying", "unreadable-recent"]);
     } finally {
       await cleanupFixture(fixture);
     }
