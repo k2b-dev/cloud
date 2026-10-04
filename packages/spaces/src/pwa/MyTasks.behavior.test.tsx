@@ -26,9 +26,9 @@ const task = (shortId: string, title: string): OverviewWork["items"][number] => 
 });
 const tents = task("Item01", "Order the tents");
 const flyer = task("Item02", "Write the flyer");
-const snapshot = (view: OverviewView, items: OverviewWork["items"]): OverviewWork => ({
+const snapshot = (view: OverviewView, items: OverviewWork["items"], mine = items.length): OverviewWork => ({
   view,
-  counts: { mine: items.length, today: 0, upcoming: 3 },
+  counts: { mine, today: 0, upcoming: 3 },
   items,
 });
 
@@ -52,7 +52,12 @@ const mockFetch = (route: (call: Call) => Answer | undefined) => {
   );
   return { calls, restore: () => spy.mockRestore() };
 };
-const COMPLETED = "/api/spaces/Space1/items/Item01/completed";
+const ITEM = "/api/spaces/Space1/items/Item01";
+const COMPLETED = `${ITEM}/completed`;
+const USER_ID = "0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f";
+const claimBy = (id: string, displayName: string) => ({
+  claim: { id: "5c1d7e9a-2b4f-4a6c-8e0d-1f3a5b7c9d2e", actor: { kind: "user", id }, displayName },
+});
 const WORK = "/api/spaces/overview/work";
 
 const load = async () => {
@@ -66,7 +71,7 @@ const load = async () => {
 const modules = isServer ? undefined : await load();
 
 type Mounted = { dom: DomTestHarness; reloads: number; dispose: () => void };
-const mount = (options: { locale?: string; items?: OverviewWork["items"] } = {}): Mounted => {
+const mount = (options: { locale?: string; items?: OverviewWork["items"]; mine?: number } = {}): Mounted => {
   const { ui, MyTasks } = modules!;
   const dom = createDomTestHarness();
   delegateEvents(["click"]);
@@ -83,8 +88,9 @@ const mount = (options: { locale?: string; items?: OverviewWork["items"] } = {})
         locale: options.locale ?? "en",
         get children() {
           return createComponent(MyTasks, {
+            userId: USER_ID,
             initialView: "mine",
-            initialWork: snapshot("mine", options.items ?? [tents, flyer]),
+            initialWork: snapshot("mine", options.items ?? [tents, flyer], options.mine),
             dateConfig: { locale: options.locale ?? "en", timeZone: "UTC" },
           });
         },
@@ -159,25 +165,149 @@ else {
     }
   });
 
-  test("names the blockers on a 409, in the person's language, and keeps the task", async () => {
+  test("names the blockers on a 409 in the server's words, without Retry, and keeps the task", async () => {
+    // The Spaces API words its refusals in the request's language; the app shows them as they are.
     for (const [locale, message] of [
       ["en", "Complete all blocking tasks first"],
       ["de", "Schließe zuerst alle blockierenden Aufgaben ab."],
     ] as const) {
-      const fetch = mockFetch(() => Response.json({ message: "Complete all blocking tasks first" }, { status: 409 }));
+      const fetch = mockFetch((call) =>
+        call.method === "POST"
+          ? Response.json({ message }, { status: 409 })
+          : call.path === ITEM
+            ? Response.json({ claim: null })
+            : call.path === WORK
+              ? Response.json(snapshot("mine", [tents, flyer]))
+              : undefined,
+      );
       const page = mount({ locale });
       try {
         checkButton(page.dom, "Order the tents")!.click();
         await waitFor(() => toasts(page.dom).length === 1, "blocked notice");
         expect(toasts(page.dom)[0]).toContain(message);
         expect(toastAction(page.dom, locale === "de" ? "Erneut versuchen" : "Retry")).toBeUndefined();
-        expect(fetch.calls).toHaveLength(1);
-        expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
         await waitFor(() => !checkButton(page.dom, "Order the tents")!.disabled, "button free again");
+        expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toEqual([`POST ${COMPLETED}`, `GET ${ITEM}`, `GET ${WORK}`]);
+        expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
       } finally {
         page.dispose();
         fetch.restore();
       }
+    }
+  });
+
+  test("completes a task the person claimed with its claim, as on the web", async () => {
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST") {
+        const body = call.body as { claimId?: string };
+        return body.claimId === claimBy(USER_ID, "Mia Muster").claim.id
+          ? Response.json({})
+          : Response.json(
+              { message: "Task is claimed; release its current claim before changing ownership or completing it" },
+              { status: 409 },
+            );
+      }
+      if (call.path === ITEM) return Response.json(claimBy(USER_ID, "Mia Muster"));
+      if (call.path === WORK) return Response.json(snapshot("mine", [flyer]));
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => titles(page.dom).length === 1, "re-read list");
+      expect(fetch.calls).toMatchObject([
+        { method: "POST", path: COMPLETED, body: { completed: true } },
+        { method: "GET", path: ITEM },
+        { method: "POST", path: COMPLETED, body: { completed: true, claimId: claimBy(USER_ID, "").claim.id } },
+        { method: "GET", path: WORK },
+      ]);
+      expect(toasts(page.dom).some((text) => text.includes("Done"))).toBe(true);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("names the person working on a task someone else claimed", async () => {
+    const fetch = mockFetch((call) =>
+      call.method === "POST"
+        ? Response.json(
+            { message: "Task is claimed; release its current claim before changing ownership or completing it" },
+            { status: 409 },
+          )
+        : call.path === ITEM
+          ? Response.json(claimBy("9e7d5c3b-1a2f-4e6d-8c0b-3a5f7e9d1c4b", "Jonas Beispiel"))
+          : call.path === WORK
+            ? Response.json(snapshot("mine", [tents, flyer]))
+            : undefined,
+    );
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => toasts(page.dom).length === 1, "claimed notice");
+      expect(toasts(page.dom)[0]).toContain(
+        "Jonas Beispiel is working on “Order the tents”. Take it over in Spaces on the web to finish it.",
+      );
+      expect(toastAction(page.dom, "Retry")).toBeUndefined();
+      expect(fetch.calls.filter((call) => call.method === "POST")).toHaveLength(1);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("says why without Retry when the Space is read-only or the task is gone, and reads the list again", async () => {
+    for (const [status, message, after] of [
+      [403, "You cannot change tasks in “Summer fair”.", [tents, flyer]],
+      [404, "“Order the tents” is no longer available.", [flyer]],
+    ] as const) {
+      const fetch = mockFetch((call) =>
+        call.method === "POST"
+          ? Response.json({ message: "Refused" }, { status })
+          : call.path === WORK
+            ? Response.json(snapshot("mine", [...after]))
+            : undefined,
+      );
+      const page = mount();
+      try {
+        checkButton(page.dom, "Order the tents")!.click();
+        await waitFor(() => toasts(page.dom).length === 1 && titles(page.dom).length === after.length, `${status} notice`);
+        expect(toasts(page.dom)[0]).toContain(message);
+        expect(toastAction(page.dom, "Retry")).toBeUndefined();
+        expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toEqual([`POST ${COMPLETED}`, `GET ${WORK}`]);
+      } finally {
+        page.dispose();
+        fetch.restore();
+      }
+    }
+  });
+
+  test("shows an all-day event as all day and says how many items the bounded list leaves out", async () => {
+    const fair = {
+      ...task("Item03", "Summer fair"),
+      startsAt: "2026-10-04T00:00:00.000Z",
+      endsAt: "2026-10-05T00:00:00.000Z",
+    };
+    const meeting = {
+      ...task("Item04", "Planning meeting"),
+      startsAt: "2026-10-04T00:00:00.000Z",
+      endsAt: "2026-10-04T01:00:00.000Z",
+    };
+    const page = mount({ items: [fair, meeting, tents], mine: 1_234 });
+    try {
+      const when = [...page.dom.root.querySelectorAll(".spaces-pwa__when")].map((time) => time.textContent ?? "");
+      expect(when[0]).toContain("All day");
+      expect(when[0]).not.toContain("00:00");
+      expect(when[1]).toContain("00:00–01:00");
+      expect(page.dom.root.querySelector(".spaces-pwa__more")?.textContent).toBe("1,231 more in Spaces on the web");
+    } finally {
+      page.dispose();
+    }
+    const complete = mount();
+    try {
+      expect(complete.dom.root.querySelector(".spaces-pwa__more")).toBeNull();
+    } finally {
+      complete.dispose();
     }
   });
 

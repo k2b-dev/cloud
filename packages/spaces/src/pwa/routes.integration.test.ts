@@ -46,7 +46,7 @@ suite("Spaces in the mobile app", () => {
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });
 
-  test("only an app session opens the part, and a task checked off there is done on the web", async () => {
+  test("only an app session opens the part, and a task the person claimed and checked off there is done on the web", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name)
@@ -82,12 +82,24 @@ suite("Spaces in the mobile app", () => {
     expect(html).toContain("Order the tents");
     expect(html).toContain(`Mark “Order the tents” as done`);
 
-    const checked = await server.request(`${origin}/api/spaces/${space!.short_id}/items/${item!.short_id}/completed`, {
-      method: "POST",
-      headers: { cookie: phone, origin, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
-      body: JSON.stringify({ completed: true }),
+    // The person claims the task on the web with I'm on it; the phone completes it with that claim, as the web does.
+    const itemPath = `${origin}/api/spaces/${space!.short_id}/items/${item!.short_id}`;
+    const post = (cookie: string, path: string, body: unknown) =>
+      server.request(`${itemPath}/${path}`, {
+        method: "POST",
+        headers: { cookie, origin, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+        body: JSON.stringify(body),
+      });
+    const claimId = crypto.randomUUID();
+    expect((await post(web, "claim", { claimId })).status).toBe(200);
+    expect((await post(phone, "completed", { completed: true })).status).toBe(409);
+    const read = await server.request(itemPath, { headers: { cookie: phone } });
+    expect(read.status).toBe(200);
+    expect(((await read.json()) as { claim: { id: string; actor: { kind: string; id: string } } }).claim).toMatchObject({
+      id: claimId,
+      actor: { kind: "user", id: user!.id },
     });
-    expect(checked.status).toBe(200);
+    expect((await post(phone, "completed", { completed: true, claimId })).status).toBe(200);
 
     const onTheWeb = await server.request(`${origin}/api/spaces/overview/work?view=mine`, { headers: { cookie: web } });
     expect(onTheWeb.status).toBe(200);

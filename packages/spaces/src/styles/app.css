@@ -122,3 +122,4 @@
 .spaces-pwa__when { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .spaces-pwa__when[data-overdue] { color: var(--k2b-danger-text); }
 .spaces-pwa__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
+.spaces-pwa__more { margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.125rem; text-align: center; }

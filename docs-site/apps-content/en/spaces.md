@@ -53,23 +53,31 @@ when the audience or lifecycle is different.
 
 When the installation runs the
 [mobile app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
-page and in its tab bar for people with the `user` role. Guests do not see it.
+page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 
 - Each row shows the title, the Space with its color, and the deadline or, for
-  an event, its time. An overdue deadline is red.
+  an event, its time or **All day**. An overdue deadline is red.
 - Tap the circle in front of a task to mark it done. The circle stays busy
   until the list loads again without the task, and **Undo** in the
   confirmation reopens it. This is the same change as on the web, with the same
   activity entry, and it needs write access to the Space.
 - Events have no circle. Complete them in Spaces on the web.
-- A task with unfinished blockers stays open, and so does a claimed task, even
-  one you claimed yourself with **I'm on it**. The app says why; release the
-  claim or complete the task on the web.
+- A task you claimed yourself with **I'm on it** is completed with your claim,
+  as on the web. A task someone else claimed stays open; the app names who is
+  working on it, and you can take it over on the web.
+- A task with unfinished blockers stays open, and the app says why. So does a
+  task in a Space you can only read, and a task that was deleted in the
+  meantime disappears from the list. These notices offer no **Retry**, because
+  trying again would not change the answer.
 - If a change cannot be saved, for example while the phone is offline, a
   notice offers **Retry**.
 - The selected list is part of the address, so a reload keeps it.
+- Each list shows a bounded number of items, the same as the start page on the
+  web: up to 100 for **For me**, 5 for **Today**, and 30 for **Upcoming**. When
+  the count is higher, a line under the list says how many more are in Spaces
+  on the web.
 
 Rows do not open the item. Read and edit details in Spaces on the web.
 

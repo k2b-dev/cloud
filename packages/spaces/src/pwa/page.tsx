@@ -19,7 +19,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <PwaLayout c={c} title="Spaces">
-      <MyTasks initialView={view} initialWork={work} dateConfig={dateConfig} />
+      <MyTasks userId={user.id} initialView={view} initialWork={work} dateConfig={dateConfig} />
     </PwaLayout>
   );
 });

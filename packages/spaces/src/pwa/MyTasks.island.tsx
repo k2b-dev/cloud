@@ -6,20 +6,28 @@ import { Button, IconButton, Placeholder, SegmentedControl, toast, useLocale } f
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
-import { spacesApiErrorMessage, spacesMessages } from "@/service/messages";
+import { spacesMessages } from "@/service/messages";
+import { isOwnClaim } from "../frontend/[id]/_components/shared/claim/claim";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { readResponseError } from "../frontend/lib/response";
 import { overviewMessages } from "../frontend/overview-messages";
 import { myTasksMessages } from "./messages";
 
 type WorkItem = OverviewWork["items"][number];
-type Props = { initialView: OverviewView; initialWork: OverviewWork; dateConfig: DateContext };
+type Props = { userId: string; initialView: OverviewView; initialWork: OverviewWork; dateConfig: DateContext };
 
 const VIEWS = ["mine", "today", "upcoming"] as const;
 const viewHref = (view: OverviewView) => (view === "mine" ? "/pwa/spaces" : `/pwa/spaces?view=${view}`);
 
 /** The app session ended: reload once, and the page request renews it or leads to pairing. */
 const sessionEnded = (response: { status: number }) => response.status === 401 && reloadOnce("pwa-auth");
+
+/** The overview carries no all-day flag; an all-day event runs from one local midnight to a later one. */
+const isAllDay = (start: Date, end: Date | null, dateConfig: DateContext) =>
+  end !== null &&
+  end > start &&
+  start.getTime() === dates.startOfDay(start, dateConfig).getTime() &&
+  end.getTime() === dates.startOfDay(end, dateConfig).getTime();
 
 /**
  * "My tasks" in the mobile app: the overview's views as a segmented control, and one flat row per task or event.
@@ -63,14 +71,29 @@ export default function MyTasks(props: Props) {
     }
   };
 
+  /** The task's current claim, read only after a refusal; null when it has none or cannot be read. */
+  const currentClaim = async (item: WorkItem) => {
+    const response = await apiClient[":id"].items[":itemId"]
+      .$get({ param: { id: item.spaceShortId, itemId: item.shortId } })
+      .catch(() => null);
+    return response?.ok ? ((await response.json()).claim ?? null) : null;
+  };
+
+  /** A refusal that a retry cannot change: say why, and show the server's current list. */
+  const refused = async (message: string): Promise<false> => {
+    toast.error(message);
+    await refresh();
+    return false;
+  };
+
   /** Sets the item's completion; true when the server saved it. Each refusal is reported here. */
-  const save = async (item: WorkItem, completed: boolean): Promise<boolean> => {
+  const save = async (item: WorkItem, completed: boolean, claimId?: string): Promise<boolean> => {
     const failed = () =>
       completed
         ? retryToast(t.completeFailed({ title: item.title }), o.retry, () => complete(item))
         : retryToast(t.reopenFailed({ title: item.title }), o.retry, () => reopen(item));
     const response = await apiClient[":id"].items[":itemId"].completed
-      .$post({ param: { id: item.spaceShortId, itemId: item.shortId }, json: { completed } })
+      .$post({ param: { id: item.spaceShortId, itemId: item.shortId }, json: { completed, claimId } })
       // Offline or unreachable: the same Retry as a failed answer.
       .catch(() => null);
     if (!response) {
@@ -79,12 +102,16 @@ export default function MyTasks(props: Props) {
     }
     if (response.ok) return true;
     if (sessionEnded(response)) return false;
-    if (response.status === 409) {
-      // Unfinished blockers or an active claim, also the person's own; the server names which.
-      const reason = await readResponseError(response, spacesMessages("en").completeBlockersFirst);
-      toast.error(spacesApiErrorMessage(409, locale(), reason));
-      return false;
+    if (response.status === 409 && completed && !claimId) {
+      // A claimed task: the person's own claim completes it, as on the web; someone else's is named.
+      const claim = await currentClaim(item);
+      if (claim && isOwnClaim(claim, props.userId)) return save(item, completed, claim.id);
+      if (claim) return refused(t.claimed({ title: item.title, name: claim.displayName }));
     }
+    if (response.status === 403) return refused(t.notAllowed({ space: item.spaceName }));
+    if (response.status === 404) return refused(t.gone({ title: item.title }));
+    // Unfinished blockers; the server already words the reason in the person's language.
+    if (response.status === 409) return refused(await readResponseError(response, spacesMessages(locale()).completeBlockersFirst));
     failed();
     return false;
   };
@@ -121,10 +148,12 @@ export default function MyTasks(props: Props) {
   const schedule = (item: WorkItem): { text: string; datetime: string; icon: string; overdue: boolean } | null => {
     if (item.startsAt) {
       const start = new Date(item.startsAt);
+      const end = item.endsAt ? new Date(item.endsAt) : null;
       const time = dates.formatTime(start, props.dateConfig);
-      const range =
-        item.endsAt && dates.isSameDay(start, new Date(item.endsAt), props.dateConfig)
-          ? `${time}–${dates.formatTime(item.endsAt, props.dateConfig)}`
+      const range = isAllDay(start, end, props.dateConfig)
+        ? t.allDay
+        : end && dates.isSameDay(start, end, props.dateConfig)
+          ? `${time}–${dates.formatTime(end, props.dateConfig)}`
           : time;
       const text = dates.isToday(start, props.dateConfig) ? range : `${dates.formatDate(start, props.dateConfig)}, ${range}`;
       return { text, datetime: item.startsAt, icon: "ti ti-clock", overdue: false };
@@ -140,6 +169,12 @@ export default function MyTasks(props: Props) {
       icon: "ti ti-calendar-due",
       overdue: deadline.getTime() < Date.now(),
     };
+  };
+
+  /** Each view reads a bounded list; the rest of its count stays on the web. */
+  const hidden = () => {
+    const data = active();
+    return data ? Math.max(0, data.counts[data.view] - data.items.length) : 0;
   };
 
   const empty = () =>
@@ -234,6 +269,7 @@ export default function MyTasks(props: Props) {
             }}
           </For>
         </ul>
+        <Show when={hidden()}>{(count) => <p class="spaces-pwa__more">{t.more({ count: count().toLocaleString(locale()) })}</p>}</Show>
       </Show>
     </div>
   );
