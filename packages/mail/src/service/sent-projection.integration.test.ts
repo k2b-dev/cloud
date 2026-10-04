@@ -17,7 +17,8 @@ import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
 import { startDraftProjectionRuntime, stopDraftProjectionRuntime, submitDueDraftProjectionWork } from "./draft-provider-projection";
-import { createDraft } from "./drafts";
+import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
+import { createDraft, discardDraft, updateDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations, listFolders } from "./messages";
@@ -1965,6 +1966,14 @@ suite("mail sent message projection", () => {
       await mailbox.syncAll();
       await importsSettled();
       expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
+      const observations = async () => {
+        const [row] = await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
+          WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND direction = 'import'
+        `;
+        return row?.count ?? 0;
+      };
+      const observationsBefore = await observations();
 
       // Every six hours the Drafts folder is reconciled in full. Without MODSEQ, that cannot tell an
       // unchanged draft from an edited one, so each draft is downloaded and compared again.
@@ -1977,12 +1986,8 @@ suite("mail sent message projection", () => {
         await mailbox.syncAll();
         await importsSettled();
       }
-      const [observations] = await sql<{ count: number }[]>`
-        SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
-        WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND direction = 'import'
-      `;
-      // The first sync and both reconciliations each looked at the draft.
-      expect(observations?.count).toBe(3);
+      // Seeing the same copy again leaves nothing behind, so the reconciliations do not pile up rows.
+      expect(await observations()).toBe(observationsBefore);
       expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
 
       // The other client saves an edit as a new message with the same Message-ID.
@@ -2012,6 +2017,13 @@ suite("mail sent message projection", () => {
           "Saved in another client.",
         ].join("\r\n"),
       );
+      const invalidations = async () => {
+        const [row] = await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM mail.live_invalidation_outbox WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+        `;
+        return row?.count ?? 0;
+      };
+      const invalidationsBefore = await invalidations();
       await mailbox.syncAll();
       await waitFor(async () => {
         const [imported] = await sql<{ count: number }[]>`
@@ -2019,6 +2031,8 @@ suite("mail sent message projection", () => {
         `;
         return imported?.count === 1;
       }, "the imported draft");
+      // An open Drafts folder refreshes live when a draft arrives from another client.
+      expect(await invalidations()).toBeGreaterThan(invalidationsBefore);
       const created = await createDraft({
         context,
         mailboxId: mailbox.mailboxId,
@@ -2056,6 +2070,235 @@ suite("mail sent message projection", () => {
       expect(page.data.draftsPage?.total).toBe(2);
       expect(page.data.draftsPage?.items.map((item) => item.subject).sort()).toEqual(["Written elsewhere", "Written in Mail"]);
       expect(page.data.listItems).toEqual([]);
+    } finally {
+      provider.restore();
+    }
+  });
+  const settleDraftImports = (mailboxId: string) =>
+    waitFor(
+      async () => {
+        // Picks up projection work the maintenance sweep would submit, such as the export of an attachment change.
+        await submitDueDraftProjectionWork();
+        const [pending] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
+        WHERE mailbox_id = ${mailboxId}::uuid
+          AND state IN ('prepared', 'appending', 'retiring', 'external', 'importing')
+      `;
+        return pending?.count === 0;
+      },
+      "draft projection",
+      20_000,
+    );
+
+  const draftElsewhere = (messageId: string, subject: string, body: string) =>
+    [
+      `Message-ID: ${messageId}`,
+      `Date: ${new Date().toUTCString()}`,
+      `From: Owner <${OWNER}>`,
+      `To: Customer <${CUSTOMER}>`,
+      `Subject: ${subject}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      body,
+    ].join("\r\n");
+
+  const mailboxDrafts = (mailboxId: string) =>
+    sql<{ id: string; subject: string; body: string; revision: string; state: string; recoveries: number }[]>`
+      SELECT
+        draft.id,
+        draft.subject,
+        draft.body_markdown AS body,
+        draft.revision::text,
+        draft.state,
+        (SELECT count(*)::int FROM mail.draft_recovery_copies recovery WHERE recovery.draft_id = draft.id) AS recoveries
+      FROM mail.drafts draft
+      WHERE draft.mailbox_id = ${mailboxId}::uuid
+      ORDER BY draft.created_at
+    `;
+
+  const editInCloud = async (mailbox: Connected, draftId: string, expectedRevision: number, body: string) => {
+    const updated = await updateDraft({
+      context,
+      mailboxId: mailbox.mailboxId,
+      draftId,
+      expectedRevision,
+      input: {
+        senderIdentityId: mailbox.identityId,
+        to: [{ name: "Customer", address: CUSTOMER }],
+        cc: [],
+        bcc: [],
+        subject: "Started elsewhere",
+        body,
+        format: "plain",
+        priority: "normal",
+        requestDeliveryReceipt: false,
+        requestReadReceipt: false,
+      },
+    });
+    if (!updated.ok) throw new Error(updated.error.message);
+    return updated.data;
+  };
+
+  test("an edit another client saves from a copy older than the Cloud edit stays a recovery copy, however often it saves again", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const messageId = `<stale-copy-${suffix}@example.test>`;
+      const drafts = provider.folder(provider.draftsPath).entries;
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      const [imported] = await mailboxDrafts(mailbox.mailboxId);
+      if (!imported) throw new Error("The external draft was not imported");
+
+      // Mail replaces the copy in the Drafts folder with its own edit.
+      const original = [...drafts.keys()];
+      await editInCloud(mailbox, imported.id, 1, "Cloud edit.");
+      await settleDraftImports(mailbox.mailboxId);
+      expect(drafts.size).toBe(1);
+      expect(drafts.has(original[0]!)).toBe(false);
+
+      // The other client still shows the original and saves an edit of it, twice; each save replaces its previous one.
+      const first = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Other client edit one."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      drafts.delete(first.uid);
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Other client edit two."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: imported.id, body: "Cloud edit.", revision: "2", state: "draft", recoveries: 2 }),
+      ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a client that edits the current copy updates the draft once, even when it stores the edit twice", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const messageId = `<double-save-${suffix}@example.test>`;
+      const drafts = provider.folder(provider.draftsPath).entries;
+      const original = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      drafts.delete(original.uid);
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Edited elsewhere."));
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Edited elsewhere."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ body: "Edited elsewhere.", revision: "2", state: "draft", recoveries: 0 }),
+      ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft another client re-saved unchanged leaves the provider when discarded, and a later save from it starts a new draft", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const messageId = `<re-saved-${suffix}@example.test>`;
+      const drafts = provider.folder(provider.draftsPath).entries;
+      const original = await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      drafts.delete(original.uid);
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Original text."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      const [draft] = await mailboxDrafts(mailbox.mailboxId);
+      expect(draft).toEqual(expect.objectContaining({ body: "Original text.", revision: "1", state: "draft" }));
+
+      const discarded = await discardDraft({ context, mailboxId: mailbox.mailboxId, draftId: draft!.id, expectedRevision: 1 });
+      if (!discarded.ok) throw new Error(discarded.error.message);
+      await settleDraftImports(mailbox.mailboxId);
+      expect(drafts.size).toBe(0);
+
+      // The other client still had the draft open and saves an edit.
+      await provider.saveDraftElsewhere(draftElsewhere(messageId, "Started elsewhere", "Saved after the discard."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: draft!.id, state: "discarded", recoveries: 0 }),
+        expect.objectContaining({ body: "Saved after the discard.", revision: "1", state: "draft" }),
+      ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("an edit from another client imports into a draft whose attachment was uploaded in Mail", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const created = await createDraft({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          senderIdentityId: mailbox.identityId,
+          to: [{ name: "Customer", address: CUSTOMER }],
+          cc: [],
+          bcc: [],
+          subject: "With attachment",
+          body: "Written in Mail.",
+          format: "plain",
+          conversationId: null,
+          intent: "new",
+          sourceMessageId: null,
+        },
+      });
+      if (!created.ok) throw new Error(JSON.stringify(created.error));
+      const upload = await createDraftAttachmentUpload({
+        context,
+        mailboxId: mailbox.mailboxId,
+        draftId: created.data.id,
+        input: { filename: "notes.txt", contentType: "text/plain", byteLength: 5 },
+      });
+      if (!upload.ok) throw new Error(upload.error.message);
+      const appended = await appendDraftAttachmentUpload({
+        context,
+        mailboxId: mailbox.mailboxId,
+        draftId: created.data.id,
+        uploadId: upload.data.id,
+        offset: 0,
+        bytes: Buffer.from("notes"),
+      });
+      if (!appended.ok) throw new Error(appended.error.message);
+      const attached = await finalizeDraftAttachmentUpload({
+        context,
+        mailboxId: mailbox.mailboxId,
+        draftId: created.data.id,
+        uploadId: upload.data.id,
+        expectedRevision: created.data.revision,
+      });
+      if (!attached.ok) throw new Error(attached.error.message);
+      await settleDraftImports(mailbox.mailboxId);
+      const [exported] = await sql<{ stable_message_id: string; uid: string }[]>`
+        SELECT stable_message_id, uid::text FROM mail.draft_provider_snapshots
+        WHERE draft_id = ${created.data.id}::uuid AND direction = 'export' AND state = 'active'
+      `;
+      if (!exported) throw new Error("The draft was not exported");
+
+      // The other client replaces Mail's copy with its own edit, without Mail's headers or the attachment.
+      provider.folder(provider.draftsPath).entries.delete(Number(exported.uid));
+      await provider.saveDraftElsewhere(draftElsewhere(exported.stable_message_id, "With attachment", "Edited elsewhere."));
+      await mailbox.syncAll();
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await mailboxDrafts(mailbox.mailboxId)).toEqual([
+        expect.objectContaining({ id: created.data.id, body: "Edited elsewhere.", revision: String(attached.data.revision + 1) }),
+      ]);
+      const [attachments] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.draft_attachments WHERE draft_id = ${created.data.id}::uuid AND removed_at IS NULL
+      `;
+      expect(attachments?.count).toBe(0);
     } finally {
       provider.restore();
     }

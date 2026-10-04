@@ -1990,7 +1990,12 @@ export const restoreDraftRecoveryCopy = async (params: {
               `
             : null;
           if (recoveryAttachments) {
-            await tx`DELETE FROM mail.draft_attachments WHERE draft_id = ${draftId}::uuid`;
+            // Remove like every other draft edit: an upload row still points at an attachment it attached.
+            await tx`UPDATE mail.draft_attachments SET removed_at = now() WHERE draft_id = ${draftId}::uuid AND removed_at IS NULL`;
+            const [nextPosition] = await tx<{ position: number }[]>`
+              SELECT COALESCE(MAX(position), -1)::int + 1 AS position FROM mail.draft_attachments WHERE draft_id = ${draftId}::uuid
+            `;
+            const firstPosition = nextPosition?.position ?? 0;
             for (const attachment of recoveryAttachments) {
               await withShortIdDb(
                 tx,
@@ -2006,7 +2011,7 @@ export const restoreDraftRecoveryCopy = async (params: {
                   ${attachment.content_type},
                   ${Number(attachment.byte_length)},
                   ${attachment.content_hash},
-                  ${attachment.position}
+                  ${firstPosition + attachment.position}
                 )
               `,
               );
