@@ -8,6 +8,7 @@ import {
   getEffectiveGroupIds,
   getEffectiveGroups,
   getEffectivePermission,
+  getEffectivePermissions,
   listUsersWithAccess,
   resolveDisplayNames,
 } from "./access";
@@ -267,6 +268,41 @@ suite("effective access", () => {
         userGroups: [fixture.groupIds.parent],
       });
       expect(spoofedPermission).toBe("none");
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }, 30_000);
+
+  test("decides many subjects in one query exactly like one subject at a time", async () => {
+    const fixture = await createFixture();
+    try {
+      const serviceAccountAccess = await createAccess({
+        principal: { type: "service_account", serviceAccountId: fixture.serviceAccountId },
+        permission: "write",
+      });
+      if (!serviceAccountAccess.ok) throw new Error(serviceAccountAccess.error.message);
+      fixture.accessIds.push(serviceAccountAccess.data.id);
+      const [directAccessId, groupAccessId, publicAccessId, authenticatedAccessId] = fixture.accessIds;
+      const subjects = [
+        ...Object.values(fixture.userIds).map((userId) => ({ type: "user" as const, userId })),
+        { type: "user" as const, userId: fixture.userIds.outside, delegatedByServiceAccountId: fixture.serviceAccountId },
+        { type: "service_account" as const, serviceAccountId: fixture.serviceAccountId },
+      ];
+      const grantSets = [
+        [],
+        [directAccessId!],
+        [groupAccessId!],
+        [directAccessId!, groupAccessId!],
+        [publicAccessId!],
+        [authenticatedAccessId!],
+        [serviceAccountAccess.data.id],
+        fixture.accessIds,
+      ];
+      for (const accessIds of grantSets) {
+        const one = await Promise.all(subjects.map((subject) => getEffectivePermission({ accessIds, subject })));
+        expect(await getEffectivePermissions({ accessIds, subjects })).toEqual(one);
+      }
+      expect(await getEffectivePermissions({ accessIds: fixture.accessIds, subjects: [] })).toEqual([]);
     } finally {
       await cleanupFixture(fixture);
     }

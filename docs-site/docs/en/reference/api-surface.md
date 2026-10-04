@@ -202,8 +202,8 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting behind the Admin AI Usage report | [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
-| `@k2b/cloud/browser/live` | Supported, browser | Live WebSocket transport with typed channel sends | [Realtime UI](/en/docs/frontend/realtime-ui) |
-| `@k2b/cloud/events` | Supported, server-only | Live updates written in the transaction that makes the change; `subscribe()` is interim | [Live updates](/en/docs/automation/live-updates) |
+| `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
+| `@k2b/cloud/events` | Supported, server-only | `defineLive`: live updates written in the transaction that makes the change; `routes(channels)` serves them over one socket per application with access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
 | `@k2b/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |

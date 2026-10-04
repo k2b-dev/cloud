@@ -394,6 +394,55 @@ export const getEffectivePermission = async (params: {
   return rows[0]?.permission ?? "none";
 };
 
+/** A Postgres UUID[] literal that keeps `null` entries in place. */
+const uuidArrayWithNulls = (values: readonly (string | null)[]): string => `{${values.map((value) => value ?? "NULL").join(",")}}`;
+
+/**
+ * The effective permission of many subjects on one resource, with one query.
+ * Each result is what `getEffectivePermission()` returns for the subject at the
+ * same position: the same direct, nested-group, authenticated, and public rules.
+ * Use it where one decision is needed for many readers, such as a live
+ * channel's `authorize`.
+ */
+export const getEffectivePermissions = async (params: {
+  accessIds: string[];
+  subjects: readonly AccessSubject[];
+}): Promise<PermissionLevel[]> => {
+  const { accessIds, subjects } = params;
+  if (subjects.length === 0) return [];
+  if (accessIds.length === 0) return subjects.map(() => "none");
+  const userIds = subjects.map((subject) => (subject.type === "user" ? subject.userId : null));
+  const serviceAccountIds = subjects.map((subject) => (subject.type === "service_account" ? subject.serviceAccountId : null));
+  // The tiers of buildAccessPrincipalTierConditions, evaluated per row of `s`; every subject here is authenticated.
+  const rows = await sql<{ position: number; permission: PermissionLevel | null }[]>`
+    SELECT s.position::int AS position, (
+      SELECT a.permission
+      FROM auth.access a
+      WHERE a.id = ANY(${toPgUuidArray(accessIds)}::uuid[])
+        AND (
+          a.service_account_id = s.service_account_id
+          OR a.user_id = s.user_id
+          OR (s.user_id IS NOT NULL AND a.group_id IN (${recursiveGroupIdsSubquery(sql`s.user_id`)}))
+          OR a.authenticated_only = true
+          OR (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND a.authenticated_only = false)
+        )
+      ORDER BY
+        CASE a.permission
+          WHEN 'admin' THEN 4
+          WHEN 'write' THEN 3
+          WHEN 'read' THEN 2
+          WHEN 'none' THEN 1
+        END DESC
+      LIMIT 1
+    ) AS permission
+    FROM unnest(${uuidArrayWithNulls(userIds)}::uuid[], ${uuidArrayWithNulls(serviceAccountIds)}::uuid[])
+      WITH ORDINALITY AS s(user_id, service_account_id, position)
+  `;
+  const permissions = subjects.map((): PermissionLevel => "none");
+  for (const row of rows) permissions[row.position - 1] = row.permission ?? "none";
+  return permissions;
+};
+
 /**
  * Lists concrete users reachable from auth.access entries.
  *

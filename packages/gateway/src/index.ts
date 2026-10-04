@@ -60,7 +60,7 @@ export default {
     const url = new URL(req.url);
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      return tryUpgradeWebSocket(req, server, getRouteTable(), (msg, meta) => log.info(msg, meta));
+      return tryUpgradeWebSocket(req, server, getRouteTable(), (msg, meta) => log.info(msg, meta), server.requestIP(req)?.address ?? null);
     }
 
     if (url.pathname === "/health") return health();

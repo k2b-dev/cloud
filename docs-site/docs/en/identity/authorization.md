@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-09-30
+updated: 2026-10-04
 ---
 
 # Resource authorization
@@ -147,6 +147,12 @@ one resource; its grants and its credential scopes limit it.
 
 Do not pass `User.memberofGroupIds`. The shared resolver reads authoritative
 membership itself.
+
+To decide one resource for many subjects, for example the readers of a
+[live channel](/en/docs/automation/live-updates), use
+`getEffectivePermissions({ accessIds, subjects })`. It returns one permission
+per subject, in the same order, with one query instead of one per subject, by
+the same rules.
 
 ## Check inside the service
 

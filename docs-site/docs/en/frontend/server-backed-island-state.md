@@ -5,7 +5,7 @@ section: Frontend
 order: 855
 description: Keep an authorized SSR snapshot current with owner-local Solid queries, pagination, mutations, and live invalidation.
 tags: [frontend, solidjs, queries, state]
-updated: 2026-08-10
+updated: 2026-10-04
 ---
 
 # Keep server-backed island state current
@@ -190,39 +190,35 @@ owns cursor validation and result limits; see
 
 ## Connect live invalidation
 
-Live transport tells the query that its authorized snapshot is stale. For an
+A live event tells the query that its authorized snapshot is stale. For an
 event that does not contain a complete authoritative projection, invalidate
-the affected query and acknowledge the cursor only after coverage:
+the affected query and let `apply` resolve only after coverage:
 
 ```tsx
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 
 subscribe: ({ invalidate }) => {
-  const live = createLiveWebSocket<InventoryEvent>({
-    url: "/api/inventory/ws",
-    subscribe: (cursor) => ({ type: "subscribe", cursor }),
-    parse: (raw) => InventoryEventSchema.parse(JSON.parse(raw)),
-    onMessage: (event, controls) => {
-      void invalidate({ cursor: event.cursor })
-        .then(() => controls.markApplied(event.cursor))
-        .catch(() => {
-          // The transport owns replay and retry policy.
-        });
+  const live = liveConnection("/api/inventory/live").subscribe("warehouse", { warehouse: warehouseId }, {
+    cursor: initialCursor,
+    parse: (data) => InventoryEventSchema.parse(data),
+    // Resolves once a snapshot that covers the events is shown.
+    apply: async (events) => {
+      for (const { data } of events) await invalidate(data);
     },
+    resync: () => invalidate({ type: "reload" }),
+    unavailable: () => replacePage(),
   });
-  live.connect();
-  return () => live.dispose();
+  return () => live.close();
 },
 ```
 
-When one cursor affects several queries, the application coordinates all
-matching invalidations and acknowledges only after all covering Promises
-resolve. Directly applying an event is appropriate only when the event itself
-is the complete authoritative projection.
+When one event affects several queries, wait for all matching invalidations
+before `apply` resolves. Directly applying an event is appropriate only when
+the event itself is the complete authoritative projection.
 
 `query.subscribe` is owner-scoped and cleanup-aware, but transport-neutral.
-The application still owns WebSocket authentication, validation, reconnect,
-backoff, replay, and fan-out. See [Realtime UI](/en/docs/frontend/realtime-ui).
+The live client owns reconnects, replay, and cursors; the server owns
+authentication and access. See [Realtime UI](/en/docs/frontend/realtime-ui).
 
 ## Keep navigation reloadable
 

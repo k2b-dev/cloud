@@ -1,13 +1,16 @@
+import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
   createAccess,
   deleteAccess,
   getEffectivePermission,
+  getEffectivePermissions,
   hasPermission,
   type PermissionLevel,
   type Principal,
   paginateItems,
+  type RequestActor,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
 import {
@@ -418,6 +421,75 @@ export const getBookPermission = async (config: { bookId: string; subject: Acces
     accessIds,
     subject: config.subject,
   });
+};
+
+const PERMISSION_RANK: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
+
+export const permissionFromScopes = (scopes: readonly string[]): PermissionLevel => {
+  if (scopes.includes("admin")) return "admin";
+  if (scopes.includes("write")) return "write";
+  if (scopes.includes("read")) return "read";
+  return "none";
+};
+
+export const minPermission = (a: PermissionLevel, b: PermissionLevel): PermissionLevel =>
+  PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b;
+
+/**
+ * What an actor's role or binding decides on a book without its grants:
+ * administrators hold every book, and a resource-bound key holds nothing
+ * outside its own book. `null` leaves the decision to the grants.
+ */
+const fixedBookPermission = (actor: RequestActor, bookId: string): PermissionLevel | null => {
+  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+  if (user && hasRole(user, "admin")) return "admin";
+  const account = actor.kind === "service_account" ? actor.serviceAccount : null;
+  if (
+    account?.kind === "resource_bound" &&
+    (account.appId !== CONTACTS_APP_ID || account.resourceType !== CONTACT_BOOK_RESOURCE_TYPE || account.resourceId !== bookId)
+  ) {
+    return "none";
+  }
+  return null;
+};
+
+/** Only a user-delegated credential acts as its user; every other service account is capped by its scopes. */
+const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
+  actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated"
+    ? minPermission(permission, permissionFromScopes(actor.scopes))
+    : permission;
+
+/**
+ * The permission of a request's actor on one existing book: administrators
+ * hold every book, a resource-bound key only its own, and every service account
+ * that does not act as its user is capped by its credential scopes. The API and
+ * the live channels decide with these rules.
+ */
+export const getActorBookPermission = async (config: {
+  bookId: string;
+  actor: RequestActor;
+  subject: AccessSubject;
+}): Promise<PermissionLevel> =>
+  fixedBookPermission(config.actor, config.bookId) ??
+  capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.subject }));
+
+/** `getActorBookPermission` for many actors on one existing book, with one query for all their grants. */
+export const getActorsBookPermissions = async (
+  bookId: string,
+  readers: readonly { actor: RequestActor; subject: AccessSubject }[],
+): Promise<PermissionLevel[]> => {
+  const fixed = readers.map((reader) => fixedBookPermission(reader.actor, bookId));
+  const open = readers.filter((_, position) => fixed[position] === null);
+  if (open.length === 0 || !isUuid(bookId)) return fixed.map((permission) => permission ?? "none");
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM contacts.book_access WHERE book_id = ${bookId}::uuid
+  `;
+  const granted = await getEffectivePermissions({
+    accessIds: accessRows.map((row) => row.access_id),
+    subjects: open.map((reader) => reader.subject),
+  });
+  let next = 0;
+  return readers.map((reader, position) => fixed[position] ?? capByCredential(reader.actor, granted[next++] ?? "none"));
 };
 
 /**

@@ -1,21 +1,14 @@
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { i18n } from "@k2b/stdlib";
-import { retry } from "@k2b/sync/retry";
 import { toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
-import {
-  CONTACTS_LIVE_WS_TYPE,
-  type ContactLiveClientMessage,
-  type ContactLiveScope,
-  type ContactLiveServerMessage,
-  parseContactLiveServerMessage,
-} from "../../live-events";
-import { createContactsLiveApplyQueue, dispatchContactsLiveInvalidation, requiresContactsShellRefresh } from "./contacts-live";
+import { ContactLiveEventSchema } from "../../live-events";
+import { dispatchContactsLiveInvalidation, requiresContactsShellRefresh } from "./contacts-live";
 import { getSelectedContactFromUrl } from "./context";
 
 type Props = {
-  scope: ContactLiveScope;
+  scope: { kind: "all" } | { kind: "book"; bookId: string };
   initialCursor: string | null;
 };
 
@@ -25,18 +18,10 @@ export const liveEventsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      bookMetadataChanged: "Contact book metadata changed",
-      updateNotApplied: "Could not apply a Contacts update",
-      liveAccessChanged: "Live access changed or expired.",
-      bookAccessChanged: "Contact book access changed",
       liveUpdatesStopped: "Live updates stopped. Reload the page to see the latest changes.",
       reload: "Reload",
     },
     de: {
-      bookMetadataChanged: "Kontaktbuch geändert",
-      updateNotApplied: "Eine Änderung in Kontakte konnte nicht übernommen werden",
-      liveAccessChanged: "Der Zugriff wurde geändert oder ist abgelaufen.",
-      bookAccessChanged: "Zugriff auf das Kontaktbuch geändert",
       liveUpdatesStopped: "Live-Aktualisierungen wurden beendet. Lade die Seite neu, um die neuesten Änderungen zu sehen.",
       reload: "Neu laden",
     },
@@ -74,8 +59,15 @@ export default function ContactsLiveEvents(props: Props) {
       if (reloading || lifecycle.signal.aborted) return;
       reloading = true;
       lifecycle.abort();
+      subscription.close();
       if (reloadOnce(`contacts:live:${window.location.pathname}`)) return;
       toast(t().liveUpdatesStopped, { duration: 0, action: { label: t().reload, onClick: () => window.location.reload() } });
+    };
+
+    /** Book names, tags, and access shape the whole page: load it again once no editor is open. */
+    const reloadPage = async () => {
+      await waitForEditorsToClose(lifecycle.signal);
+      replaceCurrentPage();
     };
 
     const getCurrentSelection = () => {
@@ -86,76 +78,25 @@ export default function ContactsLiveEvents(props: Props) {
       return selection;
     };
 
-    const applyQueue = createContactsLiveApplyQueue({
-      apply: async (event, controls) => {
-        if (reloading || lifecycle.signal.aborted) return false;
-        if (requiresContactsShellRefresh(event)) {
-          controls.terminate({ code: "shell_changed", message: t().bookMetadataChanged });
-          await waitForEditorsToClose(lifecycle.signal);
-          replaceCurrentPage();
-          return false;
+    const scope = props.scope;
+    const subscription = liveConnection("/api/contacts/live").subscribe(scope.kind, scope.kind === "book" ? { book: scope.bookId } : {}, {
+      cursor: props.initialCursor,
+      parse: (data) => ContactLiveEventSchema.parse(data),
+      apply: async (events) => {
+        for (const { data: event } of events) {
+          if (reloading) return;
+          if (requiresContactsShellRefresh(event)) return reloadPage();
+          await dispatchContactsLiveInvalidation(event, getCurrentSelection());
         }
-        await retry({
-          signal: lifecycle.signal,
-          run: () => dispatchContactsLiveInvalidation(event, getCurrentSelection()),
-          after: ({ ctx }) => {
-            if (ctx.error && ctx.attempt < 3) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 150, maxMs: 1_000 }) });
-          },
-        });
       },
-      onFailure: async (_error, controls) => {
-        controls.terminate({ code: "refresh_failed", message: t().updateNotApplied });
-        await waitForEditorsToClose(lifecycle.signal);
-        replaceCurrentPage();
-      },
+      resync: reloadPage,
+      revoked: replaceCurrentPage,
+      unavailable: () => void reloadPage(),
     });
 
-    const connection = createLiveWebSocket<ContactLiveServerMessage>({
-      url: "/api/contacts/ws",
-      initialCursor: props.initialCursor,
-      activity: "visible",
-      subscribe: (cursor) =>
-        ({
-          type: CONTACTS_LIVE_WS_TYPE.subscribe,
-          payload: { scope: props.scope, fromCursor: cursor },
-        }) satisfies ContactLiveClientMessage,
-      parse: parseContactLiveServerMessage,
-      classifyClose: ({ code, reason }) => (code === 1008 ? { code: reason || "access_denied", message: t().liveAccessChanged } : null),
-      onMessage: (message, controls) => {
-        if (message.type === CONTACTS_LIVE_WS_TYPE.error && message.payload.code === "resync_required") {
-          controls.terminate({ code: message.payload.code, message: message.payload.message });
-          void waitForEditorsToClose(lifecycle.signal).then(replaceCurrentPage);
-          return;
-        }
-        if (message.type === CONTACTS_LIVE_WS_TYPE.ready) {
-          controls.markApplied(message.payload.cursor);
-          return;
-        }
-        if (message.type === CONTACTS_LIVE_WS_TYPE.scopeChanged) {
-          controls.terminate({ code: "scope_changed", message: t().bookAccessChanged });
-          if (message.payload.change === "gained") {
-            void waitForEditorsToClose(lifecycle.signal).then(replaceCurrentPage);
-          } else {
-            replaceCurrentPage();
-          }
-          return;
-        }
-        if (message.type === CONTACTS_LIVE_WS_TYPE.event) {
-          void applyQueue.enqueue(message.payload.event, message.payload.cursor, controls);
-          return;
-        }
-        if (message.type === CONTACTS_LIVE_WS_TYPE.revoked) {
-          controls.terminate({ code: message.payload.code, message: message.payload.message });
-          replaceCurrentPage();
-        }
-      },
-    });
-
-    connection.connect();
     onCleanup(() => {
-      applyQueue.stop();
       lifecycle.abort();
-      connection.dispose();
+      subscription.close();
     });
   });
 

@@ -1,5 +1,5 @@
 import { api } from "@k2b/cloud/browser";
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { mermaidConfig } from "@k2b/cloud/browser/mermaid";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { query } from "@k2b/stdlib/solid";
@@ -11,17 +11,16 @@ export const inventoryClient = api.create<InventoryApi>({
 });
 
 type InventoryItem = { id: string; name: string };
-type InventoryEvent = { cursor: string };
+type InventoryEvent = { itemId: string };
 
-const parseInventoryEvent = (raw: string): InventoryEvent => {
-  const value: unknown = JSON.parse(raw);
-  if (typeof value !== "object" || value === null || !("cursor" in value) || typeof value.cursor !== "string") {
+const parseInventoryEvent = (value: unknown): InventoryEvent => {
+  if (typeof value !== "object" || value === null || !("itemId" in value) || typeof value.itemId !== "string") {
     throw new Error("Inventory event is invalid");
   }
-  return { cursor: value.cursor };
+  return { itemId: value.itemId };
 };
 
-export const createItemQuery = (itemId: Accessor<string>, initial: { source: string; data: InventoryItem }) =>
+export const createItemQuery = (itemId: Accessor<string>, initial: { source: string; data: InventoryItem; cursor: string | null }) =>
   query.create<string, InventoryItem, InventoryEvent>({
     source: itemId,
     initial,
@@ -31,20 +30,21 @@ export const createItemQuery = (itemId: Accessor<string>, initial: { source: str
       return response.json();
     },
     subscribe: ({ invalidate }) => {
-      const live = createLiveWebSocket<InventoryEvent>({
-        url: "/api/inventory/ws",
-        subscribe: (cursor) => ({ type: "subscribe", cursor }),
-        parse: parseInventoryEvent,
-        onMessage: (message, controls) => {
-          void invalidate(message)
-            .then(() => controls.markApplied(message.cursor))
-            .catch(() => {
-              // Reconnect replays from the last applied cursor.
-            });
+      const live = liveConnection("/api/inventory/live").subscribe(
+        "item",
+        { item: itemId() },
+        {
+          cursor: initial.cursor,
+          parse: parseInventoryEvent,
+          // Resolves once a snapshot that covers the events is shown; the cursor moves only then.
+          apply: async (events) => {
+            for (const { data } of events) await invalidate(data);
+          },
+          resync: () => invalidate({ itemId: itemId() }),
+          unavailable: () => reloadBoardAfterLiveFailure(itemId(), () => undefined),
         },
-      });
-      live.connect();
-      return () => live.dispose();
+      );
+      return () => live.close();
     },
   });
 

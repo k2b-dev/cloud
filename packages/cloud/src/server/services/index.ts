@@ -23,6 +23,7 @@ export {
   getEffectiveGroupIds,
   getEffectiveGroups,
   getEffectivePermission,
+  getEffectivePermissions,
   hasPermission,
   listUsersWithAccess,
   PERMISSION_LEVELS,
