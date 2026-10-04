@@ -548,6 +548,21 @@ export const accountsMessages = i18n.define({
         `Revoke “${name}”? This device can no longer approve sign-ins for this account. Existing sessions stay signed in.`,
       revokeDeviceLabel: ({ name }: { name: string }) => `Revoke device ${name}`,
       revokeDeviceFailed: "The device could not be revoked.",
+      appDevices: "App devices",
+      appDevicesSummary: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", {
+          one: "1 phone is signed in to the mobile app",
+          other: `${count} phones are signed in to the mobile app`,
+        }),
+      platform: "Platform",
+      platformIos: "iOS",
+      platformAndroid: "Android",
+      platformOther: "Other",
+      removeAppDevice: "Remove phone",
+      removeAppDeviceConfirm: ({ name }: { name: string }) =>
+        `Remove “${name}”? The mobile app on this phone is signed out at once. The person can pair it again.`,
+      removeAppDeviceLabel: ({ name }: { name: string }) => `Remove phone ${name}`,
+      removeAppDeviceFailed: "The phone could not be removed.",
       denyConfirm: ({ name, email }: { name: string; email: string }) => `Deny the request from ${name} (${email})?`,
       deny: "Deny",
       denyAccountRequest: "Deny account request",
@@ -1360,6 +1375,21 @@ export const accountsMessages = i18n.define({
         `„${name}“ widerrufen? Dieses Gerät kann dann keine Anmeldungen für dieses Konto mehr bestätigen. Bestehende Sitzungen bleiben angemeldet.`,
       revokeDeviceLabel: ({ name }) => `Gerät ${name} widerrufen`,
       revokeDeviceFailed: "Das Gerät konnte nicht widerrufen werden.",
+      appDevices: "App-Geräte",
+      appDevicesSummary: ({ count }) =>
+        i18n.plural(count, "de", {
+          one: "1 Telefon ist in der Mobile App angemeldet",
+          other: `${count} Telefone sind in der Mobile App angemeldet`,
+        }),
+      platform: "Plattform",
+      platformIos: "iOS",
+      platformAndroid: "Android",
+      platformOther: "Andere",
+      removeAppDevice: "Telefon entfernen",
+      removeAppDeviceConfirm: ({ name }) =>
+        `„${name}“ entfernen? Die Mobile App auf diesem Telefon wird sofort abgemeldet. Die Person kann es danach wieder koppeln.`,
+      removeAppDeviceLabel: ({ name }) => `Telefon ${name} entfernen`,
+      removeAppDeviceFailed: "Das Telefon konnte nicht entfernt werden.",
       denyConfirm: ({ name, email }) => `Die Anfrage von ${name} (${email}) ablehnen?`,
       deny: "Ablehnen",
       denyAccountRequest: "Kontoanfrage ablehnen",

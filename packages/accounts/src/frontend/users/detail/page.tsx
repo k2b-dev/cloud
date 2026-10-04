@@ -6,6 +6,7 @@ import {
   appApproval,
   coreSettings,
   linuxIdentities,
+  pwaDevices,
   readAccountCategoryPolicy,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
@@ -27,6 +28,7 @@ import { buildUserDetailUrl, buildUsersUrl, parseUsersListState } from "../../li
 import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
 import AddToGroup from "./AddToGroup.island";
+import AppDevicesSection from "./AppDevicesSection";
 import LinuxIdentity from "./LinuxIdentity.island";
 import RevokeUserDevice from "./RevokeUserDevice.island";
 import UserActions from "./UserActions.island";
@@ -73,7 +75,7 @@ export default ssr<AuthContext>(async (c) => {
   const isIpaUser = user.provider === "ipa";
   const isGuestProfile = user.profile === "guest";
 
-  const [pendingRequestsPage, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage, devices] = await Promise.all([
+  const [pendingRequestsPage, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage, devices, phones] = await Promise.all([
     accountsService.accountRequest.list({
       access: { userId: sessionUser.id, isAdmin: true },
       filter: { status: "pending" },
@@ -98,6 +100,8 @@ export default ssr<AuthContext>(async (c) => {
     }),
     // Null renders an explicit error state instead of hiding a device an admin may need to revoke.
     appApproval.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
+    // Phones in the mobile app; the section stays hidden while there are none.
+    pwaDevices.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id),
   ]);
   const showDevices = Boolean(approvalConfig?.enabled) || devices === null || devices.length > 0;
 
@@ -412,6 +416,8 @@ export default ssr<AuthContext>(async (c) => {
               )}
             </div>
           )}
+
+          <AppDevicesSection userId={user.id} devices={phones} locale={locale} />
 
           <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-memberships">
             <div class="flex flex-wrap items-end justify-between gap-2">

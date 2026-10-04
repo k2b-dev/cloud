@@ -1,7 +1,7 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import type { User } from "@k2b/cloud/contracts";
-import { AppApprovalError, accountsAppService, appApproval, notifications } from "@k2b/cloud/services";
-import { session } from "@k2b/cloud/services/session";
+import { AppApprovalError, accountsAppService, appApproval, notifications, PwaError, pwaDevices } from "@k2b/cloud/services";
+import { type AuthenticatedSession, session } from "@k2b/cloud/services/session";
 import users from "./users";
 
 const adminId = "11111111-1111-4111-8111-111111111111";
@@ -168,6 +168,85 @@ test("an invalid app sign-in configuration answers 503 on both device routes", a
   } finally {
     getMinimal.mockRestore();
     list.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+const phone = {
+  id: deviceId,
+  name: "Ada's iPhone",
+  platform: "ios" as const,
+  createdAt: "2026-09-01T10:00:00.000Z",
+  lastUsedAt: "2026-09-30T08:00:00.000Z",
+  current: false,
+};
+
+test("app device routes need admin authority; an administrator's app session carries none", async () => {
+  const list = spyOn(pwaDevices, "listUserDevices");
+  const revoke = spyOn(pwaDevices, "revokeUserDevice");
+  // A web session without the role, and an administrator's app session as the session layer delivers it.
+  const sessions: AuthenticatedSession[] = [
+    { user: { ...admin, roles: [] }, data: { userId: adminId, sid: "web", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" } },
+    {
+      user: { ...admin, roles: [] },
+      data: { userId: adminId, sid: "app", authEpoch: 0, kind: "app", deviceId, expiresAt: "2099-01-01T00:00:00Z" },
+    },
+  ];
+  try {
+    for (const authenticated of sessions) {
+      authenticate.mockResolvedValueOnce(authenticated);
+      authenticate.mockResolvedValueOnce(authenticated);
+      expect((await users.request(`/${targetId}/app-devices`)).status).toBe(403);
+      expect((await users.request(`/${targetId}/app-devices/${deviceId}`, { method: "DELETE" })).status).toBe(403);
+    }
+    expect(list).not.toHaveBeenCalled();
+    expect(revoke).not.toHaveBeenCalled();
+  } finally {
+    list.mockRestore();
+    revoke.mockRestore();
+  }
+});
+
+test("admins list a user's phones and removal repeats without error", async () => {
+  const getMinimal = spyOn(accountsAppService.user, "getMinimal").mockResolvedValue(minimalTarget as never);
+  const list = spyOn(pwaDevices, "listUserDevices").mockResolvedValue([phone]);
+  const revoke = spyOn(pwaDevices, "revokeUserDevice").mockResolvedValueOnce({ revoked: true }).mockResolvedValueOnce({ revoked: false });
+  const send = spyOn(notifications, "send");
+  try {
+    const listed = await users.request(`/${targetId}/app-devices`);
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({ devices: [phone] });
+    expect(list).toHaveBeenCalledWith({ userId: adminId, admin: true }, targetId);
+
+    for (const revoked of [true, false]) {
+      const res = await users.request(`/${targetId}/app-devices/${deviceId}`, { method: "DELETE" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ revoked });
+    }
+    expect(revoke).toHaveBeenCalledWith({ userId: adminId, admin: true }, targetId, deviceId);
+    // No removal notice in the preview.
+    expect(send).not.toHaveBeenCalled();
+  } finally {
+    getMinimal.mockRestore();
+    list.mockRestore();
+    revoke.mockRestore();
+    send.mockRestore();
+  }
+});
+
+test("unknown users and phones answer 404 in the Accounts error format", async () => {
+  const getMinimal = spyOn(accountsAppService.user, "getMinimal").mockResolvedValue(minimalTarget as never);
+  const revoke = spyOn(pwaDevices, "revokeUserDevice").mockRejectedValue(new PwaError("NOT_FOUND", 404));
+  try {
+    const missing = await users.request(`/${targetId}/app-devices/${deviceId}`, { method: "DELETE" });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ message: "Device not found" });
+    getMinimal.mockResolvedValue(null);
+    expect((await users.request(`/${targetId}/app-devices`)).status).toBe(404);
+    expect((await users.request(`/${targetId}/app-devices/${deviceId}`, { method: "DELETE" })).status).toBe(404);
+    expect(revoke).toHaveBeenCalledTimes(1);
+  } finally {
+    getMinimal.mockRestore();
     revoke.mockRestore();
   }
 });

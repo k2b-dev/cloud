@@ -3,15 +3,15 @@ title: Account administration API
 navTitle: Account administration
 section: Reference
 order: 1276
-description: Display account categories and manage Linux identities through supported APIs.
+description: Display account categories, manage Linux identities and remove a person's mobile app phones through supported APIs.
 tags: [accounts, api, linux]
-updated: 2026-09-09
+updated: 2026-10-04
 ---
 
 # Account administration API
 
 For application authors integrating account presentation or administrator-only
-Linux identity operations. For configuration in Administration, start with
+Linux identity and phone operations. For configuration in Administration, start with
 [Accounts & sign-in](/en/docs/accounts).
 
 ## Display account types in an application
@@ -163,3 +163,31 @@ remains available for assigning a GID to an existing local group.
 
 See [Assign Linux identities](/en/docs/operations/linux-identities) for setup,
 name requirements and CLI examples.
+
+## Remove phones from the mobile app
+
+> **Preview:** the mobile app is not released yet. This contract may still
+> change in a minor release.
+
+Administrators list and remove another account's phones in the mobile app
+through the Accounts API. Both routes require the `admin` role. An
+administrator's own app session never carries that role, so a phone cannot
+call them.
+
+| Method and path below `/api/accounts/users` | Result |
+| --- | --- |
+| `GET /:id/app-devices` | `{ devices }` with `id`, `name`, `platform` (`ios`, `android` or `other`), `createdAt`, `lastUsedAt` and `current` (always `false` here) |
+| `DELETE /:id/app-devices/:deviceId` | `{ revoked }`: `true` for the call that removed the phone, `false` when it was already removed |
+
+An unknown account or a phone of another account answers `404`. Removal ends
+the phone's app sessions in the same transaction, so every application's
+validator rejects them at once; the app then shows that the phone was signed
+out. Cloud audits the removal as `auth.pwa.device.revoke` with the
+administrator as actor and no notification is sent.
+
+Both routes call `pwaDevices.listUserDevices(admin, userId)` and
+`pwaDevices.revokeUserDevice(admin, userId, deviceId)` from
+`@k2b/cloud/services`, which refuse callers whose `admin` flag is `false`.
+Pass the request actor's current roles; see
+[App sessions](/en/docs/identity/authentication#app-sessions-preview) for the
+session contract.

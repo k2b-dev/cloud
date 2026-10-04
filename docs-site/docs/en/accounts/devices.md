@@ -3,12 +3,21 @@ title: Pair and manage sign-in devices
 navTitle: Devices
 section: Accounts & sign-in
 order: 1085
-description: Pair a sign-in app with QR or a copy link, and remove a lost device yourself or as an administrator.
+description: Pair a sign-in app with QR or a copy link, and remove a lost sign-in device or app device yourself or as an administrator.
 tags: [accounts, administration, authentication]
-updated: 2026-09-28
+updated: 2026-10-04
 ---
 
 # Pair and manage sign-in devices
+
+Cloud lists two kinds of paired phones separately:
+
+- **Sign-in devices** approve sign-ins for an account through an
+  authenticator such as Cloud Login. Most of this page covers them.
+- **App devices** are phones paired with the mobile app (preview). Each one
+  holds its own app session. See [Remove an app device for someone](#remove-an-app-device-for-someone).
+
+Removing one kind never affects the other.
 
 Pair your authenticator with a Cloud account to approve sign-ins for that account.
 Sign in to Cloud using a working login method before pairing. If **Pair a device**
@@ -104,3 +113,25 @@ From the terminal, administrators use
 
 See [Cloud Login](/en/docs/operations/cloud-login#protect-the-app) for app-lock
 recovery. A synced passkey is not a backup of the authenticator's local vault.
+
+## Remove an app device for someone
+
+> **Preview:** the mobile app is not released yet. Until it is, no account has
+> app devices and the section below does not appear.
+
+When someone loses a phone that is paired with the mobile app, an
+administrator opens **Accounts → Users → the user**. **App devices** lists each
+paired phone with its name, platform, when it was paired and when it was last
+used. The section appears only while the account has at least one paired phone.
+
+1. Find the phone by name and last use.
+2. Choose the remove button in its row, then **Remove phone** to confirm.
+
+Removing a phone ends its app sessions at once. At its next request, the app
+on that phone shows that it was signed out, and nobody can use it for that
+account until it is paired again. Web sessions and sign-in devices stay as they
+are. Cloud records the removal in the audit log; the person is not notified.
+
+An administrator cannot do this from the mobile app: app sessions never carry
+the administrator role. There is no `cld` command for app devices yet. For the
+HTTP routes, see [Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app).

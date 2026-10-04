@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import {
   AppDeviceViewSchema,
   IpaProfileFieldsSchema,
+  PwaDeviceViewSchema,
   UpdateAvatarResponseSchema,
   UpdateAvatarSchema,
   UserSchema,
 } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
-import { AppApprovalError, accountsAppService as accountsService, appApproval, logger } from "@k2b/cloud/services";
+import { AppApprovalError, accountsAppService as accountsService, appApproval, logger, PwaError, pwaDevices } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -34,6 +35,10 @@ const notificationSender = createAccountsNotificationSender(accountsApp.notifica
 const UserIdParamSchema = z.object({ id: z.uuid() });
 const UserDeviceParamSchema = z.object({ id: z.uuid(), deviceId: z.uuid() });
 const UserDevicesResponseSchema = z.object({ devices: z.array(AppDeviceViewSchema) });
+const UserAppDevicesResponseSchema = z.object({ devices: z.array(PwaDeviceViewSchema) });
+const AppDeviceRemovalResponseSchema = z.object({
+  revoked: z.boolean().describe("True only for the call that removed the phone; repeating the call answers false"),
+});
 
 // Admin PATCH accepts the same profile fields plus `mail`. Defined standalone
 // rather than `UpdateProfileSchema.extend(...)` so its refinement can treat
@@ -97,7 +102,7 @@ const NotifyUserSchema = z.object({
 type UserBackedActor = ReturnType<typeof expectUserBackedActor>;
 const deviceAdministrator = (actor: UserBackedActor) => ({ userId: actor.id, admin: actor.roles.includes("admin") });
 
-/** Runs a device operation for an existing account and maps app-approval refusals to the Accounts error contract. */
+/** Runs a device operation for an existing account and maps device-service refusals to the Accounts error contract. */
 const userDeviceResult = async <T>(
   id: string,
   run: () => Promise<T>,
@@ -106,7 +111,7 @@ const userDeviceResult = async <T>(
   try {
     return ok(await run());
   } catch (error) {
-    if (!(error instanceof AppApprovalError)) throw error;
+    if (!(error instanceof AppApprovalError) && !(error instanceof PwaError)) throw error;
     if (error.status === 403) return fail(err.forbidden("Admin access required"));
     if (error.status === 404) return fail(err.notFound("Device"));
     // An invalid stored app sign-in configuration, such as app.url, is not a server fault.
@@ -705,6 +710,56 @@ const app = new Hono<AuthContext>()
               .catch((error) => log.error("Device revocation notice failed", { targetUserId: id, deviceId, error: String(error) }));
           return { message: accountsApiMessages(getLocale(c)).deviceRevoked };
         }),
+      );
+    },
+  )
+  .get(
+    "/:id/app-devices",
+    describeRoute({
+      tags: ["Users"],
+      summary: "List phones paired with the mobile app",
+      description:
+        "List the account's active phones in the mobile app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(UserAppDevicesResponseSchema, "Active phones"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "User not found"),
+      },
+    }),
+    v("param", UserIdParamSchema),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const actor = deviceAdministrator(expectUserBackedActor(c));
+      return respond(
+        c,
+        userDeviceResult(id, async () => ({ devices: await pwaDevices.listUserDevices(actor, id) })),
+      );
+    },
+  )
+  .delete(
+    "/:id/app-devices/:deviceId",
+    describeRoute({
+      tags: ["Users"],
+      summary: "Remove a phone from the mobile app",
+      description:
+        "Remove one of the account's phones from the mobile app (preview) and end its app sessions at once (admin only). The phone shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`.",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(AppDeviceRemovalResponseSchema, "Phone removed, or already removed"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        404: jsonResponse(ErrorResponseSchema, "User or phone not found"),
+      },
+    }),
+    v("param", UserDeviceParamSchema),
+    async (c) => {
+      const { id, deviceId } = c.req.valid("param");
+      const actor = deviceAdministrator(expectUserBackedActor(c));
+      return respond(
+        c,
+        userDeviceResult(id, () => pwaDevices.revokeUserDevice(actor, id, deviceId)),
       );
     },
   )
