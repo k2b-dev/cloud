@@ -5,7 +5,7 @@ section: Server
 order: 210
 description: Add the request context and transport policies an application needs.
 tags: [server, middleware, hono]
-updated: 2026-09-11
+updated: 2026-10-04
 ---
 
 # Request middleware
@@ -173,6 +173,12 @@ Options:
 
 `keyBy: "ip"` always uses the client IP. `keyBy: "user"` and `"auto"` use the
 session user when one can be resolved. They fall back to the client IP.
+
+The client IP is the first `X-Forwarded-For` address, then `X-Real-IP`. The
+gateway sets both on every request and drops the client's own values, so an
+application behind the gateway can rely on them. It accepts an address named
+by a reverse proxy only from the proxies in `GATEWAY_TRUSTED_PROXIES`; see
+[Pass client addresses through the reverse proxy](/en/docs/operations/deployment-requirements#pass-client-addresses-through-the-reverse-proxy).
 
 Both limits and window length are rounded down and kept at a minimum of `1`.
 

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Deployment requirements
@@ -157,6 +157,40 @@ The query also selects jobs and queues that declare a `retention` or
 in 0.24.0; leave out such streams of your own applications, which `sync.owner`
 names.
 
+## Pass client addresses through the reverse proxy
+
+Applications rate-limit and audit requests by client address, including
+sign-in and phone pairing. Behind a reverse proxy such as Traefik, the gateway
+only sees the proxy's address, so the proxy must name the client in
+`X-Forwarded-For`, and the gateway must trust the proxy to do so.
+
+`GATEWAY_TRUSTED_PROXIES` lists the IP addresses or CIDR ranges of trusted
+proxies. The gateway reads `X-Forwarded-For` from right to left, skips every
+trusted proxy, and takes the first other address as the client. It forwards
+that address as `X-Real-IP` and as the first entry of `X-Forwarded-For`,
+followed by the trusted proxies it passed through. Entries further left came
+from the client and are dropped. A request from a peer outside the list keeps
+the peer's own address, whatever its headers claim. A malformed entry ends the
+search at the last trusted address.
+
+The default trusts loopback and private networks: `127.0.0.0/8`, `::1/128`,
+`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `fc00::/7`. It covers the
+supplied `compose.prod.yml`, where Traefik reaches the gateway over a Docker
+network. Keep the default there, or set the Traefik network's subnet from
+`docker network inspect traefik` to trust only Traefik.
+
+| Setup | Value |
+| --- | --- |
+| Traefik or another proxy on a Docker or private network | Default, or the proxy's subnet |
+| A CDN or load balancer in front of that proxy | Add its published address ranges; otherwise every client shares the CDN's addresses |
+| Clients reach the gateway directly from a private network | The proxy's exact address, or `127.0.0.1` when there is no proxy. With the default, such a client could name any address and escape per-client limits |
+
+The proxy must overwrite or append to `X-Forwarded-For`, never pass a client's
+header through unchanged. Traefik does this by default; do not enable
+`forwardedHeaders.insecure` or trust client networks in its
+`forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
+limits and audit entries must show different addresses, not the proxy's.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,
@@ -230,7 +264,7 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming. Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails require shared SMTP. | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |

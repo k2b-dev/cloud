@@ -50,6 +50,8 @@ services:
       SYNC_NAMESPACE: ${SYNC_NAMESPACE:-prod}
       NATS_CREDS_FILE: ${NATS_CREDS_FILE:-}
       NATS_TLS_CA_FILE: ${NATS_TLS_CA_FILE:-}
+      # Unset trusts loopback and private networks, which covers Traefik here.
+      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.cloud.rule=Host(`${CLOUD_HOST}`)"

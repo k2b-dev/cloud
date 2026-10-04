@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-09-29
+updated: 2026-10-04
 ---
 
 # Configuration reference
@@ -74,6 +74,7 @@ Declared in `packages/gateway/src/env.ts`.
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
 | `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Stable identity of this gateway router instance in the registry; defaults to `HOSTNAME`, then `gateway-router`. |
+| `GATEWAY_TRUSTED_PROXIES` | list | runtime | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | no | Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. An invalid entry stops the gateway at startup. |
 
 ## Application: pwa-auth
 

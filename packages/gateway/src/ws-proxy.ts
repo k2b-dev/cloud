@@ -14,6 +14,7 @@
  * isn't lost during connection setup.
  */
 import type { ServerWebSocket } from "bun";
+import type { ClientAddress } from "./client-address";
 import { isInternalPath } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
 
@@ -103,6 +104,7 @@ export const tryUpgradeWebSocket = (
   server: { upgrade: (req: Request, options: { data: ProxyData; headers?: Record<string, string> }) => boolean },
   table: RouteTable,
   logFn: (msg: string, meta?: Record<string, unknown>) => void,
+  client: ClientAddress | null = null,
 ): Response | undefined => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
@@ -115,9 +117,10 @@ export const tryUpgradeWebSocket = (
   const upstream = new URL(url.pathname + url.search, match.baseUrl);
   upstream.protocol = "ws:";
 
-  // Forward auth-relevant headers so the upstream's auth middleware sees the
-  // same request the gateway saw. Bun's WebSocket constructor only honours
-  // `headers` in the options bag (its built-in client variant).
+  // Forward auth-relevant headers and the resolved client address so the
+  // upstream's auth and rate-limit middleware see the same request. Bun's
+  // WebSocket constructor only honours `headers` in the options bag (its
+  // built-in client variant).
   const forwardedHeaders: Record<string, string> = {};
   const cookie = req.headers.get("cookie");
   if (cookie) forwardedHeaders.Cookie = cookie;
@@ -125,6 +128,11 @@ export const tryUpgradeWebSocket = (
   if (auth) forwardedHeaders.Authorization = auth;
   forwardedHeaders["X-Forwarded-Host"] = url.host;
   forwardedHeaders["X-Forwarded-Proto"] = url.protocol.replace(":", "");
+  // Same client address as the HTTP proxy; the client's own headers never pass.
+  if (client) {
+    forwardedHeaders["X-Forwarded-For"] = client.forwardedFor;
+    forwardedHeaders["X-Real-IP"] = client.address;
+  }
 
   let upstreamSocket: WebSocket;
   try {

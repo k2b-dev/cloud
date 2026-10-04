@@ -1,5 +1,6 @@
 import { PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
+import type { ClientAddress } from "./client-address";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { isInternalPath } from "./request-boundary";
 import type { RouteTable } from "./trie";
@@ -99,7 +100,7 @@ export const proxyRequest = async (
   table: RouteTable,
   stats: ProxyStats,
   log: (msg: string, meta?: Record<string, unknown>) => void,
-  clientIp: string | null = null,
+  client: ClientAddress | null = null,
 ): Promise<Response> => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
@@ -151,9 +152,15 @@ export const proxyRequest = async (
     fwdHeaders.set("Host", targetUrl.host);
     fwdHeaders.set("X-Forwarded-Host", url.host);
     fwdHeaders.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+    // Apps read the client from these headers; only the gateway may set them.
     fwdHeaders.delete("CF-Connecting-IP");
-    if (clientIp) fwdHeaders.set("X-Forwarded-For", clientIp);
-    else fwdHeaders.delete("X-Forwarded-For");
+    if (client) {
+      fwdHeaders.set("X-Forwarded-For", client.forwardedFor);
+      fwdHeaders.set("X-Real-IP", client.address);
+    } else {
+      fwdHeaders.delete("X-Forwarded-For");
+      fwdHeaders.delete("X-Real-IP");
+    }
 
     const proxyRes = await fetch(targetUrl.href, {
       method: req.method,
