@@ -1058,7 +1058,7 @@ const applyImportedDraft = async (params: {
         code: "DRAFT_IMPORT_IDENTITY_CHANGED",
       });
     }
-    let draftId = params.parsed.cloudDraftId;
+    let draftId = params.parsed.cloudDraftId ?? params.snapshot.draft_id;
     const [existing] = draftId
       ? await tx<{ id: string; revision: string | number; state: string }[]>`
           SELECT id, revision, state
@@ -1378,25 +1378,34 @@ const processImportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
           });
         }
         const fingerprint = parsedFingerprint({ parsed, senderIdentityId: identity.id });
-        if (parsed.cloudFingerprint && parsed.cloudFingerprint === fingerprint && parsed.cloudDraftId && parsed.cloudRevision) {
+        // A draft another program saved carries no Cloud headers. The Drafts-folder sync then links the
+        // observation to the Cloud draft that already maps to the same provider message.
+        const linkedDraftId = parsed.cloudDraftId ?? snapshot.draft_id;
+        const linkedRevision = parsed.cloudDraftId
+          ? parsed.cloudRevision
+          : snapshot.cloud_revision == null
+            ? null
+            : Number(snapshot.cloud_revision);
+        const unchangedSinceProjection = parsed.cloudDraftId ? parsed.cloudFingerprint === fingerprint : true;
+        if (linkedDraftId && linkedRevision && unchangedSinceProjection) {
           const [known] = await sql<{ current_revision: string | number }[]>`
         SELECT draft.revision AS current_revision
         FROM mail.drafts draft
         JOIN mail.draft_provider_snapshots projected
           ON projected.draft_id = draft.id
-         AND projected.cloud_revision = ${parsed.cloudRevision}
-         AND projected.content_fingerprint = ${parsed.cloudFingerprint}
-        WHERE draft.id = ${parsed.cloudDraftId}::uuid
+         AND projected.cloud_revision = ${linkedRevision}
+         AND projected.content_fingerprint = ${fingerprint}
+        WHERE draft.id = ${linkedDraftId}::uuid
           AND draft.mailbox_id = ${snapshot.mailbox_id}::uuid
         LIMIT 1
       `;
-          if (known && Number(known.current_revision) >= parsed.cloudRevision) {
+          if (known && Number(known.current_revision) >= linkedRevision) {
             await assertLeaseActive();
             await sql`
           UPDATE mail.draft_provider_snapshots
           SET
-            draft_id = ${parsed.cloudDraftId}::uuid,
-            cloud_revision = ${parsed.cloudRevision},
+            draft_id = ${linkedDraftId}::uuid,
+            cloud_revision = ${linkedRevision},
             content_fingerprint = ${fingerprint},
             content_snapshot = ${parsed}::jsonb,
             state = 'retired',

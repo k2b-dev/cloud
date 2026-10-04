@@ -258,6 +258,8 @@ const createProvider = (kind: ProviderKind) => {
     appends,
     folder,
     deliver: (source: string) => store(Buffer.from(source), INBOX, []),
+    // A draft another client saved, without the headers Mail writes into its own drafts.
+    saveDraftElsewhere: (source: string) => store(Buffer.from(source), draftsPath, ["\\Draft", "\\Seen"]),
     // A message another client sent; a message to the own address is delivered to the Inbox too.
     storeSent: async (source: string, alsoInInbox: boolean) => {
       const { message } = await store(Buffer.from(source), sentPath, ["\\Seen"]);
@@ -1925,6 +1927,69 @@ suite("mail sent message projection", () => {
       expect(await executeMaintenanceCommand(rebuild.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
       expect(await workStatus(announcement)).toBe("waiting");
       expect(await workStatus(contactForm)).toBe("needs_action");
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft saved in another client stays one draft through every later sync of a server without CONDSTORE", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const externalDraft = (subject: string) =>
+        [
+          `Message-ID: <external-draft-${suffix}@example.test>`,
+          `Date: ${new Date().toUTCString()}`,
+          `From: Owner <${OWNER}>`,
+          `To: Customer <${CUSTOMER}>`,
+          `Subject: ${subject}`,
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "A note written in another client.",
+        ].join("\r\n");
+      await provider.saveDraftElsewhere(externalDraft("Started elsewhere"));
+      const drafts = () =>
+        sql<{ subject: string; revision: string }[]>`
+          SELECT subject, revision::text FROM mail.drafts WHERE mailbox_id = ${mailbox.mailboxId}::uuid ORDER BY created_at
+        `;
+      const importsSettled = () =>
+        waitFor(async () => {
+          const [pending] = await sql<{ count: number }[]>`
+            SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
+            WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND direction = 'import' AND state IN ('external', 'importing')
+          `;
+          return pending?.count === 0;
+        }, "draft imports");
+
+      await mailbox.syncAll();
+      await importsSettled();
+      expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
+
+      // Every six hours the Drafts folder is reconciled in full. Without MODSEQ, that cannot tell an
+      // unchanged draft from an edited one, so each draft is downloaded and compared again.
+      for (let round = 0; round < 2; round += 1) {
+        await sql`
+          UPDATE mail.folders
+          SET envelope_cursor = jsonb_set(envelope_cursor, '{lastFullReconcileAt}', to_jsonb((now() - interval '7 hours')::text))
+          WHERE id = ${mailbox.folderId(provider.draftsPath)}::uuid
+        `;
+        await mailbox.syncAll();
+        await importsSettled();
+      }
+      const [observations] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM mail.draft_provider_snapshots
+        WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND direction = 'import'
+      `;
+      // The first sync and both reconciliations each looked at the draft.
+      expect(observations?.count).toBe(3);
+      expect(await drafts()).toEqual([{ subject: "Started elsewhere", revision: "1" }]);
+
+      // The other client saves an edit as a new message with the same Message-ID.
+      provider.folder(provider.draftsPath).entries.clear();
+      await provider.saveDraftElsewhere(externalDraft("Edited elsewhere"));
+      await mailbox.syncAll();
+      await importsSettled();
+      expect(await drafts()).toEqual([{ subject: "Edited elsewhere", revision: "2" }]);
     } finally {
       provider.restore();
     }
