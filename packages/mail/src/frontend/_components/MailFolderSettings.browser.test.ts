@@ -201,9 +201,13 @@ const openMenu = () =>
 const menuText = (page: Page) => page.evaluate(`(${openMenu.toString()})()?.innerText ?? null`) as Promise<string | null>;
 const choose = (page: Page, label: string) =>
   page.locator(".mail-folder-menu:popover-open [role='menuitemradio']", { hasText: label }).click();
+/**
+ * Waits until the server stored `count` displays and the page applied its answer. The server records a change
+ * before it answers, so only the page can say when the answer arrived: the changed row is no longer busy.
+ */
 const settled = async (page: Page, count: number) => {
   for (let attempt = 0; attempt < 100 && stored.length < count; attempt += 1) await Bun.sleep(20);
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
+  await page.waitForFunction(() => document.querySelector(".mail-folder-tree__item[aria-busy]") === null);
 };
 
 describe("Mail folder settings", () => {
