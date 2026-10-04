@@ -39,6 +39,7 @@ import {
   CapabilityOriginSchema,
 } from "../contracts/capabilities";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
+import { PWA_CANVAS_COLORS, PWA_MANIFEST_PATH } from "../contracts/pwa";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
@@ -96,6 +97,8 @@ export type PageOptions = {
   theme?: "light" | "dark";
   /** Framework-resolved BCP 47 document language — always the canonical request locale, never a page override. */
   lang?: string;
+  /** Renders the document as a page of the installable mobile app; set by `PwaLayout`. */
+  pwa?: { name: string };
 };
 
 type ResolvedPageOptions = PageOptions & { performanceRoute?: string };
@@ -342,19 +345,37 @@ export const defineApp = <
     rootDir,
     componentRoots: [resolve(env.APP_DIR ?? rootDir, "src"), fileURLToPath(new URL("../", import.meta.url))],
     basePath: opts.basePath,
-    template: ({ body, scripts, title, description, theme, lang, performanceRoute }) => {
+    template: ({ body, scripts, title, description, theme, lang, performanceRoute, pwa }) => {
       const themeFixed = theme !== undefined;
+      // App pages paint the canvas before any stylesheet and give it to the
+      // status bar. No status-bar style: `black-translucent` lays a blur band
+      // over the top edge on iOS 26.
+      const canvas = PWA_CANVAS_COLORS[theme ?? "light"];
+      const head = pwa
+        ? {
+            html: ` style="background-color:${canvas}"`,
+            viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
+            app: `<meta name="theme-color" content="${canvas}">
+    <link rel="manifest" href="${PWA_MANIFEST_PATH}">
+    <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="${escapeHtml(pwa.name)}">`,
+          }
+        : {
+            html: "",
+            viewport: "width=device-width, initial-scale=1.0",
+            app: `<meta name="theme-color" content="#09090b">
+    <meta name="mobile-web-app-capable" content="yes">`,
+          };
       // The inline layer statement fixes the cascade order before any
       // stylesheet declares a layer. Tailwind's `properties` layer resets
       // `--tw-*` in browsers without `@property` and must stay lowest.
       return `<!DOCTYPE html>
-<html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}>
-  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}${head.html}>
+  <head><meta charset="UTF-8"><meta name="viewport" content="${head.viewport}">
     <meta name="view-transition" content="same-origin">
     <title>${escapeHtml(title ?? "Cloud")}</title>
     <meta name="description" content="${escapeHtml(description ?? "Cloud workspace")}">
-    <meta name="theme-color" content="#09090b">
-    <meta name="mobile-web-app-capable" content="yes">
+    ${head.app}
     <link rel="icon" href="${appFaviconHref(opts.id, v)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>

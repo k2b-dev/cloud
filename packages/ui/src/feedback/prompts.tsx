@@ -25,6 +25,8 @@ export interface DialogOptions {
   surface?: "default" | "bare";
   header?: false;
   cancelBehavior?: OpenDialogOptions["cancelBehavior"];
+  /** Back closes the prompt like Cancel, as in a phone app; see `OpenDialogOptions.history`. */
+  history?: boolean;
 }
 
 export interface ConfirmOptions extends DialogOptions {
@@ -643,6 +645,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
       initialFocus: "first-input",
       signal: options?.signal,
       cancelBehavior: options?.cancelBehavior,
+      history: options?.history,
       ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().search,
     },
   );
@@ -705,6 +708,7 @@ export const prompts = {
         contentClassName: contentClass(options?.surface),
         signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
+        history: options?.history,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
       },
     ),
@@ -794,6 +798,7 @@ export const prompts = {
         initialFocus: confirmationPhrase ? () => confirmationInput ?? null : undefined,
         signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
+        history: options?.history,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().confirmation,
       },
     );
@@ -833,6 +838,7 @@ export const prompts = {
         contentClassName: contentClass(options?.surface),
         signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
+        history: options?.history,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().dialog,
       },
     ),
@@ -857,6 +863,7 @@ export const prompts = {
         contentClassName: contentClass(options?.surface),
         signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
+        history: options?.history,
         ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().error,
       },
     ),

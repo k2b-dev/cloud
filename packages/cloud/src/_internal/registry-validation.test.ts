@@ -38,6 +38,14 @@ describe("validateAppRegistryEntry", () => {
         },
       }),
     ).toBeNull());
+  test("accepts a mobile app part only at /pwa/<id>", () => {
+    expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core" } })).toBeNull();
+    expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: ["user"] } })).toBeNull();
+    expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/spaces" } })).toContain("pwa");
+    expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/app/core" } })).toContain("pwa");
+    expect(validateAppRegistryEntry({ ...valid, pwa: "/pwa/core" })).toContain("pwa");
+    expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: "user" } })).toContain("pwa.requiresRoles");
+  });
   test("rejects a relative Help route", () =>
     expect(
       validateAppRegistryEntry({

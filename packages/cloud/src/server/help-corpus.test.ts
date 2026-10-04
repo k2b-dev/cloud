@@ -3,8 +3,9 @@ import { join, resolve } from "node:path";
 import { defineHelp } from "./help";
 
 const repoRoot = resolve(import.meta.dir, "../../../..");
-// Capabilities and OAuth intentionally own no Help. Quotes is API-only and has no SSR Help surface.
-const registeredHelpExemptions = new Set(["capabilities", "oauth", "quotes"]);
+// Capabilities and OAuth intentionally own no Help. Quotes is API-only and has no SSR Help surface. The mobile app
+// (`pwa`) renders phone pages in `PwaLayout`, which has no Help surface.
+const registeredHelpExemptions = new Set(["capabilities", "oauth", "pwa", "quotes"]);
 const helpPackages = [
   "accounts",
   "api-docs",

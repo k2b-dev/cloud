@@ -1,6 +1,7 @@
 import type { HtmlFn } from "@k2b/ssr";
 import type { Context } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
+import { PWA_AUTH_PATH, PWA_SCOPE } from "../contracts/pwa";
 import { getLocale } from "../server/locale";
 import { preloadLayoutAnnouncements } from "../server/middleware/settings";
 import { createLoginRedirectUrl } from "../shared/redirect";
@@ -10,8 +11,8 @@ export type PageErrorOptions = {
   title?: string;
   description?: string;
   action?: { label: string; href: string; icon?: string };
-  /** Keep standalone/public pages outside the Cloud navigation shell. */
-  layout?: "cloud" | "minimal";
+  /** Keep standalone/public pages outside the Cloud navigation shell; `pwa` renders a page of the mobile app. */
+  layout?: "cloud" | "minimal" | "pwa";
 };
 
 export type PageErrorStatus = ClientErrorStatusCode | ServerErrorStatusCode;
@@ -38,5 +39,20 @@ export const createPageResponses = (html: HtmlFn<PageOptions>) => {
     },
   };
 
-  return { access, error };
+  /**
+   * Route policy for pages of the mobile app (preview), below `/pwa/`. Only an app session reaches them. Without
+   * one, Core renews the app session with the phone's device key and returns to the same page; `pwa_launch` marks
+   * that return, so a second miss stops at the shell's "unavailable" state instead of bouncing again.
+   */
+  const pwaAccess = {
+    onReject: (c: Context, reason: "unauthenticated" | "forbidden") => {
+      c.header("Cache-Control", "private, no-store");
+      if (reason === "forbidden" || c.get("actor")) return error(c, 403, { layout: "pwa" });
+      const url = new URL(c.req.url);
+      if (url.searchParams.has("pwa_launch")) return `${PWA_SCOPE}?pwa=unavailable`;
+      return `${PWA_AUTH_PATH}/session/launch?to=${encodeURIComponent(url.pathname + url.search)}`;
+    },
+  };
+
+  return { access, pwaAccess, error };
 };

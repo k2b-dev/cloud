@@ -539,6 +539,22 @@
         "typescript": "catalog:",
       },
     },
+    "packages/pwa": {
+      "name": "@k2b/cloud-app-pwa",
+      "version": "0.0.0",
+      "dependencies": {
+        "@k2b/cloud": "workspace:*",
+        "@k2b/stdlib": "catalog:",
+        "@k2b/ui": "workspace:*",
+        "hono": "catalog:",
+        "solid-js": "catalog:",
+      },
+      "devDependencies": {
+        "@k2b/ssr": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/quotes": {
       "name": "@k2b/cloud-app-quotes",
       "version": "0.0.0",

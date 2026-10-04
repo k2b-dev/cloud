@@ -1,5 +1,5 @@
 import { cookies } from "@k2b/stdlib/browser";
-import { canonicalLocale, LOCALE_COOKIE } from "../shared/locale";
+import { canonicalLocale, LOCALE_COOKIE } from "./locale";
 
 export const PROFILE_PREFERENCE_LOCALES = ["en", "de"] as const;
 export type ProfilePreferenceLocale = (typeof PROFILE_PREFERENCE_LOCALES)[number];

@@ -1,6 +1,6 @@
 import type { DropdownItem } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { profilePreferenceLocale, setLocalePreference } from "../browser/locale-preference";
+import { profilePreferenceLocale, setLocalePreference } from "../shared/locale-preference";
 import { type CloudTheme, getCurrentThemePreference, setThemePreference } from "../shared/theme";
 import { profilePreferencesMessages } from "./profile-preferences-messages";
 
@@ -40,5 +40,5 @@ export const createPreferenceController = (initialTheme: CloudTheme, locale: () 
     },
   ]);
 
-  return { items, languageLabel, messages, theme, themeLabel, toggleLanguage, toggleTheme };
+  return { items, language, languageLabel, messages, theme, themeLabel, toggleLanguage, toggleTheme };
 };

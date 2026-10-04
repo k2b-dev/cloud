@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-10-01
+updated: 2026-10-04
 ---
 
 # Monorepo development
@@ -30,7 +30,7 @@ The local administrator login is `/auth/login?method=admin` with token
 
 `bun run dev` starts Postgres, Valkey, a second Valkey for integration tests, a persistent single-node NATS JetStream server, Geo, Filegate, and Gotenberg in the
 background. It then stays in the foreground and runs the gateway, Gateway Ops,
-Core, Dashboard, Accounts, and Assistant.
+Core, Dashboard, Accounts, Assistant, and the mobile app shell (`app-pwa`).
 
 Use `bun run dev:full` only when you need every optional application.
 
@@ -84,6 +84,24 @@ Filegate also accepts browser requests from this origin. `bun run test` keeps
 ```bash
 APP_URL=https://cloud.dev.example
 ```
+
+## Test the mobile app on a phone
+
+The mobile app is unreleased. Its shell (`app-pwa`) runs in the core development
+stack, while `compose.prod.yml` starts it only with the `unreleased` profile.
+
+A phone cannot reach `localhost`, and browsers install apps and register
+service workers only over HTTPS. To try the app on a phone:
+
+1. Serve the stack through an HTTPS reverse proxy or tunnel, as described in
+   [Serve the stack under another address](#serve-the-stack-under-another-address).
+2. Make sure the `app.url` setting is that HTTPS address. `APP_URL` sets it
+   only while no value is stored; otherwise, change the URL in
+   Administration → Settings. Pairing and renewal accept only requests whose
+   `Origin` is this address.
+3. Use the same address on the computer and on the phone. Pair the phone from
+   `/me/app` on the computer, or open `/pwa/` on the phone to install the app
+   first.
 
 ## Test Filegate locally
 

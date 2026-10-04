@@ -154,6 +154,8 @@ export const createPwaPhoneRoutes = (options: PwaRouteOptions = {}) => {
     .delete("/session", async (c) => {
       await service.unpair(getCookie(c, PWA_COOKIES.device));
       clearAppCredentials(c);
+      // A pairing confirmed before the sign-out must not finish on its own later.
+      clearPairing(c);
       return c.body(null, 204);
     });
 };

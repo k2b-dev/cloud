@@ -26,7 +26,7 @@ const allowed: RegExp[] = [
   /^packages\/assistant\/src\/cli\/local-bash\.ts$/,
   /^packages\/assistant\/src\/cli\/text-editor\.ts$/,
   /^packages\/cloud\/src\/_internal\/postgres-application-name\.ts$/,
-  /^packages\/cloud\/src\/ai\/pdf-render\.ts$/,
+  /^packages\/cloud\/src\/_internal\/canvas-worker\.ts$/,
   // Evaluation harness invoked by scripts, not application runtime.
   /\.eval\.ts$/,
   /^scripts\//,

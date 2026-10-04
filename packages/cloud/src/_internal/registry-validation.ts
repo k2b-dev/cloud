@@ -104,6 +104,12 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     )
       return invalid("searchLinks", "an array of same-origin navigation links");
   }
+  if (value.pwa !== undefined) {
+    if (!isRecord(value.pwa) || value.pwa.href !== `/pwa/${value.id as string}`) return invalid("pwa", "a mobile app part at /pwa/<id>");
+    if (value.pwa.requiresRoles !== undefined && !isStringArray(value.pwa.requiresRoles)) {
+      return invalid("pwa.requiresRoles", "an array of strings");
+    }
+  }
   if (value.widgets !== undefined) {
     if (
       !Array.isArray(value.widgets) ||
