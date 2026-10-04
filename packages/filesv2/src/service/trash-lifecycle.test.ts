@@ -289,6 +289,20 @@ describe("recoverable trash lifecycle", () => {
     f.denied.add("home/alice/report.txt");
     await expect(f.service.restoreTrash(actor, { baseId: base.id, id })).rejects.toMatchObject({ code: "permission_denied" });
   });
+  test("journal snapshots with a Filegate 6.1 node id still recover when Filegate 7 omits the id", async () => {
+    const f = fixture();
+    f.setFailFinish(true);
+    await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });
+    f.setFailFinish(false);
+    const row = [...f.rows.values()][0]!;
+    row.snapshot = { ...row.snapshot!, id: "6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10" };
+    expect((await f.service.trash(actor, { baseId: base.id })).entries[0]).toMatchObject({ state: "trashed" });
+    await f.service.restoreTrash(actor, { baseId: base.id, id: row.id });
+    row.snapshot = { ...row.snapshot!, id: "6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10" };
+    expect((await f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).entry.path).toBe("report.txt");
+    f.nodes.set("home/alice/report.txt", { ...node("home/alice/report.txt"), id: "0b6f8f55-2d0e-4b6a-8f7e-3c2a1d9e4b21" });
+    await expect(f.service.restoreTrash(actor, { baseId: base.id, id: row.id })).rejects.toMatchObject({ code: "source_changed" });
+  });
   test("a restored file is recovered after the completion write failed", async () => {
     const f = fixture();
     const removed = await f.service.remove(actor, { baseId: base.id, paths: ["report.txt"] });

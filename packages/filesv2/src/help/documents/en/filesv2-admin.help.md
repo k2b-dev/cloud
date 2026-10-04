@@ -10,7 +10,7 @@ Open **File administration** to manage Files. Its views separate storage informa
 
 ## Connect storage in Settings {icon="plug"}
 
-Enter the Filegate **Backend URL** and **Backend token**. The application must be able to reach the address. Filegate 6 supplies the public addresses for direct browser downloads. Its public host must be outside the scope of Cloud cookies; a different port on the same host is insufficient. Configure the exact Cloud origin for CORS. Cloud uses the backend address for its own transfers. An existing token is never shown; leave its field blank to keep it. Use **Save configuration** to save your edits, or **Discard** to restore the saved values. Leaving with unsaved edits asks for confirmation.
+Enter the Filegate **Backend URL** and **Backend token**. The application must be able to reach the address. Filegate supplies the public addresses for direct browser downloads. Its public host must be outside the scope of Cloud cookies; a different port on the same host is insufficient. Configure the exact Cloud origin for CORS. Cloud uses the backend address for its own transfers. An existing token is never shown; leave its field blank to keep it. Use **Save configuration** to save your edits, or **Discard** to restore the saved values. Leaving with unsaved edits asks for confirmation.
 
 Enable Cloud and FreeIPA independently and select their Filegate roots. **Advanced paths** contains the optional base prefix and the home, group, and archive paths relative to that prefix. Keep these paths separate so the areas and reserved directories do not overlap.
 
@@ -26,7 +26,7 @@ Index, version history, managed mode, and Unix execution come from Filegate. Fre
 
 ## Inspect Directories {icon="folders"}
 
-Select the area and **Users** or **Groups**. Each directory shows the account's display name with the username below it; a directory without a matching account or group is marked **Unknown account** or **Unknown group**. Search by display name, username, or path, or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. FreeIPA browsing uses live filesystem access even with indexing enabled. With Filegate 6.1, FreeIPA filename search also reads the current filesystem under the user's Unix identity, independently of the index. Unreadable subtrees fail the search. Use **Next page** to continue the inventory.
+Select the area and **Users** or **Groups**. Each directory shows the account's display name with the username below it; a directory without a matching account or group is marked **Unknown account** or **Unknown group**. Search by display name, username, or path, or filter by state. **Refresh** reads the current filesystem, including directories created manually on the server. FreeIPA browsing uses live filesystem access even with indexing enabled. Since Filegate 6.1, FreeIPA filename search also reads the current filesystem under the user's Unix identity, independently of the index. Unreadable subtrees fail the search. Use **Next page** to continue the inventory.
 
 - **Present:** the directory is available for its identified account.
 - **Missing:** the expected directory is absent.

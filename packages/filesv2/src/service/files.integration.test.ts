@@ -2110,6 +2110,20 @@ suite("Files service and durable bindings", () => {
     expect((await service.retry(admin, pending!.id)).state).toBe("complete");
     expect((await service.retry(admin, pending!.id)).state).toBe("complete");
   });
+  test("pending archive recovery accepts a Filegate 6.1 snapshot id that Filegate 7 no longer publishes", async () => {
+    const admin = await user("admin", "local", true);
+    directory("cloud", "users/admin", 0, 0, "0700");
+    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await sql`ALTER TABLE filesv2.operations ADD CONSTRAINT test_pause_finish CHECK (state<>'complete')`.simple();
+    try {
+      await expect(service.archive(admin, { area: "cloud", kind: "users", name: "admin" })).rejects.toThrow();
+    } finally {
+      await sql`ALTER TABLE filesv2.operations DROP CONSTRAINT test_pause_finish`.simple();
+    }
+    const [pending] = await sql<{ id: string }[]>`SELECT id FROM filesv2.operations WHERE action='archive' AND state='pending'`;
+    await sql`UPDATE filesv2.operations SET snapshot=snapshot || '{"id":"6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10"}'::jsonb WHERE id=${pending!.id}::uuid`;
+    expect((await service.retry(admin, pending!.id)).state).toBe("complete");
+  });
   test("per-action archive destinations stay separate from active trees and survive default changes", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");

@@ -12,6 +12,7 @@ const suite = dockerAvailable ? suiteFor("filegate") : describe.skip;
 const name = `filesv2-execution-${randomUUID()}`;
 const volume = `${name}-data`;
 const identity = { uid: 12345, gid: 12345, groups: [] };
+const version = "7.0.0";
 let directory: string;
 let ownsVolume = false;
 let client: Filegate;
@@ -58,8 +59,8 @@ async function error(run: () => Promise<unknown>) {
 
 suite(
   dockerAvailable
-    ? "Filegate 6.1 separate actors and indexed live Unix search"
-    : "Filegate 6.1 separate actors and indexed live Unix search (skipped: docker is not available)",
+    ? `Filegate ${version} separate actors and indexed live Unix search`
+    : `Filegate ${version} separate actors and indexed live Unix search (skipped: docker is not available)`,
   () => {
     beforeAll(async () => {
       directory = await mkdtemp(join(tmpdir(), "filesv2-execution-"));
@@ -120,7 +121,7 @@ roots:
         `${volume}:/data`,
         "-v",
         `${directory}:/config:ro`,
-        "ghcr.io/k2b-dev/filegate:6.1.0",
+        `ghcr.io/k2b-dev/filegate:${version}`,
         "serve",
         "--config",
         "/config/conf.yaml",
@@ -131,7 +132,7 @@ roots:
       const readyUntil = Date.now() + 30_000;
       for (;;) {
         try {
-          expect((await client.system()).version).toBe("6.1.0");
+          expect((await client.system()).version).toBe(version);
           break;
         } catch {
           if (Date.now() >= readyUntil) throw new Error(`Filegate fixture did not start: ${await docker("logs", name)}`);
