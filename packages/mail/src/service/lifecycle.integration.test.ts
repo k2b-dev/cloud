@@ -59,7 +59,7 @@ import {
 import { claimFence, commitSyncBatch, executeBindingRediscovery, fetchReconcileStep, hydrateMessageBatch } from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
-const suite = suiteFor("database", "nats");
+const suite = suiteFor("database", "nats", "valkey");
 
 const contextFor = (user: { id: string; uid: string; admin: boolean }): MailRequestContext => ({
   actor: {
@@ -996,13 +996,22 @@ suite("mail lifecycle control plane", () => {
         mailbox_health: "bootstrapping",
       });
 
-      // The winner holds the provider lease inside discovery while the loser asks for it.
+      // The winner holds the provider lease inside discovery while the loser asks for it. A loser
+      // that reaches discovery too holds the lease as well; it fails at once instead of waiting for
+      // the winner's release, and the winner settles before the test ends either way.
       const enteredDiscovery = Promise.withResolvers<void>();
       const releaseDiscovery = Promise.withResolvers<void>();
+      let discovering = false;
       discover.mockImplementation(async () => {
-        enteredDiscovery.resolve();
-        await releaseDiscovery.promise;
-        return [remoteFolder("INBOX", "10", "inbox")];
+        if (discovering) throw new Error("Two rediscoveries of one binding held the provider lease at once");
+        discovering = true;
+        try {
+          enteredDiscovery.resolve();
+          await releaseDiscovery.promise;
+          return [remoteFolder("INBOX", "10", "inbox")];
+        } finally {
+          discovering = false;
+        }
       });
       const winner = executeBindingRediscovery(bindingId, false, async () => undefined);
       try {
@@ -1010,6 +1019,7 @@ suite("mail lifecycle control plane", () => {
         await expect(executeBindingRediscovery(bindingId, false, async () => undefined)).rejects.toMatchObject({ code: "SYNC_BUSY" });
       } finally {
         releaseDiscovery.resolve();
+        await Promise.allSettled([winner]);
       }
       await expect(winner).resolves.toMatchObject({ bindingId });
 
