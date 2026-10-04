@@ -30,8 +30,8 @@ render(
         return createComponent(TabBar, {
           label: "App",
           items: [
-            { id: "start", label: "Start", icon: "ti ti-home", href: "#start", current: true },
-            { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "#tasks" },
+            { id: "start", label: "Start", icon: "ti ti-home", href: window.fixtureTabs?.start ?? "#start", current: true },
+            { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: window.fixtureTabs?.tasks ?? "#tasks" },
           ],
         });
       },
@@ -259,6 +259,71 @@ describe("MobileShell in a phone browser", () => {
       expect(inset).toBe("0px");
     } finally {
       await page.context().close();
+    }
+  });
+});
+
+describe("Tab bar taps in a phone browser", () => {
+  test("a tap selects the tab while its page loads, and further taps do not start the load over", async () => {
+    const context = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 2,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    // While a load is pending, Playwright's evaluations wait for it, so the page reports the tabs after each click.
+    const report = `addEventListener("click", () => setTimeout(() => console.log(JSON.stringify(Object.fromEntries(
+      [...document.querySelectorAll(".k2b-tab-bar a")].map((link) => [link.dataset.tab, { color: getComputedStyle(link).color, pending: link.hasAttribute("data-k2b-pending") }]),
+    )))));`;
+    const start = `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>window.fixtureTabs = { start: "/start", tasks: "/tasks" };</script><script>${script}</script><script>${report}</script></body></html>`;
+    type Tabs = Record<string, { color: string; pending: boolean }>;
+    const reports: Tabs[] = [];
+    page.on("console", (message) => {
+      if (message.text().startsWith("{")) reports.push(JSON.parse(message.text()));
+    });
+    let release!: () => void;
+    const loading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let tasksRequests = 0;
+    await page.route("https://app.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/start") return route.fulfill({ contentType: "text/html", body: start });
+      if (path !== "/tasks") return route.fulfill({ status: 404 });
+      tasksRequests++;
+      // The page arrives only after every tap, as on a slow connection. A cancelled load has no one to answer.
+      await loading;
+      await route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Tasks</title>" }).catch(() => undefined);
+    });
+    try {
+      await page.goto("https://app.test/start");
+      const before = await page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll<HTMLElement>(".k2b-tab-bar a")].map((link) => [link.dataset.tab, getComputedStyle(link).color]),
+        ),
+      );
+      const box = (await page.locator('.k2b-tab-bar a[data-tab="tasks"]').boundingBox())!;
+      const tap = async (count: number) => {
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        while (reports.length < count) await Bun.sleep(10);
+      };
+
+      await tap(1);
+      // The tapped tab looks selected and the open page's tab no longer does, before the new page exists.
+      expect(reports[0]).toEqual({
+        start: { color: before.tasks!, pending: false },
+        tasks: { color: before.start!, pending: true },
+      });
+
+      await tap(2);
+      await tap(3);
+      release();
+      await page.waitForURL("https://app.test/tasks");
+      expect(tasksRequests).toBe(1);
+    } finally {
+      release();
+      await context.close();
     }
   });
 });

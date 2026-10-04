@@ -1563,6 +1563,35 @@ html:has(.k2b-mobile-shell) textarea {
   color: var(--k2b-action);
 }
 
+/* A tap selects the tab at once, as on a native tab bar, while its page
+   loads. The shell marks the tab whose page is loading; a load that takes
+   longer than a moment lets its icon pulse. Colour and opacity only, so
+   nothing moves. */
+.k2b-ui .k2b-tab-bar a:active,
+.k2b-ui .k2b-tab-bar a[data-k2b-pending] {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-tab-bar:has(a[data-k2b-pending]) a[aria-current="page"]:not([data-k2b-pending]) {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-tab-bar a[data-k2b-pending] > i {
+  animation: k2b-tab-bar-pending 0.8s ease-in-out 0.4s infinite alternate;
+}
+
+@keyframes k2b-tab-bar-pending {
+  to {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-tab-bar a[data-k2b-pending] > i {
+    animation: none;
+  }
+}
+
 .k2b-ui .k2b-tab-bar a:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
