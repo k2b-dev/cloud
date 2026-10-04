@@ -94,9 +94,14 @@ export default function ContactNotesSection(props: Props) {
   });
 
   type WriteTarget = { bookId: string; contactId: string };
-  const reconcile = (target: WriteTarget) => {
+  // The list shows a saved change only after the reload, so a screen reader hears the outcome only then. When the
+  // reload fails, the error toast already says that the change was saved.
+  const reconcile = (target: WriteTarget, outcome: string) => {
     if (source() !== createContactQuerySource(target)) return;
-    void notesQuery.invalidate().catch(() => toast.error(t().commentSavedReloadFailed));
+    void notesQuery.invalidate().then(
+      () => announce(outcome),
+      () => toast.error(t().commentSavedReloadFailed),
+    );
   };
 
   const createMutation = mutations.create<{ target: WriteTarget; note: ContactNote }, WriteTarget & { content: string }>({
@@ -114,11 +119,8 @@ export default function ContactNotesSection(props: Props) {
     // The new note appears in the list and the composer closes, so a screen reader is told. A failure stays under the
     // composer, which keeps the draft.
     onSuccess: ({ target }) => {
-      if (source() === createContactQuerySource(target)) {
-        setComposerOpen(false);
-        announce(t().commentAdded);
-      }
-      reconcile(target);
+      if (source() === createContactQuerySource(target)) setComposerOpen(false);
+      reconcile(target, t().commentAdded);
     },
   });
 
@@ -141,11 +143,8 @@ export default function ContactNotesSection(props: Props) {
     // The note shows its new text and the edit composer that had focus closes, so a screen reader is told. A failure
     // stays under the edit composer, which keeps the text.
     onSuccess: ({ target }) => {
-      if (source() === createContactQuerySource(target)) {
-        setEditingId(null);
-        announce(t().commentUpdated);
-      }
-      reconcile(target);
+      if (source() === createContactQuerySource(target)) setEditingId(null);
+      reconcile(target, t().commentUpdated);
     },
   });
 
@@ -165,10 +164,7 @@ export default function ContactNotesSection(props: Props) {
       return target;
     },
     // The note leaves the list together with its delete button, which had focus, so a screen reader is told.
-    onSuccess: (target) => {
-      if (source() === createContactQuerySource(target)) announce(t().commentDeleted);
-      reconcile(target);
-    },
+    onSuccess: (target) => reconcile(target, t().commentDeleted),
     onError: (err) => toast.error(err.message),
   });
 

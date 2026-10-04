@@ -20,6 +20,7 @@ const announcements = async (document: Document) => {
 const currentUserId = "00000000-0000-4000-8000-000000000001";
 const now = "2026-10-03T10:00:00.000Z";
 let stored: ContactNote[] = [];
+let reloadFails = false;
 
 describe("Contact note feedback", () => {
   if (isServer) {
@@ -53,6 +54,7 @@ describe("Contact note feedback", () => {
           stored = [];
           return Response.json({ ok: true });
         }
+        if (reloadFails) return Response.json({ message: "Service unavailable" }, { status: 503 });
         return Response.json({ items: stored, page: 1, perPage: 30, total: stored.length, hasNext: false });
       },
       { preconnect: originalFetch.preconnect },
@@ -63,12 +65,9 @@ describe("Contact note feedback", () => {
     dom.cleanup();
   });
 
-  test("a note added, edited or deleted is announced to screen readers, with no toast", async () => {
-    const { prompts, toast } = await import("@k2b/ui");
-    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
-    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+  const renderSection = async () => {
     const { default: ContactNotesSection } = await import("../src/frontend/_components/ContactNotesSection");
-    const dispose = render(
+    return render(
       () =>
         createComponent(ContactNotesSection, {
           bookId: "Book01",
@@ -79,11 +78,21 @@ describe("Contact note feedback", () => {
         }),
       dom.root,
     );
-    const submit = (textarea: HTMLTextAreaElement, value: string) => {
-      textarea.value = value;
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      textarea.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    };
+  };
+  const submit = (textarea: HTMLTextAreaElement, value: string) => {
+    textarea.value = value;
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  };
+
+  test("a note added, edited or deleted is announced to screen readers, with no toast", async () => {
+    const { prompts, toast } = await import("@k2b/ui");
+    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    stored = [];
+    reloadFails = false;
+    dom.document.querySelector("[data-k2b-live]")?.remove();
+    const dispose = await renderSection();
     try {
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
@@ -108,6 +117,28 @@ describe("Contact note feedback", () => {
       dispose();
       confirm.mockRestore();
       successes.mockRestore();
+    }
+  });
+
+  test("a note saved while the list cannot be reloaded is not announced, because the error toast says it was saved", async () => {
+    const { toast } = await import("@k2b/ui");
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    stored = [];
+    reloadFails = true;
+    dom.document.querySelector("[data-k2b-live]")?.remove();
+    const dispose = await renderSection();
+    try {
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
+      submit(dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!, "Prefers calls after 4 pm.");
+      await until(() => errors.mock.calls.length > 0);
+
+      expect(errors.mock.calls).toEqual([["The comment was saved, but the comments list could not be reloaded."]]);
+      expect(await announcements(dom.document)).toEqual([]);
+    } finally {
+      dispose();
+      errors.mockRestore();
+      reloadFails = false;
     }
   });
 });

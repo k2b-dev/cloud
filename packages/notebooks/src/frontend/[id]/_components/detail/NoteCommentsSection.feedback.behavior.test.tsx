@@ -147,4 +147,41 @@ describe("Note comment feedback", () => {
       successes.mockRestore();
     }
   });
+  test("a comment saved while the discussion cannot be refreshed is not announced, because the error toast says it was saved", async () => {
+    const { toast } = await import("@k2b/ui");
+    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    answer = (init) =>
+      init?.method === "POST"
+        ? Response.json({
+            id: "Comm01",
+            notebookId: "Book01",
+            noteId: "Note01",
+            authorUserId: currentUserId,
+            authorDisplayName: "Tom Sample",
+            authorAvatarHash: null,
+            content: "Link the budget sheet here.",
+            createdAt: "2026-10-03T10:00:00.000Z",
+            updatedAt: "2026-10-03T10:00:00.000Z",
+            canEdit: true,
+            canDelete: true,
+          })
+        : Response.json({ message: "Service unavailable" }, { status: 503 });
+    dom.document.querySelector("[data-k2b-live]")?.remove();
+    const dispose = await renderSection();
+    try {
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
+      const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
+      composer.value = "Link the budget sheet here.";
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+      composer.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await until(() => errors.mock.calls.length > 0);
+
+      expect(errors.mock.calls).toEqual([["The comment was saved, but the discussion could not be refreshed."]]);
+      expect(await announcements(dom.document)).toEqual([]);
+    } finally {
+      dispose();
+      errors.mockRestore();
+    }
+  });
 });

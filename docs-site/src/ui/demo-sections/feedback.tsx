@@ -220,17 +220,17 @@ const AnnounceDemo = () => {
       code={`// A comment posted from a composer that then closes.
 announce("Comment posted");
 // Rare: an outcome that must interrupt and has no visible counterpart.
-announce("Connection lost, changes are kept on this device", { politeness: "assertive" });`}
+announce("Connection lost", { politeness: "assertive" });`}
     >
       <div class="ui-demo-row">
         <Button variant="secondary" onClick={() => say("Comment posted", "polite")}>
           Polite
         </Button>
-        <Button variant="secondary" onClick={() => say("Connection lost, changes are kept on this device", "assertive")}>
+        <Button variant="secondary" onClick={() => say("Connection lost", "assertive")}>
           Assertive
         </Button>
       </div>
-      <p class="text-sm text-dimmed">{last() ?? "Nothing announced yet"}</p>
+      <p class="truncate text-sm text-dimmed">{last() ?? "Nothing announced yet"}</p>
     </DemoCard>
   );
 };
