@@ -7,6 +7,7 @@
 
 import { APP_READINESS_PATH } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
+import { resolveClientAddress } from "./client-address";
 import { gatewayRouter } from "./config";
 import { proxyRequest } from "./proxy";
 import { gatewayRuntime } from "./runtime";
@@ -58,9 +59,14 @@ export default {
     },
   ): Promise<Response | undefined> {
     const url = new URL(req.url);
+    const client = resolveClientAddress(
+      req.headers.get("x-forwarded-for"),
+      server.requestIP(req)?.address ?? null,
+      gatewayRouter.trustedProxies,
+    );
 
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      return tryUpgradeWebSocket(req, server, getRouteTable(), (msg, meta) => log.info(msg, meta), server.requestIP(req)?.address ?? null);
+      return tryUpgradeWebSocket(req, server, getRouteTable(), (msg, meta) => log.info(msg, meta), client);
     }
 
     if (url.pathname === "/health") return health();
@@ -73,7 +79,7 @@ export default {
       (msg, meta) => {
         log.info(msg, meta);
       },
-      server.requestIP(req)?.address ?? null,
+      client,
     );
   },
   websocket: websocketHandlers,

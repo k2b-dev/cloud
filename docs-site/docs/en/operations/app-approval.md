@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-09-30
+updated: 2026-10-04
 ---
 
 # Integrate an authenticator website
@@ -377,8 +377,8 @@ cryptographic work and response sizes. Poll at most once every five seconds
 while foregrounded, stop on terminal states, and back off on errors. Background
 PWA execution is not guaranteed, and push wake-ups are best effort.
 
-The existing Cloud IP rate limit applies. Operators must sanitize forwarded IP
-headers at the trusted ingress. IP throttling returns HTTP 429 with Retry-After.
+The existing Cloud IP rate limit applies. Behind a reverse proxy, the gateway
+must trust that proxy; see [Pass client addresses through the reverse proxy](/en/docs/operations/deployment-requirements#pass-client-addresses-through-the-reverse-proxy). IP throttling returns HTTP 429 with Retry-After.
 Other errors: 400 (invalid input), 401 (missing management session),
 403 (forbidden or recent authentication required), 404 (unavailable object),
 409 (used/stale/conflicting operation), 413 (body too large), and 503 (disabled,

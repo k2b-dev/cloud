@@ -14,6 +14,44 @@ describe("gateway path redaction", () => {
   });
 });
 
+describe("client address headers", () => {
+  test("replace the client's forwarding headers with the resolved address", async () => {
+    const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});
+    const seen: Record<string, string | null>[] = [];
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        seen.push(
+          Object.fromEntries(
+            ["x-forwarded-for", "x-real-ip", "cf-connecting-ip", "forwarded"].map((name) => [name, req.headers.get(name)]),
+          ),
+        );
+        return new Response("ok");
+      },
+    });
+    try {
+      const table = buildRouteTable([{ prefix: "/", appId: "core", baseUrl: `http://127.0.0.1:${upstream.port}` }]);
+      const spoofed = {
+        "X-Forwarded-For": "198.51.100.7",
+        "X-Real-IP": "198.51.100.7",
+        "CF-Connecting-IP": "198.51.100.7",
+        Forwarded: "for=198.51.100.7",
+      };
+      const proxy = (client: Parameters<typeof proxyRequest>[4]) =>
+        proxyRequest(new Request("http://cloud.example/", { headers: spoofed }), table, createProxyStats(), () => {}, client);
+      await proxy({ address: "203.0.113.10", forwardedFor: "203.0.113.10, 172.18.0.2" });
+      await proxy(null);
+      expect(seen).toEqual([
+        { "x-forwarded-for": "203.0.113.10, 172.18.0.2", "x-real-ip": "203.0.113.10", "cf-connecting-ip": null, forwarded: null },
+        { "x-forwarded-for": null, "x-real-ip": null, "cf-connecting-ip": null, forwarded: null },
+      ]);
+    } finally {
+      await upstream.stop(true);
+      telemetry.mockRestore();
+    }
+  });
+});
+
 describe("service worker scope", () => {
   test("only Core may widen a worker's scope with Service-Worker-Allowed", async () => {
     const telemetry = spyOn(services, "publishRequestTelemetry").mockImplementation(() => {});

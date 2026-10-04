@@ -58,7 +58,7 @@ const setup = (upgrade = true) => {
     },
     buildRouteTable([{ prefix: "/api/mail", appId: "mail", baseUrl: "http://mail.test" }]),
     () => undefined,
-    "198.51.100.7",
+    { address: "198.51.100.7", forwardedFor: "198.51.100.7" },
   );
   return { response, data: () => data };
 };
@@ -81,7 +81,29 @@ afterEach(() => {
 });
 
 describe("gateway WebSocket proxy", () => {
-  test("forwards the credentials, the browser's origin, and its own view of the client address to the application", () => {
+  test("forwards the resolved client address instead of the client's own headers", () => {
+    FakeUpstream.instances = [];
+    (globalThis as { WebSocket: unknown }).WebSocket = FakeUpstream;
+    const table = buildRouteTable([{ prefix: "/api/mail", appId: "mail", baseUrl: "http://mail.test" }]);
+    const upgrade = (client: Parameters<typeof tryUpgradeWebSocket>[4]) =>
+      tryUpgradeWebSocket(
+        new Request("http://cloud.test/api/mail/ws", {
+          headers: { Upgrade: "websocket", "X-Forwarded-For": "198.51.100.7", "X-Real-IP": "198.51.100.7" },
+        }),
+        { upgrade: () => true },
+        table,
+        () => undefined,
+        client,
+      );
+    upgrade({ address: "203.0.113.10", forwardedFor: "203.0.113.10, 172.18.0.2" });
+    upgrade(null);
+    const headers = FakeUpstream.instances.map((upstream) => (upstream.options as { headers: Record<string, string> }).headers);
+    expect(headers[0]).toMatchObject({ "X-Forwarded-For": "203.0.113.10, 172.18.0.2", "X-Real-IP": "203.0.113.10" });
+    expect(headers[1]).not.toHaveProperty("X-Forwarded-For");
+    expect(headers[1]).not.toHaveProperty("X-Real-IP");
+  });
+
+  test("forwards the credentials, the browser's origin, and the resolved client address to the application", () => {
     setup();
     expect(FakeUpstream.instances[0]!.options).toEqual({
       headers: {
@@ -90,6 +112,7 @@ describe("gateway WebSocket proxy", () => {
         "X-Forwarded-Host": "cloud.test",
         "X-Forwarded-Proto": "http",
         "X-Forwarded-For": "198.51.100.7",
+        "X-Real-IP": "198.51.100.7",
       },
     });
   });
