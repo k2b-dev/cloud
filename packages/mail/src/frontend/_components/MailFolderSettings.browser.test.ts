@@ -169,7 +169,7 @@ const load = async (
 };
 const close = (page: Page) => page.context().close();
 
-const exactName = (name: string) => new RegExp(`^${name.replace(/[[\]]/g, "\\$&")}$`);
+const exactName = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
 /** The trigger of the folder row whose name is `name`; `index` picks among folders of the same name. */
 const trigger = (page: Page, name: string, index = 0) =>
   page.locator(".mail-folder-tree__main", { has: page.locator(".mail-folder-tree__name", { hasText: exactName(name) }) }).nth(index);
