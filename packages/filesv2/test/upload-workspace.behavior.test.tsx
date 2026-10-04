@@ -87,6 +87,19 @@ if (!isServer) {
   }));
 }
 
+// The first import runs the Solid DOM transform over the workspace's whole source graph, which took longer than the
+// 5 s test timeout on a busy machine. Load it once, after the module mocks and outside any test, so the timeout
+// measures behavior. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return (await import("../src/frontend/Workspace.island")).default;
+  } finally {
+    dom.cleanup();
+  }
+};
+const Workspace = isServer ? undefined : await load();
+
 const wait = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));
 const originalFetch = globalThis.fetch;
 const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
@@ -130,8 +143,7 @@ describe("uploads in the Files workspace", () => {
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     const initial: WorkspaceSnapshot = { source: "/app/filesv2?base=home", bases, selectedId: base.id, directory, errorCode: null };
     dom.window.history.replaceState(null, "", initial.source);
-    const { default: Workspace } = await import("../src/frontend/Workspace.island");
-    const dispose = render(() => createComponent(Workspace, { initial, cloudUrl: "https://cloud.test" }), dom.root);
+    const dispose = render(() => createComponent(Workspace!, { initial, cloudUrl: "https://cloud.test" }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();

@@ -5,6 +5,20 @@ import { createDomTestHarness } from "../../ui/test/dom";
 
 if (!isServer) mock.module("@/api/client", () => ({ apiClient: { groups: { ":id": {} } } }));
 
+// Load once, after the module mock and outside any test, so the cold Solid transform of the component's source graph
+// does not count against the 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: MemberOfTab } = await import("../src/frontend/groups/detail/MemberOfTab");
+    return { LocaleProvider, MemberOfTab };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 describe("group display names in Accounts", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
@@ -19,8 +33,7 @@ describe("group display names in Accounts", () => {
   ] as const) {
     test(`${locale}: a parent group renders its display name and links by ID`, async () => {
       const dom = createDomTestHarness();
-      const { LocaleProvider } = await import("@k2b/ui");
-      const { default: MemberOfTab } = await import("../src/frontend/groups/detail/MemberOfTab");
+      const { LocaleProvider, MemberOfTab } = modules!;
       const dispose = render(
         () =>
           createComponent(LocaleProvider, {

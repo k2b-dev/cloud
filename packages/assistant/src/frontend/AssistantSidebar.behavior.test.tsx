@@ -5,6 +5,20 @@ import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { assistantApi } from "../api/client";
 
+// Load once outside any test, so the cold Solid transform of the sidebar's source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { default: AssistantSidebar } = await import("./AssistantSidebar");
+    const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
+    return { AssistantSidebar, createAssistantLiveInvalidationHub };
+  } finally {
+    dom.cleanup();
+  }
+};
+const { AssistantSidebar, createAssistantLiveInvalidationHub } = await load();
+
 const conversation = (id: string, title: string, projectId: string | null): AiConversation => ({
   id,
   shortId: id,
@@ -30,8 +44,6 @@ const conversation = (id: string, title: string, projectId: string | null): AiCo
 
 test("chat clicks select immediately while loading, preserve native modifiers and ignore stale completions", async () => {
   const dom = createDomTestHarness();
-  const { default: AssistantSidebar } = await import("./AssistantSidebar");
-  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
   const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
   const [selected, setSelected] = createSignal("first");
   let finish: (opened: boolean) => void = () => {};
@@ -107,8 +119,6 @@ test("chat clicks select immediately while loading, preserve native modifiers an
 test("footer project popup and mobile group share search and creation; pinned chats lead a heading-free list", async () => {
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
-  const { default: AssistantSidebar } = await import("./AssistantSidebar");
-  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
   const { registerGlobalSearchHost } = await import("@k2b/cloud/browser/testing");
   const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
   const project = {
@@ -203,8 +213,6 @@ test("footer project popup and mobile group share search and creation; pinned ch
 
 test("Done keeps its card through live updates, confirms success, then fades without blocking", async () => {
   const dom = createDomTestHarness();
-  const { default: AssistantSidebar } = await import("./AssistantSidebar");
-  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
   const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
   const original = { ...conversation("finish", "Finish this", null), hasActiveSchedule: true };
   const completed = { ...original, isDone: true, done: true };
@@ -252,8 +260,6 @@ test("Done keeps its card through live updates, confirms success, then fades wit
 
 test("failed Done request leaves the chat available and clears its pending feedback", async () => {
   const dom = createDomTestHarness();
-  const { default: AssistantSidebar } = await import("./AssistantSidebar");
-  const { createAssistantLiveInvalidationHub } = await import("./assistant-live");
   const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
   const save = spyOn(assistantApi, "setConversationDone").mockRejectedValue(new Error("Offline"));
   const dispose = render(() => <AssistantSidebar conversations={() => [conversation("fail", "Keep this", null)]} live={live} />, dom.root);

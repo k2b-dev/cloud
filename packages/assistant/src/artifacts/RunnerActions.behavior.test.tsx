@@ -3,9 +3,20 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
+// Load once outside any test, so the cold Solid transform of the component's source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return (await import("./RunnerActions")).RunnerActions;
+  } finally {
+    dom.cleanup();
+  }
+};
+const RunnerActions = await load();
+
 test("standalone readers retain personal controls while public visitors only manage local data", async () => {
   const dom = createDomTestHarness();
-  const { RunnerActions } = await import("./RunnerActions");
   const [serverAccess, setServerAccess] = createSignal(true);
   const dispose = render(() => <RunnerActions id="App001" userId="reader" serverAccess={serverAccess()} />, dom.root);
   try {

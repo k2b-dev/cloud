@@ -4,6 +4,29 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { MailboxPageData } from "../service/workspace";
 
+// Load once outside any test, so the cold Solid transform of the workspace's source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { readThemeFromCookieHeader } = await import("@k2b/cloud/shared");
+    const { DEFAULT_MAIL_CONTACT_DIRECTORY } = await import("../contact-directory-settings");
+    const { readMailUserPreferencesFromCookieHeader } = await import("./_components/mail-user-preferences");
+    const { readMailWorkspacePreferences } = await import("./_components/mail-workspace-preferences");
+    const { default: MailWorkspace } = await import("./MailWorkspace.island");
+    return {
+      readThemeFromCookieHeader,
+      DEFAULT_MAIL_CONTACT_DIRECTORY,
+      readMailUserPreferencesFromCookieHeader,
+      readMailWorkspacePreferences,
+      MailWorkspace,
+    };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
@@ -153,12 +176,13 @@ describe("Mail workspace live updates when a tab returns", () => {
   });
 
   const mount = async () => {
-    // Browser modules load after the DOM harness exists.
-    const { readThemeFromCookieHeader } = await import("@k2b/cloud/shared");
-    const { DEFAULT_MAIL_CONTACT_DIRECTORY } = await import("../contact-directory-settings");
-    const { readMailUserPreferencesFromCookieHeader } = await import("./_components/mail-user-preferences");
-    const { readMailWorkspacePreferences } = await import("./_components/mail-workspace-preferences");
-    const { default: MailWorkspace } = await import("./MailWorkspace.island");
+    const {
+      readThemeFromCookieHeader,
+      DEFAULT_MAIL_CONTACT_DIRECTORY,
+      readMailUserPreferencesFromCookieHeader,
+      readMailWorkspacePreferences,
+      MailWorkspace,
+    } = modules!;
     dispose = render(
       () =>
         createComponent(MailWorkspace, {
