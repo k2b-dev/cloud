@@ -5,7 +5,7 @@
  */
 
 import { ok } from "@k2b/stdlib";
-import { Hono, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -37,6 +37,7 @@ import {
 } from "../contracts";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
+import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
 import {
   accountLifecycle,
   accountsAppService as accountsService,
@@ -59,6 +60,9 @@ const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
   provider: user.provider,
 });
 
+/** The answer for actions the mobile app's session may not take. */
+const webOnly = (c: Context) => c.json(APP_SESSION_FORBIDDEN, 403);
+
 /**
  * Guards the endpoints that manage how the account is authenticated: passkeys,
  * API keys, the password, and account deletion.
@@ -71,7 +75,8 @@ const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
  *
  * A credential may still *read* its account's passkeys and keys; only the
  * mutations are gated. Browser sessions and user-issued OAuth access tokens
- * both resolve to a `user` actor and are unaffected.
+ * both resolve to a `user` actor and are unaffected. The mobile app's session
+ * is rejected too: whatever it created would outlive removing the phone.
  */
 const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => {
   if (c.get("actor")?.kind !== "user") {
@@ -83,6 +88,7 @@ const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => 
       403,
     );
   }
+  if (auth.isAppSession(c)) return webOnly(c);
   return next();
 });
 
@@ -134,6 +140,8 @@ const requireSessionMandateCreation = createMiddleware<AuthContext>(async (c, ne
   if (c.get("credentialKind") !== "session" || c.get("actor")?.kind !== "user") {
     return c.json({ code: "FORBIDDEN", message: "Sign in with a browser session to create background authority" }, 403);
   }
+  // A mandate would keep acting after the phone is removed.
+  if (auth.isAppSession(c)) return webOnly(c);
   return next();
 });
 
@@ -231,6 +239,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/notifications/browser/endpoints",
+    auth.rejectAppSession,
     describeRoute({
       tags: ["Me"],
       summary: "Register browser notification endpoint",
@@ -240,6 +249,7 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(BrowserNotificationEndpointSchema, "Registered browser notification endpoint"),
         400: jsonResponse(ErrorResponseSchema, "Invalid browser subscription"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Not available in the mobile app"),
       },
     }),
     v("json", RegisterBrowserNotificationEndpointSchema),
@@ -400,17 +410,21 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(MessageResponseSchema, "Profile updated"),
         400: jsonResponse(ErrorResponseSchema, "Failed to update profile"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "SSH keys cannot be changed in the mobile app"),
       },
     }),
     v("json", UpdateProfileSchema),
-    async (c) =>
-      respond(c, async () => {
+    async (c) => {
+      // SSH keys sign in to the directory's hosts and would outlive removing the phone.
+      if (c.req.valid("json").ipa?.sshPublicKeys !== undefined && auth.isAppSession(c)) return webOnly(c);
+      return respond(c, async () => {
         const user = c.get("user");
         const data = c.req.valid("json");
         const result = await accountsService.user.update({ actor: toAccountsActor(user), id: user.id, data });
         if (!result.ok) return result;
         return ok({ message: "Profile updated." });
-      }),
+      });
+    },
   )
 
   .put(

@@ -331,8 +331,8 @@ const handleMessage = async (ctx: WsContext, raw: string) => {
 
 const app = new Hono<AuthContext>().use("*", rateLimit({ keyBy: "auto", limitPerSecond: 5 })).get(
   "/",
-  upgradeWebSocket((c) => {
-    const sessionToken = auth.session.getToken(c);
+  upgradeWebSocket(async (c) => {
+    const sessionToken = await auth.session.resolveToken(c);
     const locale = getLocale(c);
     let ctx: WsContext | null = null;
     let processing: Promise<void> = Promise.resolve();

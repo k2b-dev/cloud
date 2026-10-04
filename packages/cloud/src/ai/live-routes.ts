@@ -353,8 +353,8 @@ const buildAiLiveRoutes = (config: AiLiveRoutesConfig = {}) => {
 
   return new Hono<AuthContext>().get(
     "/",
-    upgradeWebSocket((c) => {
-      const sessionToken = auth.session.getToken(c);
+    upgradeWebSocket(async (c) => {
+      const sessionToken = await auth.session.resolveToken(c);
       const messages = aiLiveMessages(getLocale(c));
       let ctx: WsContext | null = null;
       let processing: Promise<void> = Promise.resolve();

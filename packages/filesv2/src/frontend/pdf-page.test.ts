@@ -50,7 +50,10 @@ afterAll(() => {
 });
 const signIn = () => {
   token.mockReturnValue("demo-session");
-  authenticate.mockResolvedValue({ user, data: { userId: user.id, sid: "demo", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" } });
+  authenticate.mockResolvedValue({
+    user,
+    data: { userId: user.id, sid: "demo", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
+  });
 };
 
 const server = new Hono<{ Variables: { runtime: RuntimeContext } }>()

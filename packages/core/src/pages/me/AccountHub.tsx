@@ -5,7 +5,7 @@ import { createUniqueId, type JSXElement } from "solid-js";
 import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";
 
-export type AccountSection = "profile" | "security" | "access" | "notifications" | "developer";
+export type AccountSection = "profile" | "security" | "access" | "notifications" | "developer" | "app";
 
 export const notificationViews = (locale: string) => {
   const { t } = accountMessages.resolve([locale]);
@@ -27,6 +27,8 @@ export default function AccountHub(props: {
   /** Replaces the static avatar, for example with the avatar-change trigger on the profile page. */
   avatar?: JSXElement;
   loginLabel: string;
+  /** Shows the App tab while the installation offers the mobile app. */
+  appTab?: boolean;
 }) {
   const locale = useLocale();
   const t = () => accountMessages.resolve([locale()]).t;
@@ -78,6 +80,7 @@ export default function AccountHub(props: {
             { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
             { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
             { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
+            ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "ti ti-device-mobile" }] : []),
           ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
         ).map((section) => {
           const active = section.id === props.active;

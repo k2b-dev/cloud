@@ -12,7 +12,7 @@ test("Web Vitals settings read and write require an authenticated admin", async 
     const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: false });
     const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
       user,
-      data: { userId: user.id, sid: "test", authEpoch: 0, expiresAt: new Date(Date.now() + 60000).toISOString() },
+      data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: new Date(Date.now() + 60000).toISOString() },
     });
     try {
       const response = await routes.request(path, { method, headers: { Accept: "application/json", Cookie: "session_token=test" } });
@@ -28,7 +28,7 @@ test("admin reads the existing global setting", async () => {
   const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
   const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
     user,
-    data: { userId: user.id, sid: "test", authEpoch: 0, expiresAt: new Date(Date.now() + 60000).toISOString() },
+    data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: new Date(Date.now() + 60000).toISOString() },
   });
   const get = spyOn(settings, "get").mockResolvedValue(true);
   try {

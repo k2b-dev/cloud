@@ -27,7 +27,14 @@ const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
     if (!Array.isArray(parsed.apps)) return undefined;
     return {
       apps: parsed.apps,
-      profile: parsed.profile?.name && (parsed.profile.theme === "dark" || parsed.profile.theme === "light") ? parsed.profile : undefined,
+      profile:
+        parsed.profile?.name && (parsed.profile.theme === "dark" || parsed.profile.theme === "light")
+          ? {
+              name: parsed.profile.name,
+              theme: parsed.profile.theme,
+              ...(parsed.profile.appHref === "/me/app" ? { appHref: parsed.profile.appHref } : {}),
+            }
+          : undefined,
       legalLinks: Array.isArray(parsed.legalLinks) ? parsed.legalLinks : [],
     };
   } catch {

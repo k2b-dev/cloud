@@ -28,7 +28,7 @@ const admin: User = {
 const token = spyOn(session, "getToken").mockReturnValue("test-session");
 const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
   user: admin,
-  data: { userId: adminId, sid: "test-session", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+  data: { userId: adminId, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
 });
 const remove = spyOn(accountsAppService.user, "remove");
 afterEach(() => remove.mockReset());
@@ -72,11 +72,11 @@ test("device routes need admin authority before reaching the device service", as
   const revoke = spyOn(appApproval, "revokeUserDevice");
   authenticate.mockResolvedValueOnce({
     user: { ...admin, roles: [] },
-    data: { userId: adminId, sid: "test-session", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+    data: { userId: adminId, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
   });
   authenticate.mockResolvedValueOnce({
     user: { ...admin, roles: [] },
-    data: { userId: adminId, sid: "test-session", authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+    data: { userId: adminId, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
   });
   try {
     expect((await users.request(`/${targetId}/devices`)).status).toBe(403);

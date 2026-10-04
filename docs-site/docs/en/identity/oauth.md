@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-09-27
+updated: 2026-10-03
 ---
 
 # OAuth clients and flows
@@ -53,6 +53,10 @@ The authorization request accepts:
 | `nonce` | No | Included in OpenID Connect processing |
 | `code_challenge` | Public clients | PKCE challenge |
 | `code_challenge_method` | With challenge | Must be `S256` |
+
+The person approves in a web session. The mobile app's session never
+authorizes a client: `/oauth/authorize` treats it as no session and leads to
+sign-in, and consent decisions from it are refused.
 
 Every client that uses PKCE must use `S256`. Public clients must use PKCE;
 confidential clients may omit it because they also authenticate at the token
@@ -160,9 +164,10 @@ stores only SHA-256 hashes of both codes.
 
 The person opens the verification URI, enters the code, and sees the client
 name, client ID, the code again, the requested scopes, and a warning to approve
-only codes they started themselves. The page requires a browser session. API
-keys and OAuth access tokens cannot approve a device. The client profile and
-access rules apply exactly as in the authorization-code flow. The approve or deny form carries
+only codes they started themselves. The page requires a browser session on the
+web. API keys, OAuth access tokens and the mobile app's session cannot approve a
+device. The client profile and access rules apply exactly as in the
+authorization-code flow. The approve or deny form carries
 a single-use confirmation token bound to that person, and cross-origin
 submissions are rejected. Cloud records both decisions in the audit log as
 `oauth.device.authorize`.

@@ -6,6 +6,7 @@ import { approvalAvailability } from "../app-approval/availability";
 import Devices from "../app-approval/Devices.island";
 import AccountActivity from "./AccountActivity.island";
 import AccountHub, { AccountPage } from "./AccountHub";
+import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
 import PasskeysSettings from "./PasskeysSettings.island";
 import ProfileSettings from "./ProfileSettings.island";
@@ -39,7 +40,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.security }]}>
-      <AccountHub user={user} active="security" loginLabel={categoryPolicy.login.label}>
+      <AccountHub appTab={pwaAvailable(c)} user={user} active="security" loginLabel={categoryPolicy.login.label}>
         <AccountPage title={t.security} description={t.securityDescription}>
           {(isAdmin || availability === "configured") && (
             <Devices

@@ -1239,6 +1239,8 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/books/:bookId/api-keys",
+    // A resource API key outlives the phone: the mobile app cannot create one.
+    auth.rejectAppSession,
     documentRoute({
       tags: ["Contacts"],
       summary: "Create contact book API key",

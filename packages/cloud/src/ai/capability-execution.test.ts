@@ -130,6 +130,18 @@ describe("AI capability authority", () => {
     ).rejects.toThrow("no longer active");
   });
 
+  test("a turn started in the mobile app keeps the app's limits after the owner is reloaded", async () => {
+    spyOn(categoryPolicy, "isAccountCategoryAllowed").mockResolvedValue(true);
+    const current = { ...user("11111111-1111-4111-8111-111111111111"), roles: ["user" as const, "admin" as const] };
+    const resolved = await resolveAiCapabilityActor({
+      conversationId: "conversation-1",
+      persistedActor: { kind: "user", user: { ...current, roles: ["user"] }, sessionKind: "app" },
+      store: { getConversation: async () => conversation(current.id) },
+      getUser: async () => current,
+    });
+    expect(resolved.actor).toEqual({ kind: "user", user: { ...current, roles: ["user"] }, sessionKind: "app" });
+  });
+
   test("keeps two users isolated and lets the target return permission-specific results", async () => {
     const first = user("11111111-1111-4111-8111-111111111111");
     const second = user("22222222-2222-4222-8222-222222222222");

@@ -22,6 +22,10 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
     c.status(403);
     return { kind: "result", outcome: "blocked", message: t.deviceSessionRequired };
   }
+  if (c.get("sessionKind") === "app") {
+    c.status(403);
+    return { kind: "result", outcome: "blocked", message: t.webSessionRequired };
+  }
 
   const result = c.req.query("result");
   if (result === "approved" || result === "denied" || result === "expired") return { kind: "result", outcome: result };

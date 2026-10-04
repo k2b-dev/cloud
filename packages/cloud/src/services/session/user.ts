@@ -46,6 +46,9 @@ const stringArray = (value: unknown): string[] => {
   return [];
 };
 
+/** The user as the mobile app's session sees it: never an installation administrator. */
+export const withoutAdminRole = (user: User): User => ({ ...user, roles: user.roles.filter((role) => role !== "admin") });
+
 export const buildProjectedUser = (row: DbRow): User => {
   const { provider, profile } = resolveProviderProfile(row);
   const mail = (row.mail as string | null | undefined) ?? null;
@@ -57,7 +60,8 @@ export const buildProjectedUser = (row: DbRow): User => {
   const common = {
     id: row.id as string,
     uid: row.uid as string,
-    roles: buildRoles({ provider, profile, memberofGroup, manages, admin: Boolean(row.effective_admin) }),
+    // An app session of the mobile app never acts as an installation administrator.
+    roles: buildRoles({ provider, profile, memberofGroup, manages, admin: Boolean(row.effective_admin) && !row.pwa_device_id }),
     profile,
     givenname: (row.given_name as string | null | undefined) ?? "",
     sn: (row.sn as string | null | undefined) ?? "",
@@ -123,7 +127,7 @@ type SessionUserParams = {
 // Both projections use the same live validity checks. Neither caches authorization.
 const loadSessionRow = async (params: SessionUserParams, projection: SQLQuery, join: SQLQuery, query: typeof sql) => {
   const [row] = await query<DbRow[]>`
-    SELECT ${projection}, (
+    SELECT ${projection}, sf.pwa_device_id AS pwa_device_id, (
       SELECT value FROM settings.entries WHERE key = 'user.category.' ||
         CASE WHEN u.provider = 'ipa' THEN 'freeipa' WHEN u.profile = 'guest' THEN 'guest' ELSE 'login' END || '.enabled'
     ) AS category_enabled
@@ -144,13 +148,19 @@ const loadSessionRow = async (params: SessionUserParams, projection: SQLQuery, j
   return row && (await decodeAccountCategoryEnabled(row.category_enabled)) ? row : null;
 };
 
+/** The user of a valid session family and, for an app session of the mobile app, its device. */
+export const loadJwtSession = async (
+  params: SessionUserParams & { groupsAdmin: string[] },
+  query: typeof sql = sql,
+): Promise<{ user: User; pwaDeviceId: string | null } | null> => {
+  const row = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin(), query);
+  return row ? { user: buildProjectedUser(row), pwaDeviceId: row.pwa_device_id ? String(row.pwa_device_id) : null } : null;
+};
+
 export const loadJwtSessionUser = async (
   params: SessionUserParams & { groupsAdmin: string[] },
   query: typeof sql = sql,
-): Promise<User | null> => {
-  const row = await loadSessionRow(params, userProjectionSql(params.groupsAdmin), userProjectionJoin(), query);
-  return row ? buildProjectedUser(row) : null;
-};
+): Promise<User | null> => (await loadJwtSession(params, query))?.user ?? null;
 
 /** Identity-only consumers must not pay for group, IPA, role and rail projections. */
 export const loadJwtSessionIdentity = async (params: SessionUserParams, query: typeof sql = sql) => {

@@ -6,6 +6,7 @@ import { dates } from "@k2b/stdlib";
 import { ButtonLink, NoticeCard, SettingsSection } from "@k2b/ui";
 import { ssr } from "../../config";
 import AccountHub, { AccountPage, AccountProfileActions } from "./AccountHub";
+import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
 import RequestFreeIpaAccount from "./RequestFreeIpaAccount.island";
 import WithdrawAccountRequest from "./WithdrawAccountRequest.island";
@@ -33,7 +34,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
-      <AccountHub user={user} active="access" loginLabel={categoryPolicy.login.label}>
+      <AccountHub appTab={pwaAvailable(c)} user={user} active="access" loginLabel={categoryPolicy.login.label}>
         <AccountPage
           title={t.accessAndGroups}
           description={t.accessDescription}

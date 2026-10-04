@@ -34,15 +34,18 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   mock.module("@k2b/cloud/server", () => ({
     getLocale: () => "en",
     auth: {
-      session: { getToken: () => "session", authenticate: async () => ({ user: { id: "user", displayName: "User", avatarHash: null } }) },
+      session: {
+        resolveToken: async () => "session",
+        authenticate: async () => ({ user: { id: "user", displayName: "User", avatarHash: null } }),
+      },
     },
   }));
   mock.module("@k2b/cloud/services", () => ({
     logger: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }),
   }));
   mock.module("hono/bun", () => ({
-    upgradeWebSocket: (factory: (context: Context) => WSEvents) => (context: Context) => {
-      events = factory(context);
+    upgradeWebSocket: (factory: (context: Context) => Promise<WSEvents>) => async (context: Context) => {
+      events = await factory(context);
       return new Response("fixture");
     },
   }));

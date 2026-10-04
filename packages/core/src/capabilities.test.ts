@@ -822,6 +822,30 @@ describe("Core AI capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { chat: { id: chat.shortId, archived: true } } } });
   });
 
+  test("the mobile app never creates, changes or resumes a scheduled task's mandate", async () => {
+    const create = spyOn(aiChatTasks, "create");
+    const update = spyOn(aiChatTasks, "update");
+    const setState = spyOn(aiChatTasks, "setState");
+    const app: CapabilityExecutionContext = { ...idempotentContext, actor: { kind: "user", user, sessionKind: "app" } };
+    const createTask = aiCapabilities.actions["ai.task.create"];
+    const updateTask = aiCapabilities.actions["ai.task.update"];
+    const resume = aiCapabilities.actions["ai.task.resume"];
+    const createInput = { chatId: chat.shortId, prompt: "Remind me.", schedule: { kind: "cron" as const, cron: "0 9 * * 1" } };
+    const results: unknown[] = [
+      await createTask.review?.(createInput, app),
+      await createTask.run(createInput, app),
+      await updateTask.review?.({ taskId: scheduledTask.shortId, prompt: "Wider." }, app),
+      await updateTask.run({ taskId: scheduledTask.shortId, prompt: "Wider." }, app),
+      await resume.review?.({ taskId: scheduledTask.shortId }, app),
+      await resume.run({ taskId: scheduledTask.shortId }, app),
+    ];
+    const webOnly = { ok: false, error: { code: "FORBIDDEN", message: "Use Cloud on the web for this.", status: 403 } };
+    expect(results).toEqual(Array.from({ length: 6 }, () => webOnly));
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    expect(setState).not.toHaveBeenCalled();
+  });
+
   test("rejects actors without a delegated user", async () => {
     const list = spyOn(aiConversations, "listConversations");
     const result = await aiCapabilities.queries["ai.chats.search"].run(
