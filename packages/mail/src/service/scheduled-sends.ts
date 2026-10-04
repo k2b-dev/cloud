@@ -14,6 +14,7 @@ import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { publishMailMailboxEvent } from "./events";
+import { OUTBOX_MAILBOX_AUTH_REQUIRED } from "./outbound-delivery";
 import { removeUnsentOutboundMessage } from "./outbound-message-projection";
 
 type ScheduledCursor = { version: 1; scheduledAt: string; id: string };
@@ -38,6 +39,7 @@ type ScheduledRow = {
   scheduled_at: Date | string;
   state: ScheduledSend["state"];
   attempt: number;
+  last_error_code: string | null;
   last_error_message: string | null;
   actor_kind: ScheduledSend["scheduledBy"]["kind"];
   actor_display_name: string;
@@ -92,7 +94,11 @@ const mapRows = (rows: ScheduledRow[]): ScheduledSend[] =>
       subject: parsed.data.subject,
       bodyPreview: bodyPreview(parsed.data),
       scheduledAt: toIso(row.requested_at),
-      nextAttemptAt: toIso(row.scheduled_at) === toIso(row.requested_at) ? null : toIso(row.scheduled_at),
+      // A send that waits for its mailbox's next login has no next attempt time: it goes out once the login comes.
+      nextAttemptAt:
+        row.last_error_code === OUTBOX_MAILBOX_AUTH_REQUIRED || toIso(row.scheduled_at) === toIso(row.requested_at)
+          ? null
+          : toIso(row.scheduled_at),
       state: row.state,
       attempt: Number(row.attempt),
       lastError: row.last_error_message,
@@ -141,6 +147,7 @@ export const listScheduledSends = async (params: {
           outbox.scheduled_at,
           outbox.state,
           outbox.attempt,
+          outbox.last_error_code,
           outbox.last_error_message,
           command.actor_kind,
           COALESCE(
@@ -211,6 +218,7 @@ export const getScheduledSend = async (params: {
           outbox.scheduled_at,
           outbox.state,
           outbox.attempt,
+          outbox.last_error_code,
           outbox.last_error_message,
           command.actor_kind,
           COALESCE(

@@ -31,6 +31,7 @@ import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { listConversations, listFolders } from "./messages";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { createProviderConnection } from "./provider-connections";
+import { getScheduledSend } from "./scheduled-sends";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
@@ -1388,8 +1389,8 @@ suite("mail sent message projection", () => {
           AND connection.id = binding.connection_id
       `;
       expect(await sendRetryNow(outbox.id)).toBe("scheduled");
-      expect(await delivery(outbox.id)).toMatchObject({ state: "scheduled", last_error_code: "OUTBOX_PREDISPATCH_RETRY" });
-      // The account and its sender were verified with the new password.
+      expect(await delivery(outbox.id)).toMatchObject({ state: "scheduled", last_error_code: "MAILBOX_AUTH_REQUIRED" });
+      // The account was verified with the new password, but its sender not yet.
       await sql`
         UPDATE mail.provider_bindings binding
         SET verified_secret_revision = connection.secret_revision
@@ -1397,6 +1398,8 @@ suite("mail sent message projection", () => {
         WHERE binding.id = (SELECT selected_binding_id FROM mail.outbox_submissions WHERE id = ${outbox.id}::uuid)
           AND connection.id = binding.connection_id
       `;
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      // Now the sender is verified with it too.
       await sql`
         UPDATE mail.sender_identity_bindings sender_binding
         SET verified_secret_revision = binding.verified_secret_revision
@@ -1410,24 +1413,93 @@ suite("mail sent message projection", () => {
     }
   });
 
-  test("a scheduled send waits while its mailbox needs its password again instead of failing", async () => {
+  const loginWait = async (outboxId: string) => {
+    const [row] = await sql<{ outbox_attempt: number; command_attempt: number; mime_blob_id: string | null; mailbox_short_id: string }[]>`
+      SELECT
+        outbox.attempt AS outbox_attempt,
+        command.attempt AS command_attempt,
+        outbox.mime_blob_id,
+        mailbox.short_id AS mailbox_short_id
+      FROM mail.outbox_submissions outbox
+      JOIN mail.commands command ON command.id = outbox.command_id
+      JOIN mail.mailboxes mailbox ON mailbox.id = outbox.mailbox_id
+      WHERE outbox.id = ${outboxId}::uuid
+    `;
+    const notices = await sql<{ idempotency_key: string; target_href: string | null }[]>`
+      SELECT idempotency_key, target_href
+      FROM notifications.events
+      WHERE definition_id = 'mail.sendWaitingForLogin' AND idempotency_key LIKE ${`%:${outboxId}`}
+      ORDER BY created_at
+    `;
+    return { ...row!, notices: notices.map((notice) => ({ key: notice.idempotency_key, target: notice.target_href })) };
+  };
+
+  test("a scheduled send waits as long as its mailbox needs a new login, tells its author once, and goes out after the reconnect", async () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
       const draft = await newDraft(mailbox, "Due during an outage");
       const outbox = await schedule(mailbox, draft.id, draft.revision, "auth-required");
       await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailbox.mailboxId}::uuid`;
-      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      // More looks than a send has attempts: waiting for the login uses none of them.
+      for (let look = 0; look <= OUTBOX_MAX_ATTEMPTS; look += 1) expect(await sendRetryNow(outbox.id)).toBe("scheduled");
       expect(await delivery(outbox.id)).toEqual({
         state: "scheduled",
-        last_error_code: "OUTBOX_PREDISPATCH_RETRY",
+        last_error_code: "MAILBOX_AUTH_REQUIRED",
         command_state: "queued",
         draft_state: "scheduled",
       });
+      const waiting = await loginWait(outbox.id);
+      expect(waiting).toMatchObject({ outbox_attempt: 0, command_attempt: 0, mime_blob_id: null });
+      expect(waiting.notices).toEqual([
+        { key: `send-login:waiting:${outbox.id}`, target: `/app/mail/${waiting.mailbox_short_id}?scheduled=1` },
+      ]);
+      // Scheduled shows no retry time: the message goes out once the mailbox is signed in again.
+      const scheduled = await getScheduledSend({ context, mailboxId: mailbox.mailboxId, scheduledSendId: outbox.id });
+      expect(scheduled.ok && scheduled.data.nextAttemptAt).toBeNull();
       expect(provider.submissions()).toBe(0);
+
       await sql`UPDATE mail.mailboxes SET health = 'active' WHERE id = ${mailbox.mailboxId}::uuid`;
+      const reconnectedAt = Date.now() - 1_000;
       expect(await sendRetryNow(outbox.id)).toBe("sent");
       expect(provider.submissions()).toBe(1);
+      // Like any scheduled message, it is dated when it went out.
+      const [copy] = provider.messagesWithId("Sent", outbox.stable_message_id);
+      if (!copy) throw new Error("The Sent copy is missing");
+      expect((await simpleParser(copy.source)).date?.getTime()).toBeGreaterThanOrEqual(Math.floor(reconnectedAt / 1_000) * 1_000);
+      expect((await loginWait(outbox.id)).notices).toHaveLength(1);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a send whose mailbox is not signed in again within six days goes back to the drafts and tells its author", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Never reconnected");
+      const outbox = await schedule(mailbox, draft.id, draft.revision, "auth-expired");
+      await sql`UPDATE mail.mailboxes SET health = 'auth_required' WHERE id = ${mailbox.mailboxId}::uuid`;
+      expect(await sendRetryNow(outbox.id)).toBe("scheduled");
+      // As if the message was due six days and a minute ago.
+      await sql.begin(async (tx) => {
+        await tx`ALTER TABLE mail.outbox_submissions DISABLE TRIGGER outbox_requested_at_guard`;
+        await tx`UPDATE mail.outbox_submissions SET requested_at = now() - interval '6 days 1 minute' WHERE id = ${outbox.id}::uuid`;
+        await tx`ALTER TABLE mail.outbox_submissions ENABLE TRIGGER outbox_requested_at_guard`;
+      });
+      expect(await sendRetryNow(outbox.id)).toBe("failed");
+      expect(await delivery(outbox.id)).toEqual({
+        state: "failed",
+        last_error_code: "MAILBOX_AUTH_REQUIRED",
+        command_state: "failed",
+        draft_state: "draft",
+      });
+      const returned = await loginWait(outbox.id);
+      expect(returned.notices).toEqual([
+        { key: `send-login:waiting:${outbox.id}`, target: `/app/mail/${returned.mailbox_short_id}?scheduled=1` },
+        { key: `send-login:returned:${outbox.id}`, target: `/app/mail/${returned.mailbox_short_id}?view=send_problems` },
+      ]);
+      expect(provider.submissions()).toBe(0);
     } finally {
       provider.restore();
     }

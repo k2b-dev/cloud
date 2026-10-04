@@ -165,6 +165,7 @@ const deliveryMessages = i18n.define({
   messages: {
     en: {
       tryingAgain: ({ attempt, total }: { attempt: number; total: number }) => `Trying again · ${attempt}/${total}`,
+      waitingForSignIn: "Waiting for sign-in",
       scheduled: "Scheduled",
       sending: "Sending",
       sendingAttempt: ({ attempt, total }: { attempt: number; total: number }) => `Sending · ${attempt}/${total}`,
@@ -178,6 +179,7 @@ const deliveryMessages = i18n.define({
     },
     de: {
       tryingAgain: ({ attempt, total }) => `Erneuter Versuch · ${attempt}/${total}`,
+      waitingForSignIn: "Wartet auf Anmeldung",
       scheduled: "Geplant",
       sending: "Wird gesendet",
       sendingAttempt: ({ attempt, total }) => `Wird gesendet · ${attempt}/${total}`,
@@ -200,6 +202,9 @@ export const messageDeliveryPresentation = (
   const state = deliveryState(delivery);
   switch (state) {
     case "scheduled":
+      if (typeof delivery !== "string" && delivery.lastErrorCode === "MAILBOX_AUTH_REQUIRED") {
+        return { label: t.waitingForSignIn, icon: "ti ti-lock", tone: "warning" };
+      }
       return typeof delivery !== "string" && delivery.lastErrorCode
         ? {
             label: t.tryingAgain({ attempt: delivery.attempt, total: delivery.maxAttempts }),

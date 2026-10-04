@@ -25,7 +25,7 @@ import {
 } from "./maintenance-runtime";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { isOperatorMaintenanceKind } from "./operator-actions";
-import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
+import { OUTBOX_MAILBOX_AUTH_REQUIRED, OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import {
   hasSyncedSentCopy,
   loadOutboundProjectionByOutbox,
@@ -47,6 +47,7 @@ import {
   releaseProviderLease,
 } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
+import { notifySendWaitingForLogin } from "./send-login-notifications";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { enqueueFolderSync } from "./sync-runtime";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
@@ -61,6 +62,13 @@ const OUTBOX_JOB_LEASE_MS = 4 * 60_000;
  * `scheduled_at <= now()`, so a far-future send never keeps polling.
  */
 const OUTBOX_SCHEDULE_WINDOW_MS = 6 * 24 * 60 * 60_000;
+/**
+ * A send whose mailbox needs a new login waits for it at most as long after it was due as the
+ * outbox lets any send wait on the broker. Then it goes back to the drafts.
+ */
+const MAILBOX_LOGIN_WAIT_SECONDS = OUTBOX_SCHEDULE_WINDOW_MS / 1_000;
+/** How often a waiting send looks whether its mailbox was signed in again: each `commands-due` run. */
+const MAILBOX_LOGIN_RECHECK_SECONDS = 60;
 const JOB_HEARTBEAT_INTERVAL_MS = 30_000;
 const commandTasks = createRuntimeTaskTracker();
 
@@ -2648,14 +2656,20 @@ const scheduleOutboxRetry = async (params: {
   fallbackMessage: string;
   /** Settle only an attempt whose worker stopped before SMTP. */
   staleUnsent?: boolean;
-}): Promise<void> => {
-  const delaySeconds = Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
+  /** Waits for the mailbox's next login instead of a transient failure; the attempt does not count. */
+  waitForLogin?: boolean;
+}): Promise<boolean> => {
+  const delaySeconds = params.waitForLogin
+    ? MAILBOX_LOGIN_RECHECK_SECONDS
+    : Math.min(15 * 60, 15 * 2 ** Math.max(0, params.outbox.attempt));
+  const refund = params.waitForLogin ? 1 : 0;
   const updated = await sql.begin(async (tx) => {
     if (!(await lockOutboxFence(tx, params.outbox, params.command, params.staleUnsent))) return false;
     await tx`
       UPDATE mail.outbox_submissions
       SET
         state = 'scheduled',
+        attempt = attempt - ${refund},
         scheduled_at = now() + (${delaySeconds}::text || ' seconds')::interval,
         undo_until = NULL,
         last_error_code = ${params.code},
@@ -2667,6 +2681,7 @@ const scheduleOutboxRetry = async (params: {
       UPDATE mail.commands
       SET
         state = 'queued',
+        attempt = attempt - ${refund},
         worker_heartbeat_at = NULL,
         last_error_code = ${params.code},
         last_error_message = ${errorMessage(params.error, params.fallbackMessage)},
@@ -2693,6 +2708,7 @@ const scheduleOutboxRetry = async (params: {
       activityId: `scheduled-send-retry:${params.outbox.id}:${params.outbox.attempt}`,
     });
   }
+  return updated;
 };
 
 const sentMatches = async (params: {
@@ -2822,9 +2838,106 @@ const recordSentCopy = async (outbox: DbOutboxExecution, sender: DbSenderBinding
 const providerStoresSubmission = (binding: DbPinnedBinding, outbox: DbOutboxExecution): boolean =>
   outbox.selected_identity_transport_revision === null && parseJsonRecord(binding.capabilities).gmailExtensions === true;
 
-/** Nothing reached SMTP: a temporary failure sends again later, any other one returns the draft. */
+/**
+ * The send's mailbox needs a new login: its provider refused the password, or the password was
+ * replaced and the account or the sender is not verified with the new one yet. Expects the
+ * aliases `outbox`, `command`, `mailbox`, `binding`, and `connection` of the send.
+ */
+const mailboxLoginPending = () => sql`
+  mailbox.deleted_at IS NULL
+  AND connection.status <> 'revoked'
+  AND (
+    mailbox.health = 'auth_required'
+    OR (
+      connection.secret_revision <> command.selected_secret_revision
+      AND NOT (
+        binding.state IN ('active', 'degraded')
+        AND binding.verified_secret_revision = connection.secret_revision
+        AND EXISTS (
+          SELECT 1
+          FROM mail.sender_identity_bindings sender_binding
+          WHERE sender_binding.sender_identity_id = outbox.sender_identity_id
+            AND sender_binding.binding_id = binding.id
+            AND sender_binding.verified_secret_revision = connection.secret_revision
+            AND sender_binding.revoked_at IS NULL
+        )
+      )
+    )
+  )
+`;
+
+/** Whether the send waits for its mailbox's next login, or waited too long for it. */
+const mailboxLoginWait = async (outboxId: string): Promise<"waiting" | "expired" | null> => {
+  const [row] = await sql<{ expired: boolean }[]>`
+    SELECT outbox.requested_at <= now() - make_interval(secs => ${MAILBOX_LOGIN_WAIT_SECONDS}) AS expired
+    FROM mail.outbox_submissions outbox
+    JOIN mail.commands command ON command.id = outbox.command_id
+    JOIN mail.mailboxes mailbox ON mailbox.id = outbox.mailbox_id
+    JOIN mail.provider_bindings binding ON binding.id = outbox.selected_binding_id
+    JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+    WHERE outbox.id = ${outboxId}::uuid AND ${mailboxLoginPending()}
+  `;
+  return row ? (row.expired ? "expired" : "waiting") : null;
+};
+
+/**
+ * A waiting send whose mailbox still needs its login only moves its next look, without a claim:
+ * claiming would show the message as sending every minute.
+ */
+const deferSendWaitingForLogin = async (outboxId: string): Promise<boolean> => {
+  const [deferred] = await sql<{ id: string }[]>`
+    UPDATE mail.outbox_submissions outbox
+    SET scheduled_at = now() + make_interval(secs => ${MAILBOX_LOGIN_RECHECK_SECONDS})
+    FROM mail.commands command, mail.mailboxes mailbox, mail.provider_bindings binding, mail.provider_connections connection
+    WHERE outbox.id = ${outboxId}::uuid
+      AND outbox.state = 'scheduled'
+      AND outbox.last_error_code = ${OUTBOX_MAILBOX_AUTH_REQUIRED}
+      AND outbox.scheduled_at <= now()
+      AND outbox.requested_at > now() - make_interval(secs => ${MAILBOX_LOGIN_WAIT_SECONDS})
+      AND command.id = outbox.command_id
+      AND command.state = 'queued'
+      AND mailbox.id = outbox.mailbox_id
+      AND binding.id = outbox.selected_binding_id
+      AND connection.id = binding.connection_id
+      AND ${mailboxLoginPending()}
+    RETURNING outbox.id
+  `;
+  return Boolean(deferred);
+};
+
+const LOGIN_WAIT_CODES = new Set(["BINDING_UNAVAILABLE", "CREDENTIAL_REVISION_CHANGED"]);
+
+/**
+ * Nothing reached SMTP: a send whose mailbox needs a new login waits for it, a temporary failure
+ * sends again later, any other one returns the draft.
+ */
 const settlePreDispatchFailure = async (outbox: DbOutboxExecution, command: DbCommandExecution, error: unknown): Promise<void> => {
-  if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
+  const loginWait = LOGIN_WAIT_CODES.has(normalizeCode(error, "")) ? await mailboxLoginWait(outbox.id) : null;
+  if (loginWait === "waiting") {
+    const waiting = await scheduleOutboxRetry({
+      outbox,
+      command,
+      error: Object.assign(new Error("The mailbox needs a new login; the message goes out once it is signed in again"), {
+        code: OUTBOX_MAILBOX_AUTH_REQUIRED,
+      }),
+      code: OUTBOX_MAILBOX_AUTH_REQUIRED,
+      fallbackMessage: "The mailbox needs a new login",
+      waitForLogin: true,
+    });
+    if (waiting) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "waiting" });
+  } else if (loginWait === "expired") {
+    const returned = await finishOutbox({
+      outbox,
+      command,
+      outboxState: "failed",
+      commandState: "failed",
+      draftState: "draft",
+      error: Object.assign(new Error("The mailbox was not signed in again in time; the message went back to the drafts"), {
+        code: OUTBOX_MAILBOX_AUTH_REQUIRED,
+      }),
+    });
+    if (returned) await notifySendWaitingForLogin({ outboxId: outbox.id, notice: "returned" });
+  } else if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
     await scheduleOutboxRetry({
       outbox,
       command,
@@ -3365,6 +3478,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
   outboxId: string,
   heartbeat?: (fence: { outbox: DbOutboxExecution; command: DbCommandExecution }) => Promise<void>,
 ): Promise<string | null> => {
+  if (await deferSendWaitingForLogin(outboxId)) return "scheduled";
   const remoteResourceId = await loadOutboxRemoteResourceId(outboxId);
   if (!remoteResourceId) return null;
   // A send is a user command: it waits behind folder syncs and goes before hydration.

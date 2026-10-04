@@ -39,6 +39,13 @@ const notificationMessages = i18n.define({
       assignedTitle: ({ count }: { count: number }) =>
         count === 1 ? "A conversation was assigned to you" : `${count} conversations were assigned to you`,
       assignedBody: ({ mailbox, by }: { mailbox: string; by: string | null }) => (by ? `${by} in ${mailbox}` : mailbox),
+      sendWaitingTitle: "A message is waiting to be sent",
+      sendWaitingBody: ({ mailbox, subject }: { mailbox: string; subject: string }) =>
+        `${mailbox} needs you to sign in again. Mail sends “${subject}” as soon as the account is reconnected.`,
+      sendReturnedTitle: "A message couldn’t be sent",
+      sendReturnedBody: ({ mailbox, subject }: { mailbox: string; subject: string }) =>
+        `${mailbox} wasn’t reconnected in time, so “${subject}” is back in your drafts.`,
+      noSubject: "(no subject)",
     },
     de: {
       reminderTitle: "Mail-Erinnerung",
@@ -46,6 +53,13 @@ const notificationMessages = i18n.define({
       assignedTitle: ({ count }) =>
         count === 1 ? "Dir wurde eine Unterhaltung zugewiesen" : `${count} Unterhaltungen wurden dir zugewiesen`,
       assignedBody: ({ mailbox, by }) => (by ? `${by} in ${mailbox}` : mailbox),
+      sendWaitingTitle: "Eine Nachricht wartet auf den Versand",
+      sendWaitingBody: ({ mailbox, subject }) =>
+        `${mailbox} braucht eine erneute Anmeldung. Mail sendet „${subject}“, sobald das Konto wieder verbunden ist.`,
+      sendReturnedTitle: "Eine Nachricht konnte nicht gesendet werden",
+      sendReturnedBody: ({ mailbox, subject }) =>
+        `${mailbox} wurde nicht rechtzeitig wieder verbunden. „${subject}“ liegt wieder in deinen Entwürfen.`,
+      noSubject: "(kein Betreff)",
     },
   },
 });
@@ -63,6 +77,14 @@ const assignmentNotificationData = z.object({
   mailboxName: z.string(),
   conversationIds: z.array(publicResourceId).min(1).max(MAIL_CONVERSATION_BATCH_LIMIT),
   assignedBy: z.string().nullable(),
+});
+const sendLoginNotificationData = z.object({
+  mailboxId: publicResourceId,
+  mailboxName: z.string(),
+  subject: z.string(),
+  /** The message was scheduled for later, so it is listed under Scheduled while it waits. */
+  scheduled: z.boolean(),
+  notice: z.enum(["waiting", "returned"]),
 });
 const workflowNotificationData = z.object({
   mailboxId: publicResourceId,
@@ -97,6 +119,28 @@ export const NOTIFICATIONS = {
       targetHref:
         conversationIds.length === 1 ? `/app/mail/${mailboxId}?conversation=${conversationIds[0]}` : `/app/mail/${mailboxId}?view=mine`,
     }),
+  }),
+  sendWaitingForLogin: notification({
+    recipient: "user",
+    label: "Messages waiting for sign-in",
+    description: "When a message you sent waits until its account is reconnected, and when it goes back to your drafts instead.",
+    presentation: presentation(
+      "Nachrichten, die auf eine Anmeldung warten",
+      "Wenn eine gesendete Nachricht wartet, bis ihr Konto wieder verbunden ist, und wenn sie stattdessen zurück in deine Entwürfe geht.",
+    ),
+    delivery: { recommended: ["browser", "email"] },
+    data: sendLoginNotificationData,
+    render: ({ mailboxId, mailboxName, subject, scheduled, notice }, { locale }) => {
+      const t = text(locale);
+      const message = { mailbox: mailboxName, subject: subject || t.noSubject };
+      return notice === "waiting"
+        ? {
+            title: t.sendWaitingTitle,
+            body: t.sendWaitingBody(message),
+            targetHref: scheduled ? `/app/mail/${mailboxId}?scheduled=1` : `/app/mail/${mailboxId}`,
+          }
+        : { title: t.sendReturnedTitle, body: t.sendReturnedBody(message), targetHref: `/app/mail/${mailboxId}?view=send_problems` };
+    },
   }),
   workflowNotice: notification({
     recipient: "user",

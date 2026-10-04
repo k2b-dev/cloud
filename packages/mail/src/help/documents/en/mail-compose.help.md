@@ -118,13 +118,13 @@ Scheduled messages appear under **Scheduled** with recipients, content preview, 
 - return it to a shared draft, or
 - discard it.
 
-After successful delivery, the message becomes normal sent mail, dated when it went out rather than when you scheduled it. Scheduled delivery and Undo Send require an active mailbox transport. Pausing the mailbox stops queued delivery until an administrator resumes it. If the mailbox's password was replaced after you scheduled a message, it goes out with the new password when the mailbox and the sending identity are verified with it again by the time it is due.
+After successful delivery, the message becomes normal sent mail, dated when it went out rather than when you scheduled it. Scheduled delivery and Undo Send require an active mailbox transport. Pausing the mailbox stops queued delivery until an administrator resumes it. If the mailbox needs you to sign in again when a message is due, or its password was replaced and the mailbox or the sending identity isn't verified with the new one yet, the message waits and shows **Waiting for sign-in**. Mail tells you once and sends the message as soon as the account is reconnected; it is still dated when it goes out. If the account isn't reconnected within six days after the message was due, the message shows **Couldn’t send** and returns to Drafts, and Mail tells you again.
 
 ## Recover from a send problem {icon="alert-circle"}
 
 Select the delivery status below an outgoing message to see what happened and the safest available next step.
 
-If the mail server can't be reached before Mail hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes; the delivery status shows the next attempt. The same happens when the mailbox needs its password again or is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**.
+If the mail server can't be reached before Mail hands the message over, nothing was sent. Mail keeps the message and tries again several times over a few minutes; the delivery status shows the next attempt. The same happens when the mailbox is reconnecting at that moment, or when Mail restarted before it handed the message over. If the problem lasts, the message shows **Couldn’t send**. A message whose mailbox needs you to sign in again waits longer, as described above.
 
 - **Couldn’t send** means Mail knows the message was not sent. Choose **Review and resend** to reopen the preserved draft before trying again. Recipient, size, or delivery-option errors use a more specific review label.
 - **Partially sent** means the receiving server accepted some recipients but not others. Mail stores the message in the Sent folder like other sent mail. If storing that copy fails at that moment, Mail doesn't try again, so the Sent folder may not have it. Choose **Review remaining recipients** to create an independent draft containing only the addresses that were not accepted. **Review everyone again…** includes the original recipients too and can therefore create duplicate messages.

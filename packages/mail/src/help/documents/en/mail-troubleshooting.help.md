@@ -96,6 +96,7 @@ Then return to **Automations > Automatic replies**. Existing automatic replies c
 Open **Scheduled** and inspect the item:
 
 - A retry label means delivery failed and Mail has retained the item for another attempt.
+- **Waiting for sign-in** on the message means its mailbox needs the account reconnected. The message goes out once it is; after six days without that, it returns to Drafts.
 - A paused mailbox prevents the attempt from running.
 - **Cancel** can return the item to a shared draft or discard it before delivery begins.
 

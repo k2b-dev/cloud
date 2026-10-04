@@ -14,6 +14,10 @@ import { buildMailListHref } from "./mail-navigation";
 
 type MessageDelivery = NonNullable<MessageDetail["delivery"]>;
 
+/** The send waits for its mailbox to be signed in again; its next look has no meaningful time. */
+const waitsForSignIn = (delivery: MessageDelivery): boolean =>
+  delivery.state === "scheduled" && delivery.lastErrorCode === "MAILBOX_AUTH_REQUIRED";
+
 const deliveryExplanation = (delivery: MessageDelivery, locale: string): string => {
   const t = mailConversationUiMessages.resolve([locale]).t;
   if (delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE") {
@@ -22,6 +26,7 @@ const deliveryExplanation = (delivery: MessageDelivery, locale: string): string 
   if (delivery.state === "unknown" || delivery.lastErrorCode === "AMBIGUOUS_SMTP_OUTCOME") {
     return t.unknownExplanation;
   }
+  if (waitsForSignIn(delivery)) return t.waitingForSignInExplanation;
   if (delivery.state === "scheduled" && delivery.lastErrorCode) {
     return t.retryExplanation({ attempt: delivery.attempt, total: delivery.maxAttempts });
   }
@@ -84,7 +89,9 @@ export default function MailMessageDeliveryControl(props: {
       props.delivery.state === "undo_window"
         ? t().undoSend
         : props.delivery.state === "scheduled" && props.delivery.lastErrorCode
-          ? t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
+          ? waitsForSignIn(props.delivery)
+            ? t().waitingForSignIn
+            : t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
           : props.delivery.state === "scheduled"
             ? t().scheduled
             : props.delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"
@@ -221,7 +228,7 @@ export default function MailMessageDeliveryControl(props: {
 
           return (
             <div class="flex flex-col gap-4">
-              <Show when={props.delivery.state === "scheduled"}>
+              <Show when={props.delivery.state === "scheduled" && !waitsForSignIn(props.delivery)}>
                 <div class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2">
                   <p class="text-xs font-medium text-dimmed">{retrying ? t().nextDeliveryAttempt : t().scheduledDelivery}</p>
                   <p class="mt-1 text-sm font-semibold text-primary">{dates.formatDateTime(scheduledAt, dateConfig)}</p>
@@ -395,7 +402,9 @@ export default function MailMessageDeliveryControl(props: {
                     : props.delivery.state === "scheduled" && !props.delivery.lastErrorCode
                       ? "ti-clock"
                       : props.delivery.state === "scheduled"
-                        ? "ti-refresh"
+                        ? waitsForSignIn(props.delivery)
+                          ? "ti-lock"
+                          : "ti-refresh"
                         : props.delivery.state === "failed" || props.delivery.state === "reconciled_unsent"
                           ? "ti-alert-circle"
                           : "ti-alert-triangle"
