@@ -673,6 +673,50 @@ export type FolderRightsSource = z.infer<typeof folderRightsSourceSchema>;
 export const configurableFolderRoleSchema = z.enum(["sent", "drafts", "trash", "archive", "junk"]);
 export type ConfigurableFolderRole = z.infer<typeof configurableFolderRoleSchema>;
 
+/**
+ * Where a folder's mail appears, from loosest to strictest: `everywhere` lists it in the folder and in the
+ * views that mix folders, `folder_only` keeps it inside the folder, and `hidden` also leaves the folder out
+ * of the sidebar. Subfolders inherit the stricter of their own and their parent's setting.
+ */
+export const folderDisplaySchema = z.enum(["everywhere", "folder_only", "hidden"]);
+export type FolderDisplay = z.infer<typeof folderDisplaySchema>;
+
+export const folderDisplayInputSchema = z.object({ display: folderDisplaySchema }).strict();
+
+const folderDisplayStateShape = {
+  effectiveDisplay: folderDisplaySchema.describe("The stricter of the folder's own display and its parents'."),
+  displayInheritedFromFolderId: ResourceShortIdSchema.nullable().describe(
+    "The parent folder whose stricter display applies, or null when the folder's own display applies.",
+  ),
+};
+
+export const folderDisplayChangeSchema = z
+  .object({ folderId: ResourceShortIdSchema, display: folderDisplaySchema, ...folderDisplayStateShape })
+  .strict();
+
+export const mailFolderSchema = z
+  .object({
+    id: ResourceShortIdSchema,
+    parentId: ResourceShortIdSchema.nullable(),
+    name: z.string().min(1).max(1_000),
+    role: folderRoleSchema,
+    providerRole: folderRoleSchema,
+    configuredRole: configurableFolderRoleSchema.nullable(),
+    selectable: z.boolean(),
+    display: folderDisplaySchema,
+    ...folderDisplayStateShape,
+    displayNeutral: z
+      .boolean()
+      .describe("Sent, Drafts, Trash, Junk and the provider's collections such as All Mail: they never decide where mail appears."),
+    namespaceKinds: z.array(z.enum(["personal", "other_users", "shared"])),
+    discoveryState: z.enum(["active", "missing", "ambiguous"]),
+    missingSince: z.string().datetime().nullable(),
+    syncStatus: z.string(),
+    total: z.number().int().nonnegative(),
+    unread: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const standardMessageFlagSchema = z.enum(["seen", "answered", "flagged", "draft"]);
 export type StandardMessageFlag = z.infer<typeof standardMessageFlagSchema>;
 
@@ -3280,6 +3324,8 @@ export type RemoteFolder = {
   delimiter: string | null;
   parentPath: string | null;
   role: FolderRole;
+  /** A folder the provider fills from other folders, such as Gmail's Important and Starred; it never decides where mail appears. */
+  providerCollection?: boolean;
   subscribed: boolean;
   selectable: boolean;
   uidValidity: string | null;

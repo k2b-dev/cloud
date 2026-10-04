@@ -107,14 +107,20 @@ const OUTBOX_CASES: { status: WorkStatus; messages: CaseMessage[]; views: (keyof
   { status: "needs_action", messages: [{ outbox: "cancelled" }], views: [] },
 ];
 
-const expectedCounts = (): ConversationViewCounts => {
-  const evidence = new Map<number, { visible: boolean; followUp: boolean }>();
+/** Sent, Trash, Junk (and Spam, mapped to Junk) and All Mail never decide where mail appears. */
+const DISPLAY_NEUTRAL: ReadonlySet<Folder> = new Set(["sent", "trash", "junk", "spam", "all"]);
+
+/** The counts while `keptInside` keeps its mail inside the folder, or while every folder shows it everywhere. */
+const expectedCounts = (keptInside?: Folder): ConversationViewCounts => {
+  const evidence = new Map<number, { visible: boolean; followUp: boolean; isolated: boolean; counted: boolean }>();
   for (let item = 1; item <= MESSAGE_COUNT; item += 1) {
     const conversation = conversationOf(item);
-    const state = evidence.get(conversation) ?? { visible: false, followUp: false };
+    const state = evidence.get(conversation) ?? { visible: false, followUp: false, isolated: false, counted: false };
     if (!isDeleted(item)) {
       state.visible = true;
       if (foldersOf(item).some((folder) => !HIDDEN_FROM_FOLLOW_UP.has(folder))) state.followUp = true;
+      if (foldersOf(item).some((folder) => folder === keptInside)) state.isolated = true;
+      if (foldersOf(item).some((folder) => folder !== keptInside && !DISPLAY_NEUTRAL.has(folder))) state.counted = true;
     }
     evidence.set(conversation, state);
   }
@@ -132,17 +138,19 @@ const expectedCounts = (): ConversationViewCounts => {
     if (!state.visible) continue;
     const status = workStatusOf(conversation);
     const snoozed = snoozeOf(conversation) === "future";
-    counts.recently_active += 1;
-    if (status === "done") counts.done += 1;
+    // Assigned to me keeps conversations whose mail stays inside its folder; the other views leave them out.
+    const shown = !state.isolated || state.counted;
+    if (shown) counts.recently_active += 1;
+    if (shown && status === "done") counts.done += 1;
     if (!state.followUp) continue;
     if (snoozed) {
-      counts.snoozed += 1;
+      if (shown) counts.snoozed += 1;
       continue;
     }
-    if (status === "needs_action") counts.needs_action += 1;
-    if (status === "waiting") counts.waiting += 1;
+    if (shown && status === "needs_action") counts.needs_action += 1;
+    if (shown && status === "waiting") counts.waiting += 1;
     if (status !== "done" && assigneeOf(conversation) === "reader") counts.mine += 1;
-    if (status !== "done" && assigneeOf(conversation) !== "reader") counts.unassigned += 1;
+    if (shown && status !== "done" && assigneeOf(conversation) !== "reader") counts.unassigned += 1;
   }
   for (const outboxCase of OUTBOX_CASES) {
     for (const view of outboxCase.views) counts[view] += 1;
@@ -161,6 +169,7 @@ suite("mail conversation view counts in a large mailbox", () => {
   const userIds: string[] = [];
   let mailboxId = "";
   let context: MailRequestContext;
+  const folderIds = {} as Record<Folder, string>;
 
   beforeAll(async () => {
     const createUser = async (role: string) => {
@@ -204,7 +213,6 @@ suite("mail conversation view counts in a large mailbox", () => {
       VALUES (${mailboxId}::uuid, '{}'::jsonb, '{}'::jsonb, ${"c".repeat(64)}, 'active')
       RETURNING id
     `;
-    const folderIds = {} as Record<Folder, string>;
     for (const [index, folder] of FOLDERS.entries()) {
       const [row] = await sql<{ id: string }[]>`
         INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
@@ -424,5 +432,25 @@ suite("mail conversation view counts in a large mailbox", () => {
     const warm = durations.slice(1);
     console.info(`Mail ${MESSAGE_COUNT} view counts: ${warm.map((value) => value.toFixed(1)).join(", ")} ms`);
     expect(warm.toSorted((left, right) => left - right)[Math.floor(WARM_RUNS / 2)]).toBeLessThan(BUDGET_MS);
+  }, 120_000);
+
+  test(`counts every view within ${BUDGET_MS} ms while a folder keeps its mail inside`, async () => {
+    await sql`UPDATE mail.folders SET display = 'folder_only' WHERE id = ${folderIds.archive}::uuid`;
+    try {
+      const expected = expectedCounts("archive");
+      expect(expected.needs_action).toBeLessThan(expectedCounts().needs_action);
+      const durations: number[] = [];
+      for (let run = 0; run <= WARM_RUNS; run += 1) {
+        const startedAt = performance.now();
+        const counts = await getConversationViewCounts({ context, mailboxId });
+        durations.push(performance.now() - startedAt);
+        expect(counts.ok && counts.data).toEqual(expected);
+      }
+      const warm = durations.slice(1);
+      console.info(`Mail ${MESSAGE_COUNT} view counts with a folder kept inside: ${warm.map((value) => value.toFixed(1)).join(", ")} ms`);
+      expect(warm.toSorted((left, right) => left - right)[Math.floor(WARM_RUNS / 2)]).toBeLessThan(BUDGET_MS);
+    } finally {
+      await sql`UPDATE mail.folders SET display = 'everywhere' WHERE id = ${folderIds.archive}::uuid`;
+    }
   }, 120_000);
 });

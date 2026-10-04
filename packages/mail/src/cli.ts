@@ -54,6 +54,8 @@ import {
   type DraftLease,
   type DraftRecoveryCopy,
   draftEditableContentInputSchema,
+  type FolderDisplay,
+  folderDisplaySchema,
   type IncomingAutomationBackfill,
   type IncomingAutomationMatchPreview,
   MAIL_CONVERSATION_BATCH_LIMIT,
@@ -111,6 +113,7 @@ import type {
 } from "./service/conversation-reference";
 import type { ConversationContentSummary } from "./service/conversation-summary";
 import type { MergeConversationsResult, ReassignConversationMessageResult, SplitConversationResult } from "./service/conversations";
+import type { FolderDisplayChange } from "./service/folders";
 import type { IncomingAutomation } from "./service/incoming-automations";
 import type { AddConversationLocalTagsResult, ConversationLocalTags, LocalTag } from "./service/local-tags";
 import type { ConversationSummary, MailFolderView, MessageDetail, MessageSummary } from "./service/messages";
@@ -1595,22 +1598,36 @@ const folderSubscriptionCommand = (path: "folder subscribe" | "folder unsubscrib
     },
   });
 
-const folderSidebarVisibilityCommand = (path: "folder show" | "folder hide", showInSidebar: boolean) =>
-  command(path, {
-    summary: `${showInSidebar ? "Show" : "Hide"} a provider folder in the Cloud Mail sidebar`,
-    args: { folderId: arg.required({ description: "Canonical folder id" }) },
-    flags: mailboxFlag,
-    run: async ({ ctx, args, flags }) => {
-      const mailbox = await resolveMailbox(ctx, flags.mailbox);
-      const result = await readApi<{ folderId: string; showInSidebar: boolean }>(
-        ctx,
-        `/mailboxes/${mailbox.id}/folders/${requireMailResourceId(args.folderId, "Folder id")}`,
-        jsonRequest("PATCH", { showInSidebar }),
-      );
-      if (printStructured(ctx, result)) return;
-      ctx.print(`${showInSidebar ? "Shown" : "Hidden"} ${args.folderId} in the Cloud Mail sidebar.`);
-    },
-  });
+const folderDisplayLabels: Record<FolderDisplay, string> = {
+  everywhere: "shows its mail everywhere",
+  folder_only: "keeps its mail inside the folder",
+  hidden: "is hidden and keeps its mail inside the folder",
+};
+
+const folderDisplayCommand = command("folder display set", {
+  summary: "Set where a folder's mail appears for everyone in the mailbox",
+  args: {
+    display: arg.required({ description: "everywhere, folder_only, or hidden" }),
+    folderId: arg.required({ description: "Canonical folder id" }),
+  },
+  flags: mailboxFlag,
+  run: async ({ ctx, args, flags }) => {
+    const display = folderDisplaySchema.safeParse(args.display);
+    if (!display.success) throw new Error("Folder display must be everywhere, folder_only, or hidden.");
+    const mailbox = await resolveMailbox(ctx, flags.mailbox);
+    const result = await readApi<FolderDisplayChange>(
+      ctx,
+      `/mailboxes/${mailbox.id}/folders/${requireMailResourceId(args.folderId, "Folder id")}`,
+      jsonRequest("PATCH", { display: display.data }),
+    );
+    if (printStructured(ctx, result)) return;
+    ctx.print(
+      result.displayInheritedFromFolderId
+        ? `Saved. ${args.folderId} inherits a stricter setting from ${result.displayInheritedFromFolderId} and ${folderDisplayLabels[result.effectiveDisplay]}.`
+        : `${args.folderId} ${folderDisplayLabels[result.effectiveDisplay]}.`,
+    );
+  },
+});
 
 const messageStateCommand = (path: string, summary: string, change: Record<string, unknown>) =>
   command(path, {
@@ -2423,6 +2440,7 @@ const specialistCommands = {
     "draft attachment": "Manage attachments on shared drafts",
     "draft lease": "Inspect and manage shared draft editor leases",
     "draft recovery": "Inspect and restore shared draft recovery copies",
+    "folder display": "Choose where a folder's mail appears",
     "folder role": "Manage semantic provider folder mappings",
     "identity transport": "Manage custom SMTP transports for identities",
     "mailbox deleted": "Inspect recoverable deleted mailboxes",
@@ -3742,7 +3760,7 @@ const specialistCommands = {
             path: folder.path,
             role: folder.role,
             namespace: folder.namespaceKinds.join(","),
-            sidebar: folder.showInSidebar ? "shown" : "hidden",
+            display: folder.displayInheritedFromFolderId ? `${folder.effectiveDisplay} (inherited)` : folder.effectiveDisplay,
             total: folder.total,
             unread: folder.unread,
             discovery: folder.discoveryState,
@@ -3753,7 +3771,7 @@ const specialistCommands = {
             { key: "path", label: "PATH" },
             { key: "role", label: "ROLE" },
             { key: "namespace", label: "NAMESPACE" },
-            { key: "sidebar", label: "SIDEBAR" },
+            { key: "display", label: "DISPLAY" },
             { key: "total", label: "TOTAL" },
             { key: "unread", label: "UNREAD" },
             { key: "discovery", label: "DISCOVERY" },
@@ -3777,7 +3795,7 @@ const specialistCommands = {
         }),
         hideInSidebar: flag.boolean({
           name: "hide-in-sidebar",
-          description: "Create without showing the folder in the Cloud Mail sidebar",
+          description: "Create the folder hidden: it leaves the sidebar, and mail filed only there leaves All mail and the work views",
         }),
         wait: flag.boolean({
           description: "Wait for provider confirmation and rediscovery",
@@ -3864,8 +3882,7 @@ const specialistCommands = {
     }),
     folderSubscriptionCommand("folder subscribe", true),
     folderSubscriptionCommand("folder unsubscribe", false),
-    folderSidebarVisibilityCommand("folder show", true),
-    folderSidebarVisibilityCommand("folder hide", false),
+    folderDisplayCommand,
     command("folder role set", {
       summary: "Map a semantic role to one canonical folder",
       args: {
@@ -4069,12 +4086,14 @@ const specialistCommands = {
             date: item.internalDate,
             from: item.from.map((address) => address.address).join(", "),
             subject: item.subject,
+            folder: item.folderPath ?? "",
             id: item.id,
           })),
           [
             { key: "date", label: "DATE" },
             { key: "from", label: "FROM" },
             { key: "subject", label: "SUBJECT" },
+            { key: "folder", label: "FOLDER" },
             { key: "id", label: "MESSAGE ID" },
           ],
         );

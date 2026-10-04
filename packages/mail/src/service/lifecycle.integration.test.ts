@@ -24,14 +24,7 @@ import { createActorCommand, createMailCommand, createWorkflowCommand } from "./
 import { type ConnectorEnvelope, type FlagChange, imapSmtpConnector } from "./connectors";
 import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
-import {
-  clearFolderRole,
-  dismissUnavailableFolder,
-  listAdminFolders,
-  resolveRoleFolder,
-  setFolderRole,
-  setFolderSidebarVisibility,
-} from "./folders";
+import { clearFolderRole, dismissUnavailableFolder, listAdminFolders, resolveRoleFolder, setFolderDisplay, setFolderRole } from "./folders";
 import { getMailboxOperationalHealth } from "./health";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import {
@@ -789,7 +782,7 @@ suite("mail lifecycle control plane", () => {
   test("rediscovery projects ACL rights and conservatively reconciles rename and removal", async () => {
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
     const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue([
-      remoteFolder("INBOX", "10", "inbox"),
+      { ...remoteFolder("INBOX", "10", "inbox"), subscribed: false },
       { ...remoteFolder("Projects", "20"), subscribed: false },
     ]);
     try {
@@ -808,29 +801,33 @@ suite("mail lifecycle control plane", () => {
       `;
       inboxFolderId = inbox!.id;
       inboxFolderShortId = inbox!.id;
-      const [project] = await sql<{ id: string; show_in_sidebar: boolean; subscribed: boolean }[]>`
-        SELECT folder.id, folder.show_in_sidebar, ref.subscribed
+      const discoveredFolders = await sql<{ id: string; remote_path: string; display: string; subscribed: boolean }[]>`
+        SELECT folder.id, ref.remote_path, folder.display, ref.subscribed
         FROM mail.folders folder
         JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
-        WHERE ref.binding_id = ${bindingId}::uuid AND ref.remote_path = 'Projects'
+        WHERE ref.binding_id = ${bindingId}::uuid
+        ORDER BY ref.remote_path
       `;
-      expect(project).toMatchObject({
-        show_in_sidebar: false,
-        subscribed: false,
-      });
-      const visibleProject = await setFolderSidebarVisibility({
+      // New folders show their mail everywhere, subscribed or not; hiding one would also keep its mail
+      // out of All mail and the work views.
+      expect(discoveredFolders.map(({ remote_path, display, subscribed }) => ({ remote_path, display, subscribed }))).toEqual([
+        { remote_path: "INBOX", display: "everywhere", subscribed: false },
+        { remote_path: "Projects", display: "everywhere", subscribed: false },
+      ]);
+      const project = discoveredFolders.find((folder) => folder.remote_path === "Projects");
+      const keptProject = await setFolderDisplay({
         context: adminContext,
         mailboxId,
         folderId: project!.id,
-        showInSidebar: true,
+        display: "folder_only",
       });
-      expect(visibleProject.ok).toBe(true);
+      expect(keptProject.ok).toBe(true);
 
       discover.mockResolvedValue([remoteFolder("INBOX", "10", "inbox"), remoteFolder("Clients", "20")]);
       const renamed = await rediscoverProviderBinding({ bindingId });
       expect(renamed.renamed).toBe(1);
-      const [renamedProject] = await sql<{ id: string; rights_source: string; namespace_kind: string | null; show_in_sidebar: boolean }[]>`
-        SELECT folder.id, ref.rights_source, ref.namespace_kind, folder.show_in_sidebar
+      const [renamedProject] = await sql<{ id: string; rights_source: string; namespace_kind: string | null; display: string }[]>`
+        SELECT folder.id, ref.rights_source, ref.namespace_kind, folder.display
         FROM mail.folders folder
         JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
         WHERE ref.binding_id = ${bindingId}::uuid AND ref.remote_path = 'Clients'
@@ -839,7 +836,7 @@ suite("mail lifecycle control plane", () => {
         id: project!.id,
         rights_source: "acl",
         namespace_kind: "personal",
-        show_in_sidebar: true,
+        display: "folder_only",
       });
 
       discover.mockResolvedValue([remoteFolder("INBOX", "10", "inbox"), remoteFolder("Active", "20"), remoteFolder("Clients", "40")]);
@@ -2721,28 +2718,28 @@ suite("mail lifecycle control plane", () => {
       if (!created.ok) return;
       expect(await executeMutationCommand(created.data.id)).toBe("ambiguous");
       expect(await executeMutationCommand(created.data.id)).toBe("reconciled");
-      const [projected] = await sql<{ id: string; short_id: string; show_in_sidebar: boolean; subscribed: boolean }[]>`
-        SELECT folder.id, folder.short_id, folder.show_in_sidebar, ref.subscribed
+      const [projected] = await sql<{ id: string; short_id: string; display: string; subscribed: boolean }[]>`
+        SELECT folder.id, folder.short_id, folder.display, ref.subscribed
         FROM mail.folders folder
         JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
         WHERE ref.binding_id = ${bindingId}::uuid AND ref.remote_path = ${`Cloud Ops ${suffix}`}
       `;
       expect(projected?.subscribed).toBe(true);
-      expect(projected?.show_in_sidebar).toBe(false);
+      expect(projected?.display).toBe("hidden");
 
-      const deniedVisibility = await setFolderSidebarVisibility({
+      const deniedVisibility = await setFolderDisplay({
         context: collaboratorContext,
         mailboxId,
         folderId: projected!.id,
-        showInSidebar: true,
+        display: "everywhere",
       });
       expect(deniedVisibility.ok).toBe(false);
       if (!deniedVisibility.ok) expect(deniedVisibility.error.code).toBe("FORBIDDEN");
-      const updatedVisibility = await setFolderSidebarVisibility({
+      const updatedVisibility = await setFolderDisplay({
         context: adminContext,
         mailboxId,
         folderId: projected!.id,
-        showInSidebar: true,
+        display: "everywhere",
       });
       expect(updatedVisibility.ok).toBe(true);
       const activeDismissal = await dismissUnavailableFolder({
@@ -2756,7 +2753,7 @@ suite("mail lifecycle control plane", () => {
       expect(adminFolders.ok).toBe(true);
       if (!adminFolders.ok) return;
       expect(adminFolders.data.find((folder) => folder.id === projected!.id)).toMatchObject({
-        showInSidebar: true,
+        display: "everywhere",
         subscribed: true,
         canCreateChildren: true,
         canRename: true,
@@ -2829,15 +2826,15 @@ suite("mail lifecycle control plane", () => {
       expect(renamed.ok).toBe(true);
       if (!renamed.ok) return;
       expect(await executeMutationCommand(renamed.data.id)).toBe("confirmed");
-      const [renamedProjection] = await sql<{ id: string; show_in_sidebar: boolean; subscribed: boolean }[]>`
-        SELECT folder.id, folder.show_in_sidebar, ref.subscribed
+      const [renamedProjection] = await sql<{ id: string; display: string; subscribed: boolean }[]>`
+        SELECT folder.id, folder.display, ref.subscribed
         FROM mail.folders folder
         JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
         WHERE ref.binding_id = ${bindingId}::uuid AND ref.remote_path = ${`Cloud Renamed ${suffix}`}
       `;
       expect(renamedProjection).toEqual({
         id: projected!.id,
-        show_in_sidebar: true,
+        display: "everywhere",
         subscribed: false,
       });
 
@@ -2905,14 +2902,14 @@ suite("mail lifecycle control plane", () => {
       const [dismissedProjection] = await sql<
         {
           dismissed: boolean;
-          show_in_sidebar: boolean;
+          display: string;
           placement_preserved: boolean;
           content_preserved: boolean;
         }[]
       >`
         SELECT
           folder.dismissed_at IS NOT NULL AS dismissed,
-          folder.show_in_sidebar,
+          folder.display,
           EXISTS (
             SELECT 1
             FROM mail.message_placements placement
@@ -2928,7 +2925,7 @@ suite("mail lifecycle control plane", () => {
       `;
       expect(dismissedProjection).toEqual({
         dismissed: true,
-        show_in_sidebar: true,
+        display: "everywhere",
         placement_preserved: true,
         content_preserved: true,
       });
@@ -2946,15 +2943,15 @@ suite("mail lifecycle control plane", () => {
       ];
       const rediscovered = await rediscoverProviderBinding({ bindingId });
       expect(rediscovered.state).toBe("active");
-      const [restoredProjection] = await sql<{ discovery_state: string; dismissed_at: Date | null; show_in_sidebar: boolean }[]>`
-        SELECT discovery_state, dismissed_at, show_in_sidebar
+      const [restoredProjection] = await sql<{ discovery_state: string; dismissed_at: Date | null; display: string }[]>`
+        SELECT discovery_state, dismissed_at, display
         FROM mail.folders
         WHERE id = ${projected!.id}::uuid
       `;
       expect(restoredProjection).toEqual({
         discovery_state: "active",
         dismissed_at: null,
-        show_in_sidebar: true,
+        display: "everywhere",
       });
       const foldersAfterRediscovery = await listAdminFolders(adminContext, mailboxId);
       expect(foldersAfterRediscovery.ok).toBe(true);

@@ -698,15 +698,23 @@ const roleFromList = (entry: ListResponse): FolderRole => {
   }
 };
 
+// Gmail lists \Important as a plain attribute; \All and \Flagged (Starred) are special-use folders.
+const PROVIDER_COLLECTION_ATTRIBUTES = new Set(["\\all", "\\flagged", "\\important"]);
+
+/** Whether the provider fills this folder from the others instead of filing mail into it. */
+const isProviderCollection = (entry: ListResponse): boolean =>
+  [entry.specialUse, ...entry.flags].some((attribute) => attribute && PROVIDER_COLLECTION_ATTRIBUTES.has(attribute.toLowerCase()));
+
 const stableFolderKey = (entry: ListResponse): string => sha256(`${entry.path}\n${entry.status?.uidValidity?.toString() ?? "unknown"}`);
 
-const mapFolder = (entry: ListResponse): RemoteFolder => ({
+export const mapFolder = (entry: ListResponse): RemoteFolder => ({
   stableKey: stableFolderKey(entry),
   path: entry.path,
   name: entry.name || entry.path,
   delimiter: entry.delimiter || null,
   parentPath: entry.parentPath || null,
   role: roleFromList(entry),
+  providerCollection: isProviderCollection(entry),
   subscribed: entry.subscribed === true,
   selectable: !entry.flags.has("\\Noselect"),
   uidValidity: entry.status?.uidValidity?.toString() ?? null,

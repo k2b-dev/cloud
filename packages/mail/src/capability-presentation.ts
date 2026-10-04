@@ -136,7 +136,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.focus": {
           title: "Fokussierte E-Mails auflisten",
           description:
-            "Direkter mailboxübergreifender Arbeitswarteschlangeneintrag mit kompakten Vorschauen; Es ist keine Postfacherkennung erforderlich. Lesen Sie nur die Konversationen, die eine tiefere Zusammenarbeit oder einen Nachrichtenkontext erfordern; Verwenden Sie stattdessen die Suche für die Textsuche.",
+            "Direkter mailboxübergreifender Arbeitswarteschlangeneintrag mit kompakten Vorschauen; Es ist keine Postfacherkennung erforderlich. Die Warteschlangen unassigned und all lassen Unterhaltungen aus Ordnern mit folder_only oder hidden weg. Lesen Sie nur die Konversationen, die eine tiefere Zusammenarbeit oder einen Nachrichtenkontext erfordern; Verwenden Sie stattdessen die Suche für die Textsuche.",
           input: {
             view: "Postfachübergreifende Arbeitswarteschlange zum Auflisten.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -146,7 +146,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.list": {
           title: "Gespräche auflisten",
           description:
-            "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
+            "Durchsuchen Sie kompakte Konversationsvorschauen in einem bekannten Postfach, optional nach Ordner, Arbeitsansicht oder ungelesenem Status. Ohne folderId lassen alle Ansichten außer mine und send_problems Unterhaltungen aus Ordnern mit folder_only oder hidden weg; mit folderId werden sie aufgelistet. Das Ergebnis verfügt über genügend Status, um eine Konversation auszuwählen oder eine Anbietermarkierung/-verschiebung durchzuführen Actions; Verwenden Sie conversation.read für Details zur Zusammenarbeit.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             folderId: "Optionaler Anbieterordner ID-Filter.",
@@ -246,7 +246,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "folder.list": {
           title: "Ordner auflisten",
           description:
-            "Listen Sie Ordner in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie den zurückgegebenen Ordner IDs zum Filtern von conversation.list oder als Verschiebungsziele, sofern dies unterstützt wird.",
+            "Listen Sie Ordner in einem bekannten Postfach auf. MailboxId von mailbox.list abrufen; Verwenden Sie den zurückgegebenen Ordner IDs zum Filtern von conversation.list oder als Verschiebungsziele, sofern dies unterstützt wird. effectiveDisplay sagt, wo die E-Mails eines Ordners erscheinen: folder_only und hidden halten seine Unterhaltungen aus Alle E-Mails und den Arbeitsansichten heraus, außer eine Nachricht liegt auch in einem everywhere-Ordner.",
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -649,6 +649,17 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             "draft.priority": "Hinweis zur Nachrichtenpriorität.",
             "draft.requestDeliveryReceipt": "Ob eine Lieferquittung angefordert werden soll.",
             "draft.requestReadReceipt": "Ob eine Lesebestätigung angefordert werden soll.",
+          },
+        },
+        "folder.display.set": {
+          title: "Festlegen, wo die E-Mails eines Ordners erscheinen",
+          description:
+            "Legt die Anzeige eines Ordners für alle in einem Postfach fest; erfordert die Verwaltung des Postfachs. folder_only hält die Unterhaltungen des Ordners aus Alle E-Mails, den Arbeitsansichten außer Mir zugewiesen, deren Zählern und conversation.focus heraus, außer eine Nachricht liegt auch in einem everywhere-Ordner; hidden blendet zusätzlich den Ordner aus. Unterordner erben die strengere Einstellung. Die Suche findet weiterhin alles.",
+          input: {
+            mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
+            folderId: "Ordner-ID aus folder.list.",
+            display:
+              "everywhere zeigt die E-Mails des Ordners in Alle E-Mails und den Arbeitsansichten; folder_only lässt sie im Ordner; hidden blendet zusätzlich den Ordner aus.",
           },
         },
         "mailbox.tag.create": {

@@ -52,6 +52,8 @@ import {
   draftEditableContentInputSchema,
   draftLeaseTokenSchema,
   draftSchema,
+  folderDisplayChangeSchema,
+  folderDisplayInputSchema,
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
@@ -65,6 +67,7 @@ import {
   mailConversationSpaceSearchQuerySchema,
   mailFocusPageSchema,
   mailFocusViewSchema,
+  mailFolderSchema,
   mailingListDispositionInputSchema,
   maintenanceCommandInputSchema,
   materializeDraftSeedInputSchema,
@@ -308,7 +311,6 @@ const roleParamSchema = z.object({
   role: configurableFolderRoleSchema,
 });
 const folderRoleInputSchema = z.object({ folderId: ResourceShortIdSchema });
-const folderVisibilityInputSchema = z.object({ showInSidebar: z.boolean() }).strict();
 const draftRevisionSchema = z.object({
   expectedRevision: z.coerce.number().int().positive(),
 });
@@ -1392,23 +1394,43 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     );
   })
-  .get("/mailboxes/:mailboxId/folders", v("param", mailboxParamSchema), async (c) =>
-    respondFolders(c, messages.listFolders(requestContext(c), internalMailboxId(c))),
+  .get(
+    "/mailboxes/:mailboxId/folders",
+    describeRoute({
+      tags: ["Mail:Folders"],
+      summary: "List a mailbox's folders",
+      description:
+        "Returns every folder with its counts and display: `everywhere` shows its mail in the folder and in the views that mix folders, `folder_only` keeps it inside the folder, and `hidden` also leaves the folder out of the sidebar. `effectiveDisplay` applies the stricter display a parent passes down.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.array(mailFolderSchema), "Folders"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) => respondFolders(c, messages.listFolders(requestContext(c), internalMailboxId(c))),
   )
   .patch(
     "/mailboxes/:mailboxId/folders/:folderId",
+    describeRoute({
+      tags: ["Mail:Folders"],
+      summary: "Set where a folder's mail appears",
+      description:
+        "Sets the folder's display for everyone with access to the mailbox; requires mailbox administration. Subfolders inherit it unless their own display is stricter. A conversation leaves All mail, the work views except Assigned to me, their counts, and the cross-mailbox overview when one of its messages lies in a `folder_only` or `hidden` folder and none lies in an `everywhere` folder. Sent, Drafts, Trash, Junk and the provider's collections such as All Mail do not count. Search and saved views still find every conversation.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(folderDisplayChangeSchema, "The folder's display"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid display"),
+        403: jsonResponse(ErrorResponseSchema, "Mailbox administration is required"),
+        404: jsonResponse(ErrorResponseSchema, "Folder not found or not active"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("folderId")),
-    v("json", folderVisibilityInputSchema),
+    v("json", folderDisplayInputSchema),
     async (c) => {
       const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; folderId: string };
-      return respondFolders(
-        c,
-        folders.setFolderSidebarVisibility({
-          context: requestContext(c),
-          ...params,
-          showInSidebar: (await internalInput(c, c.req.valid("json"))).showInSidebar,
-        }),
-      );
+      return respondPublic(c, folders.setFolderDisplay({ context: requestContext(c), ...params, display: c.req.valid("json").display }));
     },
   )
   .delete("/mailboxes/:mailboxId/folders/:folderId", v("param", mailboxAndIdParamSchema("folderId")), async (c) => {

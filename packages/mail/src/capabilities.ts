@@ -35,6 +35,7 @@ import {
   drafts,
   draftUploads,
   focus,
+  folders as folderService,
   listSubscriptions,
   localTags,
   type MailRequestContext,
@@ -537,6 +538,23 @@ const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
   state: draft.state,
 });
 
+/** A folder of one mailbox by its public ID, with its full path for review and summaries. */
+const describeFolder = async (mailboxId: string, publicFolderId: string, context: CapabilityExecutionContext) => {
+  const folderId = await resolveMailboxResource("folders", mailboxId, publicFolderId);
+  if (!folderId.ok) return folderId;
+  const folders = await messages.listFolders(requestContext(context), mailboxId);
+  if (!folders.ok) return folders;
+  const folder = folders.data.find((candidate) => candidate.id === folderId.data);
+  if (!folder) return fail(err.notFound("Mail folder"));
+  const paths = mailFolderPaths(folders.data);
+  return ok({
+    id: folder.id,
+    display: folder.display,
+    path: truncateText(paths.get(folder.id) ?? folder.name, 200).text,
+    paths,
+  });
+};
+
 const mapConversation = (
   mailboxId: string,
   conversation: Omit<ConversationSummary, "folderId">,
@@ -1016,7 +1034,7 @@ const queryDefinitions = {
   "folder.list": {
     title: "List folders",
     description:
-      "List folders in one known mailbox. Get mailboxId from mailbox.list; use returned folder IDs to filter conversation.list or as move targets where supported.",
+      "List folders in one known mailbox. Get mailboxId from mailbox.list; use returned folder IDs to filter conversation.list or as move targets where supported. effectiveDisplay tells where a folder's mail appears: folder_only and hidden folders keep their conversations out of All mail and the work views unless a message also lies in an everywhere folder.",
     input: c.FolderListInputSchema,
     data: c.FolderListDataSchema,
     openWorld: false,
@@ -1035,7 +1053,8 @@ const queryDefinitions = {
         cursor: input.cursor,
         limit: input.limit,
         id: (item) => item.id,
-        map: ({ id, parentId, name, role, selectable, total, unread }) => {
+        map: (folder) => {
+          const { id, parentId, name, role, selectable, total, unread } = folder;
           const publicId = requirePublicId(ids, id);
           return {
             ref: { type: "mail.folder" as const, id: publicId },
@@ -1043,6 +1062,12 @@ const queryDefinitions = {
             title: truncateText(name, 240).text,
             role,
             selectable,
+            display: folder.display,
+            effectiveDisplay: folder.effectiveDisplay,
+            displayInheritedFromFolderId: folder.displayInheritedFromFolderId
+              ? requirePublicId(ids, folder.displayInheritedFromFolderId)
+              : null,
+            displayNeutral: folder.displayNeutral,
             total,
             unread,
             ...(selectable ? { links: [openLink(folderHref(scope.data.shortId, publicId))] } : {}),
@@ -1054,7 +1079,7 @@ const queryDefinitions = {
   "conversation.list": {
     title: "List conversations",
     description:
-      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
+      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. Without folderId, every view except mine and send_problems leaves out conversations kept inside folder_only or hidden folders; pass folderId to list them. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
     input: c.ConversationListInputSchema,
     data: c.ConversationListDataSchema,
     openWorld: true,
@@ -1095,7 +1120,7 @@ const queryDefinitions = {
   "conversation.focus": {
     title: "List focused mail",
     description:
-      "Direct cross-mailbox work-queue entry with compact previews; no mailbox discovery is required. Read only the conversations that need deeper collaboration or message context; use search instead for text lookup.",
+      "Direct cross-mailbox work-queue entry with compact previews; no mailbox discovery is required. The unassigned and all queues leave out conversations kept inside folder_only or hidden folders. Read only the conversations that need deeper collaboration or message context; use search instead for text lookup.",
     input: c.ConversationFocusInputSchema,
     data: c.ConversationFocusListDataSchema,
     openWorld: true,
@@ -1194,13 +1219,15 @@ const queryDefinitions = {
           { conversations, folders },
           context.locale,
         );
-        if (!item.attachmentMatch) return { ...conversation, attachmentMatch: null };
+        const folderPath = item.folderPath ? truncateText(item.folderPath, 500).text : null;
+        if (!item.attachmentMatch) return { ...conversation, folderPath, attachmentMatch: null };
         const attachmentId = requirePublicId(attachments, item.attachmentMatch.attachmentId);
         const messageId = requirePublicId(messagesById, item.attachmentMatch.messageId);
         const filename = boundedText(item.attachmentMatch.filename, 255).text;
         const snippet = truncateText(item.attachmentMatch.snippet, 500).text;
         return {
           ...conversation,
+          folderPath,
           attachmentMatch: {
             ref: { type: "mail.attachment" as const, id: attachmentId },
             messageRef: { type: "mail.message" as const, id: messageId },
@@ -3527,6 +3554,62 @@ const actionDefinitions = {
           conversationRef(input.conversationId, review.data.conversation.subject),
         ],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
+      });
+    },
+  },
+  "folder.display.set": {
+    title: "Set where a folder's mail appears",
+    description:
+      "Set a folder's display for everyone in one mailbox; requires mailbox administration. folder_only keeps the folder's conversations out of All mail, the work views except Assigned to me, their counts, and conversation.focus unless a message also lies in an everywhere folder; hidden also hides the folder. Subfolders inherit the stricter setting. Sent, Drafts, Trash, Junk and provider collections (displayNeutral in folder.list) cannot be folder_only. Search still finds everything.",
+    input: c.FolderDisplaySetInputSchema,
+    data: c.FolderDisplayDataSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    review: async (input: z.output<typeof c.FolderDisplaySetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "admin");
+      if (!access.ok) return access;
+      const folder = await describeFolder(scope.data.id, input.folderId, context);
+      if (!folder.ok) return folder;
+      return ok({
+        message: t.setFolderDisplayReview({ folder: folder.data.path }),
+        details: [
+          { label: t.folder, value: folder.data.path },
+          { label: t.currentFolderDisplay, value: t.folderDisplay({ display: folder.data.display }) },
+          { label: t.newFolderDisplay, value: t.folderDisplay({ display: input.display }) },
+        ],
+      });
+    },
+    run: async (input: z.output<typeof c.FolderDisplaySetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
+      const scope = await resolveMailboxScope(input.mailboxId);
+      if (!scope.ok) return scope;
+      const folder = await describeFolder(scope.data.id, input.folderId, context);
+      if (!folder.ok) return folder;
+      const result = await folderService.setFolderDisplay({
+        context: requestContext(context),
+        mailboxId: scope.data.id,
+        folderId: folder.data.id,
+        display: input.display,
+      });
+      if (!result.ok) return result;
+      const ids = await publicResources.publicIds("folders", [result.data.folderId, result.data.displayInheritedFromFolderId]);
+      const inheritedFrom = result.data.displayInheritedFromFolderId;
+      return ok({
+        data: {
+          folderId: requirePublicId(ids, result.data.folderId),
+          display: result.data.display,
+          effectiveDisplay: result.data.effectiveDisplay,
+          displayInheritedFromFolderId: inheritedFrom ? requirePublicId(ids, inheritedFrom) : null,
+        },
+        summary: capabilitySummary(
+          inheritedFrom
+            ? t.folderDisplayInherited({ folder: folder.data.path, parent: folder.data.paths.get(inheritedFrom) ?? inheritedFrom })
+            : t.folderDisplaySet({ folder: folder.data.path, display: result.data.effectiveDisplay }),
+        ),
       });
     },
   },

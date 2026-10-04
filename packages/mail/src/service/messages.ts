@@ -2,7 +2,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";
-import type { ConversationView, ConversationWorkStatus } from "../contracts";
+import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
@@ -10,6 +10,14 @@ import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
 import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
+import {
+  type FolderDisplayState,
+  folderDisplayStates,
+  isAggregatedListing,
+  loadAggregatedViewScope,
+  staysInAggregatedViews,
+  staysInAggregatedViewsAggregate,
+} from "./folder-display";
 import { FOLLOW_UP_VIEWS, isFollowUpConversation, isFollowUpMessage } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
@@ -56,7 +64,7 @@ const parseDeliveryRecipients = (value: Record<string, unknown> | string | null)
 };
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 
-export type MailFolderView = {
+export type MailFolderView = FolderDisplayState & {
   id: string;
   parentId: string | null;
   name: string;
@@ -64,7 +72,8 @@ export type MailFolderView = {
   providerRole: string;
   configuredRole: string | null;
   selectable: boolean;
-  showInSidebar: boolean;
+  /** The folder's own display; `effectiveDisplay` also applies its parents'. */
+  display: FolderDisplay;
   namespaceKinds: Array<"personal" | "other_users" | "shared">;
   discoveryState: "active" | "missing" | "ambiguous";
   missingSince: string | null;
@@ -96,7 +105,8 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
       provider_role: string;
       configured_role: string | null;
       selectable: boolean;
-      show_in_sidebar: boolean;
+      display: FolderDisplay;
+      provider_collection: boolean;
       namespace_kinds: MailFolderView["namespaceKinds"];
       discovery_state: MailFolderView["discoveryState"];
       missing_since: Date | string | null;
@@ -113,7 +123,8 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
       f.role AS provider_role,
       role_override.role AS configured_role,
       f.selectable,
-      f.show_in_sidebar,
+      f.display,
+      f.provider_collection,
       ARRAY(
         SELECT DISTINCT ref.namespace_kind
         FROM mail.binding_folder_refs ref
@@ -168,10 +179,22 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
         WHERE mailbox_id = ${mailboxId}::uuid AND origin = 'user' AND state = 'draft'
       `
     : [];
+  const displayStates = folderDisplayStates(
+    rows.map((row) => ({
+      id: row.id,
+      parentId: row.parent_id,
+      name: row.name,
+      display: row.display,
+      role: row.role,
+      providerRole: row.provider_role,
+      providerCollection: row.provider_collection,
+    })),
+  );
   return ok(
     rows.map((row, index) => {
       const draftsFolder = draftsFolders[index];
       return {
+        ...displayStates.get(row.id)!,
         id: row.id,
         parentId: row.parent_id,
         name: row.name,
@@ -179,7 +202,7 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
         providerRole: row.provider_role,
         configuredRole: row.configured_role,
         selectable: row.selectable,
-        showInSidebar: row.show_in_sidebar,
+        display: row.display,
         namespaceKinds: row.namespace_kinds,
         discoveryState: row.discovery_state,
         missingSince: row.missing_since ? toIso(row.missing_since) : null,
@@ -275,6 +298,7 @@ export const listConversations = async (params: {
   const cursor = decodeConversationCursor(params.cursor, cursorScope);
   if (!cursor.ok) return cursor;
   const lapsedAssignees = view === "unassigned" ? await listLapsedAssignees({ mailboxIds: [params.mailboxId] }) : [];
+  const aggregatedScope = isAggregatedListing(folderId, view) ? await loadAggregatedViewScope([params.mailboxId]) : null;
   const rows = await sql<DbConversation[]>`
     SELECT
       c.id,
@@ -424,6 +448,7 @@ export const listConversations = async (params: {
         OR ${view} = 'recently_active'
       )
       AND ${view && FOLLOW_UP_VIEWS.includes(view) ? isFollowUpConversation(sql`c.id`) : sql`true`}
+      AND ${aggregatedScope ? staysInAggregatedViews(sql`c.id`, aggregatedScope) : sql`true`}
       AND (
         ${folderId}::uuid IS NULL
         OR EXISTS (
@@ -514,7 +539,10 @@ export const getConversationViewCounts = async (params: {
   const access = await resolveMailExecution({ mailboxId: params.mailboxId, operation: "actorRead", context: params.context });
   if (!access.ok) return access;
   const currentUserId = userBackedActor(params.context)?.id ?? null;
-  const lapsedAssignees = await listLapsedAssignees({ mailboxIds: [params.mailboxId] });
+  const [lapsedAssignees, aggregatedScope] = await Promise.all([
+    listLapsedAssignees({ mailboxIds: [params.mailboxId] }),
+    loadAggregatedViewScope([params.mailboxId]),
+  ]);
   // One pass over the mailbox's messages decides each conversation once. PostgreSQL prices the
   // per-message folder and send checks so high that it compiled this query with JIT, which took
   // seconds in a mailbox with a few thousand messages while the counting itself takes milliseconds.
@@ -534,7 +562,10 @@ export const getConversationViewCounts = async (params: {
     >`
       SELECT
         COUNT(*) FILTER (
-          WHERE scope.follow_up AND scope.work_status = 'needs_action' AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+          WHERE scope.aggregated
+            AND scope.follow_up
+            AND scope.work_status = 'needs_action'
+            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS needs_action,
         COUNT(*) FILTER (
           WHERE scope.follow_up
@@ -543,18 +574,22 @@ export const getConversationViewCounts = async (params: {
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS mine,
         COUNT(*) FILTER (
-          WHERE scope.follow_up
+          WHERE scope.aggregated
+            AND scope.follow_up
             AND ${isUnassignedConversation(lapsedAssignees, sql`scope`)}
             AND scope.work_status <> 'done'
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS unassigned,
         COUNT(*) FILTER (
-          WHERE scope.follow_up AND scope.work_status = 'waiting' AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+          WHERE scope.aggregated
+            AND scope.follow_up
+            AND scope.work_status = 'waiting'
+            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS waiting,
-        COUNT(*) FILTER (WHERE scope.work_status = 'done')::int AS done,
-        COUNT(*) FILTER (WHERE scope.follow_up AND scope.snoozed_until > now())::int AS snoozed,
+        COUNT(*) FILTER (WHERE scope.aggregated AND scope.work_status = 'done')::int AS done,
+        COUNT(*) FILTER (WHERE scope.aggregated AND scope.follow_up AND scope.snoozed_until > now())::int AS snoozed,
         COUNT(*) FILTER (WHERE scope.send_problem)::int AS send_problems,
-        COUNT(*)::int AS recently_active
+        COUNT(*) FILTER (WHERE scope.aggregated)::int AS recently_active
       FROM (
         SELECT
           c.mailbox_id,
@@ -562,7 +597,8 @@ export const getConversationViewCounts = async (params: {
           c.snoozed_until,
           c.assignee_user_id,
           bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
-          bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem
+          bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem,
+          ${staysInAggregatedViewsAggregate(sql`placement.folder_id`, aggregatedScope)} AS aggregated
         FROM mail.conversations c
         JOIN mail.conversation_messages link ON link.conversation_id = c.id
         LEFT JOIN mail.message_placements placement

@@ -17,7 +17,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { ConfigurableFolderRole, Mailbox } from "../../contracts";
+import type { ConfigurableFolderRole, FolderDisplay, Mailbox } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
 import MailCalendarSettings from "./MailCalendarSettings";
@@ -289,14 +289,14 @@ export default function MailboxSettings(props: {
     onError: (error) => prompts.error(error.message),
   });
 
-  const setFolderVisibility = (folderId: string, showInSidebar: boolean) => {
+  const setFolderVisibility = (folderId: string, display: FolderDisplay) => {
     props.onContextChange((context) =>
       context.admin
         ? {
             ...context,
             admin: {
               ...context.admin,
-              folders: context.admin.folders.map((folder) => (folder.id === folderId ? { ...folder, showInSidebar } : folder)),
+              folders: context.admin.folders.map((folder) => (folder.id === folderId ? { ...folder, display } : folder)),
             },
           }
         : context,
