@@ -10,6 +10,14 @@ import { logger } from "./logging";
  * delivered (or dead after `maxAttempts`, when the table has a `dead_at`
  * column), and delivered rows are pruned after a retention period.
  *
+ * With `sequence`, it works in batches: claims of one outbox (table and
+ * `where`) take turns, a claim takes rows in sequence order with several rows
+ * per ordering key, and the dispatcher publishes keys concurrently and the
+ * rows of one key in order, then completes the batch in one statement. A row
+ * that never failed is due at once. Claims stay proportional to the batch
+ * with an index on the `where` columns and `sequence`, and one on the `where`
+ * columns and `orderBy` limited to `claimed_until IS NOT NULL OR attempts > 0`.
+ *
  * Required columns: `id uuid`, `attempts int`, `next_attempt_at timestamptz`,
  * `claimed_until timestamptz`, `delivered_at timestamptz`, `last_error text`,
  * `created_at timestamptz`. `maxAttempts` additionally needs `dead_at`;
@@ -37,11 +45,13 @@ export type PgOutboxConfig<Row extends OutboxRow> = {
   /**
    * Column whose rows must be delivered in insertion order. A pending earlier
    * row with the same value blocks later ones until it is delivered or dead.
+   * With `sequence`, a value waits while any of its rows is claimed or waits
+   * for a retry.
    */
-  orderBy?: string;
+  orderBy?: Extract<keyof Row, string>;
   /** Fixed column values every claimed row matches, e.g. `{ kind: "live", app_id: "contacts" }`. */
   where?: Readonly<Record<string, string>>;
-  /** Insertion-order column that orders and gates claims instead of `(created_at, id)`. */
+  /** Insertion-order column that orders claims instead of `(created_at, id)`, and enables batches (see above). */
   sequence?: string;
   /** Delete a published row instead of setting `delivered_at`; every row in the table is then pending. */
   onDelivered?: "delete";
@@ -81,11 +91,66 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const pending = deleteDelivered ? sql`` : sql`AND delivered_at IS NULL`;
   const earlierPending = deleteDelivered ? sql`` : sql`AND earlier.delivered_at IS NULL`;
   const filters = Object.entries(config.where ?? {}).map(([column, value]) => ({ column: identifier(column, "filter column"), value }));
-  const matches = (alias: "current" | "earlier") =>
+  const matches = (alias: "current" | "earlier" | "busy") =>
     filters.reduce((fragment, { column, value }) => sql`${fragment} AND ${sql.unsafe(alias)}.${column} = ${value}`, sql``);
+  // Rows without an ordering column are independent: each is a key of its own.
+  const runKey = config.orderBy ?? "id";
+  const runColumn = identifier(runKey, "ordering column");
+  const claimLock = `${config.table}:${JSON.stringify(config.where ?? {})}`;
+
+  /**
+   * Claims rows in sequence order, several per key, and never a row of a key
+   * that has a claimed row or one waiting for a retry. `next_attempt_at` only
+   * delays retries: it is the writer's transaction start, so a fresh row that
+   * committed later can carry an earlier one, or one after this claim began.
+   */
+  const claimBatch = (cap: number, order: ReturnType<typeof sql.unsafe>) =>
+    sql.begin(async (tx) => {
+      // Claims take turns: a concurrent claim would skip this one's locked rows and take later rows of the same keys.
+      // A claim that outlives its claim period is worthless, so neither a slow statement nor a vanished client holds the turn longer.
+      await tx`
+        SELECT set_config('statement_timeout', ${String(claimMs)}, true),
+               set_config('idle_in_transaction_session_timeout', ${String(claimMs)}, true),
+               pg_advisory_xact_lock(hashtextextended(${claimLock}, 0))
+      `;
+      // The busy probe runs per candidate (OFFSET 0 keeps the planner from turning it into a join, which
+      // stale statistics can make quadratic), against an index of claimed and retried rows per key.
+      return tx<Row[]>`
+        WITH candidates AS MATERIALIZED (
+          SELECT current.id
+          FROM ${table} current
+          WHERE (current.attempts = 0 OR current.next_attempt_at <= now())
+            AND (current.claimed_until IS NULL OR current.claimed_until <= now())
+            ${pending}
+            ${notDead}
+            ${matches("current")}
+            AND NOT EXISTS (
+              SELECT
+              FROM ${table} busy
+              WHERE busy.${runColumn} = current.${runColumn}
+                AND (busy.claimed_until > now() OR (busy.attempts > 0 AND busy.next_attempt_at > now()))
+                ${pending}
+                ${notDead}
+                ${matches("busy")}
+              OFFSET 0
+            )
+          ORDER BY current.${order}
+          LIMIT ${cap}
+          FOR UPDATE SKIP LOCKED
+        ), claimed AS (
+          UPDATE ${table} outbox
+          SET claimed_until = now() + (${claimMs} * interval '1 millisecond')
+          FROM candidates
+          WHERE outbox.id = candidates.id
+          RETURNING outbox.*
+        )
+        SELECT * FROM claimed ORDER BY ${order}
+      `;
+    });
 
   const claim: PgOutbox<Row>["claim"] = async (limit = batchSize) => {
     const cap = Math.min(Math.max(limit, 1), batchSize);
+    if (sequence !== null) return claimBatch(cap, sequence);
     const ordered =
       orderBy === null
         ? sql``
@@ -97,11 +162,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
               ${earlierPending}
               ${earlierNotDead}
               ${matches("earlier")}
-              AND ${
-                sequence === null
-                  ? sql`(earlier.created_at, earlier.id) < (current.created_at, current.id)`
-                  : sql`earlier.${sequence} < current.${sequence}`
-              }
+              AND (earlier.created_at, earlier.id) < (current.created_at, current.id)
           )
         `;
     // One statement: the CTE claim and the update commit atomically.
@@ -115,7 +176,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
           ${notDead}
           ${matches("current")}
           ${ordered}
-        ORDER BY current.next_attempt_at, ${sequence === null ? sql`current.created_at, current.id` : sql`current.${sequence}`}
+        ORDER BY current.next_attempt_at, current.created_at, current.id
         LIMIT ${cap}
         FOR UPDATE SKIP LOCKED
       )
@@ -125,6 +186,23 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       WHERE outbox.id = candidates.id
       RETURNING outbox.*
     `;
+  };
+
+  const retryLater = async (row: Row, error: unknown) => {
+    const attempts = row.attempts + 1;
+    const message = error instanceof Error ? error.message : String(error);
+    const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
+    const dead = maxAttempts === null ? sql`` : sql`dead_at = CASE WHEN ${attempts} >= ${maxAttempts} THEN now() ELSE dead_at END,`;
+    await sql`
+      UPDATE ${table}
+      SET attempts = ${attempts},
+          next_attempt_at = now() + (${delaySeconds} * interval '1 second'),
+          claimed_until = NULL,
+          ${dead}
+          last_error = ${message.slice(0, 1_000)}
+      WHERE id = ${row.id}::uuid ${pending} ${notDead} AND attempts = ${row.attempts}
+    `;
+    log.warn("Outbox delivery failed", { outboxId: row.id, attempts, error: message });
   };
 
   const dispatch: PgOutbox<Row>["dispatch"] = async (row, publish = config.publish) => {
@@ -140,21 +218,36 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
         WHERE id = ${row.id}::uuid ${pending} ${notDead} AND attempts = ${row.attempts}
       `;
     } catch (error) {
-      const attempts = row.attempts + 1;
-      const message = error instanceof Error ? error.message : String(error);
-      const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
-      const dead = maxAttempts === null ? sql`` : sql`dead_at = CASE WHEN ${attempts} >= ${maxAttempts} THEN now() ELSE dead_at END,`;
-      await sql`
-        UPDATE ${table}
-        SET attempts = ${attempts},
-            next_attempt_at = now() + (${delaySeconds} * interval '1 second'),
-            claimed_until = NULL,
-            ${dead}
-            last_error = ${message.slice(0, 1_000)}
-        WHERE id = ${row.id}::uuid ${pending} ${notDead} AND attempts = ${row.attempts}
-      `;
-      log.warn("Outbox delivery failed", { outboxId: row.id, attempts, error: message });
+      await retryLater(row, error);
     }
+  };
+
+  /** Publishes a claimed batch: keys concurrently, the rows of one key in order. A failed row releases the rest of its key. */
+  const dispatchBatch = async (rows: Row[]) => {
+    const delivered: string[] = [];
+    const runs = Map.groupBy(rows, (row) => row[runKey]);
+    const results = await Promise.allSettled(
+      [...runs.values()].map(async (run) => {
+        for (const [index, row] of run.entries()) {
+          try {
+            await config.publish(row);
+          } catch (error) {
+            await retryLater(row, error);
+            const rest = run.slice(index + 1).map((later) => later.id);
+            if (rest.length > 0) await sql`UPDATE ${table} SET claimed_until = NULL WHERE id = ANY(${sql.array(rest, "uuid")})`;
+            return;
+          }
+          delivered.push(row.id);
+        }
+      }),
+    );
+    if (delivered.length > 0) {
+      const ids = sql.array(delivered, "uuid");
+      await (deleteDelivered
+        ? sql`DELETE FROM ${table} WHERE id = ANY(${ids})`
+        : sql`UPDATE ${table} SET delivered_at = now(), claimed_until = NULL, last_error = NULL WHERE id = ANY(${ids})`);
+    }
+    for (const result of results) if (result.status === "rejected") throw result.reason;
   };
 
   let activeReconcile: Promise<number> | null = null;
@@ -177,8 +270,9 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       do {
         reconcileRequested = false;
         rows = await claim();
-        // Sequential: a claimed batch may contain ordered rows of one key.
-        for (const row of rows) await dispatch(row);
+        if (sequence !== null) await dispatchBatch(rows);
+        // Sequential: across keys, the claim order is the publish order.
+        else for (const row of rows) await dispatch(row);
         processed += rows.length;
       } while (reconcileRequested || rows.length > 0);
       return processed;

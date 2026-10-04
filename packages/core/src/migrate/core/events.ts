@@ -32,8 +32,15 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `.simple();
-    await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_claim ON events.outbox (kind, app_id, next_attempt_at, seq)`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_order ON events.outbox (kind, app_id, ordering_key, seq)`.simple();
+    // Unreleased main images claimed through these two.
+    await tx`DROP INDEX IF EXISTS events.idx_events_outbox_claim, events.idx_events_outbox_order`.simple();
+    // A claim walks one application's rows in seq order and probes each key for a claimed row or
+    // one waiting for a retry, so its cost follows the batch, not the backlog or its statistics.
+    await tx`CREATE INDEX IF NOT EXISTS idx_events_outbox_sequence ON events.outbox (kind, app_id, seq)`.simple();
+    await tx`
+      CREATE INDEX IF NOT EXISTS idx_events_outbox_busy ON events.outbox (kind, app_id, ordering_key)
+      WHERE claimed_until IS NOT NULL OR attempts > 0
+    `.simple();
     await tx`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_events_outbox_coalesce
       ON events.outbox (app_id, coalesce_key) WHERE coalesce_key IS NOT NULL
