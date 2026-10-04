@@ -315,7 +315,9 @@ export default function Welcome(props: WelcomeProps) {
             )}
           </Show>
           <Show when={phone()} fallback={<p>{t().phonesOnly}</p>}>
-            {/* Inside another app, the guide's one copy action takes the pairing link along to Safari or Chrome. */}
+            {/* Inside another app, the guide's one copy action takes the pairing link along to Safari or Chrome. If
+                copying fails, the guide shows the link to copy by hand: the app around the page already opened it, and
+                it pairs only once the code it yields is typed on the web. */}
             <InstallGuide appName={props.cloud} install={install()} url={link() ?? props.url} />
           </Show>
           <p class="pwa-welcome__hint">{t().alreadyInstalled}</p>

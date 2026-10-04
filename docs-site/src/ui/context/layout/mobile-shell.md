@@ -30,6 +30,11 @@ when the page has one:
   Dynamic Island) and the side insets. `MobileShell.Header` takes a `title`, an
   optional `back` control (`href` renders a link, otherwise `onClick` a
   button, always with a `label`), and optional `actions` after the title.
+  The header has the same height with a title alone as with Back or actions,
+  so the title and the content stay in place between pages. Icon buttons in
+  `actions` are 44 px targets with a glyph the size of the tab bar's icons,
+  and the last glyph ends at the side gutter, as Back's starts at it. Pass
+  plain icon buttons and leave their size to the shell.
 - Children render in the shell's only scroll area, a
   [`ScrollArea`](/en/ui/layout/scroll-area) inside `<main>`. Its content pads the
   side insets, and the bottom safe area when no footer is visible.
@@ -62,11 +67,13 @@ dialogs and menus included. They never apply to pages without a shell.
   every pointer.
 - Text fields have 16 px text and are at least 44 px high, so iOS never zooms
   into a focused field.
-- One type scale: the header title at 1.125rem, text at 1rem with headings and
-  names in a heavier weight, secondary text at 0.875rem, and the tab labels.
-  Settings section headings, notices, placeholders, and navigation
-  descriptions follow it, so a phone page mixes no desktop sizes. Applications
-  add no sizes of their own.
+- One type scale: the header and dialog titles at 1.125rem; text and button
+  labels at 1rem, with headings and names in a heavier weight; secondary text,
+  segmented options, and field labels, descriptions, and errors at 0.875rem;
+  and the tab labels at 0.6875rem. Settings section headings, notices,
+  placeholders, and navigation descriptions follow it too. Icon buttons keep
+  their glyph sizes. Use these sizes for application content on the phone
+  rather than sizes of your own.
 
 ### Toasts
 

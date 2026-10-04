@@ -227,7 +227,7 @@ export function App(props: { preferences: Preferences }) {
           title={t().appName}
           actions={
             <Dropdown.Root items={items()} align="end" variant="touch">
-              <Dropdown.Trigger iconOnly label={t().menu} class="auth-menu-button" tooltip={false}>
+              <Dropdown.Trigger iconOnly label={t().menu} tooltip={false}>
                 <span aria-hidden="true">···</span>
               </Dropdown.Trigger>
             </Dropdown.Root>

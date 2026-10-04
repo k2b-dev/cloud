@@ -1443,10 +1443,23 @@ html:has(.k2b-mobile-shell) textarea {
   font-size: 16px;
 }
 
-/* One type scale on the phone: the shell title, then 1rem for text with
-   section headings and names in a heavier weight, 0.875rem for secondary
-   text, and 0.6875rem for tab labels only. Shared components that are
-   sized for dense desktop surfaces follow it while a shell is mounted. */
+/* One type scale on the phone: 1.125rem for the shell and dialog titles, 1rem
+   for text and buttons with section headings and names in a heavier weight,
+   0.875rem for secondary text and the options of a segmented control, and
+   0.6875rem for tab labels only. Buttons match the touch menus' items, and
+   segmented options stay compact so several fit one row. Shared components
+   that are sized for dense desktop surfaces follow the scale while a shell is
+   mounted; icon buttons keep their glyph sizes. */
+html:has(.k2b-mobile-shell) .k2b-ui,
+html:has(.k2b-mobile-shell) .k2b-button:not(.k2b-icon-button) {
+  font-size: 1rem;
+}
+
+html:has(.k2b-mobile-shell) .k2b-panel-dialog__heading h2 {
+  font-size: 1.125rem;
+  letter-spacing: normal;
+}
+
 html:has(.k2b-mobile-shell) .k2b-settings-section__heading h2,
 html:has(.k2b-mobile-shell) .k2b-notice-card__title,
 html:has(.k2b-mobile-shell) .k2b-placeholder__title {
@@ -1459,7 +1472,11 @@ html:has(.k2b-mobile-shell) .k2b-settings-section__heading p,
 html:has(.k2b-mobile-shell) .k2b-notice-card__description,
 html:has(.k2b-mobile-shell) .k2b-notice-card__body,
 html:has(.k2b-mobile-shell) .k2b-placeholder__description,
-html:has(.k2b-mobile-shell) .k2b-navigation__copy small {
+html:has(.k2b-mobile-shell) .k2b-navigation__copy small,
+html:has(.k2b-mobile-shell) .k2b-segmented-control .k2b-segmented-control__option,
+html:has(.k2b-mobile-shell) .k2b-field__label,
+html:has(.k2b-mobile-shell) .k2b-field__description,
+html:has(.k2b-mobile-shell) .k2b-field__error {
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
@@ -1480,10 +1497,13 @@ html:has(.k2b-mobile-shell) .k2b-navigation__copy small {
   flex: none;
 }
 
+/* As high with a title alone as with Back or a 44 px action, so the title and
+   the content stay in place between pages. */
 .k2b-ui .k2b-mobile-shell__header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
   padding: calc(env(safe-area-inset-top) + 0.75rem) max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-right)) 0.75rem
     max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-left));
   background: var(--k2b-surface-canvas);

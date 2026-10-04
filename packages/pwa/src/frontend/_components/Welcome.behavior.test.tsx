@@ -50,7 +50,7 @@ const mount = (options: {
   url?: string;
   state?: "new" | "ended" | "expired";
   userAgent?: string;
-  platform?: "apple-mobile" | "apple-in-app";
+  platform?: "apple-mobile" | "apple-in-app" | "android";
 }): Mounted => {
   const { ui, Welcome } = modules!;
   const dom = createDomTestHarness();
@@ -172,6 +172,27 @@ else {
       button(page.dom, "Copy link")!.click();
       await waitFor(() => copied.length === 1, "copy");
       expect(copied).toEqual([LINK]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("on Android, Chrome's own installation dialog replaces the page's steps once Chrome offers it", async () => {
+    const fetch = mockFetch(() => undefined);
+    const page = mount({
+      standalone: false,
+      userAgent: "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36",
+      platform: "android",
+    });
+    try {
+      expect(text(page.dom)).toContain("Open the browser menu");
+      expect(button(page.dom, "Install app")).toBeUndefined();
+      const offer = new page.dom.window.Event("beforeinstallprompt", { cancelable: true });
+      Object.assign(offer, { prompt: async () => ({ outcome: "accepted" }) });
+      page.dom.window.dispatchEvent(offer);
+      await waitFor(() => !!button(page.dom, "Install app"), "Install button");
+      expect(text(page.dom)).not.toContain("Open the browser menu");
     } finally {
       page.dispose();
       fetch.restore();

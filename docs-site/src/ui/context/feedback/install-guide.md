@@ -39,7 +39,9 @@ const install = createInstallPrompt();
 
 - `appName` is the name people see on their Home Screen.
 - `url` is the address that **Copy link** copies inside another app, for
-  example the app's start page or a link the person must take along.
+  example the app's start page or a link the person must take along. When
+  copying fails, the guide shows it as text to copy by hand, so pass only an
+  address the person may see on screen.
 - `note` adds an application note under the steps, or under the link inside
   another app, for example what else the installed app enables or where the
   app offers installation again. Pass the note that fits `install.platform`.
@@ -80,8 +82,11 @@ tracks whether the page runs installed. It returns:
 - `busy()`, `requested()` (the person accepted), and `failed()` (the dialog
   could not open) describe the attempt.
 
-The guide uses the same state, so its button and steps follow it. Remember on
-your own whether the person already saw an installation introduction.
+The guide uses the same state, so its button and steps follow it. A page that
+renders the guide on the server may pass a placeholder state for the first
+paint and hand over `createInstallPrompt()` after mount; the guide follows the
+new state. Remember on your own whether the person already saw an
+installation introduction.
 
 ## Accessibility
 
