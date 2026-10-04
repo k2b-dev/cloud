@@ -397,12 +397,18 @@ export const defineApp = <
     <link rel="manifest" href="${PWA_MANIFEST_PATH}">
     <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-title" content="${escapeHtml(pwa.name)}">`,
+            // The web cross-fades between pages; an app page swaps at once. The browser ignores taps while a
+            // cross-document transition runs, so a tab tap right after the last one would be lost. After
+            // global.css, whose `navigation: auto` it overrides.
+            styles: `
+    <style data-cloud-app-navigation>@view-transition{navigation:none}</style>`,
           }
         : {
             html: "",
             viewport: "width=device-width, initial-scale=1.0",
             app: `<meta name="theme-color" content="#09090b">
     <meta name="mobile-web-app-capable" content="yes">`,
+            styles: "",
           };
       // The inline layer statement fixes the cascade order before any
       // stylesheet declares a layer. Tailwind's `properties` layer resets
@@ -421,7 +427,7 @@ export const defineApp = <
     <link rel="stylesheet" href="/public/fonts.css?v=${v}">
     <link rel="stylesheet" href="/public/tabler-icons.css?v=${v}">
     <link rel="stylesheet" href="/public/${opts.id}/app.css?v=${v}">
-    <link rel="stylesheet" href="/public/global.css?v=${v}">
+    <link rel="stylesheet" href="/public/global.css?v=${v}">${head.styles}
     <script>${themeBootstrapScript}</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">

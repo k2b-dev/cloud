@@ -23,7 +23,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
-const { TextInput } = await import("@k2b/ui");
+const { ButtonLink, TextInput } = await import("@k2b/ui");
 
 const { ssr } = defineApp({
   id: "inventory",
@@ -91,7 +91,9 @@ const server = new Hono<AuthContext>()
           },
         }),
     ),
-  );
+  )
+  // A web page of the same application, for comparing app navigations with web ones.
+  .get("/app/inventory", ...ssr<AuthContext>(() => () => createComponent(ButtonLink, { href: "/app/inventory?page=2", children: "Next" })));
 
 const origin = "https://cloud.example.test";
 let browser: Browser;
@@ -176,4 +178,43 @@ describe("PwaLayout in a phone browser", () => {
         await page.close();
       }
     }, 60_000);
+});
+
+describe("navigations between app pages", () => {
+  test("swap the page at once, while the web keeps its cross-fade", async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    // A document that shows itself through a view transition has one in its reveal event.
+    await page.addInitScript(() =>
+      addEventListener("pagereveal", (event) => {
+        (window as { revealedWithTransition?: boolean }).revealedWithTransition = !!(event as Event & { viewTransition: unknown })
+          .viewTransition;
+      }),
+    );
+    await page.route(`${origin}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/public/global.css") return route.fulfill({ contentType: "text/css", body: css });
+      const documentPath = url.pathname.startsWith("/pwa/")
+        ? "/pwa/inventory"
+        : url.pathname === "/app/inventory"
+          ? "/app/inventory"
+          : null;
+      if (!documentPath) return route.fulfill({ status: 204 });
+      const response = await server.request(`${origin}${documentPath}`, { headers: { Cookie: "pwa_session=test-session; theme=light" } });
+      return route.fulfill({ contentType: "text/html", body: await response.text() });
+    });
+    const revealed = () => page.evaluate(() => (window as { revealedWithTransition?: boolean }).revealedWithTransition);
+    try {
+      await page.goto(`${origin}/app/inventory`);
+      await page.getByRole("link", { name: "Next" }).click();
+      await page.waitForURL(`${origin}/app/inventory?page=2`);
+      expect(await revealed()).toBe(true);
+
+      await page.goto(`${origin}/pwa/inventory`);
+      await page.locator('.k2b-tab-bar a[data-tab="start"]').click();
+      await page.waitForURL(`${origin}/pwa/`);
+      expect(await revealed()).toBe(false);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });
