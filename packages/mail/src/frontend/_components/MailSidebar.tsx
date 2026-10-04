@@ -24,7 +24,7 @@ import type { ConversationViewCounts, MailFolderView } from "../../service/messa
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
 import { registerMailtoHandler } from "./mail-compose-route";
-import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree } from "./mail-folder-tree";
+import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
 
 type MailViewItem = {
@@ -303,6 +303,9 @@ export default function MailSidebar(props: {
   const folderNode = (node: MailFolderTreeNode<MailFolderView>, suffix: string, count: number | null = node.folder.unread) => {
     const folder = node.folder;
     const hasChildren = node.children.length > 0;
+    // Marks where "Only in the folder" is set, not each subfolder that inherits it, like the folder settings.
+    const onlyInFolder = setsOnlyInFolder(folder);
+    const unread = count !== null && count > 0;
     return (
       <AppWorkspace.NavTree.Item
         id={folder.id}
@@ -310,8 +313,18 @@ export default function MailSidebar(props: {
         href={folder.selectable ? `/app/mail/${props.mailboxId}?folder=${folder.id}` : undefined}
         icon={hasChildren ? "ti ti-folder-plus" : folderIcon(folder.role)}
         expandedIcon={hasChildren ? "ti ti-folder-open" : undefined}
-        meta={count !== null && count > 0 ? <span class="tabular-nums">{count}</span> : undefined}
-        title={folder.name}
+        meta={
+          onlyInFolder || unread ? (
+            <span class="inline-flex items-center gap-1 tabular-nums">
+              <Show when={onlyInFolder}>
+                <i class="ti ti-folder-pin" data-mail-folder-only aria-hidden="true" />
+                <span class="sr-only">{messages().onlyInFolder}</span>
+              </Show>
+              <Show when={unread}>{count}</Show>
+            </span>
+          ) : undefined
+        }
+        title={onlyInFolder ? messages().onlyInFolderTitle({ name: folder.name }) : folder.name}
         viewTransitionName={`mail-folder-${folder.id}-${suffix}`}
         navigation="enhanced"
         onNavigate={folder.selectable ? props.onNavigate : undefined}

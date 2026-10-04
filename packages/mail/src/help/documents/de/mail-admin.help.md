@@ -76,16 +76,20 @@ Prüfe jede Identität mit dem verbundenen Konto und einem Empfänger für eine 
 
 ## Anbieterordner verwalten {icon="user-cog"}
 
-Unter **Ordner** kannst du einen Ordner auf oberster Ebene oder bei entsprechender Anbieterberechtigung einen Unterordner erstellen, geeignete Anbieterordner umbenennen oder löschen, sie beim Anbieter abonnieren oder abbestellen und in der Cloud-Navigation ein- oder ausblenden.
+Unter **Ordner** kannst du einen Ordner auf oberster Ebene oder bei entsprechender Anbieterberechtigung einen Unterordner erstellen, geeignete Anbieterordner umbenennen oder löschen, sie beim Anbieter abonnieren oder abbestellen und festlegen, wo die E-Mails eines Ordners in Cloud Mail erscheinen.
 
-- **In Mail anzeigen** und **In Mail ausblenden** gelten in der Cloud für alle im Postfach. Ein ausgeblendeter Ordner verschwindet mit seinen Unterordnern aus der Seitenleiste, und Unterhaltungen, deren E-Mails nur dort liegen, fehlen in „Alle E-Mails“, den Arbeitsansichten außer **Mir zugewiesen** und **Versandprobleme** und deren Zählern; die Suche findet sie weiterhin.
+- **Wo E-Mails erscheinen** gilt in der Cloud für alle im Postfach. **Überall** zeigt den Ordner in der Seitenleiste und seine E-Mails in „Alle E-Mails“ und den Arbeitsansichten. **Nur im Ordner** behält den Ordner in der Seitenleiste, aber Unterhaltungen, deren E-Mails nur dort liegen, fehlen in „Alle E-Mails“, den Arbeitsansichten außer **Mir zugewiesen** und **Versandprobleme** und deren Zählern. **Ausgeblendet** nimmt den Ordner zusätzlich aus der Seitenleiste. Suche und gespeicherte Ansichten finden weiterhin jede Unterhaltung. Keine dieser Stufen bestellt den Ordner ab, löscht ihn, ändert Anbieterrechte oder entfernt synchronisierte E-Mails.
 - **Beim Anbieter abonnieren** ändert die IMAP-Subscription.
 - Anbieterrechte bestimmen, welche gemeinsamen oder fremden Ordner sichtbar und veränderbar sind.
-- Die Synchronisierung folgt dem Postfachumfang und wird nicht durch den Navigationsschalter gesteuert.
+- Die Synchronisierung folgt dem Postfachumfang und hängt nicht davon ab, wo E-Mails erscheinen.
 
-Nur leere, ungeschützte Ordner ohne Unterordner können beim Anbieter gelöscht werden. Ein dauerhafter Ordnervorgang läuft nach Verlassen der Einstellungen weiter; Mail erkennt den Anbieterzustand neu, bevor das Ergebnis bestätigt wird. Das Aktionsmenü bietet **In Mail anzeigen** oder **In Mail ausblenden**. Daneben steht **Sichtbar**, **Nur im Ordner**, **Ausgeblendet**, **Nicht verfügbar** oder **Prüfung erforderlich**, damit Sichtbarkeit nicht versehentlich bei Anbieteraktionen geändert wird.
+Nur leere, ungeschützte Ordner ohne Unterordner können beim Anbieter gelöscht werden. Ein dauerhafter Ordnervorgang läuft nach Verlassen der Einstellungen weiter; Mail erkennt den Anbieterzustand neu, bevor das Ergebnis bestätigt wird.
 
-**Spezielle Ordnerzuordnungen** oberhalb der Hierarchie bestimmen die aktiven auswählbaren Ordner für Gesendet, Entwürfe, Archiv, Papierkorb und Junk. Der Posteingang wird vom Anbieter erkannt. Eine falsche oder fehlende Zuordnung kann die zugehörige Unterhaltungsaktion oder Abbildung gesendeter Nachrichten und Entwürfe verhindern.
+**Ordner** zeigt die Hierarchie als kompakten Baum. Ordnergruppen wie `[Gmail]` erscheinen als Überschriften, der Pfeil neben einem Ordner klappt seine Unterordner ein, und ein Ordner, dessen Name mehrfach vorkommt, zeigt seinen Pfad. Wähle einen Ordner, um sein Menü zu öffnen. Es erklärt die drei Stufen und enthält die Aktionen des Ordners, etwa **Neuer Unterordner**, **Umbenennen**, das Anbieterabonnement, **Aus Mail entfernen** und **Ordner löschen**. Eine Zeile nennt ihre Stufe nur, wenn sie von **Überall** abweicht; **Nicht verfügbar** und **Prüfung erforderlich** markieren Probleme beim Anbieter.
+
+Ein Unterordner folgt seinem übergeordneten Ordner, wenn dessen Stufe strenger ist: Er kann mehr E-Mails im Ordner halten, nie weniger. Seine Zeile zeigt dann **geerbt von** und den Namen des übergeordneten Ordners, und sein Menü nennt den Ordner, der die lockereren Stufen vorgibt. Wählst du wieder die Stufe des übergeordneten Ordners, folgt der Unterordner ihm erneut. Gesendet, Entwürfe, Papierkorb, Junk und Sammelordner des Anbieters wie „Alle Nachrichten“, „Wichtig“ und „Markiert“ von Gmail entscheiden nie, wo E-Mails erscheinen. Für sie gibt es **Nur im Ordner** deshalb nicht.
+
+**Zuordnung besonderer Ordner** unterhalb der Hierarchie bestimmt die aktiven auswählbaren Ordner für Gesendet, Entwürfe, Archiv, Papierkorb und Junk. Der Posteingang wird vom Anbieter erkannt. Eine falsche oder fehlende Zuordnung kann die zugehörige Unterhaltungsaktion oder Abbildung gesendeter Nachrichten und Entwürfe verhindern.
 
 Stellt das IMAP-Konto gemeinsame Ordner oder Ordner anderer Personen bereit, kann **Neu erkennen** sie in derselben Hierarchie anzeigen. Sie sind Anbieterzustand des verbundenen Kontos und keine eigenen Cloud-Ressourcen. Cloud teilt keine einzelnen Ordner, ändert keine vorgelagerten ACLs, vereint keine gleichnamigen Ordner verschiedener Konten und verwendet nicht die Zugangsdaten einer anderen Person, wenn diese Verbindung den Zugriff verliert.
 

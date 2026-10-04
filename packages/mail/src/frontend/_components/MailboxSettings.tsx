@@ -645,18 +645,16 @@ export default function MailboxSettings(props: {
           </Show>
 
           <SettingsModal.Tab id="folders" title={messages().folders} icon="ti ti-folders" description={messages().foldersDescription}>
-            <SettingsGroup title={messages().mailboxFolders} description={messages().mailboxFoldersDescription}>
-              <MailFolderSettings
-                mailboxId={props.context.mailbox.id}
-                folders={admin().folders}
-                reloading={props.reloading}
-                onReload={props.onReload}
-                onWorkspaceChange={props.onWorkspaceChange}
-                onFolderVisibilityChange={setFolderVisibility}
-                onFolderRoleChange={(role, folderId) => updateFolderRole.mutate({ role, folderId })}
-                folderRolePending={updateFolderRole.loading()}
-              />
-            </SettingsGroup>
+            <MailFolderSettings
+              mailboxId={props.context.mailbox.id}
+              folders={admin().folders}
+              reloading={props.reloading}
+              onReload={props.onReload}
+              onWorkspaceChange={props.onWorkspaceChange}
+              onFolderVisibilityChange={setFolderVisibility}
+              onFolderRoleChange={(role, folderId) => updateFolderRole.mutate({ role, folderId })}
+              folderRolePending={updateFolderRole.loading()}
+            />
           </SettingsModal.Tab>
         </SettingsModal.Group>
 

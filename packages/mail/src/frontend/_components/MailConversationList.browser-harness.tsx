@@ -1,8 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import type { Mailbox } from "../../contracts";
+import type { MailFolderView } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import type { MailListItem } from "./mail-navigation";
 
@@ -12,6 +14,8 @@ export type MailListHarnessOptions = {
   selectedConversationId: string | null;
   selectionMode?: boolean;
   sidebarCollapsed?: boolean;
+  /** Names a folder whose mail stays inside it, as All mail and the work views do. */
+  folderOnlyHint?: MailFolderView;
 };
 
 declare global {
@@ -20,10 +24,12 @@ declare global {
     /** Replaces the list items like a live list update: rows keep their identity by id. */
     setMailItems: (items: MailListItem[]) => void;
     mailNavigations: string[];
+    folderHintDismissed: boolean;
   }
 }
 
 window.mailNavigations = [];
+window.folderHintDismissed = false;
 
 const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unknown as Mailbox;
 const noop = () => {};
@@ -33,6 +39,7 @@ window.mountMailList = (options) => {
   if (!host) throw new Error("Missing harness root");
   const dateConfig = { locale: options.locale, timeZone: "Europe/Berlin" } as DateContext;
   const [list, setList] = createStore({ items: options.items });
+  const [hintFolder, setHintFolder] = createSignal(options.folderOnlyHint ?? null);
   window.setMailItems = (items) => setList("items", reconcile(items));
   render(
     () => (
@@ -88,6 +95,18 @@ window.mountMailList = (options) => {
                   localTags={[]}
                   savedViews={[]}
                   activeSavedViewId={null}
+                  folderOnlyHint={(() => {
+                    const folder = hintFolder();
+                    return folder
+                      ? {
+                          folder,
+                          dismiss: () => {
+                            window.folderHintDismissed = true;
+                            setHintFolder(null);
+                          },
+                        }
+                      : null;
+                  })()}
                   listMode="conversations"
                   loading={false}
                   liveDegraded={false}

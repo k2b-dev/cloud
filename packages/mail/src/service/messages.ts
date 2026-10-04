@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { convert } from "html-to-text";
 import { z } from "zod";
 import type { ConversationView, ConversationWorkStatus, FolderDisplay } from "../contracts";
+import { isAggregatedListing } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { attachmentMimeOrder } from "./attachment-order";
 import { type MailRequestContext, userBackedActor } from "./auth";
@@ -13,7 +14,6 @@ import { resolveMailExecution } from "./execution";
 import {
   type FolderDisplayState,
   folderDisplayStates,
-  isAggregatedListing,
   loadAggregatedViewScope,
   staysInAggregatedViews,
   staysInAggregatedViewsAggregate,

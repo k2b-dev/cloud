@@ -83,6 +83,8 @@ export default function MailConversationList(props: {
   localTags: LocalTag[];
   savedViews: SavedConversationView[];
   activeSavedViewId: string | null;
+  /** A folder set to "Only in the folder" whose mail this view leaves out, until this person dismisses the hint. */
+  folderOnlyHint?: { folder: MailFolderView; dismiss: () => void } | null;
   listMode: MailListMode;
   loading: boolean;
   liveDegraded: boolean;
@@ -485,6 +487,37 @@ export default function MailConversationList(props: {
                       <span>{health().action === "health" ? messages().status : health().actionLabel}</span>
                     </Button>
                   </Show>
+                </div>
+              </div>
+            </NoticeCard>
+          )}
+        </Show>
+        <Show when={props.folderOnlyHint}>
+          {(hint) => (
+            <NoticeCard tone="neutral" icon="ti ti-folder-pin" data-mail-folder-only-hint>
+              <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+                <p class="min-w-0 flex-1 basis-56">
+                  <strong class="font-medium text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
+                  {messages().folderOnlyHintDetail}
+                </p>
+                <div class="flex shrink-0 items-center gap-1">
+                  <Show when={hint().folder.selectable}>
+                    <ButtonLink
+                      href={`/app/mail/${props.mailboxId}?folder=${hint().folder.id}`}
+                      variant="ghost"
+                      size="xs"
+                      navigation="enhanced"
+                      onNavigate={props.onNavigate}
+                      scroll="preserve"
+                    >
+                      {messages().openFolder({ name: hint().folder.name })}
+                    </ButtonLink>
+                  </Show>
+                  <Tooltip.Anchor content={messages().dismissHint}>
+                    <IconButton type="button" size="xs" label={messages().dismissHint} onClick={() => hint().dismiss()}>
+                      <i class="ti ti-x" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
                 </div>
               </div>
             </NoticeCard>

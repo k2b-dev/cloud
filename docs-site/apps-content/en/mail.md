@@ -80,8 +80,12 @@ in the Inbox, it appears everywhere again.
 Mailbox administrators change the display with
 `PATCH /api/mail/mailboxes/{mailboxId}/folders/{folderId}` and
 `{"display": "folder_only"}`, `cld mail folder display set folder_only <folder-id>`,
-or the agent action `folder.display.set`. The folder settings in Mail show and
-hide folders and mark folders whose mail stays inside them. Sent, Drafts,
+or the agent action `folder.display.set`. In Mail, they choose it under
+**Settings > Folders**, where selecting a folder opens the three displays with
+a short explanation and the folder's actions, and subfolders show the display
+they inherit. The sidebar marks each folder set to **Only in the folder**, and
+All mail and the work views name such a folder in a hint until the person
+dismisses it in that browser. Sent, Drafts,
 Trash, Junk, and provider collections cannot be set to `folder_only`, because
 they never decide where mail appears. `GET /api/mail/mailboxes/{mailboxId}/folders`
 and `cld mail folders` show each folder's own display, the effective one, and

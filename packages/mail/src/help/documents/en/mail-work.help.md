@@ -48,11 +48,13 @@ The built-in **Follow-up** views show what should happen next. **Assignment** sh
 | Follow-up | Done | Conversations marked Done |
 | Assignment | Assigned to me | Conversations assigned to you |
 | Assignment | Unassigned | Conversations without an assignee, or whose assignee can no longer write in this mailbox |
-| Mail / More | All mail | Mail from every provider folder except Trash and Junk |
+| Mail / More | All mail | Mail from every provider folder except Trash, Junk, and folders whose mail stays inside them |
 | More | Recent activity | Recently changed conversations |
 | Mail | Scheduled | Messages waiting for future delivery |
 
 Provider folders are a different layer. Moving a conversation to Archive, Trash, Junk, or another provider folder changes remote mail placement and can be visible in other clients. Marking a conversation **Done** changes only Cloud follow-up state; it does not archive or move the email.
+
+A mailbox administrator can keep a folder's mail inside that folder, for example a shared team folder (**Only in the folder**). Its conversations then stay out of **Needs action**, **Waiting for reply**, **Later**, **Done**, **Unassigned**, **All mail**, and **Recent activity**, and out of their counts, unless a message of the conversation also lies in a folder that shows its mail everywhere, such as the Inbox. They stay in the folder itself, in **Assigned to me**, and in search and saved views. In the sidebar, a small folder symbol beside the count marks such a folder; the count still shows its unread mail. While one of these views leaves a folder's mail out, a hint above the list names the folder and opens it. Closing the hint hides it for that folder in this browser.
 
 Use **Waiting for reply** when your team's next step depends on another person. Mail applies it after a human reply or reply-all is confirmed as sent, including replies synchronized from another email client. Use **Show later** when the next review depends on a date or time. Choose when the conversation should appear again. It stays under **Later**, outside active views, until that time unless new incoming mail arrives first.
 

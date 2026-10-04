@@ -32,8 +32,17 @@ describe("Mail reading preferences", () => {
       readingFormat: "plain",
       composeFormat: "plain",
       undoSeconds: 20,
+      dismissedFolderHints: [],
     });
     expect(readMailUserPreferencesFromCookieHeader(`settings-app-mail=${value}`, "mailboxB").readingFormat).toBe("automatic");
+  });
+
+  test("keeps each dismissed folder hint once and ignores anything else", () => {
+    expect(normalizeMailUserPreferences({ dismissedFolderHints: ["Fold01", 7, "Fold02", "Fold01", null] }).dismissedFolderHints).toEqual([
+      "Fold01",
+      "Fold02",
+    ]);
+    expect(normalizeMailUserPreferences({ dismissedFolderHints: "Fold01" }).dismissedFolderHints).toEqual([]);
   });
 });
 

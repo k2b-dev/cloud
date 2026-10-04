@@ -11,6 +11,7 @@ import {
   type ScheduledSendPage,
   type SenderIdentity,
 } from "../contracts";
+import { isAggregatedListing } from "../folder-display-rules";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
   MAIL_SEARCH_PARAMETER,
@@ -28,7 +29,6 @@ import * as conversationSummaries from "./conversation-summary";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
 import { latestMailInvalidationCursor } from "./events";
-import { isAggregatedListing } from "./folder-display";
 import { FOLLOW_UP_VIEWS } from "./follow-up-scope";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";

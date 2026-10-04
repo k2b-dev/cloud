@@ -22,8 +22,9 @@ export const observeMailUserPreferences = (mailboxId: string, serverFallback?: M
   return readMailUserPreferences(mailboxId);
 };
 
-export const writeMailUserPreferences = (mailboxId: string, preferences: MailUserPreferences): MailUserPreferences => {
-  const normalized = normalizeMailUserPreferences(preferences);
+/** Changes the given preferences of one mailbox and keeps the others. */
+export const writeMailUserPreferences = (mailboxId: string, preferences: Partial<MailUserPreferences>): MailUserPreferences => {
+  const normalized = normalizeMailUserPreferences({ ...readMailUserPreferences(mailboxId), ...preferences });
   const current = readSettings();
   cookies.writeJsonCookie(MAIL_USER_PREFERENCES_COOKIE, {
     mailboxes: {

@@ -954,3 +954,271 @@
 .k2b-ui .mail-focus-main {
   box-shadow: none;
 }
+
+/* Folder settings: one compact tree. Each row is the trigger of its folder's menu; the state column has a fixed
+   width, so choosing a display, hovering, or opening a menu never moves a row. Indent guides are one quiet line per
+   ancestor level, centred under that ancestor's chevron; rows touch, so the lines run on. Unlayered, because the
+   shared `.k2b-ui` button reset is unlayered too. */
+.k2b-ui .mail-folder-tree {
+  --mail-folder-indent: 1.25rem;
+  --mail-folder-pad: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  container-type: inline-size;
+  list-style: none;
+}
+
+/* Each row sets its depth inline; each guide its ancestor level. */
+.k2b-ui .mail-folder-tree__row {
+  --mail-folder-depth: 0;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 2.375rem;
+  align-items: stretch;
+  padding-inline: calc(var(--mail-folder-pad) + var(--mail-folder-depth) * var(--mail-folder-indent)) var(--mail-folder-pad);
+  border-radius: var(--k2b-radius-control);
+}
+
+.k2b-ui .mail-folder-tree__row[data-group]:not(:first-child) {
+  margin-top: 0.75rem;
+}
+
+.k2b-ui .mail-folder-tree__row:is(:hover, :focus-within, :has(.mail-folder-tree__main[aria-expanded="true"])) {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .mail-folder-tree__guide {
+  --mail-folder-level: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--mail-folder-pad) + var(--mail-folder-level) * var(--mail-folder-indent) + 0.5rem);
+  width: 1px;
+  background: var(--k2b-border);
+  pointer-events: none;
+}
+
+.k2b-ui .mail-folder-tree__toggle {
+  position: relative;
+  display: grid;
+  flex: none;
+  width: 1rem;
+  margin-right: 0.25rem;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui button.mail-folder-tree__toggle {
+  cursor: pointer;
+}
+
+.k2b-ui button.mail-folder-tree__toggle:hover {
+  color: var(--k2b-text);
+}
+
+.k2b-ui .mail-folder-tree__menu-root {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.k2b-ui .mail-folder-tree__main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem 0 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: none;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.k2b-ui .mail-folder-tree__main:disabled {
+  cursor: default;
+}
+
+.k2b-ui :is(.mail-folder-tree__main, .mail-folder-tree__toggle):focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: -2px;
+}
+
+.k2b-ui .mail-folder-tree__icon {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.9375rem;
+}
+
+.k2b-ui .mail-folder-tree__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.k2b-ui .mail-folder-tree__name {
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-folder-tree__row[data-effective="hidden"] .mail-folder-tree__name {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .mail-folder-tree__row[data-missing] .mail-folder-tree__name {
+  color: var(--k2b-text-muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--k2b-text-muted) 50%, transparent);
+}
+
+.k2b-ui .mail-folder-tree__shared {
+  flex: none;
+  align-self: center;
+  margin-left: -0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+/* The path and notes give way first, so the folder name stays readable. */
+.k2b-ui .mail-folder-tree__note {
+  min-width: 0;
+  flex: 0 10 auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-folder-tree__row[data-group] .mail-folder-tree__name {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.k2b-ui .mail-folder-tree__state {
+  display: inline-flex;
+  width: 11.5rem;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .mail-folder-tree__state > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .mail-folder-tree__state > i {
+  flex: none;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .mail-folder-tree__state[data-kind="own"] {
+  color: var(--k2b-text);
+  font-weight: 500;
+}
+
+.k2b-ui .mail-folder-tree__state[data-kind="own"] > i {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .mail-folder-tree__state[data-kind="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+/* The default needs no words: it shows only where the pointer or focus is. */
+.k2b-ui .mail-folder-tree__state[data-kind="default"] {
+  visibility: hidden;
+}
+
+.k2b-ui .mail-folder-tree__row:is(:hover, :focus-within, :has(.mail-folder-tree__main[aria-expanded="true"]))
+  .mail-folder-tree__state[data-kind="default"] {
+  visibility: visible;
+}
+
+.k2b-ui .mail-folder-tree__state-short {
+  display: none;
+}
+
+@container (max-width: 30rem) {
+  .k2b-ui .mail-folder-tree__state {
+    width: 7.75rem;
+  }
+
+  .k2b-ui .mail-folder-tree__state-long {
+    display: none;
+  }
+
+  .k2b-ui .mail-folder-tree__state-short {
+    display: inline;
+  }
+}
+
+/* Touch rows are 44 px tall; the chevron's target reaches into the indent beside it. */
+@media (any-pointer: coarse) {
+  .k2b-ui .mail-folder-tree__row {
+    min-height: 2.75rem;
+  }
+
+  .k2b-ui button.mail-folder-tree__toggle::before {
+    position: absolute;
+    inset: 0 0 0 -0.75rem;
+    content: "";
+  }
+}
+
+/* The menu's heading is a quiet question with an optional second line, not a section label. */
+.k2b-ui .mail-folder-menu .k2b-dropdown__label {
+  padding-top: 0.5rem;
+  font-size: 0.6875rem;
+  letter-spacing: normal;
+  line-height: 1.35;
+  text-transform: none;
+  white-space: pre-line;
+}
+
+.k2b-ui .mail-folder-menu .k2b-dropdown__item[role="menuitemradio"] {
+  align-items: flex-start;
+}
+
+.k2b-ui .mail-folder-menu .k2b-dropdown__item[role="menuitemradio"] > i:first-child {
+  margin-top: 0.0625rem;
+}
+
+.k2b-ui .mail-folder-menu .k2b-dropdown__item[aria-checked="true"] > i:first-child {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .mail-folder-menu .k2b-dropdown__item[aria-checked="true"] .k2b-dropdown__copy > span {
+  color: var(--k2b-text);
+  font-weight: 500;
+}
+
+.k2b-ui .mail-folder-menu .k2b-dropdown__copy > small {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+}

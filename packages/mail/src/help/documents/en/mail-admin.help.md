@@ -96,26 +96,28 @@ The **Allow automatic replies** option is separate from verification. Automatic 
 - create a subfolder where the provider grants that right;
 - rename or delete an eligible provider folder;
 - subscribe or unsubscribe on the provider; and
-- show or hide a folder in the Cloud Mail sidebar.
+- choose where each folder's mail appears in Cloud Mail.
 
 These controls affect different things:
 
-- **Show in Mail** and **Hide from Mail** are Cloud settings for everyone in the mailbox. A hidden folder and its subfolders leave the sidebar, and conversations whose mail lies only there leave All mail, the work views except **Assigned to me** and **Send problems**, and their counts; search still finds them. Hiding a folder does not unsubscribe it, delete it, change provider permissions, or remove already synchronized mail.
+- **Where mail appears** is a Cloud setting for everyone in the mailbox. **Everywhere** shows the folder in the sidebar and its mail in All mail and the work views. **Only in the folder** keeps the folder in the sidebar, but conversations whose mail lies only there leave All mail, the work views except **Assigned to me** and **Send problems**, and their counts. **Hidden** also takes the folder out of the sidebar. Search and saved views still find every conversation. None of these choices unsubscribes or deletes the folder, changes provider permissions, or removes synchronized mail.
 - **Subscribe on the mail provider** changes the IMAP subscription. Other mail clients may use that subscription to decide which folders they show.
 - **Provider access** is controlled by the provider. Cloud displays shared and other-user folders only when the connected account can see them, and enables destructive actions only when current provider rights allow them.
-- **Synchronization** follows the configured mailbox scope and provider state. It is not enabled or disabled by the sidebar switch.
+- **Synchronization** follows the configured mailbox scope and provider state. Where mail appears does not change it.
 
 Deleting a folder removes it at the provider and is therefore offered only for an empty folder without subfolders. Inbox and other protected folders cannot be deleted. A folder operation is durable: leaving the settings page does not cancel it, and Mail rediscovers provider state before confirming the result.
 
-Use a folder's actions menu to choose **Show in Mail** or **Hide from Mail**. The status beside the folder shows **Visible**, **Only in the folder**, **Hidden**, **Unavailable**, or **Needs review**. This menu placement prevents accidental visibility changes while managing provider folders.
+**Folders** shows the hierarchy as a compact tree. Folder groups such as Gmail's `[Gmail]` appear as headings, the chevron beside a folder collapses its subfolders, and a folder whose name occurs more than once shows its path. Select a folder to open its menu. It explains the three choices and holds the folder's actions, such as **New subfolder**, **Rename**, the provider subscription, **Remove from Mail**, and **Delete folder**. A row names its choice only when it differs from **Everywhere**; **Unavailable** and **Needs review** mark provider problems.
 
-**Special folder mappings** appears above the folder hierarchy and selects the active, selectable folders used for Sent, Drafts, Archive, Trash, and Junk operations. Inbox is discovered from the provider. An incorrect or missing mapping can prevent the corresponding conversation action or sent/draft projection from completing.
+A subfolder follows its parent when the parent's choice is stricter: it can keep more mail inside, never less. Its row then shows **inherited from** and the parent's name, and its menu names the parent that sets the looser choices. Choosing the parent's choice again lets the subfolder follow the parent once more. Sent, Drafts, Trash, Junk, and provider collections such as Gmail's All Mail, Important, and Starred never decide where mail appears, so **Only in the folder** is not offered for them.
+
+**Special folder mappings** appears below the folder hierarchy and selects the active, selectable folders used for Sent, Drafts, Archive, Trash, and Junk operations. Inbox is discovered from the provider. An incorrect or missing mapping can prevent the corresponding conversation action or sent/draft projection from completing.
 
 If the IMAP account exposes shared or other-user folders, **Rediscover** can make them appear in the same hierarchy. They are provider state of this connected account, not separate Cloud resources. Cloud does not provide folder-level sharing, edit upstream ACLs, combine similarly named folders from several accounts, or use another person's credential if this connection loses access.
 
 Provider-side namespace, subscription, or permission changes can make a folder unavailable or ambiguous. Review **Mailbox tools > Mailbox health**, correct the provider state when necessary, then run **Rediscover**.
 
-When an unavailable folder is permanently gone, choose **Remove from Mail** from its actions menu. Confirming removes the unavailable folder and unavailable subfolders from Cloud Mail's folder list. It does not delete anything at the provider and does not remove mirrored messages or history. If the provider exposes the folder again, the next rediscovery restores it automatically.
+When an unavailable folder is permanently gone, choose **Remove from Mail** from its menu. Confirming removes the unavailable folder and unavailable subfolders from Cloud Mail's folder list. It does not delete anything at the provider and does not remove mirrored messages or history. If the provider exposes the folder again, the next rediscovery restores it automatically.
 
 Agents can change provider subscriptions with `cld mail folder subscribe` and `cld mail folder unsubscribe`. Both commands create the same durable, observable provider command as the web app.
 

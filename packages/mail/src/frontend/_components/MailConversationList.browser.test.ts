@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { type Browser, type BrowserContextOptions, chromium, type Page } from "playwright";
 import type { MailConversationPreview } from "../../contracts";
+import type { MailFolderView } from "../../service/messages";
 import type { MailListHarnessOptions } from "./MailConversationList.browser-harness";
 import type { MailListItem } from "./mail-navigation";
 
@@ -171,6 +172,7 @@ const load = async (
     locale?: "en" | "de";
     selectionMode?: boolean;
     sidebarCollapsed?: boolean;
+    folderOnlyHint?: MailFolderView;
   } = {},
 ) => {
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
@@ -197,6 +199,7 @@ const load = async (
     selectedConversationId: options.selectedConversationId ?? null,
     selectionMode: options.selectionMode,
     sidebarCollapsed: options.sidebarCollapsed,
+    folderOnlyHint: options.folderOnlyHint,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -634,6 +637,65 @@ describe("Mail quick look", () => {
         });
         expect(style.background).toBe(theme === "light" ? "rgb(255, 255, 255)" : "rgb(17, 21, 27)");
         for (const shadow of style.shadow.split(/,(?![^(]*\))/u)) expect(shadow).toContain("inset");
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+});
+
+describe("Mail hint for a folder whose mail stays inside it", () => {
+  const shared: MailFolderView = {
+    id: "Fold02",
+    parentId: null,
+    name: "Shared",
+    role: "other",
+    providerRole: "other",
+    configuredRole: null,
+    selectable: true,
+    display: "folder_only",
+    effectiveDisplay: "folder_only",
+    displayInheritedFromFolderId: null,
+    displayNeutral: false,
+    namespaceKinds: ["shared"],
+    discoveryState: "active",
+    missingSince: null,
+    syncStatus: "current",
+    total: 12,
+    unread: 3,
+  };
+  const hint = "[data-mail-folder-only-hint]";
+
+  for (const [name, context] of [
+    ["desktop", desktop],
+    ["phone", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }],
+  ] as const) {
+    test(`stays inside the list column on ${name} and leaves without a trace when dismissed`, async () => {
+      const page = await load({ context, folderOnlyHint: shared, locale: name === "phone" ? "de" : "en" });
+      try {
+        const list = (await box(page, "[data-mail-conversation-list]"))!;
+        const notice = (await box(page, hint))!;
+        expect(notice.left).toBeGreaterThanOrEqual(list.left);
+        expect(notice.left + notice.width).toBeLessThanOrEqual(list.left + list.width);
+        // Every line and control stays inside the notice; touch targets may reach beyond a control, not its box.
+        expect(
+          await page.$eval(hint, (element) => {
+            const outer = element.getBoundingClientRect();
+            return [...element.querySelectorAll("*")].filter((child) => {
+              const inner = child.getBoundingClientRect();
+              return inner.width > 0 && (inner.left < outer.left - 0.5 || inner.right > outer.right + 0.5);
+            }).length;
+          }),
+        ).toBe(0);
+        expect(await page.locator(`${hint} a`).getAttribute("href")).toBe("/app/mail/Box001?folder=Fold02");
+        expect(await page.locator(hint).innerText()).toContain(
+          name === "phone" ? "E-Mails aus „Shared“ erscheinen nur noch im Ordner." : "Mail from “Shared” now appears only in its folder.",
+        );
+
+        await page.locator(`${hint} button`).click();
+        expect(await page.locator(hint).count()).toBe(0);
+        expect(await page.evaluate(() => window.folderHintDismissed)).toBe(true);
         expect(page.errors).toEqual([]);
       } finally {
         await close(page);
