@@ -633,6 +633,40 @@ describe("AI controller stream sessions", () => {
     expect(calls).toEqual(["subscribe:Chat01", "close:Chat01"]);
   });
 
+  test("shows the server's reason and stops when the default stream loses access", async () => {
+    const streamRequests: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        const path = new URL(String(input), "http://cloud.test").pathname;
+        if (path.endsWith("/stream")) {
+          streamRequests.push(path);
+          return Response.json({ message: "Conversation access changed" }, { status: 403 });
+        }
+        return Response.json({});
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const current = conversation("Chat01");
+    let dispose!: () => void;
+    let controller!: ReturnType<typeof createAiChatController>;
+    createRoot((rootDispose) => {
+      dispose = rootDispose;
+      controller = createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+      });
+    });
+
+    for (let i = 0; i < 20 && controller.error() === null; i++) await Bun.sleep(1);
+
+    expect(controller.error()).toBe("Conversation access changed");
+    expect(controller.streamStatus()).toBe("idle");
+    await Bun.sleep(700);
+    expect(streamRequests).toEqual(["/api/ai/conversations/Chat01/stream"]);
+    dispose();
+  });
+
   test("rejects an earlier session after leaving and reopening the same conversation", () => {
     const firstA = { conversationId: "a", generation: 1 };
     const b = { conversationId: "b", generation: 2 };

@@ -121,7 +121,9 @@ CLI-compatible integrations keep working unchanged. Core's Assistant injects
 the shared AI live connection instead: changing chats replaces only its turn
 channel, while the workspace WebSocket and user-wide invalidation channel stay
 alive. Both paths use the same projection, reconnect snapshot, and action
-deduplication behavior.
+deduplication behavior. When access to the conversation ends, both stop the
+stream and show the server's reason as the chat's error instead of
+reconnecting.
 
 ## Attach Cloud resources
 

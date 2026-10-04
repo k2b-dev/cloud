@@ -16,6 +16,7 @@ import {
   respond,
   v,
 } from "../server";
+import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import type { AiToolApprovalContext } from "./approvals";
@@ -1108,11 +1109,11 @@ export const aiRoutes = (() => {
         return createAiConversationStreamResponse({
           conversation,
           signal: c.req.raw.signal,
-          // Both calls hit the database: resolveContext re-runs the app's own
-          // access check, loadConversation re-checks ownership and resource
-          // scope. The actor itself is a request-time snapshot, so this catches
-          // a withdrawn grant but not a revoked credential — see r9358ceb.
+          // The actor is a request-time snapshot: re-authenticate its
+          // credential first, so a revoked session or API key ends the stream,
+          // then re-check ownership and resource scope of the conversation.
           revalidate: async () => {
+            if (!(await isRequestCredentialCurrent(c))) return false;
             const current = await resolveContext(c);
             if (current instanceof Response) return false;
             return Boolean(await loadConversation(c, current));
