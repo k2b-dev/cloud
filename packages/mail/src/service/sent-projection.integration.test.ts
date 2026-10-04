@@ -20,10 +20,11 @@ import { startDraftProjectionRuntime, stopDraftProjectionRuntime, submitDueDraft
 import { createDraft } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
-import { listConversations } from "./messages";
+import { listConversations, listFolders } from "./messages";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { createProviderConnection } from "./provider-connections";
 import { enqueueFolderReconciliation, hydrateMessageBatch, ingestEnvelope, syncFolderBatch } from "./sync-runtime";
+import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
 const suite = suiteFor("database", "nats", "valkey");
 
@@ -1990,6 +1991,71 @@ suite("mail sent message projection", () => {
       await mailbox.syncAll();
       await importsSettled();
       expect(await drafts()).toEqual([{ subject: "Edited elsewhere", revision: "2" }]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("the Drafts folder lists and counts the drafts saved in Mail and in another client", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      await provider.saveDraftElsewhere(
+        [
+          `Message-ID: <listed-draft-${suffix}@example.test>`,
+          `Date: ${new Date().toUTCString()}`,
+          `From: Owner <${OWNER}>`,
+          `To: Customer <${CUSTOMER}>`,
+          "Subject: Written elsewhere",
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "Saved in another client.",
+        ].join("\r\n"),
+      );
+      await mailbox.syncAll();
+      await waitFor(async () => {
+        const [imported] = await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM mail.drafts WHERE mailbox_id = ${mailbox.mailboxId}::uuid
+        `;
+        return imported?.count === 1;
+      }, "the imported draft");
+      const created = await createDraft({
+        context,
+        mailboxId: mailbox.mailboxId,
+        input: {
+          senderIdentityId: mailbox.identityId,
+          to: [{ name: "Customer", address: CUSTOMER }],
+          cc: [],
+          bcc: [],
+          subject: "Written in Mail",
+          body: "Saved in Mail.",
+          format: "plain",
+          conversationId: null,
+          intent: "new",
+          sourceMessageId: null,
+        },
+      });
+      if (!created.ok) throw new Error(JSON.stringify(created.error));
+      await waitForDraftExport(created.data.id, ["active"]);
+      await mailbox.syncAll();
+
+      const draftsFolderId = mailbox.folderId(provider.draftsPath);
+      const folders = await listFolders(context, mailbox.mailboxId);
+      if (!folders.ok) throw new Error(folders.error.message);
+      expect(folders.data.find((folder) => folder.id === draftsFolderId)).toMatchObject({ role: "drafts", total: 2, unread: 0 });
+
+      const [draftsFolder] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.folders WHERE id = ${draftsFolderId}::uuid`;
+      const request = await resolveWorkspaceRequest(
+        new URL(`https://cloud.example.test/app/mail/mailbox?folder=${draftsFolder!.short_id}`),
+        mailbox.mailboxId,
+      );
+      if (!request) throw new Error("Workspace request did not resolve");
+      const page = await loadMailboxPageData({ context, mailboxId: mailbox.mailboxId, ...request });
+      if (!page.ok) throw new Error(page.error.message);
+      expect(page.data.draftsMode).toBe(true);
+      expect(page.data.draftsPage?.total).toBe(2);
+      expect(page.data.draftsPage?.items.map((item) => item.subject).sort()).toEqual(["Written elsewhere", "Written in Mail"]);
+      expect(page.data.listItems).toEqual([]);
     } finally {
       provider.restore();
     }

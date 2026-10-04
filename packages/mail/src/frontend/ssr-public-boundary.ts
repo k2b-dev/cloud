@@ -207,6 +207,12 @@ export const projectMailboxPageData = async (data: MailboxPageData, loadPublicId
       add(paths, "conversations", ["scheduledPage", "items", index, "conversationId"], item.conversationId);
     });
   }
+  if (data.draftsPage) {
+    addResourceList(paths, "drafts", ["draftsPage", "items"], data.draftsPage.items);
+    data.draftsPage.items.forEach((item, index) => {
+      add(paths, "conversations", ["draftsPage", "items", index, "conversationId"], item.conversationId);
+    });
+  }
   return projectSsrPaths({ ...data, activity }, paths, loadPublicIds);
 };
 

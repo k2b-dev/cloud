@@ -24,6 +24,7 @@ import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader from "./_components/MailConversationReader";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
+import MailDraftsView from "./_components/MailDraftsView";
 import { openMailRemoteContentRulesDialog } from "./_components/MailRemoteContentRulesDialog";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences } from "./_components/MailSettingsStore";
@@ -90,6 +91,14 @@ const mailListScope = (href: string): string => {
   url.searchParams.delete("cursor");
   return `${url.pathname}${url.search}`;
 };
+
+/** Scheduled and Drafts page through their own lists; every other view pages through conversations. */
+const pageNextCursor = (snapshot: MailboxPageData): string | null | undefined =>
+  snapshot.scheduledMode
+    ? snapshot.scheduledPage?.nextCursor
+    : snapshot.draftsMode
+      ? snapshot.draftsPage?.nextCursor
+      : snapshot.nextListCursor;
 
 function MailWorkspaceView(props: {
   data: MailboxPageData;
@@ -270,11 +279,11 @@ function MailWorkspaceView(props: {
       if (cursor !== undefined) url.searchParams.set("cursor", cursor);
       const snapshot = await fetchWorkspaceRoute(url.toString(), abortSignal, target.listMode);
       if (!snapshot) throw new Error(t().loadViewFailed);
-      const nextCursor = snapshot.scheduledMode ? snapshot.scheduledPage?.nextCursor : snapshot.nextListCursor;
+      const nextCursor = pageNextCursor(snapshot);
       assertCursorProgress(cursor, nextCursor, "mailbox");
       return { source, snapshot };
     },
-    getNextCursor: (page) => (page.snapshot.scheduledMode ? page.snapshot.scheduledPage?.nextCursor : page.snapshot.nextListCursor),
+    getNextCursor: (page) => pageNextCursor(page.snapshot),
     subscribe: ({ invalidate }) =>
       liveHub.register({
         matches: () => true,
@@ -328,6 +337,16 @@ function MailWorkspaceView(props: {
           ...next,
           scheduledPage: { ...reconciled.scheduledPage, items: [...items.values()] },
           scheduledError: reconciled.scheduledError,
+        };
+        continue;
+      }
+      if (next.draftsMode && next.draftsPage && reconciled.draftsPage) {
+        const items = new Map(next.draftsPage.items.map((item) => [item.id, item]));
+        for (const item of reconciled.draftsPage.items) items.set(item.id, item);
+        next = {
+          ...next,
+          draftsPage: { ...reconciled.draftsPage, items: [...items.values()] },
+          draftsError: reconciled.draftsError,
         };
         continue;
       }
@@ -1588,7 +1607,7 @@ function MailWorkspaceView(props: {
       <AppWorkspace.Content>
         <AppWorkspace.Main class="p-0" aria-busy={routeLoading()} mobilePane={hasSelection() ? "main" : "conversations"} scroll={false}>
           <Show
-            when={data.scheduledMode}
+            when={data.scheduledMode || data.draftsMode}
             fallback={
               <>
                 <AppWorkspace.MainPane
@@ -1698,25 +1717,44 @@ function MailWorkspaceView(props: {
               </>
             }
           >
-            <MailScheduledView
-              mailboxId={data.mailbox.id}
-              page={
-                data.scheduledPage ?? {
-                  items: [],
-                  nextCursor: null,
-                  total: data.scheduledCount,
-                }
+            <Show
+              when={data.draftsMode}
+              fallback={
+                <MailScheduledView
+                  mailboxId={data.mailbox.id}
+                  page={
+                    data.scheduledPage ?? {
+                      items: [],
+                      nextCursor: null,
+                      total: data.scheduledCount,
+                    }
+                  }
+                  error={data.scheduledError}
+                  dateConfig={props.dateConfig}
+                  canWrite={canWrite()}
+                  loading={routeLoading()}
+                  onNavigate={async () => {
+                    await workspaceQuery.loadMore();
+                    if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
+                  }}
+                  onRefresh={requireWorkspaceReconcile}
+                />
               }
-              error={data.scheduledError}
-              dateConfig={props.dateConfig}
-              canWrite={canWrite()}
-              loading={routeLoading()}
-              onNavigate={async () => {
-                await workspaceQuery.loadMore();
-                if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
-              }}
-              onRefresh={requireWorkspaceReconcile}
-            />
+            >
+              <MailDraftsView
+                mailboxId={data.mailbox.id}
+                title={data.listTitle}
+                returnHref={requestPath()}
+                page={data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
+                error={data.draftsError}
+                dateConfig={props.dateConfig}
+                loading={routeLoading()}
+                onNavigate={async () => {
+                  await workspaceQuery.loadMore();
+                  if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
+                }}
+              />
+            </Show>
           </Show>
         </AppWorkspace.Main>
         <AppWorkspace.Detail id="mail-context" open={detailsOpen() && canShowDetails()} width="lg" maxWidth={520}>

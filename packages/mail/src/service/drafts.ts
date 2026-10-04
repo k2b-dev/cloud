@@ -15,6 +15,7 @@ import {
   type DraftDeliveryClass,
   type DraftEditableContent,
   type DraftEditableContentInput,
+  type DraftFolderPage,
   type DraftIntent,
   type DraftRecoveryCopy,
   type DraftSeedOrigin,
@@ -1775,6 +1776,105 @@ export const listConversationDrafts = async (params: {
       updatedAt: toIso(row.updated_at),
     })),
   );
+};
+
+const draftFolderCursorSchema = z.object({ updatedAt: z.string().datetime(), id: z.string().uuid() }).strict();
+
+/**
+ * The drafts the mailbox's Drafts folder shows, most recently edited first. Sync hands the provider's
+ * Drafts folder to the draft projection rather than to message placements, so this list, not the
+ * folder's messages, is what that folder holds.
+ */
+export const listDraftFolder = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<Result<DraftFolderPage>> => {
+  let cursor: z.infer<typeof draftFolderCursorSchema> | null = null;
+  if (params.cursor) {
+    try {
+      const parsed = draftFolderCursorSchema.safeParse(JSON.parse(Buffer.from(params.cursor, "base64url").toString("utf8")));
+      if (!parsed.success) return fail(err.badInput("Invalid pagination cursor"));
+      cursor = parsed.data;
+    } catch {
+      return fail(err.badInput("Invalid pagination cursor"));
+    }
+  }
+  const allowed = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  if (!allowed.ok) return allowed;
+  const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
+  const rows = await sql<
+    (DbConversationDraftSummary & {
+      conversation_id: string | null;
+      to_addresses: MailAddress[] | string;
+      cc_addresses: MailAddress[] | string;
+      bcc_addresses: MailAddress[] | string;
+      updated_at_cursor: string;
+    })[]
+  >`
+    SELECT
+      d.id,
+      d.short_id,
+      d.conversation_id,
+      d.intent,
+      d.subject,
+      d.to_addresses,
+      d.cc_addresses,
+      d.bcc_addresses,
+      LEFT(d.body_markdown, ${DRAFT_BODY_PREVIEW_SOURCE_LENGTH}) AS body_preview_source,
+      COALESCE(
+        NULLIF(author_user.display_name, ''),
+        author_user.uid,
+        author_service.name,
+        CASE d.author_kind
+          WHEN 'workflow' THEN 'Workflow'
+          WHEN 'system' THEN 'Mail provider'
+          WHEN 'user' THEN 'Former user'
+          ELSE 'Former service account'
+        END
+      ) AS created_by_display_name,
+      d.updated_at,
+      to_char(d.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_cursor
+    FROM mail.drafts d
+    LEFT JOIN auth.users author_user ON d.author_kind = 'user' AND author_user.id = d.author_id
+    LEFT JOIN auth.service_accounts author_service ON d.author_kind = 'service_account' AND author_service.id = d.author_id
+    WHERE d.mailbox_id = ${params.mailboxId}::uuid
+      AND d.origin = 'user'
+      AND d.state = 'draft'
+      AND (
+        ${cursor === null}
+        OR (d.updated_at, d.id) < (${cursor?.updatedAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid)
+      )
+    ORDER BY d.updated_at DESC, d.id DESC
+    LIMIT ${limit + 1}
+  `;
+  const [count] = await sql<{ total: number }[]>`
+    SELECT COUNT(*)::int AS total
+    FROM mail.drafts
+    WHERE mailbox_id = ${params.mailboxId}::uuid AND origin = 'user' AND state = 'draft'
+  `;
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return ok({
+    items: page.map((row) => ({
+      id: row.id,
+      conversationId: row.conversation_id,
+      intent: row.intent,
+      subject: row.subject,
+      to: parseArray(row.to_addresses),
+      cc: parseArray(row.cc_addresses),
+      bcc: parseArray(row.bcc_addresses),
+      bodyPreview: draftBodyPreview(row.body_preview_source),
+      createdByDisplayName: row.created_by_display_name,
+      updatedAt: toIso(row.updated_at),
+    })),
+    nextCursor:
+      rows.length > limit && last
+        ? Buffer.from(JSON.stringify({ updatedAt: last.updated_at_cursor, id: last.id })).toString("base64url")
+        : null,
+    total: count?.total ?? 0,
+  });
 };
 
 export const getDraft = async (context: MailRequestContext, mailboxId: string, draftId: string): Promise<Result<MailDraft>> => {

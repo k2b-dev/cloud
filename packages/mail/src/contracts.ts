@@ -2996,6 +2996,15 @@ export type ConversationDraftSummary = Pick<MailDraft, "id" | "intent" | "subjec
   createdByDisplayName: string;
 };
 
+/** A draft as the Drafts folder lists it. */
+export type DraftFolderItem = ConversationDraftSummary & Pick<MailDraft, "conversationId" | "to" | "cc" | "bcc">;
+
+export type DraftFolderPage = {
+  items: DraftFolderItem[];
+  nextCursor: string | null;
+  total: number;
+};
+
 export const scheduledSendSchema = z
   .object({
     id: ResourceShortIdSchema,

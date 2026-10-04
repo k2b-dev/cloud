@@ -112,8 +112,15 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
       f.discovery_state,
       f.missing_since,
       f.sync_status,
-      COALESCE(placement_counts.total, 0)::int AS total,
-      COALESCE(unread_counts.unread, 0)::int AS unread
+      -- Sync hands the Drafts folder to the draft projection, not to placements: it holds the mailbox's drafts.
+      CASE
+        WHEN COALESCE(role_override.role, f.role) = 'drafts' THEN draft_counts.total
+        ELSE COALESCE(placement_counts.total, 0)
+      END::int AS total,
+      CASE
+        WHEN COALESCE(role_override.role, f.role) = 'drafts' THEN 0
+        ELSE COALESCE(unread_counts.unread, 0)
+      END::int AS unread
     FROM mail.folders f
     JOIN mail.remote_resources rr ON rr.id = f.remote_resource_id
     LEFT JOIN mail.folder_role_overrides role_override
@@ -132,6 +139,13 @@ export const listFolders = async (context: MailRequestContext, mailboxId: string
         AND placement.deleted_at IS NULL
         AND NOT ('\\Seen' = ANY(placement.flags))
     ) unread_counts ON true
+    CROSS JOIN (
+      SELECT COUNT(*)::int AS total
+      FROM mail.drafts draft
+      WHERE draft.mailbox_id = ${mailboxId}::uuid
+        AND draft.origin = 'user'
+        AND draft.state = 'draft'
+    ) draft_counts
     WHERE rr.mailbox_id = ${mailboxId}::uuid
       AND NOT (f.discovery_state = 'missing' AND f.dismissed_at IS NOT NULL)
     ORDER BY
