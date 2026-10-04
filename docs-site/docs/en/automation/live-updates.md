@@ -131,7 +131,10 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
   follows the first 1,000 keys and logs a warning about the rest.
 - `authorize(key, viewers)` returns the IDs of the viewers who may read `key`.
   Cloud calls it with up to 500 viewers at once, so check them together
-  instead of one by one. Use the same permission service as the API.
+  instead of one by one: `getEffectivePermissions()` from `@k2b/cloud/server`
+  decides every viewer's `accessSubject` with one query, by the same rules as
+  `getEffectivePermission()`. Apply the same role and credential rules as the
+  API.
 - `collection: true` marks a channel whose key set can change without an
   update, such as "every book I can read". Cloud runs `keys()` again every
   minute and after an access update. A collection may start with no keys.
@@ -158,8 +161,12 @@ refused handshake would only reach the browser as a retryable `1012`.
 | Code | Cause |
 | --- | --- |
 | `login_required` | No credential, or the session or token has ended |
-| `forbidden_origin` | A session from another origin than the one of the `app.url` setting |
+| `forbidden_origin` | A session whose `Origin` differs from the origin of the `app.url` setting |
 | `missing_scope` | An OAuth token without `read` (or `admin`), as on other read routes |
+
+Browsers send `Origin` with every socket, and the gateway forwards it. A
+socket without `Origin` comes from a client that is not a web page, and it is
+served like any other request with that credential.
 
 An API key reads what the application's `authorize` allows for its scopes,
 as on the API.
@@ -283,6 +290,17 @@ once to fill its window, not once per socket. Plan the send buffers for each
 socket that reads too slowly: 256 KiB in the application, twice that during
 a replay, and up to 4 MiB in the gateway, which closes the browser socket with
 `1013` above it.
+
+Live sockets have no metrics of their own. Each replica logs under
+`events:live`, with the application ID:
+
+| Log | Meaning |
+| --- | --- |
+| `Live sockets closed: <check> failed` | `authorize`, `keys()`, or the credential check threw or took longer than 10 seconds; the sockets reconnect |
+| `Live socket closed because the client reads too slowly` | A socket exceeded its send buffer |
+| `A live subscription follows only the first keys of its scope` | `keys()` returned more than 1,000 keys |
+| `Live follower failed; it resumes` | Reading the topic failed; the replica retries every second |
+| `Live updates wait to be published` | Updates older than 60 seconds are still in the outbox |
 
 Continue with [Realtime UI](/en/docs/frontend/realtime-ui) for the browser,
 with [Topics and live events](/en/docs/automation/topics-and-live-events) for

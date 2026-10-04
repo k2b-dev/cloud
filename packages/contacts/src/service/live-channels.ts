@@ -2,19 +2,18 @@ import type { LiveViewer } from "@k2b/cloud/events";
 import { hasPermission } from "@k2b/cloud/server";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
-import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, getActorBookPermission } from "./access";
+import { CONTACT_BOOK_RESOURCE_TYPE, CONTACTS_APP_ID, getActorsBookPermissions } from "./access";
 import * as books from "./books";
 import { resolvePublicId } from "./public-resources";
 
-/** Viewers who may read one book, decided like the Contacts API. Keys are internal book IDs. */
+/** Viewers who may read one book, decided like the Contacts API, with one query for all of them. Keys are internal book IDs. */
 const bookReaders = async (bookId: string, viewers: readonly LiveViewer[]): Promise<ReadonlySet<string>> => {
-  const readers = new Set<string>();
-  if (!(await books.get({ id: bookId }))) return readers;
-  for (const viewer of viewers) {
-    const permission = await getActorBookPermission({ bookId, actor: viewer.actor, subject: viewer.accessSubject });
-    if (hasPermission(permission, "read")) readers.add(viewer.id);
-  }
-  return readers;
+  if (!(await books.get({ id: bookId }))) return new Set();
+  const permissions = await getActorsBookPermissions(
+    bookId,
+    viewers.map((viewer) => ({ actor: viewer.actor, subject: viewer.accessSubject })),
+  );
+  return new Set(viewers.filter((_, position) => hasPermission(permissions[position] ?? "none", "read")).map((viewer) => viewer.id));
 };
 
 /** The book a resource-bound key may read; every other caller reads through its grants. */

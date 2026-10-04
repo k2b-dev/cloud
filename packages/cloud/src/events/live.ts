@@ -187,8 +187,14 @@ type Refusal = { code: "login_required" | "forbidden_origin" | "missing_scope"; 
  */
 const refusalOf = async (c: Context<AuthContext>): Promise<Refusal | null> => {
   if (!c.get("actor")) return { code: "login_required", message: "Sign in again to receive live updates." };
-  // A session cookie travels with every page of the browser, so its socket must come from Cloud's own origin.
-  if (c.get("credentialKind") === "session" && c.req.header("Origin") !== publicCloudOrigin(await settings.get<string>("app.url"))) {
+  // A session cookie travels with every page of the browser, so a browser's socket must come from Cloud's own origin.
+  // Browsers always send Origin on a socket; a client without one is no page that another site could have opened.
+  const origin = c.req.header("Origin");
+  if (
+    c.get("credentialKind") === "session" &&
+    origin !== undefined &&
+    origin !== publicCloudOrigin(await settings.get<string>("app.url"))
+  ) {
     return { code: "forbidden_origin", message: "Live sockets signed in with a session must come from the Cloud origin." };
   }
   const oauthScopes = c.get("oauthScopes");

@@ -319,7 +319,7 @@ suite("live routes", () => {
     }
   }, 60_000);
 
-  test("a missing or ended session, another origin, and an OAuth token without read are refused on the socket with 1008", async () => {
+  test("a missing or ended session, another origin, and an OAuth token without read are refused on the socket with 1008; no origin is served", async () => {
     const hal = await person("Hal Example");
     // Behind the gateway the browser never sees a refused handshake, only a retryable close.
     const refusal = async (headers: Record<string, string>) => {
@@ -336,7 +336,13 @@ suite("live routes", () => {
 
     expect(await refusal({ origin, ...address() })).toEqual(refused("login_required"));
     expect(await refusal({ ...hal.headers, origin: "https://elsewhere.example" })).toEqual(refused("forbidden_origin"));
-    expect(await refusal({ cookie: hal.headers.cookie, ...address() })).toEqual(refused("forbidden_origin"));
+    // Browsers always send Origin; a client without one (or a gateway from before it forwarded Origin) is served.
+    allow("no-origin", hal);
+    const withoutOrigin = await open(0, { cookie: hal.headers.cookie, ...address() });
+    withoutOrigin.sub("s", "item", { key: "no-origin" });
+    await until(() => withoutOrigin.of("s").length === 1);
+    expect(withoutOrigin.of("s")[0]?.t).toBe("ready");
+    withoutOrigin.socket.close();
 
     const clientId = `live-${crypto.randomUUID()}`;
     await sql`INSERT INTO oauth.clients (name, client_id, redirect_uris) VALUES ('Live test', ${clientId}, ARRAY['https://client.example/callback'])`;
