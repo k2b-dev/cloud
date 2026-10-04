@@ -5,7 +5,7 @@ section: Frontend
 order: 850
 description: Call typed application APIs and handle user-initiated writes consistently.
 tags: [browser, api, mutations]
-updated: 2026-08-10
+updated: 2026-10-04
 ---
 
 # Browser clients and mutations
@@ -36,6 +36,18 @@ export const inventoryApi = api.create<InventoryApi>({
 
 The client infers route parameters and request payloads. Check `response.ok`
 before reading success data.
+
+On a page of the [mobile app](/en/docs/frontend/mobile-app-pages), the client
+also keeps the app session alive. When a request answers `401`, the client
+renews the app session through Core and, once the phone has a valid session,
+sends the request once more. A `401` means that the server did not apply the
+request: the authentication middleware answers it before any route handler
+runs, and a route that answers `401` itself must do so before it changes
+anything, as described in
+[Return expected failures](/en/docs/server/services-and-results#return-expected-failures).
+The repeat therefore applies a change at most once. When the phone is no
+longer paired, the app opens its pairing view instead. On the web, a `401` is
+returned as it is.
 
 Do not use raw `fetch()` for an application JSON API when its typed route is
 available.

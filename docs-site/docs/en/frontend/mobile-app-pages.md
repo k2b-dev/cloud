@@ -149,6 +149,11 @@ sets `Referrer-Policy: no-referrer` and `frame-ancestors 'none'`. In the
 browser, it registers the app's service worker, shows an offline notice, and
 keeps the app session alive.
 
+App pages switch at once, without the cross-fade that web pages use between
+documents. A browser ignores taps while such a transition runs, so a quick
+second tap in the tab bar would be lost. A tapped tab shows as selected while
+its page loads, and a repeat tap on it does not start the load over.
+
 ### Only the app's session reaches a part
 
 Requests below `/pwa/`, except Core's `/pwa/_auth`, authenticate only with the
@@ -166,15 +171,12 @@ grants, as on the web.
 
 - Serve pages only below `/pwa/<app-id>`, each in `PwaLayout` with
   `ssr.pwaAccess`. Check resource permissions in services, as on the web.
-- Keep APIs at `/api/<app-id>` and reuse the typed browser clients. When an API
-  call answers `401`, the app session has ended; reload once so the page
-  request renews it or leads to pairing:
-
-  ```ts
-  import { reloadOnce } from "@k2b/cloud/browser/reload";
-
-  if (response.status === 401 && reloadOnce("pwa-auth")) return;
-  ```
+- Keep APIs at `/api/<app-id>` and call them through the typed browser
+  client from `api.create()`. On an app page it renews an ended app session
+  and repeats the request once, so a `401` that still reaches the part is
+  final, for example while offline. Treat it like any failed request; do not
+  reload the page. See
+  [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations#create-a-typed-client).
 
 - WebSocket and stream handlers take the credential from the auth middleware
   or from `await auth.session.resolveToken(c)`, never from a cookie by name.
@@ -225,7 +227,13 @@ connection returns.
 
 Parts have no offline mode of their own. Write actions need the network: keep
 the action available, report a failure in a toast with **Retry**, and never
-present an unsaved change as saved.
+leave an unsaved change looking saved. A quick, reversible action, such as
+checking off a task, may show its result at once with **Undo**. Send the changes
+to one item one after another, so the person's last choice is the one that
+stays. When the server refuses a change or cannot be reached, show the state
+the server kept and say why.
+Controls that the server renders before their island runs stay disabled until
+then, because a tap on them would do nothing.
 
 There is no update prompt. Each tab tap and each link loads a page from the
 network, so a new release of the part reaches the phone with the next page.
@@ -245,7 +253,8 @@ Cover the part at its own seams, as described in
 - **Render:** the page in `PwaLayout` with its views, empty states, and the
   data the person may see.
 - **Behavior:** at a phone width of 390 px in light and dark, every action
-  works by touch, a failed write offers **Retry**, and a `401` reloads once.
+  works by touch, and a failed write offers **Retry** and shows the state the
+  server kept.
 - **Safari:** run the behavior checks in WebKit with iPhone emulation, because
   iOS decides the status bar color and the zoom behavior.
 

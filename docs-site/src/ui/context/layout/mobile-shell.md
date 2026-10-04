@@ -111,10 +111,21 @@ browser, the shell measures the footer and watches the toast rail to keep the
 footer height and the toast padding current. It removes the footer
 height when it unmounts.
 
+The shell also answers taps on its links at once. It listens to touches, so iOS
+shows the pressed state of links and buttons. A link that loads a page of the
+same site is marked with `data-k2b-pending` until the next page replaces this
+one; the [TabBar](/en/ui/layout/tab-bar) shows its item as selected. A second
+tap on that link is ignored, because it would cancel the load and start it
+over. Any other tap ends the wait, also one on text without an action, so a
+load that stalls or a link that answers with a download can be tapped again
+after it. A touch that scrolls keeps the wait. Links with a modifier key, a
+`target`, a `download` attribute, another origin, or only a `#fragment` are
+left alone.
+
 A page that renders the shell on the server and hydrates only islands inside
 it calls `observeMobileShell(root)` once in the browser instead, with the
-shell's root element. It keeps the same measurements current and returns the
-cleanup:
+shell's root element. It keeps the same measurements and link taps working and
+returns the cleanup:
 
 ```ts
 import { observeMobileShell } from "@k2b/ui";

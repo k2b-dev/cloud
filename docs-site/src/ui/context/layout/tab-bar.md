@@ -36,6 +36,14 @@ const items: TabBarItem[] = [
 The bar is a set of links, not a tab widget: each item loads a page. The server
 marks the current item, so the bar never changes after hydration.
 
+A tap selects its item at once, before the next page arrives, as on a native
+tab bar: the item takes the current item's colour while it is pressed and while
+its page loads. When the load takes longer than a moment, the item's icon
+pulses. A second tap on the item does not start the load over. Pressed and
+loading change only colour and opacity, so nothing moves. The loading state and
+the ignored repeat tap come from the shell in the browser; see
+[MobileShell](/en/ui/layout/mobile-shell#runtime).
+
 ## Accessibility
 
 The bar is a `<nav>` landmark named by `label`, with a list of links. The open
@@ -46,7 +54,9 @@ decorative; the visible label is the accessible name. Each item is at least
 ## Runtime
 
 `TabBar` is plain server-rendered markup with native links and needs no
-hydration.
+hydration. Its loading state needs a mounted `MobileShell` or
+`observeMobileShell()`; without either, the links still work, with the
+pressed colour only.
 
 ## Example
 

@@ -99,6 +99,10 @@ describe("document head", () => {
       // Fonts, styles and the theme bootstrap stay shared with the web.
       expect(html).toContain('<link rel="stylesheet" href="/public/global.css?v=');
       expect(html).toContain("<style data-cloud-css-layers>");
+      // No cross-fade between app pages: it would swallow the next tap. Later than global.css, which turns it on.
+      expect(html.indexOf("<style data-cloud-app-navigation>@view-transition{navigation:none}</style>")).toBeGreaterThan(
+        html.indexOf("/public/global.css"),
+      );
     }
   });
 

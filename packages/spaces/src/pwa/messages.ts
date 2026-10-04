@@ -7,7 +7,6 @@ export const myTasksMessages = i18n.define({
     en: {
       tasks: "Tasks",
       complete: ({ title }: { title: string }) => `Mark “${title}” as done`,
-      completing: ({ title }: { title: string }) => `Marking “${title}” as done`,
       event: "Event",
       done: "Done",
       undo: "Undo",
@@ -24,7 +23,6 @@ export const myTasksMessages = i18n.define({
     de: {
       tasks: "Aufgaben",
       complete: ({ title }) => `„${title}“ als erledigt markieren`,
-      completing: ({ title }) => `„${title}“ wird als erledigt markiert`,
       event: "Termin",
       done: "Erledigt",
       undo: "Rückgängig",

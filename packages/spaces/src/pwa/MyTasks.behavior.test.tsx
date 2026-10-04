@@ -118,7 +118,7 @@ const toastAction = (dom: DomTestHarness, label: string) =>
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
-  test("checks a task off, keeps its button busy until the list is read again, and Undo reopens it", async () => {
+  test("checks a task off at once, reads the list again once the server saved it, and Undo reopens it", async () => {
     let finish: (response: Response) => void = () => {};
     let open = [flyer];
     const fetch = mockFetch((call) => {
@@ -137,28 +137,202 @@ else {
     const page = mount();
     try {
       checkButton(page.dom, "Order the tents")!.click();
+      // The row leaves and Done offers Undo before the server has answered.
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(toasts(page.dom).some((text) => text.includes("Done"))).toBe(true);
       await waitFor(() => fetch.calls.length === 1, "completion request");
       expect(fetch.calls[0]).toMatchObject({ method: "POST", path: COMPLETED, body: { completed: true } });
-      expect(checkButton(page.dom, "Order the tents")!.disabled).toBe(true);
-      expect(checkButton(page.dom, "Write the flyer")!.disabled).toBe(false);
-      // A second tap while the request runs sends nothing.
-      checkButton(page.dom, "Order the tents")!.click();
-      await Bun.sleep(20);
-      expect(fetch.calls).toHaveLength(1);
 
       finish(Response.json({}));
-      await waitFor(() => titles(page.dom).length === 1, "re-read list");
+      await waitFor(() => fetch.calls.length === 2 && !page.dom.root.querySelector("[aria-busy]"), "re-read list");
       expect(fetch.calls[1]).toMatchObject({ method: "GET", path: WORK, search: "?view=mine" });
       expect(titles(page.dom)).toEqual(["Write the flyer"]);
       expect(page.dom.root.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe("For me 1");
-      expect(toasts(page.dom).some((text) => text.includes("Done"))).toBe(true);
 
       toastAction(page.dom, "Undo")!.click();
-      await waitFor(() => titles(page.dom).length === 2, "reopened task");
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+      await waitFor(() => fetch.calls.length === 4, "reopened task");
       expect(fetch.calls.slice(2)).toMatchObject([
         { method: "POST", path: COMPLETED, body: { completed: false } },
         { method: "GET", path: WORK, search: "?view=mine" },
       ]);
+      await waitFor(() => !page.dom.root.querySelector("[aria-busy]"), "list read again");
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("Undo before the server answered reopens the task once it is saved", async () => {
+    let finish: (response: Response) => void = () => {};
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        if ((call.body as { completed: boolean }).completed === false) return Response.json({});
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      if (call.method === "GET" && call.path === WORK) return Response.json(snapshot("mine", [tents, flyer]));
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 1, "completion request");
+      toastAction(page.dom, "Undo")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+      finish(Response.json({}));
+      await waitFor(() => fetch.calls.length === 3, "reopened task");
+      expect(fetch.calls.map((call) => `${call.method} ${call.path} ${JSON.stringify(call.body ?? null)}`)).toEqual([
+        `POST ${COMPLETED} {"completed":true}`,
+        `POST ${COMPLETED} {"completed":false}`,
+        `GET ${WORK} null`,
+      ]);
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("checking a task off again after an early Undo keeps it done, with a single request", async () => {
+    let finish: (response: Response) => void = () => {};
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      if (call.method === "GET" && call.path === WORK) return Response.json(snapshot("mine", [flyer]));
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 1, "completion request");
+      toastAction(page.dom, "Undo")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+      checkButton(page.dom, "Order the tents")!.click();
+      // The second tap takes the row away at once, under a fresh Done.
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(toastAction(page.dom, "Undo")).toBeDefined();
+
+      finish(Response.json({}));
+      await waitFor(() => fetch.calls.length === 2 && !page.dom.root.querySelector("[aria-busy]"), "list read again");
+      await Bun.sleep(20);
+      // The person's last choice was done: no reopen follows the completion.
+      expect(fetch.calls.map((call) => `${call.method} ${call.path} ${JSON.stringify(call.body ?? null)}`)).toEqual([
+        `POST ${COMPLETED} {"completed":true}`,
+        `GET ${WORK} null`,
+      ]);
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a completion the server saved stays done when the list cannot be read", async () => {
+    const fetch = mockFetch((call) =>
+      call.method === "POST"
+        ? Response.json({})
+        : call.path === WORK
+          ? Response.json({ message: "Unavailable" }, { status: 503 })
+          : undefined,
+    );
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => toasts(page.dom).some((text) => text.includes("The list could not be updated.")), "refresh notice");
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(toastAction(page.dom, "Undo")).toBeDefined();
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("an Undo the server could not save leaves the task done and offers Retry", async () => {
+    let finish: (response: Response) => void = () => {};
+    let online = false;
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        if ((call.body as { completed: boolean }).completed) {
+          return new Promise<Response>((resolve) => {
+            finish = resolve;
+          });
+        }
+        return online ? Response.json({}) : "offline";
+      }
+      if (call.method === "GET" && call.path === WORK) return online ? Response.json(snapshot("mine", [tents, flyer])) : "offline";
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 1, "completion request");
+      toastAction(page.dom, "Undo")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+
+      // The completion is saved, the reopen is not: the task is done on the server, and the row says so.
+      finish(Response.json({}));
+      await waitFor(() => toastAction(page.dom, "Retry") !== undefined, "reopen Retry");
+      expect(toasts(page.dom)).toHaveLength(1);
+      expect(toasts(page.dom)[0]).toContain("“Order the tents” could not be reopened.");
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
+      expect(fetch.calls.map((call) => `${call.method} ${call.path} ${JSON.stringify(call.body ?? null)}`)).toEqual([
+        `POST ${COMPLETED} {"completed":true}`,
+        `POST ${COMPLETED} {"completed":false}`,
+      ]);
+
+      online = true;
+      toastAction(page.dom, "Retry")!.click();
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+      await waitFor(() => fetch.calls.length === 4 && !page.dom.root.querySelector("[aria-busy]"), "reopened task");
+      expect(fetch.calls.slice(2)).toMatchObject([
+        { method: "POST", path: COMPLETED, body: { completed: false } },
+        { method: "GET", path: WORK },
+      ]);
+      expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("Undo after switching the view brings the task back only in the view it left", async () => {
+    const band = task("Item09", "Book the band");
+    let finish: (response: Response) => void = () => {};
+    const fetch = mockFetch((call) => {
+      if (call.method === "POST" && call.path === COMPLETED) {
+        if ((call.body as { completed: boolean }).completed) return Response.json({});
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      if (call.method === "GET" && call.path === WORK) {
+        return call.search === "?view=upcoming" ? Response.json(snapshot("upcoming", [band])) : Response.json(snapshot("mine", [flyer]));
+      }
+      return undefined;
+    });
+    const page = mount();
+    try {
+      checkButton(page.dom, "Order the tents")!.click();
+      await waitFor(() => fetch.calls.length === 2 && !page.dom.root.querySelector("[aria-busy]"), "re-read list");
+      [...page.dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((radio) => radio.textContent?.startsWith("Upcoming"))!
+        .click();
+      await waitFor(() => titles(page.dom).includes("Book the band"), "upcoming work");
+
+      toastAction(page.dom, "Undo")!.click();
+      await waitFor(() => fetch.calls.length === 4, "reopen request");
+      expect(fetch.calls[3]).toMatchObject({ method: "POST", path: COMPLETED, body: { completed: false } });
+      expect(titles(page.dom)).toEqual(["Book the band"]);
+      finish(Response.json({}));
+      await waitFor(() => fetch.calls.length === 5 && !page.dom.root.querySelector("[aria-busy]"), "upcoming read again");
+      expect(fetch.calls[4]).toMatchObject({ method: "GET", path: WORK, search: "?view=upcoming" });
+      expect(titles(page.dom)).toEqual(["Book the band"]);
     } finally {
       page.dispose();
       fetch.restore();
@@ -183,10 +357,11 @@ else {
       const page = mount({ locale });
       try {
         checkButton(page.dom, "Order the tents")!.click();
-        await waitFor(() => toasts(page.dom).length === 1, "blocked notice");
-        expect(toasts(page.dom)[0]).toContain(message);
+        await waitFor(() => toasts(page.dom).some((text) => text.includes(message)), "blocked notice");
+        expect(toasts(page.dom)).toHaveLength(1);
         expect(toastAction(page.dom, locale === "de" ? "Erneut versuchen" : "Retry")).toBeUndefined();
-        await waitFor(() => !checkButton(page.dom, "Order the tents")!.disabled, "button free again");
+        await waitFor(() => checkButton(page.dom, "Order the tents") !== null, "row back");
+        expect(toasts(page.dom).some((text) => text.includes("Done"))).toBe(false);
         expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toEqual([`POST ${COMPLETED}`, `GET ${ITEM}`, `GET ${WORK}`]);
         expect(titles(page.dom)).toEqual(["Order the tents", "Write the flyer"]);
       } finally {
@@ -214,7 +389,8 @@ else {
     const page = mount();
     try {
       checkButton(page.dom, "Order the tents")!.click();
-      await waitFor(() => titles(page.dom).length === 1, "re-read list");
+      await waitFor(() => fetch.calls.length === 4, "re-read list");
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
       expect(fetch.calls).toMatchObject([
         { method: "POST", path: COMPLETED, body: { completed: true } },
         { method: "GET", path: ITEM },
@@ -244,7 +420,8 @@ else {
     const page = mount();
     try {
       checkButton(page.dom, "Order the tents")!.click();
-      await waitFor(() => toasts(page.dom).length === 1, "claimed notice");
+      await waitFor(() => toasts(page.dom).some((text) => text.includes("Jonas Beispiel")), "claimed notice");
+      expect(toasts(page.dom)).toHaveLength(1);
       expect(toasts(page.dom)[0]).toContain(
         "Jonas Beispiel is working on “Order the tents”. Take it over in Spaces on the web to finish it.",
       );
@@ -271,8 +448,11 @@ else {
       const page = mount();
       try {
         checkButton(page.dom, "Order the tents")!.click();
-        await waitFor(() => toasts(page.dom).length === 1 && titles(page.dom).length === after.length, `${status} notice`);
-        expect(toasts(page.dom)[0]).toContain(message);
+        await waitFor(
+          () => toasts(page.dom).some((text) => text.includes(message)) && titles(page.dom).length === after.length,
+          `${status} notice`,
+        );
+        expect(toasts(page.dom)).toHaveLength(1);
         expect(toastAction(page.dom, "Retry")).toBeUndefined();
         expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toEqual([`POST ${COMPLETED}`, `GET ${WORK}`]);
       } finally {
@@ -311,15 +491,29 @@ else {
     }
   });
 
-  test("reloads once when the app session has ended, so the page renews it or leads to pairing", async () => {
-    const fetch = mockFetch(() => Response.json({ message: "Authentication required" }, { status: 401 }));
+  test("renews an ended app session and still checks the task off, without reloading", async () => {
+    const answers: Answer[] = [Response.json({ message: "Authentication required" }, { status: 401 }), Response.json({})];
+    const fetch = mockFetch((call) =>
+      call.path === COMPLETED
+        ? answers.shift()
+        : call.path === "/pwa/_auth/session/renew"
+          ? Response.json({ renewed: false })
+          : call.path === WORK
+            ? Response.json(snapshot("mine", [flyer]))
+            : undefined,
+    );
     const page = mount();
     try {
       checkButton(page.dom, "Order the tents")!.click();
-      await waitFor(() => page.reloads === 1, "reload");
-      await Bun.sleep(20);
-      expect(toasts(page.dom)).toEqual([]);
-      expect(fetch.calls).toHaveLength(1);
+      await waitFor(() => fetch.calls.length === 4, "saved after renewal");
+      expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+        `POST ${COMPLETED}`,
+        "POST /pwa/_auth/session/renew",
+        `POST ${COMPLETED}`,
+        `GET ${WORK}`,
+      ]);
+      expect(page.reloads).toBe(0);
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
     } finally {
       page.dispose();
       fetch.restore();
@@ -335,13 +529,16 @@ else {
     try {
       checkButton(page.dom, "Order the tents")!.click();
       await waitFor(() => toastAction(page.dom, "Retry") !== undefined, "first Retry");
+      // The row is back and Done is gone: nothing unsaved looks saved.
+      expect(toasts(page.dom)).toHaveLength(1);
       expect(toasts(page.dom)[0]).toContain("“Order the tents” could not be marked as done.");
       expect(checkButton(page.dom, "Order the tents")!.disabled).toBe(false);
 
       toastAction(page.dom, "Retry")!.click();
       await waitFor(() => fetch.calls.length === 2 && toastAction(page.dom, "Retry") !== undefined, "offline Retry");
       toastAction(page.dom, "Retry")!.click();
-      await waitFor(() => titles(page.dom).length === 1, "saved on Retry");
+      await waitFor(() => fetch.calls.length === 4, "saved on Retry");
+      expect(titles(page.dom)).toEqual(["Write the flyer"]);
       expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toEqual([
         `POST ${COMPLETED}`,
         `POST ${COMPLETED}`,

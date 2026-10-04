@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { PWA_AUTH_PATH, PWA_SCOPE } from "./pwa-paths";
+
+export { PWA_AUTH_PATH, PWA_SCOPE };
 
 /**
  * The installable mobile app (preview). One shell application `pwa` owns the
@@ -6,8 +9,6 @@ import { z } from "zod";
  * `/pwa/_auth` and the web-side pairing API.
  */
 export const PWA_SHELL_APP_ID = "pwa";
-export const PWA_SCOPE = "/pwa/";
-export const PWA_AUTH_PATH = "/pwa/_auth";
 export const PWA_API_PATH = "/api/auth/pwa/v1";
 export const PWA_MANIFEST_PATH = "/pwa/manifest.webmanifest";
 export const PWA_SERVICE_WORKER_PATH = "/pwa/sw.js";

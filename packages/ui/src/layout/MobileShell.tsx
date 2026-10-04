@@ -39,15 +39,81 @@ const persistentToastInset = (body: HTMLElement): number => {
   return Math.max(0, Math.min(area.height, area.bottom - top));
 };
 
+/** Marks the link whose page is loading; the tab bar shows it as selected. */
+const PENDING = "data-k2b-pending";
+
+/** The link a click follows as a page load of this origin, or null when the click does something else. */
+const pageLink = (root: HTMLElement, event: MouseEvent): HTMLAnchorElement | null => {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null;
+  const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+  if (!link || !root.contains(link) || link.hasAttribute("download") || (link.target && link.target !== "_self")) return null;
+  const url = new URL(link.href);
+  if (url.origin !== location.origin) return null;
+  // A jump inside the page loads nothing.
+  if (url.hash && url.pathname === location.pathname && url.search === location.search) return null;
+  return link;
+};
+
 /**
- * Keeps a mounted shell's measurements current: the footer height on the body, which the portalled toast rail reads,
- * and the room a persistent toast takes from the scroll area. `MobileShell` calls it itself; a page that renders the
- * shell on the server without hydrating it calls it once in the browser. Returns the cleanup.
+ * Taps on the shell's links. iOS shows `:active` only while the page listens to touches, so a tap gets its pressed
+ * state at once. A link's page keeps loading while the old page stays visible; a second tap on it would cancel that
+ * load and start it over, so it is ignored. Returns the cleanup.
+ */
+const observeLinkTaps = (root: HTMLElement): (() => void) => {
+  let pending: string | undefined;
+  const clear = () => {
+    pending = undefined;
+    for (const link of root.querySelectorAll(`[${PENDING}]`)) link.removeAttribute(PENDING);
+  };
+  const touch = () => {};
+  // On the window, so it runs after every handler of the click, including delegated ones that prevent it.
+  const click = (event: MouseEvent) => {
+    const link = pageLink(root, event);
+    if (link && link.href === pending) {
+      event.preventDefault();
+      return;
+    }
+    // Any other tap ends the wait, also for a link that answered with a download instead of a page.
+    clear();
+    if (!link) return;
+    pending = link.href;
+    link.setAttribute(PENDING, "");
+  };
+  // iOS sends no click for a tap on content without an action, so the end of a tap anywhere else ends the wait as
+  // well. A touch that scrolls ends without a pointerup and keeps it.
+  const release = (event: PointerEvent) => {
+    if (pending === undefined) return;
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+    if (link?.href !== pending) clear();
+  };
+  // A page restored from the back/forward cache shows the state it was left in.
+  const show = (event: PageTransitionEvent) => {
+    if (event.persisted) clear();
+  };
+  document.addEventListener("touchstart", touch, { passive: true });
+  window.addEventListener("pointerup", release);
+  window.addEventListener("click", click);
+  window.addEventListener("pageshow", show);
+  return () => {
+    document.removeEventListener("touchstart", touch);
+    window.removeEventListener("pointerup", release);
+    window.removeEventListener("click", click);
+    window.removeEventListener("pageshow", show);
+    clear();
+  };
+};
+
+/**
+ * Keeps a mounted shell working: the footer height on the body, which the portalled toast rail reads, the room a
+ * persistent toast takes from the scroll area, and immediate feedback for link taps. `MobileShell` calls it itself;
+ * a page that renders the shell on the server without hydrating it calls it once in the browser. Returns the
+ * cleanup.
  */
 export function observeMobileShell(root: HTMLElement): () => void {
   const main = root.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__main");
   const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
   if (!main || !body) return () => {};
+  const stopLinkTaps = observeLinkTaps(root);
   let frame = 0;
   const measure = () => {
     frame = 0;
@@ -78,6 +144,7 @@ export function observeMobileShell(root: HTMLElement): () => void {
     mutations.disconnect();
     document.removeEventListener("transitionend", schedule, true);
     document.body.style.removeProperty(FOOTER_HEIGHT);
+    stopLinkTaps();
   };
 }
 

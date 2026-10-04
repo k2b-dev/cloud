@@ -149,6 +149,11 @@ describe("Spaces in the mobile app", () => {
       { title: "Write the flyer", space: "Summer fair", check: "Mark “Write the flyer” as done", when: null },
     ]);
     expect(document.querySelector(".spaces-pwa__when")?.hasAttribute("data-overdue")).toBe(true);
+    // A tap before the island runs would do nothing, so the buttons do not look ready until then.
+    expect([...document.querySelectorAll<HTMLButtonElement>("button.spaces-pwa__check")].map((button) => button.disabled)).toEqual([
+      true,
+      true,
+    ]);
   });
 
   test("shows today's events with their time range and without a check button", async () => {

@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { hc } from "hono/client";
+import { insideMobileApp, renewAppSession } from "../browser/app-session";
 
 export type CreateApiClientConfig = {
   baseUrl?: string;
@@ -10,9 +11,29 @@ export type CreateApiClientConfig = {
 // ==========================
 
 /**
- * Creates a typed Hono API client.
+ * A request from a page of the mobile app that answers `401` met an ended app session. The client renews it and sends
+ * the request once more, so the action is not lost. A `401` means the server applied nothing: the auth middleware
+ * answers it before any handler runs, and a route that answers `401` itself must do so before it changes anything.
  */
-export const createApiClient = <TApi extends Hono<any, any, any>>(config: CreateApiClientConfig = {}) => hc<TApi>(config.baseUrl ?? "/api");
+const fetchInMobileApp = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {
+  const response = await fetch(input, init);
+  if (response.status !== 401 || init?.body instanceof ReadableStream) return response;
+  // Also after a renewal that found the session current: another renewal on this page may have replaced the session
+  // after this request left with the old one.
+  if (!(await renewAppSession()).ok) return response;
+  return fetch(input, init);
+};
+
+// On the web, the client hands back fetch's own promise, so its answers arrive exactly as without the app session.
+const fetchWithAppSession = (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> =>
+  insideMobileApp() ? fetchInMobileApp(input, init) : fetch(input, init);
+
+/**
+ * Creates a typed Hono API client. On a page of the mobile app, it renews an expired app session and repeats the
+ * request once.
+ */
+export const createApiClient = <TApi extends Hono<any, any, any>>(config: CreateApiClientConfig = {}) =>
+  hc<TApi>(config.baseUrl ?? "/api", { fetch: fetchWithAppSession });
 
 /**
  * Untyped fallback API client for core-only browser code.
