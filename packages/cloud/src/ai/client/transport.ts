@@ -13,6 +13,38 @@ export type AiConversationStreamTransport = {
   }) => AiStreamHandle;
 };
 
+/**
+ * Why a conversation stream ended for good. The codes match the live
+ * WebSocket's turn errors and revocations.
+ */
+export type AiStreamErrorCode = "login_required" | "access_denied" | "not_found";
+
+/** A stream that will not recover by reconnecting; `message` comes from the server when it sent one. */
+export class AiStreamError extends Error {
+  readonly code: AiStreamErrorCode;
+
+  constructor(code: AiStreamErrorCode, message: string) {
+    super(message);
+    this.name = "AiStreamError";
+    this.code = code;
+  }
+}
+
+const TERMINAL_STATUS_CODES: Readonly<Record<number, AiStreamErrorCode>> = {
+  401: "login_required",
+  403: "access_denied",
+  404: "not_found",
+};
+
+const terminalStreamError = async (response: Response, code: AiStreamErrorCode): Promise<AiStreamError> => {
+  const body: unknown = await response.json().catch(() => null);
+  const message =
+    body && typeof body === "object" && "message" in body && typeof body.message === "string" && body.message
+      ? body.message
+      : `AI stream failed: ${response.status}`;
+  return new AiStreamError(code, message);
+};
+
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 10_000;
@@ -53,12 +85,15 @@ export async function* parseAiSse(response: Response, signal: AbortSignal): Asyn
 /**
  * Subscribe to a conversation's SSE stream with automatic reconnect. Each
  * (re)connect starts with a fresh `state` event, so the projection self-heals on
- * every reconnect without cursor bookkeeping.
+ * every reconnect without cursor bookkeeping. A 401, 403, or 404 cannot heal
+ * that way: the subscription stops and reports an `AiStreamError` once through
+ * `onError`, its only signal that the stream ended. Status stays where it was.
  */
 export const subscribeAiStream = (input: {
   url: string;
   onEvent: (event: AiStreamEvent) => void;
   onStatus?: (status: AiStreamConnectionStatus) => void;
+  onError?: (error: AiStreamError) => void;
   fetch?: AiStreamFetch;
 }): AiStreamHandle => {
   const fetchStream: AiStreamFetch = input.fetch ?? fetch;
@@ -80,8 +115,17 @@ export const subscribeAiStream = (input: {
       try {
         input.onStatus?.(reconnectDelay === RECONNECT_BASE_MS ? "connecting" : "reconnecting");
         const response = await fetchStream(input.url, { signal: attempt.signal, headers: { Accept: "text/event-stream" } });
-        clearConnectTimer();
         if (stopped) return;
+        const terminalCode = TERMINAL_STATUS_CODES[response.status];
+        if (terminalCode) {
+          // The connect timeout still bounds reading the error body.
+          const error = await terminalStreamError(response, terminalCode);
+          if (stopped) return;
+          stopped = true;
+          input.onError?.(error);
+          return;
+        }
+        clearConnectTimer();
         if (!response.ok || !response.body) throw new Error(`AI stream failed: ${response.status}`);
         input.onStatus?.("open");
         reconnectDelay = RECONNECT_BASE_MS;
@@ -113,5 +157,5 @@ export const subscribeAiStream = (input: {
 };
 
 export const aiSseConversationStreamTransport: AiConversationStreamTransport = {
-  subscribe: ({ url, onEvent, onStatus }) => subscribeAiStream({ url, onEvent, onStatus }),
+  subscribe: ({ url, onEvent, onStatus, onError }) => subscribeAiStream({ url, onEvent, onStatus, onError }),
 };

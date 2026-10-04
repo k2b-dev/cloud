@@ -242,6 +242,44 @@ const loadAuthenticatedActor = (
 };
 
 /**
+ * Re-checks the credential that admitted this request, past the per-request
+ * cache, for a response that outlives its request such as a stream. True while
+ * that credential still authenticates the same actor; pass the same
+ * `oauthAudience` the route admitted with. Invocation credentials are bound to
+ * one call and always fail.
+ */
+export const isRequestCredentialCurrent = async (
+  c: Context<AuthContext>,
+  options: Pick<RoleOptions, "oauthAudience"> = {},
+): Promise<boolean> => {
+  const actor = c.get("actor");
+  if (!actor) return false;
+  const credentialKind = c.get("credentialKind");
+  if (credentialKind === "session") {
+    const token = c.get("sessionToken");
+    if (!token || actor.kind !== "user") return false;
+    return (await session.authenticateUserId(token)) === actor.user.id;
+  }
+
+  const bearer = session.getBearerToken(c);
+  if (!bearer) return false;
+  if (credentialKind === "api_key") {
+    if (actor.kind !== "service_account") return false;
+    const current = await serviceAccountCredentials.authenticateApiToken(bearer);
+    if (current?.delegatedUser && isAccountExpired(current.delegatedUser.accountExpires)) return false;
+    return current?.credential.id === actor.credentialId;
+  }
+  if (credentialKind === "oauth") {
+    const expectedAudience = typeof options.oauthAudience === "function" ? await options.oauthAudience() : options.oauthAudience;
+    const current = await oauthTokens.verifyAccessToken(bearer, expectedAudience);
+    if (!current) return false;
+    if (current.kind === "user") return actor.kind === "user" && current.user.id === actor.user.id;
+    return actor.kind === "service_account" && current.serviceAccount.id === actor.serviceAccount.id;
+  }
+  return false;
+};
+
+/**
  * Universal auth middleware. Handles authentication AND authorization.
  *
  * @param args - Roles to check (OR logic) + optional RoleOptions at the end. Special roles:

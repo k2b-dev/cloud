@@ -1,15 +1,20 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { accounts } from "../services/accounts";
+import { serviceAccountCredentials } from "../services/service-account-credentials";
+import { session } from "../services/session/index";
 import { createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
 import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
+import type { AiStreamEvent } from "./protocol";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
+import { publishAiWireEvent } from "./stream";
 
 const suite = databaseSuite();
 
@@ -275,4 +280,179 @@ suite("global AI conversation boundaries", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+});
+
+type StreamReader = ReadableStreamDefaultReader<Uint8Array>;
+
+const readFirstEvent = async (reader: StreamReader): Promise<AiStreamEvent> => {
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("\n\n")) {
+    const next = await reader.read();
+    if (next.done) throw new Error("Stream ended before its first event");
+    text += decoder.decode(next.value, { stream: true });
+  }
+  const data = text
+    .slice(0, text.indexOf("\n\n"))
+    .split("\n")
+    .find((line) => line.startsWith("data:"));
+  return JSON.parse(data!.slice(5)) as AiStreamEvent;
+};
+
+/** Drains the stream until the server ends it or the deadline passes. */
+const readUntilClosed = async (reader: StreamReader, deadlineMs: number): Promise<{ closed: boolean; bytes: number }> => {
+  const deadline = Date.now() + deadlineMs;
+  let bytes = 0;
+  while (true) {
+    const remaining = deadline - Date.now();
+    const next = remaining > 0 ? await Promise.race([reader.read(), Bun.sleep(remaining).then(() => null)]) : null;
+    if (!next) {
+      await reader.cancel().catch(() => undefined);
+      return { closed: false, bytes };
+    }
+    if (next.done) return { closed: true, bytes };
+    bytes += next.value.byteLength;
+  }
+};
+
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("global AI conversation stream", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+
+  const openStream = (shortId: string, token: string, signal: AbortSignal) =>
+    aiRoutes.request(`/conversations/${shortId}/stream`, {
+      headers: { Accept: "text/event-stream", Cookie: `session_token=${token}` },
+      signal,
+    });
+
+  const openStreamWithBearer = (shortId: string, token: string, signal: AbortSignal) =>
+    aiRoutes.request(`/conversations/${shortId}/stream`, {
+      headers: { Accept: "text/event-stream", Authorization: `Bearer ${token}` },
+      signal,
+    });
+
+  test("ends an open stream once its session is revoked", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const abort = new AbortController();
+    try {
+      const response = await openStream(chat.shortId, token, abort.signal);
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      expect((await readFirstEvent(reader)).type).toBe("state");
+
+      await session.revoke(token);
+
+      // One revalidation interval (5 s) plus slack.
+      expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);
+      expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(401);
+    } finally {
+      abort.abort();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  }, 20_000);
+
+  test("ends an open stream once its API key is revoked", async () => {
+    const userId = await insertUser();
+    const user = await accounts.users.get({ id: userId });
+    if (!user) throw new Error("Missing fixture user");
+    const created = await serviceAccountCredentials.createUserApiToken({ user, name: "AI stream" });
+    if (!created.ok) throw new Error(created.error.message);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const abort = new AbortController();
+    try {
+      const response = await openStreamWithBearer(chat.shortId, created.data.token, abort.signal);
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      expect((await readFirstEvent(reader)).type).toBe("state");
+
+      const revoked = await serviceAccountCredentials.revokeForDelegatedUser({ credentialId: created.data.credential.id, user });
+      expect(revoked.ok).toBe(true);
+
+      expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);
+      expect((await openStreamWithBearer(chat.shortId, created.data.token, abort.signal)).status).toBe(401);
+    } finally {
+      abort.abort();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE delegated_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  }, 20_000);
+
+  test("ends an open stream once its conversation is archived", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const abort = new AbortController();
+    try {
+      const response = await openStream(chat.shortId, token, abort.signal);
+      expect(response.status).toBe(200);
+      const reader = response.body!.getReader();
+      expect((await readFirstEvent(reader)).type).toBe("state");
+
+      // The credential stays valid; only the conversation check can end this stream.
+      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: userId })).toBe(true);
+
+      expect((await readUntilClosed(reader, 10_000)).closed).toBe(true);
+      expect((await openStream(chat.shortId, token, abort.signal)).status).toBe(404);
+    } finally {
+      abort.abort();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  }, 20_000);
+
+  test("ends the stream instead of buffering without bound when the reader falls behind", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const abort = new AbortController();
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        runConfig: { kind: "chat", input: "hi", toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: "hi" }] },
+      });
+      const response = await openStream(chat.shortId, token, abort.signal);
+      const reader = response.body!.getReader();
+      const state = await readFirstEvent(reader);
+      if (state.type !== "state" || !state.activeTurn) throw new Error("Expected the queued turn in the snapshot");
+      const { attempt, seq } = state.activeTurn;
+
+      // 48 events of 200 KiB: about 9.4 MiB the reader never takes.
+      const delta = "x".repeat(200 * 1024);
+      const published = 48;
+      for (let i = 1; i <= published; i++) {
+        await publishAiWireEvent({
+          v: 1,
+          type: "block_delta",
+          conversationId: chat.id,
+          turnId: turn.id,
+          attempt,
+          seq: seq + i,
+          blockId: "text-1",
+          blockKind: "text",
+          delta,
+        });
+      }
+      await Bun.sleep(1_500);
+
+      const drained = await readUntilClosed(reader, 3_000);
+      expect(drained.closed).toBe(true);
+      // The 4 MiB bound plus the snapshot and the event that crossed it.
+      expect(drained.bytes).toBeLessThan(5 * 1024 * 1024);
+    } finally {
+      abort.abort();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  }, 20_000);
 });
