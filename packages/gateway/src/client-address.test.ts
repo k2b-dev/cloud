@@ -52,6 +52,29 @@ describe("client address", () => {
     expect(resolveClientAddress("2001:db8::1", "::1", trustedProxySet(["::1"]))?.address).toBe("2001:db8::1");
   });
 
+  test("gives every spelling of one address the same rate-limit key", () => {
+    for (const spelling of ["2001:DB8:0:0::1", "2001:db8:0000::0001", "2001:db8::1%eth0"]) {
+      expect(resolveClientAddress(spelling, "172.18.0.2", defaults)?.address).toBe("2001:db8::1");
+    }
+    for (const spelling of ["::ffff:cb00:710a", "0:0:0:0:0:ffff:203.0.113.10", "::FFFF:CB00:710A"]) {
+      expect(resolveClientAddress(spelling, "172.18.0.2", defaults)?.address).toBe("203.0.113.10");
+    }
+    expect(resolveClientAddress("fd00::1, 2001:db8::5", "0:0:0:0:0:ffff:ac12:2", defaults)).toEqual({
+      address: "2001:db8::5",
+      forwardedFor: "2001:db8::5, 172.18.0.2",
+    });
+  });
+
+  test("lets a client on a trusted network name itself until the list is narrowed to the proxy", () => {
+    // nginx appends with $proxy_add_x_forwarded_for; the LAN client prepended a forged entry.
+    const appended = "203.0.113.99, 192.168.1.20";
+    expect(resolveClientAddress(appended, "172.18.0.2", defaults)?.address).toBe("203.0.113.99");
+    expect(resolveClientAddress(appended, "172.18.0.2", trustedProxySet(["172.18.0.2"]))).toEqual({
+      address: "192.168.1.20",
+      forwardedFor: "192.168.1.20, 172.18.0.2",
+    });
+  });
+
   test("stops at a malformed hop and never forwards it", () => {
     for (const malformed of ["not-an-ip", "203.0.113.10:4711", "[2001:db8::1]", "unknown", "", "203.0.113.256"]) {
       expect(resolveClientAddress(malformed, "172.18.0.2", defaults)).toEqual({ address: "172.18.0.2", forwardedFor: "172.18.0.2" });

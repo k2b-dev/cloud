@@ -176,8 +176,10 @@ session user when one can be resolved. They fall back to the client IP.
 
 The client IP is the first `X-Forwarded-For` address, then `X-Real-IP`. The
 gateway sets both on every request and drops the client's own values, so an
-application behind the gateway can rely on them. It accepts an address named
-by a reverse proxy only from the proxies in `GATEWAY_TRUSTED_PROXIES`; see
+application behind the gateway can rely on them. It also removes `Forwarded`
+and `CF-Connecting-IP`, so no other header names a client. It accepts an
+address named by a reverse proxy only from the proxies in
+`GATEWAY_TRUSTED_PROXIES`; see
 [Pass client addresses through the reverse proxy](/en/docs/operations/deployment-requirements#pass-client-addresses-through-the-reverse-proxy).
 
 Both limits and window length are rounded down and kept at a minimum of `1`.

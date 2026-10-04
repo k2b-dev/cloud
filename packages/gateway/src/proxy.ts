@@ -154,6 +154,7 @@ export const proxyRequest = async (
     fwdHeaders.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
     // Apps read the client from these headers; only the gateway may set them.
     fwdHeaders.delete("CF-Connecting-IP");
+    fwdHeaders.delete("Forwarded");
     if (client) {
       fwdHeaders.set("X-Forwarded-For", client.forwardedFor);
       fwdHeaders.set("X-Real-IP", client.address);

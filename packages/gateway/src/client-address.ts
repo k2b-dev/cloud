@@ -46,16 +46,23 @@ export const trustedProxySet = (entries: readonly string[]): BlockList => {
   return set;
 };
 
-const IPV4_MAPPED = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i;
+const IPV4_MAPPED = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/;
 
-/** Canonical form of one address, or `null` when it is not a bare IP address (ports, brackets and names are rejected). */
+/**
+ * Canonical form of one address, so one client keeps one rate-limit key, or
+ * `null` when it is not a bare IP address (ports, brackets and names are
+ * rejected).
+ */
 const normalizeAddress = (value: string): string | null => {
   const version = isIP(value);
   if (version === 4) return value;
   if (version !== 6) return null;
-  // Bun reports IPv4 peers on a dual-stack socket as `::ffff:a.b.c.d`;
-  // forward the IPv4 form so one client keeps one rate-limit key.
-  return value.match(IPV4_MAPPED)?.[1] ?? value.toLowerCase();
+  // A zone names an interface on the writer's host, not part of the address.
+  const canonical = new URL(`http://[${value.split("%")[0]}]`).hostname.slice(1, -1);
+  // Bun reports IPv4 peers on a dual-stack socket in IPv4-mapped form.
+  const [, high, low] = canonical.match(IPV4_MAPPED) ?? [];
+  if (high === undefined || low === undefined) return canonical;
+  return [Number.parseInt(high, 16), Number.parseInt(low, 16)].flatMap((word) => [word >> 8, word & 255]).join(".");
 };
 
 const isTrusted = (trusted: BlockList, address: string): boolean => trusted.check(address, isIP(address) === 4 ? "ipv4" : "ipv6");
