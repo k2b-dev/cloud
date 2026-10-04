@@ -2440,6 +2440,7 @@ const specialistCommands = {
     "draft attachment": "Manage attachments on shared drafts",
     "draft lease": "Inspect and manage shared draft editor leases",
     "draft recovery": "Inspect and restore shared draft recovery copies",
+    "folder display": "Choose where a folder's mail appears",
     "folder role": "Manage semantic provider folder mappings",
     "identity transport": "Manage custom SMTP transports for identities",
     "mailbox deleted": "Inspect recoverable deleted mailboxes",
