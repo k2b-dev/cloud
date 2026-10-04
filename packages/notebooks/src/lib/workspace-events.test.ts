@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { NotebookWorkspaceEvent, NotebookWorkspaceInvalidationScope } from "./workspace-events";
-import { isPermissionInvalidation } from "./workspace-events";
+import { isPermissionInvalidation, toPublicWorkspaceEvent } from "./workspace-events";
 
 const invalidated = (scopes: NotebookWorkspaceInvalidationScope[]): NotebookWorkspaceEvent => ({
   v: 1,
@@ -46,5 +46,48 @@ describe("isPermissionInvalidation", () => {
         noteShortId: "note01",
       }),
     ).toBe(false);
+  });
+});
+
+describe("toPublicWorkspaceEvent", () => {
+  const reader = { notebookShortId: "book01", userId: "user-a" };
+
+  test("an event retained from before the slim format reaches readers without note text or notebook fields", () => {
+    const retainedNote = {
+      v: 1,
+      type: "note.updated",
+      notebookId: "nb-1",
+      note: { id: "n-1", shortId: "note01", historyIncomplete: true, title: "Secret", contentMd: "secret text", parentShortId: null },
+    } as NotebookWorkspaceEvent;
+    expect(toPublicWorkspaceEvent(retainedNote, reader)).toEqual({
+      v: 1,
+      type: "note.updated",
+      notebookId: "book01",
+      note: { id: "note01", historyIncomplete: true },
+    });
+    const retainedNotebook = { v: 1, type: "notebook.updated", notebookId: "nb-1", notebook: { name: "Secret" } } as NotebookWorkspaceEvent;
+    expect(toPublicWorkspaceEvent(retainedNotebook, reader)).toEqual({ v: 1, type: "notebook.updated", notebookId: "book01" });
+  });
+
+  test("a favorite reaches only the person who set it", () => {
+    const favorite: NotebookWorkspaceEvent = {
+      v: 1,
+      type: "note.favorite.changed",
+      notebookId: "nb-1",
+      noteId: "n-1",
+      shortId: "note01",
+      userId: "user-a",
+      favorite: true,
+    };
+    expect(toPublicWorkspaceEvent(favorite, reader)).toEqual({
+      v: 1,
+      type: "note.favorite.changed",
+      notebookId: "book01",
+      noteId: "note01",
+      userId: "user-a",
+      favorite: true,
+    });
+    expect(toPublicWorkspaceEvent(favorite, { ...reader, userId: "user-b" })).toBeNull();
+    expect(toPublicWorkspaceEvent(favorite, { ...reader, userId: null })).toBeNull();
   });
 });

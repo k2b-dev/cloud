@@ -1,22 +1,17 @@
 import { lazySync } from "@k2b/cloud";
-import { logger } from "@k2b/cloud/services";
+import { latestTopicCursor, logger } from "@k2b/cloud/services";
 import { sql } from "bun";
-import type {
-  NotebookWorkspaceEvent,
-  NotebookWorkspaceInvalidationScope,
-  NotebookWorkspaceNote,
-  NotebookWorkspaceNotebook,
-} from "../lib/workspace-events";
+import type { NotebookWorkspaceEvent, NotebookWorkspaceInvalidationScope } from "../lib/workspace-events";
 
 const log = logger("notebooks:workspace-events");
 type InvalidationReason = Extract<NotebookWorkspaceEvent, { type: "workspace.invalidated" }>["reason"];
 
-const TOPIC_PREFIX = "cloud:notebooks:events";
+const TOPIC_ID = "cloud:notebooks:events:workspace";
 const TOPIC_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 const workspaceTopic = lazySync((sync) =>
   sync.topic<NotebookWorkspaceEvent>({
-    id: `${TOPIC_PREFIX}:workspace`,
+    id: TOPIC_ID,
     retention: { maxAgeMs: TOPIC_RETENTION_MS, maxBytes: 256 * 1024 * 1024 },
     maxPayloadBytes: 68_096,
   }),
@@ -47,16 +42,12 @@ export const live = (config: { notebookId: string; after?: string | null; signal
       signal: config.signal,
     });
 
-export const latestCursor = (config: { notebookId: string }): Promise<string | null> =>
-  workspaceTopic().latestCursor({ tenantId: config.notebookId });
+/** Replay baseline for SSR; a notebook without events still gets the shared head. */
+export const latestCursor = (config: { notebookId: string }): Promise<string> =>
+  latestTopicCursor({ topic: workspaceTopic(), resourceId: TOPIC_ID, tenantId: config.notebookId });
 
-export const notebookUpdated = (notebook: NotebookWorkspaceNotebook): Promise<void> =>
-  publish({
-    v: 1,
-    type: "notebook.updated",
-    notebookId: notebook.id,
-    notebook,
-  });
+export const notebookUpdated = (notebook: { id: string }): Promise<void> =>
+  publish({ v: 1, type: "notebook.updated", notebookId: notebook.id, notebook: {} });
 
 const resolveNoteShortId = async (noteId: string | null): Promise<string | null> => {
   if (!noteId) return null;
@@ -66,24 +57,14 @@ const resolveNoteShortId = async (noteId: string | null): Promise<string | null>
   return row?.short_id ?? null;
 };
 
-export const noteCreated = async (note: NotebookWorkspaceNote): Promise<void> =>
-  publish(
-    {
-      v: 1,
-      type: "note.created",
-      notebookId: note.notebookId,
-      note: { ...note, parentShortId: await resolveNoteShortId(note.parentId) },
-    },
-    `note:${note.id}:created:${note.createdAt}`,
-  );
+type NoteHint = { id: string; shortId: string; notebookId: string; historyIncomplete?: boolean };
+const noteRef = (note: NoteHint) => ({ id: note.id, shortId: note.shortId, historyIncomplete: note.historyIncomplete });
 
-export const noteUpdated = async (note: NotebookWorkspaceNote): Promise<void> =>
-  publish({
-    v: 1,
-    type: "note.updated",
-    notebookId: note.notebookId,
-    note: { ...note, parentShortId: await resolveNoteShortId(note.parentId) },
-  });
+export const noteCreated = (note: NoteHint & { createdAt: string }): Promise<void> =>
+  publish({ v: 1, type: "note.created", notebookId: note.notebookId, note: noteRef(note) }, `note:${note.id}:created:${note.createdAt}`);
+
+export const noteUpdated = (note: NoteHint): Promise<void> =>
+  publish({ v: 1, type: "note.updated", notebookId: note.notebookId, note: noteRef(note) });
 
 export const noteDeleted = (config: { notebookId: string; noteId: string; shortId: string }): Promise<void> =>
   publish(
