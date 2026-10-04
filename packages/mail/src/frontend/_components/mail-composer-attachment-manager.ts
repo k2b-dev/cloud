@@ -123,7 +123,12 @@ export const createMailComposerAttachmentManager = (options: {
       const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["attachment-uploads"][":uploadId"].$delete({
         param: { mailboxId: options.mailboxId, draftId: upload.draftId, uploadId: upload.uploadId },
       });
-      if (!response.ok) throw new Error(await readApiError(response, t().cancelUploadFailed({ filename: upload.filename })));
+      // An upload this page found unfinished may have been completed or cancelled by the session that streamed
+      // it since the page loaded; then it no longer blocks sending and the entry only needs to go.
+      const endedElsewhere = upload.file === null && (response.status === 404 || response.status === 409);
+      if (!response.ok && !endedElsewhere) {
+        throw new Error(await readApiError(response, t().cancelUploadFailed({ filename: upload.filename })));
+      }
     }
     setUploads((current) => current.filter((entry) => !isEntry(upload)(entry)));
   };

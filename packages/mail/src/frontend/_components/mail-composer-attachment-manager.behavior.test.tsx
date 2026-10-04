@@ -48,16 +48,18 @@ describe("Mail composer attachments", () => {
   const originalFetch = globalThis.fetch;
   let dom: DomTestHarness;
   let requests: Array<{ method: string; url: string }>;
+  let respond: () => Response;
   let dispose = () => {};
 
   beforeEach(() => {
     dom = createDomTestHarness();
     requests = [];
+    respond = () => Response.json({ id: UPLOAD_ID, state: "cancelled" });
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         requests.push({ method: request.method, url: new URL(request.url).pathname });
-        return Response.json({ id: UPLOAD_ID, state: "cancelled" });
+        return respond();
       },
       { preconnect: originalFetch.preconnect },
     );
@@ -69,7 +71,7 @@ describe("Mail composer attachments", () => {
     dom.cleanup();
   });
 
-  test("an upload a closed tab left unfinished shows on reopening and can be cancelled, so it no longer blocks Send", async () => {
+  const mountWithUnfinishedUpload = async () => {
     const { createMailComposerAttachmentManager } = await import("./mail-composer-attachment-manager");
     const { createMailComposerTransition } = await import("./mail-composer-transition");
     const { default: MailComposerAttachments } = await import("./MailComposerAttachments");
@@ -105,20 +107,37 @@ describe("Mail composer attachments", () => {
       });
     }, dom.root);
 
+    return manager!;
+  };
+
+  test("an upload a closed tab left unfinished shows on reopening and can be cancelled, so it no longer blocks Send", async () => {
+    const manager = await mountWithUnfinishedUpload();
+
     // The composer blocks Send while any upload is listed, like the server does.
-    expect(manager!.uploads()).toHaveLength(1);
+    expect(manager.uploads()).toHaveLength(1);
     expect(dom.root.textContent).toContain("report.pdf");
     expect(dom.root.textContent).toContain("Upload not finished");
     // The file stayed in the closed tab, so the upload cannot be retried from here.
     expect(dom.root.querySelector('[aria-label="Retry report.pdf"]')).toBeNull();
 
     dom.root.querySelector<HTMLButtonElement>('[aria-label="Cancel report.pdf"]')!.click();
-    for (let i = 0; i < 50 && manager!.uploads().length > 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 50 && manager.uploads().length > 0; i++) await Bun.sleep(10);
 
     expect(requests).toEqual([
       { method: "DELETE", url: `/api/mail/mailboxes/${MAILBOX_ID}/drafts/${DRAFT_ID}/attachment-uploads/${UPLOAD_ID}` },
     ]);
-    expect(manager!.uploads()).toEqual([]);
+    expect(manager.uploads()).toEqual([]);
     expect(dom.root.textContent).not.toContain("report.pdf");
+  });
+
+  test("an unfinished upload that its own session finished meanwhile leaves the list on cancel instead of failing", async () => {
+    respond = () => Response.json({ code: "CONFLICT", message: "An attached upload cannot be cancelled" }, { status: 409 });
+    const manager = await mountWithUnfinishedUpload();
+
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Cancel report.pdf"]')!.click();
+    for (let i = 0; i < 50 && manager.uploads().length > 0; i++) await Bun.sleep(10);
+
+    expect(requests).toHaveLength(1);
+    expect(manager.uploads()).toEqual([]);
   });
 });

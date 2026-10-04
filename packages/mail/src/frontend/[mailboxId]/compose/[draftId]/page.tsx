@@ -39,7 +39,7 @@ export default ssr<AuthContext>(async (c) => {
     mailboxAccess.getMailboxPermission(context, mailboxId),
     senderIdentities.listSenderIdentities(context, mailboxId),
     drafts.getDraft(context, mailboxId, draftId),
-    draftUploads.listDraftAttachmentUploads({ context, mailboxId, draftId }),
+    draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
     calendarInvitations.composerIntegrationAvailable(),
   ]);
   if (!mailbox.ok) return ssr.error(c, mailbox.error.status);
@@ -70,9 +70,12 @@ export default ssr<AuthContext>(async (c) => {
         currentActor={currentActor}
         identities={publicData.identities}
         initialDraft={publicData.draft}
-        unfinishedUploads={(uploads.ok ? uploads.data : [])
-          .filter((upload) => upload.state === "uploading" || upload.state === "uploaded")
-          .map(({ id, filename, byteLength, receivedBytes }) => ({ id, filename, byteLength, receivedBytes }))}
+        unfinishedUploads={(uploads.ok ? uploads.data : []).map(({ id, filename, byteLength, receivedBytes }) => ({
+          id,
+          filename,
+          byteLength,
+          receivedBytes,
+        }))}
         initialPanes={initialPanes}
         returnHref={returnHref}
         popout={popout}
