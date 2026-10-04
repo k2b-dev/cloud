@@ -47,7 +47,9 @@ const setup = (upgrade = true) => {
   (globalThis as { WebSocket: unknown }).WebSocket = FakeUpstream;
   let data: GatewaySocket["data"] | null = null;
   const response = tryUpgradeWebSocket(
-    new Request("http://cloud.test/api/mail/ws", { headers: { Upgrade: "websocket", Cookie: "session_token=test" } }),
+    new Request("http://cloud.test/api/mail/ws", {
+      headers: { Upgrade: "websocket", Cookie: "session_token=test", Origin: "http://cloud.test", "X-Forwarded-For": "203.0.113.9" },
+    }),
     {
       upgrade: (_request, options) => {
         data = options?.data ?? null;
@@ -56,6 +58,7 @@ const setup = (upgrade = true) => {
     },
     buildRouteTable([{ prefix: "/api/mail", appId: "mail", baseUrl: "http://mail.test" }]),
     () => undefined,
+    { address: "198.51.100.7", forwardedFor: "198.51.100.7" },
   );
   return { response, data: () => data };
 };
@@ -98,6 +101,20 @@ describe("gateway WebSocket proxy", () => {
     expect(headers[0]).toMatchObject({ "X-Forwarded-For": "203.0.113.10, 172.18.0.2", "X-Real-IP": "203.0.113.10" });
     expect(headers[1]).not.toHaveProperty("X-Forwarded-For");
     expect(headers[1]).not.toHaveProperty("X-Real-IP");
+  });
+
+  test("forwards the credentials, the browser's origin, and the resolved client address to the application", () => {
+    setup();
+    expect(FakeUpstream.instances[0]!.options).toEqual({
+      headers: {
+        Cookie: "session_token=test",
+        Origin: "http://cloud.test",
+        "X-Forwarded-Host": "cloud.test",
+        "X-Forwarded-Proto": "http",
+        "X-Forwarded-For": "198.51.100.7",
+        "X-Real-IP": "198.51.100.7",
+      },
+    });
   });
 
   test.each([

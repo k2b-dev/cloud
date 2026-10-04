@@ -30,7 +30,8 @@ export type LiveWebSocketOptions<TMessage> = {
   url: string | (() => string);
   initialCursor?: string | null;
   activity?: LiveWebSocketActivity;
-  subscribe: (cursor: string | null) => unknown;
+  /** The subscription sent when a socket opens; omit it when `onOpen` sends the subscriptions. */
+  subscribe?: (cursor: string | null) => unknown;
   parse: (raw: string) => TMessage | null;
   onOpen?: (controls: LiveWebSocketControls) => void;
   onMessage: (message: TMessage, controls: LiveWebSocketControls) => void;
@@ -233,7 +234,8 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       clearConnectDeadline();
       try {
         subscribedCursor = lastAppliedCursor;
-        if (!send(options.subscribe(subscribedCursor))) throw new Error("Live WebSocket subscription could not be sent");
+        if (options.subscribe && !send(options.subscribe(subscribedCursor)))
+          throw new Error("Live WebSocket subscription could not be sent");
         setStatus("open");
         options.onOpen?.(controls);
       } catch (error) {

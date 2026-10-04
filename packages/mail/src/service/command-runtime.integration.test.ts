@@ -13,7 +13,7 @@ import { createActorCommand } from "./commands";
 import { imapSmtpConnector } from "./connectors";
 import { createMailbox } from "./mailboxes";
 import { createProviderConnection } from "./provider-connections";
-import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
+import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex, recordProviderReachable } from "./provider-operation-lock";
 
 const suite = suiteFor("database", "nats");
 
@@ -325,12 +325,22 @@ suite("mail command runtime provider safety", () => {
       deleted = true;
     });
     return {
+      state,
       remove,
       restore: () => {
         remove.mockRestore();
         state.mockRestore();
       },
     };
+  };
+
+  // Ends the pause of the mailbox's provider work that a timeout started, as IMAP push does when it
+  // reaches the provider again.
+  const endProviderPause = async (): Promise<void> => {
+    const [resource] = await sql<{ id: string }[]>`
+      SELECT remote_resource_id AS id FROM mail.provider_bindings WHERE id = ${bindingId}::uuid
+    `;
+    await recordProviderReachable(resource!.id);
   };
 
   const deleteCommand = async (messageId: string, key: string): Promise<string> => {
@@ -360,10 +370,14 @@ suite("mail command runtime provider safety", () => {
     try {
       const commandId = await deleteCommand(message.id, "unreachable-delete");
       // Neither failure reached the provider, so the delete waits for its next run instead of failing or needing attention.
-      for (let failure = 0; failure < 2; failure += 1) {
-        expect(await executeMutationCommand(commandId)).toBe("queued");
-        expect(await commandRow(commandId)).toEqual({ state: "queued", provider_effect_started_at: null });
-      }
+      expect(await executeMutationCommand(commandId)).toBe("queued");
+      expect(await commandRow(commandId)).toEqual({ state: "queued", provider_effect_started_at: null });
+      // The timeout paused the mailbox's provider work: a run during the pause does not try the provider.
+      expect(await executeMutationCommand(commandId)).toBe("queued");
+      expect(provider.state).toHaveBeenCalledTimes(1);
+      await endProviderPause();
+      expect(await executeMutationCommand(commandId)).toBe("queued");
+      expect(await commandRow(commandId)).toEqual({ state: "queued", provider_effect_started_at: null });
       expect(provider.remove).not.toHaveBeenCalled();
       expect(await executeMutationCommand(commandId)).toBe("confirmed");
       expect(provider.remove).toHaveBeenCalledTimes(1);
@@ -379,7 +393,11 @@ suite("mail command runtime provider safety", () => {
     try {
       const commandId = await deleteCommand(message.id, "unreachable-delete-exhausted");
       const states: (string | null)[] = [];
-      for (let run = 0; run < 5; run += 1) states.push(await executeMutationCommand(commandId));
+      for (let run = 0; run < 5; run += 1) {
+        states.push(await executeMutationCommand(commandId));
+        // Each run after the pause that the previous timeout started.
+        await endProviderPause();
+      }
       expect(states).toEqual(["queued", "queued", "queued", "queued", "failed"]);
       const [row] = await sql<{ attempt: number; last_error_code: string | null; provider_effect_started_at: Date | null }[]>`
         SELECT attempt, last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${commandId}::uuid

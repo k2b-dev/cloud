@@ -9,7 +9,7 @@ import { imapSmtpConnector } from "./connectors";
 import { EndpointPolicyError } from "./connectors/endpoint-policy";
 import { logDatabaseFailure } from "./database-errors";
 import { isTemporaryLoginFailure, providerErrorDetail } from "./provider-errors";
-import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
+import { providerBusy, recordProviderReachable, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
 type SqlClient = typeof sql;
 
@@ -562,7 +562,11 @@ export const replaceProviderConnection = async (params: {
         return ok({ connection, verification: verification.data });
       });
     });
-    return barrier.acquired ? barrier.value : fail(providerBusy("Provider work is still running; retry credential replacement shortly"));
+    if (!barrier.acquired) return fail(providerBusy("Provider work is still running; retry credential replacement shortly"));
+    // The provider answered the new connection's verification, so a pause after the old one timed out
+    // does not hold back the verification and syncs that follow.
+    if (barrier.value.ok) await Promise.all(resourceIds.map((resourceId) => recordProviderReachable(resourceId)));
+    return barrier.value;
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during credential verification; retry the operation"));

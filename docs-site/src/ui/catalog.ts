@@ -191,7 +191,12 @@ const portableSections = [
     pages: [
       page("blocks", "Notices and inline guidance", "ti ti-info-circle", "Persistent findings and quiet contextual guidance."),
       page("badges", "Status badges", "ti ti-status-change", "Semantic status presentation in chip, dot, and text forms."),
-      page("toast", "Toast", "ti ti-bell", "Scoped transient feedback with updates, actions, and dismissal."),
+      page(
+        "toast",
+        "Toast",
+        "ti ti-bell",
+        "Scoped transient feedback with updates, actions, and dismissal, plus screen-reader announcements.",
+      ),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
       page(
         "hover-preview",

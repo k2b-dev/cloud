@@ -126,9 +126,14 @@ export const tryUpgradeWebSocket = (
   if (cookie) forwardedHeaders.Cookie = cookie;
   const auth = req.headers.get("authorization");
   if (auth) forwardedHeaders.Authorization = auth;
+  // Applications refuse a session-authenticated socket from another origin.
+  const origin = req.headers.get("origin");
+  if (origin) forwardedHeaders.Origin = origin;
   forwardedHeaders["X-Forwarded-Host"] = url.host;
   forwardedHeaders["X-Forwarded-Proto"] = url.protocol.replace(":", "");
-  // Same client address as the HTTP proxy; the client's own headers never pass.
+  // Same client address as the HTTP proxy, so the application keys rate
+  // limits of bearer and anonymous sockets per client; the client's own
+  // headers never pass.
   if (client) {
     forwardedHeaders["X-Forwarded-For"] = client.forwardedFor;
     forwardedHeaders["X-Real-IP"] = client.address;

@@ -612,7 +612,7 @@ describe("@k2b/ui feedback runtime", () => {
     const { toast } = await import("../src/feedback/toast");
     dom.document.documentElement.setAttribute("lang", "de");
     toast.success("Kontakt erstellt", { action: { label: "Rückgängig", onClick: () => {} } });
-    const regions = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-toast-live] > *"));
+    const regions = Array.from(dom.document.querySelectorAll<HTMLElement>("[data-k2b-live] > *"));
     // Not atomic: each line is read on its own, not again with every later one.
     expect(
       regions.map((region) => [
@@ -651,6 +651,39 @@ describe("@k2b/ui feedback runtime", () => {
     await Bun.sleep(150);
     expect(regions[1]!.lastElementChild?.textContent).toBe("Fehler: Kontakte werden abgeglichen");
     dom.document.documentElement.removeAttribute("lang");
+    dom.cleanup();
+  });
+
+  test("announce writes to the same two regions as the toasts, without showing anything", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    const { announce } = await import("../src/feedback/announce");
+    const { toast } = await import("../src/feedback/toast");
+    const lines = (politeness: string) =>
+      Array.from(dom.document.querySelectorAll(`[data-k2b-live] [data-politeness="${politeness}"] > *`), (line) => line.textContent);
+
+    announce("Item completed");
+    // The same message twice is read twice; an empty one is not read at all.
+    announce("Item completed");
+    announce("");
+    announce("Could not reach the server", { politeness: "assertive" });
+    toast.success("Contact created");
+    // A focused control in its own scope, such as a menu, does not get regions of its own.
+    const scope = dom.document.createElement("div");
+    scope.className = "k2b-ui";
+    const control = dom.document.createElement("button");
+    scope.append(control);
+    dom.root.append(scope);
+    control.focus();
+    announce("Assigned to you");
+    await Bun.sleep(150);
+
+    expect(dom.document.querySelectorAll("[data-k2b-live]")).toHaveLength(1);
+    expect(dom.document.querySelectorAll('[role="status"], [role="alert"]')).toHaveLength(2);
+    expect(lines("polite")).toEqual(["Item completed", "Item completed", "Contact created", "Assigned to you"]);
+    expect(lines("assertive")).toEqual(["Could not reach the server"]);
+    // Only the toast is visible; an announcement adds nothing to the rail.
+    expect(dom.document.querySelectorAll("[data-k2b-toast]")).toHaveLength(1);
     dom.cleanup();
   });
 

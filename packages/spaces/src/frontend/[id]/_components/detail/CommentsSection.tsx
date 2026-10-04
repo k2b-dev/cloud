@@ -1,10 +1,10 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Avatar, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast } from "@k2b/ui";
+import { Avatar, announce, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
-import { announceStatus, createRetryToasts } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 
@@ -44,7 +44,7 @@ export default function CommentsSection(props: Props) {
     // The new comment appears in the list, and a screen reader is told because focus stays in the composer. A failure
     // stays under the composer, which keeps the draft.
     onSuccess: () => {
-      announceStatus(t.commentAdded);
+      announce(t.commentAdded);
       props.onUpdate();
     },
   });
@@ -61,7 +61,7 @@ export default function CommentsSection(props: Props) {
     },
     // The comment leaves the list together with the control that had focus, so a screen reader is told.
     onSuccess: () => {
-      announceStatus(t.commentDeleted);
+      announce(t.commentDeleted);
       props.onUpdate();
     },
     onError: (err) => toast.error(err.message),
@@ -78,7 +78,7 @@ export default function CommentsSection(props: Props) {
       await res.json();
     },
     onSuccess: () => {
-      announceStatus(t.commentUpdated);
+      announce(t.commentUpdated);
       props.onUpdate();
     },
     // The edit dialog has closed, so Retry saves the captured text again instead of losing it, and stays until closed.

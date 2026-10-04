@@ -75,6 +75,7 @@ export {
   getEffectiveGroupIds,
   getEffectiveGroups,
   getEffectivePermission,
+  getEffectivePermissions,
   hasPermission,
   images,
   isServiceError,

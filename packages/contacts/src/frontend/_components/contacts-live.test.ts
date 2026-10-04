@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  createContactsLiveApplyQueue,
   dispatchContactsLiveInvalidation,
   listenForContactsLiveInvalidation,
   requiresContactsResultsRefresh,
@@ -24,7 +23,6 @@ describe("Contacts live invalidation routing", () => {
   });
 
   test("refreshes the SSR shell for visibility and metadata changes", () => {
-    expect(requiresContactsShellRefresh({ type: "scope.changed" })).toBe(true);
     expect(requiresContactsShellRefresh({ type: "access.changed", bookId: BOOK_ID, at: AT })).toBe(true);
     expect(requiresContactsShellRefresh({ type: "tags.changed", bookId: BOOK_ID, at: AT })).toBe(true);
   });
@@ -101,19 +99,6 @@ describe("Contacts live invalidation routing", () => {
       await expect(
         dispatchContactsLiveInvalidation({ type: "contact.updated", bookId: BOOK_ID, contactId: CONTACT_ID, at: AT }, NO_SELECTION),
       ).rejects.toThrow("Contacts live results coverage is not ready");
-
-      const order: string[] = [];
-      const queue = createContactsLiveApplyQueue({
-        apply: (event) => dispatchContactsLiveInvalidation(event, NO_SELECTION),
-        onFailure: (error) => {
-          order.push(`failed:${error instanceof Error ? error.message : "unknown"}`);
-        },
-      });
-      await queue.enqueue({ type: "contact.updated", bookId: BOOK_ID, contactId: CONTACT_ID, at: AT }, "7-1", {
-        markApplied: (cursor) => order.push(`mark:${cursor}`),
-        terminate: () => order.push("terminated"),
-      });
-      expect(order).toEqual(["failed:Contacts live results coverage is not ready"]);
     } finally {
       stopDetail();
       (globalThis as unknown as { window: unknown }).window = originalWindow;
@@ -149,66 +134,5 @@ describe("Contacts live invalidation routing", () => {
     } finally {
       (globalThis as unknown as { window: unknown }).window = originalWindow;
     }
-  });
-
-  test("applies events serially and advances each cursor only after coverage", async () => {
-    const order: string[] = [];
-    let releaseFirst: (() => void) | undefined;
-    const firstCoverage = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    const queue = createContactsLiveApplyQueue({
-      apply: async (event) => {
-        order.push(`apply:${event.type}`);
-        if (event.type === "contact.updated") await firstCoverage;
-        order.push(`covered:${event.type}`);
-      },
-      onFailure: () => {
-        order.push("failed");
-      },
-    });
-    const controls = {
-      markApplied: (cursor: string) => order.push(`mark:${cursor}`),
-      terminate: () => order.push("terminated"),
-    };
-
-    const first = queue.enqueue({ type: "contact.updated", bookId: BOOK_ID, contactId: CONTACT_ID, at: AT }, "7-1", controls);
-    const second = queue.enqueue({ type: "notes.changed", bookId: BOOK_ID, contactId: CONTACT_ID, at: AT }, "7-2", controls);
-    await Promise.resolve();
-    expect(order).toEqual(["apply:contact.updated"]);
-
-    releaseFirst?.();
-    await Promise.all([first, second]);
-    expect(order).toEqual([
-      "apply:contact.updated",
-      "covered:contact.updated",
-      "mark:7-1",
-      "apply:notes.changed",
-      "covered:notes.changed",
-      "mark:7-2",
-    ]);
-  });
-
-  test("stops the queue without acknowledging the failing event or later events", async () => {
-    const order: string[] = [];
-    const queue = createContactsLiveApplyQueue({
-      apply: async (event) => {
-        order.push(`apply:${event.type}`);
-        throw new Error("coverage failed");
-      },
-      onFailure: (error) => {
-        order.push(`failed:${error instanceof Error ? error.message : "unknown"}`);
-      },
-    });
-    const controls = {
-      markApplied: (cursor: string) => order.push(`mark:${cursor}`),
-      terminate: () => order.push("terminated"),
-    };
-
-    const first = queue.enqueue({ type: "contact.updated", bookId: BOOK_ID, contactId: CONTACT_ID, at: AT }, "7-1", controls);
-    const second = queue.enqueue({ type: "notes.changed", bookId: BOOK_ID, contactId: CONTACT_ID, at: AT }, "7-2", controls);
-    await Promise.all([first, second]);
-
-    expect(order).toEqual(["apply:contact.updated", "failed:coverage failed"]);
   });
 });

@@ -4,7 +4,7 @@ import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, openSpotlightSearch, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -1466,8 +1466,9 @@ function MailWorkspaceView(props: {
       if (!response.ok) throw new Error(await readApiError(response, t().updateTagsFailed));
       const next = await response.json();
       if (abortSignal.aborted || disposed) return;
-      // The row and the details show the new tags, so the change needs no confirmation.
+      // The row and the details show the new tags; focus is back on the row, which does not say so.
       applyConversationTags(next);
+      announce(t().tagsUpdated);
     },
     onError: (error) => {
       void reconcileWorkspace()

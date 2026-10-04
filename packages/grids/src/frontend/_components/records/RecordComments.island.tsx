@@ -1,5 +1,18 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Button, DetailPanel, Discussion, IconButton, MarkdownView, prompts, TextInput, Tooltip, toast, useLocale } from "@k2b/ui";
+import {
+  Avatar,
+  announce,
+  Button,
+  DetailPanel,
+  Discussion,
+  IconButton,
+  MarkdownView,
+  prompts,
+  TextInput,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { PublicRecordComment as RecordComment } from "../../../api/public-dto";
 import { recordMessages } from "./messages";
@@ -92,7 +105,8 @@ export default function RecordComments(props: Props) {
     !comment.deletedAt &&
     Boolean(permissions().canModerate || (comment.authorUserId && comment.authorUserId === permissions().actorUserId));
 
-  // The new comment appears in the list; a failure stays under the composer, which keeps the draft.
+  // The new comment appears in the list and the composer closes, so a screen reader is told. A failure stays under the
+  // composer, which keeps the draft.
   const post = async (body: string): Promise<boolean> => {
     const normalized = body.trim();
     if (!normalized) return false;
@@ -121,6 +135,7 @@ export default function RecordComments(props: Props) {
       const created = (await response.json()) as RecordComment;
       setComments((current) => current.map((comment) => (comment.id === temporaryId ? created : comment)));
       setComposerOpen(false);
+      announce(t().commentPosted);
       return true;
     } catch (cause) {
       setComments((current) => current.filter((comment) => comment.id !== temporaryId));
@@ -142,7 +157,9 @@ export default function RecordComments(props: Props) {
       if (!response.ok) throw new Error(await responseError(response, t().commentUpdateFailed));
       const updated = (await response.json()) as RecordComment;
       setComments((current) => current.map((item) => (item.id === comment.id ? updated : item)));
+      // The edit form closes with the control that had focus, so a screen reader is told.
       setEditingId(null);
+      announce(t().commentUpdated);
     } catch (cause) {
       // The edit form stays open with the text, so the reason belongs under the field.
       setEditError(cause instanceof Error ? cause.message : t().commentUpdateFailed);
@@ -168,6 +185,8 @@ export default function RecordComments(props: Props) {
       setComments((current) =>
         current.map((item) => (item.id === comment.id ? { ...item, body: null, deletedAt: now, updatedAt: now } : item)),
       );
+      // The placeholder replaces the comment and its delete button, which had focus.
+      announce(t().commentDeleted);
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : t().commentDeleteFailed);
     } finally {

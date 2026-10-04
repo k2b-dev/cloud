@@ -1,6 +1,7 @@
 import { fileIcons } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
+  announce,
   Button,
   DetailPanel,
   Dropdown,
@@ -131,8 +132,11 @@ export default function RecordDocumentsSection(props: {
       if (!createRes.ok) throw new Error(await errorMessage(createRes, t().snapshotCreateFailed));
       return loadSnapshots();
     },
-    // The new snapshot appears in the list, so it needs no confirmation.
-    onSuccess: (items) => setSnapshots(items),
+    // The new snapshot appears in the list; the button was busy while it was created, so a screen reader is told.
+    onSuccess: (items) => {
+      setSnapshots(items);
+      announce(t().snapshotCreatedStatus);
+    },
     onError: (error) => toast.error(error.message),
   });
 

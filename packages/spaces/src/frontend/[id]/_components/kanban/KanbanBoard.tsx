@@ -8,7 +8,7 @@ import {
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
-import { Dropdown, IconButton, Tooltip, toast, useLocale } from "@k2b/ui";
+import { announce, Dropdown, IconButton, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
@@ -24,7 +24,7 @@ import {
 import { descriptionPreview } from "@/presentation/description-preview";
 import { spaceCommandMessages } from "../../../../commands";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
-import { announceStatus, createRetryToasts } from "../../../lib/feedback";
+import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import { defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
@@ -783,7 +783,7 @@ export default function KanbanBoard(props: Props) {
         toast(t.alreadyAssignedToYou);
         return;
       }
-      announceStatus(t.assignedToYou);
+      announce(t.assignedToYou);
       const refresh = (): void =>
         void invalidateSpacesData()
           .then(refocus)

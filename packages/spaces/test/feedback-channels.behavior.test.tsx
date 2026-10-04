@@ -36,10 +36,10 @@ const flush = async () => {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 10));
 };
-/** The lines the polite Spaces status region reads, once its announcement delay has passed. */
+/** The lines the shared polite status region of `@k2b/ui` reads, once its announcement delay has passed. */
 const announcements = async (document: Document) => {
   await new Promise((resolve) => setTimeout(resolve, 150));
-  return [...document.querySelectorAll("[data-spaces-status] > div")].map((line) => line.textContent);
+  return [...document.querySelectorAll('[data-k2b-live] [role="status"] > div')].map((line) => line.textContent);
 };
 
 let completionAnswers: Response[] = [];

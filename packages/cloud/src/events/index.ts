@@ -1,2 +1,2 @@
-export type { LiveUpdate } from "./live";
+export type { LiveChannel, LiveViewer } from "./live";
 export { defineLive } from "./live";

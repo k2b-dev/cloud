@@ -5,7 +5,7 @@ section: Frontend
 order: 900
 description: Test server-rendered pages, interactive islands, navigation, and application states.
 tags: [testing, frontend, accessibility]
-updated: 2026-08-10
+updated: 2026-10-04
 ---
 
 # Frontend testing
@@ -73,9 +73,10 @@ must not apply the rejected target. Cover rapid navigation and failed
 Cover:
 
 - subscribe from the SSR cursor;
+- a returning tab that loads nothing again;
 - reconnect from the last applied cursor;
 - duplicate events;
-- cursor overflow and snapshot reload;
+- `resync` and snapshot reload;
 - access revocation;
 - disposal on unmount.
 

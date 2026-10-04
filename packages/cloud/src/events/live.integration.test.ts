@@ -75,23 +75,22 @@ suiteFor("database", "nats")("live outbox", () => {
     }
     expect(await pending()).toEqual([]);
     expect(await publishedAfter(after)).toEqual([{ v: 1, k: "a", d: { n: 2 } }]);
-
-    const updates = live.subscribe({ after })[Symbol.asyncIterator]();
-    const first = await updates.next();
-    await updates.return(undefined);
-    expect(first.value).toMatchObject({ key: "a", data: { n: 2 } });
   });
 
-  test("a subscriber receives the schema output once, and data that does not survive JSON fails the write", async () => {
+  test("the topic carries the JSON input, and data that does not survive JSON fails the write", async () => {
     const transformed = defineLive({ appId: APP, event: z.object({ n: z.string().transform(Number) }) });
     const after = await transformed.cursor();
     await sql.begin((tx) => transformed.publish(tx, { key: "transform", data: { n: "42" } }));
-    expect((await pending()).map((row) => row.payload)).toEqual([{ v: 1, k: "transform", d: { n: "42" } }]);
+    await sql.begin((tx) => transformed.publish(tx, { key: "transform", access: true }));
+    expect((await pending()).map((row) => row.payload)).toEqual([
+      { v: 1, k: "transform", d: { n: "42" } },
+      { v: 1, k: "transform", a: true },
+    ]);
     await liveOutbox(APP, toTopic).reconcile();
-    const updates = transformed.subscribe({ after })[Symbol.asyncIterator]();
-    const first = await updates.next();
-    await updates.return(undefined);
-    expect(first.value).toMatchObject({ key: "transform", data: { n: 42 } });
+    expect(await publishedAfter(after)).toEqual([
+      { v: 1, k: "transform", d: { n: "42" } },
+      { v: 1, k: "transform", a: true },
+    ]);
 
     const dated = defineLive({ appId: APP, event: z.object({ at: z.date() }) });
     await expect(sql.begin((tx) => dated.publish(tx, { key: "date", data: { at: new Date() } }))).rejects.toThrow();
@@ -182,9 +181,6 @@ suiteFor("database", "nats")("live outbox", () => {
     await sql`SELECT events.enqueue(gen_random_uuid(), ${APP}, 'live', 'big', ${JSON.stringify({ v: 1, k: "big", d: "x".repeat(40_000) })}::text::jsonb)`;
     expect((await pending()).map((row) => row.payload)).toEqual([{ v: 1, k: "big", r: true }]);
     await liveOutbox(APP, toTopic).reconcile();
-    const updates = live.subscribe({ after })[Symbol.asyncIterator]();
-    const first = await updates.next();
-    await updates.return(undefined);
-    expect(first.value).toMatchObject({ key: "big", data: null });
+    expect(await publishedAfter(after)).toEqual([{ v: 1, k: "big", r: true }]);
   });
 });

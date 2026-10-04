@@ -3,15 +3,25 @@ title: Topics and live events
 navTitle: Topics and live events
 section: Automation
 order: 640
-description: Publish transient events to application processes and connected browsers.
+description: Publish retained events to consumers in application processes, and choose the right path for open tabs.
 tags: [topics, events, realtime]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Topics and live events
 
-Use a Sync topic for retained events, independent consumer groups, or live
-updates. Cloud owns the NATS connection; declare topics through `lazySync()`.
+Use a Sync topic for retained events that processes consume, replay, or
+resume from a cursor. Cloud owns the NATS connection; declare topics through
+`lazySync()`.
+
+Choose by who reads the event:
+
+| Reader | Use |
+| --- | --- |
+| The application's own open tabs, after a committed change | [Live updates](/en/docs/automation/live-updates): written in the transaction, served over the application's live socket, access checked at delivery |
+| Workers of this or another application, with retries and dead letters | A topic with a durable consumer (`process()`) |
+| A process that replays or follows history from a cursor | A topic with `replay()`, `follow()`, or `hub()` |
+| Presence, typing, or focus that may be lost | `sync.ephemeral`, not a topic |
 
 ## Publish an event
 
@@ -140,45 +150,33 @@ Reading `head()` first guarantees that the tenant has no event between
 `latest` and `head`. Refresh the stored cursors of idle tenants the same way
 before the window reaches them, for example in a periodic reconcile.
 
-## Stream live updates
+## Follow a topic in a process
 
-Use `live({ tenantId, signal })` for best-effort broadcast. It has no cursor or
-replay and filters the tenant on the server. It is suitable when missed events
-are harmless and the application can read canonical state again.
+`live({ tenantId, signal })` is a best-effort broadcast. It has no cursor or
+replay and filters the tenant on the server. Use it when missed events are
+harmless and the process can read canonical state again.
 
-For resumable browser streams, use a memoized hub:
+`hub({ tenantId })` shares one follower among the subscribers of a process,
+each with its own cursor, and retires it when the last subscriber leaves:
 
 ```ts
-const topic = inventoryEvents();
-const after = await topic.head();
-const snapshot = await loadAuthorizedSnapshot();
-sendSnapshot(snapshot);
-for await (const event of topic.hub().subscribe({ after, signal })) {
-  sendToBrowser(event);
+for await (const event of inventoryEvents().hub().subscribe({ after, signal })) {
+  await apply(event);
 }
 ```
 
-Capturing the cursor before the snapshot prevents writes during the snapshot
-read from disappearing. `head()` returns the newest cursor of the whole topic
-in one lookup, or `cursorAt(0)` when it is empty; use
-`latestCursor({ tenantId })` when the stream is filtered to one tenant.
-Deduplicate replayed changes against the snapshot.
-`hub().subscribe()` without `after` is live-only. Slow subscribers can receive
-`RetentionGapError` and must resynchronize.
+Read `after` with `head()` before loading the state the subscriber starts
+from, so a change made meanwhile is not lost. `head()` returns the newest
+cursor of the whole topic in one lookup, or `cursorAt(0)` when it is empty.
+`hub().subscribe()` without `after` is live-only. A subscriber that falls
+behind receives `RetentionGapError` and must read its state again.
 
-A hub shares one follower among local subscribers and retires it when the
-last subscriber leaves, so a connection ends its subscription rather than
-closing the hub. Pass `hub({ tenantId })` for per-entity streams. Replay,
-follow, and hubs filter the tenant on the server, and an idle follower keeps
-its position current while other tenants write.
+Do not stream committed changes to browsers from a topic. Updates that follow
+a database change belong in that change's transaction, and open tabs receive
+them through [Live updates](/en/docs/automation/live-updates), which also replays missed
+updates and checks each reader's access when it delivers. Publishing to a
+topic after the commit loses the update when the publish fails.
 
-Foreground Cloud notifications resume with these cursors. After an invalid or
+Foreground Cloud notifications resume with topic cursors. After an invalid or
 expired cursor, notifications reconnect from the current head. Saved
 notification history remains available.
-
-Use [Realtime UI](/en/docs/frontend/realtime-ui) for browser integration. Validate
-untrusted payloads at the application boundary.
-
-An update that follows a database change belongs in that change's transaction.
-Use [Live updates](/en/docs/automation/live-updates) instead of publishing to a
-topic after the commit, which loses the update when the publish fails.

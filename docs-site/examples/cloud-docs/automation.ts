@@ -1,5 +1,5 @@
 import { lazySync } from "@k2b/cloud";
-import { defineLive } from "@k2b/cloud/events";
+import { defineLive, type LiveViewer } from "@k2b/cloud/events";
 import { ratelimit } from "@k2b/cloud/server";
 import { defineWorkflowModule, type WorkflowBoundPlan, workflowAction } from "@k2b/cloud/workflows";
 import { bindWorkflow, compileWorkflow } from "@k2b/cloud/workflows/language";
@@ -286,13 +286,18 @@ export const changeQuantity = async (sql: SQL, input: { itemId: string; publicIt
   inventoryLive.wake();
 };
 
-export const forwardInventoryUpdates = async (
-  after: string,
-  signal: AbortSignal,
-  mayRead: (key: string) => Promise<boolean>,
-  send: (message: { cursor: string; event: { type: string; itemId: string } | null }) => void,
-) => {
-  for await (const update of inventoryLive.subscribe({ after, signal })) {
-    if (await mayRead(update.key)) send({ cursor: update.cursor, event: update.data });
-  }
-};
+/** The live socket of the application, mounted at `/api/inventory/live`. */
+export const inventoryLiveRoutes = (
+  warehouseIdFromPublicId: (warehouse: string) => Promise<string | null>,
+  readersOfWarehouse: (warehouseId: string, viewers: readonly LiveViewer[]) => Promise<ReadonlySet<string>>,
+) =>
+  inventoryLive.routes({
+    warehouse: {
+      scope: z.object({ warehouse: z.string() }).strict(),
+      keys: async ({ warehouse }: { warehouse: string }) => {
+        const id = await warehouseIdFromPublicId(warehouse);
+        return id ? [id] : null;
+      },
+      authorize: readersOfWarehouse,
+    },
+  });

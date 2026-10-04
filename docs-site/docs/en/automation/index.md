@@ -5,7 +5,7 @@ section: Automation
 order: 600
 description: Choose the smallest execution model that preserves the work and recovery guarantees you need.
 tags: [automation, jobs, workflows]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # Automation
@@ -26,8 +26,8 @@ idempotency, retention, and operational state that simple work does not need.
 | Run one durable task | NATS-backed and at least once; the handler must be idempotent | [Jobs](/en/docs/automation/jobs-and-queues#run-a-job) |
 | Control receive, leases, and dead letters | NATS-backed and at least once; the app settles each delivery | [Queues](/en/docs/automation/jobs-and-queues#use-a-queue) |
 | Run recurring work | Durable schedule state; occurrences may repeat during handover | [Schedulers](/en/docs/automation/schedulers) |
-| Replay events or update connected clients | Retained consumer stream or best-effort live fan-out | [Topics and live events](/en/docs/automation/topics-and-live-events) |
-| Tell the application's open tabs about a committed change | Written in the domain transaction; published at least once, in order per key | [Live updates](/en/docs/automation/live-updates) |
+| Replay or consume retained events in processes | Retained consumer stream, cursor replay, or best-effort broadcast | [Topics and live events](/en/docs/automation/topics-and-live-events) |
+| Tell the application's open tabs about a committed change | Written in the domain transaction; served over one socket per application, access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
 | Coordinate app instances briefly | Expiring NATS state, never the domain source of truth | [Coordination primitives](/en/docs/automation/coordination-primitives) |
 | Explain and recover a user-authored process | Immutable plan, durable run, outcomes, and effect journal | [Workflow overview](/en/docs/automation/workflow-overview) |
 
