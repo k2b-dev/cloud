@@ -9,6 +9,7 @@ import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
+import { isAggregatedListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../live-events";
 import { resolveMailSearchRoute } from "../search-state";
@@ -27,7 +28,7 @@ import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import { openMailRemoteContentRulesDialog } from "./_components/MailRemoteContentRulesDialog";
 import MailScheduledView from "./_components/MailScheduledView";
-import { observeMailUserPreferences } from "./_components/MailSettingsStore";
+import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
 import { openMailSubscriptionDialog } from "./_components/MailSubscriptionDialog";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
@@ -55,6 +56,7 @@ import { mergeMailCursorPage } from "./_components/mail-cursor-page";
 import { preserveUnavailableMailDetail } from "./_components/mail-detail-availability";
 import { reconcileConversationSummary } from "./_components/mail-details-reconciliation";
 import { createRetryToasts } from "./_components/mail-feedback";
+import { onlyInFolderFolders } from "./_components/mail-folder-tree";
 import { mailboxNeedsConnection } from "./_components/mail-health-presentation";
 import {
   type MailListOptimisticField,
@@ -141,6 +143,28 @@ function MailWorkspaceView(props: {
   const [conversationOpenIntent, setConversationOpenIntent] = createSignal(0);
   const mailboxId = props.data.mailbox.id;
   const userPreferences = createMemo(() => observeMailUserPreferences(mailboxId, props.initialUserPreferences));
+  // The views that mix folders name the first folder set to "Only in the folder" until this person dismisses it.
+  // The dismissals live in the preferences cookie, so the server renders the same hint and nothing moves on load.
+  const folderOnlyHint = createMemo(() => {
+    const aggregated =
+      !data.scheduledMode &&
+      !data.draftsMode &&
+      !data.query &&
+      activeSearch().expression === null &&
+      !data.savedViewId &&
+      isAggregatedListing(data.folderId, data.activeView);
+    if (!aggregated) return null;
+    const dismissed = new Set(userPreferences().dismissedFolderHints);
+    const folder = onlyInFolderFolders(data.folders).find((candidate) => !dismissed.has(candidate.id));
+    return folder ? { folder, dismiss: () => dismissFolderOnlyHint(folder.id) } : null;
+  });
+  const dismissFolderOnlyHint = (folderId: string) => {
+    // Only folders that still keep their mail inside stay listed, so the cookie stays as short as the folder list.
+    const current = new Set(onlyInFolderFolders(data.folders).map((folder) => folder.id));
+    writeMailUserPreferences(mailboxId, {
+      dismissedFolderHints: [...userPreferences().dismissedFolderHints.filter((id) => current.has(id) && id !== folderId), folderId],
+    });
+  };
   let preferenceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingPreferences: Partial<MailWorkspacePreferences> = {};
   let liveTransportTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1641,6 +1665,7 @@ function MailWorkspaceView(props: {
                     localTags={data.localTags}
                     savedViews={data.savedViews}
                     activeSavedViewId={data.savedViewId}
+                    folderOnlyHint={folderOnlyHint()}
                     listMode={data.listMode}
                     loading={routeLoading()}
                     liveDegraded={liveDegraded()}

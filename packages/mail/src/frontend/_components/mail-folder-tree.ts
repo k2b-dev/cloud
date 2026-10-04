@@ -35,3 +35,13 @@ export const excludeMailFolderTreeRoles = <T extends MailFolderView>(
     const children = excludeMailFolderTreeRoles(node.children, roles);
     return roles.has(node.folder.role) ? children : [{ folder: node.folder, children }];
   });
+
+/** Whether the folder itself is set to "Only in the folder", rather than inheriting it from a parent. */
+export const setsOnlyInFolder = (folder: MailFolderView): boolean =>
+  folder.effectiveDisplay === "folder_only" && folder.displayInheritedFromFolderId === null;
+
+/** The available folders set to "Only in the folder", in sidebar order: the folders the combined views can hint at. */
+export const onlyInFolderFolders = <T extends MailFolderView>(folders: readonly T[]): T[] =>
+  flattenMailFolderTree(buildMailFolderTree(folders))
+    .map(({ folder }) => folder)
+    .filter((folder) => folder.discoveryState === "active" && setsOnlyInFolder(folder));

@@ -1,11 +1,10 @@
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
-import type { ConversationView, FolderDisplay } from "../contracts";
-import { buildMailFolderTree, type MailFolderTreeEntry, type MailFolderTreeNode } from "../folder-tree";
+import type { FolderDisplay } from "../contracts";
+import { type InheritedFolderDisplay, inheritFolderDisplays } from "../folder-display-rules";
+import type { MailFolderTreeEntry } from "../folder-tree";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
-
-const STRICTNESS: Record<FolderDisplay, number> = { everywhere: 0, folder_only: 1, hidden: 2 };
 
 /**
  * Folders that hold copies of mail filed elsewhere, or mail on its way in or out: Sent, Drafts, Trash,
@@ -16,13 +15,6 @@ const STRICTNESS: Record<FolderDisplay, number> = { everywhere: 0, folder_only: 
  */
 const NEUTRAL_ROLES: ReadonlySet<string> = new Set(["sent", "drafts", "trash", "junk", "all"]);
 
-/**
- * The views that mix folders. A conversation leaves them, and their counts, when its mail lies only in
- * "folder only" or hidden folders. "Assigned to me" keeps it, because an assignment addresses one person;
- * "Send problems" keeps it, because a failed send must not disappear.
- */
-const AGGREGATED_VIEWS: readonly ConversationView[] = ["needs_action", "unassigned", "waiting", "done", "snoozed", "recently_active"];
-
 export type FolderDisplayEntry = MailFolderTreeEntry & {
   display: FolderDisplay;
   role: string;
@@ -30,11 +22,7 @@ export type FolderDisplayEntry = MailFolderTreeEntry & {
   providerCollection: boolean;
 };
 
-export type FolderDisplayState = {
-  /** The stricter of the folder's own display and the one it inherits from its parents. */
-  effectiveDisplay: FolderDisplay;
-  /** The parent whose stricter display applies to this folder, or null when its own display applies. */
-  displayInheritedFromFolderId: string | null;
+export type FolderDisplayState = InheritedFolderDisplay & {
   /** Whether the folder neither keeps nor removes conversations in the views that mix folders. */
   displayNeutral: boolean;
 };
@@ -50,26 +38,10 @@ const EMPTY_SCOPE: AggregatedViewScope = { isolatedFolderIds: [], countingFolder
 export const isDisplayNeutral = (folder: Pick<FolderDisplayEntry, "role" | "providerRole" | "providerCollection">): boolean =>
   folder.providerCollection || NEUTRAL_ROLES.has(folder.role) || NEUTRAL_ROLES.has(folder.providerRole);
 
-/** Each folder's effective display: a subfolder can be stricter than its parent, never looser. */
+/** Each folder's effective display, see `inheritFolderDisplays`, and whether it is neutral. */
 export const folderDisplayStates = (folders: readonly FolderDisplayEntry[]): Map<string, FolderDisplayState> => {
-  const states = new Map<string, FolderDisplayState>();
-  const visit = (
-    nodes: readonly MailFolderTreeNode<FolderDisplayEntry>[],
-    inherited: { display: FolderDisplay; folderId: string } | null,
-  ) => {
-    for (const { folder, children } of nodes) {
-      const inherits = inherited !== null && STRICTNESS[inherited.display] > STRICTNESS[folder.display];
-      const applied = inherits ? inherited : { display: folder.display, folderId: folder.id };
-      states.set(folder.id, {
-        effectiveDisplay: applied.display,
-        displayInheritedFromFolderId: inherits ? applied.folderId : null,
-        displayNeutral: isDisplayNeutral(folder),
-      });
-      visit(children, applied);
-    }
-  };
-  visit(buildMailFolderTree(folders), null);
-  return states;
+  const inherited = inheritFolderDisplays(folders);
+  return new Map(folders.map((folder) => [folder.id, { ...inherited.get(folder.id)!, displayNeutral: isDisplayNeutral(folder) }]));
 };
 
 /** Splits the folders that are not neutral into those that keep their mail inside and those that count everywhere. */
@@ -150,10 +122,6 @@ export const loadAggregatedViewScope = async (mailboxIds: readonly string[]): Pr
     ),
   );
 };
-
-/** Whether a listing mixes folders: no folder is open and the view is All mail or one of the work views above. */
-export const isAggregatedListing = (folderId: string | null, view: ConversationView | null): boolean =>
-  folderId === null && (view === null || AGGREGATED_VIEWS.includes(view));
 
 /**
  * Whether a conversation belongs in the views that mix folders: it leaves them only when one of its

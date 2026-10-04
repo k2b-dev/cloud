@@ -121,7 +121,7 @@ describe("Mailbox settings composition", () => {
     expect(html).not.toContain("Danger zone");
   });
 
-  test("names folders whose mail stays inside them, also when a parent decides it", () => {
+  test("shows the folders as one tree with each folder's display, inherited displays, and provider groups", () => {
     type AdminFolder = NonNullable<MailboxSettingsContext["admin"]>["folders"][number];
     const folder = (id: string, name: string, overrides: Partial<AdminFolder> = {}): AdminFolder => ({
       id,
@@ -152,13 +152,46 @@ describe("Mailbox settings composition", () => {
     });
     const html = renderSettings("admin", "folders", undefined, {
       folders: [
-        folder("Fold01", "Projects"),
-        folder("Fold02", "Shared", { display: "folder_only", effectiveDisplay: "folder_only" }),
-        folder("Fold03", "Team", { parentId: "Fold02", effectiveDisplay: "folder_only", displayInheritedFromFolderId: "Fold02" }),
+        folder("Fold01", "Inbox", { role: "inbox", providerRole: "inbox" }),
+        folder("Fold02", "Shared", { display: "folder_only", namespaceKinds: ["shared"] }),
+        folder("Fold03", "Team", { parentId: "Fold02", namespaceKinds: ["shared"] }),
+        folder("Fold04", "Important", { parentId: "Fold03", display: "hidden", namespaceKinds: ["shared"] }),
+        folder("Fold05", "Old project", { discoveryState: "missing" }),
+        folder("Fold09", "Archive", { subscribed: false }),
+        folder("Fold06", "[Gmail]", { selectable: false }),
+        folder("Fold07", "Important", { parentId: "Fold06", displayNeutral: true }),
+        folder("Fold08", "Sent Mail", { parentId: "Fold06", role: "sent", providerRole: "sent", displayNeutral: true }),
       ],
     });
+    const rows = [...html.matchAll(/aria-label="([^"]*)" type="button" class="k2b-dropdown__trigger mail-folder-tree__main/g)].map(
+      (match) => match[1],
+    );
 
-    expect(html.match(/Only in the folder/g)).toHaveLength(2);
-    expect(html.match(/>Visible</g)).toHaveLength(1);
+    expect(rows).toEqual([
+      "Inbox, Everywhere",
+      "Shared, Shared by provider, Only in the folder",
+      "Team, Shared by provider, Only in the folder, inherited from Shared",
+      "Important, in Shared / Team, Shared by provider, Hidden",
+      "Old project, Unavailable",
+      "Archive, Not subscribed, Everywhere",
+      "[Gmail], Folder group · 2 folders, Everywhere",
+      "Important, in [Gmail], Everywhere",
+      "Sent Mail, Everywhere",
+    ]);
+    // Groups read as headers: their folders start unindented, and the header counts them.
+    expect(html).toContain('data-group="" data-effective="everywhere"');
+    expect(html).toContain("Folder group · 2 folders");
+    expect(html.match(/style="--mail-folder-depth:0"/g)).toHaveLength(7);
+    // Subfolders are lists inside their folder, so assistive technology hears the hierarchy.
+    expect(html).toContain('aria-label="Subfolders of Shared"');
+    expect(html).toContain('aria-label="Subfolders of [Gmail]"');
+    // The default needs no words in the row; deviations and the inherited source do.
+    expect(html).toContain('data-kind="default"');
+    expect(html).toContain('<span class="mail-folder-tree__state-long">inherited from Shared</span>');
+    // The menu explains the three displays, how far a change reaches, and what a parent already decides.
+    expect(html).toContain("Where mail appears · also 2 subfolders");
+    expect(html).toContain("Set by “Shared”. Change it there.");
+    expect(html).toContain("Follows “Shared”. Looser choices are set there.");
+    expect(html).toContain("Not needed: this folder never decides what combined views show.");
   });
 });

@@ -139,4 +139,62 @@ describe("Mail sidebar", () => {
     expect(mailSection).toContain("Trash");
     expect(desktop).toContain("mail-compose-action");
   });
+
+  test("marks where Only in the folder is set and keeps the unread count beside it", () => {
+    const folder = (id: string, name: string, overrides: Partial<MailFolderView> = {}): MailFolderView => ({
+      id,
+      parentId: null,
+      name,
+      role: "other",
+      providerRole: "other",
+      configuredRole: null,
+      selectable: true,
+      display: "everywhere",
+      effectiveDisplay: "everywhere",
+      displayInheritedFromFolderId: null,
+      displayNeutral: false,
+      namespaceKinds: ["personal"],
+      discoveryState: "active",
+      missingSince: null,
+      syncStatus: "current",
+      total: 0,
+      unread: 0,
+      ...overrides,
+    });
+    const html = renderSidebar({
+      folders: [
+        folder("Fold01", "Newsletter", { display: "folder_only", effectiveDisplay: "folder_only", unread: 12 }),
+        folder("Fold02", "Shared", { display: "folder_only", effectiveDisplay: "folder_only" }),
+        folder("Fold03", "Projects", {
+          parentId: "Fold02",
+          effectiveDisplay: "folder_only",
+          displayInheritedFromFolderId: "Fold02",
+          unread: 2,
+        }),
+        folder("Fold04", "Customers", { unread: 3 }),
+      ],
+    });
+    const desktop = html.slice(html.indexOf('class="k2b-app-workspace__sidebar-desktop'));
+
+    expect(desktop.match(/data-mail-folder-only/g)).toHaveLength(2);
+    expect(desktop).toContain('title="Newsletter: only in the folder, not in combined views such as Needs action"');
+    expect(desktop).toContain('title="Shared: only in the folder, not in combined views such as Needs action"');
+    expect(desktop).toContain('title="Projects"');
+    expect(desktop).toContain('title="Customers"');
+    const newsletter = desktop.slice(desktop.indexOf('title="Newsletter'), desktop.indexOf('title="Shared'));
+    expect(newsletter).toContain('<span class="sr-only">Only in the folder</span>');
+    expect(newsletter).toContain("12");
+
+    // The phone navigation names it too, below the folder's name.
+    type Entry = { id: string; description?: string; children?: Entry[] };
+    const json = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1];
+    const flatten = (entries: Entry[]): Entry[] => entries.flatMap((entry) => [entry, ...flatten(entry.children ?? [])]);
+    const phone = flatten((JSON.parse(json ?? "{}") as { items: Entry[] }).items).filter((entry) => entry.id.startsWith("folder:"));
+    expect(Object.fromEntries(phone.map((entry) => [entry.id, entry.description ?? null]))).toEqual({
+      "folder:Fold01": "Only in the folder",
+      "folder:Fold02": "Only in the folder",
+      "folder:Fold03": null,
+      "folder:Fold04": null,
+    });
+  });
 });

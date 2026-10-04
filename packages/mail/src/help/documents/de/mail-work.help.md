@@ -48,11 +48,13 @@ Die integrierten Ansichten unter **Nachverfolgung** zeigen, was als Nächstes ge
 | Nachverfolgung | Erledigt | Als erledigt markierte Unterhaltungen |
 | Zuordnung | Mir zugewiesen | Dir zugewiesene Unterhaltungen |
 | Zuordnung | Nicht zugewiesen | Unterhaltungen ohne zuständige Person oder deren zuständige Person in diesem Postfach nicht mehr schreiben darf |
-| Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb und Junk |
+| Mail / Mehr | Alle E-Mails | E-Mails aus allen Anbieterordnern außer Papierkorb, Junk und Ordnern, deren E-Mails im Ordner bleiben |
 | Mehr | Letzte Aktivität | Kürzlich geänderte Unterhaltungen |
 | Mail | Geplant | Nachrichten, die auf eine spätere Zustellung warten |
 
 Anbieterordner bilden eine andere Ebene. Wenn du eine Unterhaltung in Archiv, Papierkorb, Junk oder einen anderen Anbieterordner verschiebst, ändert sich die entfernte Ablage. Die Änderung kann in anderen E-Mail-Programmen sichtbar sein. Wenn du eine Unterhaltung als **Erledigt** markierst, ändert sich nur der Cloud-Nachverfolgungsstatus. Die E-Mail wird weder archiviert noch verschoben.
+
+Ein Postfach-Administrator kann die E-Mails eines Ordners im Ordner halten, etwa bei einem geteilten Teamordner (**Nur im Ordner**). Seine Unterhaltungen fehlen dann in **Handlungsbedarf**, **Wartet auf Antwort**, **Später**, **Erledigt**, **Nicht zugewiesen**, **Alle E-Mails**, **Letzte Aktivität** und der Mail-Übersicht (**Alle Postfächer**) sowie in deren Zählern, außer eine Nachricht der Unterhaltung liegt auch in einem Ordner, dessen E-Mails überall erscheinen, etwa im Posteingang. Im Ordner selbst, in **Mir zugewiesen**, in der Suche und in gespeicherten Ansichten bleiben sie. In der Seitenleiste markiert ein kleines Ordnersymbol neben dem Zähler einen solchen Ordner; der Zähler zeigt weiterhin seine ungelesenen E-Mails. Auf dem Smartphone zeigt die Navigation **Nur im Ordner** unter dem Namen des Ordners. Solange eine dieser Ansichten die E-Mails eines Ordners auslässt, nennt ein Hinweis über der Liste den Ordner und öffnet ihn. Schließt du den Hinweis, bleibt er für diesen Ordner in diesem Browser geschlossen.
 
 Verwende **Wartet auf Antwort**, wenn der nächste Schritt deines Teams von einer anderen Person abhängt. Mail setzt diesen Status, nachdem der Versand einer menschlichen Antwort oder Antwort an alle bestätigt wurde. Das gilt auch für Antworten, die aus einem anderen E-Mail-Programm synchronisiert werden. Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder einer Uhrzeit abhängt. Bei **Wann soll die Unterhaltung wieder erscheinen?** wählst du den Zeitpunkt. Bis dahin liegt sie unter **Später** und bleibt aus aktiven Ansichten ausgeblendet, sofern nicht vorher eine neue E-Mail eingeht.
 

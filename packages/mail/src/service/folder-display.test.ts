@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { aggregatedViewScope, type FolderDisplayEntry, folderDisplayStates, isAggregatedListing } from "./folder-display";
+import { isAggregatedListing } from "../folder-display-rules";
+import { aggregatedViewScope, type FolderDisplayEntry, folderDisplayStates } from "./folder-display";
 
 const folder = (id: string, overrides: Partial<FolderDisplayEntry> = {}): FolderDisplayEntry => ({
   id,

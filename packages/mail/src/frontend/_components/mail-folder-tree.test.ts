@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildMailFolderTree, mailFolderPaths } from "../../folder-tree";
 import type { MailFolderView } from "../../service/messages";
-import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree } from "./mail-folder-tree";
+import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, onlyInFolderFolders } from "./mail-folder-tree";
 
 const folder = (id: string, overrides: Partial<MailFolderView> = {}): MailFolderView => ({
   id,
@@ -113,5 +113,18 @@ describe("Mail folder tree", () => {
       ["project", 0],
       ["customer", 1],
     ]);
+  });
+
+  test("names the folders set to Only in the folder in sidebar order, not the subfolders that inherit it", () => {
+    const folders = [
+      folder("projects", { display: "folder_only", effectiveDisplay: "folder_only" }),
+      folder("shared", { display: "folder_only", effectiveDisplay: "folder_only" }),
+      folder("team", { parentId: "shared", effectiveDisplay: "folder_only", displayInheritedFromFolderId: "shared" }),
+      folder("gone", { display: "folder_only", effectiveDisplay: "folder_only", discoveryState: "missing" }),
+      folder("archive", { display: "hidden", effectiveDisplay: "hidden" }),
+      folder("old", { parentId: "archive", display: "folder_only", effectiveDisplay: "hidden", displayInheritedFromFolderId: "archive" }),
+    ];
+
+    expect(onlyInFolderFolders(folders).map((entry) => entry.id)).toEqual(["projects", "shared"]);
   });
 });
