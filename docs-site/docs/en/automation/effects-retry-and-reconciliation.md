@@ -33,6 +33,14 @@ atomic journal guarantee.
 Idempotent external work must pass `ctx.effectKey` to the provider or its own
 deduplication store.
 
+A deduplication table can have more than one unique constraint, such as the
+key and the run, step, and recipient it stands for. Insert into such a table
+with `ON CONFLICT DO NOTHING` without a conflict target, then read the row by
+its key. With a target, two concurrent identical inserts can still fail with a
+unique violation on the other constraint. If the read finds no row, another
+key holds the other constraint. Treat that, and a row whose stored values
+differ from the request, as a conflict.
+
 When an idempotent action stores its result in its own database transaction,
 call `await ctx.heartbeat(tx)` on that transaction before writing. It checks
 the execution generation and cancellation state and locks the run until commit,
