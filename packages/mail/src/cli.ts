@@ -3794,7 +3794,7 @@ const specialistCommands = {
         }),
         hideInSidebar: flag.boolean({
           name: "hide-in-sidebar",
-          description: "Create without showing the folder in the Cloud Mail sidebar",
+          description: "Create the folder hidden: it leaves the sidebar, and mail filed only there leaves All mail and the work views",
         }),
         wait: flag.boolean({
           description: "Wait for provider confirmation and rediscovery",

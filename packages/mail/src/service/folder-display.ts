@@ -47,7 +47,7 @@ export type AggregatedViewScope = {
 
 const EMPTY_SCOPE: AggregatedViewScope = { isolatedFolderIds: [], countingFolderIds: [] };
 
-const isDisplayNeutral = (folder: Pick<FolderDisplayEntry, "role" | "providerRole" | "providerCollection">): boolean =>
+export const isDisplayNeutral = (folder: Pick<FolderDisplayEntry, "role" | "providerRole" | "providerCollection">): boolean =>
   folder.providerCollection || NEUTRAL_ROLES.has(folder.role) || NEUTRAL_ROLES.has(folder.providerRole);
 
 /** Each folder's effective display: a subfolder can be stricter than its parent, never looser. */
@@ -86,7 +86,7 @@ export const aggregatedViewScope = (folders: readonly FolderDisplayEntry[]): Agg
 };
 
 /** The folders of the mailboxes that `mailboxIds` selects, with what their display depends on. */
-const loadFolderDisplayEntries = async (db: typeof sql, mailboxIds: SqlFragment): Promise<FolderDisplayEntry[]> => {
+export const loadFolderDisplayEntries = async (db: typeof sql, mailboxIds: SqlFragment): Promise<FolderDisplayEntry[]> => {
   const rows = await db<
     {
       id: string;

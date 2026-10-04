@@ -20,26 +20,29 @@ the agent tools that list them; search and saved views still find it. See
 [Mail](/en/apps/mail#choose-where-a-folders-mail-appears).
 
 Folders that were hidden from the sidebar keep their mail out of those views
-from now on, including folders Mail hid on discovery because they were not
-subscribed. Set such a folder to `everywhere` if its mail should appear there
-again. Gmail's All Mail, Important, and Starred never decide where mail
-appears, so hiding them changes nothing.
+from now on, including folders older versions hid on discovery because they
+were not subscribed. Set such a folder to `everywhere` if its mail should appear
+there again. Newly discovered folders now always start as `everywhere`, also
+when the account does not subscribe to them, so new shared folders and an
+unsubscribed INBOX keep their mail in the views.
 
-The first Mail start after this update replaces `mail.folders.show_in_sidebar`
-with `mail.folders.display` (a shown folder becomes `everywhere`, a hidden one
-`hidden`) and adds `mail.folders.provider_collection`, which the next folder
-discovery fills. Replace every Mail replica together: an older replica fails
-folder reads once a newer one has migrated. To roll back to an older image,
-first run:
+Gmail's All Mail, Important, and Starred never decide where mail appears, so
+hiding them changes nothing. Mail recognizes Important and Starred at its next
+folder discovery, which runs for every connected mailbox within 15 minutes of
+the first start. Until then a hidden Important or Starred folder keeps
+conversations that lie only there and in All Mail out of the views.
 
-```sql
-ALTER TABLE mail.folders ADD COLUMN show_in_sidebar boolean DEFAULT true NOT NULL;
-UPDATE mail.folders SET show_in_sidebar = display <> 'hidden';
-ALTER TABLE mail.folders DROP COLUMN display, DROP COLUMN provider_collection;
-```
+The first Mail start after this update adds `mail.folders.display`, filled from
+`mail.folders.show_in_sidebar` (a shown folder becomes `everywhere`, a hidden
+one `hidden`), and `mail.folders.provider_collection`. `show_in_sidebar` stays
+and Mail keeps it current, so replicas can be replaced one by one and an older
+image runs on the database without SQL. An older image shows `folder_only`
+folders like `everywhere` ones and keeps every conversation in the views; its
+own sidebar changes reach the newer version only through `show_in_sidebar`, not
+the display. A later release drops `show_in_sidebar`.
 
-A rollback shows `folder_only` folders in the sidebar again and loses that
-setting.
+`showInSidebar: false` in the `create_folder` command and
+`cld mail folder create --hide-in-sidebar` now create a `hidden` folder.
 
 | Old | New |
 | --- | --- |

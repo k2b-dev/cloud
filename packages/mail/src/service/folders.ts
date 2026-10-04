@@ -126,8 +126,20 @@ export const setFolderDisplay = async (params: {
         FOR UPDATE OF folder
       `;
       if (!folder) return fail(err.notFound("Mail folder"));
+      if (display.data === "folder_only" && (await loadFolderDisplayState(params.mailboxId, folder.id, tx)).displayNeutral) {
+        return fail(
+          err.badInput(
+            "Sent, Drafts, Trash, Junk and provider collections such as All Mail never decide where mail appears, so they cannot keep it inside the folder",
+          ),
+        );
+      }
       if (folder.previous !== display.data) {
-        await tx`UPDATE mail.folders SET display = ${display.data}, updated_at = now() WHERE id = ${folder.id}::uuid`;
+        // show_in_sidebar stays current until a later release drops it, so an older Mail image still reads hidden folders.
+        await tx`
+          UPDATE mail.folders
+          SET display = ${display.data}, show_in_sidebar = ${display.data !== "hidden"}, updated_at = now()
+          WHERE id = ${folder.id}::uuid
+        `;
       }
       const state = await loadFolderDisplayState(params.mailboxId, folder.id, tx);
       const change: FolderDisplayChange = {

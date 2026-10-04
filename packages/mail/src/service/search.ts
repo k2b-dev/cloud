@@ -11,7 +11,13 @@ import { sha256Json } from "./canonical";
 import { isUnassignedConversation, type LapsedAssignee, listLapsedAssignees } from "./collaborators";
 import { hasSendProblem } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
-import { type AggregatedViewScope, loadAggregatedViewScope, staysInAggregatedViews } from "./folder-display";
+import {
+  type AggregatedViewScope,
+  isDisplayNeutral,
+  loadAggregatedViewScope,
+  loadFolderDisplayEntries,
+  staysInAggregatedViews,
+} from "./folder-display";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
 const log = logger("mail:search");
@@ -49,7 +55,10 @@ export type MessageSearchHit = {
   revision: number;
   updatedAt: string;
   sourceFolderId: string | null;
-  /** The source folder's full path, such as `Shared / Support`, so a result shows where its mail lies. */
+  /**
+   * The full path, such as `Shared / Support`, of the one folder the result's mail is filed in, ignoring
+   * Sent, Drafts, Trash, Junk and provider collections; null when it lies in several such folders.
+   */
   folderPath: string | null;
   unreadFolderIds: string[];
   rank: number;
@@ -728,7 +737,19 @@ const parseStringRows = (value: unknown[] | string): string[] => {
 const participantLabelsSchema = z.array(z.string().trim().min(1));
 const parseParticipantLabels = (value: unknown[] | string): string[] => participantLabelsSchema.parse(parseStringRows(value));
 
-const mapHit = (row: DbSearchHit, folderPaths: ReadonlyMap<string, string>): MessageSearchHit => ({
+type ResultFolders = { paths: ReadonlyMap<string, string>; neutral: ReadonlySet<string> };
+
+/**
+ * The folder a result's mail is filed in: its one folder that is not neutral, so Gmail's All Mail or
+ * one's own reply in Sent does not hide where a conversation lies; otherwise its only folder.
+ */
+const resultFolderPath = (folderIds: readonly string[], folders: ResultFolders): string | null => {
+  const filed = folderIds.filter((id) => !folders.neutral.has(id));
+  const folderId = filed.length === 1 ? filed[0] : folderIds.length === 1 ? folderIds[0] : undefined;
+  return folderId ? (folders.paths.get(folderId) ?? null) : null;
+};
+
+const mapHit = (row: DbSearchHit, folders: ResultFolders): MessageSearchHit => ({
   id: row.id,
   conversationId: row.conversation_id,
   primaryReference: row.primary_reference,
@@ -766,7 +787,7 @@ const mapHit = (row: DbSearchHit, folderPaths: ReadonlyMap<string, string>): Mes
   revision: Number(row.revision),
   updatedAt: (row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)).toISOString(),
   sourceFolderId: row.source_folder_id,
-  folderPath: row.source_folder_id ? (folderPaths.get(row.source_folder_id) ?? null) : null,
+  folderPath: resultFolderPath(parseStringRows(row.active_folder_ids), folders),
   unreadFolderIds: parseStringRows(row.unread_folder_ids),
   rank: Number(row.rank),
 });
@@ -1400,18 +1421,11 @@ const searchesUnassigned = (expression: MailSearchExpression): boolean => {
   return expression.type === "assignee" && expression.userId === null;
 };
 
-/** Full folder paths of one mailbox, the way the folder list shows them. */
-const loadFolderPaths = async (mailboxId: string): Promise<Map<string, string>> =>
-  mailFolderPaths(
-    (
-      await sql<{ id: string; parent_id: string | null; name: string }[]>`
-        SELECT folder.id, folder.parent_id, folder.name
-        FROM mail.folders folder
-        JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
-        WHERE resource.mailbox_id = ${mailboxId}::uuid
-      `
-    ).map((row) => ({ id: row.id, parentId: row.parent_id, name: row.name })),
-  );
+/** Full folder paths of one mailbox, the way the folder list shows them, and its neutral folders. */
+const loadResultFolders = async (mailboxId: string): Promise<ResultFolders> => {
+  const entries = await loadFolderDisplayEntries(sql, sql`${mailboxId}::uuid`);
+  return { paths: mailFolderPaths(entries), neutral: new Set(entries.filter(isDisplayNeutral).map((entry) => entry.id)) };
+};
 
 export const searchMessages = async (params: {
   context: MailRequestContext;
@@ -1476,8 +1490,8 @@ export const searchMessages = async (params: {
   backend = execution.data.backend;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const folderPaths = pageRows.some((row) => row.source_folder_id) ? await loadFolderPaths(params.mailboxId) : new Map<string, string>();
-  const items = pageRows.map((row) => mapHit(row, folderPaths));
+  const folders = pageRows.length > 0 ? await loadResultFolders(params.mailboxId) : { paths: new Map(), neutral: new Set<string>() };
+  const items = pageRows.map((row) => mapHit(row, folders));
   const last = items.at(-1);
   const lastRow = pageRows.at(-1);
   return ok({

@@ -3560,7 +3560,7 @@ const actionDefinitions = {
   "folder.display.set": {
     title: "Set where a folder's mail appears",
     description:
-      "Set a folder's display for everyone in one mailbox; requires mailbox administration. folder_only keeps the folder's conversations out of All mail, the work views except Assigned to me, their counts, and conversation.focus unless a message also lies in an everywhere folder; hidden also hides the folder. Subfolders inherit the stricter setting. Search still finds everything.",
+      "Set a folder's display for everyone in one mailbox; requires mailbox administration. folder_only keeps the folder's conversations out of All mail, the work views except Assigned to me, their counts, and conversation.focus unless a message also lies in an everywhere folder; hidden also hides the folder. Subfolders inherit the stricter setting. Sent, Drafts, Trash, Junk and provider collections (displayNeutral in folder.list) cannot be folder_only. Search still finds everything.",
     input: c.FolderDisplaySetInputSchema,
     data: c.FolderDisplayDataSchema,
     destructive: false,

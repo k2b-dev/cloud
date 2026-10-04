@@ -45,10 +45,18 @@ const context = (permission: MailboxSettingsContext["permission"], options: { sp
   admin: permission === "admin" ? { accessEntries: [], bindings: [], connections: [], folders: [], identities: [] } : null,
 });
 
-const renderSettings = (permission: MailboxSettingsContext["permission"], initialTab?: string, options?: { spacesCalendar?: boolean }) =>
+const renderSettings = (
+  permission: MailboxSettingsContext["permission"],
+  initialTab?: string,
+  options?: { spacesCalendar?: boolean },
+  admin?: Partial<NonNullable<MailboxSettingsContext["admin"]>>,
+) =>
   renderToString(() =>
     createComponent(MailboxSettings, {
-      context: context(permission, options),
+      context: (() => {
+        const value = context(permission, options);
+        return value.admin && admin ? { ...value, admin: { ...value.admin, ...admin } } : value;
+      })(),
       initialTab,
       currentUserEmail: "user@example.test",
       reloading: false,
@@ -111,5 +119,46 @@ describe("Mailbox settings composition", () => {
     expect(html).not.toContain("Compose");
     expect(html).not.toContain("Accounts &amp; identities");
     expect(html).not.toContain("Danger zone");
+  });
+
+  test("names folders whose mail stays inside them, also when a parent decides it", () => {
+    type AdminFolder = NonNullable<MailboxSettingsContext["admin"]>["folders"][number];
+    const folder = (id: string, name: string, overrides: Partial<AdminFolder> = {}): AdminFolder => ({
+      id,
+      parentId: null,
+      name,
+      role: "other",
+      providerRole: "other",
+      configuredRole: null,
+      selectable: true,
+      display: "everywhere",
+      effectiveDisplay: "everywhere",
+      displayInheritedFromFolderId: null,
+      displayNeutral: false,
+      namespaceKinds: ["personal"],
+      discoveryState: "active",
+      missingSince: null,
+      syncStatus: "current",
+      total: 0,
+      unread: 0,
+      subscribed: true,
+      rightsSource: "acl",
+      effectiveRights: [],
+      canCreateChildren: false,
+      canRename: false,
+      canDelete: false,
+      canManageSubscription: false,
+      ...overrides,
+    });
+    const html = renderSettings("admin", "folders", undefined, {
+      folders: [
+        folder("Fold01", "Projects"),
+        folder("Fold02", "Shared", { display: "folder_only", effectiveDisplay: "folder_only" }),
+        folder("Fold03", "Team", { parentId: "Fold02", effectiveDisplay: "folder_only", displayInheritedFromFolderId: "Fold02" }),
+      ],
+    });
+
+    expect(html.match(/Only in the folder/g)).toHaveLength(2);
+    expect(html.match(/>Visible</g)).toHaveLength(1);
   });
 });

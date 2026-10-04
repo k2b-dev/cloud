@@ -362,7 +362,9 @@ const upsertProjectedFolder = async (params: {
       ${params.folder.providerCollection},
       ${params.folder.selectable},
       ${readable},
-      ${!params.folder.selectable || params.folder.subscribed ? "everywhere" : "hidden"},
+      -- A new folder shows its mail everywhere, subscribed or not: a hidden one would keep its mail
+      -- out of All mail and the work views, and unsubscribed shared folders and even INBOX are common.
+      'everywhere',
       ${params.discoveryGeneration},
       'active',
       ${readable ? "pending" : "excluded"}

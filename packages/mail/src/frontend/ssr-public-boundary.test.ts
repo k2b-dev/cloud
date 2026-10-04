@@ -20,6 +20,7 @@ const ids = {
   attachment: "00000000-0000-4000-8000-000000000004",
   automation: "00000000-0000-4000-8000-000000000005",
   folder: "00000000-0000-4000-8000-000000000006",
+  childFolder: "00000000-0000-4000-8000-000000000007",
 };
 const shorts = new Map([
   [ids.mailbox, "Box001"],
@@ -28,6 +29,7 @@ const shorts = new Map([
   [ids.attachment, "Attach"],
   [ids.automation, "Auto01"],
   [ids.folder, "Fold01"],
+  [ids.childFolder, "Fold02"],
 ]);
 const loadIds = async (_table: string, values: Array<string | null | undefined>) =>
   new Map(values.flatMap((id) => (id && shorts.has(id) ? [[id, shorts.get(id)!] as const] : [])));
@@ -127,7 +129,10 @@ describe("Mail SSR public boundary", () => {
   test("projects workspace selection and nested list IDs", async () => {
     const data = {
       mailbox: { id: ids.mailbox },
-      folders: [],
+      folders: [
+        { id: ids.folder, parentId: null, displayInheritedFromFolderId: null },
+        { id: ids.childFolder, parentId: ids.folder, displayInheritedFromFolderId: ids.folder },
+      ],
       identities: [],
       savedViewId: null,
       savedViews: [],
@@ -165,6 +170,8 @@ describe("Mail SSR public boundary", () => {
     const projected = await projectMailboxPageData(data, loadIds);
     expect(projected.mailbox.id).toBe("Box001");
     expect(projected.selectedConversationId).toBe("Conv01");
+    // A subfolder names the parent whose display it inherits by the same public ID as its parent.
+    expect(projected.folders[1]).toMatchObject({ id: "Fold02", parentId: "Fold01", displayInheritedFromFolderId: "Fold01" });
     expect(projected.listItems[0]).toMatchObject({ id: "Conv01", conversationId: "Conv01" });
     expect(projected.activity[0]).toMatchObject({
       conversationId: "Conv01",

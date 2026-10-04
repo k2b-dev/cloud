@@ -352,6 +352,27 @@ suite("mail folder display", () => {
     });
     await setDisplay(imap, "private", "hidden");
     await setDisplay(gmail, "label", "folder_only");
+    // An older Mail image reads the sidebar switch, which follows the display.
+    const [privateSwitch] = await sql<{ show_in_sidebar: boolean }[]>`
+      SELECT show_in_sidebar FROM mail.folders WHERE id = ${imap.folders.private!}::uuid
+    `;
+    expect(privateSwitch).toEqual({ show_in_sidebar: false });
+
+    // Sent and the provider's collections never decide where mail appears, so they cannot keep it inside.
+    for (const [mailbox, folder] of [
+      [imap, "sent"],
+      [gmail, "all"],
+      [gmail, "important"],
+    ] as const) {
+      const neutral = await setFolderDisplay({
+        context: owner,
+        mailboxId: mailbox.mailboxId,
+        folderId: mailbox.folders[folder]!,
+        display: "folder_only",
+      });
+      expect(neutral.ok, folder).toBe(false);
+      if (!neutral.ok) expect(neutral.error.code).toBe("BAD_INPUT");
+    }
 
     const folders = await listFolders(reader, imap.mailboxId);
     if (!folders.ok) throw new Error(folders.error.message);
@@ -465,6 +486,37 @@ suite("mail folder display", () => {
     });
     if (!everything.ok) throw new Error(everything.error.message);
     expect(subjectsOf(everything.data.items.map((item) => item.conversationId!))).toEqual(IMAP_ALL);
+
+    // The path names the one folder a result is filed in; Sent, Trash and Gmail's collections do not count.
+    const paths = async (mailbox: Fixture, groupByConversation: boolean) => {
+      const found = await searchMessages({
+        context: owner,
+        mailboxId: mailbox.mailboxId,
+        request: { expression: { type: "all" }, sort: "newest", limit: 50 },
+        groupByConversation,
+      });
+      if (!found.ok) throw new Error(found.error.message);
+      const bySubject = new Map(Object.entries(conversations).map(([subject, id]) => [id, subject]));
+      return found.data.items.map((item) => [bySubject.get(item.conversationId!), item.folderPath]).sort();
+    };
+    expect(Object.fromEntries(await paths(imap, true))).toMatchObject({
+      team: "Shared / Team",
+      "shared and sent": "Shared",
+      "shared and trash": "Shared",
+      "shared and inbox": null,
+      inbox: "INBOX",
+    });
+    expect(Object.fromEntries(await paths(gmail, true))).toEqual({
+      "gmail label": "Shared",
+      "gmail label and own reply": "Shared",
+      "gmail inbox and label": null,
+      "gmail label then inbox": null,
+    });
+    // Message by message, a label shows through All Mail; one's own reply lies only in neutral folders.
+    expect((await paths(gmail, false)).filter(([subject]) => subject === "gmail label and own reply")).toEqual([
+      ["gmail label and own reply", null],
+      ["gmail label and own reply", "Shared"],
+    ]);
   });
 
   test("leaves them out of the cross-mailbox overview except where they are assigned to the person", async () => {

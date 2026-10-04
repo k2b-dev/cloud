@@ -782,7 +782,7 @@ suite("mail lifecycle control plane", () => {
   test("rediscovery projects ACL rights and conservatively reconciles rename and removal", async () => {
     const verify = spyOn(imapSmtpConnector, "verify").mockResolvedValue(fixtureVerification());
     const discover = spyOn(imapSmtpConnector, "discoverFolders").mockResolvedValue([
-      remoteFolder("INBOX", "10", "inbox"),
+      { ...remoteFolder("INBOX", "10", "inbox"), subscribed: false },
       { ...remoteFolder("Projects", "20"), subscribed: false },
     ]);
     try {
@@ -801,23 +801,27 @@ suite("mail lifecycle control plane", () => {
       `;
       inboxFolderId = inbox!.id;
       inboxFolderShortId = inbox!.id;
-      const [project] = await sql<{ id: string; display: string; subscribed: boolean }[]>`
-        SELECT folder.id, folder.display, ref.subscribed
+      const discoveredFolders = await sql<{ id: string; remote_path: string; display: string; subscribed: boolean }[]>`
+        SELECT folder.id, ref.remote_path, folder.display, ref.subscribed
         FROM mail.folders folder
         JOIN mail.binding_folder_refs ref ON ref.folder_id = folder.id
-        WHERE ref.binding_id = ${bindingId}::uuid AND ref.remote_path = 'Projects'
+        WHERE ref.binding_id = ${bindingId}::uuid
+        ORDER BY ref.remote_path
       `;
-      expect(project).toMatchObject({
-        display: "hidden",
-        subscribed: false,
-      });
-      const visibleProject = await setFolderDisplay({
+      // New folders show their mail everywhere, subscribed or not; hiding one would also keep its mail
+      // out of All mail and the work views.
+      expect(discoveredFolders.map(({ remote_path, display, subscribed }) => ({ remote_path, display, subscribed }))).toEqual([
+        { remote_path: "INBOX", display: "everywhere", subscribed: false },
+        { remote_path: "Projects", display: "everywhere", subscribed: false },
+      ]);
+      const project = discoveredFolders.find((folder) => folder.remote_path === "Projects");
+      const keptProject = await setFolderDisplay({
         context: adminContext,
         mailboxId,
         folderId: project!.id,
-        display: "everywhere",
+        display: "folder_only",
       });
-      expect(visibleProject.ok).toBe(true);
+      expect(keptProject.ok).toBe(true);
 
       discover.mockResolvedValue([remoteFolder("INBOX", "10", "inbox"), remoteFolder("Clients", "20")]);
       const renamed = await rediscoverProviderBinding({ bindingId });
@@ -832,7 +836,7 @@ suite("mail lifecycle control plane", () => {
         id: project!.id,
         rights_source: "acl",
         namespace_kind: "personal",
-        display: "everywhere",
+        display: "folder_only",
       });
 
       discover.mockResolvedValue([remoteFolder("INBOX", "10", "inbox"), remoteFolder("Active", "20"), remoteFolder("Clients", "40")]);

@@ -69,7 +69,7 @@ suite("mail baseline schema", () => {
     expect(shape).toEqual({ table_exists: true, claim_index_exists: true, versions: 1 });
   });
 
-  test("turns each folder's sidebar switch into its display, and the rollback restores the switch", async () => {
+  test("turns each folder's sidebar switch into its display once, and keeps the switch for an older image", async () => {
     await migrate();
     const [mailbox] = await sql<{ id: string }[]>`
       INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Folder display migration') RETURNING id
@@ -80,50 +80,44 @@ suite("mail baseline schema", () => {
         VALUES (${mailbox!.id}::uuid, '{}'::jsonb, '{}'::jsonb, ${"d".repeat(64)}, 'active')
         RETURNING id
       `;
-      const folder = async (name: string, display: string) => {
+      // An older Mail image writes only the sidebar switch.
+      const folder = async (name: string, showInSidebar: boolean) => {
         const [row] = await sql<{ id: string }[]>`
-          INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, display)
-          VALUES (${newShortId()}, ${resource!.id}::uuid, ${name}, ${name}, ${display})
+          INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, show_in_sidebar)
+          VALUES (${newShortId()}, ${resource!.id}::uuid, ${name}, ${name}, ${showInSidebar})
           RETURNING id
         `;
         return row!.id;
       };
-      const shown = await folder("Shown", "everywhere");
-      const kept = await folder("Kept", "folder_only");
-      const hidden = await folder("Hidden", "hidden");
+      const displays = async () =>
+        Object.fromEntries(
+          (
+            await sql<{ id: string; display: string }[]>`
+              SELECT id, display FROM mail.folders WHERE remote_resource_id = ${resource!.id}::uuid
+            `
+          ).map((row) => [row.id, row.display]),
+        );
 
-      // The rollback SQL from the pull request, as an older Mail image needs the database.
-      await sql`ALTER TABLE mail.folders ADD COLUMN show_in_sidebar boolean DEFAULT true NOT NULL`;
-      await sql`UPDATE mail.folders SET show_in_sidebar = display <> 'hidden'`;
+      // The database before this update has no display yet.
       await sql`ALTER TABLE mail.folders DROP COLUMN display`;
-      const sidebar = await sql<{ id: string; show_in_sidebar: boolean }[]>`
-        SELECT id, show_in_sidebar FROM mail.folders WHERE remote_resource_id = ${resource!.id}::uuid
-      `;
-      expect(Object.fromEntries(sidebar.map((row) => [row.id, row.show_in_sidebar]))).toEqual({
-        [shown]: true,
-        [kept]: true,
-        [hidden]: false,
-      });
-
+      const shown = await folder("Shown", true);
+      const hidden = await folder("Hidden", false);
       await migrate();
-      const displays = await sql<{ id: string; display: string }[]>`
-        SELECT id, display FROM mail.folders WHERE remote_resource_id = ${resource!.id}::uuid
-      `;
-      // "Only in the folder" has no sidebar switch to survive the rollback; it shows everywhere again.
-      expect(Object.fromEntries(displays.map((row) => [row.id, row.display]))).toEqual({
-        [shown]: "everywhere",
-        [kept]: "everywhere",
-        [hidden]: "hidden",
-      });
-      const [columns] = await sql<{ switch_left: boolean; versions: number }[]>`
-        SELECT
-          EXISTS (
-            SELECT 1 FROM information_schema.columns
-            WHERE table_schema = 'mail' AND table_name = 'folders' AND column_name = 'show_in_sidebar'
-          ) AS switch_left,
-          (SELECT count(*)::int FROM mail.schema_migrations) AS versions
-      `;
-      expect(columns).toEqual({ switch_left: false, versions: 1 });
+      expect(await displays()).toEqual({ [shown]: "everywhere", [hidden]: "hidden" });
+
+      // Later starts keep every display, also one the switch cannot express.
+      await sql`UPDATE mail.folders SET display = 'folder_only' WHERE id = ${shown}::uuid`;
+      await migrate();
+      expect(await displays()).toEqual({ [shown]: "folder_only", [hidden]: "hidden" });
+
+      // An older image still reads and writes its switch, and its new folders show their mail everywhere.
+      const [switches] = await sql<{ show_in_sidebar: boolean }[]>`SELECT show_in_sidebar FROM mail.folders WHERE id = ${hidden}::uuid`;
+      expect(switches).toEqual({ show_in_sidebar: false });
+      const older = await folder("Older", true);
+      expect((await displays())[older]).toBe("everywhere");
+
+      const [shape] = await sql<{ versions: number }[]>`SELECT count(*)::int AS versions FROM mail.schema_migrations`;
+      expect(shape).toEqual({ versions: 1 });
       const invalid = await sql`UPDATE mail.folders SET display = 'sidebar' WHERE id = ${shown}::uuid`.then(
         () => null,
         (error: unknown) => error,

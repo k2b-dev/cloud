@@ -100,14 +100,14 @@ The **Allow automatic replies** option is separate from verification. Automatic 
 
 These controls affect different things:
 
-- **Show in Mail** and **Hide from Mail** are Cloud settings for everyone in the mailbox. A hidden folder and its subfolders leave the sidebar, and conversations whose mail lies only there leave All mail, the work views except **Assigned to me**, and their counts; search still finds them. Hiding a folder does not unsubscribe it, delete it, change provider permissions, or remove already synchronized mail.
+- **Show in Mail** and **Hide from Mail** are Cloud settings for everyone in the mailbox. A hidden folder and its subfolders leave the sidebar, and conversations whose mail lies only there leave All mail, the work views except **Assigned to me** and **Send problems**, and their counts; search still finds them. Hiding a folder does not unsubscribe it, delete it, change provider permissions, or remove already synchronized mail.
 - **Subscribe on the mail provider** changes the IMAP subscription. Other mail clients may use that subscription to decide which folders they show.
 - **Provider access** is controlled by the provider. Cloud displays shared and other-user folders only when the connected account can see them, and enables destructive actions only when current provider rights allow them.
 - **Synchronization** follows the configured mailbox scope and provider state. It is not enabled or disabled by the sidebar switch.
 
 Deleting a folder removes it at the provider and is therefore offered only for an empty folder without subfolders. Inbox and other protected folders cannot be deleted. A folder operation is durable: leaving the settings page does not cancel it, and Mail rediscovers provider state before confirming the result.
 
-Use a folder's actions menu to choose **Show in Mail** or **Hide from Mail**. The status beside the folder shows **Visible**, **Hidden**, **Unavailable**, or **Needs review**. This menu placement prevents accidental visibility changes while managing provider folders.
+Use a folder's actions menu to choose **Show in Mail** or **Hide from Mail**. The status beside the folder shows **Visible**, **Only in the folder**, **Hidden**, **Unavailable**, or **Needs review**. This menu placement prevents accidental visibility changes while managing provider folders.
 
 **Special folder mappings** appears above the folder hierarchy and selects the active, selectable folders used for Sent, Drafts, Archive, Trash, and Junk operations. Inbox is discovered from the provider. An incorrect or missing mapping can prevent the corresponding conversation action or sent/draft projection from completing.
 

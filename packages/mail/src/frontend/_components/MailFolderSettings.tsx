@@ -227,7 +227,12 @@ function FolderEditor(props: {
               onValueChange={(value) => setParentFolderId(value === TOP_LEVEL_FOLDER_ID ? null : value)}
             />
             <div class="flex flex-col gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-3">
-              <Switch label={messages().showInMailboxNavigation} value={showInSidebar} onValueChange={setShowInSidebar} />
+              <Switch
+                label={messages().showInMail}
+                description={messages().showInMailDescription}
+                value={showInSidebar}
+                onValueChange={setShowInSidebar}
+              />
               <Switch label={messages().subscribeOnProvider} value={subscribe} onValueChange={setSubscribe} />
             </div>
           </Show>
@@ -322,7 +327,8 @@ export default function MailFolderSettings(props: {
     },
     onSuccess: ({ folderId, display }) => {
       props.onFolderVisibilityChange(folderId, display);
-      props.onWorkspaceChange();
+      // Reload, because the change also decides the effective display of every subfolder.
+      void refresh();
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -523,6 +529,9 @@ export default function MailFolderSettings(props: {
                 if (!canManageSidebarVisibility()) return null;
                 if (folder.display === "hidden") return { label: messages().hidden, icon: "ti ti-eye-off", tone: "neutral" as const };
                 if (hiddenByParent) return { label: messages().parentHidden, icon: "ti ti-eye-off", tone: "neutral" as const };
+                if (folder.effectiveDisplay === "folder_only") {
+                  return { label: messages().onlyInFolder, icon: "ti ti-inbox-off", tone: "neutral" as const };
+                }
                 return { label: messages().visible, icon: "ti ti-eye", tone: "neutral" as const };
               };
               return (

@@ -62,8 +62,9 @@ Each folder has one display setting, the same for everyone in the mailbox:
 
 Use **Only in the folder** for shared or team folders whose mail should not
 fill the shared work lists. The folder itself still lists its conversations and
-counts its unread mail, search shows each result's folder path, and
-**Assigned to me** and **Send problems** keep every conversation. The views left
+counts its unread mail, and **Assigned to me** and **Send problems** keep every
+conversation. Search results from the API, `cld`, and agent tools name the
+folder each result is filed in. The views left
 out are All mail, Needs action, Waiting, Later, Done, Unassigned, Recently
 active, and the cross-mailbox overview; agent tools follow the same rule.
 
@@ -76,12 +77,16 @@ Gmail, a conversation labelled only `Shared` stays in that folder although it
 is also in All Mail and holds your reply in Sent; once a message of it arrives
 in the Inbox, it appears everywhere again.
 
-Mailbox administrators change the display.
-`PATCH /api/mail/mailboxes/{mailboxId}/folders/{folderId}` with
-`{"display": "folder_only"}` and `cld mail folder display set folder_only <folder-id>`
-do the same as the folder settings. `GET /api/mail/mailboxes/{mailboxId}/folders`
+Mailbox administrators change the display with
+`PATCH /api/mail/mailboxes/{mailboxId}/folders/{folderId}` and
+`{"display": "folder_only"}`, `cld mail folder display set folder_only <folder-id>`,
+or the agent action `folder.display.set`. The folder settings in Mail show and
+hide folders and mark folders whose mail stays inside them. Sent, Drafts,
+Trash, Junk, and provider collections cannot be set to `folder_only`, because
+they never decide where mail appears. `GET /api/mail/mailboxes/{mailboxId}/folders`
 and `cld mail folders` show each folder's own display, the effective one, and
-the parent it comes from.
+the parent it comes from. Newly discovered folders show their mail everywhere,
+whether or not the account subscribes to them.
 
 ## Delete and restore a mailbox
 
