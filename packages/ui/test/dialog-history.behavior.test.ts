@@ -111,4 +111,17 @@ describe("dialogCore history option", () => {
     await result;
     expect(history.length).toBe(start);
   });
+
+  test("prompts take the option, and Back dismisses them", async () => {
+    dom = createDomTestHarness();
+    const { prompts } = await import("../src/feedback/prompts");
+    const start = history.length;
+    const answer = prompts.confirm("Sign out of the app?", { history: true });
+    expect(history.length).toBe(start + 1);
+    const back = popped();
+    history.back();
+    await back;
+    expect(await answer).toBeUndefined();
+    expect(marker()).toBeUndefined();
+  });
 });

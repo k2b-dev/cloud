@@ -97,7 +97,7 @@ export {
   openFloatingWindow,
 } from "./FloatingWindow";
 export type { MobileShellHeaderProps, MobileShellProps } from "./MobileShell";
-export { default as MobileShell } from "./MobileShell";
+export { default as MobileShell, observeMobileShell } from "./MobileShell";
 export { default as Navigation, type NavigationProps } from "./Navigation";
 export {
   createNavigation,

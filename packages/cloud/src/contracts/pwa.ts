@@ -9,6 +9,13 @@ export const PWA_SHELL_APP_ID = "pwa";
 export const PWA_SCOPE = "/pwa/";
 export const PWA_AUTH_PATH = "/pwa/_auth";
 export const PWA_API_PATH = "/api/auth/pwa/v1";
+export const PWA_MANIFEST_PATH = "/pwa/manifest.webmanifest";
+export const PWA_SERVICE_WORKER_PATH = "/pwa/sw.js";
+/**
+ * The page canvas of the app (`--k2b-surface-canvas` of `@k2b/ui`) in light and dark. App documents paint it
+ * before any stylesheet loads and give it to the status bar.
+ */
+export const PWA_CANVAS_COLORS = { light: "#fafafa", dark: "#090d12" } as const;
 
 /** Cookie names. Only `pwa_session` reaches every application; the others use Core-only paths. */
 export const PWA_COOKIES = {

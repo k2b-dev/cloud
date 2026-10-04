@@ -36,6 +36,7 @@ export * from "./help";
 export type * from "./icons";
 export { icons } from "./icons";
 export * from "./locale";
+export * from "./locale-preference";
 export * from "./login-method";
 export { markdown } from "./markdown";
 export type { ErrorCode, EvalContext, EvalError, EvalResult, EvalValue, ProgressValue } from "./markdown/formula";

@@ -27,6 +27,7 @@
       "packages/notebooks",
       "packages/oauth",
       "packages/pulse",
+      "packages/pwa",
       "packages/proxy-auth",
       "packages/quotes",
       "packages/spaces",

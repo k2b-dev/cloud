@@ -2,13 +2,20 @@
 // Do NOT import from this barrel in .island.tsx or .client.tsx files!
 
 export { default as AdminLayout } from "./AdminLayout";
-export { hasDedicatedRuntimeRoute, resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
+export {
+  hasDedicatedRuntimeRoute,
+  resolveRuntimeRoute,
+  type VisiblePwaPart,
+  visibleNavigationApps,
+  visiblePwaParts,
+} from "./app-navigation";
 export { default as Layout } from "./Layout";
 export {
   default as MinimalLayout,
   type MinimalLayoutPreferencePosition,
   type MinimalLayoutProps,
 } from "./MinimalLayout";
+export { default as PwaLayout, type PwaLayoutProps } from "./PwaLayout";
 export { requestPath } from "./request-path";
 export { getLocalizedRuntimeContext, getRuntimeContext, type RuntimeContext } from "./runtime";
 export type { UrlFilterField } from "./url-filter";

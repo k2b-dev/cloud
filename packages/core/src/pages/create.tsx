@@ -13,6 +13,7 @@ import adminPage from "./admin/page";
 import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
 import pairDevicePage from "./app-approval/pair.page";
+import { createAppIconRoutes } from "./app-icons";
 import consentPage from "./auth/consent.page";
 import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRedirect } from "./auth/login-redirect";
 import newPasswordPage from "./auth/new-password/page";
@@ -135,7 +136,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       // through as data URIs and override this fallback (mime taken from the
       // data URI, so PNG/ICO uploads still work).
       return serveBranding(c, "app.favicon", join(brandingPublicDir, "logo.svg"), "image/svg+xml");
-    });
+    })
+    .route("/branding", createAppIconRoutes());
 
   // 404 catch-all (must be after all mounted routes)
   pages.get("/*", auth.requireRole("*"), ...notFoundPage);

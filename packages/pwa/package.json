@@ -1,0 +1,28 @@
+{
+  "name": "@k2b/cloud-app-pwa",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "module": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@k2b/cloud": "workspace:*",
+    "@k2b/stdlib": "catalog:",
+    "@k2b/ui": "workspace:*",
+    "hono": "catalog:",
+    "solid-js": "catalog:"
+  },
+  "devDependencies": {
+    "@k2b/ssr": "catalog:",
+    "@types/bun": "catalog:",
+    "bun-plugin-tailwind": "catalog:",
+    "playwright": "catalog:",
+    "typescript": "catalog:"
+  },
+  "license": "AGPL-3.0-or-later"
+}

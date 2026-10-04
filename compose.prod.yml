@@ -164,6 +164,13 @@ services:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-proxy-auth:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
+  # The mobile app is unreleased: its image is built and published, but it
+  # starts only with `--profile unreleased`. Do not start it.
+  app-pwa:
+    <<: *app-defaults
+    image: ghcr.io/k2b-dev/cloud-app-pwa:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    profiles: ["unreleased"]
+
   app-quotes:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-quotes:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}

@@ -4,9 +4,19 @@ const root = new URL("../../", import.meta.url);
 const requirements = await Bun.file(new URL("docs-site/docs/en/operations/deployment-requirements.md", root)).text();
 const appIds = [...requirements.matchAll(/^\|[^\n]*?\(`([a-z0-9-]+)`\) \|/gm)].map((match) => match[1]!);
 
+/** Services start only with `--profile unreleased` until their release; they get no public row or catalog page before it. */
+const unreleasedAppIds = (source: string): string[] =>
+  [...source.matchAll(/^  (app-[a-z0-9-]+):\n((?: {4}.*\n)*)/gm)]
+    .filter((match) => /^ {4}profiles: \["unreleased"\]$/m.test(match[2]!))
+    .map((match) => match[1]!.replace(/^app-/, ""));
+const unreleased = unreleasedAppIds(await Bun.file(new URL("compose.prod.yml", root)).text());
+
 const composeAppIds = async (file: string): Promise<string[]> => {
   const source = await Bun.file(new URL(file, root)).text();
-  return [...source.matchAll(/^  (gateway|app-[a-z0-9-]+):$/gm)].map((match) => match[1]!.replace(/^app-/, "")).sort();
+  return [...source.matchAll(/^  (gateway|app-[a-z0-9-]+):$/gm)]
+    .map((match) => match[1]!.replace(/^app-/, ""))
+    .filter((id) => !unreleased.includes(id))
+    .sort();
 };
 
 describe("deployment requirements coverage", () => {

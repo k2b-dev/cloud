@@ -88,6 +88,14 @@ export type AppCliModule = {
 /** `cld` modules keyed by module name, the command `cld <name>`. */
 export type AppCliModules = Readonly<Record<string, AppCliModule>>;
 
+/** An application's part of the mobile app (preview). */
+export type AppPwaPart = {
+  /** Always `/pwa/<app id>`. */
+  href: string;
+  /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
+  requiresRoles?: Role[];
+};
+
 export type AppMeta = {
   id: string;
   name: string;
@@ -118,6 +126,8 @@ export type AppMeta = {
   legalLinks?: LegalLink[];
   /** Static search destinations, visible when the app is in the user's navigation catalog. */
   searchLinks?: readonly AppSearchLink[];
+  /** The app's pages in the installable mobile app (preview), at `href` = `/pwa/<id>`. */
+  pwa?: AppPwaPart;
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP endpoint that returns a `WidgetResponse` (see `contracts/widgets.ts`).

@@ -31,6 +31,16 @@ describe("buildRuntimeFromRegistry", () => {
     expect(buildRuntimeFromRegistry([entry()]).apps[0]?.appearance).toBeUndefined();
   });
 
+  it("copies the mobile app part without sharing the registry's role list", () => {
+    const app = entry();
+    app.pwa = { href: "/pwa/example", requiresRoles: ["user"] };
+
+    const part = buildRuntimeFromRegistry([app]).apps[0]?.pwa;
+    expect(part).toEqual({ href: "/pwa/example", requiresRoles: ["user"] });
+    expect(part?.requiresRoles).not.toBe(app.pwa.requiresRoles);
+    expect(buildRuntimeFromRegistry([entry()]).apps[0]?.pwa).toBeUndefined();
+  });
+
   it("preserves app-declared admin navigation", () => {
     const app = entry();
     app.adminNav = [

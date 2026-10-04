@@ -1,6 +1,6 @@
 # Dev containers — run with:
-#   bun run dev          (core set, 6 containers)
-#   bun run dev:full     (core + extras, 23 containers; --profile extra)
+#   bun run dev          (core set, 7 containers)
+#   bun run dev:full     (core + extras, 24 containers; --profile extra)
 #   bun run dev:start FOO    (ad-hoc: start a single extra app in the running stack)
 #   bun run dev:restart FOO  (reload mounted source without rebuilding the image)
 #
@@ -104,6 +104,17 @@ services:
       - ./packages/dashboard/src:/app/packages/dashboard/src
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/dashboard/src/index.ts
+
+  app-pwa:
+    <<: *app
+    container_name: app-pwa
+    environment: { <<: *env, APP_ID: pwa }
+    volumes:
+      - ./packages/cloud/src:/app/packages/cloud/src
+      - ./packages/cloud/scripts:/app/packages/cloud/scripts
+      - ./packages/pwa/src:/app/packages/pwa/src
+      - ./styles.css:/app/styles.css
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/pwa/src/index.ts
 
   app-accounts:
     <<: *app
