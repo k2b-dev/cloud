@@ -1,4 +1,4 @@
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { type CloudTheme, getCurrentThemePreference } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
@@ -11,7 +11,7 @@ import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
 import { isAggregatedListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
-import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../live-events";
+import { MailLiveEventSchema } from "../live-events";
 import { resolveMailSearchRoute } from "../search-state";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
@@ -65,7 +65,6 @@ import {
   type PendingMailListState,
   reconcileMailListOptimisticState,
 } from "./_components/mail-list-optimistic";
-import { createMailLiveInvalidationHub, type MailLiveInvalidation } from "./_components/mail-live-invalidation-hub";
 import { buildMailListHref, isMailWorkspaceUrl, mailRouteUrl, resolveMailWorkspaceUrl } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
@@ -130,9 +129,7 @@ function MailWorkspaceView(props: {
   });
   const [settingsOpening, setSettingsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
-  const [liveTransportDegraded, setLiveTransportDegraded] = createSignal(false);
-  const [liveSnapshotDegraded, setLiveSnapshotDegraded] = createSignal(false);
-  const liveDegraded = createMemo(() => liveTransportDegraded() || liveSnapshotDegraded());
+  const [liveUnavailable, setLiveUnavailable] = createSignal(false);
   const activeSearch = createMemo(() => resolveMailSearchRoute(mailRouteUrl(requestPath())));
   const activeTagId = createMemo(() => {
     const expression = activeSearch().expression;
@@ -167,8 +164,6 @@ function MailWorkspaceView(props: {
   };
   let preferenceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingPreferences: Partial<MailWorkspacePreferences> = {};
-  let liveTransportTimer: ReturnType<typeof setTimeout> | null = null;
-  let markLiveApplied: (cursor: string | null | undefined) => void = () => undefined;
   let actionMutationLoading = () => false;
   let structureMutationLoading = () => false;
   const actionPending = () => structureMutationLoading() || actionMutationLoading();
@@ -247,18 +242,8 @@ function MailWorkspaceView(props: {
   let committedRouteSource = initialRouteSource;
   let workspaceTransition: WorkspaceTransition | null = null;
 
-  const liveHub = createMailLiveInvalidationHub({
-    delayMs: 180,
-    isBlocked: workspaceRefreshBlocked,
-    onApplied: (cursor) => {
-      setLiveSnapshotDegraded(false);
-      markLiveApplied(cursor);
-    },
-    onFailed: () => setLiveSnapshotDegraded(true),
-  });
-
   type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
-  const activityQuery = query.create<string | null, ConversationActivityResult, MailLiveInvalidation>({
+  const activityQuery = query.create<string | null, ConversationActivityResult>({
     source: selectedConversationId,
     initial: props.data.selectedConversationId
       ? {
@@ -280,21 +265,13 @@ function MailWorkspaceView(props: {
       const page = await response.json();
       return { conversationId, items: page.items };
     },
-    subscribe: ({ invalidate }) =>
-      liveHub.register({
-        matches: (invalidation) => {
-          const conversationId = selectedConversationId();
-          return Boolean(conversationId && (invalidation.conversationIds === null || invalidation.conversationIds.has(conversationId)));
-        },
-        invalidate,
-      }),
   });
   const conversationActivity = () => {
     const current = activityQuery.data();
     return current?.conversationId === data.selectedConversationId && !activityQuery.error() ? current.items : data.activity;
   };
 
-  const workspaceQuery = query.createInfinite<string, WorkspaceRouteResult, string, MailLiveInvalidation>({
+  const workspaceQuery = query.createInfinite<string, WorkspaceRouteResult, string>({
     source: routeSource,
     initial: { source: initialRouteSource, pages: [{ source: initialRouteSource, snapshot: props.data }] },
     loadPage: async (source, { cursor, abortSignal }) => {
@@ -308,11 +285,6 @@ function MailWorkspaceView(props: {
       return { source, snapshot };
     },
     getNextCursor: (page) => pageNextCursor(page.snapshot),
-    subscribe: ({ invalidate }) =>
-      liveHub.register({
-        matches: () => true,
-        invalidate,
-      }),
   });
   routeLoading = () => workspaceQuery.loading() || workspaceQuery.refreshing() || workspaceQuery.loadingMore();
 
@@ -335,7 +307,7 @@ function MailWorkspaceView(props: {
     workspaceTransition = null;
     if (source === routeSource()) {
       return workspaceQuery
-        .invalidate({ cursor: null, conversationIds: null })
+        .invalidate()
         .then(() => "applied" as const)
         .catch(() => "failed" as const);
     }
@@ -534,9 +506,27 @@ function MailWorkspaceView(props: {
     });
   });
 
+  // A live refresh waits while a settings or management dialog is open; what the dialog changed refreshes the view
+  // when it closes.
+  const refreshWaiters: Array<() => void> = [];
   createEffect(() => {
-    if (!workspaceRefreshBlocked()) liveHub.resume();
+    if (!workspaceRefreshBlocked()) for (const resume of refreshWaiters.splice(0)) resume();
   });
+  const whenRefreshAllowed = (): Promise<void> =>
+    workspaceRefreshBlocked() ? new Promise((resume) => refreshWaiters.push(resume)) : Promise.resolve();
+
+  /**
+   * Refreshes the view, and the open conversation's activity when a change may touch it; `null` stands for any
+   * change. Only the view decides whether the refresh worked: the activity shows its own error, and the server's
+   * activity stays in place.
+   */
+  const refreshLiveData = async (conversationIds: readonly (string | null)[] | null): Promise<void> => {
+    await whenRefreshAllowed();
+    const selected = selectedConversationId();
+    const activity = selected !== null && (conversationIds === null || conversationIds.some((id) => id === null || id === selected));
+    if (activity) void activityQuery.invalidate().catch(() => undefined);
+    await workspaceQuery.invalidate();
+  };
 
   const openSettings = async (initialTab?: string) => {
     if (disposed || settingsOpening()) return;
@@ -596,7 +586,12 @@ function MailWorkspaceView(props: {
     if (disposed || managementOpening()) return;
     setManagementOpening("subscriptions");
     try {
-      await openMailSubscriptionDialog({ mailboxId: data.mailbox.id, canWrite: canWrite(), initialListKey });
+      await openMailSubscriptionDialog({
+        mailboxId: data.mailbox.id,
+        canWrite: canWrite(),
+        initialListKey,
+        liveCursor: data.initialLiveCursor,
+      });
     } finally {
       if (!disposed) setManagementOpening(null);
       if (!initialListKey || disposed) return;
@@ -623,79 +618,22 @@ function MailWorkspaceView(props: {
 
   onMount(() => {
     setRequestPath(`${window.location.pathname}${window.location.search}`);
-    const live = createLiveWebSocket<MailLiveServerMessage>({
-      url: "/api/mail/ws",
-      initialCursor: props.data.initialLiveCursor,
-      activity: "visible",
-      subscribe: (cursor) =>
-        ({
-          type: MAIL_LIVE_WS_TYPE.subscribe,
-          payload: { mailboxId: props.data.mailbox.id, fromCursor: cursor },
-        }) satisfies MailLiveClientMessage,
-      parse: (raw) => {
-        const message = parseMailLiveServerMessage(raw);
-        if (!message) throw new Error("Invalid Mail live server message");
-        return message;
+    const subscription = liveConnection("/api/mail/live").subscribe(
+      "mailbox",
+      { mailbox: mailboxId },
+      {
+        cursor: props.data.initialLiveCursor,
+        parse: (data) => MailLiveEventSchema.parse(data),
+        apply: (events) => refreshLiveData(events.map((event) => event.data.conversationId)),
+        resync: () => refreshLiveData(null),
+        revoked: () => void documentNavigate("/app/mail", { replace: true }),
+        // A reload lets the route policy send an ended session to sign-in. A failure that survives it must not
+        // reload in a loop.
+        unavailable: () => {
+          if (!reloadOnce(`mail:live:${mailboxId}`)) setLiveUnavailable(true);
+        },
       },
-      onStatus: (status) => {
-        if (liveTransportTimer) clearTimeout(liveTransportTimer);
-        liveTransportTimer = null;
-        if (status === "reconnecting") {
-          if (!liveTransportDegraded()) {
-            liveTransportTimer = setTimeout(() => {
-              liveTransportTimer = null;
-              if (!disposed) setLiveTransportDegraded(true);
-            }, 2_000);
-          }
-          return;
-        }
-        if (status === "open" || status === "paused" || status === "closed") setLiveTransportDegraded(false);
-      },
-      onMessage: (message, controls) => {
-        const messageMailboxId = message.payload.mailboxId;
-        if (messageMailboxId && messageMailboxId !== props.data.mailbox.id) {
-          controls.terminate({
-            code: "resource_mismatch",
-            message: "Mail live subscription changed resources",
-          });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.ready) {
-          // The server confirms the subscribed cursor when it can replay from it, as when a tab returns.
-          // Any other cursor (a first subscription or a head after skipped replay) needs a snapshot refresh,
-          // and so does a page that shows paused updates: the refresh is what confirms it is current again.
-          if (message.payload.cursor !== controls.subscribedCursor() || liveSnapshotDegraded()) {
-            liveHub.schedule({ cursor: message.payload.cursor, conversationId: null });
-          }
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.event) {
-          liveHub.schedule({
-            cursor: message.payload.cursor,
-            conversationId: message.payload.event.conversationId,
-          });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.revoked) {
-          controls.terminate({
-            code: message.payload.code,
-            message: message.payload.message,
-          });
-          return;
-        }
-        if (message.type === MAIL_LIVE_WS_TYPE.error) {
-          setLiveSnapshotDegraded(true);
-        }
-      },
-      classifyClose: ({ code, reason }) => (code === 1008 ? { code: reason || "access_denied", message: t().accessChanged } : null),
-      onFatal: (error) => {
-        if (error.code !== "login_required") documentNavigate("/app/mail", { replace: true });
-        // A reload lets the route policy send an expired session to sign-in. A
-        // failure that survives it must not reload in a loop.
-        else if (!reloadOnce(`mail:live:${mailboxId}`)) setLiveTransportDegraded(true);
-      },
-    });
-    markLiveApplied = live.markApplied;
+    );
     const stopPopState = listenPopState(({ url }) => {
       if (!isMailWorkspaceUrl(url, mailboxId, window.location.origin)) {
         documentNavigate(url.href, { replace: true });
@@ -709,10 +647,8 @@ function MailWorkspaceView(props: {
         }
       })();
     });
-    live.connect();
     onCleanup(() => {
-      live.dispose();
-      markLiveApplied = () => undefined;
+      subscription.close();
       stopPopState();
     });
   });
@@ -720,10 +656,8 @@ function MailWorkspaceView(props: {
   onCleanup(() => {
     disposed = true;
     if (preferenceTimer) clearTimeout(preferenceTimer);
-    if (liveTransportTimer) clearTimeout(liveTransportTimer);
     workspaceTransition?.resolve("stale");
     workspaceTransition = null;
-    liveHub.dispose();
     for (const frame of focusFrames) cancelAnimationFrame(frame);
     focusFrames.clear();
   });
@@ -1668,7 +1602,7 @@ function MailWorkspaceView(props: {
                     folderOnlyHint={folderOnlyHint()}
                     listMode={data.listMode}
                     loading={routeLoading()}
-                    liveDegraded={liveDegraded()}
+                    liveDegraded={liveUnavailable()}
                     onCollapse={() => setCollapsed(true)}
                     onOpenHealth={() => void openHealth()}
                     onOpenDeliverySettings={() => void openSettings("delivery")}

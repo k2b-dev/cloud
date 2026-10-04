@@ -15,8 +15,8 @@ import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { listCurrentMailboxUsers } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
-import { type MailConversationChangedEvent, publishMailCollaborationEvent } from "./events";
 import { resolveMailExecution } from "./execution";
+import { type MailActivityChange, mailLive } from "./live";
 import { parseMessageProtocolFacts } from "./message-protocol";
 
 type SqlClient = typeof sql;
@@ -140,7 +140,7 @@ type MutableCommentRow = {
 
 export type CollaborationMutation<T> = {
   value: T;
-  event: Omit<MailConversationChangedEvent, "type" | "at"> | null;
+  event: MailActivityChange | null;
 };
 
 type DateCursor = { version: 1; date: string; id: string };
@@ -344,7 +344,7 @@ export const insertActivity = async (params: {
 
 const finishMutation = async <T>(result: Result<CollaborationMutation<T>>): Promise<Result<T>> => {
   if (!result.ok) return result;
-  if (result.data.event) await publishMailCollaborationEvent(result.data.event);
+  if (result.data.event) mailLive.wake();
   return ok(result.data.value);
 };
 
@@ -736,7 +736,7 @@ export const applyConversationAssignments = async (params: {
   }
   if (!result.ok) return result;
   const committed = result.data;
-  for (const event of committed.events) await publishMailCollaborationEvent(event);
+  if (committed.events.length > 0) mailLive.wake();
   return ok({
     result: {
       assignee: committed.assignee,
@@ -796,15 +796,7 @@ export const releaseDueSnoozes = async (batchSize = 500): Promise<number> => {
         RETURNING mailbox_id, conversation_id, id AS activity_id
       `,
     );
-    for (const event of events) {
-      await publishMailCollaborationEvent({
-        mailboxId: event.mailbox_id,
-        conversationId: event.conversation_id,
-        reason: "collaboration",
-        targetId: event.conversation_id,
-        activityId: String(event.activity_id),
-      });
-    }
+    if (events.length > 0) mailLive.wake();
     released += events.length;
     if (events.length < batchSize) return released;
   }

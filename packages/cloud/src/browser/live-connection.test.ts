@@ -267,6 +267,41 @@ describe("liveConnection", () => {
     expect(socket.sent.at(-1)).toEqual({ t: "unsub", id: "1" });
   });
 
+  test("closing during a pending apply or retry reports nothing", async () => {
+    const pending = recorder();
+    let rejectApply: (error: Error) => void = () => undefined;
+    const subscription = liveConnection("/api/app/live").subscribe(
+      "item",
+      { key: "a" },
+      {
+        ...pending.handlers(),
+        apply: () =>
+          new Promise<void>((_, reject) => {
+            rejectApply = reject;
+          }),
+      },
+    );
+    const socket = FakeWebSocket.instances[0] as FakeWebSocket;
+    socket.open();
+    socket.message({ t: "event", id: "1", cursor: "s6t.app.2", data: 2 });
+    await Bun.sleep(1);
+    subscription.close();
+    rejectApply(new Error("owner disposed"));
+    await Bun.sleep(1);
+    expect(pending.log).toEqual([]);
+
+    const retrying = recorder();
+    retrying.failNext(1);
+    const second = liveConnection("/api/app/live").subscribe("item", { key: "a" }, retrying.handlers());
+    const next = FakeWebSocket.instances[1] as FakeWebSocket;
+    next.open();
+    next.message({ t: "event", id: "1", cursor: "s6t.app.2", data: 2 });
+    await Bun.sleep(1);
+    second.close();
+    await elapse(1_000);
+    expect(retrying.log).toEqual(["apply:2"]);
+  });
+
   test("revoked ends one subscription; a policy close ends all of them", () => {
     const first = recorder();
     const second = recorder();

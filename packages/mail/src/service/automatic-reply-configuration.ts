@@ -32,7 +32,7 @@ import {
   formatConversationReference,
   putConversationReferenceConfigurationInTransaction,
 } from "./conversation-reference";
-import { publishMailMailboxEvent } from "./events";
+import { mailLive } from "./live";
 import {
   decodeStoredResponseScheduleDefinition,
   normalizeResponseScheduleDefinition,
@@ -760,21 +760,9 @@ export const createAutomaticReplySetup = async (params: {
       },
     );
     if (result.referenceActivityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "reference_configuration",
-        targetId: params.mailboxId,
-        activityId: result.referenceActivityId,
-      });
+      mailLive.wake();
     }
-    await publishMailMailboxEvent({
-      mailboxId: params.mailboxId,
-      conversationId: null,
-      reason: "automatic_reply",
-      targetId: result.configuration.id,
-      activityId: result.activityId,
-    });
+    mailLive.wake();
     return ok({
       automaticReply: result.configuration,
       referenceConfiguration: result.referenceConfiguration,
@@ -916,22 +904,10 @@ export const updateAutomaticReplySetup = async (params: {
       },
     );
     if (result.referenceActivityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "reference_configuration",
-        targetId: params.mailboxId,
-        activityId: result.referenceActivityId,
-      });
+      mailLive.wake();
     }
     if (result.activityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "automatic_reply",
-        targetId: result.configuration.id,
-        activityId: result.activityId,
-      });
+      mailLive.wake();
     }
     return ok({
       automaticReply: result.configuration,

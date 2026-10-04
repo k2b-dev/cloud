@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -97,6 +97,8 @@ const data: MailboxPageData = {
   selectedReference: null,
 };
 
+type Frame = { t: string; id?: string; channel?: string; scope?: unknown; after?: string };
+
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -104,7 +106,7 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
 
   readyState = FakeWebSocket.CONNECTING;
-  sent: string[] = [];
+  sent: Frame[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
@@ -115,7 +117,7 @@ class FakeWebSocket {
   }
 
   send(data: string) {
-    this.sent.push(data);
+    this.sent.push(JSON.parse(data));
   }
 
   open() {
@@ -123,8 +125,8 @@ class FakeWebSocket {
     this.onopen?.();
   }
 
-  message(type: string, payload: Record<string, unknown>) {
-    this.onmessage?.({ data: JSON.stringify({ type, payload: { mailboxId: MAILBOX_ID, ...payload } }) });
+  message(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
   }
 
   close(code = 1000, reason = "") {
@@ -134,10 +136,10 @@ class FakeWebSocket {
   }
 }
 
-/** Longer than the workspace's live refresh delay, so a scheduled refresh has run. */
-const settle = () => Bun.sleep(400);
+/** Long enough for a refresh through the mocked API to finish. */
+const settle = () => Bun.sleep(60);
 
-describe("Mail workspace live updates when a tab returns", () => {
+describe("Mail workspace live updates", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
@@ -147,22 +149,31 @@ describe("Mail workspace live updates when a tab returns", () => {
   const originalWebSocket = globalThis.WebSocket;
   let dom: DomTestHarness;
   let visibility: DocumentVisibilityState;
+  let reload: ReturnType<typeof spyOn>;
   let workspaceRequests: number;
+  let listRequests: number;
   let dispose = () => {};
 
   beforeEach(() => {
     dom = createDomTestHarness();
+    dom.window.sessionStorage.clear();
+    reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
     visibility = "visible";
     Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => visibility });
     FakeWebSocket.instances = [];
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
     workspaceRequests = 0;
+    listRequests = 0;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
         const url = String(input instanceof Request ? input.url : input);
         if (url.includes("/workspace-route")) {
           workspaceRequests += 1;
           return Response.json(data);
+        }
+        if (url.includes("/subscriptions")) {
+          listRequests += 1;
+          return Response.json({ items: [], nextCursor: null });
         }
         return Response.json({});
       },
@@ -171,14 +182,17 @@ describe("Mail workspace live updates when a tab returns", () => {
   });
 
   afterEach(async () => {
+    const { dialogCore } = await import("@k2b/ui");
+    dialogCore.close();
     dispose();
     await Bun.sleep(20);
+    reload.mockRestore();
     globalThis.fetch = originalFetch;
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
     dom.cleanup();
   });
 
-  const mount = async () => {
+  const mount = async (path = `/app/mail/${MAILBOX_ID}`) => {
     const {
       readThemeFromCookieHeader,
       DEFAULT_MAIL_CONTACT_DIRECTORY,
@@ -186,11 +200,12 @@ describe("Mail workspace live updates when a tab returns", () => {
       readMailWorkspacePreferences,
       MailWorkspace,
     } = modules!;
+    dom.window.history.replaceState(null, "", path);
     dispose = render(
       () =>
         createComponent(MailWorkspace, {
           data,
-          requestPath: `/app/mail/${MAILBOX_ID}`,
+          requestPath: path,
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
@@ -204,56 +219,102 @@ describe("Mail workspace live updates when a tab returns", () => {
     );
   };
 
-  const latestSocket = () => {
-    const socket = FakeWebSocket.instances.at(-1);
-    if (!socket) throw new Error("No socket was opened");
-    return socket;
+  const socket = () => {
+    const latest = FakeWebSocket.instances.at(-1);
+    if (!latest) throw new Error("No socket was opened");
+    return latest;
   };
 
   const returnToTab = () => {
     visibility = "hidden";
     dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
+    expect(socket().readyState).toBe(FakeWebSocket.CLOSED);
     visibility = "visible";
     dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
-    latestSocket().open();
+    socket().open();
   };
+
+  const event = (id: string, cursor: string, conversationId: string | null) =>
+    socket().message({ t: "event", id, cursor, data: { conversationId } });
 
   const updatesPaused = () => dom.root.textContent?.includes("Updates paused") ?? false;
 
-  test("a returning tab refreshes only when the server's head skipped replay", async () => {
+  test("changes refresh the view, and a returning tab resumes from its cursor without loading again", async () => {
     await mount();
-    latestSocket().open();
-    latestSocket().message("mail.live.ready", { cursor: "s6t.mail.4" });
-    await settle();
-
-    returnToTab();
-    expect(FakeWebSocket.instances).toHaveLength(2);
-    latestSocket().message("mail.live.ready", { cursor: "s6t.mail.4" });
+    socket().open();
+    expect(socket().url).toBe("ws://localhost/api/mail/live");
+    expect(socket().sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID }, after: "s6t.mail.4" }]);
+    socket().message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
     await settle();
     expect(workspaceRequests).toBe(0);
 
-    // Replay was too long, so the server follows with its head: events were skipped.
-    latestSocket().message("mail.live.ready", { cursor: "s6t.mail.9" });
+    event("1", "s6t.mail.5", "Conv01");
     await settle();
     expect(workspaceRequests).toBe(1);
+
+    // Hidden, the tab misses one change; it arrives as a replay after the applied cursor, and nothing else loads.
+    returnToTab();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(socket().sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID }, after: "s6t.mail.5" }]);
+    socket().message({ t: "ready", id: "1", cursor: "s6t.mail.5" });
+    await settle();
+    expect(workspaceRequests).toBe(1);
+    event("1", "s6t.mail.6", null);
+    await settle();
+    expect(workspaceRequests).toBe(2);
+
+    // A cursor the server can no longer replay from loads the view once.
+    socket().message({ t: "resync", id: "1", cursor: "s6t.mail.90" });
+    await settle();
+    expect(workspaceRequests).toBe(3);
+    expect(reload).not.toHaveBeenCalled();
   });
 
-  test("a stream error pauses updates until the reconnected stream confirms the page is current", async () => {
-    await mount();
-    latestSocket().open();
-    latestSocket().message("mail.live.ready", { cursor: "s6t.mail.4" });
+  test("the subscription dialog shares the page's socket, and the view catches up once the dialog closes", async () => {
+    await mount(`/app/mail/${MAILBOX_ID}?mailingList=news%40example.test`);
     await settle();
-
-    // The server reports a failed access check and closes; the client reconnects from the same cursor.
-    latestSocket().message("mail.live.error", { code: "internal_error", message: "Access check failed" });
-    latestSocket().close(1011, "internal_error");
-    expect(updatesPaused()).toBe(true);
-    dom.window.dispatchEvent(new dom.window.Event("focus"));
-    latestSocket().open();
-    latestSocket().message("mail.live.ready", { cursor: "s6t.mail.4" });
+    socket().open();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const subscriptions = socket().sent.filter((frame) => frame.t === "sub");
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions.every((frame) => frame.channel === "mailbox")).toBe(true);
+    // The dialog resumes from the page's cursor too, which was read before its list loaded.
+    expect(subscriptions.every((frame) => frame.after === "s6t.mail.4")).toBe(true);
+    const ids = subscriptions.map((frame) => frame.id!);
+    for (const id of ids) socket().message({ t: "ready", id, cursor: "s6t.mail.4" });
     await settle();
+    expect(listRequests).toBe(1);
 
+    // The dialog refreshes its list at once; the view behind it waits.
+    for (const id of ids) event(id, "s6t.mail.5", "Conv01");
+    await settle();
+    expect({ listRequests, workspaceRequests }).toEqual({ listRequests: 2, workspaceRequests: 0 });
+
+    const { dialogCore } = await import("@k2b/ui");
+    dialogCore.close();
+    await settle();
     expect(workspaceRequests).toBe(1);
+    const closed = socket().sent.at(-1);
+    expect(closed?.t).toBe("unsub");
+    expect(ids).toContain(closed?.id ?? "");
+  });
+
+  test("an ended session reloads the page once, and a page that just reloaded shows that updates are paused", async () => {
+    await mount();
+    socket().open();
+    socket().message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    socket().message({ t: "error", code: "login_required", message: "Sign in again to receive live updates." });
+    socket().close(1008, "login_required");
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
     expect(updatesPaused()).toBe(false);
+
+    dispose();
+    await mount();
+    socket().open();
+    socket().close(1008, "login_required");
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(updatesPaused()).toBe(true);
   });
 });

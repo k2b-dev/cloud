@@ -13,7 +13,7 @@ import type {
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
-import { publishMailMailboxEvent } from "./events";
+import { mailLive } from "./live";
 import { removeUnsentOutboundMessage } from "./outbound-message-projection";
 
 type ScheduledCursor = { version: 1; scheduledAt: string; id: string };
@@ -389,13 +389,7 @@ const cancelScheduledSendBy = async (params: {
         });
       }
     }
-    await publishMailMailboxEvent({
-      mailboxId: params.mailboxId,
-      conversationId: null,
-      reason: "scheduled_send",
-      targetId: result.data.draftId,
-      activityId: `scheduled-send-cancelled:${params.scheduledSendId ?? params.commandId}`,
-    });
+    mailLive.wake();
     return ok({ disposition: result.data.disposition, draftId: result.data.draftId });
   } catch {
     return fail(err.internal("Failed to cancel scheduled message"));

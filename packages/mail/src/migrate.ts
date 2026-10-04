@@ -105,6 +105,48 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     $$
   `.simple();
   await addCommandQueuePosition(tx);
+  await writeLiveUpdatesToPlatformOutbox(tx);
+};
+
+/**
+ * Mail's one writer of live updates, called by the trigger on `mail.activity_events` and by
+ * changes that record no activity. It writes to Core's platform outbox and joins the updates of
+ * one conversation, or of the whole mailbox, in one transaction. It keeps the signature of the
+ * function that wrote to Mail's former table, so the replicas of an older image that still run
+ * during a rollout write their updates here too; the uuid it returns is always NULL.
+ * The baseline does not create it, so a fresh installation and an upgraded one get this body.
+ */
+const writeLiveUpdatesToPlatformOutbox = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    CREATE OR REPLACE FUNCTION mail.enqueue_live_invalidation(target_mailbox_id uuid, target_conversation_id uuid DEFAULT NULL)
+    RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+    DECLARE
+      conversation_short_id text;
+    BEGIN
+      IF target_conversation_id IS NOT NULL THEN
+        SELECT short_id INTO conversation_short_id
+        FROM mail.conversations
+        WHERE id = target_conversation_id AND mailbox_id = target_mailbox_id;
+      END IF;
+      PERFORM events.enqueue(
+        gen_random_uuid(),
+        'mail',
+        'live',
+        target_mailbox_id::text,
+        jsonb_build_object(
+          'v', 1,
+          'k', target_mailbox_id::text,
+          'd', jsonb_build_object('conversationId', conversation_short_id)
+        ),
+        target_mailbox_id::text || ':' || COALESCE(conversation_short_id, '')
+      );
+      RETURN NULL;
+    END;
+    $$
+  `.simple();
+  await tx`DROP TABLE IF EXISTS mail.live_invalidation_outbox`.simple();
 };
 
 /**

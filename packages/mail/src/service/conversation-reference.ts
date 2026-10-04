@@ -5,7 +5,7 @@ import type { ConversationReferencePreview, EnsureConversationReference, PutConv
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
-import { publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
+import { mailLive } from "./live";
 import { mailLiquidTemplateVariables, renderMailLiquidTemplate, validateMailLiquidTemplate } from "./template-rendering";
 
 const REFERENCE_PATTERN_MAX_LENGTH = 120;
@@ -450,13 +450,7 @@ export const putConversationReferenceConfiguration = async (params: {
     );
     if (!result.ok) return result;
     if (result.data.activityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "reference_configuration",
-        targetId: params.mailboxId,
-        activityId: result.data.activityId,
-      });
+      mailLive.wake();
     }
     return ok(result.data.configuration);
   } catch (error) {
@@ -683,13 +677,7 @@ export const ensureConversationReference = async (params: {
     );
     if (!result.ok) return result;
     if (result.data.activityId) {
-      await publishMailCollaborationEvent({
-        mailboxId: params.mailboxId,
-        conversationId: params.conversationId,
-        reason: "reference",
-        targetId: result.data.result.reference.id,
-        activityId: result.data.activityId,
-      });
+      mailLive.wake();
     }
     return ok(result.data.result);
   } catch (error) {

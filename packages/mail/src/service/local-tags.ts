@@ -6,7 +6,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { insertActivity } from "./collaboration";
-import { publishMailCollaborationEvent, publishMailMailboxEvent } from "./events";
+import { mailLive } from "./live";
 
 type SqlClient = typeof sql;
 
@@ -186,13 +186,7 @@ export const createLocalTag = async (params: {
       return ok({ tag, activityId });
     });
     if (!result.ok) return result;
-    await publishMailMailboxEvent({
-      mailboxId: params.mailboxId,
-      conversationId: null,
-      reason: "local_tag",
-      targetId: result.data.tag.id,
-      activityId: result.data.activityId,
-    });
+    mailLive.wake();
     return ok(result.data.tag);
   } catch (error) {
     return mutationFailure(error, "Failed to create local tag");
@@ -263,13 +257,7 @@ export const updateLocalTag = async (params: {
     });
     if (!result.ok) return result;
     if (result.data.activityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "local_tag",
-        targetId: result.data.tag.id,
-        activityId: result.data.activityId,
-      });
+      mailLive.wake();
     }
     return ok(result.data.tag);
   } catch (error) {
@@ -340,13 +328,7 @@ export const deleteLocalTag = async (params: {
       return ok({ activityId });
     });
     if (!result.ok) return result;
-    await publishMailMailboxEvent({
-      mailboxId: params.mailboxId,
-      conversationId: null,
-      reason: "local_tag",
-      targetId: params.tagId,
-      activityId: result.data.activityId,
-    });
+    mailLive.wake();
     return ok();
   } catch (error) {
     return mutationFailure(error, "Failed to delete local tag");
@@ -520,17 +502,7 @@ export const addConversationLocalTags = async (params: {
       },
     );
     if (!result.ok) return result;
-    await Promise.all(
-      result.data.events.map((event) =>
-        publishMailCollaborationEvent({
-          mailboxId: params.mailboxId,
-          conversationId: event.conversationId,
-          reason: "local_tag",
-          targetId: event.conversationId,
-          activityId: event.activityId,
-        }),
-      ),
-    );
+    if (result.data.events.length > 0) mailLive.wake();
     return ok(result.data.response);
   } catch (error) {
     return mutationFailure(error, "Failed to add conversation tags");
@@ -707,13 +679,7 @@ export const setConversationLocalTags = async (params: {
     );
     if (!result.ok) return result;
     if (result.data.activityId) {
-      await publishMailCollaborationEvent({
-        mailboxId: params.mailboxId,
-        conversationId: result.data.conversationId,
-        reason: "local_tag",
-        targetId: params.conversationId,
-        activityId: result.data.activityId,
-      });
+      mailLive.wake();
     }
     return ok(result.data.state);
   } catch (error) {
