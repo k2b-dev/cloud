@@ -28,6 +28,16 @@ export const isSentFolder = (folderId: SqlFragment): SqlFragment => hasFolderRol
 export const isInboxFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["inbox"]);
 
 /**
+ * Whether one message, joined with one of its live placements or with none (`placement` is null),
+ * puts its conversation in the follow-up views: the copy is filed outside Trash and Junk, or the
+ * message has no copy yet and `hasOpenSubmission` says it is on its way out.
+ */
+export const isFollowUpMessage = (placement: SqlFragment, hasOpenSubmission: SqlFragment): SqlFragment => sql`(
+  (${placement}.message_id IS NOT NULL AND NOT ${isTrashOrJunkFolder(sql`${placement}.folder_id`)})
+  OR (${placement}.message_id IS NULL AND ${hasOpenSubmission})
+)`;
+
+/**
  * Whether a conversation belongs in the follow-up views and their counts: one of its messages is
  * filed outside Trash and Junk, or is an outgoing message the provider holds no copy of yet. Spam
  * the provider files into Junk and mail someone deleted need no follow-up. The conversation keeps
@@ -40,16 +50,13 @@ export const isFollowUpConversation = (conversationId: SqlFragment): SqlFragment
     ON scope_placement.message_id = scope_link.message_id
    AND scope_placement.deleted_at IS NULL
   WHERE scope_link.conversation_id = ${conversationId}
-    AND (
-      (scope_placement.message_id IS NOT NULL AND NOT ${isTrashOrJunkFolder(sql`scope_placement.folder_id`)})
-      OR (
-        scope_placement.message_id IS NULL
-        AND EXISTS (
-          SELECT 1
-          FROM mail.outbox_submissions scope_outbox
-          WHERE scope_outbox.message_id = scope_link.message_id
-            AND scope_outbox.state <> 'cancelled'
-        )
-      )
-    )
+    AND ${isFollowUpMessage(
+      sql`scope_placement`,
+      sql`EXISTS (
+        SELECT 1
+        FROM mail.outbox_submissions scope_outbox
+        WHERE scope_outbox.message_id = scope_link.message_id
+          AND scope_outbox.state <> 'cancelled'
+      )`,
+    )}
 )`;

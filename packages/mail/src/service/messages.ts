@@ -10,7 +10,7 @@ import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
 import { hasSendProblem, isUnsentOutboundMessage } from "./conversation-timeline";
 import { resolveMailExecution } from "./execution";
-import { FOLLOW_UP_VIEWS, isFollowUpConversation } from "./follow-up-scope";
+import { FOLLOW_UP_VIEWS, isFollowUpConversation, isFollowUpMessage } from "./follow-up-scope";
 import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
@@ -515,70 +515,69 @@ export const getConversationViewCounts = async (params: {
   if (!access.ok) return access;
   const currentUserId = userBackedActor(params.context)?.id ?? null;
   const lapsedAssignees = await listLapsedAssignees({ mailboxIds: [params.mailboxId] });
-  const [row] = await sql<
-    {
-      needs_action: number;
-      mine: number;
-      unassigned: number;
-      waiting: number;
-      done: number;
-      snoozed: number;
-      send_problems: number;
-      recently_active: number;
-    }[]
-  >`
-    SELECT
-      COUNT(*) FILTER (
-        WHERE scope.follow_up AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-      )::int AS needs_action,
-      COUNT(*) FILTER (
-        WHERE scope.follow_up
-          AND c.assignee_user_id = ${currentUserId}::uuid
-          AND c.work_status <> 'done'
-          AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-      )::int AS mine,
-      COUNT(*) FILTER (
-        WHERE scope.follow_up
-          AND ${isUnassignedConversation(lapsedAssignees)}
-          AND c.work_status <> 'done'
-          AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-      )::int AS unassigned,
-      COUNT(*) FILTER (
-        WHERE scope.follow_up AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
-      )::int AS waiting,
-      COUNT(*) FILTER (WHERE c.work_status = 'done')::int AS done,
-      COUNT(*) FILTER (WHERE scope.follow_up AND c.snoozed_until > now())::int AS snoozed,
-      COUNT(*) FILTER (
-        WHERE EXISTS (
-          SELECT 1
-          FROM mail.conversation_messages problem_cm
-          WHERE problem_cm.conversation_id = c.id
-            AND ${hasSendProblem(sql`problem_cm.message_id`)}
-        )
-      )::int AS send_problems,
-      COUNT(*)::int AS recently_active
-    FROM mail.conversations c
-    -- Only open or postponed conversations can be in a follow-up view; Done ones skip the check.
-    CROSS JOIN LATERAL (
-      SELECT CASE
-        WHEN c.work_status <> 'done' OR c.snoozed_until > now() THEN ${isFollowUpConversation(sql`c.id`)}
-        ELSE false
-      END AS follow_up
-    ) scope
-    WHERE c.mailbox_id = ${params.mailboxId}::uuid
-      AND EXISTS (
-        SELECT 1
-        FROM mail.conversation_messages visible_cm
-        LEFT JOIN mail.message_placements visible_mp
-          ON visible_mp.message_id = visible_cm.message_id
-         AND visible_mp.deleted_at IS NULL
-        LEFT JOIN mail.outbox_submissions visible_outbox
-          ON visible_outbox.message_id = visible_cm.message_id
-         AND visible_outbox.state <> 'cancelled'
-        WHERE visible_cm.conversation_id = c.id
-          AND (visible_mp.message_id IS NOT NULL OR visible_outbox.id IS NOT NULL)
-      )
-  `;
+  // One pass over the mailbox's messages decides each conversation once. PostgreSQL prices the
+  // per-message folder and send checks so high that it compiled this query with JIT, which took
+  // seconds in a mailbox with a few thousand messages while the counting itself takes milliseconds.
+  const [row] = await sql.begin(async (tx) => {
+    await tx`SET LOCAL jit = off`;
+    return tx<
+      {
+        needs_action: number;
+        mine: number;
+        unassigned: number;
+        waiting: number;
+        done: number;
+        snoozed: number;
+        send_problems: number;
+        recently_active: number;
+      }[]
+    >`
+      SELECT
+        COUNT(*) FILTER (
+          WHERE scope.follow_up AND scope.work_status = 'needs_action' AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+        )::int AS needs_action,
+        COUNT(*) FILTER (
+          WHERE scope.follow_up
+            AND scope.assignee_user_id = ${currentUserId}::uuid
+            AND scope.work_status <> 'done'
+            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+        )::int AS mine,
+        COUNT(*) FILTER (
+          WHERE scope.follow_up
+            AND ${isUnassignedConversation(lapsedAssignees, sql`scope`)}
+            AND scope.work_status <> 'done'
+            AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+        )::int AS unassigned,
+        COUNT(*) FILTER (
+          WHERE scope.follow_up AND scope.work_status = 'waiting' AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
+        )::int AS waiting,
+        COUNT(*) FILTER (WHERE scope.work_status = 'done')::int AS done,
+        COUNT(*) FILTER (WHERE scope.follow_up AND scope.snoozed_until > now())::int AS snoozed,
+        COUNT(*) FILTER (WHERE scope.send_problem)::int AS send_problems,
+        COUNT(*)::int AS recently_active
+      FROM (
+        SELECT
+          c.mailbox_id,
+          c.work_status,
+          c.snoozed_until,
+          c.assignee_user_id,
+          bool_or(${isFollowUpMessage(sql`placement`, sql`outbox.id IS NOT NULL`)}) AS follow_up,
+          bool_or(${hasSendProblem(sql`link.message_id`)}) AS send_problem
+        FROM mail.conversations c
+        JOIN mail.conversation_messages link ON link.conversation_id = c.id
+        LEFT JOIN mail.message_placements placement
+          ON placement.message_id = link.message_id
+         AND placement.deleted_at IS NULL
+        LEFT JOIN mail.outbox_submissions outbox
+          ON outbox.message_id = link.message_id
+         AND outbox.state <> 'cancelled'
+        WHERE c.mailbox_id = ${params.mailboxId}::uuid
+        GROUP BY c.id
+        -- A conversation counts while one of its messages is filed somewhere or on its way out.
+        HAVING bool_or(placement.message_id IS NOT NULL OR outbox.id IS NOT NULL)
+      ) scope
+    `;
+  });
   return ok({
     needs_action: row?.needs_action ?? 0,
     mine: row?.mine ?? 0,
