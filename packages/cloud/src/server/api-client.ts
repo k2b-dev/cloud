@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { hc } from "hono/client";
+import { insideMobileApp, renewAppSession } from "../browser/app-session";
 
 export type CreateApiClientConfig = {
   baseUrl?: string;
@@ -10,9 +11,22 @@ export type CreateApiClientConfig = {
 // ==========================
 
 /**
- * Creates a typed Hono API client.
+ * A request from a page of the mobile app that answers `401` met an expired app session. The client renews it and
+ * sends the request once more, so the action is not lost; Core already refused the first attempt before it ran.
  */
-export const createApiClient = <TApi extends Hono<any, any, any>>(config: CreateApiClientConfig = {}) => hc<TApi>(config.baseUrl ?? "/api");
+const fetchWithAppSession = async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): Promise<Response> => {
+  const response = await fetch(input, init);
+  if (response.status !== 401 || !insideMobileApp() || init?.body instanceof ReadableStream) return response;
+  if (!(await renewAppSession()).ok) return response;
+  return fetch(input, init);
+};
+
+/**
+ * Creates a typed Hono API client. On a page of the mobile app, it renews an expired app session and repeats the
+ * request once.
+ */
+export const createApiClient = <TApi extends Hono<any, any, any>>(config: CreateApiClientConfig = {}) =>
+  hc<TApi>(config.baseUrl ?? "/api", { fetch: fetchWithAppSession });
 
 /**
  * Untyped fallback API client for core-only browser code.
