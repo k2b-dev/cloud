@@ -128,6 +128,46 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("numbers new commands in lock order and keeps the commands stored before without rewriting them", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.commands DROP COLUMN queue_position`;
+    const [mailbox] = await sql<{ id: string }[]>`
+      INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Queue position')
+      RETURNING id
+    `;
+    const addCommand = async (key: string) => {
+      const [command] = await sql<{ id: string }[]>`
+        INSERT INTO mail.commands (mailbox_id, kind, actor_kind, idempotency_key, request_hash, target, payload, access_subject_kind)
+        VALUES (${mailbox!.id}::uuid, 'sync_mailbox', 'system', ${key}, ${"0".repeat(64)}, '{}'::jsonb, '{}'::jsonb, 'system')
+        RETURNING id
+      `;
+      return command!.id;
+    };
+    try {
+      const stored = await addCommand("stored-before");
+      const storage = async () =>
+        (await sql<{ file: number }[]>`SELECT relfilenode::int AS file FROM pg_class WHERE oid = 'mail.commands'::regclass`)[0]!.file;
+      const before = await storage();
+      await migrate();
+      await migrate();
+      const first = await addCommand("accepted-first");
+      const second = await addCommand("accepted-second");
+      const positions = await sql<{ id: string; queue_position: string }[]>`
+        SELECT id, queue_position::text FROM mail.commands WHERE mailbox_id = ${mailbox!.id}::uuid
+      `;
+      const position = (id: string) => BigInt(positions.find((row) => row.id === id)!.queue_position);
+      expect(position(stored)).toBe(0n);
+      expect(position(first)).toBeGreaterThan(0n);
+      expect(position(second)).toBeGreaterThan(position(first));
+      const [sequence] = await sql<{ cache_size: string }[]>`
+        SELECT cache_size::text FROM pg_sequences WHERE schemaname = 'mail' AND sequencename = 'commands_queue_position_seq'
+      `;
+      expect({ cacheSize: sequence?.cache_size, rewritten: (await storage()) !== before }).toEqual({ cacheSize: "1", rewritten: false });
+    } finally {
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox!.id}::uuid`;
+    }
+  });
+
   test("seeds the singleton rows a fresh installation needs", async () => {
     await migrate();
     const [security] = await sql<{ singleton: boolean; trusted: string[] }[]>`

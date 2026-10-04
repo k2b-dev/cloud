@@ -104,6 +104,32 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     END
     $$
   `.simple();
+  await addCommandQueuePosition(tx);
+};
+
+/**
+ * The order in which the mailbox lock accepted each command. Every command insert runs after its
+ * transaction locked the mailbox row and keeps that lock until it commits, so a sequence value taken
+ * by the insert follows the lock order per mailbox, while `created_at` is the transaction's start time.
+ * The sequence must not cache values per session, or a later session could take a lower value.
+ *
+ * Commands that exist before the update keep 0 from the column's catalog default, so neither the
+ * history nor the queue is rewritten. They keep their previous order among themselves through the
+ * `(queue_position, created_at, id)` key and stay ahead of every command accepted afterwards, which
+ * the mailbox lock also accepted later. Only the first start after the update changes the table.
+ */
+const addCommandQueuePosition = async (tx: SqlClient): Promise<void> => {
+  const [existing] = await tx<{ present: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_attribute
+      WHERE attrelid = 'mail.commands'::regclass AND attname = 'queue_position' AND NOT attisdropped
+    ) AS present
+  `;
+  if (existing?.present) return;
+  await tx`CREATE SEQUENCE IF NOT EXISTS mail.commands_queue_position_seq AS bigint CACHE 1`.simple();
+  await tx`ALTER TABLE mail.commands ADD COLUMN queue_position bigint NOT NULL DEFAULT 0`.simple();
+  await tx`ALTER SEQUENCE mail.commands_queue_position_seq OWNED BY mail.commands.queue_position`.simple();
+  await tx`ALTER TABLE mail.commands ALTER COLUMN queue_position SET DEFAULT nextval('mail.commands_queue_position_seq')`.simple();
 };
 
 const migrationErrorCode = (error: unknown): string | null => {

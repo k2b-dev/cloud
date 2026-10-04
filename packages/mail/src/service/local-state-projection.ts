@@ -141,10 +141,10 @@ export const rollbackLocalStateProjection = async (
      AND later.state IN ('queued', 'executing', 'ambiguous')
      AND later.kind = 'change_message_state'
      AND later.target ->> 'remoteMessageRefId' = ${remoteMessageRefId}
-     AND (later.created_at, later.id) > (failed.created_at, failed.id)
+     AND (later.queue_position, later.created_at, later.id) > (failed.queue_position, failed.created_at, failed.id)
      AND later.transport_metadata ? 'localStateProjection'
     WHERE failed.id = ${command.id}::uuid
-    ORDER BY later.created_at, later.id
+    ORDER BY later.queue_position, later.created_at, later.id
   `;
   const later: LaterStateCommand[] = [];
   for (const row of rows) {
