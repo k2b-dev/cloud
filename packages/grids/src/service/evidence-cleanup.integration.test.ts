@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { createDisposableDatabase, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 
 const databaseName = process.env.GRIDS_EVIDENCE_CLEANUP_DB_CHILD;
 
@@ -46,18 +47,20 @@ if (!databaseName) {
       const { cleanupExpiredEvidenceExports, expireCompletedExports } = await import("./evidence-exports");
       const baseId = crypto.randomUUID();
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, 'cln001', 'Cleanup fixture')`;
+      let shortIds: string[] = [];
       const seed = async () => {
         await sql`DELETE FROM grids.evidence_exports`;
+        shortIds = Array.from({ length: 206 }, () => testShortId());
         await sql`
           INSERT INTO grids.evidence_exports (
             id, short_id, base_id, sections, status, requested_at, expires_at, package_filename, package_size_bytes,
             package_sha256, manifest_sha256, manifest
           )
-          SELECT gen_random_uuid(), lpad(position::text, 6, '0'), ${baseId}::uuid, ARRAY['records'], 'completed',
-            now() - ((207 - position) * interval '1 hour'),
-            CASE WHEN position = 206 THEN now() + interval '1 day' ELSE now() - ((206 - position) * interval '1 hour') END,
+          SELECT gen_random_uuid(), item.short_id, ${baseId}::uuid, ARRAY['records'], 'completed',
+            now() - ((207 - item.position) * interval '1 hour'),
+            CASE WHEN item.position = 206 THEN now() + interval '1 day' ELSE now() - ((206 - item.position) * interval '1 hour') END,
             'fixture.tar', 3, repeat('a', 64), repeat('b', 64), '{}'::jsonb
-          FROM generate_series(1, 206) AS position
+          FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, position)
         `;
         await sql`
           INSERT INTO grids.evidence_export_chunks (export_id, sequence, bytes)
@@ -89,8 +92,8 @@ if (!databaseName) {
       expect(await remaining()).toEqual({ expired: 100, remaining: 105, chunks: 106 });
       const expired = await sql<
         { short_id: string }[]
-      >`SELECT short_id FROM grids.evidence_exports WHERE status = 'expired' ORDER BY short_id`;
-      expect(expired.map((row) => row.short_id)).toEqual(Array.from({ length: 100 }, (_, index) => String(index + 1).padStart(6, "0")));
+      >`SELECT short_id FROM grids.evidence_exports WHERE status = 'expired' ORDER BY requested_at`;
+      expect(expired.map((row) => row.short_id)).toEqual(shortIds.slice(0, 100));
 
       const controller = new AbortController();
       await expect(

@@ -284,11 +284,10 @@ postgresTest(
       const after = await capture();
       if (!after.ok) throw new Error(after.error.message);
       expect(after.data.payload.rows).not.toEqual(before.data.payload.rows);
+      const shortIds = Array.from({ length: 10_001 }, () => testShortId());
       await sql`INSERT INTO grids.records (id, short_id, table_id, data)
-      SELECT gen_random_uuid(), candidate.short_id, ${fixture.orders.id}::uuid, ${{ [fixture.amountId]: "1" }}::jsonb
-      FROM (SELECT 'W' || lpad(n::text, 5, '0') AS short_id FROM generate_series(1, 99999) n) candidate
-      WHERE NOT EXISTS (SELECT 1 FROM grids.records r WHERE r.short_id = candidate.short_id)
-      LIMIT 10001`;
+      SELECT gen_random_uuid(), item.short_id, ${fixture.orders.id}::uuid, ${{ [fixture.amountId]: "1" }}::jsonb
+      FROM unnest(${sql.array(shortIds, "TEXT")}) AS item(short_id)`;
       const incomplete = await capture();
       expect(incomplete.ok).toBe(false);
       if (!incomplete.ok) expect(incomplete.error.code).toBe("BAD_INPUT");

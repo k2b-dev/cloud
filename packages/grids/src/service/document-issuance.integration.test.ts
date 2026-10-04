@@ -576,7 +576,7 @@ describe("Workflow run download-all", () => {
 
   postgresTest("rejects a run over the document count limit", async () => {
     const { runId } = await issueRunDocuments([csvFile("export.csv", "x\r\n")]);
-    // Random short IDs may clash with earlier rows; extra attempts keep the run above the limit.
+    const shortIds = Array.from({ length: 1100 }, () => testShortId());
     await sql`
       INSERT INTO grids.documents (
         short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
@@ -584,13 +584,12 @@ describe("Workflow run download-all", () => {
         profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
         validation_report, issued_actor, primary_artifact_key
       )
-      SELECT substr(md5(random()::text || n), 1, 6), template_id, workflow_run_id, 'limit-' || n, snapshot_id, base_id, table_id,
-        record_id, document_number || '-' || n, filename, template_snapshot, render_data, renderer_kind, renderer_version,
+      SELECT item.short_id, template_id, workflow_run_id, 'limit-' || item.n, snapshot_id, base_id, table_id,
+        record_id, document_number || '-' || item.n, filename, template_snapshot, render_data, renderer_kind, renderer_version,
         template_revision, profile_id, profile_version, profile_snapshot, snapshot_sha256, validator_version, validation_status,
         validation_report, issued_actor, primary_artifact_key
-      FROM grids.documents, generate_series(1, 1100) AS n
+      FROM grids.documents, unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, n)
       WHERE workflow_run_id = ${runId}::uuid
-      ON CONFLICT DO NOTHING
     `;
     const [{ count } = { count: 0 }] = await sql<Array<{ count: number }>>`
       SELECT count(*)::int AS count FROM grids.documents WHERE workflow_run_id = ${runId}::uuid

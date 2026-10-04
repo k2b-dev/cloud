@@ -129,11 +129,12 @@ describe("base overview activity integration", () => {
 describe("admin base list integration", () => {
   postgresTest("pages bases that share one creation time exactly once, newest id first", async () => {
     const marker = `stable-paging-${crypto.randomUUID()}`;
+    const shortIds = Array.from({ length: 12 }, () => testShortId());
     // One statement shares one now(): every base ties on created_at.
     const inserted = await sql<{ id: string }[]>`
       INSERT INTO grids.bases (short_id, name)
-      SELECT substr(md5(random()::text || n), 1, 6), ${marker} || ' ' || n
-      FROM generate_series(1, 12) AS n
+      SELECT item.short_id, ${marker} || ' ' || item.n
+      FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, n)
       RETURNING id::text AS id
     `;
     try {

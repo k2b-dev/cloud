@@ -10,16 +10,17 @@ const shortIdSpace = 36 ** 5;
 let shortIdCounter = Date.now() % shortIdSpace;
 
 /**
- * The only source of short IDs for Grids test fixtures. Raw fixture inserts
- * bypass the production `insertWithShortId` retry, so every value must be new
- * to the database: `o` plus a five-digit base36 counter. The counter never
- * repeats within a process and starts at the time this module loads, so a
- * later test process sharing the database starts beyond the IDs of an earlier
- * one that issued fewer IDs than the milliseconds it ran. Bulk fixtures that
- * issue more, such as the 25,001-record evidence export, delete their rows
- * before their test ends. The `o` keeps fixtures apart from IDs that services
- * generate in the same database. A Grids test that generates short IDs any
- * other way fails `integration-test-utils.test.ts`.
+ * The only source of short IDs for Grids test fixtures, also for bulk SQL
+ * inserts. Raw fixture inserts bypass the production `insertWithShortId`
+ * retry, so every value must be new to the database: `o` plus a five-digit
+ * base36 counter. The counter never repeats within a process and starts at the
+ * time this module loads, so a later test process sharing the database starts
+ * beyond the IDs of an earlier one only if that one issued fewer IDs than the
+ * milliseconds it ran. A process that issues more, like the evidence exports
+ * with their 25,001-record test, deletes the rows of that test and of every
+ * later test in the process. The `o` keeps fixtures apart from IDs that
+ * services generate in the same database. `integration-test-utils.test.ts`
+ * flags the common other ways to make up a short ID in Grids database tests.
  */
 export const testShortId = () => {
   shortIdCounter = (shortIdCounter + 1) % shortIdSpace;

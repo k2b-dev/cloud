@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { parseGridsQueryDsl } from "./parser";
 import { previewDslQuery } from "./preview";
@@ -25,14 +26,11 @@ describe("GQL grouped execution page boundaries", () => {
     async () => {
       const fixture = await insertDslDbFixture();
       try {
+        const shortIds = Array.from({ length: 10_001 }, () => testShortId());
         await sql`INSERT INTO grids.records (id, short_id, table_id, data)
-        SELECT gen_random_uuid(), candidate.short_id, ${fixture.orders.id}::uuid,
-          jsonb_build_object(${fixture.statusId}::text, candidate.short_id, ${fixture.amountId}::text, 123456)
-        FROM (
-          SELECT 'G' || lpad(n::text, 5, '0') AS short_id FROM generate_series(1, 20000) n
-        ) candidate
-        WHERE NOT EXISTS (SELECT 1 FROM grids.records existing WHERE existing.short_id = candidate.short_id)
-        LIMIT 10001`;
+        SELECT gen_random_uuid(), item.short_id, ${fixture.orders.id}::uuid,
+          jsonb_build_object(${fixture.statusId}::text, item.short_id, ${fixture.amountId}::text, 123456)
+        FROM unnest(${sql.array(shortIds, "TEXT")}) AS item(short_id)`;
         const context = {
           ...ctx(fixture),
           views: [

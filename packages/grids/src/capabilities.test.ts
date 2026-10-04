@@ -1091,11 +1091,12 @@ describe("Grids capabilities", () => {
         error: { code: "BAD_INPUT", message: expect.stringContaining("Select fewer fields") },
       });
 
+      const shortIds = Array.from({ length: 30 }, () => testShortId());
       await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        SELECT gen_random_uuid(), substring(md5(random()::text) FROM 1 FOR 6), ${tableId}::uuid,
-               jsonb_build_object(${fieldId}::text, 'page-' || item::text || repeat('x', 10000))
-        FROM generate_series(1, 30) AS item
+        SELECT gen_random_uuid(), item.short_id, ${tableId}::uuid,
+               jsonb_build_object(${fieldId}::text, 'page-' || item.n::text || repeat('x', 10000))
+        FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, n)
       `;
       const pagedQuery = `from table {${tablePublicId}}\nselect {${fieldPublicId}}\nwhere contains({${fieldPublicId}}, 'page-')`;
       for (const query of [

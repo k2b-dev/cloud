@@ -1839,11 +1839,12 @@ describe("combined table integration", () => {
     async () => {
       const fixture = await createFixture();
       try {
+        const shortIds = Array.from({ length: 10_025 }, () => testShortId());
         await sql`
         INSERT INTO grids.records (id, short_id, table_id, data)
-        SELECT gen_random_uuid(), 'E' || lpad(sequence::text, 5, '0'), ${fixture.sourceTableId}::uuid,
-               jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Export row ' || sequence::text)
-        FROM generate_series(1, 10025) sequence
+        SELECT gen_random_uuid(), item.short_id, ${fixture.sourceTableId}::uuid,
+               jsonb_build_object(${fixture.sourceTextFieldId}::text, 'Export row ' || item.sequence::text)
+        FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, sequence)
       `;
         const exported = await exportRecords({
           tableId: fixture.targetTableId,

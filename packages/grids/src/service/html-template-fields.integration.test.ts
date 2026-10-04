@@ -112,11 +112,12 @@ describe("HTML template field integration", () => {
         expect(latest.ok).toBe(true);
         if (latest.ok) expect(latest.data.rows[0]?.recordId).toBe(latestRecordShortId);
 
+        const shortIds = Array.from({ length: 500 }, () => testShortId());
         await sql`
           INSERT INTO grids.records (id, short_id, table_id, data)
-          SELECT gen_random_uuid(), 'E' || lpad(sequence::text, 5, '0'), ${tableId}::uuid,
-                 jsonb_build_object(${nameFieldId}::text, 'Product ' || sequence::text)
-          FROM generate_series(1, 500) sequence
+          SELECT gen_random_uuid(), item.short_id, ${tableId}::uuid,
+                 jsonb_build_object(${nameFieldId}::text, 'Product ' || item.sequence::text)
+          FROM unnest(${sql.array(shortIds, "TEXT")}) WITH ORDINALITY AS item(short_id, sequence)
         `;
         await materialize(tableId);
         const exported = await exportRecords({

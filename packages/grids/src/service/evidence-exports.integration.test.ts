@@ -687,6 +687,7 @@ describe("evidence export integration", () => {
       `;
       expect(queued?.count).toBe(0);
     } finally {
+      // These 25,001 IDs run ahead of the clock, so later test processes issue them again (see testShortId).
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
