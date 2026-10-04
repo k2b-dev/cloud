@@ -1,4 +1,4 @@
-import { PWA_AUTH_PATH, PWA_SCOPE, PwaRenewResultSchema } from "../contracts/pwa";
+import { PWA_AUTH_PATH, PWA_SCOPE } from "../contracts/pwa-paths";
 
 export type AppSessionRenewal = {
   /** The page has a valid app session now. */
@@ -37,9 +37,15 @@ const call = async (): Promise<AppSessionRenewal & { renewed: boolean }> => {
     return { ok: false, renewed: false };
   }
   if (!response.ok) return { ok: false, renewed: false };
-  const parsed = PwaRenewResultSchema.safeParse(await response.json().catch(() => null));
-  if (!parsed.success) return { ok: false, renewed: false };
-  return { ok: true, renewed: parsed.data.renewed, otherAccount: parsed.data.otherAccount };
+  // `PwaRenewResultSchema`, read by hand: the typed client on every page must not load the validators.
+  const body: unknown = await response.json().catch(() => null);
+  if (typeof body !== "object" || body === null || !("renewed" in body) || typeof body.renewed !== "boolean") {
+    return { ok: false, renewed: false };
+  }
+  const other = "otherAccount" in body ? body.otherAccount : undefined;
+  const otherAccount =
+    typeof other === "object" && other !== null && "name" in other && typeof other.name === "string" ? { name: other.name } : undefined;
+  return { ok: true, renewed: body.renewed, otherAccount };
 };
 
 let running: Promise<AppSessionRenewal> | undefined;
