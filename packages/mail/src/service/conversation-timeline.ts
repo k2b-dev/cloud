@@ -46,6 +46,21 @@ export const isUnsentOutboundMessage = (messageId: SqlFragment): SqlFragment => 
 )`;
 
 /**
+ * Whether a message's send needs attention: it failed, its outcome is unknown, the provider left it
+ * unsent, or a scheduled retry follows an error. Send problems lists exactly these messages, and
+ * conversations that contain one.
+ */
+export const hasSendProblem = (messageId: SqlFragment): SqlFragment => sql`EXISTS (
+  SELECT 1
+  FROM mail.outbox_submissions problem_outbox
+  WHERE problem_outbox.message_id = ${messageId}
+    AND (
+      (problem_outbox.state = 'scheduled' AND problem_outbox.last_error_code IS NOT NULL)
+      OR problem_outbox.state IN ('failed', 'unknown', 'reconciled_unsent', 'needs_attention')
+    )
+)`;
+
+/**
  * Whether mail reached a sent message's conversation after someone chose Send, such as an answer
  * that arrived while a reply waited for its send time. The reply was written without that mail, so
  * sending it does not answer it. Both times are Mail's own clock: when the send was committed and
