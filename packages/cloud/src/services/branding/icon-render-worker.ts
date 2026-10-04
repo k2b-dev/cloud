@@ -2,6 +2,7 @@
 
 import { createCanvas, type Image, loadImage } from "@napi-rs/canvas";
 import { z } from "zod";
+import { sizedSvg } from "./icon-svg";
 
 const MAX_SOURCE_BYTES = 10 * 1024 * 1024;
 const inputSchema = z.object({
@@ -25,17 +26,6 @@ const inputSchema = z.object({
     .min(1)
     .max(8),
 });
-
-/** Gives an SVG root the target size, so the vector renders sharp instead of being scaled as a bitmap. */
-const sizedSvg = (svg: string, size: number): string =>
-  svg.replace(/<svg\b([^>]*)>/i, (_tag, attributes: string) => {
-    const width = /\swidth\s*=\s*["']?([\d.]+)/i.exec(attributes)?.[1];
-    const height = /\sheight\s*=\s*["']?([\d.]+)/i.exec(attributes)?.[1];
-    let rest = attributes.replace(/\s(?:width|height)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
-    // Without a viewBox, a new size would crop instead of scale.
-    if (!/\sviewBox\s*=/i.test(rest) && width && height) rest += ` viewBox="0 0 ${width} ${height}"`;
-    return `<svg${rest} width="${size}" height="${size}">`;
-  });
 
 const decode = async (data: Buffer, mime: string, size: number): Promise<Image> =>
   loadImage(mime === "image/svg+xml" ? Buffer.from(sizedSvg(data.toString("utf8"), size)) : data);

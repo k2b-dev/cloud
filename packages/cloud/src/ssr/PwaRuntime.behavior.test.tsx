@@ -178,12 +178,13 @@ else {
     }
   });
 
-  test("reloads once when the phone is no longer paired and opens the blocked state for a blocked account", async () => {
+  test("opens the signed-out pairing view when the phone is no longer paired, and the blocked state for a blocked account", async () => {
     const unpaired = mockRenew([Response.json({ code: "UNPAIRED", message: "" }, { status: 401 })]);
     let harness = mount();
     try {
-      await waitFor(() => harness.reloads === 1, "reload");
-      expect(harness.replaced).toEqual([]);
+      await waitFor(() => harness.replaced.length === 1, "signed-out state");
+      expect(harness.replaced).toEqual(["/pwa/?pwa=ended"]);
+      expect(harness.reloads).toBe(0);
     } finally {
       harness.dispose();
       unpaired.restore();

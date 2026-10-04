@@ -15,7 +15,7 @@ const waitFor = async (condition: () => boolean, label: string) => {
   throw new Error(`Timed out waiting for ${label}`);
 };
 
-type Route = (method: string, path: string, body: unknown) => Response | undefined;
+type Route = (method: string, path: string, body: unknown) => Response | Promise<Response> | undefined;
 const mockFetch = (route: Route) => {
   const calls: { method: string; path: string; body: unknown }[] = [];
   const spy = spyOn(globalThis, "fetch").mockImplementation(
@@ -24,7 +24,7 @@ const mockFetch = (route: Route) => {
         const path = new URL(String(input), "http://localhost/").pathname;
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
         calls.push({ method: init?.method ?? "GET", path, body });
-        return route(init?.method ?? "GET", path, body) ?? Response.json({ code: "UNAVAILABLE", message: "" }, { status: 503 });
+        return (await route(init?.method ?? "GET", path, body)) ?? Response.json({ code: "UNAVAILABLE", message: "" }, { status: 503 });
       },
       { preconnect: globalThis.fetch.preconnect },
     ),
@@ -160,6 +160,57 @@ else {
     }
   });
 
+  test("a link that opens the app replaces the check for an earlier pairing, so its answer cannot delete the new cookie", async () => {
+    let answerClaim = () => {};
+    const fetch = mockFetch((_method, path) =>
+      path === "/pwa/_auth/pairings/claim"
+        ? new Promise<Response>((resolve) => {
+            answerClaim = () => resolve(claimed());
+          })
+        : path === "/pwa/_auth/pairings/complete"
+          ? waiting()
+          : undefined,
+    );
+    const page = mount({ standalone: true, url: `/pwa/?pwa=new#pair=${SECRET}` });
+    try {
+      await waitFor(() => fetch.calls.length === 1, "claim");
+      await Bun.sleep(20);
+      expect(fetch.calls.map((call) => call.path)).toEqual(["/pwa/_auth/pairings/claim"]);
+      answerClaim();
+      await waitFor(() => text(page.dom).includes("482 913"), "code");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a link the running app receives waits for a completion still on its way", async () => {
+    let answerCompletion = () => {};
+    const fetch = mockFetch((_method, path) =>
+      path === "/pwa/_auth/pairings/complete"
+        ? new Promise<Response>((resolve) => {
+            answerCompletion = () => resolve(Response.json({ code: "EXPIRED", message: "" }, { status: 410 }));
+          })
+        : path === "/pwa/_auth/pairings/claim"
+          ? claimed()
+          : undefined,
+    );
+    const page = mount({ standalone: true });
+    try {
+      await waitFor(() => fetch.calls.length === 1, "pending completion check");
+      page.dom.window.location.hash = `#pair=${SECRET}`;
+      page.dom.window.dispatchEvent(new page.dom.window.HashChangeEvent("hashchange"));
+      await Bun.sleep(20);
+      expect(fetch.calls.map((call) => call.path)).toEqual(["/pwa/_auth/pairings/complete"]);
+      answerCompletion();
+      await waitFor(() => text(page.dom).includes("482 913"), "code");
+      expect(fetch.calls.map((call) => call.path).slice(0, 2)).toEqual(["/pwa/_auth/pairings/complete", "/pwa/_auth/pairings/claim"]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("a pasted link pairs, and other links get their own message", async () => {
     const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/pairings/claim" ? claimed() : undefined));
     const page = mount({ standalone: true });
@@ -234,15 +285,9 @@ else {
     [429, "LIMIT_REACHED", { message: "You have paired the most phones allowed. Remove one on the web." }],
   ] as const)
     test(`waiting ends on ${code}`, async () => {
-      let completions = 0;
       const fetch = mockFetch((_method, path) => {
         if (path === "/pwa/_auth/pairings/claim") return claimed();
-        if (path === "/pwa/_auth/pairings/complete") {
-          completions += 1;
-          return completions === 1
-            ? Response.json({ code: "EXPIRED", message: "" }, { status: 410 })
-            : Response.json({ code, message: "" }, { status });
-        }
+        if (path === "/pwa/_auth/pairings/complete") return Response.json({ code, message: "" }, { status });
       });
       const page = mount({ standalone: true, url: `/pwa/?pwa=new#pair=${SECRET}` });
       try {

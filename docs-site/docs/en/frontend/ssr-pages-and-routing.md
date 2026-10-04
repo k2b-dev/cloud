@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-09-29
+updated: 2026-10-04
 ---
 
 # SSR pages and routing
@@ -133,9 +133,11 @@ missing and inaccessible resources apart. Other HTTP error statuses are
 preserved and receive generic failure copy. This does not catch exceptions.
 
 The optional third argument accepts `title`, `description`,
-`action: { label, href, icon? }`, and `layout: "cloud" | "minimal"` (default
-`"cloud"`). Supply only safe, localized application copy, never internal error
-details. Use `"minimal"` for standalone pages without Cloud navigation. A
+`action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`
+(default `"cloud"`). Supply only safe, localized application copy, never
+internal error details. Use `"minimal"` for standalone pages without Cloud
+navigation. `"pwa"` (preview) renders the error as a page of the mobile app,
+with a link back to its Start page; it is for pages below `/pwa/`. A
 custom public page can instead set `c.status(404)` and retain its own render
 function. Keep independent widget or panel failures inside their page.
 

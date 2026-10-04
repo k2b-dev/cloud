@@ -192,6 +192,43 @@ else {
     }
   });
 
+  test("a renewal that sets no cookies inside the rotation grace is tried once more after it, then returns to Start", async () => {
+    const answers = [Response.json({ renewed: false }), Response.json({ renewed: true })];
+    const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/session/renew" ? answers.shift() : undefined));
+    const delays: (number | undefined)[] = [];
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) => {
+      delays.push(delay);
+      return window.setTimeout(callback, delay === 60_000 ? 5 : delay);
+    }) as never);
+    const page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
+    try {
+      await waitFor(() => page.replaced.length === 1, "Start");
+      expect(fetch.calls.map((call) => call.path)).toEqual(["/pwa/_auth/session/renew", "/pwa/_auth/session/renew"]);
+      expect(delays).toContain(60_000);
+      expect(page.replaced).toEqual(["/pwa/"]);
+    } finally {
+      timeout.mockRestore();
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a renewal that never sets cookies stays on the unavailable state", async () => {
+    const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/session/renew" ? Response.json({ renewed: false }) : undefined));
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) =>
+      window.setTimeout(callback, delay === 60_000 ? 5 : delay)) as never);
+    const page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
+    try {
+      await waitFor(() => fetch.calls.length === 2, "second renewal");
+      await Bun.sleep(20);
+      expect(page.replaced).toEqual([]);
+    } finally {
+      timeout.mockRestore();
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("a connected app explains why a pairing link does not pair again; other pages just drop it", async () => {
     let page = mount(() => createComponent(modules!.PairingNotice, { name: "Mia Muster" }), { url: `/pwa/#pair=${SECRET}` });
     try {

@@ -175,6 +175,10 @@ describe("ssr.pwaAccess", () => {
     expect(document.querySelector('.k2b-placeholder a[href="/pwa/"]')?.textContent).toBe("Back to Start");
     expect(document.querySelector('link[rel="manifest"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("admin handler");
+    expect([response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
+      "no-referrer",
+      "frame-ancestors 'none'",
+    ]);
   });
 
   test("renders the app's 404 in the phone frame", async () => {
@@ -223,12 +227,28 @@ describe("PwaLayout", () => {
     let { document, html } = await render("/pwa/open");
     expect(document.querySelector(".k2b-tab-bar")).toBeNull();
     expect(html).toContain("keepalive:!0");
+    expect(html).toContain("reload:!0");
 
     tokenSpy.mockReturnValue(null);
     apps = [shell, part("inventory", "Inventory")];
     ({ document, html } = await render("/pwa/open"));
     expect(document.querySelector(".k2b-tab-bar")).toBeNull();
     expect(html).toContain("keepalive:!1");
+    // A page without a person shows no times and may hold a pairing link in memory only: no timezone reload.
+    expect(html).toContain("reload:!1");
+  });
+
+  test("refuses framing and referrers on every app page", async () => {
+    signIn("app");
+    apps = [shell];
+    for (const path of ["/pwa/open", "/pwa/missing"]) {
+      const { response } = await render(path);
+      expect([path, response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
+        path,
+        "no-referrer",
+        "frame-ancestors 'none'",
+      ]);
+    }
   });
 
   test("hides parts the person may not see", async () => {

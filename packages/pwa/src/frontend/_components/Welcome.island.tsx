@@ -88,6 +88,15 @@ export default function Welcome(props: WelcomeProps) {
     }
   };
 
+  // Pairing requests go out one after another. A completion answered "expired" deletes the pairing cookie, so it must
+  // never arrive after a claim that has just set a new one.
+  let queue: Promise<unknown> = Promise.resolve();
+  const inOrder = (send: () => Promise<PhoneAnswer>): Promise<PhoneAnswer> => {
+    const answer = queue.then(send);
+    queue = answer;
+    return answer;
+  };
+
   // ── Waiting for the person to type the code on the web ──────────────
   let polling = false;
   let inFlight = false;
@@ -103,7 +112,7 @@ export default function Welcome(props: WelcomeProps) {
   const poll = async () => {
     if (!polling || inFlight || document.visibilityState !== "visible") return;
     inFlight = true;
-    const answer = await phoneAuth.complete();
+    const answer = await inOrder(phoneAuth.complete);
     inFlight = false;
     if (!polling) return;
     if (answer.status === 200) return location.replace(PWA_SCOPE);
@@ -141,7 +150,7 @@ export default function Welcome(props: WelcomeProps) {
     stopPolling();
     setBusy(true);
     setMessage(undefined);
-    const answer = await phoneAuth.claim(parsed.secret, phonePlatform());
+    const answer = await inOrder(() => phoneAuth.claim(parsed.secret, phonePlatform()));
     setBusy(false);
     const claimed = answer.status === 200 ? PwaClaimResultSchema.safeParse(answer.body) : undefined;
     if (claimed?.success) {
@@ -180,8 +189,15 @@ export default function Welcome(props: WelcomeProps) {
 
   onMount(() => {
     const standalone = isStandalone();
+    let linked = false;
     // Read the fragment first: the link must leave the address before anything else runs.
-    onCleanup(watchPairingLink((value) => (standalone ? void claim(value) : setLink(value))));
+    onCleanup(
+      watchPairingLink((value) => {
+        if (!standalone) return setLink(value);
+        linked = true;
+        void claim(value);
+      }),
+    );
     const prompt = createInstallPrompt();
     setInstall(prompt);
     // iPadOS reports a Mac; only the browser knows its touch screen.
@@ -197,10 +213,10 @@ export default function Welcome(props: WelcomeProps) {
       stopPolling();
       document.removeEventListener("visibilitychange", visible);
     });
-    if (!standalone) return;
-    // A pairing may still be running after the app was closed.
+    // A pairing may still be running after the app was closed. A link that opened the app starts a new one instead.
+    if (!standalone || linked) return;
     void (async () => {
-      const answer = await phoneAuth.complete();
+      const answer = await inOrder(phoneAuth.complete);
       if (answer.status === 200) return location.replace(PWA_SCOPE);
       const pending = answer.status === 202 ? PwaCompleteResultSchema.safeParse(answer.body) : undefined;
       if (pending?.success && pending.data.state === "waiting" && !waiting() && !busy()) {

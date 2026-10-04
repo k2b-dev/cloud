@@ -1,6 +1,5 @@
 import { observeMobileShell, syncThemeColor, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
-import { reloadOnce } from "../browser/reload";
 import { PWA_AUTH_PATH, PWA_SCOPE, PWA_SERVICE_WORKER_PATH, PwaRenewResultSchema } from "../contracts/pwa";
 import { pwaMessages } from "./pwa-messages";
 
@@ -95,8 +94,9 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
       }
       if (disposed) return false;
       if (response.status === 401) {
-        // The page request then renews or leads to pairing.
-        reloadOnce("pwa-auth");
+        // The phone was removed or its pairing ended. Core has already deleted the device key with this answer, so
+        // a reload could only show the generic pairing view; the pairing view for a signed-out phone says why.
+        location.replace(`${PWA_SCOPE}?pwa=ended`);
         return false;
       }
       if (response.status === 403) {

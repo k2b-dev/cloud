@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 # API surface
@@ -80,7 +80,9 @@ import {
 ```
 
 This entry point contains Hono context types, middleware, actor helpers,
-validation, resource access, and response helpers.
+validation, resource access, and response helpers. `buildMetadata` holds the
+Cloud `version` and `release` label of the running application's build, for
+example to show the version on a settings page.
 
 For an internal endpoint using signed Cloud invocations, the same barrel exports
 `requireInvocation` and `InvocationExpectation`. Supply the expected target app,

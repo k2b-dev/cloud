@@ -14,7 +14,8 @@ import TimezoneCookie from "./TimezoneCookie.island";
 const TAB_PARTS = 3;
 
 export type PwaLayoutProps = {
-  c: LayoutContext;
+  /** The request context; the layout also sets the page's framing and referrer headers. */
+  c: LayoutContext & { header(name: string, value: string): void };
   /** Header heading and document title. */
   title: string;
   /** Up-navigation inside the part, for example from a detail back to its list. */
@@ -39,6 +40,9 @@ export default function PwaLayout(props: PwaLayoutProps) {
   page.theme = readThemeFromCookieHeader(c.req.raw.headers.get("Cookie"));
   page.title = props.title;
   page.pwa = { name: cloud };
+  // No app page may be framed, and none leaks its address to another site.
+  c.header("Referrer-Policy", "no-referrer");
+  c.header("Content-Security-Policy", "frame-ancestors 'none'");
 
   const parts = visiblePwaParts(getRuntimeContext(c).apps, user, locale);
   const path = new URL(c.req.raw.url).pathname;
@@ -51,7 +55,8 @@ export default function PwaLayout(props: PwaLayoutProps) {
 
   return (
     <LocaleProvider locale={locale}>
-      <TimezoneCookie />
+      {/* Pages without a person show no times. Their pairing link lives only in memory, and a reload would lose it. */}
+      <TimezoneCookie reload={!!user} />
       <MobileShell
         header={<MobileShell.Header title={props.title} back={props.back} actions={props.actions} />}
         footer={user && parts.length > 0 ? <TabBar label={t.tabs} items={items} /> : undefined}

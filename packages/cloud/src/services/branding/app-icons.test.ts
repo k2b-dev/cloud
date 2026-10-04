@@ -3,7 +3,8 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import * as canvasWorker from "../../_internal/canvas-worker";
 import { PWA_CANVAS_COLORS } from "../../contracts/pwa";
 import * as settings from "../settings";
-import { APP_ICON_VARIANTS, type AppIconVariant, createAppIcons } from "./app-icons";
+import { readAppIconSource } from "./app-icon-source";
+import { APP_ICON_RETRY_SECONDS, APP_ICON_VARIANTS, type AppIconVariant, createAppIcons } from "./app-icons";
 
 let logo = "";
 const settingsSpy = spyOn(settings, "get").mockImplementation((async (key: string) => (key === "app.logo" ? logo : undefined)) as never);
@@ -45,6 +46,16 @@ const pixels = async (png: Uint8Array) => {
 const rgba = (hex: string) => [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).concat(255);
 
 const runtime = process.platform === "linux" ? describe : describe.skip;
+
+test("decodes an unchanged logo once, and a new logo on its next read", async () => {
+  logo = pngLogo;
+  const first = await readAppIconSource();
+  expect(await readAppIconSource()).toBe(first);
+  logo = svgLogo;
+  const second = await readAppIconSource();
+  expect(second).not.toBe(first);
+  expect(second.mime).toBe("image/svg+xml");
+});
 
 runtime("app icons", () => {
   test("draws every variant at its size, transparent for any and opaque on the light canvas for maskable and Apple", async () => {
@@ -95,6 +106,25 @@ runtime("app icons", () => {
     expect(second).not.toBe(first);
     expect((await icons.render("pwa-icon-192")).etag).toBe(`"${second}"`);
     expect(spawnSpy).toHaveBeenCalledTimes(2);
+  }, 30_000);
+
+  test("keeps a failed run for the retry window, so failing requests do not start a worker each", async () => {
+    logo = pngLogo;
+    const icons = createAppIcons();
+    spawnSpy.mockImplementationOnce(() => {
+      throw new Error("The worker could not start.");
+    });
+    await expect(icons.render("pwa-icon-192")).rejects.toThrow();
+    await expect(icons.render("pwa-icon-512")).rejects.toThrow();
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const now = Date.now();
+    const clock = spyOn(Date, "now").mockReturnValue(now + APP_ICON_RETRY_SECONDS * 1000);
+    try {
+      expect((await icons.render("pwa-icon-192")).png.byteLength).toBeGreaterThan(0);
+      expect(spawnSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
   }, 30_000);
 
   test("falls back to the Cloud logo when the logo cannot be decoded or is not an uploaded image", async () => {

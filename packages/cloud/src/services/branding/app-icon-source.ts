@@ -11,13 +11,9 @@ export type AppIconSource = { data: Uint8Array; mime: string; version: string };
 
 const DATA_URI = /^data:([^;,]+);base64,(.+)$/;
 
-/**
- * The installation logo the app icons are drawn from: `app.logo` when it is a base64 data URI (as uploaded in the
- * settings), otherwise the Cloud logo. `version` is the first 12 hex characters of a hash over the logo and the
- * drawing, so it changes exactly when the icons do.
- */
-export const readAppIconSource = async (): Promise<AppIconSource> => {
-  const logo = (await settings.get<string>("app.logo")) || "";
+let latest: { logo: string; source: AppIconSource } | undefined;
+
+const parse = (logo: string): AppIconSource => {
   const match = DATA_URI.exec(logo);
   const data = match ? Buffer.from(match[2]!, "base64") : null;
   const source =
@@ -28,5 +24,17 @@ export const readAppIconSource = async (): Promise<AppIconSource> => {
   return { data: source.data, mime: source.mime, version };
 };
 
-/** The icons' version; the app's manifest and service worker carry it, so a new logo reaches installed apps. */
+/**
+ * The installation logo the app icons are drawn from: `app.logo` when it is a base64 data URI (as uploaded in the
+ * settings), otherwise the Cloud logo. `version` is the first 12 hex characters of a hash over the logo and the
+ * drawing, so it changes exactly when the icons do.
+ */
+export const readAppIconSource = async (): Promise<AppIconSource> => {
+  const logo = (await settings.get<string>("app.logo")) || "";
+  // The manifest, the worker and the icons read it on every request; decode and hash a logo only once.
+  if (latest?.logo !== logo) latest = { logo, source: parse(logo) };
+  return latest.source;
+};
+
+/** The icons' version; the app's manifest carries it, so a new logo reaches installed apps. */
 export const appIconVersion = async (): Promise<string> => (await readAppIconSource()).version;

@@ -189,8 +189,8 @@ describe("shell routes", () => {
     expect(await response.text()).toContain("k2b-mobile-shell");
   });
 
-  test("every shell response refuses framing and referrers", async () => {
-    for (const path of ["/pwa/?pwa=new", "/pwa/offline", "/pwa/manifest.webmanifest", "/pwa/sw.js", "/pwa/nothing-here"]) {
+  test("every shell page refuses framing and referrers", async () => {
+    for (const path of ["/pwa/?pwa=new", "/pwa/?pwa=unavailable", "/pwa/nothing-here"]) {
       const response = await request(path);
       expect([path, response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
         path,
@@ -240,44 +240,26 @@ const loadWorker = async (network: (request: Request) => Promise<Response>) => {
   const response = await request("/pwa/sw.js");
   const source = await response.text();
   const listeners = new Map<string, Listener>();
-  const store = new Map<string, Map<string, Response>>();
-  const added: { url: string; init?: RequestInit }[] = [];
   const calls = { skipWaiting: 0, claim: 0 };
-  const caches = {
-    open: async (name: string) => {
-      const cache = store.get(name) ?? new Map<string, Response>();
-      store.set(name, cache);
-      return {
-        add: async (entry: { url: string; init?: RequestInit }) => {
-          added.push(entry);
-          cache.set(entry.url, new Response("offline page", { status: 200 }));
-        },
-      };
+  // Every cache a page script could have written to; the worker must never read one.
+  const caches = new Proxy(
+    {},
+    {
+      get: () => {
+        throw new Error("The worker read CacheStorage");
+      },
     },
-    keys: async () => [...store.keys()],
-    delete: async (name: string) => store.delete(name),
-    match: async (path: string) =>
-      [...store.values()]
-        .find((cache) => cache.has(path))
-        ?.get(path)
-        ?.clone(),
-  };
+  );
   const worker = {
     addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
     skipWaiting: async () => void calls.skipWaiting++,
     clients: { claim: async () => void calls.claim++ },
   };
-  new Function("self", "caches", "fetch", "location", "Request", "Response", source)(
+  new Function("self", "caches", "fetch", "location", "Response", source)(
     worker,
     caches,
     network,
     { origin: "https://cloud.example.test" },
-    class {
-      constructor(
-        readonly url: string,
-        readonly init?: RequestInit,
-      ) {}
-    },
     Response,
   );
   const run = async (type: string, event: Record<string, unknown>) => {
@@ -290,50 +272,55 @@ const loadWorker = async (network: (request: Request) => Promise<Response>) => {
     listeners.get("fetch")!({ request: { url, mode }, respondWith: (promise: Promise<Response>) => (answer = promise) });
     return answer ? await answer : undefined;
   };
-  return { response, source, store, added, calls, run, navigate };
+  const offlineHtml = JSON.parse(/^const OFFLINE_HTML = (".*");$/m.exec(source)![1]!) as string;
+  return { response, source, offlineHtml, calls, run, navigate };
 };
 
 describe("service worker", () => {
-  test("is served for the /pwa/ scope, versioned by the release, the name and the icons", async () => {
+  test("is served for the /pwa/ scope, changes with the installation name, and revalidates", async () => {
     const worker = await loadWorker(async () => new Response("page"));
     expect(worker.response.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
     expect(worker.response.headers.get("cache-control")).toBe("no-cache");
     expect(worker.response.headers.get("service-worker-allowed")).toBeNull();
     expect(worker.source).toEndWith(serviceWorkerSource);
-    const version = /^const VERSION = "([0-9a-f]{16})";/.exec(worker.source)?.[1];
-    expect(version).toBeDefined();
+    const etag = worker.response.headers.get("etag")!;
+    expect((await request("/pwa/sw.js", { headers: { "If-None-Match": etag } })).status).toBe(304);
     settings["app.name"] = "Another Cloud";
-    expect((await (await request("/pwa/sw.js")).text()).startsWith(`const VERSION = "${version}";`)).toBe(false);
+    const changed = await request("/pwa/sw.js", { headers: { "If-None-Match": etag } });
+    expect(changed.status).toBe(200);
+    expect(await changed.text()).not.toBe(worker.source);
   });
 
-  test("caches only the offline page, without credentials, and takes over at once", async () => {
+  test("caches nothing and takes over at once", async () => {
     const worker = await loadWorker(async () => new Response("page"));
     await worker.run("install", {});
-    expect(worker.added).toEqual([{ url: "/pwa/offline", init: { cache: "reload", credentials: "omit", redirect: "error" } }]);
     expect(worker.calls.skipWaiting).toBe(1);
-    worker.store.set("cloud-pwa-old", new Map());
-    worker.store.set("other-cache", new Map());
     await worker.run("activate", {});
-    expect([...worker.store.keys()].sort()).toEqual([`cloud-pwa-${/"([0-9a-f]{16})"/.exec(worker.source)![1]}`, "other-cache"]);
     expect(worker.calls.claim).toBe(1);
   });
 
-  test("shows the offline page for network errors, gateway errors and Core's 404 below /pwa/, and nothing else", async () => {
+  test("shows its own offline page for network errors, gateway errors and Core's 404 below /pwa/, and nothing else", async () => {
     let answer: () => Promise<Response> = async () => new Response("page");
     const worker = await loadWorker(() => answer());
-    await worker.run("install", {});
+    const offline = async (url: string) => {
+      const response = (await worker.navigate(url))!;
+      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      return (await response.text()) === worker.offlineHtml;
+    };
 
     expect(await (await worker.navigate("https://cloud.example.test/pwa/inventory"))!.text()).toBe("page");
     answer = async () => {
       throw new TypeError("offline");
     };
-    expect(await (await worker.navigate("https://cloud.example.test/pwa/"))!.text()).toBe("offline page");
+    expect(await offline("https://cloud.example.test/pwa/")).toBe(true);
     for (const status of [502, 503, 504]) {
       answer = async () => new Response("gateway", { status });
-      expect(await (await worker.navigate("https://cloud.example.test/pwa/"))!.text()).toBe("offline page");
+      expect(await offline("https://cloud.example.test/pwa/")).toBe(true);
     }
     answer = async () => new Response("core 404", { status: 404, headers: { "X-Gateway-App": "core" } });
-    expect(await (await worker.navigate("https://cloud.example.test/pwa/"))!.text()).toBe("offline page");
+    expect(await offline("https://cloud.example.test/pwa/")).toBe(true);
+    // Core serves /pwa/_auth: a link there cannot call up the offline page.
+    expect(await (await worker.navigate("https://cloud.example.test/pwa/_auth/anything"))!.text()).toBe("core 404");
     answer = async () => new Response("part 404", { status: 404, headers: { "X-Gateway-App": "inventory" } });
     expect(await (await worker.navigate("https://cloud.example.test/pwa/inventory/9"))!.text()).toBe("part 404");
     answer = async () => new Response("server error", { status: 500 });
@@ -349,10 +336,7 @@ describe("service worker", () => {
 describe("offline page", () => {
   test("is self-contained, carries both languages and the inline logo, and nothing about the account", async () => {
     signIn();
-    const response = await request("/pwa/offline");
-    expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    const html = await response.text();
+    const { offlineHtml: html } = await loadWorker(async () => new Response("page"));
     expect(html).toContain("Can&#39;t reach Example Cloud");
     expect(html).toContain("Example Cloud nicht erreichbar");
     expect(html).toContain('src="data:image/svg+xml;base64,');

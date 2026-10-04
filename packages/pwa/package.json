@@ -20,8 +20,6 @@
   "devDependencies": {
     "@k2b/ssr": "catalog:",
     "@types/bun": "catalog:",
-    "bun-plugin-tailwind": "catalog:",
-    "playwright": "catalog:",
     "typescript": "catalog:"
   },
   "license": "AGPL-3.0-or-later"

@@ -21,6 +21,8 @@ export const APP_ICON_VARIANTS = {
 export type AppIconVariant = keyof typeof APP_ICON_VARIANTS;
 
 const RENDER_TIMEOUT_MS = 10_000;
+/** A failed run is kept this long, so failing requests cannot start a worker each; the icon routes ask to retry after it. */
+export const APP_ICON_RETRY_SECONDS = 60;
 /** Four PNGs of at most 512 px, in base64, plus the JSON envelope. */
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const RenderResult = z.object({
@@ -82,20 +84,22 @@ const renderAll = async (source: Awaited<ReturnType<typeof readAppIconSource>>):
 
 /**
  * Renders the mobile app's icons from the installation logo. One run draws all variants in an isolated process; the
- * result is kept for the current logo, concurrent requests share one run, and a new logo is drawn on its next read.
+ * result is kept for the current logo, concurrent requests share one run, a new logo is drawn on its next read, and a
+ * failed run is tried again after `APP_ICON_RETRY_SECONDS`.
  */
 export const createAppIcons = () => {
-  let current: { version: string; icons: Promise<Map<AppIconVariant, Uint8Array<ArrayBuffer>>> } | undefined;
+  type Run = { version: string; icons: Promise<Map<AppIconVariant, Uint8Array<ArrayBuffer>>>; failedAt?: number };
+  let current: Run | undefined;
   return {
     version: appIconVersion,
     render: async (variant: AppIconVariant): Promise<{ png: Uint8Array<ArrayBuffer>; etag: string }> => {
       const source = await readAppIconSource();
       let entry = current;
-      if (entry?.version !== source.version) {
-        const created = { version: source.version, icons: renderAll(source) };
-        // A failed run is not kept; the next request tries again.
+      const retry = entry?.failedAt !== undefined && Date.now() - entry.failedAt >= APP_ICON_RETRY_SECONDS * 1000;
+      if (entry?.version !== source.version || retry) {
+        const created: Run = { version: source.version, icons: renderAll(source) };
         created.icons.catch(() => {
-          if (current === created) current = undefined;
+          created.failedAt = Date.now();
         });
         current = entry = created;
       }

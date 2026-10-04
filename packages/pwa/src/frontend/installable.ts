@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { PWA_CANVAS_COLORS, PWA_SCOPE } from "@k2b/cloud/contracts";
-import { buildMetadata } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { appIconVersion, readAppIconSource } from "@k2b/cloud/services/branding/app-icon-source";
 import { CLOUD_LOGO_SVG, LOCALE_COOKIE, themeBootstrapScript } from "@k2b/cloud/shared";
@@ -61,22 +60,10 @@ export const manifestResponse = async (c: Context) => {
 };
 
 /**
- * The service worker, scope `/pwa/` (no `Service-Worker-Allowed`). Its version follows the release, its own source,
- * the installation name and the icons, so each of them installs a new worker with a fresh offline page.
- */
-export const serviceWorkerResponse = async (c: Context) => {
-  const version = hash(buildMetadata.release, workerSource, await appName(), await appIconVersion()).slice(0, 16);
-  return c.body(`const VERSION = ${JSON.stringify(version)};\n${workerSource}`, 200, {
-    "Content-Type": "text/javascript; charset=utf-8",
-    "Cache-Control": "no-cache",
-  });
-};
-
-/**
  * The page the service worker shows when Cloud or the app cannot be reached. Self-contained: inline styles, the logo
  * as a data URI, both languages; nothing about the account.
  */
-export const offlineResponse = async (c: Context) => {
+const offlineDocument = async (): Promise<string> => {
   const cloud = await appName();
   const source = await readAppIconSource();
   const logo =
@@ -91,7 +78,7 @@ export const offlineResponse = async (c: Context) => {
       <button type="button" onclick="location.reload()">${escapeHtml(t.tryAgain)}</button>
     </section>`;
   };
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en" class="light">
 <head>
   <meta charset="UTF-8">
@@ -140,5 +127,17 @@ export const offlineResponse = async (c: Context) => {
   </script>
 </body>
 </html>`;
-  return c.body(html, 200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+};
+
+/**
+ * The service worker, scope `/pwa/` (no `Service-Worker-Allowed`), with the offline page in its source. A new release,
+ * installation name or logo changes the bytes, and the browser installs the new worker. Browsers check it on every
+ * navigation in the app, so an unchanged worker answers `304`.
+ */
+export const serviceWorkerResponse = async (c: Context) => {
+  const body = `const OFFLINE_HTML = ${JSON.stringify(await offlineDocument())};\n${workerSource}`;
+  const etag = `"${hash(body).slice(0, 32)}"`;
+  const headers = { "Cache-Control": "no-cache", ETag: etag };
+  if (notModified(c, etag)) return c.body(null, 304, headers);
+  return c.body(body, 200, { ...headers, "Content-Type": "text/javascript; charset=utf-8" });
 };

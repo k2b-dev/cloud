@@ -1,6 +1,6 @@
-import { PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_LIMITS, PWA_SCOPE, PwaRenewResultSchema } from "@k2b/cloud/contracts";
 import { Button, useLocale } from "@k2b/ui";
-import { onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 import { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
 
@@ -19,16 +19,34 @@ const mayRetry = (): boolean => {
   }
 };
 
+/** Whether a renewal set new app cookies; `undefined` when it did not succeed at all. */
+const renew = async (): Promise<boolean | undefined> => {
+  const answer = await phoneAuth.renew();
+  if (answer.status !== 200) return undefined;
+  const parsed = PwaRenewResultSchema.safeParse(answer.body);
+  return parsed.success ? parsed.data.renewed : undefined;
+};
+
 /**
- * "Try again" for the unavailable state. On load it renews once with a request of its own: some platforms drop
- * cookies set on a redirect, and the launch bounce is one.
+ * "Try again" for the unavailable state. On load it renews with a request of its own: some platforms drop cookies
+ * set on a redirect, and the launch bounce is one. Such a phone still presents the key the bounce has just replaced,
+ * which only renews once the rotation grace has passed, so a renewal that sets no cookies is tried once more after it.
  */
 export default function Unavailable() {
   const locale = useLocale();
   const t = () => shellMessages.resolve([locale()]).t;
   onMount(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    onCleanup(() => clearTimeout(timer));
     void (async () => {
-      if ((await phoneAuth.renew()).status === 200 && mayRetry()) location.replace(PWA_SCOPE);
+      let renewed = await renew();
+      if (renewed === false) {
+        await new Promise((resolve) => {
+          timer = setTimeout(resolve, PWA_LIMITS.rotationGraceSeconds * 1000);
+        });
+        renewed = await renew();
+      }
+      if (renewed && mayRetry()) location.replace(PWA_SCOPE);
     })();
   });
   return (
