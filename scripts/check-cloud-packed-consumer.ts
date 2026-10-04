@@ -174,8 +174,10 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Production server bundle is empty");
   await checkPackedRuntime(root, consumer, cleanEnv);
   // Gateway shares these scripts but provides its plugin without defineApp().
-  await Bun.write(join(consumer, "src/config.ts"), await Bun.file(join(root, "packages/gateway/src/config.ts")).text());
-  await Bun.write(join(consumer, "src/env.ts"), await Bun.file(join(root, "packages/gateway/src/env.ts")).text());
+  // Copy config.ts with every local module it imports.
+  for (const file of ["config.ts", "env.ts", "client-address.ts"]) {
+    await Bun.write(join(consumer, "src", file), await Bun.file(join(root, "packages/gateway/src", file)).text());
+  }
   await Bun.write(join(consumer, "src/index.ts"), `export default { fetch: () => new Response("ok") };\n`);
   await run(
     "Load plugin-only config through the installed preload",
