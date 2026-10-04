@@ -3,6 +3,18 @@ import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
+// Load once outside any test, so the cold Solid transform of the library source does not count against the 5 s test
+// timeout. The library needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return await import("../src");
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 type Row = { id: string; name: string };
 
 const rowsUpTo = (count: number): Row[] => Array.from({ length: count }, (_, index) => ({ id: `r${index}`, name: `Row ${index}` }));
@@ -36,7 +48,7 @@ async function renderLoadMoreTable() {
   }
   Object.defineProperty(globalThis, "IntersectionObserver", { configurable: true, writable: true, value: ManualIntersectionObserver });
 
-  const { DataTable } = await import("../src");
+  const { DataTable } = modules!;
   const [rows, setRows] = createSignal(rowsUpTo(3));
   const [hasMore, setHasMore] = createSignal(false);
   let loads = 0;

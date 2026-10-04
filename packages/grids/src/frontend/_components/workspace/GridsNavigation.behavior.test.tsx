@@ -4,6 +4,21 @@ import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
+// Load once outside any test, so the cold Solid transform of the navigation's source graph does not count against the
+// 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    const { Navigation } = await import("@k2b/ui");
+    const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
+    const { default: GridsNavigation } = await import("./GridsNavigation.island");
+    return { Navigation, readWorkspaceNavigation, GridsNavigation };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
 const state = (canManageBase: boolean): PublicOkWorkspaceState => ({
   kind: "ok",
   base: {
@@ -55,9 +70,7 @@ describe("Grids phone navigation", () => {
   const phoneMenu = async (canManageBase: boolean) => {
     const dom = createDomTestHarness();
     delegateEvents(["click"], dom.document);
-    const { Navigation } = await import("@k2b/ui");
-    const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
-    const { default: GridsNavigation } = await import("./GridsNavigation.island");
+    const { Navigation, readWorkspaceNavigation, GridsNavigation } = modules!;
     const disposeProvider = render(() => createComponent(GridsNavigation, { state: state(canManageBase) }), dom.root);
     await Bun.sleep(0);
     const provided = readWorkspaceNavigation();
