@@ -742,8 +742,8 @@ function MailSearchBuilderDialog(props: {
         </PanelDialog.Section>
         <Show when={error()}>
           {(message) => (
-            <NoticeCard tone="danger" icon={false} role="alert">
-              <i class="ti ti-alert-circle" aria-hidden="true" /> {message()}
+            <NoticeCard tone="danger" role="alert">
+              {message()}
             </NoticeCard>
           )}
         </Show>

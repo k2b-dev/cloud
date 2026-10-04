@@ -140,6 +140,14 @@ const measure = () => {
     notice: frame(".k2b-notice-card"),
     noticeDetailSize: style(".k2b-notice-card__description").fontSize,
     noticeDetailOpacity: style(".k2b-notice-card__description").opacity,
+    noticeInk: [style(".k2b-notice-card__title").color, style(".k2b-notice-card__description").color],
+    neutralInk: ["--k2b-text", "--k2b-text-secondary"].map((token) => {
+      const probe = document.querySelector(".k2b-notice-card")!.appendChild(document.createElement("span"));
+      probe.style.color = `var(${token})`;
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    }),
     nestedPlaceholder: frame(".nested-placeholder"),
     paperPlaceholder: { ...frame(".paper-placeholder"), shadow: style(".paper-placeholder").boxShadow },
     standalonePlaceholder: frame(".standalone-placeholder"),
@@ -167,8 +175,9 @@ describe("@k2b/ui one frame per surface", () => {
 
           expect(result.notice.border).toBe(transparent);
           expect(result.notice.background).not.toBe(transparent);
-          expect(result.noticeDetailSize).toBe("12px");
+          expect(result.noticeDetailSize).toBe("14px");
           expect(result.noticeDetailOpacity).toBe("1");
+          expect(result.noticeInk).toEqual(result.neutralInk);
 
           expect(result.nestedPlaceholder).toEqual({ border: transparent, background: transparent });
           expect(result.paperPlaceholder).toEqual({ border: transparent, background: transparent, shadow: "none" });

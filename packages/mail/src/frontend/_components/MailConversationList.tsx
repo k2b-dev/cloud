@@ -472,38 +472,32 @@ export default function MailConversationList(props: {
         </Show>
         <Show when={healthPresentation()}>
           {(health) => (
-            <NoticeCard tone={health().tone} icon={false} role="status" data-mailbox-health={props.mailbox.health}>
-              <div class="flex min-w-0 items-start gap-2">
-                <i
-                  class={`ti ${health().tone === "warning" ? "ti-alert-triangle" : "ti-info-circle"} mt-0.5 shrink-0`}
-                  aria-hidden="true"
-                />
-                <div class="min-w-0">
-                  <p>
-                    <strong class="font-semibold text-primary">{health().title}.</strong> {health().message}
-                  </p>
-                  <Show when={props.canAdmin && health().action && health().actionLabel}>
-                    <Button
-                      type="button"
-                      variant="subtle"
-                      size="xs"
-                      class="mt-2"
-                      aria-label={health().actionLabel ?? undefined}
-                      title={health().actionLabel ?? undefined}
-                      onClick={() => (health().action === "delivery" ? props.onOpenDeliverySettings() : props.onOpenHealth())}
-                    >
-                      <i class="ti ti-activity" aria-hidden="true" />
-                      <span>{health().action === "health" ? messages().status : health().actionLabel}</span>
-                    </Button>
-                  </Show>
-                </div>
-              </div>
+            <NoticeCard
+              tone={health().tone}
+              role="status"
+              data-mailbox-health={props.mailbox.health}
+              title={health().title}
+              detail={health().message}
+            >
+              <Show when={props.canAdmin && health().action && health().actionLabel}>
+                <Button
+                  type="button"
+                  variant="subtle"
+                  size="xs"
+                  aria-label={health().actionLabel ?? undefined}
+                  title={health().actionLabel ?? undefined}
+                  onClick={() => (health().action === "delivery" ? props.onOpenDeliverySettings() : props.onOpenHealth())}
+                >
+                  <i class="ti ti-activity" aria-hidden="true" />
+                  <span>{health().action === "health" ? messages().status : health().actionLabel}</span>
+                </Button>
+              </Show>
             </NoticeCard>
           )}
         </Show>
         <Show when={props.folderOnlyHint}>
           {(hint) => (
-            <NoticeCard tone="neutral" icon="ti ti-folder-pin" data-mail-folder-only-hint>
+            <NoticeCard tone="neutral" data-mail-folder-only-hint>
               <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
                 <p class="min-w-0 flex-[1_1_14rem]">
                   <strong class="font-medium text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}

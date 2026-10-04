@@ -262,15 +262,7 @@ export default function FormSubmit(props: Props) {
         />
       </Show>
 
-      <Show
-        when={!done()}
-        fallback={
-          <NoticeCard tone="success" icon={false} bodyClass="flex items-center gap-2">
-            <i class="ti ti-circle-check shrink-0" />
-            <span>{props.form.config.successMessage ?? t().saved}</span>
-          </NoticeCard>
-        }
-      >
+      <Show when={!done()} fallback={<NoticeCard tone="success">{props.form.config.successMessage ?? t().saved}</NoticeCard>}>
         <div class={props.renderContext ? "grids-form-workspace" : undefined}>
           <form
             ref={(element) => {
@@ -284,9 +276,8 @@ export default function FormSubmit(props: Props) {
           >
             <fieldset disabled={props.disabled || submitting() || pendingSubmission() !== null} class={formLayoutClass}>
               <Show when={hasInlineCreate()}>
-                <NoticeCard class="basis-full" tone="info" icon={false} bodyClass="flex items-start gap-2">
-                  <i class="ti ti-info-circle mt-0.5 shrink-0" />
-                  <span>{t().linkedRecordsWarning}</span>
+                <NoticeCard class="basis-full" tone="info">
+                  {t().linkedRecordsWarning}
                 </NoticeCard>
               </Show>
               <FormSections state={sections}>
@@ -322,10 +313,7 @@ export default function FormSubmit(props: Props) {
             </fieldset>
 
             <Show when={error()}>
-              <NoticeCard tone="danger" icon={false} bodyClass="flex items-start gap-2">
-                <i class="ti ti-alert-circle mt-0.5 shrink-0" />
-                <span>{error()}</span>
-              </NoticeCard>
+              <NoticeCard tone="danger">{error()}</NoticeCard>
               <Show when={pendingSubmission() && !confirmedConflict()}>
                 <p class="text-sm text-dimmed">{t().retrySubmission}</p>
               </Show>

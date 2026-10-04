@@ -356,15 +356,11 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
   return prompts.dialog<"view">(
     (close) => (
       <div class="flex flex-col gap-4">
-        <NoticeCard tone="success" icon={false}>
-          <div class="flex items-start gap-3">
-            <i class="ti ti-check text-base" />
-            <div class="flex flex-col gap-1">
-              <span class="font-medium">{payload.provider === "ipa" ? t.ipaAccountCreated : t.localAccountCreated}</span>
-              <span class="text-xs">{notificationMessage}</span>
-            </div>
-          </div>
-        </NoticeCard>
+        <NoticeCard
+          tone="success"
+          title={payload.provider === "ipa" ? t.ipaAccountCreated : t.localAccountCreated}
+          detail={notificationMessage}
+        />
 
         <DescriptionList
           columns={2}
@@ -382,7 +378,7 @@ const buildSuccessDialog = (payload: CreateUserPayload, data: CreateUserResponse
         />
 
         <Show when={data.creationNotice?.markdown}>
-          <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-3">
+          <NoticeCard tone="info" bodyClass="flex flex-col gap-3">
             <MarkdownView markdown={data.creationNotice?.markdown ?? ""} />
           </NoticeCard>
         </Show>

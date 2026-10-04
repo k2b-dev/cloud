@@ -659,7 +659,7 @@ export default function WorkflowsPage(props: Props) {
               <div class="flex min-h-[24rem] flex-1 flex-col gap-2">
                 <Show when={emailLoadError()}>
                   {(message) => (
-                    <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3" role="alert">
+                    <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3" role="alert">
                       <span>{message()}</span>
                       <Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={() => emailDeliveriesMut.mutate()}>
                         <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
@@ -767,7 +767,7 @@ export default function WorkflowsPage(props: Props) {
 
           <Show when={loadError()}>
             {(message) => (
-              <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3" role="alert">
+              <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3" role="alert">
                 <span>{message()}</span>
                 <Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={reloadAll}>
                   <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}

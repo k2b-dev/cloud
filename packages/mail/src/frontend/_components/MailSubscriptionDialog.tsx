@@ -279,7 +279,7 @@ function MailSubscriptionDialog(props: {
           <div class="flex flex-col gap-2">
             <Show when={subscriptions.error()}>
               {(error) => (
-                <NoticeCard tone="warning" icon={false}>
+                <NoticeCard tone="warning">
                   {error().message}
                   <Button variant="ghost" size="xs" type="button" class="ml-2" onClick={() => void subscriptions.refresh()}>
                     {messages().retry}

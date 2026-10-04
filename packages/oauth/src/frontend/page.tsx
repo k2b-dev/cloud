@@ -153,7 +153,7 @@ export default ssr<AuthContext>(async (c) => {
 
         {totalPages > 1 ? <Pagination currentPage={clientsPage.page} totalPages={totalPages} baseUrl={paginationBaseUrl} /> : null}
 
-        <NoticeCard tone="info" icon={false} style="view-transition-name: admin-oauth-reference">
+        <NoticeCard tone="info" style="view-transition-name: admin-oauth-reference">
           <h2 class="mb-3 text-sm font-medium">{t.discoveryEndpoints}</h2>
           <div class="space-y-1 text-xs font-mono mb-4">
             <div class="flex flex-col gap-0.5">

@@ -63,9 +63,7 @@ export default function GuestLoginForm(props: {
           }}
           class="flex flex-col gap-4"
         >
-          <NoticeCard tone="success" icon={false}>
-            {t().checkEmail}
-          </NoticeCard>
+          <NoticeCard tone="success">{t().checkEmail}</NoticeCard>
 
           <TextInput
             label={t().loginCode}
@@ -78,7 +76,7 @@ export default function GuestLoginForm(props: {
           />
 
           {error() && (
-            <NoticeCard tone="danger" icon={false}>
+            <NoticeCard tone="danger">
               <span>{error()?.message}</span>
             </NoticeCard>
           )}
@@ -108,7 +106,7 @@ export default function GuestLoginForm(props: {
         />
 
         {error() && (
-          <NoticeCard tone="danger" icon={false}>
+          <NoticeCard tone="danger">
             <span>{error()?.message}</span>
           </NoticeCard>
         )}

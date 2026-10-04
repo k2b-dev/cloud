@@ -76,14 +76,14 @@ export function WorkflowRunExecutionSection(props: {
       </dl>
       <Show when={props.run.error}>
         {(error) => (
-          <NoticeCard tone="danger" icon={false} class="mt-3">
+          <NoticeCard tone="danger" class="mt-3">
             {error().message}
           </NoticeCard>
         )}
       </Show>
       <Show when={props.run.resultMessage}>
         {(message) => (
-          <NoticeCard tone="success" icon={false} class="mt-3">
+          <NoticeCard tone="success" class="mt-3">
             {message()}
           </NoticeCard>
         )}

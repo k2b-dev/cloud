@@ -96,7 +96,7 @@ export default function PulseOverview(props: Props) {
         }
       >
         <Show when={props.capabilities && !props.capabilities.timescaleEnabled}>
-          <NoticeCard tone="warning" icon={false} class="mb-3">
+          <NoticeCard tone="warning" class="mb-3">
             {t().timescaleWarning}
           </NoticeCard>
         </Show>

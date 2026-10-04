@@ -375,7 +375,6 @@ export const documentedOnlyUiCatalogExports = {
   DropdownItem: "Documented compositional child of Dropdown.",
   FileTree: "Documented child composed by the FileBrowserPanel demo.",
   NOTICE_CARD_CLASSES: "Documented NoticeCard class contract for non-Solid renderers.",
-  NOTICE_CARD_ICONS: "Documented NoticeCard icon defaults for non-Solid renderers.",
   PANES_LAYOUT_VERSION: "Documented Panes serialization version.",
   abbreviations: "Documented completion dictionary used by editor examples.",
   activatePanesItem: "Documented pure Panes activation helper.",

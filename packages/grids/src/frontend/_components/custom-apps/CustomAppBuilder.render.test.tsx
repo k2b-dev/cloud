@@ -232,7 +232,7 @@ describe("CustomAppBuilder", () => {
     );
     expect(html).toContain("The saved draft must be fixed before it can be published.");
     expect(html).toContain("Review draft");
-    expect(html).toContain('class="mt-3 flex flex-wrap gap-2"');
+    expect(html).toContain('class="flex flex-wrap gap-2"');
     expect(html).toContain("Choose a request.");
     expect(html).toContain("Overview");
   });

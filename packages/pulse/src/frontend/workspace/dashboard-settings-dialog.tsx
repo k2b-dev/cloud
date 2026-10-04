@@ -106,7 +106,7 @@ export const openPulseDashboardSettingsDialog = (options: DashboardSettingsDialo
             <SettingsModal.Group title={t().sharing}>
               <SettingsModal.Tab id="public-link" title={t().publicLink} icon="ti ti-link" description={t().publicLinkDescription}>
                 <SettingsGroup title={t().publicAccess} description={t().changesImmediate}>
-                  <NoticeCard tone={options.currentDashboard().publicEnabled ? "success" : "info"} icon={false}>
+                  <NoticeCard tone={options.currentDashboard().publicEnabled ? "success" : "info"}>
                     {options.currentDashboard().publicEnabled ? t().publicEnabledDescription : t().publicDisabledDescription}
                   </NoticeCard>
                   <div class="flex flex-wrap items-center gap-2">

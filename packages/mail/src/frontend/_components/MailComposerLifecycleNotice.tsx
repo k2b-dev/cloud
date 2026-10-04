@@ -38,12 +38,7 @@ export default function MailComposerLifecycleNotice(props: {
   onMount(() => notice?.focus({ preventScroll: true }));
   return (
     <div ref={notice} role="group" tabIndex={-1} aria-label={title()}>
-      <NoticeCard
-        tone={props.transition.hasUnsavedChanges ? "warning" : "info"}
-        icon={draft().state === "discarded" ? "ti ti-trash" : "ti ti-send"}
-        title={title()}
-        class="mx-3 mt-3"
-      >
+      <NoticeCard tone={props.transition.hasUnsavedChanges ? "warning" : "info"} title={title()} class="mx-3 mt-3">
         <div class="flex flex-col gap-3">
           <div class="space-y-1" role="status" aria-live="polite">
             <p>{message()}</p>

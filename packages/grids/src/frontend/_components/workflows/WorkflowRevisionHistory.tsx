@@ -169,7 +169,7 @@ export function WorkflowRevisionHistory(props: {
           </nav>
           <Show when={loadMut.error()}>
             {(error) => (
-              <NoticeCard tone="danger" icon={false} class="md:col-span-2" role="alert">
+              <NoticeCard tone="danger" class="md:col-span-2" role="alert">
                 <span>{error().message}</span>
                 <Button variant="ghost" size="sm" type="button" onClick={() => loadMut.mutate({ append: false })}>
                   <i class="ti ti-refresh" /> {t().retryHistory}

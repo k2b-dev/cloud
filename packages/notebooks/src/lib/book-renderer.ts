@@ -427,7 +427,7 @@ export const renderNotebookBook = (
         }
         const noticeKind = kind as NoticeKind;
         const tone: NoticeTone = NOTICE_TONES[noticeKind];
-        // Notices show their tone colour only; the type name remains for screen readers.
+        // Notices are the calm NoticeCard: tone tint, neutral text; the type name remains for screen readers.
         return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${tone}" role="note"><span class="sr-only">${escape(t[noticeKind])}: </span><div class="${NOTICE_CARD_CLASSES.body}">${marked.parse(body, { async: false })}</div></aside>`;
       }),
       "",

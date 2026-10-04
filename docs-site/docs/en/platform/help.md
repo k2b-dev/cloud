@@ -162,11 +162,15 @@ Deleting an item cannot be undone.
 Callout text supports bold, emphasis, inline code, and line breaks. It does not
 parse lists, links, tables, or nested blocks. Put those after the callout.
 
+A callout renders as a calm [notice](/en/ui/feedback/blocks): a light tint of
+its tone, neutral text, and no icon. The optional title after the type is the
+visible heading. Without a title, screen readers still hear the type name,
+but sighted readers see only the tint, so add a title, or start the text with
+a word such as **Risk:**, when the type matters.
+
 The shared `markdown.render()` and `markdown.renderSync()` helpers from
-`@k2b/cloud/shared` render the same callouts. Pass `{ notices: "minimal" }` to
-show only the tone color: the icon and the automatic type label disappear, an
-explicit title stays visible, and screen readers still hear the type name.
-Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
+`@k2b/cloud/shared`, Notebooks, and Notebooks PDF exports render the same
+callout. Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
 email. Each link then renders as an ordinary anchor around its text instead of
 the bracketed Cloud link label.
 

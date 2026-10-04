@@ -69,40 +69,34 @@ export default ssr<AuthContext>(async (c) => {
         <div class="max-w-2xl mx-auto w-full">
           {accountRequest && (
             <NoticeCard tone="info" class="mb-4" bodyClass="flex flex-col gap-3">
-              <div class="flex items-center justify-between">
-                <h3 class="text-sm font-semibold text-primary flex items-center gap-2">
-                  <i class="ti ti-user-plus" />
-                  {t.freeIpaAccessRequest}
-                </h3>
+              <div class="flex items-center justify-between gap-3">
+                <h3 class="font-semibold text-primary">{t.freeIpaAccessRequest}</h3>
                 <DenyRequest requestId={accountRequest.id} email={accountRequest.email} firstName={accountRequest.firstName} />
               </div>
 
-              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
                 <dt class="text-dimmed">{t.name}</dt>
                 <dd class="text-primary font-medium">
                   {accountRequest.displayName || `${accountRequest.firstName} ${accountRequest.lastName}`}
                 </dd>
                 <dt class="text-dimmed">{t.email}</dt>
-                <dd class="text-secondary">{accountRequest.email}</dd>
+                <dd>{accountRequest.email}</dd>
                 {accountRequest.phone && (
                   <>
                     <dt class="text-dimmed">{t.phone}</dt>
-                    <dd class="text-secondary">{accountRequest.phone}</dd>
+                    <dd>{accountRequest.phone}</dd>
                   </>
                 )}
               </dl>
 
               {accountRequest.comment && (
-                <NoticeCard tone="warning" icon={false}>
-                  <p class="text-xs font-semibold mb-1 flex items-center gap-1">
-                    <i class="ti ti-message text-xs" />
-                    {t.requesterNote}
-                  </p>
-                  <p class="text-sm">{accountRequest.comment}</p>
-                </NoticeCard>
+                <div>
+                  <p class="font-semibold text-primary">{t.requesterNote}</p>
+                  <p>{accountRequest.comment}</p>
+                </div>
               )}
 
-              <p class="text-xs text-dimmed">{t.requestCompletesOnCreate}</p>
+              <p>{t.requestCompletesOnCreate}</p>
             </NoticeCard>
           )}
           <Paper class="p-6">

@@ -2091,7 +2091,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                         : text("Changes are saved automatically. Publish the draft when it is ready for everyone.")))
                 }
               >
-                <div class="mt-3 flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2">
                   <Show when={saveState() === "error"}>
                     <Button size="xs" variant="secondary" onClick={() => void flushAutosave()}>
                       {text("Retry save")}
@@ -2216,9 +2216,8 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
             scrollPreserveKey={`grids-custom-app-inspector-${app().id}-${inspectorMode()}-${selectedSidebarAction()?.id ?? selectedActionId() ?? selectedBlockId() ?? selectedPage().id}`}
           >
             <Show when={panelDiagnostics().length > 0}>
-              <NoticeCard tone="danger" icon={false} role="alert">
-                <p class="font-medium">{text("This draft needs attention")}</p>
-                <ul class="mt-2 list-disc space-y-1 pl-4 text-sm">
+              <NoticeCard tone="danger" role="alert" title={text("This draft needs attention")}>
+                <ul class="list-disc space-y-1 pl-4">
                   <For each={panelDiagnostics()}>{(diagnostic) => <li>{diagnostic.message}</li>}</For>
                 </ul>
               </NoticeCard>

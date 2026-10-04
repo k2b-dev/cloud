@@ -86,9 +86,7 @@ export function WorkflowInputFields(props: Props) {
                 />
               </Match>
               <Match when={(input.type === "record" || input.type === "recordList") && !table}>
-                <NoticeCard tone="danger" icon={false}>
-                  {t().inputTableUnavailable({ label })}
-                </NoticeCard>
+                <NoticeCard tone="danger">{t().inputTableUnavailable({ label })}</NoticeCard>
               </Match>
               <Match when={input.type === "decimal"}>
                 <TextInput

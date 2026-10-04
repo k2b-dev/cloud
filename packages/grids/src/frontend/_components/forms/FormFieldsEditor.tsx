@@ -223,7 +223,7 @@ const chooseFormFieldEntryKind = (field: Field, locale: string) => {
   return prompts.dialog<"user_input" | "form_value">(
     (close) => (
       <div class="flex flex-col gap-4">
-        <NoticeCard tone="info" icon={false}>
+        <NoticeCard tone="info">
           <p class="font-semibold">{t.useField({ name: field.name })}</p>
           <p class="mt-1">{t.fieldKindDescription}</p>
         </NoticeCard>

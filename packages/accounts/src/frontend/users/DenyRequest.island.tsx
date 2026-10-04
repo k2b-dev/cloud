@@ -37,11 +37,7 @@ export default function DenyRequest(props: DenyRequestProps) {
       fields: {
         info: {
           type: "info",
-          content: () => (
-            <NoticeCard tone="warning" icon={false}>
-              {messages().denyConfirm({ name: props.firstName, email: props.email })}
-            </NoticeCard>
-          ),
+          content: () => <NoticeCard tone="warning">{messages().denyConfirm({ name: props.firstName, email: props.email })}</NoticeCard>,
         },
         reason: {
           type: "text",

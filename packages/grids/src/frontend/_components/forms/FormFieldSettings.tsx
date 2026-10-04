@@ -145,9 +145,7 @@ function FormFieldSettings(props: {
       <Show when={props.valueEntry()}>
         {(entry) => (
           <>
-            <NoticeCard tone="info" icon={false}>
-              {t().hiddenFixedValue}
-            </NoticeCard>
+            <NoticeCard tone="info">{t().hiddenFixedValue}</NoticeCard>
             <FieldInput
               field={props.field()!}
               entry={{ kind: "user_input", fieldId: props.field()!.id, required: false }}

@@ -96,11 +96,9 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
       />
       <PanelDialog.Body>
         <div class="flex flex-col gap-5">
-          <NoticeCard tone="neutral" icon={false}>
-            {messages().remoteImagesPrivacy}
-          </NoticeCard>
+          <NoticeCard tone="neutral">{messages().remoteImagesPrivacy}</NoticeCard>
           <Show when={rules.data() && rules.error()}>
-            <NoticeCard tone="warning" icon={false}>
+            <NoticeCard tone="warning">
               {messages().remoteImagePreferencesStale}
               <Button variant="ghost" size="xs" type="button" class="ml-2" onClick={() => void rules.refresh()}>
                 {messages().retry}

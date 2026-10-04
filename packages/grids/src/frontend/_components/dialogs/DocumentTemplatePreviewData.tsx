@@ -119,7 +119,7 @@ export function DocumentDataTree(props: {
           }
         >
           {(message) => (
-            <NoticeCard tone="danger" icon={false} class="m-3">
+            <NoticeCard tone="danger" class="m-3">
               {message()}
             </NoticeCard>
           )}
@@ -150,7 +150,7 @@ export function RenderedDocumentSource(props: { source: () => string | null; loa
           }
         >
           {(message) => (
-            <NoticeCard tone="danger" icon={false} class="m-3">
+            <NoticeCard tone="danger" class="m-3">
               {message()}
             </NoticeCard>
           )}

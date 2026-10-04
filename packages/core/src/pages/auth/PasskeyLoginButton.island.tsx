@@ -50,7 +50,7 @@ export default function PasskeyLoginButton(props: { redirectTo?: string }) {
         {t().continueWithPasskey}
       </Button>
       {mutation.error() && (
-        <NoticeCard tone="danger" icon={false}>
+        <NoticeCard tone="danger">
           <span>{mutation.error()?.message}</span>
         </NoticeCard>
       )}

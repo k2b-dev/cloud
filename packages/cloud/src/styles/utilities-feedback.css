@@ -237,8 +237,8 @@
 }
 .k2b-ui .cloud-announcement > .k2b-icon-button {
   position: absolute;
-  top: 0.4375rem;
-  right: 0.4375rem;
+  top: 0.875rem;
+  right: 0.875rem;
 }
 
 /* Approval prose follows the surrounding review fields, not document typography. */

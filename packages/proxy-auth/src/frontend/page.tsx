@@ -94,7 +94,7 @@ export default ssr<AuthContext>(async (c) => {
           <Placeholder surface="paper" description={<>{t.empty}</>} />
         )}
 
-        <NoticeCard tone="info" icon={false} style="view-transition-name: admin-proxy-auth-reference">
+        <NoticeCard tone="info" style="view-transition-name: admin-proxy-auth-reference">
           <h2 class="mb-3 text-sm font-medium">{t.setupTitle}</h2>
           <p class="text-xs mb-3 opacity-80">{t.setupDescription}</p>
 

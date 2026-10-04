@@ -20,6 +20,11 @@ describe("note PDF HTML", () => {
       expect(html).toContain(`Pack the <strong>${kind}</strong> kit.`);
       expect(html).toContain(`.k2b-notice-card[data-tone="${TONES[kind]}"]`);
     }
+    // The calm notice on paper: a light tint, no accent border, and the preset's text colour.
+    const notice = /\.k2b-notice-card \{([^}]*)\}/.exec(html)?.[1] ?? "";
+    expect(notice).toContain("background: var(--notice-tint)");
+    expect(notice).not.toContain("border:");
+    expect(notice).not.toMatch(/(^|[ ;])color:/);
   });
 
   test("renders the reader's other note blocks and prints images as labels", () => {

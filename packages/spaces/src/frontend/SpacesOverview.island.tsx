@@ -128,9 +128,7 @@ function CreateSpaceForm(props: {
         void submit();
       }}
     >
-      <NoticeCard tone="info" icon={false}>
-        {t.adminNotice}
-      </NoticeCard>
+      <NoticeCard tone="info">{t.adminNotice}</NoticeCard>
       <TextInput
         label={t.name}
         description={t.nameDescription}

@@ -60,14 +60,11 @@ function FinalizeDialog(props: {
 
   return (
     <div class="flex min-w-0 flex-col gap-4">
-      <NoticeCard tone="warning" icon={false} bodyClass="flex min-w-0 items-start gap-2">
-        <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
-        <span class="min-w-0 break-words">
-          {messages().deliveryWarning({
-            deliverable: formatNumber(props.deliverableCount, { locale: locale() }),
-            skipped: formatNumber(props.skippedNoEmailCount, { locale: locale() }),
-          })}
-        </span>
+      <NoticeCard tone="warning" bodyClass="break-words">
+        {messages().deliveryWarning({
+          deliverable: formatNumber(props.deliverableCount, { locale: locale() }),
+          skipped: formatNumber(props.skippedNoEmailCount, { locale: locale() }),
+        })}
       </NoticeCard>
       <Checkbox
         label={messages().confirmRecipients}

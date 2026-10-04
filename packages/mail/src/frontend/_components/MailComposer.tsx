@@ -787,10 +787,7 @@ export default function MailComposer(props: {
               value={nextReadReceipt}
               onValueChange={setNextReadReceipt}
             />
-            <NoticeCard tone="neutral" icon={false} bodyClass="flex items-start gap-2">
-              <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-              <p>{t().receiptDisclaimer}</p>
-            </NoticeCard>
+            <NoticeCard tone="neutral">{t().receiptDisclaimer}</NoticeCard>
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(false)}>
                 {t().cancel}
