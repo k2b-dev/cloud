@@ -30,11 +30,11 @@ async function failureCode(run: () => Promise<unknown>) {
   }
 }
 
-suite("actual Filegate 6.1.0 transfer contract (isolated local prefix)", () => {
+suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
   beforeAll(async () => {
     client = new Filegate({ baseUrl: testInfra.filegate!, token: await localFilegateToken(), fetch: transfer });
     const system = await client.system();
-    expect(system.version).toBe("6.1.0");
+    expect(system.version).toBe("7.0.0");
     root = client.root("cloud");
     await root.mkdir(prefix);
     ownsPrefix = true;
@@ -148,7 +148,7 @@ suite("actual Filegate 6.1.0 transfer contract (isolated local prefix)", () => {
       expect(await (await root.contentRaw(renamed.path)).text()).toBe("new");
     });
     statuses.direct = { collision, renameFailure, renamed: renamedPath !== null };
-    // This expectation records the observed 6.1.0 dependency, not a mock that invents atomic rename behavior.
+    // This expectation records the observed 7.0.0 dependency, not a mock that invents atomic rename behavior.
     expect(renameFailure).toBeNull();
   });
 

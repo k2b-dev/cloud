@@ -105,7 +105,7 @@ service workers only over HTTPS. To try the app on a phone:
 
 ## Test Filegate locally
 
-Development infrastructure includes Filegate 6.1.0 for Files (`filesv2`) development.
+Development infrastructure includes Filegate 7.0.0 for Files (`filesv2`) development.
 To prepare its backend token and configuration and start only Filegate:
 
 ```bash
@@ -140,6 +140,9 @@ backend; never include it in browser code or public links.
 Each root and Filegate's state have separate persistent Docker volumes.
 The `freeipa` root is local test storage, not an NFS mount or a FreeIPA server.
 Both capability combinations are deliberate test fixtures, not provider rules.
+Because `cloud` is indexed and managed, Filegate reports stable file IDs
+(`stableIds`) for it; `freeipa` has none. The volumes need no migration when
+the image changes; the next `docker compose up` recreates the container.
 The daemon limits individual test uploads to 1 GiB.
 
 This development container runs as root with only `CHOWN`, `DAC_OVERRIDE`,

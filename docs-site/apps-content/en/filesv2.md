@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-09-26
+updated: 2026-10-04
 ---
 
 # Files
@@ -13,7 +13,7 @@ updated: 2026-09-26
 Files (`filesv2`) is a separate application for personal and group storage. It presents
 Cloud and FreeIPA directories in one file browser. Administrators manage
 directory creation, assignments, and archives separately from everyday browsing.
-File transfers use short-lived Filegate 6 leases.
+File transfers use short-lived Filegate leases.
 
 The details panel shows five text lines or CSV data rows, followed by the number
 of remaining lines. Open the expanded preview to read more; CSV tables paginate
@@ -478,7 +478,7 @@ archive, restore, and permanent deletion. Comments and AI assistance inside the
 editor are not part of this version. The reserved top-level `trash` directory
 is excluded from ordinary browsing and downloads.
 
-Filegate 6.1 supplies Unix execution, native historical copies, managed-root
+Filegate 6.1 and later supply Unix execution, native historical copies, managed-root
 preconditions, retained upload results, and sorting/filtering before pagination.
 This does not establish production readiness for a particular filesystem or NFS
 export. Unmanaged external-writer conflict safety

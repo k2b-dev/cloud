@@ -55,13 +55,14 @@ async function stat(root: RootClient, path: string): Promise<Node | null> {
     throw error;
   }
 }
+/** Compares ids only when both sides have one: Filegate 7 omits them outside stable-id roots. */
 const unchanged = (before: Node | null, now: Node) =>
   before !== null &&
   before.directory === now.directory &&
   before.uid === now.uid &&
   before.gid === now.gid &&
   before.mode === now.mode &&
-  (before.id ? before.id === now.id : before.modified === now.modified && before.size === now.size);
+  (before.id && now.id ? before.id === now.id : before.modified === now.modified && before.size === now.size);
 async function serviceUid(root: RootClient, parent: string): Promise<number> {
   // The root directory owner may differ from the daemon. Only remove a probe
   // whose creation succeeded; no existing directory is ever chowned here.

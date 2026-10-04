@@ -10,6 +10,36 @@ updated: 2026-10-04
 
 # Deprecations and migrations
 
+## Files supports Filegate 7
+
+Files is tested with Filegate 7.0; Filegate 6.1 keeps working. Upgrading the
+Filegate daemon needs no migration: the index format, the `/v1` API, and leases
+stay the same, and the root volumes and `state_dir` stay in place.
+
+Upgrade Cloud before or together with the daemon. Filegate 7 publishes file IDs
+only on roots with stable IDs, and earlier Files releases compare the IDs they
+recorded under Filegate 6.1. On roots with `index: true` and `managed: false`,
+those releases cannot finish these operations if they were still open when
+the daemon changed:
+
+- moving files and folders into the trash and restoring them from it;
+- archiving, restoring, and deleting directories.
+
+Repeating a completed trash restore also fails. These releases report
+`source_changed` or `operation_unresolved` indefinitely. The current release
+compares IDs only when both sides have one and otherwise compares modification
+time and size, so these operations complete on their next retry or trash
+listing.
+
+Filegate 7 reports stable file IDs (`stableIds`) only for roots with both
+`index: true` and `managed: true`. Such a root needs Filegate as its only
+writer and readable and writable `user.*` extended attributes on the real
+mount. Files does not use these IDs yet. An ID stays valid only while the file
+keeps its device and inode, so back up each root with its `.filegate`
+directory, ownership, ACLs, and extended attributes together with the complete
+`state_dir`, with Filegate stopped. Restoring copies onto new inodes or another
+device assigns new IDs. Follow Filegate's backup and recovery guide.
+
 ## Spaces writes live updates through the platform outbox
 
 Spaces writes its live updates in the transaction that makes the change,
@@ -135,7 +165,7 @@ There is no automatic migration. Files never read the legacy application's
 settings or storage, and nothing moves on upgrade. An installation that still
 runs `app-files` must move its users to Files before it upgrades:
 
-1. Set up Files with Filegate 6.1 as described in
+1. Set up Files with Filegate 7.0 as described in
    [Deployment requirements](/en/docs/operations/deployment-requirements), and
    map the home and group directories the legacy app served to Files storage.
 2. Verify that users see and can open their files in `/app/filesv2`.
