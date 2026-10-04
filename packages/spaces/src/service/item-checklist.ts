@@ -9,7 +9,7 @@ import {
 import { withShortId } from "../lib/short-id";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 
 type ChecklistRow = {
   id: string;
@@ -45,9 +45,10 @@ const getTaskContext = async (itemId: string, db: SqlExecutor = sql, lock = fals
   return item ?? null;
 };
 
+/** Records a checklist change in `tx` and announces it to open pages of the Space. */
 const recordChange = async (
   params: { itemId: string; context: ItemContext; actor: SpaceActivityIdentity; action: string },
-  db: SqlExecutor = sql,
+  tx: SqlExecutor,
 ) => {
   await activity.record(
     {
@@ -57,8 +58,9 @@ const recordChange = async (
       action: params.action,
       metadata: { itemTitle: params.context.title },
     },
-    db,
+    tx,
   );
+  await publishSpaceChange(tx, { type: "item.updated", spaceId: params.context.space_id, itemId: params.itemId });
 };
 
 export const list = async (params: { itemId: string }): Promise<SpaceTaskChecklistEntry[]> => {
@@ -82,7 +84,7 @@ export const create = async (params: {
 }): Promise<MutationResult<SpaceTaskChecklistEntry>> => {
   const label = params.data.label.trim();
   const inserted = await withShortId("checklist", (shortId) =>
-    sql.begin(async (tx): Promise<MutationResult<{ row: ChecklistRow; context: ItemContext }>> => {
+    sql.begin(async (tx): Promise<MutationResult<ChecklistRow>> => {
       const [context] = await tx<ItemContext[]>`
         SELECT space_id, title
         FROM spaces.items
@@ -114,12 +116,12 @@ export const create = async (params: {
         RETURNING id, short_id, label, completed, created_at, updated_at
       `;
       if (row) await recordChange({ itemId: params.itemId, context, actor: params.actor, action: "checklist.created" }, tx);
-      return row ? { ok: true, data: { row, context } } : { ok: false, error: "Failed to create checklist entry", status: 500 };
+      return row ? { ok: true, data: row } : { ok: false, error: "Failed to create checklist entry", status: 500 };
     }),
   );
   if (!inserted.ok) return inserted;
-  await publishSpaceEvent({ type: "item.updated", spaceId: inserted.data.context.space_id, itemId: params.itemId });
-  return { ok: true, data: mapEntry(inserted.data.row) };
+  spacesLive.wake();
+  return { ok: true, data: mapEntry(inserted.data) };
 };
 
 export const update = async (params: {
@@ -129,7 +131,7 @@ export const update = async (params: {
   actor: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceTaskChecklistEntry>> => {
   const label = params.data.label?.trim();
-  const result = await sql.begin(async (tx): Promise<MutationResult<{ row: ChecklistRow; context: ItemContext }>> => {
+  const result = await sql.begin(async (tx): Promise<MutationResult<ChecklistRow>> => {
     const context = await getTaskContext(params.itemId, tx, true);
     if (!context) return { ok: false, error: "Task not found", status: 404 };
     const [row] = await tx<ChecklistRow[]>`
@@ -151,15 +153,15 @@ export const update = async (params: {
       },
       tx,
     );
-    return { ok: true, data: { row, context } };
+    return { ok: true, data: row };
   });
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.updated", spaceId: result.data.context.space_id, itemId: params.itemId });
-  return { ok: true, data: mapEntry(result.data.row) };
+  spacesLive.wake();
+  return { ok: true, data: mapEntry(result.data) };
 };
 
 export const remove = async (params: { itemId: string; id: string; actor: SpaceActivityIdentity }): Promise<MutationResult<void>> => {
-  const result = await sql.begin(async (tx): Promise<MutationResult<ItemContext>> => {
+  const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
     const context = await getTaskContext(params.itemId, tx, true);
     if (!context) return { ok: false, error: "Task not found", status: 404 };
     const rows = await tx<{ id: string }[]>`
@@ -167,9 +169,9 @@ export const remove = async (params: { itemId: string; id: string; actor: SpaceA
     `;
     if (rows.length === 0) return { ok: false, error: "Checklist entry not found", status: 404 };
     await recordChange({ itemId: params.itemId, context, actor: params.actor, action: "checklist.deleted" }, tx);
-    return { ok: true, data: context };
+    return { ok: true, data: undefined };
   });
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.updated", spaceId: result.data.space_id, itemId: params.itemId });
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };

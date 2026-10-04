@@ -5,8 +5,10 @@ import {
   createAccess,
   deleteAccess,
   getEffectivePermission,
+  getEffectivePermissions,
   type PermissionLevel,
   type Principal,
+  type RequestActor,
   type ResourceAccessAdapter,
   resolveDisplayNames,
   updateAccess,
@@ -19,7 +21,7 @@ import {
 } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================
 // Space Access Adapter
@@ -52,7 +54,7 @@ const PERMISSION_RANK: Record<PermissionLevel, number> = {
   admin: 3,
 };
 
-const permissionFromScopes = (scopes: string[]): PermissionLevel => {
+export const permissionFromScopes = (scopes: readonly string[]): PermissionLevel => {
   if (scopes.includes("admin")) return "admin";
   if (scopes.includes("write")) return "write";
   if (scopes.includes("read")) return "read";
@@ -139,10 +141,14 @@ export const listSpaceAccess = async (spaceId: string): Promise<AccessEntry[]> =
  */
 export const addSpaceAccess = async (spaceId: string, accessId: string): Promise<Result<void>> => {
   try {
-    await sql`
-      INSERT INTO spaces.space_access (space_id, access_id)
-      VALUES (${spaceId}::uuid, ${accessId}::uuid)
-    `;
+    await sql.begin(async (tx) => {
+      await tx`
+        INSERT INTO spaces.space_access (space_id, access_id)
+        VALUES (${spaceId}::uuid, ${accessId}::uuid)
+      `;
+      await publishSpaceChange(tx, { type: "access.changed", spaceId });
+    });
+    spacesLive.wake();
     return ok();
   } catch (e: unknown) {
     const error = e as { code?: string };
@@ -223,9 +229,11 @@ export const revokeSpaceAccess = async (params: { spaceId: string; accessId: str
     }
 
     const result = await tx`DELETE FROM auth.access WHERE id = ${params.accessId}::uuid`;
-    return result.count > 0 ? ok() : fail(err.notFound("Access entry for this space"));
+    if (result.count === 0) return fail(err.notFound("Access entry for this space"));
+    await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    return ok();
   });
-  if (result.ok) await publishSpaceEvent({ type: "access.changed", spaceId: params.spaceId });
+  if (result.ok) spacesLive.wake();
   return result;
 };
 
@@ -263,9 +271,11 @@ export const updateSpaceAccessPermission = async (params: {
       return fail(err.badInput("Cannot remove the last admin"));
     }
 
-    return updateAccess({ id: params.accessId, permission: params.permission }, tx);
+    const updated = await updateAccess({ id: params.accessId, permission: params.permission }, tx);
+    if (updated.ok) await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    return updated;
   });
-  if (result.ok) await publishSpaceEvent({ type: "access.changed", spaceId: params.spaceId });
+  if (result.ok) spacesLive.wake();
   return result;
 };
 
@@ -286,6 +296,39 @@ export const getSpacePermission = async (params: { spaceId: string; subject: Acc
   return getEffectivePermission({
     accessIds,
     subject: params.subject,
+  });
+};
+
+/**
+ * The permission of each request actor on one Space, with one query for all of
+ * their grants. A resource-bound key holds nothing outside its own Space, and
+ * every service account that does not act as its user is capped by its
+ * credential scopes; global roles grant nothing. The API and the live channel
+ * decide with these rules.
+ */
+export const getActorsSpacePermissions = async (
+  spaceId: string,
+  readers: readonly { actor: RequestActor; subject: AccessSubject }[],
+): Promise<PermissionLevel[]> => {
+  const accessRows = await sql<{ access_id: string }[]>`
+    SELECT access_id FROM spaces.space_access WHERE space_id = ${spaceId}::uuid
+  `;
+  const granted = await getEffectivePermissions({
+    accessIds: accessRows.map((row) => row.access_id),
+    subjects: readers.map((reader) => reader.subject),
+  });
+  return readers.map(({ actor }, position) => {
+    const account = actor.kind === "service_account" ? actor.serviceAccount : null;
+    if (
+      account?.kind === "resource_bound" &&
+      (account.appId !== SPACES_APP_ID || account.resourceType !== SPACE_RESOURCE_TYPE || account.resourceId !== spaceId)
+    ) {
+      return "none";
+    }
+    const permission = granted[position] ?? "none";
+    return actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated"
+      ? minPermission(permission, permissionFromScopes(actor.scopes))
+      : permission;
   });
 };
 
@@ -345,7 +388,6 @@ export const grantSpaceAccess = async (params: {
     return fail(err.internal("Failed to retrieve created access entry"));
   }
 
-  await publishSpaceEvent({ type: "access.changed", spaceId });
   return ok(created);
 };
 

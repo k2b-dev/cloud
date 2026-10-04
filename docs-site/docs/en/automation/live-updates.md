@@ -288,8 +288,8 @@ updates does not start before Core has created it:
 Update Cloud Core first: its migration creates the outbox.
 ```
 
-Update Core before the applications that define live updates. Contacts is the
-first built-in application that does.
+Update Core before the applications that define live updates. Contacts and
+Spaces are the built-in applications that do.
 
 A replica that stops closes its sockets with `1012`; the tabs reconnect to
 another replica and resume from their cursors. Each replica reads the topic

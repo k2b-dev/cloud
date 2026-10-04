@@ -89,10 +89,12 @@ import {
 import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, EventInvitationDraftSchema } from "../integration";
 import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
 import { spacesService } from "../service";
-import { isSpaceResourceId, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
+import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
 import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
+import { spacesLive } from "../service/live";
+import { spacesLiveChannels } from "../service/live-channels";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
 import { loadOverviewWork } from "../service/overview";
 import {
@@ -114,7 +116,7 @@ import {
 } from "../service/public-resources";
 import * as taskWork from "../service/task-work";
 import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "../work-contracts";
-import wsRoutes from "../ws";
+import legacyLiveRoutes from "../ws";
 
 // ==========================
 // Spaces API
@@ -266,22 +268,6 @@ const getCommentAuthor = (c: Context<AuthContext>): Result<CommentAuthor> => {
   return fail(err.forbidden("This endpoint requires a user-backed actor"));
 };
 
-const PERMISSION_RANK: Record<PermissionLevel, number> = {
-  none: 0,
-  read: 1,
-  write: 2,
-  admin: 3,
-};
-
-const permissionFromScopes = (scopes: string[]): PermissionLevel => {
-  if (scopes.includes("admin")) return "admin";
-  if (scopes.includes("write")) return "write";
-  if (scopes.includes("read")) return "read";
-  return "none";
-};
-
-const minPermission = (a: PermissionLevel, b: PermissionLevel): PermissionLevel => (PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b);
-
 const getSpaceAccessSubject = (c: Context<AuthContext>) => {
   const user = getUserBackedActor(c);
   const accessSubject = c.get("accessSubject");
@@ -391,30 +377,7 @@ const checkSpaceAccess = async (c: Context<AuthContext>, shortId: string, requir
     };
   }
 
-  if (
-    subject.serviceAccount?.kind === "resource_bound" &&
-    (subject.serviceAccount.appId !== SPACES_APP_ID ||
-      subject.serviceAccount.resourceType !== SPACE_RESOURCE_TYPE ||
-      subject.serviceAccount.resourceId !== spaceId)
-  ) {
-    return {
-      space: null,
-      internalId: null,
-      permission: "none" as PermissionLevel,
-      error: await respond(c, fail(err.forbidden("Access denied"))),
-    };
-  }
-
-  let permission = await spacesService.space.permission.get({
-    spaceId,
-    subject: subject.subject,
-  });
-
-  // Only a user-delegated credential acts as its user; every other service account is capped by its scopes.
-  if (subject.serviceAccount && subject.serviceAccount.kind !== "user_delegated") {
-    permission = minPermission(permission, permissionFromScopes(subject.serviceAccountScopes));
-  }
-
+  const [permission = "none"] = await getActorsSpacePermissions(spaceId, [{ actor: c.get("actor"), subject: subject.subject }]);
   if (!hasPermission(permission, requiredLevel)) {
     return {
       space: null,
@@ -532,7 +495,8 @@ import widgetRoutes from "./widgets";
 
 const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
-  .route("/ws", wsRoutes)
+  .route("/live", spacesLive.routes(spacesLiveChannels))
+  .route("/ws", legacyLiveRoutes)
   .use(auth.requireRole("authenticated"))
 
   // ==========================

@@ -4,7 +4,7 @@ import type { MutationResult } from "../contracts";
 import { ClaimTaskSchema, type TaskWork, TaskWorkSchema, type WorkActor, WorkActorSchema, WorkTextSchema } from "../work-contracts";
 import { buildSpacePrincipalCondition } from "./access";
 import * as activity from "./activity";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 
 type Db = typeof sql;
 const empty = (): TaskWork => ({ claim: null, progress: null, result: null });
@@ -125,8 +125,9 @@ export const change = async (params: {
       },
       tx,
     );
+    await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
     return { ok: true, data: work };
   });
-  if (result.ok) await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+  if (result.ok) spacesLive.wake();
   return result;
 };

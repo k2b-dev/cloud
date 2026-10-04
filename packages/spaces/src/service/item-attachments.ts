@@ -1,7 +1,7 @@
 import { sql } from "bun";
 import { MAX_TASK_ATTACHMENT_SIZE_BYTES, MAX_TASK_ATTACHMENTS, type MutationResult, type SpaceItemAttachment } from "@/contracts";
 import { withShortId } from "../lib/short-id";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 
 const INLINE_IMAGE_TYPES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
 
@@ -81,12 +81,13 @@ export const upload = async (params: {
            ${INLINE_IMAGE_TYPES.has(mimeType) ? "image" : "file"}, ${params.content}, ${params.userId}::uuid)
         RETURNING short_id, item_id, filename, mime_type, size_bytes, kind, created_at
       `;
+      await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
       return { ok: true, data: created! };
     }),
   );
 
   if (!result.ok) return result;
-  await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+  spacesLive.wake();
   return { ok: true, data: mapAttachment(result.data) };
 };
 
@@ -100,12 +101,16 @@ export const getContentByShortId = async (params: { shortId: string }): Promise<
 };
 
 export const remove = async (params: { shortId: string; itemId: string; spaceId: string }): Promise<MutationResult<void>> => {
-  const result = await sql`
-    DELETE FROM spaces.item_attachments
-    WHERE short_id = ${params.shortId}
-      AND item_id = ${params.itemId}::uuid
-  `;
-  if (result.count === 0) return { ok: false, error: "Attachment not found", status: 404 };
-  await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+  const deleted = await sql.begin(async (tx) => {
+    const result = await tx`
+      DELETE FROM spaces.item_attachments
+      WHERE short_id = ${params.shortId}
+        AND item_id = ${params.itemId}::uuid
+    `;
+    if (result.count > 0) await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+    return result.count > 0;
+  });
+  if (!deleted) return { ok: false, error: "Attachment not found", status: 404 };
+  spacesLive.wake();
   return { ok: true, data: undefined };
 };

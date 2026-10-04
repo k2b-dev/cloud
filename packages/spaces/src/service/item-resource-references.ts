@@ -2,7 +2,7 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { MAX_ITEM_RESOURCE_REFERENCES, type SpaceItemResourceReference, type SpaceItemResourceReferenceInput } from "@/contracts";
-import { publishSpaceEvent } from "./events";
+import { publishSpaceChange, spacesLive } from "./live";
 
 type ResourceReferenceRow = {
   resource_type: string;
@@ -88,21 +88,27 @@ export const add = async (params: {
   spaceId: string;
   reference: SpaceItemResourceReferenceInput;
 }): Promise<SpaceItemResourceReference | null> => {
-  const row = await upsertOne(sql, params.itemId, params.reference);
+  const row = await sql.begin(async (tx) => {
+    const upserted = await upsertOne(tx, params.itemId, params.reference);
+    if (upserted) await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+    return upserted;
+  });
   if (!row) return null;
-  const reference = mapReference(row);
-  await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
-  return reference;
+  spacesLive.wake();
+  return mapReference(row);
 };
 
 export const remove = async (params: { itemId: string; spaceId: string; ref: CloudResourceRef }): Promise<boolean> => {
-  const result = await sql`
-    DELETE FROM spaces.item_resource_refs
-    WHERE item_id = ${params.itemId}::uuid
-      AND resource_type = ${params.ref.type}
-      AND resource_id = ${params.ref.id}
-  `;
-  const deleted = result.count > 0;
-  if (deleted) await publishSpaceEvent({ type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+  const deleted = await sql.begin(async (tx) => {
+    const result = await tx`
+      DELETE FROM spaces.item_resource_refs
+      WHERE item_id = ${params.itemId}::uuid
+        AND resource_type = ${params.ref.type}
+        AND resource_id = ${params.ref.id}
+    `;
+    if (result.count > 0) await publishSpaceChange(tx, { type: "item.updated", spaceId: params.spaceId, itemId: params.itemId });
+    return result.count > 0;
+  });
+  if (deleted) spacesLive.wake();
   return deleted;
 };

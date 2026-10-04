@@ -10,6 +10,28 @@ updated: 2026-10-04
 
 # Deprecations and migrations
 
+## Spaces writes live updates through the platform outbox
+
+Spaces writes its live updates in the transaction that makes the change,
+through the platform outbox that Core's migration creates, so a change can no
+longer commit without reaching open pages. Update Core before Spaces: Spaces
+does not start until `events.outbox` exists. See
+[Live updates](/en/docs/automation/live-updates).
+
+Spaces pages follow a Space on `/api/spaces/live` with the channel `space`,
+which reads the topic `cloud:live:spaces` and checks the reader's access when
+it delivers an update. For one release, `/api/spaces/ws` answers tabs that were
+open during the upgrade with a request to load the page again; such a tab
+reloads once. While replicas of both versions run, a change handled by an older
+replica reaches a new tab only after its next reload, and a tab whose page and
+socket come from replicas of different versions can reload and then show "Live
+updates are unavailable right now" until the rollout finishes; reloading the
+page after the rollout restores live updates. Nothing writes the
+previous topic, `cloud:spaces:events:items`, anymore. Its events expire after
+24 hours, but its stream keeps its 1 GiB reservation until the next release
+removes it together with `/api/spaces/ws`; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
 ## Mail folders choose where their mail appears
 
 A Mail folder's sidebar switch became a display with three values:

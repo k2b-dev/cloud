@@ -99,10 +99,12 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     },
   }));
 
-  mock.module("@/service/events", () => ({
-    latestSpaceEventCursor: async () => {
-      calls.push("cursor");
-      return "7-1";
+  mock.module("@/service/live", () => ({
+    spacesLive: {
+      cursor: async () => {
+        calls.push("cursor");
+        return "7-1";
+      },
     },
   }));
 

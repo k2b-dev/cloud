@@ -1,16 +1,11 @@
-import { createLiveWebSocket } from "@k2b/cloud/browser/live";
+import { liveConnection } from "@k2b/cloud/browser/live";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { type ToastHandle, toast } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
-import {
-  parseSpaceLiveServerMessage,
-  SPACE_LIVE_WS_TYPE,
-  type SpaceLiveClientMessage,
-  type SpaceLiveServerMessage,
-} from "../../../../live-events";
+import { type SpaceLiveEvent, SpaceLiveEventSchema } from "../../../../live-events";
 import { useSpaceMessages } from "../../messages";
-import { createSpacesLiveCursorQueue, invalidateSpacesData } from "./workspace-events";
+import { invalidateSpacesData, type SpacesDataDomain } from "./workspace-events";
 
 type Props = {
   spaceId: string;
@@ -20,75 +15,79 @@ type Props = {
   dateConfig?: DateContext;
 };
 
+const ALL_DOMAINS: SpacesDataDomain[] = ["view", "detail", "wormholes"];
+
+/** The Space's name, settings, or access shape the whole page. */
+const changesPage = (event: SpaceLiveEvent) => event.type.startsWith("space.") || event.type === "access.changed";
+
 export default function SpaceLiveEvents(props: Props) {
   const t = useSpaceMessages();
   onMount(() => {
-    const lifecycle = new AbortController();
+    let stopped = false;
+    let reloading = false;
     let unavailable: ToastHandle | null = null;
-    // Deadline views (overdue, today, this week) depend on the current day, and no event announces a new day.
-    const today = () => dates.formatDateKey(new Date(), props.dateConfig);
-    let snapshotDay = props.snapshotDay;
     // A condition that persists across loads must not reload the page forever.
-    const reload = () => {
-      if (lifecycle.signal.aborted || unavailable || reloadOnce(`spaces:live:${props.spaceId}`)) return;
+    const reload = (): boolean => {
+      if (stopped || reloading) return true;
+      if (unavailable) return false;
+      reloading = reloadOnce(`spaces:live:${props.spaceId}`);
+      if (reloading) return true;
       unavailable = toast(t.liveUpdatesUnavailable, { duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
+      return false;
     };
-    const connection = createLiveWebSocket<SpaceLiveServerMessage>({
-      url: "/api/spaces/ws",
-      initialCursor: props.initialCursor,
-      activity: "visible",
-      subscribe: (cursor) =>
-        ({
-          type: SPACE_LIVE_WS_TYPE.subscribe,
-          payload: { spaceId: props.spaceId, fromCursor: cursor },
-        }) satisfies SpaceLiveClientMessage,
-      parse: parseSpaceLiveServerMessage,
-      onMessage: (message, controls) => {
-        if (lifecycle.signal.aborted) return;
-        if (message.payload.spaceId && message.payload.spaceId !== props.spaceId) return;
-        if (message.type === SPACE_LIVE_WS_TYPE.error && message.payload.code === "resync_required") {
-          controls.terminate({ code: message.payload.code, message: message.payload.message });
-          return;
-        }
-        if (message.type === SPACE_LIVE_WS_TYPE.ready) {
-          // A ready that confirms the subscribed cursor resumes the stream after it, as when a tab returns on the
-          // same day. Any other cursor skipped events, and a new day moves deadline views, so the snapshot refreshes.
-          const day = today();
-          if (message.payload.cursor !== controls.subscribedCursor() || day !== snapshotDay) {
-            snapshotDay = day;
-            void applyCursor(["view", "detail", "wormholes"], message.payload.cursor, null);
-          }
-          return;
-        }
-        if (message.type === SPACE_LIVE_WS_TYPE.event) {
-          const eventType = message.payload.event.type;
-          if (eventType.startsWith("space.") || eventType === "access.changed") {
-            reload();
-            return;
-          }
-          const domains = eventType.startsWith("item.") ? (["view", "detail"] as const) : (["view", "wormholes"] as const);
-          void applyCursor([...domains], message.payload.cursor, "itemId" in message.payload.event ? message.payload.event.itemId : null);
-          return;
-        }
-        if (message.type === SPACE_LIVE_WS_TYPE.revoked) {
-          controls.terminate({ code: message.payload.code, message: message.payload.message });
-        }
-      },
-      onFatal: reload,
-    });
-    const applyCursor = createSpacesLiveCursorQueue({
-      invalidate: invalidateSpacesData,
-      markApplied: (cursor) => {
-        if (!lifecycle.signal.aborted) connection.markApplied(cursor);
-      },
-      onFailure: reload,
-      signal: lifecycle.signal,
-    });
+    // The server renders the Space's name, settings, and the reader's permissions. When the page cannot reload
+    // right now, its data still catches up, and the toast offers the reload for the rest.
+    const reloadPage = async () => {
+      if (!reload()) await invalidateSpacesData(ALL_DOMAINS);
+    };
 
-    connection.connect();
+    // Deadline views (overdue, today, this week) depend on the current day, and no event announces a new day.
+    // A page without an SSR cursor may have missed changes before its subscription started. A failed
+    // refresh keeps the old day, so the next return to the tab tries again.
+    const today = () => dates.formatDateKey(new Date(), props.dateConfig);
+    let snapshotDay = props.initialCursor === null ? null : props.snapshotDay;
+    const refreshForNewDay = () => {
+      const day = today();
+      if (stopped || document.visibilityState !== "visible" || day === snapshotDay) return;
+      invalidateSpacesData(ALL_DOMAINS).then(
+        () => (snapshotDay = day),
+        () => undefined,
+      );
+    };
+
+    const subscription = liveConnection("/api/spaces/live").subscribe(
+      "space",
+      { space: props.spaceId },
+      {
+        cursor: props.initialCursor,
+        parse: (data) => SpaceLiveEventSchema.parse(data),
+        apply: async (events) => {
+          const changes = events.map((event) => event.data);
+          if (changes.some(changesPage)) return reloadPage();
+          const domains = new Set<SpacesDataDomain>(["view"]);
+          const items = new Set<string>();
+          for (const change of changes) {
+            if ("itemId" in change) {
+              domains.add("detail");
+              items.add(change.itemId);
+            } else domains.add("wormholes");
+          }
+          // One named item lets an open detail of another item stay as it is.
+          await invalidateSpacesData([...domains], events.at(-1)?.cursor ?? null, items.size === 1 ? ([...items][0] ?? null) : null);
+        },
+        // Missed updates may have renamed the Space or changed access.
+        resync: reloadPage,
+        revoked: () => void reload(),
+        unavailable: () => void reload(),
+      },
+    );
+
+    refreshForNewDay();
+    document.addEventListener("visibilitychange", refreshForNewDay);
     onCleanup(() => {
-      lifecycle.abort();
-      connection.dispose();
+      stopped = true;
+      document.removeEventListener("visibilitychange", refreshForNewDay);
+      subscription.close();
       unavailable?.dismiss();
     });
   });

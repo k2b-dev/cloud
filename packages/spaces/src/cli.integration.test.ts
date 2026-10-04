@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { sql } from "bun";
-import { connectTestNats, testFor, testSyncNamespace } from "../../../scripts/fixtures/test-infra";
+import { testFor } from "../../../scripts/fixtures/test-infra";
 import { installFirstPartyModules } from "../../cloud-cli/test/fixtures/first-party";
 import { newShortId } from "./lib/short-id";
 
@@ -21,7 +21,7 @@ afterAll(() => rm(cliHome, { recursive: true, force: true }));
  * Runs in a child process: the API module binds its middleware at import time.
  */
 if (process.env.SPACES_CLI_CHILD !== "1") {
-  testFor("database", "nats")(
+  testFor("database")(
     "cld spaces addresses items by ID and <space>:<title>",
     async () => {
       const child = Bun.spawn([process.execPath, "test", import.meta.path], {
@@ -64,18 +64,11 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
   type Item = { id: string; spaceId: string; title: string; columnId: string; deadline: string | null; completedAt: string | null };
 
   beforeAll(async () => {
-    const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
-    const { createSync } = await import("@k2b/sync");
     const server = await import("@k2b/cloud/server");
-    const { oauthTokens, toPgUuidArray } = await import("@k2b/cloud/services");
+    const { oauthTokens, toPgTextArray, toPgUuidArray } = await import("@k2b/cloud/services");
     spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
     const { migrate } = await import("./migrate");
     const { default: app } = await import("./api");
-
-    // Item changes publish live events, so the API needs a bound Sync.
-    const connection = await connectTestNats({ name: "spaces-cli-test" });
-    const sync = createSync({ connection, namespace: testSyncNamespace("spaces-cli"), application: "spaces", defaults: { replicas: 1 } });
-    bindProcessSync(sync);
     const user: User = {
       id: crypto.randomUUID(),
       uid: `cli-${crypto.randomUUID().slice(0, 8)}`,
@@ -97,7 +90,6 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
     };
     userId = user.id;
     spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
-    await sync.ready();
     await migrate();
     await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user', 'Cli Agent')`;
 
@@ -118,14 +110,15 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       http.stop(true);
       const accessIds = await sql<{ access_id: string }[]>`
         SELECT sa.access_id FROM spaces.space_access sa JOIN auth.access a ON a.id = sa.access_id WHERE a.user_id = ${user.id}::uuid`;
-      await sql`DELETE FROM spaces.spaces WHERE id IN (
-        SELECT sa.space_id FROM spaces.space_access sa WHERE sa.access_id = ANY(${toPgUuidArray(accessIds.map((row) => row.access_id))}::uuid[]))`;
-      await sql`DELETE FROM spaces.spaces WHERE name = 'Foreign space'`;
+      const spaces = await sql<{ id: string }[]>`
+        SELECT id::text FROM spaces.spaces WHERE name = 'Foreign space' OR id IN (
+          SELECT sa.space_id FROM spaces.space_access sa WHERE sa.access_id = ANY(${toPgUuidArray(accessIds.map((row) => row.access_id))}::uuid[]))`;
+      const spaceIds = spaces.map((space) => space.id);
+      // Nothing publishes in this process: drop the live updates of the Spaces this test wrote.
+      await sql`DELETE FROM events.outbox WHERE app_id = 'spaces' AND ordering_key = ANY(${toPgTextArray(spaceIds)}::text[])`;
+      await sql`DELETE FROM spaces.spaces WHERE id = ANY(${toPgUuidArray(spaceIds)}::uuid[])`;
       await sql`DELETE FROM auth.access WHERE user_id = ${user.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
-      await sync.drain({ timeoutMs: 5_000 });
-      unbindProcessSync();
-      await connection.drain();
     };
   }, 60_000);
 
