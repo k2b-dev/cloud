@@ -7,7 +7,8 @@ import { loadOverviewWork, loadSpaceOverviewStats } from "@/service/overview";
 import { spacesPublicResources } from "@/service/public-resources";
 import { ssr } from "../config";
 import { parseLastSpaceId, parsePinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
-import SpacesOverview, { overviewMessages } from "./SpacesOverview.island";
+import { overviewMessages } from "./overview-messages";
+import SpacesOverview from "./SpacesOverview.island";
 
 const log = logger("spaces:overview");
 
