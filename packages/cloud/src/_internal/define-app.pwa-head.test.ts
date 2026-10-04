@@ -19,7 +19,8 @@ const app = defineApp({
   icon: "ti ti-stack",
   description: "Document head probe",
   baseUrl: "http://head-probe:3000",
-  routes: ["/app/head-probe", "/pwa/head-probe"],
+  routes: ["/app/head-probe"],
+  pwa: {},
 });
 
 const server = new Hono()

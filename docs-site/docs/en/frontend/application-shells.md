@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-08-12
+updated: 2026-10-04
 ---
 
 # Application shells
@@ -31,6 +31,7 @@ then keep domain data and actions inside the application-owned content slots.
 | Complex editor dialog | `PanelDialog` |
 | Tabular records | `DataPanel` and `DataTable` |
 | Metrics | `StatGrid` and `StatCell` |
+| Page in the mobile app (preview) | `PwaLayout`; see [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
 
 
 ## Build an overview

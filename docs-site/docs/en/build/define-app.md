@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-09-28
+updated: 2026-10-04
 ---
 
 # Define an application
@@ -125,6 +125,29 @@ group. The layout adds those links to the existing AI administration section.
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.
 
+## Add pages to the mobile app
+
+> **Preview:** the mobile app is not released yet. This option may still change
+> in a minor release.
+
+`pwa` adds the application to the installation's
+[mobile app](/en/docs/frontend/mobile-app-pages):
+
+```ts
+pwa: { requiresRoles: ["user"] },
+```
+
+Cloud appends `/pwa/<id>` to `routes` and publishes the part in the registry.
+The mobile app lists it with the application's `name`, `icon`, and
+`description`. `requiresRoles` is optional and, like `nav.requiresRoles`,
+controls only visibility; routes and services still authorize.
+
+`/pwa` is reserved. `defineApp()` throws at startup when `routes` lists `/pwa`
+or a path below it; the only exceptions are the mobile app's own `/pwa` and
+Core's `/pwa/_auth`. It also throws when an application declares `pwa` with the
+id `pwa`, `settings`, or `offline`, or with an id that is not lowercase letters,
+digits, and hyphens starting with a letter.
+
 ## Translate registered presentation
 
 Keep the complete base presentation in the normal application declaration.
@@ -198,6 +221,7 @@ The remaining options declare application-owned contributions:
 | `legalLinks` | Application-owned legal and information links | — |
 | `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |
 | `openapi` | Public OpenAPI document path | [Typed HTTP APIs](/en/docs/server/http#publish-openapi) |
+| `pwa` | Pages in the mobile app (preview) | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
 
 Definitions establish ownership and types. They do not run an operation.
 

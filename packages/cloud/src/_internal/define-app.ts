@@ -27,6 +27,7 @@ import type {
   AppLifecycle,
   AppMeta,
   AppPresentationCatalog,
+  AppPwaPart,
   AppSearchLink,
   CloudLifecycleContext,
   WidgetEndpoint,
@@ -39,7 +40,7 @@ import {
   CapabilityOriginSchema,
 } from "../contracts/capabilities";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
-import { PWA_CANVAS_COLORS, PWA_MANIFEST_PATH } from "../contracts/pwa";
+import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
@@ -166,6 +167,16 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   legalLinks?: ReadonlyArray<{ label: string; href: string; icon?: string }>;
   /** Static destinations for the global search UI; no capabilities are created. */
   searchLinks?: readonly AppSearchLink[];
+  /**
+   * Preview: pages of this app in the installable mobile app. Declaring it adds
+   * `/pwa/<id>` to the gateway routes and lists the app in the mobile app,
+   * with its name, icon and description. Serve the pages below `/pwa/<id>`
+   * with `PwaLayout` and `ssr.pwaAccess`. `routes` never lists `/pwa` paths.
+   */
+  pwa?: {
+    /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
+    requiresRoles?: Role[];
+  };
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP path on this app that returns a `WidgetResponse`. The dashboard
@@ -316,6 +327,32 @@ export type AppDefinition<S extends AppSettingsMap = {}, N extends NotificationD
 
 // ── Implementation ──────────────────────────────────────────────────────────
 
+const isPwaPath = (route: string): boolean => route === "/pwa" || route.startsWith("/pwa/");
+/** A route as the gateway reads it: trimmed and without empty segments, so `//pwa/x/` is `/pwa/x`. */
+const canonicalRoute = (route: string): string => {
+  const trimmed = route.trim();
+  return trimmed.startsWith("/") ? `/${trimmed.split("/").filter(Boolean).join("/")}` : trimmed;
+};
+
+/**
+ * `/pwa` belongs to the mobile app shell, `/pwa/_auth` to Core, and `/pwa/<id>`
+ * to the app that declares `pwa`. A part never claims a path by hand, so no app
+ * can take the shell's pages or another app's part.
+ */
+const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): AppPwaPart | undefined => {
+  for (const route of opts.routes) {
+    const path = canonicalRoute(route);
+    if (!isPwaPath(path)) continue;
+    if ((path === "/pwa" && opts.id === PWA_SHELL_APP_ID) || (path === PWA_AUTH_PATH && opts.id === "core")) continue;
+    throw new Error(`App "${opts.id}" lists route "${route}"; /pwa is reserved for the mobile app, declare pwa: {} to get /pwa/${opts.id}`);
+  }
+  if (!opts.pwa) return undefined;
+  if (!isPwaPartId(opts.id)) {
+    throw new Error(`App "${opts.id}" cannot declare pwa; a part needs a plain id other than pwa, settings and offline`);
+  }
+  return { href: `/pwa/${opts.id}`, requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined };
+};
+
 export const defineApp = <
   const S extends AppSettingsMap = {},
   const N extends NotificationDefinitionMap = {},
@@ -327,6 +364,7 @@ export const defineApp = <
   const isDevelopment = env.IS_DEVELOPMENT;
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
+  const pwaPart = validateAppPwaPart(opts);
 
   // ── 0. Register declared settings into the runtime registry ──────────
   // SETTINGS_MAP is the single source of truth for validation in store.ts
@@ -436,10 +474,11 @@ export const defineApp = <
         links: group.links.map((link) => ({ ...link })),
       }),
     ),
-    routes: [...opts.routes, ...cliPluginRoutePrefixes(cliModules)],
+    routes: [...opts.routes, ...cliPluginRoutePrefixes(cliModules), ...(pwaPart ? [pwaPart.href] : [])],
     nav: opts.nav,
     legalLinks: opts.legalLinks ? [...opts.legalLinks] : undefined,
     searchLinks: opts.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
+    pwa: pwaPart,
     widgets: opts.widgets ? opts.widgets.map((w) => ({ ...w })) : undefined,
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
     openapi: opts.openapi,
@@ -534,6 +573,9 @@ export const defineApp = <
         help: compiledHelp?.summary,
         legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
         searchLinks: meta.searchLinks,
+        pwa: meta.pwa
+          ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
+          : undefined,
         widgets: meta.widgets ? meta.widgets.map((w) => ({ ...w })) : undefined,
         settingKeys: meta.settingKeys ? [...meta.settingKeys] : undefined,
         openapi: advertiseOpenapi ? opts.openapi : undefined,

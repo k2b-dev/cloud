@@ -92,6 +92,17 @@ describe("visiblePwaParts", () => {
     ]);
   });
 
+  test("lists only parts the gateway routes to their app", () => {
+    const unrouted = [
+      // The shell's own pages and ids that are not part ids.
+      part("settings", "Settings"),
+      part("offline", "Offline"),
+      // A part whose app does not claim its path.
+      { ...part("orders", "Orders"), routes: ["/app/orders"] },
+    ] satisfies RuntimeAppMeta[];
+    expect(visiblePwaParts([...parts, ...unrouted], user, "en").map((app) => app.id)).toEqual(["spaces", "zeiten"]);
+  });
+
   test("keeps admin parts away from app sessions, which never carry the admin role", () => {
     expect(visiblePwaParts(parts, { ...user, roles: [...user.roles, "admin"] }, "en").map((app) => app.id)).toContain("ops");
     expect(visiblePwaParts(parts, user, "en").map((app) => app.id)).not.toContain("ops");

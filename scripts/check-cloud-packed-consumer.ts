@@ -99,26 +99,45 @@ try {
           jsx: "preserve",
           jsxImportSource: "solid-js",
         },
-        include: ["src/**/*.ts"],
+        include: ["src/**/*.ts", "src/**/*.tsx"],
       },
       null,
       2,
     ),
   );
+  // A third-party part of the mobile app: declared with pwa, served with PwaLayout behind ssr.pwaAccess.
   await Bun.write(
     join(consumer, "src/config.ts"),
     `import { defineApp } from "@k2b/cloud";
 export const app = defineApp({
-  id: "inventory", name: "Inventory", icon: "ti ti-packages",
-  description: "Packed consumer smoke", baseUrl: process.env.CONSUMER_BASE_URL ?? "http://inventory:3000", routes: ["/api/inventory"],
+  id: "inventory", name: "Inventory", icon: "ti ti-packages", description: "Packed consumer smoke",
+  basePath: "/pwa/inventory", baseUrl: process.env.CONSUMER_BASE_URL ?? "http://inventory:3000", routes: ["/api/inventory"], pwa: {},
 });
 `,
   );
   await Bun.write(
-    join(consumer, "src/index.ts"),
-    `import { Hono } from "hono";
+    join(consumer, "src/shelf.page.tsx"),
+    `import type { AuthContext } from "@k2b/cloud/server";
+import { PwaLayout } from "@k2b/cloud/ssr";
 import { app } from "./config";
-const router = new Hono().get("/api/inventory/health", c => c.json({ app: app.meta.id, status: "ok" }));
+export default app.ssr<AuthContext>((c) => () => (
+  <PwaLayout c={c} title="Inventory">
+    <p>Shelf A</p>
+  </PwaLayout>
+));
+`,
+  );
+  await Bun.write(
+    join(consumer, "src/index.ts"),
+    `import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
+import { Hono } from "hono";
+import { app } from "./config";
+import shelfPage from "./shelf.page";
+const router = new Hono<AuthContext>()
+  .use("*", middleware.runtime())
+  .use("*", middleware.settings())
+  .get("/api/inventory/health", c => c.json({ app: app.meta.id, status: "ok" }))
+  .get("/pwa/inventory", auth.requireRole("authenticated", app.ssr.pwaAccess), auth.requireUser(app.ssr.pwaAccess), ...shelfPage);
 export default await app.start({ fetch: router.fetch, port: Number(process.env.PORT ?? 3000) });
 `,
   );
