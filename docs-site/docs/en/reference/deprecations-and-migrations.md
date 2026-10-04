@@ -19,12 +19,17 @@ stay the same, and the root volumes and `state_dir` stay in place.
 Upgrade Cloud before or together with the daemon. Filegate 7 publishes file IDs
 only on roots with stable IDs, and earlier Files releases compare the IDs they
 recorded under Filegate 6.1. On roots with `index: true` and `managed: false`,
-those releases cannot finish moves to and from the trash or directory
-archive, restore, and delete operations that were still open when the daemon
-changed, and repeating a completed trash restore fails. They report
-`source_changed` or `operation_unresolved` indefinitely. The current release compares IDs only when
-both sides have one and otherwise compares modification time and size, so these
-operations complete on their next retry or trash listing.
+those releases cannot finish these operations if they were still open when
+the daemon changed:
+
+- moving files and folders into the trash and restoring them from it;
+- archiving, restoring, and deleting directories.
+
+Repeating a completed trash restore also fails. These releases report
+`source_changed` or `operation_unresolved` indefinitely. The current release
+compares IDs only when both sides have one and otherwise compares modification
+time and size, so these operations complete on their next retry or trash
+listing.
 
 Filegate 7 reports stable file IDs (`stableIds`) only for roots with both
 `index: true` and `managed: true`. Such a root needs Filegate as its only
