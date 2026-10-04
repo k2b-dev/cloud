@@ -30,7 +30,7 @@ function CurrentConditionStat(props: { label: string; value: string; icon: strin
         <i class={`${props.icon} text-sm`} aria-hidden="true" />
       </span>
       <div class="flex min-w-0 flex-col">
-        <span class="truncate text-[10px] font-medium uppercase tracking-wider text-dimmed">{props.label}</span>
+        <span class="truncate text-xs font-medium text-dimmed">{props.label}</span>
         <span class="truncate text-base font-semibold tabular-nums text-primary">{props.value}</span>
       </div>
     </div>

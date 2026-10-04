@@ -3371,11 +3371,14 @@
 }
 
 /* A surface that paints its own background inside a group starts over: its
-   fields and fills return to the muted recess. */
+   fields and fills return to the muted recess. A lone detail panel section and
+   a discussion in a panel are frames like a group. */
 .k2b-ui
   :is(
     .k2b-detail-panel__summary,
     .k2b-detail-panel__group,
+    .k2b-detail-panel__body > .k2b-detail-panel__section,
+    .k2b-detail-panel .k2b-discussion[data-surface="default"],
     .k2b-disclosure,
     .k2b-choice-popover,
     .k2b-date-popover,

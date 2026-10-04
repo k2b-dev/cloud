@@ -252,7 +252,7 @@ export default function MailConversationContext(props: {
 
   return (
     <>
-      <DetailPanel.Section title={messages().contacts} icon="ti ti-address-book" tone="neutral">
+      <section aria-label={messages().contacts} class="bg-[var(--ui-surface)] p-3">
         <Show
           when={context()}
           fallback={
@@ -322,7 +322,7 @@ export default function MailConversationContext(props: {
                             <Show
                               when={!participant.hasMatch && canCreateContact}
                               fallback={
-                                <div class="flex min-w-0 items-start gap-2 py-1.5">
+                                <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
                                   <i class="ti ti-user mt-0.5 text-dimmed" aria-hidden="true" />
                                   <div class="min-w-0 flex-1">
                                     <p class="truncate text-sm font-medium text-primary">{participant.displayName || participant.email}</p>
@@ -348,7 +348,7 @@ export default function MailConversationContext(props: {
                         >
                           <div class="flex flex-col gap-1">
                             <Show when={participant.showParticipantHeading}>
-                              <div class="py-1">
+                              <div class="px-2 py-1">
                                 <p class="truncate text-xs font-medium text-secondary">{participant.displayName || participant.email}</p>
                                 <Show when={participant.displayName}>
                                   <p class="truncate text-xs text-dimmed" title={participant.email}>
@@ -377,7 +377,7 @@ export default function MailConversationContext(props: {
                                     <Show
                                       when={contact.openHref}
                                       fallback={
-                                        <div class="flex min-w-0 items-start gap-2 py-1.5">
+                                        <div class="flex min-w-0 items-start gap-2 px-2 py-1.5">
                                           <i class="ti ti-address-book mt-0.5 text-dimmed" aria-hidden="true" />
                                           <div class="min-w-0 flex-1">
                                             <p class="truncate text-sm font-medium text-primary">{contact.displayName}</p>
@@ -461,88 +461,86 @@ export default function MailConversationContext(props: {
             </Show>
           </Show>
         </Show>
-      </DetailPanel.Section>
-      <DetailPanel.Section title={messages().spaces} icon="ti ti-layout-kanban" tone="neutral">
-        <div class="flex flex-col gap-1">
-          <Show
-            when={context()}
-            fallback={
-              <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title={messages().loadingSpaces} />}>
-                {(error) => (
-                  <Placeholder
-                    state="error"
-                    align="center"
-                    title={messages().spacesUnavailable}
-                    description={error().message}
-                    icon="ti ti-layout-kanban-off"
-                    action={
-                      <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                        {messages().retry}
-                      </Button>
-                    }
-                  />
-                )}
+      </section>
+      <section aria-label={messages().spaces} class="space-y-1 bg-[var(--ui-surface)] p-3">
+        <Show
+          when={context()}
+          fallback={
+            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title={messages().loadingSpaces} />}>
+              {(error) => (
+                <Placeholder
+                  state="error"
+                  align="center"
+                  title={messages().spacesUnavailable}
+                  description={error().message}
+                  icon="ti ti-layout-kanban-off"
+                  action={
+                    <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
+                      {messages().retry}
+                    </Button>
+                  }
+                />
+              )}
+            </Show>
+          }
+        >
+          {(current) => (
+            <Show
+              when={current().spaces.status === "ready"}
+              fallback={<Placeholder state="error" align="center" title={messages().spacesUnavailable} icon="ti ti-layout-kanban-off" />}
+            >
+              <For each={current().spaces.status === "ready" ? current().spaces.items : []}>
+                {(item) => {
+                  const openHref = item.links.find((link) => link.rel === "open")?.href;
+                  if (!openHref) return null;
+                  return (
+                    <DetailPanel.Action
+                      href={openHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      leading={<i class={item.icon ?? "ti ti-checkbox"} aria-hidden="true" />}
+                      title={item.title}
+                      description={item.metadata?.find((entry) => entry.label === "Space")?.value}
+                      menuLabel={messages().moreActionsFor({ name: item.title })}
+                      menuItems={[
+                        {
+                          label: messages().unlink,
+                          icon: "ti ti-unlink",
+                          action: () => void unlinkSpaceItem(item.ref.id),
+                        },
+                      ]}
+                    />
+                  );
+                }}
+              </For>
+              <Show when={current().spaces.status === "ready" && current().spaces.truncated}>
+                <p class="px-2 py-1 text-xs text-dimmed">{messages().moreLinkedSpaceItems}</p>
               </Show>
-            }
-          >
-            {(current) => (
-              <Show
-                when={current().spaces.status === "ready"}
-                fallback={<Placeholder state="error" align="center" title={messages().spacesUnavailable} icon="ti ti-layout-kanban-off" />}
-              >
-                <For each={current().spaces.status === "ready" ? current().spaces.items : []}>
-                  {(item) => {
-                    const openHref = item.links.find((link) => link.rel === "open")?.href;
-                    if (!openHref) return null;
-                    return (
-                      <DetailPanel.Action
-                        href={openHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        leading={<i class={item.icon ?? "ti ti-checkbox"} aria-hidden="true" />}
-                        title={item.title}
-                        description={item.metadata?.find((entry) => entry.label === "Space")?.value}
-                        menuLabel={messages().moreActionsFor({ name: item.title })}
-                        menuItems={[
-                          {
-                            label: messages().unlink,
-                            icon: "ti ti-unlink",
-                            action: () => void unlinkSpaceItem(item.ref.id),
-                          },
-                        ]}
-                      />
-                    );
-                  }}
-                </For>
-                <Show when={current().spaces.status === "ready" && current().spaces.truncated}>
-                  <p class="py-1 text-xs text-dimmed">{messages().moreLinkedSpaceItems}</p>
-                </Show>
-                <DetailPanel.Action
-                  type="button"
-                  onClick={() => void linkExistingSpaceItem()}
-                  leading={<i class="ti ti-link-plus text-[var(--k2b-action)]" aria-hidden="true" />}
-                  title={messages().linkSpaces}
-                  trailing={<span class="text-[0.6875rem] font-normal">{messages().existingItem}</span>}
-                />
-                <DetailPanel.Action
-                  type="button"
-                  onClick={() => void createSpaceItem("task")}
-                  leading={<i class="ti ti-checkbox text-[var(--k2b-action)]" aria-hidden="true" />}
-                  title={messages().spacesTask}
-                  trailing={<span class="text-[0.6875rem] font-normal">{messages().newItem}</span>}
-                />
-                <DetailPanel.Action
-                  type="button"
-                  onClick={() => void createSpaceItem("event")}
-                  leading={<i class="ti ti-calendar-event text-[var(--k2b-action)]" aria-hidden="true" />}
-                  title={messages().spacesEvent}
-                  trailing={<span class="text-[0.6875rem] font-normal">{messages().newItem}</span>}
-                />
-              </Show>
-            )}
-          </Show>
-        </div>
-      </DetailPanel.Section>
+              <DetailPanel.Action
+                type="button"
+                onClick={() => void linkExistingSpaceItem()}
+                leading={<i class="ti ti-link-plus text-[var(--k2b-action)]" aria-hidden="true" />}
+                title={messages().linkSpaces}
+                trailing={<span class="text-[0.6875rem] font-normal">{messages().existingItem}</span>}
+              />
+              <DetailPanel.Action
+                type="button"
+                onClick={() => void createSpaceItem("task")}
+                leading={<i class="ti ti-checkbox text-[var(--k2b-action)]" aria-hidden="true" />}
+                title={messages().spacesTask}
+                trailing={<span class="text-[0.6875rem] font-normal">{messages().newItem}</span>}
+              />
+              <DetailPanel.Action
+                type="button"
+                onClick={() => void createSpaceItem("event")}
+                leading={<i class="ti ti-calendar-event text-[var(--k2b-action)]" aria-hidden="true" />}
+                title={messages().spacesEvent}
+                trailing={<span class="text-[0.6875rem] font-normal">{messages().newItem}</span>}
+              />
+            </Show>
+          )}
+        </Show>
+      </section>
     </>
   );
 }
