@@ -376,10 +376,14 @@ export const createMailDraftSession = (options: {
         }
         if (options.isDisposed()) return currentDraft;
         const acquired = await acquireLease(currentDraft);
-        if (!acquired) return currentDraft;
-        setStatus("saved");
-        setStatusMessage("");
-        return currentDraft;
+        // A retried materialization returns the draft its first request stored, which can predate the
+        // editor's current content; the save below brings the draft up to date before anyone uses it.
+        if (!acquired) return serializedContent() === lastSavedContent ? currentDraft : null;
+        if (serializedContent() === lastSavedContent) {
+          setStatus("saved");
+          setStatusMessage("");
+          return currentDraft;
+        }
       }
       if (!currentDraft || !lease()) {
         currentDraft = await ensureDraft();
