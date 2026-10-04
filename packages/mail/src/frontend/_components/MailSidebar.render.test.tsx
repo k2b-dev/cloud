@@ -184,5 +184,17 @@ describe("Mail sidebar", () => {
     const newsletter = desktop.slice(desktop.indexOf('title="Newsletter'), desktop.indexOf('title="Shared'));
     expect(newsletter).toContain('<span class="sr-only">Only in the folder</span>');
     expect(newsletter).toContain("12");
+
+    // The phone navigation names it too, below the folder's name.
+    type Entry = { id: string; description?: string; children?: Entry[] };
+    const json = /<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1];
+    const flatten = (entries: Entry[]): Entry[] => entries.flatMap((entry) => [entry, ...flatten(entry.children ?? [])]);
+    const phone = flatten((JSON.parse(json ?? "{}") as { items: Entry[] }).items).filter((entry) => entry.id.startsWith("folder:"));
+    expect(Object.fromEntries(phone.map((entry) => [entry.id, entry.description ?? null]))).toEqual({
+      "folder:Fold01": "Only in the folder",
+      "folder:Fold02": "Only in the folder",
+      "folder:Fold03": null,
+      "folder:Fold04": null,
+    });
   });
 });

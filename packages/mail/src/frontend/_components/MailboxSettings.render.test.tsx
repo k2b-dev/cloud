@@ -157,6 +157,7 @@ describe("Mailbox settings composition", () => {
         folder("Fold03", "Team", { parentId: "Fold02", namespaceKinds: ["shared"] }),
         folder("Fold04", "Important", { parentId: "Fold03", display: "hidden", namespaceKinds: ["shared"] }),
         folder("Fold05", "Old project", { discoveryState: "missing" }),
+        folder("Fold09", "Archive", { subscribed: false }),
         folder("Fold06", "[Gmail]", { selectable: false }),
         folder("Fold07", "Important", { parentId: "Fold06", displayNeutral: true }),
         folder("Fold08", "Sent Mail", { parentId: "Fold06", role: "sent", providerRole: "sent", displayNeutral: true }),
@@ -172,20 +173,25 @@ describe("Mailbox settings composition", () => {
       "Team, Shared by provider, Only in the folder, inherited from Shared",
       "Important, in Shared / Team, Shared by provider, Hidden",
       "Old project, Unavailable",
-      "[Gmail], Everywhere",
+      "Archive, Not subscribed, Everywhere",
+      "[Gmail], Folder group · 2 folders, Everywhere",
       "Important, in [Gmail], Everywhere",
       "Sent Mail, Everywhere",
     ]);
     // Groups read as headers: their folders start unindented, and the header counts them.
     expect(html).toContain('data-group="" data-effective="everywhere"');
     expect(html).toContain("Folder group · 2 folders");
-    expect(html.match(/style="--mail-folder-depth:0"/g)).toHaveLength(6);
+    expect(html.match(/style="--mail-folder-depth:0"/g)).toHaveLength(7);
+    // Subfolders are lists inside their folder, so assistive technology hears the hierarchy.
+    expect(html).toContain('aria-label="Subfolders of Shared"');
+    expect(html).toContain('aria-label="Subfolders of [Gmail]"');
     // The default needs no words in the row; deviations and the inherited source do.
     expect(html).toContain('data-kind="default"');
     expect(html).toContain('<span class="mail-folder-tree__state-long">inherited from Shared</span>');
     // The menu explains the three displays, how far a change reaches, and what a parent already decides.
-    expect(html).toContain("Also applies to 2 subfolders.");
+    expect(html).toContain("Where mail appears · also 2 subfolders");
     expect(html).toContain("Set by “Shared”. Change it there.");
+    expect(html).toContain("Follows “Shared”. Looser choices are set there.");
     expect(html).toContain("Not needed: this folder never decides what combined views show.");
   });
 });

@@ -466,11 +466,227 @@ export default function MailFolderSettings(props: {
   });
 
   const busy = () => props.reloading || pendingFolderId() !== null;
+  // While one change runs, the menus offer no second one. The rows stay enabled, so the row that opened the menu keeps
+  // its focus and nothing dims while the change saves and the folders reload.
+  const changing = () => pendingFolderId() !== null;
+  const childIds = createMemo(() => {
+    const children = new Map<string | null, string[]>();
+    for (const row of rows()) {
+      const siblings = children.get(row.parentRowId);
+      if (siblings) siblings.push(row.folder.id);
+      else children.set(row.parentRowId, [row.folder.id]);
+    }
+    return children;
+  });
+
+  // Each folder is a list item, and its subfolders are a list inside it, so assistive technology knows the hierarchy.
+  const folderList = (parentId: string | null) => <For each={childIds().get(parentId) ?? []}>{(folderId) => folderRow(folderId)}</For>;
+
+  const folderRow = (folderId: string) => {
+    const row = () => rowById().get(folderId)!;
+    const folder = () => row().folder;
+    const state = () => displayStates().get(folderId)!;
+    const nameOf = (id: string | null | undefined) => (id ? (folderById().get(id)?.name ?? "") : "");
+    const shared = () => folder().namespaceKinds.some((kind) => kind === "shared" || kind === "other_users");
+    const canChooseDisplay = () => folder().discoveryState === "active" && (folder().selectable || folder().subscribed !== false);
+    const status = (): FolderState => {
+      if (folder().discoveryState !== "active") {
+        const label = folder().discoveryState === "missing" ? messages().unavailable : messages().needsReview;
+        const icon = folder().discoveryState === "missing" ? "ti ti-folder-off" : "ti ti-alert-triangle";
+        return { kind: "warning", icon, long: label, short: label, spoken: label };
+      }
+      const display = state().effectiveDisplay;
+      const label = displayLabel(display);
+      const source = nameOf(state().inheritedFromFolderId);
+      if (state().inheritedFromFolderId) {
+        return {
+          kind: "inherited",
+          icon: DISPLAY_ICONS[display],
+          long: messages().inheritedFrom({ name: source }),
+          short: messages().inherited,
+          spoken: messages().inheritedDisplay({ display: label, name: source }),
+        };
+      }
+      return {
+        kind: display === "everywhere" ? "default" : "own",
+        icon: DISPLAY_ICONS[display],
+        long: label,
+        short: label,
+        spoken: label,
+      };
+    };
+    const choiceDescription = (display: FolderDisplay): { text: string; disabled: boolean } => {
+      const floor = state().floor;
+      if (floor && isStricterDisplay(floor.display, display)) {
+        return { text: messages().displaySetBy({ name: nameOf(floor.folderId) }), disabled: true };
+      }
+      const neutral = folder().displayNeutral;
+      if (neutral && display === "folder_only") return { text: messages().onlyInFolderNeutralDescription, disabled: true };
+      const text =
+        display === "everywhere"
+          ? neutral
+            ? messages().everywhereNeutralDescription
+            : messages().everywhereDescription
+          : display === "folder_only"
+            ? messages().onlyInFolderDescription
+            : neutral
+              ? messages().hiddenNeutralDescription
+              : messages().hiddenDescription;
+      // The choice that follows the parent names it, so a keyboard or screen reader user also learns why the looser
+      // choices, which a menu skips, are not available.
+      return {
+        text: floor && display === floor.display ? `${text} ${messages().followsParent({ name: nameOf(floor.folderId) })}` : text,
+        disabled: false,
+      };
+    };
+    const chooseDisplay = (chosen: FolderDisplay) => {
+      if (changing()) return;
+      const display = mailFolderDisplayToStore(chosen, state());
+      if (display === folder().display) return;
+      updateDisplay.mutate({ folder: folder(), display, chosen, subfolders: row().descendantCount });
+    };
+    const actions = (): DropdownAction[] => [
+      ...(folder().canCreateChildren
+        ? [{ label: messages().newSubfolder, icon: "ti ti-folder-plus", action: () => void openFolderEditor(null, folderId) }]
+        : []),
+      ...(folder().canRename ? [{ label: messages().rename, icon: "ti ti-edit", action: () => void openFolderEditor(folder()) }] : []),
+      ...(folder().canManageSubscription
+        ? [
+            {
+              label: folder().subscribed ? messages().unsubscribeOnProvider : messages().subscribeOnProvider,
+              icon: folder().subscribed ? "ti ti-bookmark-off" : "ti ti-bookmark",
+              disabled: changing(),
+              action: () => folderMutation.mutate({ folder: folder(), action: "subscription" }),
+            },
+          ]
+        : []),
+      ...(folder().discoveryState === "missing"
+        ? [
+            {
+              label: messages().removeFromMail,
+              icon: "ti ti-folder-off",
+              variant: "danger" as const,
+              disabled: changing(),
+              action: () => folderMutation.mutate({ folder: folder(), action: "dismiss" }),
+            },
+          ]
+        : []),
+      ...(folder().canDelete
+        ? [
+            {
+              label: messages().deleteFolder,
+              icon: "ti ti-trash",
+              variant: "danger" as const,
+              disabled: changing(),
+              action: () => folderMutation.mutate({ folder: folder(), action: "delete" }),
+            },
+          ]
+        : []),
+    ];
+    const menu = (): DropdownSection[] => [
+      ...(canChooseDisplay()
+        ? [
+            {
+              sectionLabel: messages().displaySection({ subfolders: row().descendantCount }),
+              items: DISPLAYS.map((display) => {
+                const description = choiceDescription(display);
+                return {
+                  choice: "radio" as const,
+                  label: displayLabel(display),
+                  icon: DISPLAY_ICONS[display],
+                  description: description.text,
+                  disabled: description.disabled || changing(),
+                  checked: state().effectiveDisplay === display,
+                  action: () => chooseDisplay(display),
+                };
+              }),
+            },
+          ]
+        : []),
+      ...(actions().length > 0 ? [{ items: actions() }] : []),
+    ];
+    const pending = () => pendingFolderId() === folderId;
+    const expanded = () => !collapsedIds().has(folderId);
+    const name = () => (row().path ? messages().folderInPath({ name: folder().name, path: row().path! }) : folder().name);
+    // The label replaces the row's text for assistive technology, so it carries every note the row shows.
+    const label = () =>
+      [
+        name(),
+        ...(shared() ? [messages().sharedByProvider] : []),
+        ...(row().group ? [messages().folderGroup({ count: row().descendantCount })] : []),
+        ...(folder().subscribed === false ? [messages().notSubscribed] : []),
+        status().spoken,
+      ].join(", ");
+    return (
+      <li class="mail-folder-tree__item" aria-busy={pending() || undefined}>
+        <div
+          class="mail-folder-tree__row"
+          style={{ "--mail-folder-depth": row().depth }}
+          data-group={row().group ? "" : undefined}
+          data-effective={state().effectiveDisplay}
+          data-missing={folder().discoveryState === "missing" ? "" : undefined}
+        >
+          <For each={Array.from({ length: row().depth }, (_, level) => level)}>
+            {(level) => <span class="mail-folder-tree__guide" style={{ "--mail-folder-level": level }} aria-hidden="true" />}
+          </For>
+          <Show when={row().hasChildren} fallback={<span class="mail-folder-tree__toggle" aria-hidden="true" />}>
+            <button
+              type="button"
+              class="mail-folder-tree__toggle"
+              aria-expanded={expanded()}
+              aria-label={messages().subfoldersOf({ name: folder().name })}
+              onClick={() => toggleCollapsed(folderId)}
+            >
+              <i class={`ti ${expanded() ? "ti-chevron-down" : "ti-chevron-right"}`} aria-hidden="true" />
+            </button>
+          </Show>
+          <Dropdown.Root
+            class="mail-folder-tree__menu-root"
+            menuClass="mail-folder-menu"
+            width="21rem"
+            position="bottom-left"
+            label={messages().folderMenu({ name: folder().name })}
+            items={menu()}
+            disabled={menu().length === 0}
+          >
+            <Dropdown.Trigger appearance="plain" class="mail-folder-tree__main" label={label()}>
+              <Show when={!row().group}>
+                <i class={`${folderIcon(folder())} mail-folder-tree__icon`} aria-hidden="true" />
+              </Show>
+              <span class="mail-folder-tree__copy">
+                <span class="mail-folder-tree__name">{folder().name}</span>
+                <Show when={shared()}>
+                  <i class="ti ti-users mail-folder-tree__shared" title={messages().sharedByProvider} aria-hidden="true" />
+                </Show>
+                <Show when={row().group}>
+                  <span class="mail-folder-tree__note">{messages().folderGroup({ count: row().descendantCount })}</span>
+                </Show>
+                <Show when={row().path}>{(path) => <span class="mail-folder-tree__note">{path()}</span>}</Show>
+                <Show when={folder().subscribed === false}>
+                  <span class="mail-folder-tree__note">{messages().notSubscribed}</span>
+                </Show>
+              </span>
+              <span class="mail-folder-tree__state" data-kind={pending() ? "own" : status().kind}>
+                <i class={pending() ? "ti ti-loader-2 animate-spin" : status().icon} aria-hidden="true" />
+                <span class="mail-folder-tree__state-long">{status().long}</span>
+                <span class="mail-folder-tree__state-short">{status().short}</span>
+              </span>
+            </Dropdown.Trigger>
+          </Dropdown.Root>
+        </div>
+        <Show when={row().hasChildren && expanded()}>
+          <ul class="mail-folder-tree__children" aria-label={messages().subfoldersOf({ name: folder().name })}>
+            {folderList(folderId)}
+          </ul>
+        </Show>
+      </li>
+    );
+  };
 
   return (
     <div class="flex flex-col gap-3">
       <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <p class="min-w-0 flex-1 basis-56 text-xs text-dimmed">{messages().folderVisibilityDescription}</p>
+        <p class="min-w-0 flex-[1_1_14rem] text-xs text-dimmed">{messages().folderVisibilityDescription}</p>
         <Button variant="secondary" size="sm" type="button" class="shrink-0" disabled={busy()} onClick={() => void openFolderEditor(null)}>
           <i class="ti ti-folder-plus" aria-hidden="true" />
           {messages().newFolder}
@@ -488,198 +704,7 @@ export default function MailFolderSettings(props: {
         }
       >
         <ul class="mail-folder-tree" aria-label={messages().folders}>
-          <For each={rowIds()}>
-            {(folderId) => {
-              const row = () => rowById().get(folderId)!;
-              const folder = () => row().folder;
-              const state = () => displayStates().get(folderId)!;
-              const nameOf = (id: string | null | undefined) => (id ? (folderById().get(id)?.name ?? "") : "");
-              const shared = () => folder().namespaceKinds.some((kind) => kind === "shared" || kind === "other_users");
-              const canChooseDisplay = () => folder().discoveryState === "active" && (folder().selectable || folder().subscribed !== false);
-              const status = (): FolderState => {
-                if (folder().discoveryState !== "active") {
-                  const label = folder().discoveryState === "missing" ? messages().unavailable : messages().needsReview;
-                  const icon = folder().discoveryState === "missing" ? "ti ti-folder-off" : "ti ti-alert-triangle";
-                  return { kind: "warning", icon, long: label, short: label, spoken: label };
-                }
-                const display = state().effectiveDisplay;
-                const label = displayLabel(display);
-                const source = nameOf(state().inheritedFromFolderId);
-                if (state().inheritedFromFolderId) {
-                  return {
-                    kind: "inherited",
-                    icon: DISPLAY_ICONS[display],
-                    long: messages().inheritedFrom({ name: source }),
-                    short: messages().inherited,
-                    spoken: messages().inheritedDisplay({ display: label, name: source }),
-                  };
-                }
-                return {
-                  kind: display === "everywhere" ? "default" : "own",
-                  icon: DISPLAY_ICONS[display],
-                  long: label,
-                  short: label,
-                  spoken: label,
-                };
-              };
-              const choiceDescription = (display: FolderDisplay): { text: string; disabled: boolean } => {
-                const floor = state().floor;
-                if (floor && isStricterDisplay(floor.display, display)) {
-                  return { text: messages().displaySetBy({ name: nameOf(floor.folderId) }), disabled: true };
-                }
-                if (folder().displayNeutral) {
-                  return display === "everywhere"
-                    ? { text: messages().everywhereNeutralDescription, disabled: false }
-                    : display === "folder_only"
-                      ? { text: messages().onlyInFolderNeutralDescription, disabled: true }
-                      : { text: messages().hiddenNeutralDescription, disabled: false };
-                }
-                return {
-                  text:
-                    display === "everywhere"
-                      ? messages().everywhereDescription
-                      : display === "folder_only"
-                        ? messages().onlyInFolderDescription
-                        : messages().hiddenDescription,
-                  disabled: false,
-                };
-              };
-              const chooseDisplay = (chosen: FolderDisplay) => {
-                const display = mailFolderDisplayToStore(chosen, state());
-                if (display === folder().display) return;
-                updateDisplay.mutate({ folder: folder(), display, chosen, subfolders: row().descendantCount });
-              };
-              const actions = (): DropdownAction[] => [
-                ...(folder().canCreateChildren
-                  ? [{ label: messages().newSubfolder, icon: "ti ti-folder-plus", action: () => void openFolderEditor(null, folderId) }]
-                  : []),
-                ...(folder().canRename
-                  ? [{ label: messages().rename, icon: "ti ti-edit", action: () => void openFolderEditor(folder()) }]
-                  : []),
-                ...(folder().canManageSubscription
-                  ? [
-                      {
-                        label: folder().subscribed ? messages().unsubscribeOnProvider : messages().subscribeOnProvider,
-                        icon: folder().subscribed ? "ti ti-bookmark-off" : "ti ti-bookmark",
-                        action: () => folderMutation.mutate({ folder: folder(), action: "subscription" }),
-                      },
-                    ]
-                  : []),
-                ...(folder().discoveryState === "missing"
-                  ? [
-                      {
-                        label: messages().removeFromMail,
-                        icon: "ti ti-folder-off",
-                        variant: "danger" as const,
-                        action: () => folderMutation.mutate({ folder: folder(), action: "dismiss" }),
-                      },
-                    ]
-                  : []),
-                ...(folder().canDelete
-                  ? [
-                      {
-                        label: messages().deleteFolder,
-                        icon: "ti ti-trash",
-                        variant: "danger" as const,
-                        action: () => folderMutation.mutate({ folder: folder(), action: "delete" }),
-                      },
-                    ]
-                  : []),
-              ];
-              const menu = (): DropdownSection[] => [
-                ...(canChooseDisplay()
-                  ? [
-                      {
-                        sectionLabel: [
-                          messages().displayQuestion({ name: folder().name }),
-                          ...(row().descendantCount > 0 ? [messages().appliesToSubfolders({ count: row().descendantCount })] : []),
-                        ].join("\n"),
-                        items: DISPLAYS.map((display) => {
-                          const description = choiceDescription(display);
-                          return {
-                            choice: "radio" as const,
-                            label: displayLabel(display),
-                            icon: DISPLAY_ICONS[display],
-                            description: description.text,
-                            disabled: description.disabled,
-                            checked: state().effectiveDisplay === display,
-                            action: () => chooseDisplay(display),
-                          };
-                        }),
-                      },
-                    ]
-                  : []),
-                ...(actions().length > 0 ? [{ items: actions() }] : []),
-              ];
-              const pending = () => pendingFolderId() === folderId;
-              const name = () => (row().path ? messages().folderInPath({ name: folder().name, path: row().path! }) : folder().name);
-              return (
-                <li
-                  class="mail-folder-tree__row"
-                  style={{ "--mail-folder-depth": row().depth }}
-                  data-group={row().group ? "" : undefined}
-                  data-effective={state().effectiveDisplay}
-                  data-missing={folder().discoveryState === "missing" ? "" : undefined}
-                >
-                  <For each={Array.from({ length: row().depth }, (_, level) => level)}>
-                    {(level) => <span class="mail-folder-tree__guide" style={{ "--mail-folder-level": level }} aria-hidden="true" />}
-                  </For>
-                  <Show when={row().hasChildren} fallback={<span class="mail-folder-tree__toggle" aria-hidden="true" />}>
-                    <button
-                      type="button"
-                      class="mail-folder-tree__toggle"
-                      aria-expanded={!collapsedIds().has(folderId)}
-                      aria-label={
-                        collapsedIds().has(folderId)
-                          ? messages().expandFolder({ name: folder().name })
-                          : messages().collapseFolder({ name: folder().name })
-                      }
-                      onClick={() => toggleCollapsed(folderId)}
-                    >
-                      <i class={`ti ${collapsedIds().has(folderId) ? "ti-chevron-right" : "ti-chevron-down"}`} aria-hidden="true" />
-                    </button>
-                  </Show>
-                  <Dropdown.Root
-                    class="mail-folder-tree__menu-root"
-                    menuClass="mail-folder-menu"
-                    width="21rem"
-                    position="bottom-left"
-                    label={messages().folderMenu({ name: folder().name })}
-                    items={menu()}
-                    disabled={busy() || menu().length === 0}
-                  >
-                    <Dropdown.Trigger
-                      appearance="plain"
-                      class="mail-folder-tree__main"
-                      label={[name(), ...(shared() ? [messages().sharedByProvider] : []), status().spoken].join(", ")}
-                    >
-                      <Show when={!row().group}>
-                        <i class={`${folderIcon(folder())} mail-folder-tree__icon`} aria-hidden="true" />
-                      </Show>
-                      <span class="mail-folder-tree__copy">
-                        <span class="mail-folder-tree__name">{folder().name}</span>
-                        <Show when={shared()}>
-                          <i class="ti ti-users mail-folder-tree__shared" title={messages().sharedByProvider} aria-hidden="true" />
-                        </Show>
-                        <Show when={row().group}>
-                          <span class="mail-folder-tree__note">{messages().folderGroup({ count: row().descendantCount })}</span>
-                        </Show>
-                        <Show when={row().path}>{(path) => <span class="mail-folder-tree__note">{path()}</span>}</Show>
-                        <Show when={folder().subscribed === false}>
-                          <span class="mail-folder-tree__note">{messages().notSubscribed}</span>
-                        </Show>
-                      </span>
-                      <span class="mail-folder-tree__state" data-kind={pending() ? "own" : status().kind}>
-                        <i class={pending() ? "ti ti-loader-2 animate-spin" : status().icon} aria-hidden="true" />
-                        <span class="mail-folder-tree__state-long">{status().long}</span>
-                        <span class="mail-folder-tree__state-short">{status().short}</span>
-                      </span>
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
-                </li>
-              );
-            }}
-          </For>
+          {folderList(null)}
         </ul>
       </Show>
 

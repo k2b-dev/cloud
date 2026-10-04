@@ -3,10 +3,12 @@ import { inheritFolderDisplays } from "../../folder-display-rules";
 import { buildMailFolderTree, type MailFolderTreeNode } from "../../folder-tree";
 import type { MailFolderView } from "../../service/messages";
 
-type SettingsFolder = Pick<MailFolderView, "id" | "parentId" | "name" | "display" | "selectable">;
+type SettingsFolder = Pick<MailFolderView, "id" | "parentId" | "name" | "display" | "selectable" | "displayNeutral">;
 
 export type MailFolderSettingsRow<T extends SettingsFolder> = {
   folder: T;
+  /** The row this folder is listed under, or null at the top level. */
+  parentRowId: string | null;
   /** A top-level folder that only holds other folders, such as Gmail's `[Gmail]`. It reads as a header and adds no indent. */
   group: boolean;
   depth: number;
@@ -27,21 +29,23 @@ export const mailFolderSettingsRows = <T extends SettingsFolder>(
   const nameCounts = new Map<string, number>();
   for (const folder of folders) nameCounts.set(folder.name, (nameCounts.get(folder.name) ?? 0) + 1);
   const rows: MailFolderSettingsRow<T>[] = [];
-  const visit = (nodes: readonly MailFolderTreeNode<T>[], depth: number, ancestors: readonly string[], root: boolean) => {
+  const visit = (nodes: readonly MailFolderTreeNode<T>[], depth: number, ancestors: readonly string[], parentRowId: string | null) => {
     for (const node of nodes) {
-      const group = root && !node.folder.selectable && node.children.length > 0;
+      const group = parentRowId === null && !node.folder.selectable && node.children.length > 0;
       rows.push({
         folder: node.folder,
+        parentRowId,
         group,
         depth,
         hasChildren: node.children.length > 0,
         descendantCount: countDescendants(node),
         path: ancestors.length > 0 && (nameCounts.get(node.folder.name) ?? 0) > 1 ? ancestors.join(" / ") : null,
       });
-      if (!collapsedIds.has(node.folder.id)) visit(node.children, group ? depth : depth + 1, [...ancestors, node.folder.name], false);
+      if (!collapsedIds.has(node.folder.id))
+        visit(node.children, group ? depth : depth + 1, [...ancestors, node.folder.name], node.folder.id);
     }
   };
-  visit(buildMailFolderTree(folders), 0, [], true);
+  visit(buildMailFolderTree(folders), 0, [], null);
   return rows;
 };
 
@@ -60,14 +64,26 @@ export type MailFolderDisplayState = {
 export const mailFolderDisplayStates = (folders: readonly SettingsFolder[]): Map<string, MailFolderDisplayState> => {
   const inherited = inheritFolderDisplays(folders);
   return new Map(
-    folders.map((folder) => {
+    folders.map((folder): [string, MailFolderDisplayState] => {
       const own = inherited.get(folder.id)!;
       const parent = folder.parentId ? inherited.get(folder.parentId) : undefined;
       const floor =
         folder.parentId && parent && parent.effectiveDisplay !== "everywhere"
           ? { display: parent.effectiveDisplay, folderId: parent.displayInheritedFromFolderId ?? folder.parentId }
           : null;
-      return [folder.id, { effectiveDisplay: own.effectiveDisplay, inheritedFromFolderId: own.displayInheritedFromFolderId, floor }];
+      // A neutral folder never decides what the combined views show, so "Only in the folder" changes nothing for it:
+      // it shows like Everywhere and passes no floor. Only Hidden, which also leaves the sidebar, applies to it.
+      if (folder.displayNeutral && own.effectiveDisplay === "folder_only") {
+        return [folder.id, { effectiveDisplay: "everywhere", inheritedFromFolderId: null, floor: null }];
+      }
+      return [
+        folder.id,
+        {
+          effectiveDisplay: own.effectiveDisplay,
+          inheritedFromFolderId: own.displayInheritedFromFolderId,
+          floor: folder.displayNeutral && floor?.display === "folder_only" ? null : floor,
+        },
+      ];
     }),
   );
 };

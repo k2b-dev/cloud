@@ -110,6 +110,8 @@ const css =
   (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
 /** The displays the page stored, in order. */
 let stored: { folderId: string; display: FolderDisplay }[] = [];
+/** How long the server takes to answer a display change. */
+let patchDelayMs = 0;
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -120,6 +122,7 @@ const server = Bun.serve({
     const match = /^\/api\/mail\/mailboxes\/Box001\/folders\/([^/]+)$/u.exec(pathname);
     if (match?.[1] && request.method === "PATCH") {
       const { display } = (await request.json()) as { display: FolderDisplay };
+      await Bun.sleep(patchDelayMs);
       stored.push({ folderId: match[1], display });
       return Response.json({ folderId: match[1], display, effectiveDisplay: display, displayInheritedFromFolderId: null });
     }
@@ -146,8 +149,11 @@ afterAll(async () => {
 const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } };
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
 
-const load = async (options: { context?: BrowserContextOptions; theme?: "light" | "dark"; locale?: "en" | "de" } = {}) => {
+const load = async (
+  options: { context?: BrowserContextOptions; theme?: "light" | "dark"; locale?: "en" | "de"; reloadMs?: number } = {},
+) => {
   stored = [];
+  patchDelayMs = 0;
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -156,20 +162,20 @@ const load = async (options: { context?: BrowserContextOptions; theme?: "light" 
   await page.evaluate((harnessOptions: FolderSettingsHarnessOptions) => window.mountFolderSettings(harnessOptions), {
     locale: options.locale ?? "en",
     folders,
+    reloadMs: options.reloadMs,
   } satisfies FolderSettingsHarnessOptions);
   await page.waitForSelector(".mail-folder-tree");
   return Object.assign(page, { errors });
 };
 const close = (page: Page) => page.context().close();
 
+const exactName = (name: string) => new RegExp(`^${name.replace(/[[\]]/g, "\\$&")}$`);
 /** The trigger of the folder row whose name is `name`; `index` picks among folders of the same name. */
 const trigger = (page: Page, name: string, index = 0) =>
-  page
-    .locator(".mail-folder-tree__main", { has: page.locator(".mail-folder-tree__name", { hasText: new RegExp(`^${name}$`) }) })
-    .nth(index);
+  page.locator(".mail-folder-tree__main", { has: page.locator(".mail-folder-tree__name", { hasText: exactName(name) }) }).nth(index);
 const rowState = (page: Page, name: string, index = 0) =>
   page
-    .locator(".mail-folder-tree__row", { has: page.locator(".mail-folder-tree__name", { hasText: new RegExp(`^${name}$`) }) })
+    .locator(".mail-folder-tree__row", { has: page.locator(".mail-folder-tree__name", { hasText: exactName(name) }) })
     .nth(index)
     .locator(".mail-folder-tree__state");
 /** Every row, name, and state box of the tree, and the panel around it. */
@@ -253,7 +259,7 @@ describe("Mail folder settings", () => {
       const before = await layout(page);
       expect(await rowState(page, "Shared").getAttribute("data-kind")).toBe("default");
       await trigger(page, "Shared").click();
-      expect(await menuText(page)).toContain("Where does mail from “Shared” appear?\nAlso applies to 5 subfolders.");
+      expect(await menuText(page)).toContain("WHERE MAIL APPEARS · ALSO 5 SUBFOLDERS");
       expect(await menuText(page)).toContain("Only in the folder\nIn the sidebar. Its mail appears only when you open the folder.");
       expect(await menuText(page)).toContain("New subfolder");
       // The menu sits under the row, inside the window.
@@ -273,8 +279,10 @@ describe("Mail folder settings", () => {
       expect(await trigger(page, "Trade fair").getAttribute("aria-label")).toBe(
         "Trade fair, Shared by provider, Only in the folder, inherited from Shared",
       );
-      // Focus is back on the row, and nothing moved.
-      expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Shared");
+      // Focus is back on the row itself, and nothing moved.
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+        "Shared, Shared by provider, Only in the folder",
+      );
       expect(await layout(page)).toEqual(before);
       expect(page.errors).toEqual([]);
     } finally {
@@ -293,6 +301,10 @@ describe("Mail folder settings", () => {
       const everywhere = page.locator(".mail-folder-menu:popover-open [role='menuitemradio']", { hasText: "Everywhere" });
       expect(await everywhere.isDisabled()).toBe(true);
       expect(await everywhere.innerText()).toContain("Set by “Shared”. Change it there.");
+      // The choice the keyboard reaches names the parent too, since a menu skips the disabled ones.
+      expect(
+        await page.locator(".mail-folder-menu:popover-open [role='menuitemradio']", { hasText: "Only in the folder" }).innerText(),
+      ).toContain("Follows “Shared”. Looser choices are set there.");
       await choose(page, "Hidden");
       await settled(page, 2);
       expect(await rowState(page, "Trade fair").innerText()).toBe("Hidden");
@@ -307,11 +319,40 @@ describe("Mail folder settings", () => {
       ]);
       expect(await rowState(page, "Trade fair").innerText()).toBe("inherited from Shared");
 
-      // Neutral folders explain why "Only in the folder" is not offered.
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("lets a neutral folder ignore Only in the folder from its parent and be shown again when hidden", async () => {
+    const page = await load();
+    try {
+      await trigger(page, "[Gmail]").click();
+      await choose(page, "Only in the folder");
+      await settled(page, 1);
+
+      // Sent Mail never decides what combined views show, so it shows like Everywhere, and its menu says so.
+      expect(await rowState(page, "Sent Mail").getAttribute("data-kind")).toBe("default");
       await trigger(page, "Sent Mail").click();
-      const folderOnly = page.locator(".mail-folder-menu:popover-open [role='menuitemradio']", { hasText: "Only in the folder" });
-      expect(await folderOnly.isDisabled()).toBe(true);
-      expect(await folderOnly.innerText()).toContain("Not needed: this folder never decides what combined views show.");
+      const radio = (label: string) => page.locator(".mail-folder-menu:popover-open [role='menuitemradio']", { hasText: label });
+      expect(await radio("Everywhere").getAttribute("aria-checked")).toBe("true");
+      expect(await radio("Everywhere").isDisabled()).toBe(false);
+      expect(await radio("Only in the folder").getAttribute("aria-checked")).toBe("false");
+      expect(await radio("Only in the folder").isDisabled()).toBe(true);
+      expect(await radio("Only in the folder").innerText()).toContain("Not needed: this folder never decides what combined views show.");
+      await page.keyboard.press("Escape");
+
+      // The hidden All Mail can be shown again without loosening [Gmail].
+      await trigger(page, "All Mail").click();
+      expect(await radio("Everywhere").isDisabled()).toBe(false);
+      await choose(page, "Everywhere");
+      await settled(page, 2);
+      expect(stored).toEqual([
+        { folderId: "Gmai01", display: "folder_only" },
+        { folderId: "AllM01", display: "everywhere" },
+      ]);
+      expect(await rowState(page, "All Mail").getAttribute("data-kind")).toBe("default");
       expect(page.errors).toEqual([]);
     } finally {
       await close(page);
@@ -334,11 +375,62 @@ describe("Mail folder settings", () => {
 
       // The panel and the tree come first; then the rows Inbox, Newsletter, and Shared with their name and state.
       const above = (await layout(page)).slice(2, 11);
-      await page.getByRole("button", { name: "Collapse Shared" }).click();
+      const chevron = page.getByRole("button", { name: "Subfolders of Shared" });
+      await chevron.click();
+      expect(await chevron.getAttribute("aria-expanded")).toBe("false");
       expect(await page.locator(".mail-folder-tree__row").count()).toBe(folders.length - 5);
       expect((await layout(page)).slice(2, 11)).toEqual(above);
-      await page.getByRole("button", { name: "Expand Shared" }).click();
+      await chevron.click();
+      expect(await chevron.getAttribute("aria-expanded")).toBe("true");
       expect(await page.locator(".mail-folder-tree__row").count()).toBe(folders.length);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("keeps focus on the row and every row at full strength while a change saves and the folders reload", async () => {
+    const page = await load({ reloadMs: 600 });
+    try {
+      patchDelayMs = 600;
+      const projects = "Projects, Shared by provider, Everywhere";
+      await trigger(page, "Projects").focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      const snapshot = () =>
+        page.evaluate(() => ({
+          focused: document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName,
+          busy: document.querySelector("[aria-busy='true'] .mail-folder-tree__name")?.textContent ?? null,
+          disabled: [...document.querySelectorAll<HTMLButtonElement>(".mail-folder-tree__main")].filter((row) => row.disabled).length,
+          dimmed: [...document.querySelectorAll(".mail-folder-tree__main")].filter((row) => getComputedStyle(row).opacity !== "1").length,
+        }));
+
+      // While the change saves: only the changed row is busy, and no row dims or loses its focus.
+      await Bun.sleep(300);
+      expect(await snapshot()).toEqual({ focused: projects, busy: "Projects", disabled: 0, dimmed: 0 });
+      // A second choice waits for the first.
+      await page.keyboard.press("Enter");
+      const offered = await page.$$eval(".mail-folder-menu:popover-open [role='menuitemradio']", (items) =>
+        items.map((item) => item.getAttribute("aria-disabled")),
+      );
+      expect(offered).toEqual(["true", "true", "true"]);
+      await page.keyboard.press("Escape");
+
+      // While the folders reload.
+      await settled(page, 1);
+      await Bun.sleep(300);
+      expect(await snapshot()).toEqual({
+        focused: "Projects, Shared by provider, Only in the folder",
+        busy: null,
+        disabled: 0,
+        dimmed: 0,
+      });
+      await Bun.sleep(500);
+      expect(stored).toEqual([{ folderId: "Proj01", display: "folder_only" }]);
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+        "Projects, Shared by provider, Only in the folder",
+      );
       expect(page.errors).toEqual([]);
     } finally {
       await close(page);
@@ -356,7 +448,7 @@ describe("Mail folder settings", () => {
         items.map((item) => item.getBoundingClientRect().height),
       );
       expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
-      expect(await menuText(page)).toContain("Wo erscheinen E-Mails aus „Important“?");
+      expect(await menuText(page)).toContain("WO E-MAILS ERSCHEINEN");
       expect(page.errors).toEqual([]);
     } finally {
       await close(page);

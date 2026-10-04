@@ -496,6 +496,8 @@ export default function MailSidebar(props: {
       icon: folderIcon(folder.role),
       active: props.activeFolderId === folder.id,
       badge: folder.role === "sent" ? undefined : (folder.role === "drafts" ? folder.total : folder.unread) || undefined,
+      // The phone navigation names where "Only in the folder" is set, like the mark in the desktop sidebar.
+      description: setsOnlyInFolder(folder) ? messages().onlyInFolder : undefined,
       children: node.children.map(folderEntry),
     };
     return folder.selectable

@@ -1,4 +1,5 @@
 import { LocaleProvider, SettingsModal } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { render } from "solid-js/web";
 import type { MailAdminFolderView } from "../../service/folders";
@@ -8,6 +9,8 @@ import { mailSettingsMessages } from "./mail-settings-messages";
 export type FolderSettingsHarnessOptions = {
   locale: "en" | "de";
   folders: MailAdminFolderView[];
+  /** How long the reload after a change takes; Mail's settings mark the folders as reloading meanwhile. */
+  reloadMs?: number;
 };
 
 declare global {
@@ -22,6 +25,7 @@ window.mountFolderSettings = (options) => {
   const messages = mailSettingsMessages.resolve([options.locale]).t;
   // Like Mail's settings: the change shows at once, and the reload brings the server's view of the tree.
   const [state, setState] = createStore({ folders: options.folders });
+  const [reloading, setReloading] = createSignal(false);
   render(
     () => (
       <LocaleProvider locale={options.locale}>
@@ -31,8 +35,12 @@ window.mountFolderSettings = (options) => {
               <MailFolderSettings
                 mailboxId="Box001"
                 folders={state.folders}
-                reloading={false}
-                onReload={async () => {}}
+                reloading={reloading()}
+                onReload={async () => {
+                  setReloading(true);
+                  await new Promise((done) => setTimeout(done, options.reloadMs ?? 0));
+                  setReloading(false);
+                }}
                 onWorkspaceChange={() => {}}
                 onFolderVisibilityChange={(folderId, display) =>
                   setState("folders", (folder) => folder.id === folderId, "display", display)

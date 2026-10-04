@@ -7,6 +7,7 @@ import {
   type MailUserPreferences,
   normalizeMailUserPreferences,
   readStoredMailUserPreferencesFromCookieHeader,
+  storeMailUserPreferences,
 } from "./mail-user-preferences";
 
 const [preferencesRevision, setPreferencesRevision] = createSignal(0);
@@ -25,13 +26,7 @@ export const observeMailUserPreferences = (mailboxId: string, serverFallback?: M
 /** Changes the given preferences of one mailbox and keeps the others. */
 export const writeMailUserPreferences = (mailboxId: string, preferences: Partial<MailUserPreferences>): MailUserPreferences => {
   const normalized = normalizeMailUserPreferences({ ...readMailUserPreferences(mailboxId), ...preferences });
-  const current = readSettings();
-  cookies.writeJsonCookie(MAIL_USER_PREFERENCES_COOKIE, {
-    mailboxes: {
-      ...current.mailboxes,
-      [mailboxId]: normalized,
-    },
-  });
+  cookies.writeJsonCookie(MAIL_USER_PREFERENCES_COOKIE, storeMailUserPreferences(readSettings(), mailboxId, normalized));
   setPreferencesRevision((revision) => revision + 1);
   return normalized;
 };

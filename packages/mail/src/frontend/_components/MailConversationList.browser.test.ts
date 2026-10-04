@@ -172,7 +172,7 @@ const load = async (
     locale?: "en" | "de";
     selectionMode?: boolean;
     sidebarCollapsed?: boolean;
-    folderOnlyHint?: MailFolderView;
+    folderOnlyHints?: MailFolderView[];
   } = {},
 ) => {
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
@@ -199,7 +199,7 @@ const load = async (
     selectedConversationId: options.selectedConversationId ?? null,
     selectionMode: options.selectionMode,
     sidebarCollapsed: options.sidebarCollapsed,
-    folderOnlyHint: options.folderOnlyHint,
+    folderOnlyHints: options.folderOnlyHints,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -672,7 +672,7 @@ describe("Mail hint for a folder whose mail stays inside it", () => {
     ["phone", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }],
   ] as const) {
     test(`stays inside the list column on ${name} and leaves without a trace when dismissed`, async () => {
-      const page = await load({ context, folderOnlyHint: shared, locale: name === "phone" ? "de" : "en" });
+      const page = await load({ context, folderOnlyHints: [shared], locale: name === "phone" ? "de" : "en" });
       try {
         const list = (await box(page, "[data-mail-conversation-list]"))!;
         const notice = (await box(page, hint))!;
@@ -693,6 +693,12 @@ describe("Mail hint for a folder whose mail stays inside it", () => {
           name === "phone" ? "E-Mails aus „Shared“ erscheinen nur noch im Ordner." : "Mail from “Shared” now appears only in its folder.",
         );
 
+        // On wide lists the actions sit beside the text; on narrow ones they move below it rather than squeeze it.
+        const text = (await box(page, `${hint} p`))!;
+        const actions = (await box(page, `${hint} a`))!;
+        if (name === "phone") expect(actions.top).toBeGreaterThanOrEqual(text.top + text.height);
+        else expect(actions.top).toBeLessThan(text.top + text.height);
+
         await page.locator(`${hint} button`).click();
         expect(await page.locator(hint).count()).toBe(0);
         expect(await page.evaluate(() => window.folderHintDismissed)).toBe(true);
@@ -702,4 +708,24 @@ describe("Mail hint for a folder whose mail stays inside it", () => {
       }
     }, 30_000);
   }
+
+  test("keeps keyboard focus in the list column when a hint is dismissed", async () => {
+    const page = await load({ folderOnlyHints: [shared, { ...shared, id: "Fold03", name: "Projects" }] });
+    try {
+      await page.locator(`${hint} button`).focus();
+      await page.keyboard.press("Enter");
+      // The next hint takes the place of the first, and its close button keeps the focus.
+      expect(await page.locator(hint).innerText()).toContain("Mail from “Projects” now appears only in its folder.");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Dismiss hint");
+      // Without another hint, focus moves to the list's heading rather than out of the page.
+      await page.keyboard.press("Enter");
+      expect(await page.locator(hint).count()).toBe(0);
+      expect(await page.evaluate(() => `${document.activeElement?.tagName} ${document.activeElement?.textContent?.trim()}`)).toBe(
+        "H1 Inbox",
+      );
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
 });

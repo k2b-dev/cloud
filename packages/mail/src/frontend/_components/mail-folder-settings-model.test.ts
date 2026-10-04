@@ -2,12 +2,16 @@ import { describe, expect, test } from "bun:test";
 import type { FolderDisplay } from "../../contracts";
 import { mailFolderDisplayStates, mailFolderDisplayToStore, mailFolderSettingsRows } from "./mail-folder-settings-model";
 
-const folder = (id: string, overrides: { parentId?: string; name?: string; display?: FolderDisplay; selectable?: boolean } = {}) => ({
+const folder = (
+  id: string,
+  overrides: { parentId?: string; name?: string; display?: FolderDisplay; selectable?: boolean; displayNeutral?: boolean } = {},
+) => ({
   id,
   parentId: overrides.parentId ?? null,
   name: overrides.name ?? id,
   display: overrides.display ?? "everywhere",
   selectable: overrides.selectable ?? true,
+  displayNeutral: overrides.displayNeutral ?? false,
 });
 
 const folders = [
@@ -24,8 +28,9 @@ const folders = [
 describe("folder settings tree", () => {
   test("indents subfolders, keeps a provider group's folders unindented, and names the path of duplicate names", () => {
     expect(
-      mailFolderSettingsRows(folders, new Set()).map(({ folder, group, depth, hasChildren, descendantCount, path }) => ({
+      mailFolderSettingsRows(folders, new Set()).map(({ folder, parentRowId, group, depth, hasChildren, descendantCount, path }) => ({
         id: folder.id,
+        parentRowId,
         group,
         depth,
         hasChildren,
@@ -33,15 +38,24 @@ describe("folder settings tree", () => {
         path,
       })),
     ).toEqual([
-      { id: "inbox", group: false, depth: 0, hasChildren: false, descendantCount: 0, path: null },
-      { id: "shared", group: false, depth: 0, hasChildren: true, descendantCount: 2, path: null },
-      { id: "team", group: false, depth: 1, hasChildren: true, descendantCount: 1, path: null },
-      { id: "team-important", group: false, depth: 2, hasChildren: false, descendantCount: 0, path: "shared / team" },
-      { id: "gmail", group: true, depth: 0, hasChildren: true, descendantCount: 3, path: null },
-      { id: "gmail-important", group: false, depth: 0, hasChildren: false, descendantCount: 0, path: "[Gmail]" },
+      { id: "inbox", parentRowId: null, group: false, depth: 0, hasChildren: false, descendantCount: 0, path: null },
+      { id: "shared", parentRowId: null, group: false, depth: 0, hasChildren: true, descendantCount: 2, path: null },
+      { id: "team", parentRowId: "shared", group: false, depth: 1, hasChildren: true, descendantCount: 1, path: null },
+      {
+        id: "team-important",
+        parentRowId: "team",
+        group: false,
+        depth: 2,
+        hasChildren: false,
+        descendantCount: 0,
+        path: "shared / team",
+      },
+      { id: "gmail", parentRowId: null, group: true, depth: 0, hasChildren: true, descendantCount: 3, path: null },
+      // A group's folders are listed under it, but start at the top level.
+      { id: "gmail-important", parentRowId: "gmail", group: false, depth: 0, hasChildren: false, descendantCount: 0, path: "[Gmail]" },
       // Only a top-level folder group reads as a header; a nested one stays a folder row.
-      { id: "noselect", group: false, depth: 0, hasChildren: true, descendantCount: 1, path: null },
-      { id: "noselect-child", group: false, depth: 1, hasChildren: false, descendantCount: 0, path: null },
+      { id: "noselect", parentRowId: "gmail", group: false, depth: 0, hasChildren: true, descendantCount: 1, path: null },
+      { id: "noselect-child", parentRowId: "noselect", group: false, depth: 1, hasChildren: false, descendantCount: 0, path: null },
     ]);
   });
 
@@ -64,6 +78,28 @@ describe("folder settings tree", () => {
       floor: { display: "folder_only", folderId: "shared" },
     });
     expect(states.get("gmail-important")).toEqual({ effectiveDisplay: "everywhere", inheritedFromFolderId: null, floor: null });
+  });
+
+  test("lets Only in the folder from a parent pass a neutral folder by, and Hidden apply to it", () => {
+    const states = mailFolderDisplayStates([
+      folder("support", { display: "folder_only" }),
+      folder("support-sent", { parentId: "support", displayNeutral: true }),
+      folder("support-trash", { parentId: "support", display: "hidden", displayNeutral: true }),
+      folder("archive", { display: "hidden" }),
+      folder("archive-trash", { parentId: "archive", displayNeutral: true }),
+    ]);
+
+    // Sent shows like Everywhere: it never decides what the combined views show, so the parent's choice changes nothing.
+    expect(states.get("support-sent")).toEqual({ effectiveDisplay: "everywhere", inheritedFromFolderId: null, floor: null });
+    // A hidden Trash can be shown again without loosening its parent; picking Everywhere stores Everywhere.
+    expect(states.get("support-trash")).toEqual({ effectiveDisplay: "hidden", inheritedFromFolderId: null, floor: null });
+    expect(mailFolderDisplayToStore("everywhere", states.get("support-trash")!)).toBe("everywhere");
+    // A hidden parent still hides it.
+    expect(states.get("archive-trash")).toEqual({
+      effectiveDisplay: "hidden",
+      inheritedFromFolderId: "archive",
+      floor: { display: "hidden", folderId: "archive" },
+    });
   });
 
   test("follows the parent when someone picks what the parent already passes down", () => {

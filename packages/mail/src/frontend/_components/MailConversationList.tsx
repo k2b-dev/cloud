@@ -125,6 +125,13 @@ export default function MailConversationList(props: {
     spamActionForConversation({ viewFolderId: props.viewFolderId, activeFolderIds: item.activeFolderIds, folders: props.folders });
   const requestUrl = () => mailRouteUrl(props.requestUrl);
   let listColumn: HTMLDivElement | undefined;
+  let listHeading: HTMLHeadingElement | undefined;
+  // Dismissing the last hint removes the focused close button with it, so focus moves to the list's heading instead
+  // of falling out of the page. Another hint takes its place and keeps the focus on its close button.
+  const dismissFolderOnlyHint = (hint: { dismiss: () => void }) => {
+    hint.dismiss();
+    if (!props.folderOnlyHint && listHeading?.isConnected) listHeading.focus();
+  };
   const workspaceFrame = () => listColumn?.closest<HTMLElement>(".mail-workspace") ?? null;
   const conversationItem = (conversationId: string | undefined) =>
     conversationId
@@ -327,7 +334,9 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <h1 class="truncate text-base font-semibold text-primary">{props.title}</h1>
+                <h1 ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
+                  {props.title}
+                </h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
                   <span class="shrink-0 whitespace-nowrap">{messages().shown({ count: props.items.length })}</span>
                   <Show when={props.loading}>
@@ -496,7 +505,7 @@ export default function MailConversationList(props: {
           {(hint) => (
             <NoticeCard tone="neutral" icon="ti ti-folder-pin" data-mail-folder-only-hint>
               <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
-                <p class="min-w-0 flex-1 basis-56">
+                <p class="min-w-0 flex-[1_1_14rem]">
                   <strong class="font-medium text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
                   {messages().folderOnlyHintDetail}
                 </p>
@@ -514,7 +523,7 @@ export default function MailConversationList(props: {
                     </ButtonLink>
                   </Show>
                   <Tooltip.Anchor content={messages().dismissHint}>
-                    <IconButton type="button" size="xs" label={messages().dismissHint} onClick={() => hint().dismiss()}>
+                    <IconButton type="button" size="xs" label={messages().dismissHint} onClick={() => dismissFolderOnlyHint(hint())}>
                       <i class="ti ti-x" aria-hidden="true" />
                     </IconButton>
                   </Tooltip.Anchor>

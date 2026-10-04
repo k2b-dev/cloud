@@ -14,8 +14,8 @@ export type MailListHarnessOptions = {
   selectedConversationId: string | null;
   selectionMode?: boolean;
   sidebarCollapsed?: boolean;
-  /** Names a folder whose mail stays inside it, as All mail and the work views do. */
-  folderOnlyHint?: MailFolderView;
+  /** Folders whose mail stays inside them, which All mail and the work views name one after another. */
+  folderOnlyHints?: MailFolderView[];
 };
 
 declare global {
@@ -39,7 +39,7 @@ window.mountMailList = (options) => {
   if (!host) throw new Error("Missing harness root");
   const dateConfig = { locale: options.locale, timeZone: "Europe/Berlin" } as DateContext;
   const [list, setList] = createStore({ items: options.items });
-  const [hintFolder, setHintFolder] = createSignal(options.folderOnlyHint ?? null);
+  const [hintFolders, setHintFolders] = createSignal(options.folderOnlyHints ?? []);
   window.setMailItems = (items) => setList("items", reconcile(items));
   render(
     () => (
@@ -96,13 +96,13 @@ window.mountMailList = (options) => {
                   savedViews={[]}
                   activeSavedViewId={null}
                   folderOnlyHint={(() => {
-                    const folder = hintFolder();
+                    const folder = hintFolders()[0];
                     return folder
                       ? {
                           folder,
                           dismiss: () => {
                             window.folderHintDismissed = true;
-                            setHintFolder(null);
+                            setHintFolders((folders) => folders.slice(1));
                           },
                         }
                       : null;

@@ -956,17 +956,21 @@
 }
 
 /* Folder settings: one compact tree. Each row is the trigger of its folder's menu; the state column has a fixed
-   width, so choosing a display, hovering, or opening a menu never moves a row. Indent guides are one quiet line per
-   ancestor level, centred under that ancestor's chevron; rows touch, so the lines run on. Unlayered, because the
-   shared `.k2b-ui` button reset is unlayered too. */
+   width, so choosing a display, hovering, or opening a menu never moves a row. Subfolders are a list inside their
+   folder's item, but indent through the row's depth, so a provider group's folders stay at the top level. Indent
+   guides are one quiet line per ancestor level, centred under that ancestor's chevron; rows touch, so the lines run
+   on. Unlayered, because the shared `.k2b-ui` button reset is unlayered too. */
 .k2b-ui .mail-folder-tree {
   --mail-folder-indent: 1.25rem;
   --mail-folder-pad: 0.375rem;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
+}
+
+.k2b-ui :is(.mail-folder-tree, .mail-folder-tree__children) {
   margin: 0;
   padding: 0;
-  container-type: inline-size;
   list-style: none;
 }
 
@@ -982,11 +986,18 @@
   border-radius: var(--k2b-radius-control);
 }
 
-.k2b-ui .mail-folder-tree__row[data-group]:not(:first-child) {
+.k2b-ui .mail-folder-tree__item:not(:first-child) > .mail-folder-tree__row[data-group] {
   margin-top: 0.75rem;
 }
 
-.k2b-ui .mail-folder-tree__row:is(:hover, :focus-within, :has(.mail-folder-tree__main[aria-expanded="true"])) {
+/* Hover counts on the row's own controls, not on the row: its menu lies inside it, and WebKit keeps an ancestor of
+   a closed menu hovered. */
+.k2b-ui
+  .mail-folder-tree__row:is(
+    :has(> .mail-folder-tree__toggle:hover),
+    :has(> .mail-folder-tree__menu-root > .mail-folder-tree__main:is(:hover, [aria-expanded="true"])),
+    :focus-within
+  ) {
   background: var(--k2b-hover);
 }
 
@@ -1006,7 +1017,6 @@
   display: grid;
   flex: none;
   width: 1rem;
-  margin-right: 0.25rem;
   padding: 0;
   place-items: center;
   border: 0;
@@ -1036,7 +1046,8 @@
   flex: 1;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 0.25rem 0 0;
+  /* The left padding is the gap to the chevron, so the pointer never leaves the row's controls between them. */
+  padding: 0 0.25rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
   background: none;
@@ -1053,7 +1064,7 @@
 
 .k2b-ui :is(.mail-folder-tree__main, .mail-folder-tree__toggle):focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: -2px;
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .mail-folder-tree__icon {
@@ -1155,7 +1166,12 @@
   visibility: hidden;
 }
 
-.k2b-ui .mail-folder-tree__row:is(:hover, :focus-within, :has(.mail-folder-tree__main[aria-expanded="true"]))
+.k2b-ui
+  .mail-folder-tree__row:is(
+    :has(> .mail-folder-tree__toggle:hover),
+    :has(> .mail-folder-tree__menu-root > .mail-folder-tree__main:is(:hover, [aria-expanded="true"])),
+    :focus-within
+  )
   .mail-folder-tree__state[data-kind="default"] {
   visibility: visible;
 }
@@ -1189,36 +1205,4 @@
     inset: 0 0 0 -0.75rem;
     content: "";
   }
-}
-
-/* The menu's heading is a quiet question with an optional second line, not a section label. */
-.k2b-ui .mail-folder-menu .k2b-dropdown__label {
-  padding-top: 0.5rem;
-  font-size: 0.6875rem;
-  letter-spacing: normal;
-  line-height: 1.35;
-  text-transform: none;
-  white-space: pre-line;
-}
-
-.k2b-ui .mail-folder-menu .k2b-dropdown__item[role="menuitemradio"] {
-  align-items: flex-start;
-}
-
-.k2b-ui .mail-folder-menu .k2b-dropdown__item[role="menuitemradio"] > i:first-child {
-  margin-top: 0.0625rem;
-}
-
-.k2b-ui .mail-folder-menu .k2b-dropdown__item[aria-checked="true"] > i:first-child {
-  color: var(--k2b-action);
-}
-
-.k2b-ui .mail-folder-menu .k2b-dropdown__item[aria-checked="true"] .k2b-dropdown__copy > span {
-  color: var(--k2b-text);
-  font-weight: 500;
-}
-
-.k2b-ui .mail-folder-menu .k2b-dropdown__copy > small {
-  font-size: 0.6875rem;
-  line-height: 1.35;
 }
