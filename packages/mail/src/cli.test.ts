@@ -678,7 +678,10 @@ test("search --folder resolves each folder through the server and rejects unknow
     providerRole: "other",
     configuredRole: null,
     selectable: true,
-    showInSidebar: true,
+    display: "everywhere",
+    effectiveDisplay: "everywhere",
+    displayInheritedFromFolderId: null,
+    displayNeutral: false,
     namespaceKinds: ["personal"],
     discoveryState: "active",
     missingSince: null,
@@ -1899,7 +1902,10 @@ test("ls lists mailboxes, or a folder's conversations with a built-in view", asy
     providerRole: "inbox",
     configuredRole: null,
     selectable: true,
-    showInSidebar: true,
+    display: "everywhere",
+    effectiveDisplay: "everywhere",
+    displayInheritedFromFolderId: null,
+    displayNeutral: false,
     namespaceKinds: ["personal"],
     discoveryState: "active",
     missingSince: null,
@@ -3641,23 +3647,46 @@ test("folder create submits one durable provider command and waits for rediscove
   expect(JSON.parse(result.stdout)).toMatchObject({ kind: "create_folder", state: "confirmed" });
 });
 
-test("folder hide changes only Cloud Mail sidebar visibility", async () => {
+test("folder display set changes where a folder's mail appears", async () => {
   let body: unknown;
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
     if (request.method === "PATCH" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/folders/${FOLDER_ID}`) {
       body = await request.json();
-      return api({ folderId: FOLDER_ID, showInSidebar: false });
+      return api({ folderId: FOLDER_ID, display: "folder_only", effectiveDisplay: "folder_only", displayInheritedFromFolderId: null });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "folder", "hide", FOLDER_ID, "--mailbox", MAILBOX_ID]);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "--json",
+    "mail",
+    "folder",
+    "display",
+    "set",
+    "folder_only",
+    FOLDER_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(body).toEqual({ showInSidebar: false });
-  expect(JSON.parse(result.stdout)).toEqual({ folderId: FOLDER_ID, showInSidebar: false });
+  expect(body).toEqual({ display: "folder_only" });
+  expect(JSON.parse(result.stdout)).toMatchObject({ folderId: FOLDER_ID, effectiveDisplay: "folder_only" });
+
+  const invalid = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "folder",
+    "display",
+    "set",
+    "sidebar",
+    FOLDER_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
+  expect(invalid.exitCode).not.toBe(0);
+  expect(invalid.stderr).toContain("everywhere, folder_only, or hidden");
 });
 
 test("message read uses an additive state command", async () => {
@@ -3821,7 +3850,10 @@ const triageFolder = (id: string, name: string, role: string, parentId: string |
   providerRole: role,
   configuredRole: null,
   selectable: true,
-  showInSidebar: true,
+  display: "everywhere",
+  effectiveDisplay: "everywhere",
+  displayInheritedFromFolderId: null,
+  displayNeutral: false,
   namespaceKinds: ["personal"],
   discoveryState: "active",
   missingSince: null,

@@ -78,7 +78,7 @@ Prüfe jede Identität mit dem verbundenen Konto und einem Empfänger für eine 
 
 Unter **Ordner** kannst du einen Ordner auf oberster Ebene oder bei entsprechender Anbieterberechtigung einen Unterordner erstellen, geeignete Anbieterordner umbenennen oder löschen, sie beim Anbieter abonnieren oder abbestellen und in der Cloud-Navigation ein- oder ausblenden.
 
-- **In Mail anzeigen** ändert nur die Navigation.
+- **In Mail anzeigen** und **Aus Mail ausblenden** gelten in der Cloud für alle im Postfach. Ein ausgeblendeter Ordner verschwindet mit seinen Unterordnern aus der Seitenleiste, und Unterhaltungen, deren E-Mails nur dort liegen, fehlen in „Alle E-Mails“, den Arbeitsansichten außer **Mir zugewiesen** und deren Zählern; die Suche findet sie weiterhin.
 - **Beim Anbieter abonnieren** ändert die IMAP-Subscription.
 - Anbieterrechte bestimmen, welche gemeinsamen oder fremden Ordner sichtbar und veränderbar sind.
 - Die Synchronisierung folgt dem Postfachumfang und wird nicht durch den Navigationsschalter gesteuert.

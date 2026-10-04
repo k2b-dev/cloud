@@ -17,7 +17,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { ConfigurableFolderRole, MailCommand } from "../../contracts";
+import type { ConfigurableFolderRole, FolderDisplay, MailCommand } from "../../contracts";
 import { buildMailFolderTree, mailFolderPaths } from "../../folder-tree";
 import type { MailAdminFolderView } from "../../service/folders";
 import { readApiError } from "./api-response";
@@ -147,7 +147,7 @@ function FolderEditor(props: {
           id: folder.id,
           label: paths.get(folder.id) ?? folder.name,
           description: `${folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder}${
-            folder.showInSidebar ? "" : ` · ${messages().hiddenInSidebar}`
+            folder.display === "hidden" ? ` · ${messages().hiddenInSidebar}` : ""
           }`,
           icon: folder.namespaceKinds.includes("shared") ? "ti ti-users" : "ti ti-folder",
         })),
@@ -255,7 +255,7 @@ export default function MailFolderSettings(props: {
   reloading: boolean;
   onReload: () => Promise<void>;
   onWorkspaceChange: () => void;
-  onFolderVisibilityChange: (folderId: string, showInSidebar: boolean) => void;
+  onFolderVisibilityChange: (folderId: string, display: FolderDisplay) => void;
   onFolderRoleChange: (role: ConfigurableFolderRole, folderId: string) => void;
   folderRolePending: boolean;
 }) {
@@ -302,25 +302,26 @@ export default function MailFolderSettings(props: {
       folderEditorDialogOptions,
     );
 
-  const updateVisibility = mutation.create<{ folderId: string; showInSidebar: boolean }, { folderId: string; showInSidebar: boolean }>({
+  const updateVisibility = mutation.create<{ folderId: string; display: FolderDisplay }, { folderId: string; display: FolderDisplay }>({
     mutation: async (input, { abortSignal }) => {
       setPendingFolderId(input.folderId);
       try {
         const response = await apiClient.mailboxes[":mailboxId"].folders[":folderId"].$patch(
           {
             param: { mailboxId: props.mailboxId, folderId: input.folderId },
-            json: { showInSidebar: input.showInSidebar },
+            json: { display: input.display },
           },
           { init: { signal: abortSignal } },
         );
         if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateFolderVisibility));
-        return response.json();
+        await response.json();
+        return input;
       } finally {
         setPendingFolderId(null);
       }
     },
-    onSuccess: ({ folderId, showInSidebar }) => {
-      props.onFolderVisibilityChange(folderId, showInSidebar);
+    onSuccess: ({ folderId, display }) => {
+      props.onFolderVisibilityChange(folderId, display);
       props.onWorkspaceChange();
     },
     onError: (error) => prompts.error(error.message),
@@ -484,9 +485,10 @@ export default function MailFolderSettings(props: {
                 ...(folder.discoveryState === "active" && canManageSidebarVisibility()
                   ? [
                       {
-                        label: folder.showInSidebar ? messages().hideFromMail : messages().showInMail,
-                        icon: folder.showInSidebar ? "ti ti-eye-off" : "ti ti-eye",
-                        action: () => updateVisibility.mutate({ folderId: folder.id, showInSidebar: !folder.showInSidebar }),
+                        label: folder.display === "hidden" ? messages().showInMail : messages().hideFromMail,
+                        icon: folder.display === "hidden" ? "ti ti-eye" : "ti ti-eye-off",
+                        action: () =>
+                          updateVisibility.mutate({ folderId: folder.id, display: folder.display === "hidden" ? "everywhere" : "hidden" }),
                       },
                     ]
                   : []),
@@ -519,7 +521,7 @@ export default function MailFolderSettings(props: {
                   return { label: messages().needsReview, icon: "ti ti-alert-triangle", tone: "warning" as const };
                 }
                 if (!canManageSidebarVisibility()) return null;
-                if (!folder.showInSidebar) return { label: messages().hidden, icon: "ti ti-eye-off", tone: "neutral" as const };
+                if (folder.display === "hidden") return { label: messages().hidden, icon: "ti ti-eye-off", tone: "neutral" as const };
                 if (hiddenByParent) return { label: messages().parentHidden, icon: "ti ti-eye-off", tone: "neutral" as const };
                 return { label: messages().visible, icon: "ti ti-eye", tone: "neutral" as const };
               };

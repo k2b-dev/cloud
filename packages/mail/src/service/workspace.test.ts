@@ -32,6 +32,7 @@ const hit: MessageSearchHit = {
   revision: 1,
   updatedAt: "2026-08-15T10:00:00.000Z",
   sourceFolderId: null,
+  folderPath: null,
   unreadFolderIds: [],
   rank: 0,
 };

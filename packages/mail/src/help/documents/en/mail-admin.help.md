@@ -100,7 +100,7 @@ The **Allow automatic replies** option is separate from verification. Automatic 
 
 These controls affect different things:
 
-- **Show in Mail** and **Hide from Mail** are only Cloud navigation preferences. Hiding a folder does not unsubscribe it, delete it, change provider permissions, or remove already synchronized mail.
+- **Show in Mail** and **Hide from Mail** are Cloud settings for everyone in the mailbox. A hidden folder and its subfolders leave the sidebar, and conversations whose mail lies only there leave All mail, the work views except **Assigned to me**, and their counts; search still finds them. Hiding a folder does not unsubscribe it, delete it, change provider permissions, or remove already synchronized mail.
 - **Subscribe on the mail provider** changes the IMAP subscription. Other mail clients may use that subscription to decide which folders they show.
 - **Provider access** is controlled by the provider. Cloud displays shared and other-user folders only when the connected account can see them, and enables destructive actions only when current provider rights allow them.
 - **Synchronization** follows the configured mailbox scope and provider state. It is not enabled or disabled by the sidebar switch.

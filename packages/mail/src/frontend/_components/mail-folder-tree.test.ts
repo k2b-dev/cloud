@@ -11,7 +11,10 @@ const folder = (id: string, overrides: Partial<MailFolderView> = {}): MailFolder
   providerRole: "other",
   configuredRole: null,
   selectable: true,
-  showInSidebar: true,
+  display: "everywhere",
+  effectiveDisplay: "everywhere",
+  displayInheritedFromFolderId: null,
+  displayNeutral: false,
   namespaceKinds: ["personal"],
   discoveryState: "active",
   missingSince: null,
@@ -48,7 +51,7 @@ describe("Mail folder tree", () => {
   test("hides unavailable branches and local hidden subtrees", () => {
     const tree = buildVisibleMailFolderTree([
       folder("visible"),
-      folder("hidden", { showInSidebar: false }),
+      folder("hidden", { display: "hidden", effectiveDisplay: "hidden" }),
       folder("hidden-child", { parentId: "hidden" }),
       folder("missing", { discoveryState: "missing" }),
       folder("missing-child", { parentId: "missing" }),
@@ -60,7 +63,7 @@ describe("Mail folder tree", () => {
   test("identifies descendants whose visible parent is hidden", () => {
     const tree = buildMailFolderTree([
       folder("visible"),
-      folder("hidden", { showInSidebar: false }),
+      folder("hidden", { display: "hidden", effectiveDisplay: "hidden" }),
       folder("child", { parentId: "hidden" }),
       folder("grandchild", { parentId: "child" }),
     ]);

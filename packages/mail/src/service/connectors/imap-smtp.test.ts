@@ -21,6 +21,7 @@ import {
   imapSmtpConnector,
   listenOnImapSession,
   mapFetchedEnvelope,
+  mapFolder,
   normalizeImapQuotaEvidence,
   parseEnvelopeHeaders,
   parseReferences,
@@ -863,6 +864,31 @@ const listedFolder = (path: string, subscribed: boolean): ListResponse => ({
   subscribed,
   parent: [],
   parentPath: "",
+});
+
+describe("IMAP folder discovery", () => {
+  test("marks the folders a provider fills from the others", () => {
+    const gmail = (path: string, attribute: string | undefined, specialUse?: string): ListResponse => ({
+      ...listedFolder(path, true),
+      flags: new Set(["\\HasNoChildren", ...(attribute ? [attribute] : [])]),
+      ...(specialUse ? { specialUse } : {}),
+    });
+    const folders = [
+      gmail("[Gmail]/All Mail", "\\All", "\\All"),
+      gmail("[Gmail]/Important", "\\Important"),
+      gmail("[Gmail]/Starred", "\\Flagged", "\\Flagged"),
+      gmail("[Gmail]/Sent Mail", "\\Sent", "\\Sent"),
+      gmail("Shared/Support", undefined),
+    ].map(mapFolder);
+
+    expect(folders.map(({ path, role, providerCollection }) => [path, role, providerCollection])).toEqual([
+      ["[Gmail]/All Mail", "all", true],
+      ["[Gmail]/Important", "other", true],
+      ["[Gmail]/Starred", "other", true],
+      ["[Gmail]/Sent Mail", "sent", false],
+      ["Shared/Support", "other", false],
+    ]);
+  });
 });
 
 describe("IMAP envelope UID batching", () => {

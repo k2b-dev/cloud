@@ -42,6 +42,7 @@ import {
   drafts,
   draftUploads,
   focus,
+  folders,
   listSubscriptions,
   localTags,
   mailboxAccess,
@@ -516,6 +517,7 @@ describe("mail capabilities", () => {
       "draft.patch",
       "draft.send",
       "draft.update",
+      "folder.display.set",
       "mailbox.tag.create",
       "mailbox.tag.delete",
       "mailbox.tag.update",
@@ -547,6 +549,7 @@ describe("mail capabilities", () => {
       "draft.patch",
       "draft.send",
       "draft.update",
+      "folder.display.set",
       "mailbox.tag.create",
       "mailbox.tag.delete",
       "mailbox.tag.update",
@@ -889,7 +892,10 @@ describe("mail capabilities", () => {
       providerRole: "custom",
       configuredRole: null,
       selectable: true,
-      showInSidebar: true,
+      display: "everywhere" as const,
+      effectiveDisplay: "everywhere" as const,
+      displayInheritedFromFolderId: null,
+      displayNeutral: false,
       namespaceKinds: ["personal" as const],
       discoveryState: "active" as const,
       missingSince: null,
@@ -1124,6 +1130,34 @@ describe("mail capabilities", () => {
       ok: true,
       data: { ...commentFixture, body: null, deletedAt: timestamp, revision: 4 },
     } as never);
+    spyOn(messages, "listFolders").mockResolvedValue({
+      ok: true,
+      data: [
+        {
+          id: internalFolderId,
+          parentId: null,
+          name: "Shared",
+          role: "other",
+          providerRole: "other",
+          configuredRole: null,
+          selectable: true,
+          display: "everywhere",
+          effectiveDisplay: "everywhere",
+          displayInheritedFromFolderId: null,
+          displayNeutral: false,
+          namespaceKinds: ["shared"],
+          discoveryState: "active",
+          missingSince: null,
+          syncStatus: "current",
+          total: 3,
+          unread: 1,
+        },
+      ],
+    });
+    spyOn(folders, "setFolderDisplay").mockResolvedValue({
+      ok: true,
+      data: { folderId: internalFolderId, display: "folder_only", effectiveDisplay: "folder_only", displayInheritedFromFolderId: null },
+    });
     spyOn(localTags, "createLocalTag").mockResolvedValue({ ok: true, data: tagFixture } as never);
     spyOn(localTags, "updateLocalTag").mockResolvedValue({ ok: true, data: tagFixture } as never);
     spyOn(localTags, "listLocalTags").mockResolvedValue({
@@ -1324,6 +1358,11 @@ describe("mail capabilities", () => {
           ),
       },
       {
+        localId: "folder.display.set",
+        action: mailCapabilities.actions["folder.display.set"],
+        run: () => mailCapabilities.actions["folder.display.set"].run({ mailboxId, folderId, display: "folder_only" }, context),
+      },
+      {
         localId: "mailbox.tag.create",
         action: mailCapabilities.actions["mailbox.tag.create"],
         run: () => mailCapabilities.actions["mailbox.tag.create"].run({ mailboxId, name: "customer", color: "#336699" }, context),
@@ -1374,6 +1413,7 @@ describe("mail capabilities", () => {
       "conversation.assign": "Assigned “Planning session” to Ada Lovelace.",
       "conversation.assign.batch": "Assigned 1 conversation to Ada Lovelace. 1 not found.",
       "mailbox.tag.create": "Created mailbox tag #customer.",
+      "folder.display.set": "Mail from “Shared” now stays in its folder.",
       "mailing-list.unsubscribe": "Requested unsubscribe from Example Newsletter.",
     });
     expect(JSON.stringify(actionOutputs)).not.toContain(draftFixture.body);
@@ -1389,7 +1429,10 @@ describe("mail capabilities", () => {
       providerRole: "custom",
       configuredRole: null,
       selectable: true,
-      showInSidebar: true,
+      display: "everywhere" as const,
+      effectiveDisplay: "everywhere" as const,
+      displayInheritedFromFolderId: null,
+      displayNeutral: false,
       namespaceKinds: ["personal" as const],
       discoveryState: "active" as const,
       missingSince: null,

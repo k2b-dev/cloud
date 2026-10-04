@@ -2,10 +2,17 @@ import { audit } from "@k2b/cloud/services";
 import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
-import { type ConfigurableFolderRole, configurableFolderRoleSchema, type FolderRole } from "../contracts";
+import {
+  type ConfigurableFolderRole,
+  configurableFolderRoleSchema,
+  type FolderDisplay,
+  type FolderRole,
+  folderDisplaySchema,
+} from "../contracts";
 import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { publishMailMailboxEvent } from "./events";
+import { type FolderDisplayState, loadFolderDisplayState } from "./folder-display";
 import { listFolders, type MailFolderView } from "./messages";
 
 type SqlClient = typeof sql;
@@ -88,34 +95,47 @@ export const listAdminFolders = async (context: MailRequestContext, mailboxId: s
   );
 };
 
-export const setFolderSidebarVisibility = async (params: {
+export type FolderDisplayChange = Omit<FolderDisplayState, "displayNeutral"> & { folderId: string; display: FolderDisplay };
+
+/**
+ * Sets where one folder's mail appears for everyone with access to the mailbox. Its subfolders inherit
+ * the setting unless their own is stricter; a looser setting is stored and applies once the parent's
+ * setting allows it.
+ */
+export const setFolderDisplay = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   folderId: string;
-  showInSidebar: boolean;
-}): Promise<Result<{ folderId: string; showInSidebar: boolean }>> => {
+  display: FolderDisplay;
+}): Promise<Result<FolderDisplayChange>> => {
+  const display = folderDisplaySchema.safeParse(params.display);
+  if (!display.success) return fail(err.badInput("Unsupported folder display"));
   const actor = actorRefFromRequest(params.context);
   let activityId: string | null = null;
   try {
     const result = await sql.begin(async (tx) => {
       const permission = await requireMailboxPermission(params.context, params.mailboxId, "admin", tx);
       if (!permission.ok) return permission;
-      const [folder] = await tx<{ id: string }[]>`
-        UPDATE mail.folders folder
-        SET
-          show_in_sidebar = ${params.showInSidebar},
-          updated_at = CASE
-            WHEN folder.show_in_sidebar <> ${params.showInSidebar} THEN now()
-            ELSE folder.updated_at
-          END
-        FROM mail.remote_resources resource
+      const [folder] = await tx<{ id: string; previous: FolderDisplay }[]>`
+        SELECT folder.id, folder.display AS previous
+        FROM mail.folders folder
+        JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
         WHERE folder.id = ${params.folderId}::uuid
-          AND resource.id = folder.remote_resource_id
           AND resource.mailbox_id = ${params.mailboxId}::uuid
           AND folder.discovery_state = 'active'
-        RETURNING folder.id
+        FOR UPDATE OF folder
       `;
       if (!folder) return fail(err.notFound("Mail folder"));
+      if (folder.previous !== display.data) {
+        await tx`UPDATE mail.folders SET display = ${display.data}, updated_at = now() WHERE id = ${folder.id}::uuid`;
+      }
+      const state = await loadFolderDisplayState(params.mailboxId, folder.id, tx);
+      const change: FolderDisplayChange = {
+        folderId: folder.id,
+        display: display.data,
+        effectiveDisplay: state.effectiveDisplay,
+        displayInheritedFromFolderId: state.displayInheritedFromFolderId,
+      };
       const [activity] = await tx<{ id: string }[]>`
         INSERT INTO mail.activity_events (
           mailbox_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
@@ -123,28 +143,28 @@ export const setFolderSidebarVisibility = async (params: {
           ${params.mailboxId}::uuid,
           ${actor.kind},
           ${actor.kind === "user" ? actor.userId : actor.kind === "service_account" ? actor.serviceAccountId : null}::uuid,
-          'folder.sidebar_visibility_changed',
+          'folder.display_changed',
           'confirmed',
           'folder',
           ${folder.id}::uuid,
-          ${{ showInSidebar: params.showInSidebar }}::jsonb
+          ${{ display: display.data, previousDisplay: folder.previous }}::jsonb
         )
         RETURNING id
       `;
-      if (!activity) throw new Error("Folder visibility activity insert returned no row");
+      if (!activity) throw new Error("Folder display activity insert returned no row");
       activityId = String(activity.id);
       await audit.record(
         {
-          action: "mail.folder.sidebar_visibility.change",
+          action: "mail.folder.display.change",
           outcome: "allowed",
           actor: auditActorFromRequest(params.context),
           target: { type: "mailbox", id: params.mailboxId },
           requestId: params.context.requestId,
-          metadata: { folderId: folder.id, showInSidebar: params.showInSidebar },
+          metadata: { folderId: folder.id, display: display.data, previousDisplay: folder.previous },
         },
         tx,
       );
-      return ok({ folderId: folder.id, showInSidebar: params.showInSidebar });
+      return ok(change);
     });
     if (result.ok && activityId) {
       await publishMailMailboxEvent({
@@ -158,7 +178,7 @@ export const setFolderSidebarVisibility = async (params: {
     return result;
   } catch (error) {
     if (isServiceError(error)) return fail(error);
-    return fail(err.internal("Failed to update folder visibility"));
+    return fail(err.internal("Failed to update folder display"));
   }
 };
 

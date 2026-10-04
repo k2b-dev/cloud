@@ -10,6 +10,47 @@ updated: 2026-10-04
 
 # Deprecations and migrations
 
+## Mail folders choose where their mail appears
+
+A Mail folder's sidebar switch became a display with three values:
+`everywhere`, `folder_only`, and `hidden`. A conversation whose mail lies only
+in `folder_only` or `hidden` folders leaves All mail, the work views except
+Assigned to me and Send problems, their counts, the cross-mailbox overview, and
+the agent tools that list them; search and saved views still find it. See
+[Mail](/en/apps/mail#choose-where-a-folders-mail-appears).
+
+Folders that were hidden from the sidebar keep their mail out of those views
+from now on, including folders Mail hid on discovery because they were not
+subscribed. Set such a folder to `everywhere` if its mail should appear there
+again. Gmail's All Mail, Important, and Starred never decide where mail
+appears, so hiding them changes nothing.
+
+The first Mail start after this update replaces `mail.folders.show_in_sidebar`
+with `mail.folders.display` (a shown folder becomes `everywhere`, a hidden one
+`hidden`) and adds `mail.folders.provider_collection`, which the next folder
+discovery fills. Replace every Mail replica together: an older replica fails
+folder reads once a newer one has migrated. To roll back to an older image,
+first run:
+
+```sql
+ALTER TABLE mail.folders ADD COLUMN show_in_sidebar boolean DEFAULT true NOT NULL;
+UPDATE mail.folders SET show_in_sidebar = display <> 'hidden';
+ALTER TABLE mail.folders DROP COLUMN display, DROP COLUMN provider_collection;
+```
+
+A rollback shows `folder_only` folders in the sidebar again and loses that
+setting.
+
+| Old | New |
+| --- | --- |
+| `PATCH .../folders/{folderId}` with `{"showInSidebar": false}` | `{"display": "hidden"}` (or `everywhere`, `folder_only`) |
+| `showInSidebar` in folder lists | `display`, `effectiveDisplay`, `displayInheritedFromFolderId`, `displayNeutral` |
+| `cld mail folder hide <folder-id>` | `cld mail folder display set hidden <folder-id>` |
+| `cld mail folder show <folder-id>` | `cld mail folder display set everywhere <folder-id>` |
+
+Agents set the display with the `folder.display.set` action; `folder.list`
+returns it.
+
 ## Grids change-feed cursors need one rescan
 
 `cld grids records changes` and its HTTP route used to resume after the start
