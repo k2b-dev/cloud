@@ -10,7 +10,8 @@ const root = mkdtempSync(join(tmpdir(), "spaces-overview-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: SpacesOverview, overviewMessages } = await import("./SpacesOverview.island.tsx");
+const { default: SpacesOverview } = await import("./SpacesOverview.island.tsx");
+const { overviewMessages } = await import("./overview-messages");
 const { LocaleProvider } = await import("@k2b/ui");
 
 const render = (initialActivityError: string | null = null, locale = "en") =>

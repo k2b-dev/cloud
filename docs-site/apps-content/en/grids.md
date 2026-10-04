@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-09-27
+updated: 2026-10-04
 ---
 
 # Grids
@@ -730,8 +730,11 @@ changes`. The feed reports committed Record identities, event types, versions,
 and deletion times for the last 30 days; it does not return field values or
 replace a current Record read. Every page rechecks Base Read access, and an
 optional `--table` narrows the feed without creating a separate permission
-boundary. If a cursor has expired, perform a new full scan instead of guessing
-which changes were missed. Use `--all --max-events N` for a bounded catch-up.
+boundary. A change appears once every earlier write transaction on the
+PostgreSQL server has ended, so a long import delays the changes after it
+instead of being skipped. If a cursor has expired, perform a new full scan
+instead of guessing which changes were missed. Use `--all --max-events N` for a
+bounded catch-up.
 
 Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
@@ -747,10 +750,20 @@ Grids-owned shared data. Follow the [operator reset procedure](/en/docs/referenc
 before switching an existing installation. Start Core before Grids.
 
 Record events are committed in PostgreSQL before background publication.
-Workflow dispatch failures retry up to 20 times and remain in PostgreSQL for
-inspection. Delayed retries return to the queue behind other work, so a broken
-workflow does not block its partition throughout the retry period. Transport
-failures have a separate Sync dead-letter queue.
+Workflow dispatch failures retry up to 20 times. A stopped event remains in
+PostgreSQL for inspection and replay until 30 days after its change; Grids
+keeps the record state it replays at least that long. Delayed retries return
+to the queue behind other work, so a broken workflow does not block its
+partition throughout the retry period. Transport failures have a separate Sync
+dead-letter queue.
+
+The Record change feed returns a change only after every earlier write
+transaction on the PostgreSQL server has ended, in any database. A session left
+idle in a transaction therefore pauses the feed until it ends; nothing is lost.
+Find it as the oldest `backend_xid` in `pg_stat_activity`, and bound such
+sessions with `idle_in_transaction_session_timeout`. After a logical dump and
+restore of the database, saved feed cursors answer `409` once and integrations
+perform a full Record scan.
 
 Platform admins can open **Grids** in the administration area and select a
 Base's failed record events to inspect the error and retry count. After fixing

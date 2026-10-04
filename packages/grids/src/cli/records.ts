@@ -145,7 +145,7 @@ export const recordCommands = [
   command("records changes", {
     summary: "Resume recent Record changes in a Base",
     description:
-      "Returns public Record identities and versions from the last 30 days. Save the cursor and read current Record values separately.",
+      "Returns public Record identities and versions from the last 30 days. A change appears once every earlier write has ended, so the cursor never passes it. Save the cursor and read current Record values separately.",
     args: baseArgs,
     flags: {
       ...baseFlag,

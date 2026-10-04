@@ -81,13 +81,15 @@ const mapIntent = (
 });
 
 type DeliveryIntentRow = DeliveryRow & {
+  workflow_step_key: string;
+  recipient_index: number;
   recipient_value: string | null;
   idempotency_key: string;
   rendered_html: string | null;
 };
 
 const intentColumns = sql`
-  id, workflow_id, workflow_run_id, template_id, recipient_kind, recipient_value, recipient_summary,
+  id, workflow_id, workflow_run_id, workflow_step_key, recipient_index, template_id, recipient_kind, recipient_value, recipient_summary,
   notification_id, provider_status, status, subject, rendered_html, idempotency_key, error, created_at,
   (created_at::text || '|' || id::text) AS cursor_token
 `;
@@ -108,6 +110,17 @@ export const getWorkflowEmailDeliveryIntent = async (
   return row ? mapIntent(row) : null;
 };
 
+/**
+ * Records that a step will mail one recipient, or returns the intent an
+ * earlier or concurrent attempt recorded.
+ *
+ * The table is unique both by idempotency key and by run, step, and recipient,
+ * and two identical attempts collide on both. `ON CONFLICT` therefore names no
+ * target: with one named, a racing loser that passed the check on the key
+ * fails on the other index with a unique violation instead of reading the
+ * winner. No intent under the key means another key holds the slot; that, and
+ * an intent for another slot or with other content, is a conflicting intent.
+ */
 export const getOrCreateWorkflowEmailDeliveryIntent = async (
   input: DeliveryIntentInput,
   client: SqlClient = sql,
@@ -123,7 +136,7 @@ export const getOrCreateWorkflowEmailDeliveryIntent = async (
       ${input.recipientKind}, ${input.recipientValue}, ${input.recipientSummary}, ${input.idempotencyKey},
       'pending', ${input.subject}, ${input.renderedHtml}
     )
-    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+    ON CONFLICT DO NOTHING
     RETURNING ${intentColumns}
   `;
   const [row] = rows.length
@@ -133,9 +146,11 @@ export const getOrCreateWorkflowEmailDeliveryIntent = async (
         FROM grids.workflow_email_deliveries
         WHERE idempotency_key = ${input.idempotencyKey}
       `;
-  if (!row) throw err.internal(workflowServiceText(input.locale).emailIntentInsertFailed);
   if (
+    !row ||
     row.workflow_run_id !== input.workflowRunId ||
+    row.workflow_step_key !== input.workflowStepKey ||
+    row.recipient_index !== input.recipientIndex ||
     row.template_id !== input.templateId ||
     row.recipient_kind !== input.recipientKind ||
     row.recipient_value !== input.recipientValue ||

@@ -37,7 +37,7 @@ For a connector that repeatedly projects the same external object, use the exter
 
 For up to 100 independent projections, `cld grids records upsert-external-batch` applies the same contract sequentially. Every item has its own idempotency key and ordered outcome; one conflict does not roll back successful siblings. If the request is interrupted, retry the complete unchanged batch: committed items replay and remaining items continue. `records import` is different: it creates one all-or-nothing batch and is not the retry-safe external-identity path.
 
-For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public Base, Table, and Record IDs plus the committed event type and Record version, not a field-value snapshot. Reread each current Record before projecting it. Base Read access is checked on every page; `--table` only narrows that Base feed. Cursors cover the last 30 days. If a cursor expires, make a fresh full Record scan and start from the new feed position. Bound automated catch-up with `--all --max-events N`.
+For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public Base, Table, and Record IDs plus the committed event type and Record version, not a field-value snapshot. Reread each current Record before projecting it. Base Read access is checked on every page; `--table` only narrows that Base feed. A change appears once every earlier write has ended, so a long import delays the changes after it instead of being skipped. If the feed stays empty while Records change, ask the operator about a transaction left open on the database server. Cursors cover the last 30 days. If a cursor expires, make a fresh full Record scan and start from the new feed position. Bound automated catch-up with `--all --max-events N`.
 
 ## A view or Grids App result is wrong {icon="layout"}
 
@@ -107,7 +107,7 @@ This is a failed query, not the `needs_attention` state below.
 
 ## A workflow run needs attention {icon="alert-triangle"}
 
-Platform administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Continue with the returned `nextOffset` using `--offset`. After fixing the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event using its original retained data. Use the exact failure UUID from the list. Acceptance does not mean processing completed; Base Admin access alone does not grant this operator action.
+Platform administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Stopped workflow events stay listed until 30 days after their change; Grids keeps the record state they replay at least that long. Continue with the returned `nextOffset` using `--offset`. After fixing the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event using its original retained data. Use the exact failure UUID from the list. Acceptance does not mean processing completed; Base Admin access alone does not grant this operator action.
 
 `needs_attention` requires a person to inspect the reason before continuing.
 
