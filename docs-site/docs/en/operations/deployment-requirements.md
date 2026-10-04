@@ -176,17 +176,27 @@ search at the last trusted address.
 The default trusts loopback and private networks: `127.0.0.0/8`, `::1/128`,
 `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` and `fc00::/7`. It covers the
 supplied `compose.prod.yml`, where Traefik reaches the gateway over a Docker
-network. Keep the default there, or set the Traefik network's subnet from
+network and replaces any `X-Forwarded-For` a client sends. Keep the default
+there, or set the Traefik network's subnet from
 `docker network inspect traefik` to trust only Traefik.
+
+The default trusts every client on a private network as well. Such a client can
+name any address and escape per-client limits whenever its own
+`X-Forwarded-For` reaches the gateway: when it connects to the gateway
+directly, or when the proxy appends to the client's header instead of
+replacing it, as nginx does with `$proxy_add_x_forwarded_for`. If clients can
+connect from private or IPv6 unique local addresses in such a setup, set
+`GATEWAY_TRUSTED_PROXIES` to the proxy's exact address or subnet.
 
 | Setup | Value |
 | --- | --- |
-| Traefik or another proxy on a Docker or private network | Default, or the proxy's subnet |
-| A CDN or load balancer in front of that proxy | Add its published address ranges; otherwise every client shares the CDN's addresses |
-| Clients reach the gateway directly from a private network | The proxy's exact address, or `127.0.0.1` when there is no proxy. With the default, such a client could name any address and escape per-client limits |
+| Traefik as supplied, or another proxy that replaces the client's `X-Forwarded-For` | Default, or the proxy's subnet |
+| A proxy that appends to the client's `X-Forwarded-For`, with clients on private networks | The proxy's exact address or subnet |
+| Clients reach the gateway directly from a private network | The proxy's exact address, or `127.0.0.1` when there is no proxy |
+| A CDN or load balancer in front of the proxy | Add its published address ranges; otherwise every client shares the CDN's addresses |
 
-The proxy must overwrite or append to `X-Forwarded-For`, never pass a client's
-header through unchanged. Traefik does this by default; do not enable
+The proxy must replace or append to `X-Forwarded-For`, never pass a client's
+header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.insecure` or trust client networks in its
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
