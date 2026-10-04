@@ -16,7 +16,14 @@ import { createDraft } from "./drafts";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { runMaintenanceJob, startMaintenanceRuntime, stopMaintenanceRuntime, submitDueMaintenanceCommands } from "./maintenance-runtime";
 import { createProviderConnection } from "./provider-connections";
-import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
+import {
+  acquireProviderLease,
+  MAIL_PROVIDER_JOB_CONCURRENCY,
+  MAIL_PROVIDER_OPERATION_LEASE_MS,
+  mailProviderOperationMutex,
+  recordProviderFailure,
+  recordProviderReachable,
+} from "./provider-operation-lock";
 import {
   enqueueFolderSync,
   enqueueMailboxHydration,
@@ -39,6 +46,9 @@ const FOLDER_RIGHTS = ["read", "write_flags", "insert", "move", "delete_messages
 const ROUND_TRIP_MS = 15;
 // A move takes this much longer per message it carries.
 const MOVE_MS_PER_MESSAGE = 5;
+// A host that does not answer lets each connection attempt wait this long, like the connectors'
+// 15-second connection timeout, before the attempt fails.
+const UNREACHABLE_TIMEOUT_MS = 5_000;
 
 type StoredMessage = { messageId: string; subject: string; internalDate: Date };
 // `modseq` grows with every change, like HIGHESTMODSEQ on a server with CONDSTORE.
@@ -123,6 +133,55 @@ const runFolderSyncJob = async (folderId: string, options: { input?: SyncFolderJ
 };
 
 /**
+ * Runs `mail:sync-folder` jobs on as many places as the job's worker has in one process. Each
+ * place takes the next due job in the order the jobs were queued; a job that asks to run again
+ * after a delay is due again then, behind the others. A job that fails ends, because the worker
+ * retries it only after its backoff. `submit` resolves once the job ended.
+ */
+const syncFolderWorker = (places = MAIL_PROVIDER_JOB_CONCURRENCY) => {
+  type QueuedJob = { input: SyncFolderJobInput; dueAt: number; ended: () => void };
+  const queue: QueuedJob[] = [];
+  let stopped = false;
+  const runPlace = async (): Promise<void> => {
+    while (!stopped) {
+      const index = queue.findIndex((job) => job.dueAt <= performance.now());
+      if (index < 0) {
+        await Bun.sleep(5);
+        continue;
+      }
+      const [job] = queue.splice(index, 1);
+      let delayMs: number | null = null;
+      try {
+        await runSyncFolderJob({
+          input: job!.input,
+          heartbeat: async () => undefined,
+          resubmit: (resubmit) => {
+            delayMs = resubmit?.delayMs ?? 0;
+            if (resubmit?.input) job!.input = resubmit.input;
+          },
+        });
+      } catch {
+        delayMs = null;
+      }
+      if (delayMs === null) job!.ended();
+      else queue.push({ ...job!, dueAt: performance.now() + delayMs });
+    }
+  };
+  const running = Array.from({ length: places }, () => runPlace());
+  return {
+    submit: (folderId: string): Promise<void> => {
+      const ended = Promise.withResolvers<void>();
+      queue.push({ input: { folderId }, dueAt: performance.now(), ended: ended.resolve });
+      return ended.promise;
+    },
+    stop: async (): Promise<void> => {
+      stopped = true;
+      await Promise.all(running);
+    },
+  };
+};
+
+/**
  * Runs `mail:sync-folder` job turns until one batch got the provider lease, as `runFolderSyncJob`
  * does; returns the continuation that batch asked for.
  */
@@ -197,6 +256,9 @@ suite("mail provider lease fairness", () => {
   let afterStatus: ((account: string, path: string) => Promise<void>) | null = null;
   // Accounts whose server times out on STATUS.
   const failingStatus = new Set<string>();
+  // Accounts whose host does not answer, and every connection attempt to one, by account.
+  const unreachable = new Set<string>();
+  const unreachableAttempts: string[] = [];
   let hydrationStarted = false;
   const ensureHydrationRuntime = async (): Promise<void> => {
     if (hydrationStarted) return;
@@ -515,6 +577,11 @@ suite("mail provider lease fairness", () => {
 
     spies.push(
       spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (config, path) => {
+        if (unreachable.has(config.username)) {
+          unreachableAttempts.push(config.username);
+          await Bun.sleep(UNREACHABLE_TIMEOUT_MS);
+          throw Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" });
+        }
         await Bun.sleep(ROUND_TRIP_MS);
         if (failingStatus.has(config.username)) throw new Error("Connection timed out");
         const folder = folderOf(config.username, path);
@@ -1418,4 +1485,81 @@ suite("mail provider lease fairness", () => {
     expect(await runTurn(false)).toEqual({ delayMs: 2_000, input: { mailboxId: mailbox.mailboxId, idle: true } });
     expect(await runTurn(true)).toBeNull();
   }, 60_000);
+
+  test("a provider host that stops answering for as many mailboxes as the worker has places holds back no other mailbox's sync", async () => {
+    const onDeadHost: Mailbox[] = [];
+    for (let index = 0; index < MAIL_PROVIDER_JOB_CONCURRENCY; index += 1) onDeadHost.push(await connect(`dead-host-${index}`));
+    const healthy = await connect("beside-dead-host");
+    const deadFolders = onDeadHost.flatMap((mailbox) => [INBOX, ARCHIVE, SENT].map((path) => mailbox.folderId(path)));
+    for (const mailbox of onDeadHost) unreachable.add(mailbox.account);
+    const worker = syncFolderWorker();
+    try {
+      // Every mailbox on the host runs into the connection timeout once.
+      for (const folderId of deadFolders) void worker.submit(folderId);
+      const resourceIds = onDeadHost.map((mailbox) => mailbox.remoteResourceId);
+      await waitFor(
+        async () => {
+          const [timedOut] = await sql<{ count: number }[]>`
+            SELECT count(DISTINCT remote_resource_id)::int AS count FROM mail.sync_runs
+            WHERE remote_resource_id IN ${sql(resourceIds)} AND error_code = 'CONNECT_TIMEOUT'
+          `;
+          return timedOut?.count === onDeadHost.length;
+        },
+        "every mailbox on the dead host to time out",
+        4 * UNREACHABLE_TIMEOUT_MS,
+      );
+
+      // The next scheduled syncs queue all their folders again before new mail arrives elsewhere.
+      const attemptsBefore = unreachableAttempts.length;
+      for (const folderId of deadFolders) void worker.submit(folderId);
+      const [newMail] = deliver(healthy, 1, "beside-dead-host");
+      const startedAt = performance.now();
+      await worker.submit(healthy.folderId(INBOX));
+      const syncMs = performance.now() - startedAt;
+      expect(await imported(healthy, newMail!)).toBe(true);
+      // One batch, without waiting for a place that a connection attempt to the dead host holds.
+      expect(syncMs).toBeLessThan(UNREACHABLE_TIMEOUT_MS / 2);
+      expect(unreachableAttempts.length).toBe(attemptsBefore);
+    } finally {
+      for (const mailbox of onDeadHost) unreachable.delete(mailbox.account);
+      await worker.stop();
+    }
+
+    // Once IMAP push connects to the host again, the mailbox's next sync runs at once.
+    const recovered = onDeadHost[0]!;
+    const [afterOutage] = deliver(recovered, 1, "after-outage");
+    await recordProviderReachable(recovered.remoteResourceId);
+    const syncMs = await runFolderSyncJob(recovered.folderId(INBOX));
+    expect(await imported(recovered, afterOutage!)).toBe(true);
+    expect(syncMs).toBeLessThan(UNREACHABLE_TIMEOUT_MS / 2);
+  }, 60_000);
+
+  test("the provider breaker waits one connection timeout, doubles up to a minute, and closes when the provider answers", async () => {
+    const resource = crypto.randomUUID();
+    const take = (waiter = "first") =>
+      acquireProviderLease({ resource, waiter, priority: "sync", ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    // A refused command and a dropped connection fail fast and open nothing.
+    await recordProviderFailure(resource, Object.assign(new Error("Mailbox does not exist"), { responseStatus: "NO" }));
+    await recordProviderFailure(resource, Object.assign(new Error("Connection not available"), { code: "NoConnection" }));
+    const free = await take();
+    expect(free.lock).not.toBeNull();
+    await mailProviderOperationMutex().release(free.lock!);
+
+    const timeout = Object.assign(new Error("Failed to establish connection in required time"), { code: "CONNECT_TIMEOUT" });
+    for (const windowMs of [15_000, 30_000, 60_000, 60_000]) {
+      await recordProviderFailure(resource, timeout);
+      const turn = await take();
+      expect(turn.lock).toBeNull();
+      // Up to a quarter of the window at random, plus the lease line's retry jitter.
+      expect(turn.retryAfterMs).toBeGreaterThan(windowMs - 1_000);
+      expect(turn.retryAfterMs).toBeLessThan(windowMs * 1.25 + 500);
+    }
+
+    // A waiter the breaker sent away comes back only when the window would end. It keeps its place,
+    // but once the provider answers again, a later waiter that asks takes the lease meanwhile.
+    await recordProviderReachable(resource);
+    const reachable = await take("later");
+    expect(reachable.lock).not.toBeNull();
+    await mailProviderOperationMutex().release(reachable.lock!);
+  });
 });

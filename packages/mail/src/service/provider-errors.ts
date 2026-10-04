@@ -129,3 +129,24 @@ export const isTransientProviderFailure = (error: unknown): boolean => {
   const failures = verificationFailures(error);
   return isTemporaryLoginFailure(error) || (failures.length > 0 && failures.every(isTransientProviderFailure));
 };
+
+// Codes of a provider that did not answer in time, so the attempt waited for a timeout before it
+// failed: a host that drops connection attempts, a server that sends no greeting or does not
+// finish the TLS upgrade, or a connection whose replies stop.
+const PROVIDER_TIMEOUT_CODES = new Set([
+  "ENDPOINT_DNS_TIMEOUT",
+  "CONNECT_TIMEOUT",
+  "GREETING_TIMEOUT",
+  "UPGRADE_TIMEOUT",
+  "ETIMEDOUT",
+  "ETIMEOUT",
+]);
+
+/**
+ * The provider did not answer before a timeout, including in a failed IMAP and SMTP verification.
+ * Unlike a refused or dropped connection, each such attempt holds its job for the whole timeout.
+ */
+export const isProviderTimeout = (error: unknown): boolean => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return (typeof code === "string" && PROVIDER_TIMEOUT_CODES.has(code)) || verificationFailures(error).some(isProviderTimeout);
+};

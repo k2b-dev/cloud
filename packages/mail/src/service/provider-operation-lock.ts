@@ -3,6 +3,7 @@ import type { ServiceError } from "@k2b/stdlib";
 import type { Lock } from "@k2b/sync";
 import { redis } from "bun";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { isProviderTimeout } from "./provider-errors";
 
 export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
 
@@ -10,8 +11,8 @@ export const MAIL_PROVIDER_OPERATION_LEASE_MS = 5 * 60_000;
  * Jobs of one kind, such as folder syncs or sends, that one Mail process runs at once. Only the
  * job holding a remote mailbox's provider lease works on it, and the others resubmit, so each
  * place serves another mailbox: an unreachable mailbox holds one place while it waits for its
- * provider, not the queue. A provider host with as many unreachable mailboxes as places still
- * holds every place for the length of its connection timeouts.
+ * provider, not the queue. The provider breaker below keeps a mailbox whose provider does not
+ * answer from taking a place again for every job it has queued.
  */
 export const MAIL_PROVIDER_JOB_CONCURRENCY = 4;
 
@@ -45,10 +46,32 @@ const LEASE_RETRY_JITTER_MS = 500;
 const LEASE_PRESENCE_GRACE_MS = 2_000;
 const LEASE_PLACE_TTL_MS = 5 * 60_000;
 
-// KEYS: the waiters' places and until when each counts as present. ARGV: waiter, head start,
-// retry step, retry maximum, jitter, presence grace, place TTL. Registers the waiter, keeping
-// the better of its place from an earlier try and the new one, and returns its position among
-// the present waiters and when it should retry.
+// Work under the lease that failed because the provider did not answer before a timeout, such as
+// a host that lets each connection attempt wait for it, opens the remote mailbox's breaker. While
+// it is open, every job that asks for the lease waits as for a busy lease: it does not connect
+// and does not use an attempt. It keeps its place but does not count as present, because it comes
+// back only when the window ends; so once the breaker closes, at the end of its window or early,
+// for example when IMAP push reaches the provider again, the first job that asks takes the lease
+// and probes the provider. One job per mailbox connects; another timeout opens the breaker for
+// twice as long, and any success closes it. A refused or dropped connection fails fast and opens
+// nothing, so it does not hold back the mailbox's next sync. Folder syncs, body downloads, and
+// rediscovery record what they found, as they run for every mailbox; commands, sends, and draft
+// work only wait for the breaker, because they settle provider failures in their own records.
+//
+// The first window is one connection timeout (15 seconds in the IMAP and SMTP connectors), so a
+// provider that does not answer keeps at most about half a worker place busy with probes, and
+// less as it backs off. The longest window is the one-minute cadence of scheduled folder syncs
+// and the longest IMAP push reconnect delay, so a provider that answers again syncs within about
+// a minute even without push. Up to a quarter of the window is added at random, so mailboxes of
+// one host that failed together do not all probe at the same moment.
+const BREAKER_FIRST_WINDOW_MS = 15_000;
+const BREAKER_MAX_WINDOW_MS = 60_000;
+const BREAKER_JITTER_FRACTION = 0.25;
+
+// KEYS: the waiters' places, until when each counts as present, and the mailbox's breaker. ARGV:
+// waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL. Registers the
+// waiter, keeping the better of its place from an earlier try and the new one, and returns its
+// position among the present waiters, when it should retry, and whether the breaker is open.
 const enterLeaseLineScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
@@ -66,15 +89,40 @@ const enterLeaseLineScript = `
     if presentUntil and tonumber(presentUntil) >= now then position = position + 1 end
   end
   local retryAfter = math.min(tonumber(ARGV[3]) * (position + 1), tonumber(ARGV[4])) + tonumber(ARGV[5])
-  redis.call("ZADD", KEYS[2], now + retryAfter + tonumber(ARGV[6]), ARGV[1])
+  local presentUntil = now + retryAfter + tonumber(ARGV[6])
+  local breakerOpen = 0
+  local openUntil = tonumber(redis.call("HGET", KEYS[3], "until") or "0")
+  if openUntil > now then
+    breakerOpen = 1
+    retryAfter = openUntil - now + tonumber(ARGV[5])
+    presentUntil = now - 1
+  end
+  redis.call("ZADD", KEYS[2], presentUntil, ARGV[1])
   redis.call("PEXPIRE", KEYS[1], placeTtl)
   redis.call("PEXPIRE", KEYS[2], placeTtl)
-  return { position, retryAfter }
+  return { position, retryAfter, breakerOpen }
 `;
 
-const leaseLineKeys = (resource: string): [string, string] => [
+// KEYS: the mailbox's breaker. ARGV: first window, longest window, jitter fraction. The breaker
+// remembers its last window for one longest window after it closes, so the failure of the probe
+// that follows doubles it.
+const openBreakerScript = `
+  local time = redis.call("TIME")
+  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  local previous = tonumber(redis.call("HGET", KEYS[1], "window") or "0")
+  local window = tonumber(ARGV[1])
+  if previous > 0 then window = math.min(previous * 2, tonumber(ARGV[2])) end
+  local openFor = window + math.floor(window * tonumber(ARGV[3]))
+  redis.call("HSET", KEYS[1], "window", window, "until", now + openFor)
+  redis.call("PEXPIRE", KEYS[1], openFor + tonumber(ARGV[2]))
+  return openFor
+`;
+
+// One hash tag, so the line and the breaker of a mailbox live together.
+const leaseLineKeys = (resource: string): [string, string, string] => [
   `mail:provider-lease-line:{${resource}}:places`,
   `mail:provider-lease-line:{${resource}}:present`,
+  `mail:provider-lease-line:{${resource}}:breaker`,
 ];
 
 const leaveLeaseLine = async (resource: string, waiter: string): Promise<void> => {
@@ -89,8 +137,10 @@ export type ProviderLeaseTurn = { lock: Lock; retryAfterMs: null } | { lock: nul
  * priority and by how long they have waited, so a job that releases the lease and asks again
  * lines up anew instead of taking it straight back. A job that does not get the lease keeps its
  * place and retries after `retryAfterMs`; `waiter` must stay the same across those tries. A
- * waiter that comes back late is passed over until it returns, without losing its place. The
- * line is ephemeral Valkey state: losing it only loses the order, never the lease.
+ * waiter that comes back late is passed over until it returns, without losing its place. While
+ * the mailbox's provider breaker is open, nobody takes the lease and `retryAfterMs` is when it
+ * closes. The line and the breaker are ephemeral Valkey state: losing them only loses the order
+ * and the pause, never the lease.
  */
 export const acquireProviderLease = async (params: {
   resource: string;
@@ -100,7 +150,7 @@ export const acquireProviderLease = async (params: {
 }): Promise<ProviderLeaseTurn> => {
   const reply: unknown = await redis.send("EVAL", [
     enterLeaseLineScript,
-    "2",
+    "3",
     ...leaseLineKeys(params.resource),
     params.waiter,
     String(LEASE_HEAD_START_MS[params.priority]),
@@ -113,7 +163,8 @@ export const acquireProviderLease = async (params: {
   if (!Array.isArray(reply)) throw new Error("The provider lease line returned no position");
   const position = Number(reply[0]);
   const retryAfterMs = Number(reply[1]);
-  if (position === 0) {
+  const breakerOpen = Number(reply[2]) === 1;
+  if (position === 0 && !breakerOpen) {
     const lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
     if (lock) {
       try {
@@ -128,6 +179,35 @@ export const acquireProviderLease = async (params: {
     }
   }
   return { lock: null, retryAfterMs };
+};
+
+/**
+ * Records a failure of work that held the provider lease of `resource`. A provider that did not
+ * answer before a timeout opens the breaker described above, or reopens it for longer; other
+ * failures leave it as it is. Valkey errors are ignored: a breaker that does not open only costs
+ * the connection attempts it would have saved, and the job keeps its own error.
+ */
+export const recordProviderFailure = async (resource: string, error: unknown): Promise<void> => {
+  if (!isProviderTimeout(error)) return;
+  await redis
+    .send("EVAL", [
+      openBreakerScript,
+      "1",
+      leaseLineKeys(resource)[2],
+      String(BREAKER_FIRST_WINDOW_MS),
+      String(BREAKER_MAX_WINDOW_MS),
+      String(Math.random() * BREAKER_JITTER_FRACTION),
+    ])
+    .catch(() => undefined);
+};
+
+/**
+ * Records that the provider of `resource` answered: work under its lease finished, or IMAP push
+ * connected. Closes the breaker, so waiting jobs run at their next try instead of after the
+ * window. Valkey errors are ignored: a breaker that stays open closes at the end of its window.
+ */
+export const recordProviderReachable = async (resource: string): Promise<void> => {
+  await redis.send("DEL", [leaseLineKeys(resource)[2]]).catch(() => undefined);
 };
 
 /**

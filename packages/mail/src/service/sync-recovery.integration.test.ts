@@ -13,6 +13,7 @@ import { loadImapPushPlan } from "./imap-push-runtime";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { executeMaintenanceCommand } from "./maintenance-runtime";
 import { createProviderConnection, replaceProviderConnection } from "./provider-connections";
+import { recordProviderReachable } from "./provider-operation-lock";
 import { claimFence, runSyncFolderJob, syncFolderBatch } from "./sync-runtime";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -208,7 +209,7 @@ suite("mail sync recovery", () => {
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
-  test("a sync timeout degrades the mailbox only until the next attempt synchronizes it", async () => {
+  test("a sync timeout degrades the mailbox only until a sync after the provider answers again synchronizes it", async () => {
     const fixture = await createSyncedMailbox("timeout");
     const before = await transportState(fixture);
     await degradeWithTimeout(fixture);
@@ -219,6 +220,11 @@ suite("mail sync recovery", () => {
 
     const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue(EMPTY_INBOX);
     try {
+      // The timeout opened the mailbox's provider breaker: the next sync waits instead of connecting,
+      // until the breaker's window ends or, as here, IMAP push reaches the provider again.
+      await expect(syncFolderBatch(fixture.folderId, async () => undefined)).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      expect(status).not.toHaveBeenCalled();
+      await recordProviderReachable(fixture.resourceId);
       await expect(syncFolderBatch(fixture.folderId, async () => undefined)).resolves.toMatchObject({ hasMore: false });
       expect(status).toHaveBeenCalledTimes(1);
     } finally {

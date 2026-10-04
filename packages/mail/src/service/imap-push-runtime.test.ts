@@ -96,7 +96,12 @@ const startIdleListener = (options: {
 }) => {
   const controller = new AbortController();
   const listening = Promise.withResolvers<void>();
-  const events = { listens: 0, closedAt: [] as number[], health: [] as { state: string; error?: unknown }[] };
+  const events = {
+    listens: 0,
+    closedAt: [] as number[],
+    health: [] as { state: string; error?: unknown }[],
+    reachable: [] as string[],
+  };
   let releaseIterator: ((value: IteratorResult<ConnectorChangeHint>) => void) | null = null;
   const task = runImapPushBinding(
     plan,
@@ -134,6 +139,9 @@ const startIdleListener = (options: {
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async (remoteResourceId) => {
+        events.reachable.push(remoteResourceId);
+      },
       leaderMutex: options.leader,
       permits:
         options.permits ??
@@ -153,6 +161,7 @@ const startIdleListener = (options: {
 const plan: ImapPushBindingPlan = {
   bindingId: "00000000-0000-4000-8000-000000000001",
   mailboxId: "00000000-0000-4000-8000-000000000002",
+  remoteResourceId: "00000000-0000-4000-8000-000000000005",
   connectionId: "00000000-0000-4000-8000-000000000003",
   secretRevision: 3,
   imapHost: "mail.example.test",
@@ -352,6 +361,7 @@ describe("IMAP push runtime", () => {
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async () => undefined,
       leaderMutex: leader,
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -386,6 +396,7 @@ describe("IMAP push runtime", () => {
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async () => undefined,
       leaderMutex: new FakeMutex(),
       permits: {
         acquire: async () => {
@@ -442,6 +453,7 @@ describe("IMAP push runtime", () => {
         controller.abort(new Error("test complete"));
       },
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async () => undefined,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -491,6 +503,7 @@ describe("IMAP push runtime", () => {
         enqueueReconciliation: async () => undefined,
         enqueueRediscovery: async () => undefined,
         loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+        recordProviderReachable: async () => undefined,
         leaderMutex: new FakeMutex(),
         permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
         sleep: async (_ms: number, signal: AbortSignal) => {
@@ -523,6 +536,7 @@ describe("IMAP push runtime", () => {
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async () => undefined,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -574,6 +588,7 @@ describe("IMAP push runtime", () => {
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async () => undefined,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async (_ms: number, signal: AbortSignal) => {
@@ -630,6 +645,7 @@ describe("IMAP push runtime", () => {
         enqueueReconciliation: async () => undefined,
         enqueueRediscovery: async () => undefined,
         loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+        recordProviderReachable: async () => undefined,
         leaderMutex: new FakeMutex(),
         permits: {
           acquire: async () => ({ locks: [] }),
@@ -673,6 +689,7 @@ describe("IMAP push runtime", () => {
       enqueueReconciliation: async () => undefined,
       enqueueRediscovery: async () => undefined,
       loadReconnectBudget: async () => ({ lastDiscoveryAt: null, lastFullReconcileAt: null, fullReconcilePending: false }),
+      recordProviderReachable: async () => undefined,
       leaderMutex: new FakeMutex(),
       permits: new FixedImapConnectionPermitPool(new FakeMutex(), { global: 1, host: 1, mailbox: 1 }),
       sleep: async () => undefined,
@@ -694,6 +711,16 @@ describe("IMAP push lease renewal", () => {
       jest.useRealTimers();
     }
   };
+
+  test("closes the remote mailbox's provider breaker once the listener is connected", () =>
+    withFakeTimers(async () => {
+      const listener = startIdleListener({ leader: new ScriptedMutex() });
+      await listener.listening;
+      expect(listener.events.reachable).toEqual([plan.remoteResourceId]);
+
+      listener.controller.abort(new Error("test shutdown"));
+      expect(await listener.task).toEqual({ error: null });
+    }));
 
   test("keeps the listener up through one renewal the lease store did not answer", () =>
     withFakeTimers(async () => {

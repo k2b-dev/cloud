@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isProviderAuthenticationFailure, isTransientProviderFailure } from "./provider-errors";
+import { isProviderAuthenticationFailure, isProviderTimeout, isTransientProviderFailure } from "./provider-errors";
 
 const failure = (code: string) => Object.assign(new Error(code), { code });
 
@@ -124,5 +124,22 @@ describe("provider connection failures", () => {
     expect(isProviderAuthenticationFailure(verification(smtpRejected))).toBe(true);
     expect(isTransientProviderFailure(verification(failure("ETLS")))).toBe(false);
     expect(isTransientProviderFailure(verification())).toBe(false);
+  });
+
+  test("count only a provider that did not answer before a timeout as timed out, also behind a verification", () => {
+    for (const code of ["ENDPOINT_DNS_TIMEOUT", "CONNECT_TIMEOUT", "GREETING_TIMEOUT", "UPGRADE_TIMEOUT", "ETIMEDOUT", "ETIMEOUT"]) {
+      expect(isProviderTimeout(failure(code))).toBe(true);
+    }
+    // Refused, dropped, or limited connections fail fast.
+    for (const code of ["ECONNREFUSED", "ENOTFOUND", "NoConnection", "ECONNRESET", "EPIPE"]) {
+      expect(isProviderTimeout(failure(code))).toBe(false);
+    }
+    expect(isProviderTimeout(Object.assign(new Error("Command failed"), { authenticationFailed: true, serverResponseCode: "LIMIT" }))).toBe(
+      false,
+    );
+    const verification = (...failures: unknown[]) =>
+      Object.assign(new Error("IMAP: ...; SMTP: ..."), { code: "PROVIDER_TRANSPORT_VERIFICATION_FAILED", failures });
+    expect(isProviderTimeout(verification(failure("CONNECT_TIMEOUT"), failure("ECONNREFUSED")))).toBe(true);
+    expect(isProviderTimeout(verification(failure("ECONNREFUSED")))).toBe(false);
   });
 });

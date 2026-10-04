@@ -47,6 +47,8 @@ import {
   mailProviderOperationMutex,
   type ProviderLeasePriority,
   providerBusyRetryAfterMs,
+  recordProviderFailure,
+  recordProviderReachable,
 } from "./provider-operation-lock";
 import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
@@ -2273,6 +2275,7 @@ export const syncFolderBatch = async (
       },
     });
   } catch (error) {
+    await recordProviderFailure(folder.remote_resource_id, error);
     const code = normalizeSyncErrorCode(error);
     if (runId) await finishFailedRun(runId, code);
     if (
@@ -2297,6 +2300,7 @@ export const syncFolderBatch = async (
       .release(lock)
       .catch(() => false);
   }
+  await recordProviderReachable(folder.remote_resource_id);
   // Queued only after the provider lease is released: a hydration job that starts while this
   // sync still holds it finds the resource busy and has to try again.
   if (batch.imported > 0) await submitHydrationJob({ mailboxId: folder.mailbox_id });
@@ -2692,11 +2696,15 @@ export const hydrateMessageBatch = async (
             };
           },
         });
+      } catch (error) {
+        await recordProviderFailure(message.remote_resource_id, error);
+        throw error;
       } finally {
         await mailProviderOperationMutex()
           .release(lock)
           .catch(() => false);
       }
+      await recordProviderReachable(message.remote_resource_id);
       // Folder reconciliation retires the references of messages the provider deleted.
       if (batch.missingFromUid !== null) await enqueueFolderReconciliation(message.folder_id, batch.missingFromUid);
       if (batch.targetError) throw batch.targetError;
@@ -2801,8 +2809,9 @@ export const executeBindingRediscovery = async (
     ttlMs: SYNC_LEASE_MS,
   });
   if (!lock) throw Object.assign(new Error("Mail remote resource is busy"), { code: "SYNC_BUSY", retryAfterMs: busyRetryAfterMs });
+  let result: BindingRediscoveryResult;
   try {
-    return await withLeaseHeartbeat({
+    result = await withLeaseHeartbeat({
       intervalMs: 30_000,
       heartbeat: async () => {
         await extendSyncLease(lock, "during provider rediscovery");
@@ -2814,11 +2823,16 @@ export const executeBindingRediscovery = async (
         return rediscoverProviderBinding({ bindingId, allowCredentialRevision, signal });
       },
     });
+  } catch (error) {
+    await recordProviderFailure(binding.remote_resource_id, error);
+    throw error;
   } finally {
     await mailProviderOperationMutex()
       .release(lock)
       .catch(() => false);
   }
+  await recordProviderReachable(binding.remote_resource_id);
+  return result;
 };
 
 const REDISCOVERY_MAX_ATTEMPTS = 5;
