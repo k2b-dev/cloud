@@ -47,7 +47,7 @@ export const latestCursor = (config: { notebookId: string }): Promise<string> =>
   latestTopicCursor({ topic: workspaceTopic(), resourceId: TOPIC_ID, tenantId: config.notebookId });
 
 export const notebookUpdated = (notebook: { id: string }): Promise<void> =>
-  publish({ v: 1, type: "notebook.updated", notebookId: notebook.id });
+  publish({ v: 1, type: "notebook.updated", notebookId: notebook.id, notebook: {} });
 
 const resolveNoteShortId = async (noteId: string | null): Promise<string | null> => {
   if (!noteId) return null;

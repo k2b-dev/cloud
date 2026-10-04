@@ -4,7 +4,7 @@ import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts
 const natsTest = testFor("nats");
 
 natsTest(
-  "a quiet notebook has a replay cursor and a note above the topic payload limit still sends its hint",
+  "a quiet notebook has a replay cursor, and stored hints stay small and readable by older replicas",
   async () => {
     const { createSync } = await import("@k2b/sync");
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
@@ -42,18 +42,24 @@ natsTest(
         lockedAt: null,
       };
       await workspaceEvents.noteUpdated(note);
-      await workspaceEvents.invalidated({ notebookId, reason: "bulk", scopes: ["tree"] });
+      await workspaceEvents.notebookUpdated({ id: notebookId });
 
       const events = workspaceEvents.live({ notebookId, after: cursor, signal: abort.signal })[Symbol.asyncIterator]();
-      const first = await events.next();
-      if (first.done) throw new Error("Expected the retained note hint");
-      // Readers refetch on every hint, so the event carries references only.
-      expect(first.value.data).toEqual({
+      const next = async () => {
+        const result = await events.next();
+        if (result.done) throw new Error("Expected a retained workspace hint");
+        return result.value.data;
+      };
+      // Readers refetch on every hint, so the event carries references only,
+      // and a note above the topic payload limit still sends its hint.
+      expect(await next()).toEqual({
         v: 1,
         type: "note.updated",
         notebookId,
         note: { id: note.id, shortId: note.shortId, historyIncomplete: true },
       });
+      // Replicas from before reference-only events destructure `notebook`.
+      expect(await next()).toEqual({ v: 1, type: "notebook.updated", notebookId, notebook: {} });
       await events.return?.();
     } finally {
       abort.abort();

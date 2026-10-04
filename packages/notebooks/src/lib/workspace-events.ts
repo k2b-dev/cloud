@@ -27,6 +27,12 @@ export type NotebookWorkspaceEvent =
       v: 1;
       type: "notebook.updated";
       notebookId: string;
+      /**
+       * Published empty. Replicas from before reference-only events destructure
+       * it, so a rolling deploy or an image rollback must still find an object;
+       * events retained from then still carry notebook fields.
+       */
+      notebook: Record<string, unknown>;
     }
   | {
       v: 1;
