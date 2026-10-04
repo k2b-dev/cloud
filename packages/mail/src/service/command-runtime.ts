@@ -185,7 +185,8 @@ const hasEarlierActiveMessageMutation = async (commandId: string): Promise<boole
      AND predecessor.kind IN ('set_flags', 'change_message_state', 'move', 'copy', 'delete')
      AND predecessor.state IN ('queued', 'executing', 'ambiguous')
      AND predecessor.target->>'remoteMessageRefId' = current_command.target->>'remoteMessageRefId'
-     AND (predecessor.created_at, predecessor.id) < (current_command.created_at, current_command.id)
+     AND (predecessor.queue_position, predecessor.created_at, predecessor.id)
+       < (current_command.queue_position, current_command.created_at, current_command.id)
     WHERE current_command.id = ${commandId}::uuid
       AND current_command.target ? 'remoteMessageRefId'
     LIMIT 1
@@ -3598,13 +3599,14 @@ const REQUEUED_COMMAND_RETRY_SECONDS = 30;
 // job instead of starting its own.
 const MAILBOX_COMMAND_POLL_MS = 2_000;
 
-/** The mailbox's next mutation command in creation order, and how long until it may run. */
+/** The mailbox's next mutation command in the order the mailbox lock accepted them, and how long until it may run. */
 const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wait_ms: number } | null> => {
   const [next] = await sql<{ id: string; wait_ms: number }[]>`
     SELECT id, GREATEST(0, CEIL(EXTRACT(EPOCH FROM (due_at - now())) * 1000))::int AS wait_ms
     FROM (
       SELECT
         id,
+        queue_position,
         created_at,
         CASE
           WHEN state = 'ambiguous' THEN updated_at + make_interval(secs => ${AMBIGUOUS_COMMAND_RECHECK_SECONDS})
@@ -3616,7 +3618,7 @@ const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wai
         AND state IN ('queued', 'ambiguous')
         AND kind = ANY(${toPgTextArray(MUTATION_COMMAND_KINDS)}::text[])
     ) pending
-    ORDER BY GREATEST(due_at, now()), created_at, id
+    ORDER BY GREATEST(due_at, now()), queue_position, created_at, id
     LIMIT 1
   `;
   return next ?? null;
@@ -3632,7 +3634,7 @@ const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wai
 const MOVE_SET_LIMIT = 50;
 
 /**
- * The commands that move together with `headId`, the mailbox's next command, in creation order:
+ * The commands that move together with `headId`, the mailbox's next command, in queue order:
  * queued moves from the same source folder to the same destination over the same binding, whose
  * message has no earlier pending change. Empty when `headId` is not such a move.
  *
@@ -3645,7 +3647,7 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
   const rows = await sql<{ id: string }[]>`
     WITH pending AS MATERIALIZED (
       SELECT
-        id, kind, state, created_at, last_error_code, selected_binding_id, selected_secret_revision,
+        id, kind, state, queue_position, created_at, last_error_code, selected_binding_id, selected_secret_revision,
         target->>'remoteMessageRefId' AS message_ref,
         target->>'sourceFolderId' AS source_folder_id,
         target->>'destinationFolderId' AS destination_folder_id
@@ -3658,6 +3660,7 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
       SELECT
         candidate.id,
         candidate.id = head.id AS is_head,
+        candidate.queue_position,
         candidate.created_at,
         nullif(lower(btrim(content.message_id)), '') AS rfc_message_id
       FROM pending head
@@ -3676,19 +3679,19 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
           SELECT 1
           FROM pending earlier
           WHERE earlier.message_ref = candidate.message_ref
-            AND (earlier.created_at, earlier.id) < (candidate.created_at, candidate.id)
+            AND (earlier.queue_position, earlier.created_at, earlier.id) < (candidate.queue_position, candidate.created_at, candidate.id)
         )
     ),
     ranked AS (
       SELECT
-        id, is_head, created_at, rfc_message_id,
-        row_number() OVER (PARTITION BY rfc_message_id ORDER BY is_head DESC, created_at, id) AS copy
+        id, is_head, queue_position, created_at, rfc_message_id,
+        row_number() OVER (PARTITION BY rfc_message_id ORDER BY is_head DESC, queue_position, created_at, id) AS copy
       FROM candidates
     )
     SELECT id
     FROM ranked
     WHERE rfc_message_id IS NULL OR copy = 1
-    ORDER BY is_head DESC, created_at, id
+    ORDER BY is_head DESC, queue_position, created_at, id
     LIMIT ${MOVE_SET_LIMIT}
   `;
   return rows[0]?.id === headId ? rows.map((row) => row.id) : [];

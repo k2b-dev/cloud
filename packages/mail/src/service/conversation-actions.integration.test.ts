@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { encryptSecret, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -416,6 +416,54 @@ suite("mail conversation actions", () => {
       expect(await placementFlags(message.refId)).toEqual(["\\Answered", "\\Flagged", "\\Seen"]);
       expect(await executeMutationCommand(flag)).toBe("failed");
       expect(await placementFlags(message.refId)).toEqual(["\\Answered", "\\Seen"]);
+    });
+  });
+
+  // Mark read starts its transaction first, but Flag takes the mailbox lock and commits before Mark read reaches it.
+  // Mark read then shows its change on top of Flag's, so the queue has to run and undo Flag first.
+  test("runs and undoes queued changes in the order the mailbox lock accepted them", async () => {
+    const message = await unreadMessage("Overtaken read", 34);
+    const begin = sql.begin.bind(sql);
+    const readStarted = Promise.withResolvers<void>();
+    const flagCommitted = Promise.withResolvers<void>();
+    // Holds Mark read's transaction open after it started, before it reaches the mailbox lock.
+    const holdRead = spyOn(sql, "begin").mockImplementationOnce((callback) => {
+      if (typeof callback !== "function") throw new Error("Mark read opens its transaction without options");
+      return begin(async (tx) => {
+        await tx`SELECT now()`;
+        readStarted.resolve();
+        await flagCommitted.promise;
+        return callback(tx);
+      });
+    });
+    let read: Promise<string> | undefined;
+    let flag = "";
+    try {
+      read = queueChange(message, { addFlags: ["seen"] }, "overtaken-read");
+      await readStarted.promise;
+      flag = await queueChange(message, { addFlags: ["flagged"] }, "overtaken-flag");
+    } finally {
+      flagCommitted.resolve();
+      holdRead.mockRestore();
+    }
+    const readId = await read;
+    const [order] = await sql<{ read_started_first: boolean; read_accepted_later: boolean }[]>`
+      SELECT
+        read.created_at < flag.created_at AS read_started_first,
+        read.queue_position > flag.queue_position AS read_accepted_later
+      FROM mail.commands read, mail.commands flag
+      WHERE read.id = ${readId}::uuid AND flag.id = ${flag}::uuid
+    `;
+    expect(order).toEqual({ read_started_first: true, read_accepted_later: true });
+    expect(await placementFlags(message.refId)).toEqual(["\\Flagged", "\\Seen"]);
+
+    await whileSignInRequired(async () => {
+      // Mark read waits for the Flag change the mailbox lock accepted before it.
+      expect(await executeMutationCommand(readId)).toBe("queued");
+      expect(await executeMutationCommand(flag)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual(["\\Seen"]);
+      expect(await executeMutationCommand(readId)).toBe("failed");
+      expect(await placementFlags(message.refId)).toEqual([]);
     });
   });
 
