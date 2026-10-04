@@ -393,6 +393,7 @@ export const documentedOnlyUiCatalogExports = {
   isPointInsideToast: "Documented toast interaction helper.",
   normalizeAppWorkspaceLayoutState: "Documented AppWorkspace persisted-state helper.",
   isPanesItemVisible: "Documented Panes visibility helper.",
+  observeMobileShell: "Documented MobileShell measurement helper for a shell rendered on the server without hydration.",
   openFileBrowser: "Documented imperative FileBrowserPanel opener.",
   openFloatingWindow: "Documented imperative FloatingWindow opener.",
   panelDialogFixedPanelClass: "Documented PanelDialog fixed-mode class helper.",

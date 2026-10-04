@@ -55,6 +55,7 @@ Cancellation returns `false`, `null`, or `undefined` according to the method. Ha
 | `surface` | Uses the standard panel or a caller-owned `bare` surface. |
 | `header` | Set to `false` when a custom dialog owns its header. |
 | `cancelBehavior` | `prompts.alert` can use `"ignore"` to keep Escape and backdrop clicks from closing it. |
+| `history` | Back closes the prompt like Cancel instead of leaving the page; see [Close dialogs with Back](#close-dialogs-with-back). `prompts.form` does not take it. |
 
 Use `surface: "bare"` with `header: false` only when the custom content supplies complete visible panel structure and a close control.
 
@@ -218,7 +219,7 @@ interface DialogOptions {
   signal?: AbortSignal; title?: string; ariaLabel?: string; icon?: string; confirmText?: string;
   cancelText?: string | false; variant?: "danger" | "primary" | "success";
   size?: "small" | "medium" | "large" | "wide" | "full"; surface?: "default" | "bare"; header?: false;
-  cancelBehavior?: OpenDialogOptions["cancelBehavior"];
+  cancelBehavior?: OpenDialogOptions["cancelBehavior"]; history?: boolean;
 }
 
 interface ConfirmOptions extends DialogOptions {
@@ -374,6 +375,10 @@ const add = await dialogCore.open((close) => <PairingSheet close={close} />, {
   history: true,
 });
 ```
+
+Prompts take the same option, for example
+`prompts.confirm("Sign out of the app?", { history: true })`; Back then
+answers the prompt with `undefined`, like Cancel.
 
 The dialog adds a same-URL history entry while it is open. Back, or the
 Android back gesture, closes it and every dialog opened after it; nested

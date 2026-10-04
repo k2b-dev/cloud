@@ -35,7 +35,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { AppCliModules } from "../src/contracts/app";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
-import { buildPdfRenderer } from "./build-pdf-renderer";
+import { buildCanvasWorkers } from "./build-canvas-workers";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
@@ -132,7 +132,8 @@ try {
       __CLOUD_VERSION__: JSON.stringify(version),
       __CLOUD_RELEASE__: JSON.stringify(release),
       __CLOUD_SYNC_VERSION__: JSON.stringify(syncVersion),
-      __CLOUD_PDF_RENDER_WORKER__: JSON.stringify("./pdf-render/worker.js"),
+      __CLOUD_PDF_RENDER_WORKER__: JSON.stringify("./canvas/pdf-worker.js"),
+      __CLOUD_ICON_RENDER_WORKER__: JSON.stringify("./canvas/icon-worker.js"),
       __CLOUD_APP_ASSETS__: JSON.stringify("./assets/"),
       __CLOUD_CLI_PLUGINS__: JSON.stringify("./cli/"),
     },
@@ -145,9 +146,7 @@ if (!server.success) {
   for (const m of server.logs) console.error(m);
   throw new Error("Server bundle failed");
 }
-if (Object.keys(server.metafile?.inputs ?? {}).some((path) => path.endsWith("/ai/pdf-render.ts"))) {
-  await buildPdfRenderer(dist);
-}
+await buildCanvasWorkers(dist, Object.keys(server.metafile?.inputs ?? {}));
 
 // 2. Per-app Tailwind stylesheet.
 const appCss = resolve(appDir, "src/styles/app.css");

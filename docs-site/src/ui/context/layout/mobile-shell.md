@@ -111,6 +111,17 @@ browser, the shell measures the footer and watches the toast rail to keep the
 footer height and the toast padding current. It removes the footer
 height when it unmounts.
 
+A page that renders the shell on the server and hydrates only islands inside
+it calls `observeMobileShell(root)` once in the browser instead, with the
+shell's root element. It keeps the same measurements current and returns the
+cleanup:
+
+```ts
+import { observeMobileShell } from "@k2b/ui";
+
+const stop = observeMobileShell(document.querySelector<HTMLElement>(".k2b-mobile-shell")!);
+```
+
 `syncThemeColor()` is browser-only.
 
 ## Example

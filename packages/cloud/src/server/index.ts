@@ -1,3 +1,4 @@
+export { buildMetadata } from "../_internal/build-metadata";
 export { expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
 export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";

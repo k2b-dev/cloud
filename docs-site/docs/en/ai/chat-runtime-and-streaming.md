@@ -290,6 +290,20 @@ normal full refresh for invalidations and starts the visible conversation from
 a fresh authorized state snapshot. The CLI and low-level consumers continue to
 use `/conversations/:id/stream` over SSE.
 
+An open SSE stream re-checks its credential and the conversation every 5
+seconds. A revoked session or API key, an expired account, or a conversation
+that is archived or no longer the caller's ends the stream. The next
+connection attempt then receives 401, 403, or 404. The controller's default
+SSE transport does not retry these statuses. Like the WebSocket's turn error,
+it stops the stream: `streamStatus()` becomes `idle` and `error()` shows the
+server's message. Reopening or refreshing the chat, or acting in it, subscribes
+again. Other failures keep reconnecting with backoff.
+
+The server closes a stream once its reader has left about 4 MiB unread. The
+event that crosses that limit is still queued, and a `state` snapshot or a
+`turn_finished` event with its stored messages can be larger than one live
+event. The client then reconnects and continues from a fresh state snapshot.
+
 The controller folds both transports into the same projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,
 approval, and frontend-tool actions. Do not put conversation and Project lists,

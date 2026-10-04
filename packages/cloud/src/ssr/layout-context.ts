@@ -6,7 +6,7 @@ import type { RuntimeContext } from "./runtime";
 export type LayoutContext = {
   get(key: "user"): User | undefined;
   get(key: "railPreferences"): RailSnapshot | undefined;
-  get(key: "page"): { theme?: "light" | "dark" };
+  get(key: "page"): { theme?: "light" | "dark"; title?: string; pwa?: { name: string } };
   get(key: "runtime"): RuntimeContext;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   /** Every application settings snapshot includes Core's app metadata. */

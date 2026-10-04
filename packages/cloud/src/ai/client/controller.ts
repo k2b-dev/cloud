@@ -178,6 +178,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const abortRequests = new Map<string, Promise<boolean>>();
   let stream: AiStreamHandle | null = null;
   let streamSession: AiStreamSession | null = null;
+  /** The chat error left by a stream that ended for good, until a stream opens again. */
+  let streamError: string | null = null;
   let streamGeneration = 0;
   let conversationOpenGeneration = 0;
   let historyTargetSeq: number | null = null;
@@ -217,9 +219,12 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (activeConversationId()) setGlobalError(message);
     else setGlobalError(message);
   };
+  /** Starts the person's next action in the active chat clean, including a stream that ended with an error. */
   const clearErrors = () => {
     setGlobalError(null);
     setRunError(null);
+    const conversationId = activeConversationId();
+    if (conversationId) openStream(conversationId);
   };
   const error = () => globalError() ?? runError();
 
@@ -314,12 +319,19 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       conversationId,
       url: url(`/conversations/${conversationId}/stream`),
       onStatus: (status) => {
-        if (isCurrentStreamSession(streamSession, session)) setStreamStatus(status);
+        if (!isCurrentStreamSession(streamSession, session)) return;
+        setStreamStatus(status);
+        if (status !== "open" || streamError === null) return;
+        if (globalError() === streamError) setGlobalError(null);
+        streamError = null;
       },
       onEvent: (event) => applyEvent(session, event),
+      // The transport has stopped. Drop its handle so the next visit, refresh,
+      // or action in this chat can subscribe again.
       onError: (error) => {
         if (!isCurrentStreamSession(streamSession, session)) return;
-        setStreamStatus("idle");
+        closeStream();
+        streamError = error.message;
         setConversationError(conversationId, error.message);
       },
     });
@@ -422,6 +434,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const openConversation = async (conversationId: string) => {
     if (activeConversationId() === conversationId && state.conversation?.id === conversationId) {
+      openStream(conversationId);
       void markConversationViewed(conversationId);
       return "current" as const;
     }
@@ -485,6 +498,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
     if (detail.timeline) setTimeline(conversationId, detail.timeline);
     setRunError(conversationRunError(detail.conversation));
+    openStream(conversationId);
   };
 
   const requestMessagesPage = async (conversationId: string, before: number, limit: number): Promise<AiMessagesPage> => {
@@ -573,8 +587,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (conversationId) void openConversation(conversationId);
     else {
       conversationOpenGeneration += 1;
-      clearErrors();
       setActiveConversationIdSignal(null);
+      clearErrors();
       historyTargetSeq = null;
       setLoadingConversationId(null);
       closeStream();

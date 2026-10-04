@@ -116,7 +116,7 @@ const AttachmentPicker = (props: Props) => {
       {/* Existing attachments — pick to reuse without re-upload */}
       <Show when={(list.data() ?? []).length > 0}>
         <div class="flex flex-col gap-1.5">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-dimmed">{t().reuseExisting}</p>
+          <p class="text-xs font-semibold text-secondary">{t().reuseExisting}</p>
           <ul class="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
             <For each={list.data() ?? []}>
               {(att) => (

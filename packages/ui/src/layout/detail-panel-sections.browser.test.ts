@@ -17,6 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: DetailPanel } = await import("./DetailPanel");
 const { default: Discussion } = await import("./Discussion");
 const { Button } = await import("../actions/Button");
+const { TextInput } = await import("../inputs/TextInput");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const viewports = {
@@ -128,6 +129,29 @@ const nested = () =>
     }),
   )}</div>`;
 
+// A panel reused inside a tinted dialog group: that group turns field wells white
+// for its tint, but every frame of the panel paints its own surface again.
+const hosted = () =>
+  `<div id="hosted" class="k2b-panel-dialog__section-body">${renderToString(() =>
+    createComponent(DetailPanel, {
+      get children() {
+        return createComponent(DetailPanel.Body, {
+          get children() {
+            return [
+              createComponent(DetailPanel.Group, {
+                get children() {
+                  return section("Contents", "ti ti-list", undefined, () => createComponent(TextInput, { label: "Grouped", value: "" }));
+                },
+              }),
+              section("Notes", "ti ti-notes", undefined, () => createComponent(TextInput, { label: "Lone", value: "" })),
+              discussion("one", true),
+            ];
+          },
+        });
+      },
+    }),
+  )}</div>`;
+
 // Outside a detail panel the discussion keeps its own card, and `bare` stays bare.
 const standalone = () =>
   `<div id="standalone" style="padding:1rem">${renderToString(() => discussion("one", false))}</div>` +
@@ -153,6 +177,7 @@ const open = async (viewport: { width: number; height: number }, theme: "light" 
       panel("two", "two") +
       panel("composer", "one", true) +
       nested() +
+      hosted() +
       standalone() +
       `</body></html>`,
   );
@@ -242,6 +267,16 @@ const measure = () => {
     })(),
     standalone: card("standalone"),
     bare: card("bare"),
+    hosted: (() => {
+      const well = (selector: string) => style(document.querySelector(`#hosted ${selector}`)!).backgroundColor;
+      return {
+        tint: style(document.querySelector("#hosted")!).backgroundColor,
+        frame: style(document.querySelector("#hosted .k2b-detail-panel__body > .k2b-detail-panel__section")!).backgroundColor,
+        grouped: well(".k2b-detail-panel__group .k2b-input-shell"),
+        lone: well(".k2b-detail-panel__body > .k2b-detail-panel__section .k2b-input-shell"),
+        composer: well(".k2b-discussion__composer-field .k2b-markdown-editor"),
+      };
+    })(),
   };
 };
 
@@ -308,6 +343,13 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([8, 12, 12]);
           expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
           expect(result.inSection).toEqual({ left: 0, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
+
+          // Hosted in a tinted dialog group, the lone section and the discussion are frames like a
+          // group: their field wells are recessed again instead of white on the white frame.
+          expect(result.hosted.tint).not.toBe(result.hosted.frame);
+          expect(result.hosted.grouped).not.toBe(result.hosted.frame);
+          expect(result.hosted.lone).toBe(result.hosted.grouped);
+          expect(result.hosted.composer).toBe(result.hosted.grouped);
 
           // Outside a detail panel the default discussion is its own card; bare draws nothing.
           expect(result.standalone.border).toBe("1px");

@@ -239,6 +239,12 @@ body {
   color: rgb(244 244 245); /* zinc-100 */
 }
 
+/* Pages of the mobile app paint the shell canvas, which their theme-color and
+   html background repeat for the status bar. */
+html:has(.k2b-mobile-shell) body {
+  background-color: var(--k2b-surface-canvas);
+}
+
 .dark {
   color-scheme: dark;
   --color-selection-bg: rgb(59 130 246 / 0.5);

@@ -1,0 +1,155 @@
+/* Scoped scan: only this app's own .ts/.tsx. Cloud-lib classes (UI components,
+   layout primitives, etc.) come in via global.css. Apps must NEVER scan each
+   other's source. */
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../**/*.{ts,tsx}";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* The welcome page renders both blocks; the display mode picks one, so the
+   layout never waits for JavaScript. */
+.pwa-standalone-only {
+  display: none;
+}
+
+@media (display-mode: standalone) {
+  .pwa-standalone-only {
+    display: block;
+  }
+
+  .pwa-browser-only {
+    display: none;
+  }
+}
+
+.pwa-welcome,
+.pwa-start,
+.pwa-settings {
+  max-width: 32rem;
+  margin: 0 auto;
+}
+
+.pwa-welcome {
+  padding-top: 1.5rem;
+  text-align: center;
+}
+
+.pwa-welcome__icon {
+  display: block;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 1.25rem;
+  object-fit: contain;
+}
+
+.pwa-welcome__block {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pwa-welcome__block h2 {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.pwa-welcome__block p {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+}
+
+.pwa-welcome__primary {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.pwa-welcome__paste {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: start;
+}
+
+.pwa-welcome__block .pwa-welcome__message {
+  color: var(--k2b-danger-text);
+}
+
+.pwa-welcome__block .pwa-welcome__hint {
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.pwa-welcome__code {
+  display: block;
+  margin: 0.5rem 0;
+  font-size: 2.5rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+.pwa-welcome__link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  border-block: 1px solid var(--k2b-border);
+}
+
+.pwa-welcome .k2b-install-guide {
+  text-align: start;
+}
+
+.pwa-start {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.pwa-start > .k2b-navigation + .k2b-navigation {
+  padding-top: 1rem;
+  border-top: 1px solid var(--k2b-border);
+}
+
+.pwa-settings {
+  padding-top: 0.5rem;
+}
+
+.pwa-settings__account {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pwa-settings__account p {
+  margin: 0;
+}
+
+.pwa-settings__name-line {
+  font-weight: 600;
+}
+
+.pwa-settings__meta,
+.pwa-settings__version {
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.pwa-settings__version {
+  margin: 2.5rem 0 0;
+  text-align: center;
+}
+
+.pwa-settings__name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.pwa-settings__name > .k2b-button {
+  align-self: flex-start;
+}

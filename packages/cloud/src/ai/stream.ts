@@ -17,6 +17,16 @@ import type { AiConversation } from "./types";
 const log = logger("ai:stream");
 
 /**
+ * Bytes an SSE reader may leave unread before its stream ends, the live
+ * socket's send-buffer limit. The check runs before each event, so the queue
+ * can exceed it by the event that crosses it, and a state snapshot or a
+ * finished turn with its messages can be larger than one live event. The
+ * reconnect starts from a fresh state snapshot, so ending the stream loses
+ * nothing durable.
+ */
+const AI_STREAM_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
+
+/**
  * Live fanout for wire events. Events carry their full payload so the SSE hot
  * path never touches Postgres; durable state lives in ai.messages plus the
  * throttled ai.turns.live_blocks snapshot.
@@ -224,11 +234,11 @@ export const createAiConversationStreamResponse = (input: {
   signal?: AbortSignal;
   heartbeatMs?: number;
   /**
-   * Re-checked on every heartbeat. A stream can outlive the grant that opened
-   * it by hours, and authorizing once at connect time means a withdrawn grant
-   * keeps delivering model output until the client happens to disconnect.
-   * Returning false closes the stream; the client's reconnect then meets the
-   * ordinary 403.
+   * Re-checked on every heartbeat. A stream can outlive the credential and the
+   * grant that opened it by hours, and authorizing once at connect time means
+   * a revoked session or withdrawn grant keeps delivering model output until
+   * the client happens to disconnect. Returning false closes the stream; the
+   * client's reconnect then meets the ordinary 401, 403, or 404.
    */
   revalidate?: () => Promise<boolean>;
 }): Response => {
@@ -241,73 +251,87 @@ export const createAiConversationStreamResponse = (input: {
   if (input.signal?.aborted) abortLive();
   else input.signal?.addEventListener("abort", abortLive, { once: true });
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const enqueue = (chunk: Uint8Array): boolean => {
-        if (closed) return false;
-        try {
-          controller.enqueue(chunk);
-          return true;
-        } catch {
-          close();
-          return false;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      async start(controller) {
+        const enqueue = (chunk: Uint8Array): boolean => {
+          if (closed) return false;
+          // desiredSize is the budget left after what the reader has not taken
+          // yet. A reader that falls this far behind gets a fresh snapshot on
+          // reconnect instead of an ever-growing queue on the server.
+          if ((controller.desiredSize ?? 0) <= 0) {
+            log.warn("AI conversation stream closed: the reader fell behind", {
+              conversationId: input.conversation.id,
+              maxBufferedBytes: AI_STREAM_MAX_BUFFERED_BYTES,
+            });
+            close();
+            return false;
+          }
+          try {
+            controller.enqueue(chunk);
+            return true;
+          } catch {
+            close();
+            return false;
+          }
+        };
+        const close = () => {
+          if (closed) return;
+          closed = true;
+          if (heartbeat) clearInterval(heartbeat);
+          heartbeat = undefined;
+          input.signal?.removeEventListener("abort", abortLive);
+          abortLive();
+          try {
+            controller.close();
+          } catch {
+            // The client may already have cancelled the stream.
+          }
+        };
+
+        if (heartbeatMs > 0) {
+          heartbeat = setInterval(() => {
+            if (!enqueue(encodeSseHeartbeat())) return;
+            if (!input.revalidate) return;
+            // Fail closed: a revalidation that throws is not a pass.
+            void input
+              .revalidate()
+              .catch((error) => {
+                log.warn("AI conversation stream revalidation failed", {
+                  conversationId: input.conversation.id,
+                  error: error instanceof Error ? error.message : "revalidation failed",
+                });
+                return false;
+              })
+              .then((allowed) => {
+                if (!allowed) close();
+              });
+          }, heartbeatMs);
         }
-      };
-      const close = () => {
-        if (closed) return;
+
+        try {
+          for await (const event of streamAiConversationEvents({ conversation: input.conversation, signal: liveAbort.signal })) {
+            if (!enqueue(encodeSseEvent(event))) return;
+          }
+        } catch (error) {
+          if (!liveAbort.signal.aborted) {
+            log.warn("AI conversation stream failed", {
+              conversationId: input.conversation.id,
+              error: error instanceof Error ? error.message : "AI conversation stream failed",
+            });
+          }
+        } finally {
+          close();
+        }
+      },
+      cancel() {
         closed = true;
         if (heartbeat) clearInterval(heartbeat);
-        heartbeat = undefined;
-        input.signal?.removeEventListener("abort", abortLive);
         abortLive();
-        try {
-          controller.close();
-        } catch {
-          // The client may already have cancelled the stream.
-        }
-      };
-
-      if (heartbeatMs > 0) {
-        heartbeat = setInterval(() => {
-          if (!enqueue(encodeSseHeartbeat())) return;
-          if (!input.revalidate) return;
-          // Fail closed: a revalidation that throws is not a pass.
-          void input
-            .revalidate()
-            .catch((error) => {
-              log.warn("AI conversation stream revalidation failed", {
-                conversationId: input.conversation.id,
-                error: error instanceof Error ? error.message : "revalidation failed",
-              });
-              return false;
-            })
-            .then((allowed) => {
-              if (!allowed) close();
-            });
-        }, heartbeatMs);
-      }
-
-      try {
-        for await (const event of streamAiConversationEvents({ conversation: input.conversation, signal: liveAbort.signal })) {
-          if (!enqueue(encodeSseEvent(event))) return;
-        }
-      } catch (error) {
-        if (!liveAbort.signal.aborted) {
-          log.warn("AI conversation stream failed", {
-            conversationId: input.conversation.id,
-            error: error instanceof Error ? error.message : "AI conversation stream failed",
-          });
-        }
-      } finally {
-        close();
-      }
+      },
     },
-    cancel() {
-      closed = true;
-      if (heartbeat) clearInterval(heartbeat);
-      abortLive();
-    },
-  });
+    new ByteLengthQueuingStrategy({ highWaterMark: AI_STREAM_MAX_BUFFERED_BYTES }),
+  );
 
   return new Response(stream, { headers: sseHeaders });
 };

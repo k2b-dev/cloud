@@ -1,13 +1,32 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { parseAiSse, subscribeAiStream } from "./transport";
+import { AiStreamError, aiSseConversationStreamTransport, parseAiSse, subscribeAiStream } from "./transport";
 
 const originalSetTimeout = globalThis.setTimeout;
 const originalClearTimeout = globalThis.clearTimeout;
+const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.setTimeout = originalSetTimeout;
   globalThis.clearTimeout = originalClearTimeout;
+  globalThis.fetch = originalFetch;
 });
+
+/** Records every timer instead of running it, so a scheduled reconnect is observable. */
+const captureTimers = () => {
+  const timers: Array<{ callback: () => void; delay: number } | null> = [];
+  globalThis.setTimeout = ((callback: () => void, delay = 0) => {
+    timers.push({ callback, delay });
+    return timers.length;
+  }) as typeof setTimeout;
+  globalThis.clearTimeout = ((id: number) => {
+    timers[id - 1] = null;
+  }) as typeof clearTimeout;
+  return timers;
+};
+
+const settle = async () => {
+  for (let i = 0; i < 10; i++) await originalSetTimeout(() => undefined, 0);
+};
 
 describe("AI stream transport lifecycle", () => {
   test("abort cancels a reader even when the server sends no more chunks", async () => {
@@ -112,6 +131,85 @@ describe("AI stream transport lifecycle", () => {
 
     expect(attempts).toHaveLength(2);
     expect(statuses).toEqual(["connecting", "reconnecting"]);
+    stream.close();
+  });
+
+  for (const [status, code] of [
+    [401, "login_required"],
+    [403, "access_denied"],
+    [404, "not_found"],
+  ] as const) {
+    test(`stops and reports ${code} instead of reconnecting after HTTP ${status}`, async () => {
+      const timers = captureTimers();
+      let attempts = 0;
+      const statuses: string[] = [];
+      const errors: unknown[] = [];
+
+      const stream = subscribeAiStream({
+        url: "/stream",
+        fetch: async () => {
+          attempts++;
+          return Response.json({ message: "Server-owned reason" }, { status });
+        },
+        onStatus: (next) => statuses.push(next),
+        onEvent: () => undefined,
+        onError: (error) => errors.push(error),
+      });
+      await settle();
+
+      expect(attempts).toBe(1);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(AiStreamError);
+      expect(errors[0]).toMatchObject({ code, message: "Server-owned reason" });
+      expect(timers.filter((timer) => timer !== null && timer.delay !== 10_000)).toEqual([]);
+      expect(statuses).toEqual(["connecting"]);
+      stream.close();
+    });
+  }
+
+  test("falls back to a stable message when the error body is not JSON", async () => {
+    captureTimers();
+    const errors: AiStreamError[] = [];
+    subscribeAiStream({
+      url: "/stream",
+      fetch: async () => new Response("<html>gateway</html>", { status: 403 }),
+      onEvent: () => undefined,
+      onError: (error) => errors.push(error),
+    });
+    await settle();
+
+    expect(errors.map((error) => [error.code, error.message])).toEqual([["access_denied", "AI stream failed: 403"]]);
+  });
+
+  test("keeps reconnecting after a transient server failure", async () => {
+    const timers = captureTimers();
+    const errors: unknown[] = [];
+    subscribeAiStream({
+      url: "/stream",
+      fetch: async () => new Response(null, { status: 503 }),
+      onEvent: () => undefined,
+      onError: (error) => errors.push(error),
+    });
+    await settle();
+
+    expect(errors).toEqual([]);
+    expect(timers.some((timer) => timer?.delay === 500)).toBe(true);
+  });
+
+  test("the default conversation transport forwards terminal errors to its subscriber", async () => {
+    captureTimers();
+    globalThis.fetch = (async () => Response.json({ message: "Conversation not found" }, { status: 404 })) as unknown as typeof fetch;
+    const errors: AiStreamError[] = [];
+
+    const stream = aiSseConversationStreamTransport.subscribe({
+      conversationId: "Chat01",
+      url: "/stream",
+      onEvent: () => undefined,
+      onError: (error) => errors.push(error as AiStreamError),
+    });
+    await settle();
+
+    expect(errors.map((error) => [error.code, error.message])).toEqual([["not_found", "Conversation not found"]]);
     stream.close();
   });
 });

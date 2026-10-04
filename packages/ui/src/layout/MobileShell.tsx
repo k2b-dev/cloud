@@ -39,52 +39,58 @@ const persistentToastInset = (body: HTMLElement): number => {
   return Math.max(0, Math.min(area.height, area.bottom - top));
 };
 
+/**
+ * Keeps a mounted shell's measurements current: the footer height on the body, which the portalled toast rail reads,
+ * and the room a persistent toast takes from the scroll area. `MobileShell` calls it itself; a page that renders the
+ * shell on the server without hydrating it calls it once in the browser. Returns the cleanup.
+ */
+export function observeMobileShell(root: HTMLElement): () => void {
+  const main = root.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__main");
+  const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
+  if (!main || !body) return () => {};
+  let frame = 0;
+  const measure = () => {
+    frame = 0;
+    const footer = Math.max(0, root.getBoundingClientRect().bottom - main.getBoundingClientRect().bottom);
+    document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
+    root.style.setProperty(TOAST_INSET, `${persistentToastInset(body)}px`);
+  };
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(measure);
+  };
+  measure();
+  // The footer can appear, disappear, or change height; the main area takes whatever it leaves.
+  const resize = new ResizeObserver(schedule);
+  resize.observe(root);
+  resize.observe(main);
+  // Toasts arrive and leave anywhere in the document, and their slots grow and collapse in a transition.
+  const mutations = new MutationObserver(schedule);
+  mutations.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["data-state", "data-closing", "data-persistent", "open"],
+  });
+  document.addEventListener("transitionend", schedule, true);
+  return () => {
+    if (frame) cancelAnimationFrame(frame);
+    resize.disconnect();
+    mutations.disconnect();
+    document.removeEventListener("transitionend", schedule, true);
+    document.body.style.removeProperty(FOOTER_HEIGHT);
+  };
+}
+
 function MobileShellRoot(props: MobileShellProps): JSX.Element {
   let root!: HTMLDivElement;
-  let main!: HTMLElement;
-  let body!: HTMLDivElement;
 
-  onMount(() => {
-    let frame = 0;
-    const measure = () => {
-      frame = 0;
-      const footer = Math.max(0, root.getBoundingClientRect().bottom - main.getBoundingClientRect().bottom);
-      document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
-      root.style.setProperty(TOAST_INSET, `${persistentToastInset(body)}px`);
-    };
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(measure);
-    };
-    measure();
-    // The footer can appear, disappear, or change height; the main area takes whatever it leaves.
-    const resize = new ResizeObserver(schedule);
-    resize.observe(root);
-    resize.observe(main);
-    // Toasts arrive and leave anywhere in the document, and their slots grow and collapse in a transition.
-    const mutations = new MutationObserver(schedule);
-    mutations.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-state", "data-closing", "data-persistent", "open"],
-    });
-    document.addEventListener("transitionend", schedule, true);
-    onCleanup(() => {
-      if (frame) cancelAnimationFrame(frame);
-      resize.disconnect();
-      mutations.disconnect();
-      document.removeEventListener("transitionend", schedule, true);
-      document.body.style.removeProperty(FOOTER_HEIGHT);
-    });
-  });
+  onMount(() => onCleanup(observeMobileShell(root)));
 
   return (
     <div ref={root} class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}>
       {props.header}
-      <main ref={main} class="k2b-mobile-shell__main">
-        <ScrollArea ref={body} class="k2b-mobile-shell__body">
-          {props.children}
-        </ScrollArea>
+      <main class="k2b-mobile-shell__main">
+        <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
       </main>
       {props.footer}
     </div>

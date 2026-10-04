@@ -220,13 +220,13 @@ export default function ProfileActions(props: Props) {
             <p class="text-xs text-dimmed">{t().detailVisibility({ holders: holders() })}</p>
 
             <div class="flex flex-col gap-3">
-              <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t().contact}</span>
+              <span class="text-xs font-semibold text-secondary">{t().contact}</span>
               <TextInput label={t().phone} placeholder={t().phonePlaceholder} icon="ti ti-phone" value={phone} onValueChange={setPhone} />
             </div>
 
             <Show when={isIpa}>
               <div class="flex flex-col gap-3">
-                <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t().address}</span>
+                <span class="text-xs font-semibold text-secondary">{t().address}</span>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <div class="sm:col-span-2">
                     <TextInput
@@ -264,7 +264,7 @@ export default function ProfileActions(props: Props) {
               </div>
 
               <div class="flex flex-col gap-3">
-                <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t().sshKeys}</span>
+                <span class="text-xs font-semibold text-secondary">{t().sshKeys}</span>
                 <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-1">
                   <p>
                     {t().connectVia} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh {props.uid}@host-ip</code>

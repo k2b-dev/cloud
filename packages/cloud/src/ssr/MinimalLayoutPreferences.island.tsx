@@ -1,6 +1,6 @@
 import { Button, Dropdown, useLocale } from "@k2b/ui";
-import { type ProfilePreferenceLocale, profilePreferenceLocale, setLocalePreference } from "../browser/locale-preference";
 import { canonicalLocale } from "../shared/locale";
+import { type ProfilePreferenceLocale, profilePreferenceLocale, setLocalePreference } from "../shared/locale-preference";
 import type { CloudTheme } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 

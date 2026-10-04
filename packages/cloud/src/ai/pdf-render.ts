@@ -1,5 +1,5 @@
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { spawnCanvasWorker } from "../_internal/canvas-worker";
 
 declare const __CLOUD_PDF_RENDER_WORKER__: string | undefined;
 let activeRenders = 0;
@@ -31,27 +31,7 @@ export async function renderPdfPages(bytes: Uint8Array, pages: number[] = [1], s
       typeof __CLOUD_PDF_RENDER_WORKER__ === "string"
         ? new URL(__CLOUD_PDF_RENDER_WORKER__, import.meta.url)
         : new URL("./pdf-render-worker.ts", import.meta.url);
-    // RLIMIT_DATA bounds the decoder heap/native writable mappings on Linux.
-    // Positional arguments keep paths out of shell code. No elevated privileges.
-    const child = Bun.spawn(
-      ["/bin/sh", "-c", 'ulimit -d 524288 || exit 70; exec "$@"', "pdf-decoder", process.execPath, "--no-env-file", fileURLToPath(worker)],
-      {
-        stdin: new Blob([JSON.stringify({ pdf: Buffer.from(bytes).toString("base64"), pages })]),
-        stdout: "pipe",
-        stderr: "ignore",
-        // No application credentials or configuration reach the decoder, only fixed
-        // thread pool sizes: the Bun work pool, canvas tokio runtime, and JSC GC
-        // markers otherwise grow with the host's cores, and RLIMIT_DATA also counts
-        // each thread's stack and allocator memory.
-        env: {
-          PATH: process.env.PATH,
-          LANG: "C.UTF-8",
-          UV_THREADPOOL_SIZE: "2",
-          TOKIO_WORKER_THREADS: "2",
-          BUN_JSC_numberOfGCMarkers: "2",
-        },
-      },
-    );
+    const child = spawnCanvasWorker(worker, "pdf-decoder", JSON.stringify({ pdf: Buffer.from(bytes).toString("base64"), pages }));
     const stop = () => child.kill("SIGKILL");
     boundedSignal.addEventListener("abort", stop, { once: true });
     if (boundedSignal.aborted) stop();

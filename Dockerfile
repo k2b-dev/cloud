@@ -7,7 +7,7 @@
 # `deps` and `deps-dev` are independent of APP_ID and of application sources,
 # so the install and the @k2b/ui build are cached across all release apps.
 # `build` and `runtime` are app-specific. The image is built natively per
-# architecture: the pdf-render binary must match the target platform.
+# architecture: the native canvas binary must match the target platform.
 
 # ──────────────────────────────────────────────────────────────────────
 # Stage 1: deps — production install (cache-shared, ships to runtime builds).

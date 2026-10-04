@@ -18,6 +18,11 @@ export type AppRegistryNav = {
   adminHref?: string;
 };
 
+export type AppRegistryPwaPart = {
+  href: string;
+  requiresRoles?: Role[];
+};
+
 export type AppRegistryCapabilitySummary = {
   protocolVersion: number;
   manifestHash: string;
@@ -80,6 +85,8 @@ export type AppRegistryEntry = {
   help?: AppRegistryHelpSummary;
   legalLinks?: AppRegistryLegalLink[];
   searchLinks?: readonly AppSearchLink[];
+  /** The app's part of the mobile app (preview); `href` is `/pwa/<id>`. Older readers ignore it. */
+  pwa?: AppRegistryPwaPart;
   widgets?: AppRegistryWidget[];
   /** Setting keys declared by this app. Used by admin tooling to avoid treating live app-owned settings as legacy. */
   settingKeys?: readonly string[];

@@ -1,5 +1,6 @@
 import type { RuntimeAppMeta } from "../contracts/app";
-import { hasRole, type User } from "../contracts/shared";
+import { hasRole, type Role, type User } from "../contracts/shared";
+import { resolveAppPresentation } from "../shared/app-presentation";
 
 export type VisibleNavigationApp = RuntimeAppMeta & {
   nav: NonNullable<RuntimeAppMeta["nav"]>;
@@ -25,17 +26,26 @@ export const hasDedicatedRuntimeRoute = (apps: readonly RuntimeAppMeta[], pathna
   return !!match && match.app.id !== currentAppId;
 };
 
+const hasAnyRole = (user: User | undefined, roles: readonly Role[] | undefined): boolean =>
+  !roles || (!!user && roles.some((role) => (role === "guest" ? user.profile === "guest" : hasRole(user, role))));
+
 /** Apps rendered in the navigation for a given authenticated user. */
 export const visibleNavigationApps = (apps: readonly RuntimeAppMeta[], user: User | undefined): VisibleNavigationApp[] =>
   apps.filter(
     (app): app is VisibleNavigationApp =>
-      !!app.nav &&
-      app.nav.section !== "hidden" &&
-      (!app.nav.requiresAuth || !!user) &&
-      (!app.nav.requiresRoles ||
-        (!!user &&
-          app.nav.requiresRoles.some((role) => {
-            if (role === "guest") return user.profile === "guest";
-            return hasRole(user, role);
-          }))),
+      !!app.nav && app.nav.section !== "hidden" && (!app.nav.requiresAuth || !!user) && hasAnyRole(user, app.nav.requiresRoles),
   );
+
+export type VisiblePwaPart = RuntimeAppMeta & { pwa: NonNullable<RuntimeAppMeta["pwa"]> };
+
+/**
+ * Parts of the mobile app the user may see, localized and sorted by name. Empty without a user. The roles are
+ * coarse visibility like the navigation's; part routes and services still authorize.
+ */
+export const visiblePwaParts = (apps: readonly RuntimeAppMeta[], user: User | undefined, locale: string): VisiblePwaPart[] => {
+  if (!user) return [];
+  return apps
+    .filter((app): app is VisiblePwaPart => !!app.pwa && hasAnyRole(user, app.pwa.requiresRoles))
+    .map((app) => resolveAppPresentation(app, locale))
+    .sort((a, b) => a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id));
+};

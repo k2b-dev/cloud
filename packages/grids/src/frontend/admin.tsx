@@ -1,7 +1,7 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { ButtonLink, DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
+import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import { ssr } from "../config";
 import { gridsService } from "../service";
 import AdminGridsActions from "./_components/AdminGridsActions.island";
@@ -174,7 +174,7 @@ export default ssr<AuthContext>(async (c) => {
           </StatGrid>
 
           {operations.issues.length > 0 ? (
-            <div class="grid gap-1 lg:grid-cols-2">
+            <div class="grid gap-2 lg:grid-cols-2">
               {operations.issues.map((issue, index) => {
                 const localized =
                   [
@@ -221,24 +221,12 @@ export default ssr<AuthContext>(async (c) => {
                       : null,
                   ].filter((value): value is { title: string; detail: string } => value !== null)[index] ?? issue;
                 return (
-                  <article
-                    class={`rounded-md p-2 ${
-                      issue.severity === "error"
-                        ? "bg-red-50 text-red-800 dark:bg-red-950/25 dark:text-red-300"
-                        : "bg-amber-50 text-amber-900 dark:bg-amber-950/25 dark:text-amber-200"
-                    }`}
-                  >
-                    <div class="flex items-start gap-2">
-                      <i
-                        class={`ti ${issue.severity === "error" ? "ti-alert-circle" : "ti-clock-exclamation"} mt-0.5 shrink-0`}
-                        aria-hidden="true"
-                      />
-                      <div class="min-w-0">
-                        <h3 class="text-xs font-semibold">{localized.title}</h3>
-                        <p class="text-[11px] opacity-80">{localized.detail}</p>
-                      </div>
-                    </div>
-                  </article>
+                  <NoticeCard
+                    tone={issue.severity === "error" ? "danger" : "warning"}
+                    icon={issue.severity === "error" ? "ti ti-alert-circle" : "ti ti-clock-exclamation"}
+                    title={localized.title}
+                    detail={localized.detail}
+                  />
                 );
               })}
             </div>

@@ -556,8 +556,10 @@ suite("mobile app pairing and app sessions", () => {
     expect((await call(owner.web, "DELETE", `${PWA_API_PATH}/devices/${crypto.randomUUID()}`)).status).toBe(404);
 
     const unpaired = await pair(owner);
+    unpaired.phone.cookies.set("pwa_pairing", { value: "left-over", path: `${PWA_AUTH_PATH}/pairings`, attributes: "" });
     expect((await call(unpaired.phone, "DELETE", `${PWA_AUTH_PATH}/session`)).status).toBe(204);
     expect(unpaired.phone.get("pwa_session")).toBeUndefined();
+    expect(unpaired.phone.get("pwa_pairing")).toBeUndefined();
     const [row] = await sql<
       { revocation_reason: string }[]
     >`SELECT revocation_reason FROM auth.pwa_devices WHERE id = ${unpaired.deviceId}::uuid`;

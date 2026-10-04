@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, onTestFinished, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { getProcessSync, lazySync } from "@k2b/cloud";
 import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
@@ -10,7 +10,7 @@ import {
   finishWorkflowRun,
   publishWorkflowVersion,
 } from "@k2b/cloud/workflows/store";
-import { sql } from "bun";
+import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -43,6 +43,7 @@ import {
 import { getMailboxOperations, getPlatformMailOperations } from "./operations";
 import { executeOperatorAction } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
+import { acquireProviderLease, MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
 import {
   createSenderIdentity,
   disableSenderIdentity,
@@ -58,7 +59,7 @@ import {
 import { claimFence, commitSyncBatch, executeBindingRediscovery, fetchReconcileStep, hydrateMessageBatch } from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
-const suite = suiteFor("database", "nats");
+const suite = suiteFor("database", "nats", "valkey");
 
 const contextFor = (user: { id: string; uid: string; admin: boolean }): MailRequestContext => ({
   actor: {
@@ -139,6 +140,7 @@ suite("mail lifecycle control plane", () => {
   let mailboxShortId = "";
   let connectionId = "";
   let bindingId = "";
+  let remoteResourceId = "";
   let inboxFolderId = "";
   let inboxFolderShortId = "";
   let adminContext: MailRequestContext;
@@ -254,6 +256,17 @@ suite("mail lifecycle control plane", () => {
       RETURNING id
     `;
     bindingId = binding!.id;
+    remoteResourceId = resource!.id;
+  });
+
+  // A test that fails between finding the provider lease busy and retrying leaves its waiter in
+  // the mailbox's lease line, where it would keep the next tests from the lease for seconds. The
+  // line is ephemeral order only, so each test starts with an empty one.
+  afterEach(async () => {
+    await redis.send("DEL", [
+      `mail:provider-lease-line:{${remoteResourceId}}:places`,
+      `mail:provider-lease-line:{${remoteResourceId}}:present`,
+    ]);
   });
 
   afterAll(async () => {
@@ -983,22 +996,44 @@ suite("mail lifecycle control plane", () => {
         mailbox_health: "bootstrapping",
       });
 
-      // The winner holds the provider mutex inside discovery until the loser has settled.
+      // The winner holds the provider lease inside discovery while the loser asks for it. A loser
+      // that reaches discovery too holds the lease as well; it fails at once instead of waiting for
+      // the winner's release, and the winner settles before the test ends either way.
+      const enteredDiscovery = Promise.withResolvers<void>();
       const releaseDiscovery = Promise.withResolvers<void>();
+      let discovering = false;
       discover.mockImplementation(async () => {
-        await releaseDiscovery.promise;
-        return [remoteFolder("INBOX", "10", "inbox")];
+        if (discovering) throw new Error("Two rediscoveries of one binding held the provider lease at once");
+        discovering = true;
+        try {
+          enteredDiscovery.resolve();
+          await releaseDiscovery.promise;
+          return [remoteFolder("INBOX", "10", "inbox")];
+        } finally {
+          discovering = false;
+        }
       });
-      const calls = [
-        executeBindingRediscovery(bindingId, false, async () => undefined),
-        executeBindingRediscovery(bindingId, false, async () => undefined),
-      ];
-      await Promise.race(calls.map((call) => call.catch(() => undefined)));
-      releaseDiscovery.resolve();
-      const concurrent = await Promise.allSettled(calls);
-      expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-      const rejected = concurrent.find((result) => result.status === "rejected");
-      expect(rejected?.status === "rejected" ? rejected.reason : null).toMatchObject({ code: "SYNC_BUSY" });
+      const winner = executeBindingRediscovery(bindingId, false, async () => undefined);
+      try {
+        await Promise.race([enteredDiscovery.promise, winner]);
+        await expect(executeBindingRediscovery(bindingId, false, async () => undefined)).rejects.toMatchObject({ code: "SYNC_BUSY" });
+      } finally {
+        releaseDiscovery.resolve();
+        await Promise.allSettled([winner]);
+      }
+      await expect(winner).resolves.toMatchObject({ bindingId });
+
+      // The loser keeps its place in the provider lease line, as its job resubmits. Its retry
+      // takes the free lease and leaves the line, so the next lease request goes straight through.
+      await expect(executeBindingRediscovery(bindingId, false, async () => undefined)).resolves.toMatchObject({ bindingId });
+      const next = await acquireProviderLease({
+        resource: remoteResourceId,
+        waiter: `after-rediscovery:${suffix}`,
+        priority: "background",
+        ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+      });
+      expect(next.lock).not.toBeNull();
+      if (next.lock) await mailProviderOperationMutex().release(next.lock);
     } finally {
       discover.mockRestore();
       verify.mockRestore();
@@ -2130,6 +2165,21 @@ suite("mail lifecycle control plane", () => {
       INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
       VALUES (${inboxFolderId}::uuid, ${pausedMessage!.id}::uuid, 10, 999999)
     `;
+    // Later tests share this mailbox and its Inbox, so they get back its rights and synchronization
+    // however this test ends.
+    const [inboxRights] = await sql<{ effective_rights: string[]; rights_source: string }[]>`
+      SELECT effective_rights, rights_source
+      FROM mail.binding_folder_refs
+      WHERE binding_id = ${bindingId}::uuid AND folder_id = ${inboxFolderId}::uuid
+    `;
+    onTestFinished(async () => {
+      await sql`
+        UPDATE mail.binding_folder_refs
+        SET effective_rights = ${sql.array(inboxRights!.effective_rights, "TEXT")}, rights_source = ${inboxRights!.rights_source}
+        WHERE binding_id = ${bindingId}::uuid AND folder_id = ${inboxFolderId}::uuid
+      `;
+      await updateMailbox({ context: adminContext, mailboxId, syncEnabled: true });
+    });
     await sql`
       UPDATE mail.binding_folder_refs
       SET effective_rights = ARRAY['read']::text[], rights_source = 'acl'

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RuntimeAppMeta } from "../contracts/app";
-import type { User } from "../contracts/shared";
-import { hasDedicatedRuntimeRoute, resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
+import type { Role, User } from "../contracts/shared";
+import { hasDedicatedRuntimeRoute, resolveRuntimeRoute, visibleNavigationApps, visiblePwaParts } from "./app-navigation";
 
 const user = {
   id: "user-id",
@@ -57,6 +57,44 @@ describe("visibleNavigationApps", () => {
 
   test("includes role-gated apps when the user has the role", () => {
     expect(visibleNavigationApps(apps, { ...user, roles: [...user.roles, "admin"] }).map((app) => app.id)).toEqual(["public", "admin"]);
+  });
+});
+
+describe("visiblePwaParts", () => {
+  const part = (id: string, name: string, requiresRoles?: Role[]) =>
+    ({
+      id,
+      name,
+      icon: "ti ti-box",
+      description: `${name} app`,
+      routes: [`/pwa/${id}`],
+      pwa: { href: `/pwa/${id}`, requiresRoles },
+    }) satisfies RuntimeAppMeta;
+  const parts = [
+    { ...part("zeiten", "Zeiten"), presentation: { baseLocale: "en", translations: { de: { name: "Arbeitszeit" } } } },
+    part("spaces", "Spaces", ["user"]),
+    part("guests", "Guest Desk", ["guest"]),
+    part("ops", "Operations", ["admin"]),
+    // Navigation alone does not make a part.
+    ...apps,
+  ] satisfies RuntimeAppMeta[];
+
+  test("lists only parts the user may see, sorted by their localized name", () => {
+    expect(visiblePwaParts(parts, user, "en").map((app) => app.name)).toEqual(["Spaces", "Zeiten"]);
+    expect(visiblePwaParts(parts, user, "de").map((app) => app.name)).toEqual(["Arbeitszeit", "Spaces"]);
+  });
+
+  test("shows nothing without a user and applies the guest rule", () => {
+    expect(visiblePwaParts(parts, undefined, "en")).toEqual([]);
+    expect(visiblePwaParts(parts, { ...user, profile: "guest", roles: ["guest"] }, "en").map((app) => app.id)).toEqual([
+      "guests",
+      "zeiten",
+    ]);
+  });
+
+  test("keeps admin parts away from app sessions, which never carry the admin role", () => {
+    expect(visiblePwaParts(parts, { ...user, roles: [...user.roles, "admin"] }, "en").map((app) => app.id)).toContain("ops");
+    expect(visiblePwaParts(parts, user, "en").map((app) => app.id)).not.toContain("ops");
   });
 });
 
