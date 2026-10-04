@@ -10,6 +10,41 @@ updated: 2026-10-04
 
 # Deprecations and migrations
 
+## Mail writes live updates through the platform outbox
+
+Mail writes its live updates through the platform outbox that Core's migration
+creates, from the trigger on its activity log, so they are part of the
+transaction that records a change. Update Core before Mail: Mail does not start
+until `events.outbox` exists. See
+[Live updates](/en/docs/automation/live-updates).
+
+Mail pages follow a mailbox on `/api/mail/live` with the channel `mailbox`,
+which reads the topic `cloud:live:mail` and checks the reader's access when it
+delivers an update. The mailbox view, the composer, and the mailing list dialog
+of a page share one socket instead of opening one each, and a returning tab
+receives what it missed instead of loading the view again. The socket accepts
+every credential the Mail API accepts, so pages in the phone app receive live
+updates too.
+
+The first Mail start after the update replaces `mail.enqueue_live_invalidation()`
+and drops `mail.live_invalidation_outbox`. The function keeps its signature, so
+replicas of the previous version that still run during a rolling update write
+their changes to the platform outbox as well, and the new replicas publish them.
+A tab connected to a previous replica receives no updates until that replica
+stops; for one release, `/api/mail/ws` then closes its socket with
+`login_required`, and the tab reloads once. Previous replicas log
+`Outbox reconcile failed` until they stop, because their table is gone.
+
+Nothing writes the previous topic, `mail:invalidations`, anymore. Its events
+expire after 24 hours, but its stream keeps its 1 GiB reservation until the
+next release removes it together with `/api/mail/ws`; see
+[Deployment requirements](/en/docs/operations/deployment-requirements).
+
+If you roll Mail back to the previous version, its pages receive no live
+updates until Mail is updated again, because the database keeps the new
+function. Reloading a page shows the current state. The updates written
+meanwhile wait in `events.outbox` and are published by the next Mail start.
+
 ## Files supports Filegate 7
 
 Files is tested with Filegate 7.0; Filegate 6.1 keeps working. Upgrading the

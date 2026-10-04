@@ -8,7 +8,7 @@ import { requireMailboxCollaborationPermission } from "./collaboration";
 import { mergeConversationReferencesInTransaction } from "./conversation-reference";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
-import { type MailConversationChangedEvent, publishMailCollaborationEvent } from "./events";
+import { type MailActivityChange, mailLive } from "./live";
 import { parseMessageProtocolFacts } from "./message-protocol";
 import { MAIL_NOTIFICATION_DEFINITION_IDS } from "./notification-targets";
 
@@ -358,10 +358,6 @@ const insertThreadActivity = async (params: {
   return String(activity.id);
 };
 
-const publishEvents = async (events: Array<Omit<MailConversationChangedEvent, "type" | "at">>): Promise<void> => {
-  await Promise.all(events.map((event) => publishMailCollaborationEvent(event)));
-};
-
 export const mergeConversations = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -372,7 +368,7 @@ export const mergeConversations = async (params: {
     return fail(err.badInput("Source and target conversation must be different"));
   }
   try {
-    const events: Array<Omit<MailConversationChangedEvent, "type" | "at">> = [];
+    const events: Array<MailActivityChange> = [];
     const result = await sql.begin(async (tx): Promise<Result<MergeConversationsResult>> => {
       const allowed = await lockMailbox(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
@@ -512,7 +508,7 @@ export const mergeConversations = async (params: {
       });
       return ok({ target: targetState, removedConversationId: params.input.sourceConversationId, movedMessageCount: moved.length });
     });
-    if (result.ok) await publishEvents(events);
+    if (result.ok && events.length > 0) mailLive.wake();
     return result;
   } catch (error) {
     log.error("Failed to merge conversations", {
@@ -536,7 +532,7 @@ export const reassignConversationMessage = async (params: {
     return fail(err.badInput("Source and target conversation must be different"));
   }
   try {
-    const events: Array<Omit<MailConversationChangedEvent, "type" | "at">> = [];
+    const events: Array<MailActivityChange> = [];
     const result = await sql.begin(async (tx): Promise<Result<ReassignConversationMessageResult>> => {
       const allowed = await lockMailbox(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
@@ -667,7 +663,7 @@ export const reassignConversationMessage = async (params: {
         movedCommentCount,
       });
     });
-    if (result.ok) await publishEvents(events);
+    if (result.ok && events.length > 0) mailLive.wake();
     return result;
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === SPLIT_MESSAGES_CHANGED) {
@@ -691,7 +687,7 @@ export const splitConversation = async (params: {
   input: SplitConversationInput;
 }): Promise<Result<SplitConversationResult>> => {
   try {
-    const events: Array<Omit<MailConversationChangedEvent, "type" | "at">> = [];
+    const events: Array<MailActivityChange> = [];
     const result = await sql.begin(async (tx): Promise<Result<SplitConversationResult>> => {
       const allowed = await lockMailbox(params.context, params.mailboxId, tx);
       if (!allowed.ok) return allowed;
@@ -830,7 +826,7 @@ export const splitConversation = async (params: {
       );
       return ok({ source: sourceState, created: createdState, movedMessageCount: moved.length });
     });
-    if (result.ok) await publishEvents(events);
+    if (result.ok && events.length > 0) mailLive.wake();
     return result;
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === SPLIT_MESSAGES_CHANGED) {

@@ -71,6 +71,37 @@ const draft = (revision: number, editable: DraftEditableContent): MailDraft => (
   updatedAt: now,
 });
 
+class FakeWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+  static instances: FakeWebSocket[] = [];
+  readyState = FakeWebSocket.CONNECTING;
+  sent: Array<{ t: string; id?: string; channel?: string; scope?: unknown; after?: string }> = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  onclose: ((event: { code: number; reason: string }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(readonly url: string) {
+    FakeWebSocket.instances.push(this);
+  }
+  send(data: string) {
+    this.sent.push(JSON.parse(data));
+  }
+  open() {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.();
+  }
+  message(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
+  close(code = 1000, reason = "") {
+    if (this.readyState === FakeWebSocket.CLOSED) return;
+    this.readyState = FakeWebSocket.CLOSED;
+    this.onclose?.({ code, reason });
+  }
+}
+
 const lease = { holder: { kind: "user", id: "Usr001", displayName: "Ada Example", avatarHash: null }, acquiredAt: now, expiresAt: now };
 
 describe("Mail draft session", () => {
@@ -80,6 +111,7 @@ describe("Mail draft session", () => {
   }
 
   const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
   const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
   let dom: DomTestHarness;
   let requests: Array<{ method: string; url: string; body: unknown }>;
@@ -89,11 +121,15 @@ describe("Mail draft session", () => {
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
     requests = [];
+    Object.defineProperty(dom.document, "visibilityState", { configurable: true, get: () => "visible" });
+    FakeWebSocket.instances = [];
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   });
 
   afterEach(() => {
     dispose();
     globalThis.fetch = originalFetch;
+    (globalThis as unknown as { WebSocket: unknown }).WebSocket = originalWebSocket;
     if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
     else delete (globalThis as { localStorage?: unknown }).localStorage;
     dom.cleanup();
@@ -153,5 +189,54 @@ describe("Mail draft session", () => {
       expectedRevision: 1,
       draft: content("Final text", "second@example.test"),
     });
+  });
+
+  test("a change of the draft's conversation or of its mailbox checks the draft and its lease, other conversations do not", async () => {
+    const reply = { ...draft(3, content("Reply", "first@example.test")), conversationId: "Conv01", intent: "reply" as const };
+    respondWith((method, url) => {
+      if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "POST") return Response.json({ ...lease, token: crypto.randomUUID() });
+      if (url.endsWith(`/drafts/${DRAFT_ID}/lease`) && method === "PUT") return Response.json({ ...lease, token: crypto.randomUUID() });
+      if (url.endsWith(`/drafts/${DRAFT_ID}`) && method === "GET") return Response.json(reply);
+      return Response.json({ code: "NOT_FOUND", message: `Unexpected ${method} ${url}` }, { status: 404 });
+    });
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const [current, setCurrent] = createSignal(content("Reply", "first@example.test"));
+    createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        initialDraft: reply,
+        hasVerifiedIdentity: () => true,
+        content: current,
+        applyDraftContent: setCurrent,
+        isDisposed: () => false,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    await Bun.sleep(20);
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    expect(socket.url).toBe("ws://localhost/api/mail/live");
+    expect(socket.sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID } }]);
+    socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+
+    const checks = () => requests.filter((request) => request.method === "GET" && request.url.endsWith(`/drafts/${DRAFT_ID}`)).length;
+    const heartbeats = () => requests.filter((request) => request.method === "PUT" && request.url.endsWith("/lease")).length;
+    await Bun.sleep(20);
+    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 0, heartbeats: 0 });
+
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: "Conv02" } });
+    await Bun.sleep(20);
+    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 0, heartbeats: 0 });
+
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.6", data: { conversationId: "Conv01" } });
+    await Bun.sleep(20);
+    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 1, heartbeats: 1 });
+
+    socket.message({ t: "event", id: "1", cursor: "s6t.mail.7", data: { conversationId: null } });
+    await Bun.sleep(20);
+    expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 2, heartbeats: 2 });
   });
 });

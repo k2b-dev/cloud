@@ -21,8 +21,8 @@ import type { MailRequestContext } from "./auth";
 import { actorRefFromRequest } from "./auth";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { createActorCommands } from "./commands";
-import { publishMailMailboxEvent } from "./events";
 import { resolveRoleFolder } from "./folders";
+import { mailLive } from "./live";
 import { allowedExternalHref, mailingListMetadata, normalizeListId, oneClickEnabled } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
 
@@ -477,13 +477,7 @@ export const requestUnsubscribe = async (
       return activity?.id ?? null;
     });
     if (activityId) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "subscription",
-        targetId: claim.id,
-        activityId,
-      });
+      mailLive.wake();
     }
     return fail(err.badInput(error instanceof Error ? error.message : "Unsubscribe request failed"));
   }
@@ -518,13 +512,7 @@ export const requestUnsubscribe = async (
     return activity ? { stored, activityId: activity.id } : null;
   });
   if (!completed) return fail(err.conflict("Unsubscribe state changed while the request was running"));
-  await publishMailMailboxEvent({
-    mailboxId: params.mailboxId,
-    conversationId: null,
-    reason: "subscription",
-    targetId: completed.stored.id,
-    activityId: completed.activityId,
-  });
+  mailLive.wake();
   const result = unsubscribeMailingListResultSchema.safeParse({
     listKey: parsed.data.listKey,
     status: "unsubscribe_requested",

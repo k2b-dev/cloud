@@ -28,8 +28,8 @@ import {
   type MailRequestContext,
   userBackedActor,
 } from "./auth";
-import { publishMailMailboxEvent } from "./events";
 import { validateDestructiveIncomingAutomationsForMailbox } from "./incoming-automations";
+import { mailLive } from "./live";
 import { pauseDeletedMailboxExecution, pauseMailboxTransport } from "./mailbox-lifecycle";
 import { providerBusy, withMailboxProviderOperationBarrier } from "./provider-operation-lock";
 
@@ -559,13 +559,7 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
     () => err.internal("Failed to delete mailbox"),
   );
   if (result.ok && transitioned && activityId) {
-    await publishMailMailboxEvent({
-      mailboxId,
-      conversationId: null,
-      reason: "deleted",
-      targetId: null,
-      activityId,
-    });
+    mailLive.wake();
   }
   return result;
 };
@@ -632,13 +626,7 @@ export const restoreMailbox = async (context: MailRequestContext, mailboxId: str
     () => err.internal("Failed to restore mailbox"),
   );
   if (result.ok && transitioned && activityId) {
-    await publishMailMailboxEvent({
-      mailboxId,
-      conversationId: null,
-      reason: "restored",
-      targetId: null,
-      activityId,
-    });
+    mailLive.wake();
   }
   return result;
 };

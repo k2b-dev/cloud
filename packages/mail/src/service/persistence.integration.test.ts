@@ -41,7 +41,6 @@ import {
   restoreDraftRecoveryCopy,
   updateDraft,
 } from "./drafts";
-import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import { createLocalTag, setConversationLocalTags } from "./local-tags";
 import { createMailbox, updateMailbox } from "./mailboxes";
@@ -77,12 +76,6 @@ suite("mail PostgreSQL foundation", () => {
   const publicConversationId = async (id: string): Promise<string> => {
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.conversations WHERE id = ${id}::uuid`;
     if (!row) throw new Error("Conversation fixture is missing its public ID");
-    return row.short_id;
-  };
-
-  const publicMailboxId = async (id: string): Promise<string> => {
-    const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.mailboxes WHERE id = ${id}::uuid`;
-    if (!row) throw new Error("Mailbox fixture is missing its public ID");
     return row.short_id;
   };
 
@@ -768,15 +761,7 @@ suite("mail PostgreSQL foundation", () => {
       },
     ]);
 
-    const liveAbort = new AbortController();
-    const liveCursor = await latestMailInvalidationCursor();
-    const liveMailboxId = await publicMailboxId(mailbox.data.id);
-    const nextLiveInvalidation = (async () => {
-      for await (const event of liveMailInvalidations({ after: liveCursor, signal: liveAbort.signal })) {
-        if (event.data.mailboxId === liveMailboxId) return event;
-      }
-      throw new Error("Mail invalidation stream ended");
-    })();
+    const [before] = await sql<{ seq: string }[]>`SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events.outbox`;
     const conversationRead = await createConversationTriageCommands({
       context,
       mailboxId: mailbox.data.id,
@@ -790,17 +775,11 @@ suite("mail PostgreSQL foundation", () => {
     });
     expect(conversationRead.ok).toBe(true);
     if (!conversationRead.ok) return;
-    const liveInvalidation = await Promise.race([
-      nextLiveInvalidation,
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for triage invalidation")), 5_000)),
-    ]);
-    liveAbort.abort();
-    expect(liveInvalidation.data).toMatchObject({
-      type: "mail.invalidated",
-      mailboxId: liveMailboxId,
-      conversationId: null,
-      changeId: expect.any(String),
-    });
+    // Triage records a mailbox activity, which wrote a live update for the whole mailbox in the same transaction.
+    const updates = await sql<{ payload: { d: { conversationId: string | null } } }[]>`
+      SELECT payload FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailbox.data.id} AND seq > ${before!.seq}::bigint
+    `;
+    expect(updates.map((row) => row.payload.d)).toContainEqual({ conversationId: null });
     expect(conversationRead.data.commands).toHaveLength(3);
     expect(new Set(conversationRead.data.commands.map((item) => item.correlationId))).toEqual(
       new Set([conversationRead.data.correlationId]),

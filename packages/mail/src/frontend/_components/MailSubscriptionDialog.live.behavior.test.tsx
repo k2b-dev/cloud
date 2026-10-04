@@ -4,6 +4,8 @@ import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/d
 
 const MAILBOX_ID = "Mbox01";
 
+type Frame = { t: string; id?: string; channel?: string; scope?: unknown; after?: string };
+
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -11,7 +13,7 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
 
   readyState = FakeWebSocket.CONNECTING;
-  sent: string[] = [];
+  sent: Frame[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
@@ -22,7 +24,7 @@ class FakeWebSocket {
   }
 
   send(data: string) {
-    this.sent.push(data);
+    this.sent.push(JSON.parse(data));
   }
 
   open() {
@@ -30,8 +32,8 @@ class FakeWebSocket {
     this.onopen?.();
   }
 
-  ready(cursor: string) {
-    this.onmessage?.({ data: JSON.stringify({ type: "mail.live.ready", payload: { mailboxId: MAILBOX_ID, cursor } }) });
+  message(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
   }
 
   close(code = 1000, reason = "") {
@@ -39,16 +41,12 @@ class FakeWebSocket {
     this.readyState = FakeWebSocket.CLOSED;
     this.onclose?.({ code, reason });
   }
-
-  subscribedCursor() {
-    return (JSON.parse(this.sent.at(-1) ?? "{}") as { payload?: { fromCursor?: string | null } }).payload?.fromCursor;
-  }
 }
 
-/** Longer than the dialog's live refresh delay, so a scheduled refresh has run. */
-const settle = () => Bun.sleep(300);
+/** Long enough for a refresh through the mocked API to finish. */
+const settle = () => Bun.sleep(60);
 
-describe("Mail subscription dialog live updates when a tab returns", () => {
+describe("Mail subscription dialog live updates", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
@@ -85,44 +83,45 @@ describe("Mail subscription dialog live updates when a tab returns", () => {
     dom.cleanup();
   });
 
-  const latestSocket = () => {
-    const socket = FakeWebSocket.instances.at(-1);
-    if (!socket) throw new Error("No socket was opened");
-    return socket;
+  const socket = () => {
+    const latest = FakeWebSocket.instances.at(-1);
+    if (!latest) throw new Error("No socket was opened");
+    return latest;
   };
 
   const returnToTab = () => {
     visibility = "hidden";
     dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
-    expect(latestSocket().readyState).toBe(FakeWebSocket.CLOSED);
+    expect(socket().readyState).toBe(FakeWebSocket.CLOSED);
     visibility = "visible";
     dom.document.dispatchEvent(new dom.window.Event("visibilitychange") as unknown as Event);
-    latestSocket().open();
+    socket().open();
   };
 
-  test("refreshes the list only when the ready cursor moved", async () => {
+  test("refreshes the list on changes, and a returning tab resumes from its cursor without loading again", async () => {
     const { openMailSubscriptionDialog } = await import("./MailSubscriptionDialog");
     void openMailSubscriptionDialog({ mailboxId: MAILBOX_ID, canWrite: false });
     await settle();
     expect(listRequests).toBe(1);
 
-    // The first subscription has no cursor, so the head it receives may skip events.
-    latestSocket().open();
-    expect(latestSocket().subscribedCursor()).toBeNull();
-    latestSocket().ready("s6t.mail.4");
+    socket().open();
+    expect(socket().sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID } }]);
+    socket().message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+    await settle();
+    expect(listRequests).toBe(1);
+
+    socket().message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: "Conv01" } });
     await settle();
     expect(listRequests).toBe(2);
 
-    // A returning tab resumes from the applied cursor; the server confirms it and replays.
     returnToTab();
-    expect(FakeWebSocket.instances).toHaveLength(2);
-    expect(latestSocket().subscribedCursor()).toBe("s6t.mail.4");
-    latestSocket().ready("s6t.mail.4");
+    expect(socket().sent).toEqual([{ t: "sub", id: "1", channel: "mailbox", scope: { mailbox: MAILBOX_ID }, after: "s6t.mail.5" }]);
+    socket().message({ t: "ready", id: "1", cursor: "s6t.mail.5" });
     await settle();
     expect(listRequests).toBe(2);
 
-    // Replay was too long, so the server follows with its head: events were skipped.
-    latestSocket().ready("s6t.mail.9");
+    // A cursor the server can no longer replay from loads the list once.
+    socket().message({ t: "resync", id: "1", cursor: "s6t.mail.90" });
     await settle();
     expect(listRequests).toBe(3);
   });

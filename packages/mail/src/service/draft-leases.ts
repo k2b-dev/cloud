@@ -6,7 +6,7 @@ import type { AcquiredDraftLease, DraftLease, DraftLeaseHolder } from "../contra
 import { requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
 import { hasCurrentMailboxUserPermission } from "./collaborators";
-import { notifyMailInvalidations } from "./events";
+import { mailLive } from "./live";
 
 const DRAFT_LEASE_TTL_MS = 30_000;
 const DRAFT_LEASE_STATE_TTL_MS = 30_000;
@@ -204,7 +204,7 @@ export const acquireDraftLease = async (params: {
             ${{ previousHolder: current.value.holder }}::jsonb
           )
         `;
-        await notifyMailInvalidations();
+        mailLive.wake();
       }
       return ok({ ...mapLease(entry), token });
     } catch (error) {

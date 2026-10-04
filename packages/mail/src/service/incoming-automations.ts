@@ -37,7 +37,6 @@ import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normaliza
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
 import { databaseErrorCode } from "./database-errors";
-import { publishMailMailboxEvent } from "./events";
 import { incomingAutomationMandatePolicy } from "./incoming-automation-authority";
 import {
   buildIncomingAutomationWorkflowSource,
@@ -48,6 +47,7 @@ import {
   resolveIncomingAutomationReferences,
 } from "./incoming-automation-definition";
 import { withLeaseHeartbeat } from "./lease-heartbeat";
+import { mailLive } from "./live";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import type { SqlClient } from "./workflow-data";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
@@ -623,15 +623,6 @@ const recordActivity = async (params: {
   return String(activity.id);
 };
 
-const publishAutomationChange = async (automation: IncomingAutomation, activityId: string): Promise<void> =>
-  publishMailMailboxEvent({
-    mailboxId: automation.mailboxId,
-    conversationId: null,
-    reason: "incoming_automation",
-    targetId: automation.id,
-    activityId,
-  });
-
 const mutationFailure = (error: unknown, fallback: string): Result<never> => {
   let current = error;
   for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
@@ -1201,7 +1192,7 @@ export const createIncomingAutomation = async (params: {
       );
       return { automation, activityId };
     });
-    await publishAutomationChange(result.automation, result.activityId);
+    mailLive.wake();
     return ok(result.automation);
   } catch (error) {
     return mutationFailure(error, "Failed to create incoming automation");
@@ -1335,7 +1326,7 @@ export const updateIncomingAutomation = async (params: {
       );
       return { automation, activityId };
     });
-    if (result.activityId) await publishAutomationChange(result.automation, result.activityId);
+    if (result.activityId) mailLive.wake();
     return ok(result.automation);
   } catch (error) {
     return mutationFailure(error, "Failed to update incoming automation");
@@ -1415,7 +1406,7 @@ export const setIncomingAutomationEnabled = async (params: {
       );
       return { automation, activityId };
     });
-    if (result.activityId) await publishAutomationChange(result.automation, result.activityId);
+    if (result.activityId) mailLive.wake();
     return ok(result.automation);
   } catch (error) {
     return mutationFailure(error, "Failed to change incoming automation");
@@ -1473,7 +1464,7 @@ export const deleteIncomingAutomation = async (params: {
       );
       return { automation, activityId };
     });
-    await publishAutomationChange(result.automation, result.activityId);
+    mailLive.wake();
     return ok(result.automation);
   } catch (error) {
     return mutationFailure(error, "Failed to delete incoming automation");

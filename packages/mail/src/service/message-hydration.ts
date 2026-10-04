@@ -13,7 +13,7 @@ import { MAX_IMAP_LITERAL_BYTES } from "./connectors";
 import { isMailReceivedSinceSend, isTimelineMessage, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState, isAutomaticSubmission } from "./conversation-work-state";
 import { allowedEmailInlineStyles } from "./email-inline-style-policy";
-import { type MailCollaborationEvent, publishMailCollaborationEvent } from "./events";
+import { type MailActivityChange, mailLive } from "./live";
 import { assertMailboxTransportFence, type MailboxTransportFence } from "./mailbox-transport-fence";
 import { createBlobReadable, type StoredBlob, storeReadableBlob } from "./message-blobs";
 import { extractMessageProtocolFacts, parseMessageProtocolFacts, readMessageRootHeaders } from "./message-protocol";
@@ -470,10 +470,7 @@ const mergeVerifiedDuplicate = async (params: {
   return { canonicalMessageId: canonical.id, duplicateFound: true };
 };
 
-const applyVerifiedConversationTransition = async (params: {
-  db: typeof sql;
-  messageId: string;
-}): Promise<Omit<MailCollaborationEvent, "type" | "at"> | null> => {
+const applyVerifiedConversationTransition = async (params: { db: typeof sql; messageId: string }): Promise<MailActivityChange | null> => {
   const [lockedConversation] = await params.db<{ id: string }[]>`
     SELECT conversation.id
     FROM mail.message_contents message
@@ -795,8 +792,8 @@ export const hydrateMessageFromSource = async (params: {
     const sanitized = originalHtml ? sanitizeIncomingMailHtmlWithRemoteImages(originalHtml) : null;
     const sanitizedHtml = sanitized?.html ?? null;
     let canonicalMessageId: string | null = null;
-    let collaborationEvent: Omit<MailCollaborationEvent, "type" | "at"> | null = null;
-    let receiptEvent: Omit<MailCollaborationEvent, "type" | "at"> | null = null;
+    let collaborationEvent: MailActivityChange | null = null;
+    let receiptEvent: MailActivityChange | null = null;
     await sql.begin(async (tx) => {
       const [current] = await tx<{ id: string }[]>`
         SELECT id
@@ -939,8 +936,7 @@ export const hydrateMessageFromSource = async (params: {
         }
       }
     });
-    if (collaborationEvent) await publishMailCollaborationEvent(collaborationEvent);
-    if (receiptEvent) await publishMailCollaborationEvent(receiptEvent);
+    if (collaborationEvent || receiptEvent) mailLive.wake();
     await publishMailWorkflowDependency({
       mailboxId: claimed.mailbox_id,
       dependency: { kind: "mail.hydration", key: params.messageId },

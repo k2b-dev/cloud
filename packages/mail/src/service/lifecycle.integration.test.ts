@@ -22,7 +22,6 @@ import { sha256Json } from "./canonical";
 import { executeMutationCommand } from "./command-runtime";
 import { createActorCommand, createMailCommand, createWorkflowCommand } from "./commands";
 import { type ConnectorEnvelope, type FlagChange, imapSmtpConnector } from "./connectors";
-import { latestMailInvalidationCursor, liveMailInvalidations } from "./events";
 import { resolveMailExecution } from "./execution";
 import { clearFolderRole, dismissUnavailableFolder, listAdminFolders, resolveRoleFolder, setFolderDisplay, setFolderRole } from "./folders";
 import { getMailboxOperationalHealth } from "./health";
@@ -2035,9 +2034,7 @@ suite("mail lifecycle control plane", () => {
     expect(projection?.uid_validity).toBe("52");
     expect(projection?.run_state).toBe("completed");
     const [liveInvalidation] = await sql<{ count: number }[]>`
-      SELECT count(*)::int AS count
-      FROM mail.live_invalidation_outbox
-      WHERE mailbox_id = ${mailboxId}::uuid
+      SELECT count(*)::int AS count FROM events.outbox WHERE app_id = 'mail' AND ordering_key = ${mailboxId}
     `;
     expect(liveInvalidation?.count).toBeGreaterThan(0);
     await sql`DELETE FROM mail.folders WHERE id = ${folder!.id}::uuid`;
@@ -3565,20 +3562,7 @@ suite("mail lifecycle control plane", () => {
     }
     const [requestedMessageId] = sources.keys();
 
-    const cursor = await latestMailInvalidationCursor();
-    const abort = new AbortController();
-    const published = (async () => {
-      const changes = new Map<string, string>();
-      for await (const event of liveMailInvalidations({ after: cursor, signal: abort.signal })) {
-        const conversationShortId = event.data.conversationId;
-        if (event.data.mailboxId !== mailboxShortId || !conversationShortId) continue;
-        if (!conversationShortIds.includes(conversationShortId)) continue;
-        changes.set(conversationShortId, event.data.changeId);
-        if (changes.has(conversationShortIds[0]!) && changes.has(conversationShortIds[1]!)) return changes;
-      }
-      if (!abort.signal.aborted) throw new Error("Mail invalidation stream ended");
-      return changes;
-    })();
+    const [before] = await sql<{ seq: string }[]>`SELECT COALESCE(MAX(seq), 0)::text AS seq FROM events.outbox`;
     const download = spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(
       async (_runtime, _folderPath, requests, consume) => {
         for (const request of requests) {
@@ -3592,7 +3576,6 @@ suite("mail lifecycle control plane", () => {
         }
       },
     );
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await expect(
         hydrateMessageBatch({
@@ -3615,39 +3598,25 @@ suite("mail lifecycle control plane", () => {
         { hydration_status: "failed", hydration_attempt: 1 },
       ]);
 
-      const outbox = await sql<{ id: string; conversation_id: string; transaction_key: string; after_commits: boolean }[]>`
+      // One live update per hydrated conversation, written in one transaction after the bodies were stored.
+      const updates = await sql<{ conversation: string | null; transaction: string; after_commits: boolean }[]>`
         SELECT
-          outbox.id,
-          outbox.conversation_id,
-          outbox.transaction_key,
-          outbox.created_at >= (
+          payload -> 'd' ->> 'conversationId' AS conversation,
+          split_part(coalesce_key, ':', 1) AS transaction,
+          created_at >= (
             SELECT MAX(message.hydrated_at)
             FROM mail.message_contents message
             JOIN mail.conversation_messages link ON link.message_id = message.id
             WHERE link.conversation_id = ${hydratedConversationId!}::uuid
           ) AS after_commits
-        FROM mail.live_invalidation_outbox outbox
-        WHERE outbox.conversation_id IN (SELECT value::uuid FROM jsonb_array_elements_text(${conversationIds}::jsonb))
+        FROM events.outbox
+        WHERE app_id = 'mail' AND ordering_key = ${mailboxId} AND seq > ${before!.seq}::bigint
+          AND payload -> 'd' ->> 'conversationId' IN ${sql(conversationShortIds)}
       `;
-      expect(outbox.map((row) => row.conversation_id).sort()).toEqual([hydratedConversationId!, exhaustedConversationId!].sort());
-      expect(new Set(outbox.map((row) => row.transaction_key)).size).toBe(1);
-      expect(outbox.every((row) => row.after_commits)).toBe(true);
-
-      const changes = await Promise.race([
-        published,
-        new Promise<never>((_, reject) => {
-          timeout = setTimeout(() => reject(new Error("Timed out waiting for the hydration invalidations")), 5_000);
-        }),
-      ]);
-      expect(changes).toEqual(
-        new Map([
-          [conversationShortIds[0]!, outbox.find((row) => row.conversation_id === hydratedConversationId)!.id],
-          [conversationShortIds[1]!, outbox.find((row) => row.conversation_id === exhaustedConversationId)!.id],
-        ]),
-      );
+      expect(updates.map((row) => row.conversation).sort()).toEqual([conversationShortIds[0]!, conversationShortIds[1]!].sort());
+      expect(new Set(updates.map((row) => row.transaction)).size).toBe(1);
+      expect(updates.every((row) => row.after_commits)).toBe(true);
     } finally {
-      clearTimeout(timeout);
-      abort.abort();
       download.mockRestore();
     }
   }, 15_000);

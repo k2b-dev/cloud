@@ -13,7 +13,6 @@ export const mailWorkspaceMessages = i18n.define({
       settingsRefreshFailed: "Mailbox settings were saved, but this view could not be refreshed yet.",
       healthRefreshFailed: "Mailbox health changed, but this view could not be refreshed yet.",
       connectionChecksFailed: "The incoming or outgoing mail check failed. Details are available in the connection settings.",
-      accessChanged: "Mailbox access changed or expired.",
       restoreViewFailed: "Could not restore this mailbox view. Your current view was kept.",
       openConversationFailed: "Could not open this conversation. Your current view was kept.",
       refreshMailboxFailed: "Could not refresh this mailbox yet. Reload to confirm the latest state.",
@@ -123,7 +122,6 @@ export const mailWorkspaceMessages = i18n.define({
       healthRefreshFailed: "Der Postfachstatus wurde geändert, aber die Ansicht konnte noch nicht aktualisiert werden.",
       connectionChecksFailed:
         "Die Prüfung des E-Mail-Empfangs oder -Versands ist fehlgeschlagen. Details findest du in den Verbindungseinstellungen.",
-      accessChanged: "Der Zugriff auf das Postfach wurde geändert oder ist abgelaufen.",
       restoreViewFailed: "Die Postfachansicht konnte nicht wiederhergestellt werden. Die aktuelle Ansicht bleibt erhalten.",
       openConversationFailed: "Die Unterhaltung konnte nicht geöffnet werden. Die aktuelle Ansicht bleibt erhalten.",
       refreshMailboxFailed: "Das Postfach konnte noch nicht aktualisiert werden. Lade die Seite neu, um den aktuellen Stand zu prüfen.",
