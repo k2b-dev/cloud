@@ -11,6 +11,8 @@ export class ApprovalError extends Error {
     public code: string,
     public status: number,
     public retryAfter = 5,
+    /** Codes still allowed for a pairing, when the answer says so. */
+    public attemptsLeft?: number,
   ) {
     super(code);
   }
@@ -22,7 +24,9 @@ export async function checked<T extends ApprovalResponse>(response: T): Promise<
     const body: unknown = await response.json().catch(() => null);
     const code = body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : "UNAVAILABLE";
     const retryAfter = Number(response.headers.get("Retry-After"));
-    throw new ApprovalError(code, response.status, Number.isFinite(retryAfter) ? Math.max(5, retryAfter) : 5);
+    const attemptsLeft =
+      body && typeof body === "object" && "attemptsLeft" in body && typeof body.attemptsLeft === "number" ? body.attemptsLeft : undefined;
+    throw new ApprovalError(code, response.status, Number.isFinite(retryAfter) ? Math.max(5, retryAfter) : 5, attemptsLeft);
   }
   return response;
 }
