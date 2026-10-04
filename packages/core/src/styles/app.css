@@ -81,6 +81,17 @@
   width: min(96vw, 32rem);
 }
 
+/* Pairing a phone on /me/app walks through steps of different length; one
+   height, fitted to its tallest step, keeps the frame still between them:
+   the QR code, or the code entry where the dialog offers only the link. */
+.k2b-ui .k2b-dialog.app-pairing-dialog.is-fixed {
+  height: min(32rem, var(--k2b-dialog-available-height));
+}
+
+.k2b-ui .k2b-dialog.app-pairing-dialog.is-fixed.is-copy-only {
+  height: min(22rem, var(--k2b-dialog-available-height));
+}
+
 /* AdminLayout owns scrolling; this report grows with its tables. */
 .k2b-ui .ai-usage-page { height: auto; flex: none; overflow: visible; }
 

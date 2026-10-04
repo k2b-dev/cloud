@@ -16,7 +16,7 @@ import { Hono } from "hono";
 import { type Browser, chromium } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 
-// `/me/app` must read like the other account tabs: one frame, flat sections, no overflow on a phone.
+// `/me/app` must read like the other account tabs: one frame, flat sections, one type scale, no overflow on a phone.
 const root = mkdtempSync(join(tmpdir(), "core-account-app-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
@@ -169,7 +169,7 @@ describe("/me/app in a browser", () => {
             const main = document.querySelector("main")!;
             const panel = main.querySelector(".account-page")!;
             const visible = (value: string) => value !== "none" && !/rgba\(.*,\s*0\)$/.test(value) && value !== "transparent";
-            const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, header, nav"))
+            const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, li, p, header, nav"))
               .filter(
                 (element) => element.checkVisibility() && !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-notice-card"),
               )
@@ -180,14 +180,26 @@ describe("/me/app in a browser", () => {
                 return border || visible(style.boxShadow);
               })
               .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
-            const install = Array.from(main.querySelectorAll<HTMLAnchorElement>('a[href="/pwa/"]')).filter((link) =>
-              link.checkVisibility(),
+            // One type scale: every visible text run in the frame outside controls, by size, weight and color.
+            const styles = new Set(
+              Array.from(panel.querySelectorAll<HTMLElement>("*"))
+                .filter(
+                  (element) =>
+                    element.checkVisibility() &&
+                    !element.closest("button, a, .sr-only") &&
+                    [...element.childNodes].some((node) => node.nodeType === 3 && node.textContent?.trim()),
+                )
+                .map((element) => {
+                  const style = getComputedStyle(element);
+                  return `${style.fontSize} ${style.fontWeight} ${style.color}`;
+                }),
             );
             return {
               frames,
               current: main.querySelector('nav [aria-current="page"]')?.getAttribute("href"),
               thisPhone: panel.textContent?.includes("This phone"),
-              install: install.length,
+              styles: styles.size,
+              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a phone").length,
               overflow: document.documentElement.scrollWidth - window.innerWidth,
             };
           });
@@ -198,8 +210,9 @@ describe("/me/app in a browser", () => {
             frames: ["k2b-paper account-page flex"],
             current: "/me/app",
             thisPhone: true,
-            // Installing happens on the phone; computers get the camera hint instead.
-            install: view.touch ? 1 : 0,
+            // The list heading, phone names, and the description sharing one secondary style with the details.
+            styles: 3,
+            pair: 1,
           });
           expect(overflow).toBeLessThanOrEqual(0);
         } finally {

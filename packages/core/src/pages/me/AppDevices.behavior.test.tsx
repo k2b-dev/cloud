@@ -85,81 +85,107 @@ const mount = (dom: DomTestHarness, options: { fine?: boolean; initial?: typeof 
 };
 const button = (dom: DomTestHarness, label: string) =>
   [...dom.document.querySelectorAll("button")].find((element) => element.textContent?.trim() === label) as HTMLButtonElement | undefined;
+const dialog = (dom: DomTestHarness) => dom.document.querySelector("dialog");
+const dialogText = (dom: DomTestHarness) => dialog(dom)?.textContent ?? "";
+const STORAGE = "cloud.pwa-pairing:7bd9706e-6c70-4dd5-946f-0caac02bfc2a";
+const started = () =>
+  Response.json(
+    {
+      id: PAIRING,
+      secret: SECRET,
+      claimUntil: new Date(Date.now() + 300_000).toISOString(),
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    },
+    { status: 201 },
+  );
+/** Polls every few seconds in the browser; here at once. */
+const fastTimers = () => {
+  const wait = globalThis.setTimeout;
+  return spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void) => wait(run, 5)) as typeof setTimeout);
+};
+const resume = (dom: DomTestHarness) =>
+  dom.window.sessionStorage.setItem(STORAGE, JSON.stringify({ id: PAIRING, expiresAt: new Date(Date.now() + 600_000).toISOString() }));
+const type = (dom: DomTestHarness, code: string) => {
+  const inputs = [...dom.document.querySelectorAll<HTMLInputElement>("dialog .k2b-pin-input input")];
+  inputs.forEach((input, index) => {
+    input.value = code[index]!;
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+  });
+};
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
-  test("starting shows the QR code on fine pointers, a countdown and the copy link; cancel ends the pairing", async () => {
+  test("the page is the phone list and one action; pairing happens in a dialog", () => {
+    const dom = createDomTestHarness();
+    const dispose = mount(dom);
+    try {
+      expect(button(dom, "Pair a phone")).toBeDefined();
+      expect(dialog(dom)).toBeNull();
+      expect(dom.root.querySelector("img")).toBeNull();
+      expect(dom.root.textContent).not.toContain("Copy link");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("the dialog shows the QR code on fine pointers, a countdown and the copy link; cancel closes it and ends the pairing", async () => {
     const dom = createDomTestHarness();
     const copied: string[] = [];
     Object.defineProperty(dom.window.navigator, "clipboard", {
       configurable: true,
       value: { writeText: async (text: string) => void copied.push(text) },
     });
-    const claimUntil = new Date(Date.now() + 300_000).toISOString();
-    const expiresAt = new Date(Date.now() + 600_000).toISOString();
     const fetch = mockFetch((method, path) => {
-      if (method === "POST" && path === "/api/auth/pwa/v1/pairings")
-        return Response.json({ id: PAIRING, secret: SECRET, claimUntil, expiresAt }, { status: 201 });
+      if (method === "POST" && path === "/api/auth/pwa/v1/pairings") return started();
       if (method === "POST" && path === `/api/auth/pwa/v1/pairings/${PAIRING}/cancel`) return new Response(null, { status: 204 });
     });
     const dispose = mount(dom);
     try {
       button(dom, "Pair a phone")!.click();
-      await waitFor(() => Boolean(dom.root.querySelector('img[alt="Pairing code for the app"]')), "QR code");
-      expect(dom.root.textContent).toMatch(/The link works for [45]:\d\d\./);
-      expect(dom.window.sessionStorage.getItem("cloud.pwa-pairing:7bd9706e-6c70-4dd5-946f-0caac02bfc2a")).toContain(PAIRING);
+      await waitFor(() => Boolean(dom.document.querySelector('dialog img[alt="Pairing code for the app"]')), "QR code");
+      expect(dialogText(dom)).toMatch(/The link works for [45]:\d\d\./);
+      expect(dialogText(dom)).toContain("In the app, tap Scan code.");
+      expect(dom.window.sessionStorage.getItem(STORAGE)).toContain(PAIRING);
       // The link secret never goes to storage.
-      expect(dom.window.sessionStorage.getItem("cloud.pwa-pairing:7bd9706e-6c70-4dd5-946f-0caac02bfc2a")).not.toContain(SECRET);
+      expect(dom.window.sessionStorage.getItem(STORAGE)).not.toContain(SECRET);
       button(dom, "Copy link")!.click();
       await waitFor(() => copied.length === 1, "copy");
       expect(copied[0]).toBe(`http://localhost/pwa/#pair=${SECRET}`);
       button(dom, "Cancel")!.click();
-      await waitFor(() => dom.root.textContent?.includes("Pairing cancelled.") ?? false, "cancelled");
-      expect(fetch.calls.map((call) => `${call.method} ${call.path}`)).toContain(`POST /api/auth/pwa/v1/pairings/${PAIRING}/cancel`);
+      await waitFor(() => !dialog(dom), "dialog closed");
+      await waitFor(() => fetch.calls.some((call) => call.path === `/api/auth/pwa/v1/pairings/${PAIRING}/cancel`), "cancel");
       expect(dom.window.sessionStorage.length).toBe(0);
     } finally {
+      modules!.ui.dialogCore.close();
       dispose();
       fetch.restore();
       dom.cleanup();
     }
   });
 
-  test("touch screens get the copy link without a QR code", async () => {
+  test("touch screens get the copy link as the main action, no QR code, and the way to install the app", async () => {
     const dom = createDomTestHarness();
-    const fetch = mockFetch((method, path) =>
-      method === "POST" && path === "/api/auth/pwa/v1/pairings"
-        ? Response.json(
-            {
-              id: PAIRING,
-              secret: SECRET,
-              claimUntil: new Date(Date.now() + 300_000).toISOString(),
-              expiresAt: new Date(Date.now() + 600_000).toISOString(),
-            },
-            { status: 201 },
-          )
-        : undefined,
-    );
+    const fetch = mockFetch((method, path) => (method === "POST" && path === "/api/auth/pwa/v1/pairings" ? started() : undefined));
     const dispose = mount(dom, { fine: false });
     try {
       button(dom, "Pair a phone")!.click();
       await waitFor(() => Boolean(button(dom, "Copy link")), "copy link");
-      expect(dom.root.querySelector("img")).toBeNull();
+      expect(dom.document.querySelector("dialog img")).toBeNull();
+      expect(button(dom, "Copy link")!.dataset.variant).toBe("primary");
+      expect(dom.document.querySelector('dialog a[href="/pwa/"]')?.textContent).toBe("Install the app");
     } finally {
+      modules!.ui.dialogCore.close();
       dispose();
       fetch.restore();
       dom.cleanup();
     }
   });
 
-  test("a resumed pairing asks for the phone's code, counts wrong codes and lists the phone once it completed", async () => {
+  test("a resumed pairing reopens the dialog, asks for the phone's code, counts wrong codes and lists the phone once it completed", async () => {
     const dom = createDomTestHarness();
-    dom.window.sessionStorage.setItem(
-      "cloud.pwa-pairing:7bd9706e-6c70-4dd5-946f-0caac02bfc2a",
-      JSON.stringify({ id: PAIRING, expiresAt: new Date(Date.now() + 600_000).toISOString() }),
-    );
-    // Polls every few seconds in the browser; here at once.
-    const wait = globalThis.setTimeout;
-    const timers = spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void) => wait(run, 5)) as typeof setTimeout);
+    resume(dom);
+    const timers = fastTimers();
     let state: "claimed" | "confirmed" | "completed" = "claimed";
     let confirmations = 0;
     const paired = { ...devices[0], id: "6b1d2e3f-4a5b-4c6d-8e7f-8091a2b3c4d5", name: "New iPhone", current: false };
@@ -184,30 +210,65 @@ else {
       if (method === "GET" && path === "/api/auth/pwa/v1/devices") return Response.json({ items: state === "completed" ? [paired] : [] });
     });
     const dispose = mount(dom, { initial: [] });
-    const type = (code: string) => {
-      const inputs = [...dom.root.querySelectorAll<HTMLInputElement>("form input")];
-      inputs.forEach((input, index) => {
-        input.value = code[index]!;
-        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
-      });
-    };
     try {
-      await waitFor(() => dom.root.textContent?.includes("iPhone wants to connect. Enter the code shown in the app.") ?? false, "claimed");
-      type("111111");
+      await waitFor(() => dialogText(dom).includes("iPhone wants to connect. Enter the code shown in the app."), "claimed");
+      expect(button(dom, "Pair")!.disabled).toBeTrue();
+      // The code step takes the keyboard to the first digit.
+      await waitFor(() => dom.document.activeElement === dom.document.querySelector("dialog .k2b-pin-input input"), "focus on the code");
+      type(dom, "111111");
       button(dom, "Pair")!.click();
-      await waitFor(() => dom.root.textContent?.includes("That code doesn't match. 2 tries left.") ?? false, "wrong code");
-      type("482913");
+      await waitFor(() => dialogText(dom).includes("That code doesn't match. 2 tries left."), "wrong code");
+      type(dom, "482913");
       button(dom, "Pair")!.click();
-      await waitFor(() => dom.root.textContent?.includes("Paired. The app finishes on its own.") ?? false, "paired");
+      await waitFor(() => dialogText(dom).includes("iPhone is paired."), "paired");
+      expect(dialogText(dom)).toContain("The app finishes on its own.");
       expect(dom.window.sessionStorage.length).toBe(0);
       // Still confirmed: the list waits for the phone instead of reloading too early.
       await waitFor(() => fetch.calls.filter((call) => call.path === `/api/auth/pwa/v1/pairings/${PAIRING}`).length >= 4, "polls");
       expect(fetch.calls.some((call) => call.path === "/api/auth/pwa/v1/devices")).toBeFalse();
+      // Done closes the dialog without cancelling; the list still follows the phone.
+      button(dom, "Done")!.click();
+      await waitFor(() => !dialog(dom), "dialog closed");
+      expect(fetch.calls.some((call) => call.path.endsWith("/cancel"))).toBeFalse();
       expect(dom.root.textContent).toContain("No phones paired yet.");
       state = "completed";
       await waitFor(() => dom.root.textContent?.includes("New iPhone") ?? false, "list reload");
       expect(dom.root.textContent).not.toContain("No phones paired yet.");
     } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      timers.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("the last wrong code ends the pairing and offers a new one", async () => {
+    const dom = createDomTestHarness();
+    resume(dom);
+    const timers = fastTimers();
+    const fetch = mockFetch((method, path) => {
+      if (method === "GET" && path === `/api/auth/pwa/v1/pairings/${PAIRING}`)
+        return Response.json({
+          state: "claimed",
+          claimUntil: new Date(Date.now() + 300_000).toISOString(),
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          device: { name: "iPhone", platform: "ios" },
+          attemptsLeft: 1,
+        });
+      if (method === "POST" && path === `/api/auth/pwa/v1/pairings/${PAIRING}/confirm`)
+        return Response.json({ code: "EXPIRED", message: "This pairing has expired.", attemptsLeft: 0 }, { status: 410 });
+    });
+    const dispose = mount(dom, { initial: [] });
+    try {
+      await waitFor(() => dialogText(dom).includes("iPhone wants to connect."), "claimed");
+      type(dom, "111111");
+      button(dom, "Pair")!.click();
+      await waitFor(() => dialogText(dom).includes("Too many wrong codes"), "locked");
+      await waitFor(() => dom.document.activeElement === button(dom, "Start again"), "focus on the next step");
+      expect(dom.window.sessionStorage.length).toBe(0);
+    } finally {
+      modules!.ui.dialogCore.close();
       dispose();
       fetch.restore();
       timers.mockRestore();
@@ -226,8 +287,9 @@ else {
     try {
       button(dom, "Pair a phone")!.click();
       await waitFor(() => Boolean(button(dom, "Confirm it's you")), "re-authenticate");
-      expect(dom.root.textContent).toContain("Pairing a phone needs a recent sign-in.");
+      expect(dialogText(dom)).toContain("Pairing a phone needs a recent sign-in.");
     } finally {
+      modules!.ui.dialogCore.close();
       dispose();
       fetch.restore();
       dom.cleanup();
@@ -241,9 +303,10 @@ else {
     );
     const dispose = mount(dom);
     try {
-      expect(dom.root.textContent).toContain("This phone");
-      expect(dom.root.textContent).toContain("Last used Sep 2, 2026");
+      expect(dom.root.textContent).toContain("This phone · Last used Sep 2, 2026");
       expect(dom.root.textContent).toContain("Last used today");
+      expect(dom.root.querySelector('[role="img"][aria-label="iPhone or iPad"]')).not.toBeNull();
+      expect(dom.root.querySelector('[role="img"][aria-label="Android"]')).not.toBeNull();
       const rows = [...dom.root.querySelectorAll("li")];
       ([...rows[1]!.querySelectorAll("button")].find((element) => element.textContent?.includes("Remove")) as HTMLButtonElement).click();
       await waitFor(() => Boolean(dom.document.querySelector("dialog")), "confirm prompt");
