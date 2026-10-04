@@ -1,9 +1,8 @@
-import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, SegmentedControl, toast, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { spacesMessages } from "@/service/messages";
@@ -19,9 +18,6 @@ type Props = { userId: string; initialView: OverviewView; initialWork: OverviewW
 const VIEWS = ["mine", "today", "upcoming"] as const;
 const viewHref = (view: OverviewView) => (view === "mine" ? "/pwa/spaces" : `/pwa/spaces?view=${view}`);
 
-/** The app session ended: reload once, and the page request renews it or leads to pairing. */
-const sessionEnded = (response: { status: number }) => response.status === 401 && reloadOnce("pwa-auth");
-
 /** The overview carries no all-day flag; an all-day event runs from one local midnight to a later one. */
 const isAllDay = (start: Date, end: Date | null, dateConfig: DateContext) =>
   end !== null &&
@@ -31,7 +27,8 @@ const isAllDay = (start: Date, end: Date | null, dateConfig: DateContext) =>
 
 /**
  * "My tasks" in the mobile app: the overview's views as a segmented control, and one flat row per task or event.
- * A task is checked off with its own button; the list is then read again, so it always shows the server's view.
+ * A task is checked off with its own button: the row leaves at once, and the list is read again once the server
+ * saved it, so it always ends with the server's view. A refusal or a failure brings the row back.
  */
 export default function MyTasks(props: Props) {
   const locale = useLocale();
@@ -39,21 +36,40 @@ export default function MyTasks(props: Props) {
   const t = myTasksMessages.resolve([locale()]).t;
   const retryToast = createRetryToasts();
   const [view, setView] = createSignal<OverviewView>(props.initialView);
-  const [pending, setPending] = createSignal<ReadonlySet<string>>(new Set());
+  /** Rows checked off here whose list has not been read again yet. */
+  const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
+  const leave = (item: WorkItem, gone: boolean) =>
+    setLeaving((current) => {
+      const next = new Set(current);
+      if (gone) next.add(item.shortId);
+      else next.delete(item.shortId);
+      return next;
+    });
+  /** Rows brought back by Undo until the list is read again, each at its former place. */
+  const [returning, setReturning] = createSignal<ReadonlyMap<string, { item: WorkItem; index: number }>>(new Map());
+  // The server renders the check buttons before this island runs; until then a tap would do nothing.
+  const [ready, setReady] = createSignal(false);
+  onMount(() => setReady(true));
 
   const work = queries.create<OverviewView, OverviewWork>({
     source: view,
     initial: { source: props.initialView, data: props.initialWork },
     load: async (view, { abortSignal }) => {
       const response = await apiClient.overview.work.$get({ query: { view } }, { init: { signal: abortSignal } });
-      if (!response.ok) {
-        sessionEnded(response);
-        throw new Error(o.workLoadFailed);
-      }
+      if (!response.ok) throw new Error(o.workLoadFailed);
       return response.json();
     },
   });
   const active = () => (work.data()?.view === view() ? work.data() : undefined);
+  const items = () => {
+    const data = active();
+    if (!data) return [];
+    const list = data.items.filter((item) => !leaving().has(item.shortId));
+    for (const { item, index } of returning().values()) {
+      if (!list.some((row) => row.shortId === item.shortId)) list.splice(Math.min(index, list.length), 0, item);
+    }
+    return list;
+  };
   const counts = () => work.data()?.counts ?? props.initialWork.counts;
 
   const select = (next: OverviewView) => {
@@ -101,7 +117,6 @@ export default function MyTasks(props: Props) {
       return false;
     }
     if (response.ok) return true;
-    if (sessionEnded(response)) return false;
     if (response.status === 409 && completed && !claimId) {
       // A claimed task: the person's own claim completes it, as on the web; someone else's is named.
       const claim = await currentClaim(item);
@@ -116,25 +131,43 @@ export default function MyTasks(props: Props) {
     return false;
   };
 
-  /** The row's button stays busy until the list that no longer has the task replaces it. */
+  /** The row leaves at once with Undo; it comes back when the server refuses or cannot be reached. */
   const complete = async (item: WorkItem): Promise<void> => {
-    if (pending().has(item.shortId)) return;
-    setPending((current) => new Set(current).add(item.shortId));
-    try {
-      if (!(await save(item, true))) return;
-      const notice = toast.success(t.done, {
-        action: {
-          label: t.undo,
-          onClick: () => {
-            notice.dismiss();
-            void reopen(item);
-          },
+    if (leaving().has(item.shortId)) return;
+    const index = items().indexOf(item);
+    leave(item, true);
+    const saving = save(item, true);
+    let undone = false;
+    const notice = toast.success(t.done, {
+      action: {
+        label: t.undo,
+        onClick: () => {
+          undone = true;
+          notice.dismiss();
+          void undo(item, index, saving);
         },
-      });
-      await refresh();
+      },
+    });
+    if (!(await saving)) {
+      notice.dismiss();
+      leave(item, false);
+      return;
+    }
+    // Undo reads the list itself once the task is open again.
+    if (undone) return;
+    await refresh();
+    leave(item, false);
+  };
+
+  /** The row comes back at once; a completion the server already saved is reopened there too. */
+  const undo = async (item: WorkItem, index: number, saving: Promise<boolean>): Promise<void> => {
+    setReturning((current) => new Map(current).set(item.shortId, { item, index }));
+    leave(item, false);
+    try {
+      if (await saving) await reopen(item);
     } finally {
-      setPending((current) => {
-        const next = new Set(current);
+      setReturning((current) => {
+        const next = new Map(current);
         next.delete(item.shortId);
         return next;
       });
@@ -142,7 +175,8 @@ export default function MyTasks(props: Props) {
   };
 
   const reopen = async (item: WorkItem): Promise<void> => {
-    if (await save(item, false)) await refresh();
+    await save(item, false);
+    await refresh();
   };
 
   const schedule = (item: WorkItem): { text: string; datetime: string; icon: string; overdue: boolean } | null => {
@@ -201,7 +235,7 @@ export default function MyTasks(props: Props) {
         }))}
       />
       <Show
-        when={active()?.items.length}
+        when={items().length}
         fallback={
           <Placeholder
             state={work.error() ? "error" : active() ? "empty" : "loading"}
@@ -219,7 +253,7 @@ export default function MyTasks(props: Props) {
         }
       >
         <ul class="spaces-pwa__list" aria-label={t.tasks} aria-busy={work.refreshing() || undefined}>
-          <For each={active()?.items}>
+          <For each={items()}>
             {(item) => {
               const when = () => schedule(item);
               return (
@@ -235,9 +269,8 @@ export default function MyTasks(props: Props) {
                     <IconButton
                       class="spaces-pwa__check"
                       label={t.complete({ title: item.title })}
-                      loadingLabel={t.completing({ title: item.title })}
                       tooltip={false}
-                      loading={pending().has(item.shortId)}
+                      disabled={!ready()}
                       onClick={() => void complete(item)}
                     >
                       <i class="ti ti-circle" aria-hidden="true" />
