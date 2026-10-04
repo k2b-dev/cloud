@@ -530,7 +530,7 @@ const processExportSnapshot = async (snapshotId: string, jobHeartbeat: () => Pro
   } finally {
     // The draft changed while this job exported an older revision. The current revision goes out once
     // this job released the provider, not with the next maintenance sweep: the change may not have
-    // woken an export of its own, and one it woke met this job's provider lease.
+    // woken an export of its own, for example when its wake failed.
     if (followUp.snapshotId) {
       await submitExport(followUp.snapshotId).catch((error: unknown) =>
         log.warn("Draft export follow-up enqueue failed; the reconciliation sweep will retry it", {
@@ -619,6 +619,11 @@ const exportClaimedSnapshot = async (
         const folderStatus = await imapSmtpConnector.getFolderStatus(current.runtime, current.folder.path);
         const latestDraft = await loadDraftContent(snapshot.draft_id!);
         if (!latestDraft || latestDraft.revision !== Number(snapshot.cloud_revision)) {
+          // Queue the current revision before this one stops pending, as claiming and activating do in one
+          // transaction: the draft never looks fully exported while its current revision is not.
+          if (latestDraft) {
+            followUp.snapshotId = await sql.begin((tx) => queueDraftProjectionInTransaction({ db: tx, draftId: snapshot.draft_id! }));
+          }
           if (snapshot.provider_effect_started_at) {
             await assertLeaseActive();
             const remoteIdentity = await resolveAppendedUid({
@@ -654,9 +659,6 @@ const exportClaimedSnapshot = async (
               last_error_message = 'A newer Cloud revision superseded this snapshot'
           WHERE id = ${snapshot.id}::uuid
         `;
-          }
-          if (latestDraft) {
-            followUp.snapshotId = await sql.begin((tx) => queueDraftProjectionInTransaction({ db: tx, draftId: snapshot.draft_id! }));
           }
           return;
         }

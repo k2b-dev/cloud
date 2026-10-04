@@ -16,7 +16,13 @@ import { createActorCommand, createMailCommand } from "./commands";
 import { imapSmtpConnector } from "./connectors";
 import { mapFetchedEnvelope } from "./connectors/imap-smtp";
 import { mergeConversations } from "./conversations";
-import { startDraftProjectionRuntime, stopDraftProjectionRuntime, submitDueDraftProjectionWork } from "./draft-provider-projection";
+import {
+  enqueueDraftProjectionSnapshot,
+  queueDraftProjectionInTransaction,
+  startDraftProjectionRuntime,
+  stopDraftProjectionRuntime,
+  submitDueDraftProjectionWork,
+} from "./draft-provider-projection";
 import { appendDraftAttachmentUpload, createDraftAttachmentUpload, finalizeDraftAttachmentUpload } from "./draft-uploads";
 import { createDraft, discardDraft, updateDraft } from "./drafts";
 import { setFolderRole } from "./folders";
@@ -93,6 +99,8 @@ const createProvider = (kind: ProviderKind) => {
   const refusedRecipients = new Set<string>();
   // Runs while the next append to the Drafts folder is in flight, before the server stores the message.
   let duringNextDraftAppend: ((source: Buffer) => Promise<void>) | null = null;
+  // Runs when the next status of the Drafts folder is read, as a draft export does right before it appends.
+  let duringNextDraftsStatus: (() => Promise<void>) | null = null;
 
   const folder = (path: string): StoredFolder => {
     const found = folders.get(path);
@@ -172,6 +180,11 @@ const createProvider = (kind: ProviderKind) => {
 
   const spies = [
     spyOn(imapSmtpConnector, "getFolderStatus").mockImplementation(async (_config, path) => {
+      const during = path === draftsPath ? duringNextDraftsStatus : null;
+      if (during) {
+        duringNextDraftsStatus = null;
+        await during();
+      }
       const target = folder(path);
       return { uidValidity: target.uidValidity, uidNext: target.nextUid, highestModseq: null, messages: target.entries.size };
     }),
@@ -308,6 +321,9 @@ const createProvider = (kind: ProviderKind) => {
     },
     duringNextDraftAppend: (work: (source: Buffer) => Promise<void>) => {
       duringNextDraftAppend = work;
+    },
+    duringNextDraftsStatus: (work: () => Promise<void>) => {
+      duringNextDraftsStatus = work;
     },
     submissions: () => submissions,
     searches: () => searches,
@@ -2328,6 +2344,12 @@ suite("mail sent message projection", () => {
       }),
     );
 
+  // A change that wakes no export of its own, as when its wake fails and Mail leaves the export to the sweep.
+  const changeDraftWithoutWake = async (draftId: string, body: string) => {
+    await sql`UPDATE mail.drafts SET body_markdown = ${body}, revision = revision + 1 WHERE id = ${draftId}::uuid`;
+  };
+  const providerDraftAppends = (provider: Provider) => provider.appends.filter((path) => path === provider.draftsPath).length;
+
   test("an attachment finished in Mail reaches the provider's Drafts folder without the maintenance sweep", async () => {
     const provider = createProvider("imap");
     try {
@@ -2374,16 +2396,11 @@ suite("mail sent message projection", () => {
     const provider = createProvider("imap");
     try {
       const mailbox = await connect(provider);
-      // A change that commits while the first copy is in flight and wakes no export of its own, as when
-      // its wake fails and Mail leaves the export to the sweep.
       let changed = false;
       provider.duringNextDraftAppend(async (source) => {
         const draftId = /^X-Cloud-Draft-ID: *(\S+)/im.exec(source.toString("utf8"))?.[1];
         if (!draftId) throw new Error("The appended draft carries no Cloud draft ID");
-        await sql`
-          UPDATE mail.drafts SET body_markdown = 'Changed during the append.', revision = revision + 1
-          WHERE id = ${draftId}::uuid
-        `;
+        await changeDraftWithoutWake(draftId, "Changed during the append.");
         changed = true;
       });
       const draft = await newDraft(mailbox, "Changed mid-append");
@@ -2393,6 +2410,59 @@ suite("mail sent message projection", () => {
       expect(await providerDrafts(provider)).toEqual([
         { revision: String(draft.revision + 1), body: "Changed during the append.", attachments: [] },
       ]);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft that changes just before its copy is appended gets its current revision exported without the maintenance sweep", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Changed before the append");
+      await settleDraftImports(mailbox.mailboxId);
+      // A save's export takes the provider, and a second change whose wake fails commits right before it appends.
+      await changeDraftWithoutWake(draft.id, "Saved once more.");
+      const queued = await sql.begin((tx) => queueDraftProjectionInTransaction({ db: tx, draftId: draft.id }));
+      if (!queued) throw new Error("No export was queued for the saved revision");
+      let changed = false;
+      provider.duringNextDraftsStatus(async () => {
+        await changeDraftWithoutWake(draft.id, "Changed before the append.");
+        changed = true;
+      });
+      await enqueueDraftProjectionSnapshot(queued);
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(changed).toBe(true);
+      expect(await providerDrafts(provider)).toEqual([
+        { revision: String(draft.revision + 2), body: "Changed before the append.", attachments: [] },
+      ]);
+      // The outdated revision stopped before its append.
+      expect(providerDraftAppends(provider)).toBe(2);
+    } finally {
+      provider.restore();
+    }
+  });
+
+  test("a draft that changes before its queued export starts gets its current revision exported without the maintenance sweep", async () => {
+    const provider = createProvider("imap");
+    try {
+      const mailbox = await connect(provider);
+      const draft = await newDraft(mailbox, "Changed before the export");
+      await settleDraftImports(mailbox.mailboxId);
+      // A save's export waits in the queue while a second change whose wake fails commits.
+      await changeDraftWithoutWake(draft.id, "Saved once more.");
+      const queued = await sql.begin((tx) => queueDraftProjectionInTransaction({ db: tx, draftId: draft.id }));
+      if (!queued) throw new Error("No export was queued for the saved revision");
+      await changeDraftWithoutWake(draft.id, "Changed before the export started.");
+      await enqueueDraftProjectionSnapshot(queued);
+      await settleDraftImports(mailbox.mailboxId);
+
+      expect(await providerDrafts(provider)).toEqual([
+        { revision: String(draft.revision + 2), body: "Changed before the export started.", attachments: [] },
+      ]);
+      // The outdated revision never started its append.
+      expect(providerDraftAppends(provider)).toBe(2);
     } finally {
       provider.restore();
     }
